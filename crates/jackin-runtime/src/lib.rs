@@ -1,22 +1,15 @@
-//! jackin-runtime: container bootstrap pipeline.
+//! jackin-runtime: role launch, attach, cleanup, and backend orchestration.
 //!
-//! Holds the concrete `DockerApi` / `CommandRunner` implementations,
-//! image build, `DinD` sidecar management, mount materialization, and
-//! instance lifecycle.
-//!
-//! **Dependency tier:** `jackin-core` → `jackin-config` → `jackin-env` → `jackin-runtime`
-//!
-//! **Architecture Invariant:** L1 application / orchestration crate.
-//! Allowed dependencies: `jackin-core`, `jackin-config`, `jackin-env`,
-//! `jackin-manifest`, `jackin-docker`, `jackin-image`,
-//! `jackin-diagnostics`, `jackin-launch-tui`, `jackin-host`,
-//! `jackin-protocol`, `jackin-isolation`, `jackin-instance`.
-//! (R1: `jackin-tui` production edge removed via pure-item relocation to
-//! core + `LaunchOutputSink` port; only dev-dep remains for tests.)
+//! **Architecture Invariant:** T5.
+//! Entry point: [`launch_role_runtime`] — role launch orchestration.
 
 pub mod apple_container_client;
 pub mod exec_host;
+#[cfg(unix)]
+pub mod host_daemon;
 pub mod isolation;
+#[cfg(all(feature = "daemon-spike", unix))]
+pub mod reactive_daemon;
 pub mod runtime;
 pub mod spin_wait;
 
@@ -33,7 +26,8 @@ pub use runtime::{
     prewarm_dind_sidecar_container, prune_all_instances, prune_cache, prune_diagnostics,
     prune_images, prune_instances, prune_jackin_home, prune_roles, purge_class_data,
     purge_container_state, reconcile_keep_awake, resolve_supported_agents_for_console,
-    spawn_agent_session, spawn_shell_session, write_prewarmed_dind_state,
+    spawn_agent_session, spawn_background_sidecar_prewarm, spawn_shell_session,
+    write_prewarmed_dind_state,
 };
 #[cfg(not(test))]
 pub use runtime::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};

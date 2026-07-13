@@ -1,0 +1,2 @@
+- A wire-format change is a host↔capsule contract change: align both binaries in the same PR.
+- Data contracts only — no runtime behavior. Keep the crate dependency-light and serde-focused.

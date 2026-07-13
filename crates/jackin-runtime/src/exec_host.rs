@@ -8,7 +8,7 @@
 //!
 //! The `jackin load` process stays alive for the session and this listener
 //! runs as a `tokio::spawn` task alongside the blocking interactive attach.
-//! Future work: migrate to the jackin' daemon so all running containers share
+//! Future work: migrate to the jackin❯ daemon so all running containers share
 //! one host-side resolver.
 //!
 //! # Security
@@ -24,15 +24,13 @@
 //! end-of-options sentinel is inserted before passing to `op read` to prevent
 //! argument injection via crafted op:// values.
 //!
-//! **Boundary limitation (Phase 1 ad-hoc).** This allow-list bounds *what* can
-//! be resolved to the operator-configured set; it does NOT enforce per-use
-//! operator *approval*. The picker (operator approval) is enforced daemon-side
-//! before the daemon connects here — but `/jackin/run/host.sock` is reachable
-//! by any in-container process, so a compromised agent could connect directly
-//! and resolve the whole configured set without a picker. Binding it to the
-//! daemon (e.g. `SO_PEERCRED` or a one-time per-confirm token) is remaining
-//! hardening, tracked on the jackin-exec roadmap item; the daemon move that
-//! replaces this listener subsumes it.
+//! On Linux, the listener also authenticates the socket peer with safe
+//! `SO_PEERCRED` (`UnixStream::peer_cred`) and accepts only the container's
+//! init process (`NSpid` innermost PID 1), which is the capsule daemon. That
+//! binds credential resolution to the daemon path that already enforces the
+//! operator picker. Non-Linux hosts do not expose this same-kernel
+//! identity check here; Docker Desktop and the future reactive daemon remain
+//! the tracked residuals.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -53,13 +51,17 @@ use tokio::net::{UnixListener, UnixStream};
 /// configured for this session. Only refs in this set are resolved; any
 /// incoming request that references an unknown (name, kind, source) triple
 /// is rejected, preventing escalation from a compromised in-container process.
-#[allow(clippy::print_stderr)]
+#[allow(
+    clippy::print_stderr,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn start(
     sock_path: PathBuf,
     allowed_bindings: Vec<ExecBinding>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        if let Err(e) = run_listener(&sock_path, &allowed_bindings).await {
+        if let Err(e) = run_listener(&sock_path, &allowed_bindings, CallerAuth::CapsuleDaemon).await
+        {
             // A returned error is a startup failure (bind/chmod/mkdir) — the
             // accept loop never returns otherwise. It means jackin-exec
             // credential resolution is unavailable for the whole session, so
@@ -89,7 +91,18 @@ pub fn start_for_container(
     start(sock_path, exec_bindings.to_vec())
 }
 
-async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecBinding]) -> Result<()> {
+#[derive(Clone, Copy, Debug)]
+enum CallerAuth {
+    CapsuleDaemon,
+    #[cfg(all(test, target_os = "linux"))]
+    PeerPid(u32),
+}
+
+async fn run_listener(
+    sock_path: &Path,
+    allowed_bindings: &[ExecBinding],
+    caller_auth: CallerAuth,
+) -> Result<()> {
     // Remove stale socket from a previous session.
     drop(std::fs::remove_file(sock_path));
     if let Some(parent) = sock_path.parent() {
@@ -119,7 +132,7 @@ async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecBinding]) -> Res
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
-                if let Err(e) = handle_connection(stream, allowed_bindings).await {
+                if let Err(e) = handle_connection(stream, allowed_bindings, caller_auth).await {
                     jackin_diagnostics::debug_log!("exec_host", "connection error: {e:#}");
                 }
             }
@@ -132,8 +145,17 @@ async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecBinding]) -> Res
     }
 }
 
-async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecBinding]) -> Result<()> {
+async fn handle_connection(
+    mut stream: UnixStream,
+    allowed_bindings: &[ExecBinding],
+    caller_auth: CallerAuth,
+) -> Result<()> {
     const MAX_REQ: usize = 512 * 1024;
+    if let Err(error) = authenticate_caller(&stream, caller_auth) {
+        jackin_diagnostics::debug_log!("exec_host", "rejected unauthenticated caller: {error:#}");
+        return Ok(());
+    }
+
     // Read 4-byte BE length + JSON body (same framing as control channel).
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
@@ -188,6 +210,65 @@ async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecBindi
     // frame identically.
     stream.write_all(&frame(&reply)).await?;
     Ok(())
+}
+
+fn authenticate_caller(stream: &UnixStream, caller_auth: CallerAuth) -> Result<()> {
+    match caller_auth {
+        CallerAuth::CapsuleDaemon => authenticate_capsule_daemon_peer(stream),
+        #[cfg(all(test, target_os = "linux"))]
+        CallerAuth::PeerPid(expected) => {
+            let actual = peer_pid(stream)?;
+            anyhow::ensure!(
+                actual == expected,
+                "peer pid {actual} did not match expected pid {expected}"
+            );
+            Ok(())
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn peer_pid(stream: &UnixStream) -> Result<u32> {
+    let cred = stream.peer_cred().context("reading peer credentials")?;
+    let pid = cred
+        .pid()
+        .ok_or_else(|| anyhow::anyhow!("peer credentials did not include a pid"))?;
+    u32::try_from(pid).context("peer pid was negative")
+}
+
+#[cfg(target_os = "linux")]
+fn authenticate_capsule_daemon_peer(stream: &UnixStream) -> Result<()> {
+    let pid = peer_pid(stream)?;
+    anyhow::ensure!(
+        peer_is_container_init_process(pid)?,
+        "peer pid {pid} is not the capsule daemon container init process"
+    );
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn authenticate_capsule_daemon_peer(_stream: &UnixStream) -> Result<()> {
+    jackin_diagnostics::debug_log!(
+        "exec_host",
+        "peer credential daemon authentication unavailable on this host OS"
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn peer_is_container_init_process(pid: u32) -> Result<bool> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status"))
+        .with_context(|| format!("reading /proc/{pid}/status"))?;
+    Ok(peer_is_container_init_process_status(&status))
+}
+
+#[cfg(target_os = "linux")]
+fn peer_is_container_init_process_status(status: &str) -> bool {
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("NSpid:"))
+        .and_then(|value| value.split_whitespace().last())
+        == Some("1")
 }
 
 async fn resolve_all(refs: &[ExecBinding]) -> Result<std::collections::BTreeMap<String, String>> {

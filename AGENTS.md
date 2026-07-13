@@ -63,10 +63,10 @@ Exception: explicit operator instruction to hold.
 
 - Prefer maintained crates over hand-rolled parsers / serializers / format handlers / crypto.
 - Reuse before writing (DRY). Extend or parameterise; symmetric variants share one body.
-- Two-tier telemetry: `clog!` compact always-on; `cdebug!` firehose gated on `JACKIN_DEBUG=1`.
+- Two-tier telemetry: `clog!` compact always-on; `cdebug!` firehose gated on `JACKIN_DEBUG=1`; structured run/OTLP tier → [ENGINEERING.md](ENGINEERING.md).
 - Comments: non-obvious WHY only — never narrate WHAT.
 
-Rust workspace specifics → [crates/AGENTS.md](crates/AGENTS.md).
+Rust workspace specifics (module layout, lint baseline, supply-chain) apply under `crates/`.
 
 ## PRs, review, docs gates
 
@@ -75,12 +75,12 @@ Read [PULL_REQUESTS.md](PULL_REQUESTS.md) before opening/iterating/merging. Pre-
 - **Roadmap freshness** — update roadmap item status when change ships/advances/defers.
 - **Docs as source of truth** — update user-facing + contributor-facing docs same PR.
 
-Agent PR extras (base branch, force-push, CI-green, squash format) → [.github/AGENTS.md](.github/AGENTS.md).
+Agent PR extras (base branch, force-push, CI-green, squash format) are documented under `.github/`.
 
 ## Testing
 
 - Runner, render-conformance fixtures, `--debug` validation → [TESTING.md](TESTING.md).
-- `jackin-capsule` smoke-test mandate → [.github/AGENTS.md](.github/AGENTS.md).
+- `jackin-capsule` smoke-test mandate is a CI rule under `.github/`.
 
 ## TUI
 

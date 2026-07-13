@@ -3,7 +3,7 @@
 //! Moved from daemon.rs to separate this concern from session lifecycle and
 //! input dispatch. All methods are impl Multiplexer blocks.
 
-use std::time::Instant;
+use std::{collections::HashSet, time::Instant};
 
 use crate::tui::{
     model::{VisibleAgentState, visible_agent_state_from_protocol},
@@ -30,6 +30,25 @@ pub(super) struct AssertedClientState {
     pub(super) cursor_visible: bool,
     /// DECSCUSR style (`0` = terminal default).
     pub(super) cursor_style: u16,
+}
+
+type HyperlinkRegion = (ratatui::layout::Rect, String);
+type SgrRegion = (ratatui::layout::Rect, SgrMetadata);
+type PaneRegions = (Vec<HyperlinkRegion>, Vec<SgrRegion>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PaneRegionCache {
+    key: PaneRegionCacheKey,
+    hyperlinks: Vec<HyperlinkRegion>,
+    sgr: Vec<SgrRegion>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PaneRegionCacheKey {
+    inner: ratatui::layout::Rect,
+    scrollback_offset: usize,
+    focused: bool,
+    allow_hyperlinks: bool,
 }
 
 impl Multiplexer {
@@ -61,7 +80,8 @@ impl Multiplexer {
             return Vec::new();
         };
         self.rendered_generation = generation;
-        crate::cdebug!(
+        jackin_diagnostics::record_render(started.elapsed().as_micros() as u64, 0);
+        crate::ctrace_payload!(
             "render: reason={} wipe={} generation={} bytes={} duration_us={} term={}x{} dialog_open={}",
             reason.map_or("none", FullRedrawReason::as_str),
             wipe.is_some(),
@@ -148,7 +168,7 @@ impl Multiplexer {
         // otherwise run every frame on the compose hot path.
         if crate::logging::debug_enabled() {
             let status_rows = crate::tui::components::status_bar::STATUS_BAR_ROWS;
-            crate::cdebug!(
+            crate::ctrace_payload!(
                 "frame-geom: term={}x{} content_rows={} status_rows={} panes={}",
                 term_cols,
                 term_rows,
@@ -297,12 +317,15 @@ impl Multiplexer {
             })
             .unwrap_or_default();
 
-        // Reset each visible grid's damage memory: under derived rendering
-        // damage never selects what to emit, but draining keeps the dirty
-        // tracker's span list from growing across frames.
+        // Reset each visible grid's damage memory. Derived rendering still
+        // paints a complete Ratatui frame; the drained spans only invalidate
+        // cached per-pane metadata scans.
+        let mut damaged_panes = HashSet::new();
         for pane in &panes {
-            if let Some(session) = self.sessions.get_mut(&pane.id) {
-                drop(session.shadow_grid.dirty_spans());
+            if let Some(session) = self.sessions.get_mut(&pane.id)
+                && !session.shadow_grid.dirty_spans().is_empty()
+            {
+                damaged_panes.insert(pane.id);
             }
         }
         // Pane bodies. Every Ratatui frame must paint complete visible pane
@@ -389,7 +412,6 @@ impl Multiplexer {
         let branch = self.context_bar_branch().map(str::to_owned);
         let pull_request = self.pull_request_context.clone();
         let pull_request_loading = self.pull_request_context_loading();
-        let spawn_failure = self.spawn_failure.clone();
         let palette_key = self.input_parser.palette_key().unwrap_or(0x1C);
         let clipboard_image_notice = self.clipboard_image_notice.clone();
         let link_hover_notice = self
@@ -399,7 +421,14 @@ impl Multiplexer {
 
         // Frame hyperlink layer (§3.4): the encoder brackets exactly these
         // cells with OSC 8 during emission — no raw overlay writes.
-        let mut hyperlink_regions = pane_hyperlink_regions(&panes, &pane_screens, &self.sessions);
+        let (mut hyperlink_regions, sgr_regions) = cached_pane_regions(
+            &mut self.pane_region_cache,
+            &panes,
+            &pane_screens,
+            &self.sessions,
+            &damaged_panes,
+            focused_id,
+        );
         let ui_hyperlink_regions =
             if let Some((DialogRatatuiSnapshot::DebugInfo(state), (row, col, height, width))) =
                 dialog_snapshot.as_ref()
@@ -418,7 +447,6 @@ impl Multiplexer {
         self.ratatui_terminal
             .backend_mut()
             .set_hyperlink_regions(hyperlink_regions);
-        let sgr_regions = pane_sgr_regions(&panes, &pane_screens);
         self.ratatui_terminal
             .backend_mut()
             .set_sgr_regions(sgr_regions);
@@ -454,7 +482,6 @@ impl Multiplexer {
                     main_scroll_axes,
                     debug_run_id: debug_run_id_owned.as_deref(),
                     dialog_hint_spans: dialog_hint_spans.as_deref(),
-                    spawn_failure: spawn_failure.as_deref(),
                     palette_key,
                     clipboard_image_notice: clipboard_image_notice.as_deref(),
                     link_hover_notice: link_hover_notice.as_deref(),
@@ -576,6 +603,58 @@ impl Multiplexer {
         }
         self.last_asserted_client_state = Some(desired);
     }
+}
+
+fn cached_pane_regions(
+    cache: &mut std::collections::HashMap<u64, PaneRegionCache>,
+    panes: &[crate::tui::model::VisiblePane],
+    pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
+    sessions: &std::collections::HashMap<u64, crate::session::Session>,
+    damaged_panes: &HashSet<u64>,
+    focused_id: Option<u64>,
+) -> PaneRegions {
+    let visible: HashSet<u64> = panes.iter().map(|pane| pane.id).collect();
+    cache.retain(|id, _| visible.contains(id));
+
+    let mut hyperlinks = Vec::new();
+    let mut sgr = Vec::new();
+    for pane in panes {
+        let Some(session) = sessions.get(&pane.id) else {
+            cache.remove(&pane.id);
+            continue;
+        };
+        let key = PaneRegionCacheKey {
+            inner: ratatui::layout::Rect {
+                x: pane.inner.col,
+                y: pane.inner.row,
+                width: pane.inner.cols,
+                height: pane.inner.rows,
+            },
+            scrollback_offset: session.scrollback_offset(),
+            focused: focused_id == Some(pane.id),
+            allow_hyperlinks: session.allow_frame_hyperlinks(),
+        };
+        let rebuild = damaged_panes.contains(&pane.id)
+            || cache.get(&pane.id).is_none_or(|cached| cached.key != key);
+        if rebuild {
+            let pane_slice = std::slice::from_ref(pane);
+            let hyperlinks_for_pane = pane_hyperlink_regions(pane_slice, pane_screens, sessions);
+            let sgr_for_pane = pane_sgr_regions(pane_slice, pane_screens);
+            cache.insert(
+                pane.id,
+                PaneRegionCache {
+                    key,
+                    hyperlinks: hyperlinks_for_pane,
+                    sgr: sgr_for_pane,
+                },
+            );
+        }
+        if let Some(cached) = cache.get(&pane.id) {
+            hyperlinks.extend(cached.hyperlinks.iter().cloned());
+            sgr.extend(cached.sgr.iter().copied());
+        }
+    }
+    (hyperlinks, sgr)
 }
 
 /// Run-length-encode per-row cell metadata into single-row `Rect`s. For each

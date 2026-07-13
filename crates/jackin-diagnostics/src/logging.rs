@@ -11,6 +11,24 @@ static DEBUG_BUFFER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 const DEBUG_BUFFER_LIMIT: usize = 2048;
 
 static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
+static CONFIG_TELEMETRY_LEVEL: OnceLock<Mutex<Option<TelemetryLevel>>> = OnceLock::new();
+static CONFIG_TELEMETRY_CATEGORIES: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum TelemetryLevel {
+    Info,
+    Debug,
+    Trace,
+}
+
+/// Per-sink telemetry surface (plan 043).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TelemetrySink {
+    OtlpSpans,
+    OtlpLogs,
+    Console,
+    DiagnosticsFile,
+}
 
 pub fn set_debug_mode(enabled: bool) {
     DEBUG_MODE.store(enabled, Ordering::Relaxed);
@@ -20,6 +38,153 @@ pub fn set_debug_mode(enabled: bool) {
 #[must_use]
 pub fn is_debug_mode() -> bool {
     DEBUG_MODE.load(Ordering::Relaxed)
+}
+
+pub fn telemetry_level(debug: bool) -> TelemetryLevel {
+    // Resolution: env level → JACKIN_DEBUG alias → config → --debug fallback.
+    // Exactly one site resolves JACKIN_DEBUG truthiness as a telemetry control.
+    if let Some(level) = std::env::var("JACKIN_TELEMETRY_LEVEL")
+        .ok()
+        .and_then(|value| parse_telemetry_level(&value))
+    {
+        return level;
+    }
+    if jackin_debug_alias_enabled() {
+        return TelemetryLevel::Debug;
+    }
+    config_telemetry_level().unwrap_or({
+        if debug {
+            TelemetryLevel::Debug
+        } else {
+            TelemetryLevel::Info
+        }
+    })
+}
+
+/// `JACKIN_DEBUG` truthiness alias — only read here (and dual-injection sites).
+fn jackin_debug_alias_enabled() -> bool {
+    std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
+        matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
+/// Level for one sink: `JACKIN_TELEMETRY_<SINK>_LEVEL` → global [`telemetry_level`].
+#[must_use]
+pub fn sink_level(sink: TelemetrySink, debug: bool) -> TelemetryLevel {
+    let env_key = match sink {
+        TelemetrySink::OtlpSpans => "JACKIN_TELEMETRY_OTLP_SPANS_LEVEL",
+        TelemetrySink::OtlpLogs => "JACKIN_TELEMETRY_OTLP_LOGS_LEVEL",
+        TelemetrySink::Console => "JACKIN_TELEMETRY_CONSOLE_LEVEL",
+        TelemetrySink::DiagnosticsFile => "JACKIN_TELEMETRY_FILE_LEVEL",
+    };
+    std::env::var(env_key)
+        .ok()
+        .and_then(|value| parse_telemetry_level(&value))
+        .unwrap_or_else(|| telemetry_level(debug))
+}
+
+/// Level name string for `EnvFilter` directives.
+#[must_use]
+pub fn telemetry_level_name(level: TelemetryLevel) -> &'static str {
+    match level {
+        TelemetryLevel::Info => "info",
+        TelemetryLevel::Debug => "debug",
+        TelemetryLevel::Trace => "trace",
+    }
+}
+
+pub fn set_config_telemetry(level: Option<TelemetryLevel>, categories: &[String]) {
+    *CONFIG_TELEMETRY_LEVEL
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = level;
+    *CONFIG_TELEMETRY_CATEGORIES
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = if categories.is_empty() {
+        None
+    } else {
+        Some(categories.join(","))
+    };
+}
+
+fn config_telemetry_level() -> Option<TelemetryLevel> {
+    *CONFIG_TELEMETRY_LEVEL
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn config_telemetry_categories() -> Option<String> {
+    CONFIG_TELEMETRY_CATEGORIES
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+pub fn parse_telemetry_level(value: &str) -> Option<TelemetryLevel> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "info" => Some(TelemetryLevel::Info),
+        "debug" => Some(TelemetryLevel::Debug),
+        "trace" => Some(TelemetryLevel::Trace),
+        _ => None,
+    }
+}
+
+pub(crate) fn debug_capture_enabled(category: &str, legacy_debug: bool) -> bool {
+    let level = std::env::var("JACKIN_TELEMETRY_LEVEL")
+        .ok()
+        .and_then(|value| parse_telemetry_level(&value))
+        .or_else(config_telemetry_level)
+        .unwrap_or(if legacy_debug {
+            TelemetryLevel::Debug
+        } else {
+            TelemetryLevel::Info
+        });
+    let categories = std::env::var("JACKIN_TELEMETRY_CATEGORIES")
+        .ok()
+        .or_else(config_telemetry_categories);
+    level >= TelemetryLevel::Debug && telemetry_category_enabled(category, categories.as_deref())
+}
+
+#[cfg(test)]
+pub(crate) fn debug_capture_enabled_with_env(
+    level_env: Option<&str>,
+    categories_env: Option<&str>,
+    category: &str,
+    legacy_debug: bool,
+) -> bool {
+    let level = level_env
+        .and_then(parse_telemetry_level)
+        .unwrap_or(if legacy_debug {
+            TelemetryLevel::Debug
+        } else {
+            TelemetryLevel::Info
+        });
+    level >= TelemetryLevel::Debug && telemetry_category_enabled(category, categories_env)
+}
+
+fn telemetry_category_enabled(category: &str, categories_env: Option<&str>) -> bool {
+    categories_env
+        .filter(|raw| !raw.trim().is_empty())
+        .is_none_or(|raw| {
+            raw.split(',')
+                .map(normalize_telemetry_category)
+                .any(|candidate| {
+                    candidate == "*" || candidate == normalize_telemetry_category(category)
+                })
+        })
+}
+
+fn normalize_telemetry_category(category: &str) -> String {
+    category
+        .trim()
+        .to_ascii_lowercase()
+        .replace(['_', ' '], "-")
 }
 
 fn debug_buffer() -> &'static Mutex<Vec<String>> {
@@ -149,3 +314,6 @@ fn buffer_pending_notice(line: &str) {
 pub fn format_debug_line(category: &str, message: &str) -> String {
     format!("[jackin debug {category}] {message}")
 }
+
+#[cfg(test)]
+mod tests;

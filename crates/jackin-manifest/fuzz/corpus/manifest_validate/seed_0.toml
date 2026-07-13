@@ -1,0 +1,10 @@
+# Sample role manifest carried through the legacy migration chain.
+
+dockerfile = "Dockerfile"
+agents = ["claude"]
+
+[claude]
+plugins = []
+
+[identity]
+name = "the-architect"

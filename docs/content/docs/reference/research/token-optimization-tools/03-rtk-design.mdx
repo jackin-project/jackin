@@ -11,8 +11,8 @@ RTK ("Rust Token Killer") is the **narrow, deterministic input-side** member of 
 | Repository | `rtk-ai/rtk` (default branch `develop`; `main` 404s) |
 | Pitch | "CLI proxy that reduces LLM token consumption by 60-90% on common dev commands. Single Rust binary, zero dependencies" |
 | Form factor | **CLI + agent hook** — a `~4.1 MB` stripped binary plus a PreToolUse hook; not a library, no *official* MCP server (a third-party RTK↔MCP bridge is listed on mcpmarket, unverified), not a proxy in front of the API |
-| Latest seen | `v0.42.4` (212 release tags in ~5 months — RC-heavy cadence) |
-| Adoption (2026-06-18) | 63,608★ / 146 watchers — PR-inflated; see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
+| Latest seen | `v0.43.0` (2026-06-28; develop at 0.44-rc, `dev-0.44.0-rc.308` 2026-07-03 — RC-heavy cadence) |
+| Adoption | 63,608★ / 146 watchers (2026-06-18); 68,484★ / 166 watchers / 4,232 forks / 1,485 open issues (2026-07-05, still ~412:1 star:watcher) — PR-inflated; see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
 | License | Apache-2.0 (single binary, zero runtime deps) |
 | Bucket hit | Shell-command output (a slice of the 61% cache lines — only what runs through Bash) |
 | Cache interaction | **Safe by construction** (write-time, at the tool boundary) |
@@ -98,7 +98,7 @@ An early reading of RTK held that its `read`/`cat` filter was "line-trimming, no
 - `Minimal` (20–40%) — strip comments.
 - `Aggressive` (60–90%) — strip comments **and function bodies**.
 
-So RTK's Aggressive read overlaps headroom's `CodeAwareCompressor` (keep signatures, drop bodies) more than first stated. **The real surviving distinction is statefulness, not capability.** Both RTK and headroom drop bodies on *a payload as it passes through*, one read at a time; neither builds the **persistent, queryable symbol index** that a code-intelligence tool (ast-grep / codedb) maintains. Structural *retrieval* — asking "where is `foo` defined?" without re-reading the file — is a different lever (the dossier's [code-intelligence chapter](/reference/research/token-optimization/51-code-intelligence-tools/)); one-shot body-dropping on a file the agent reads is something RTK, headroom, and ast-grep can all do.
+So RTK's Aggressive read overlaps headroom's `CodeAwareCompressor` (keep signatures, drop bodies) more than first stated. **The real surviving distinction is statefulness, not capability.** Both RTK and headroom drop bodies on *a payload as it passes through*, one read at a time; neither builds the **persistent, queryable symbol index** that a code-intelligence tool (ast-grep / codedb) maintains. Structural *retrieval* — asking "where is `foo` defined?" without re-reading the file — is a different lever (the dossier's [code-intelligence chapter](/reference/research/token-optimization-tools/19-code-intelligence-tools/)); one-shot body-dropping on a file the agent reads is something RTK, headroom, and ast-grep can all do.
 
 ## The two hook modes
 
@@ -191,7 +191,7 @@ The RTK-specific claim graveyard:
 - **"Drop-in hook, `<10 ms`, free win"** — the compute is cheap and the cache-safety is real, but it writes a host-state hook and can silently truncate a needed line on a successful command.
 - **"Same output, just smaller" (lossless)** — lossless only where the dropped content was genuinely redundant; truncation is lossy with no success-path recovery.
 
-RTK's evidence tier is **T1 for the mechanism** (the underlying filter/dedup/group/JSON-sample levers are locally reproduced in the dossier) and **T4 for RTK's specific product numbers** (vendor self-report through its own counter). The full RTK record, the per-command table, the benchmark caveats, and the jackin❯ adoption guardrails live in the dossier's [RTK chapter](/reference/research/token-optimization/56-rtk-and-write-time-observation-compression/).
+RTK's evidence tier is **T1 for the mechanism** (the underlying filter/dedup/group/JSON-sample levers are locally reproduced in the dossier) and **T4 for RTK's specific product numbers** (vendor self-report through its own counter). The full RTK record, the per-command table, the benchmark caveats, and the jackin❯ adoption guardrails live in the dossier's [RTK chapter](/reference/research/token-optimization-tools/24-rtk-and-write-time-observation-compression/).
 
 ---
 

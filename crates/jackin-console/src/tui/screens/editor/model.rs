@@ -5,6 +5,7 @@
 //! `view`).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::marker::PhantomData;
 
 use jackin_config::WorkspaceConfig;
 use jackin_tui::components::FocusOwner;
@@ -244,7 +245,6 @@ pub trait EditorErrorPopupModal<ErrorPopupState> {
 
 #[derive(Debug)]
 pub struct EditorState<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -277,8 +277,7 @@ pub struct EditorState<
     pub secrets_expanded: BTreeSet<String>,
     pub auth_expanded: BTreeSet<String>,
     pub auth_selected_kind: Option<crate::tui::auth::AuthKind>,
-    pub pending_picker_target: Option<(SecretsScopeTag, Option<String>)>,
-    pub pending_picker_value: Option<EnvValue>,
+    pub _env_value: PhantomData<fn() -> EnvValue>,
     pub workspace_mounts_scroll_x: u16,
     pub tab_scroll_x: u16,
     pub tab_scroll_y: u16,
@@ -305,7 +304,6 @@ impl<
     PendingOpCommit,
 >
     EditorState<
-        WorkspaceConfig,
         crate::mount_info_cache::MountInfoCache,
         Modal,
         SaveFlow,
@@ -483,8 +481,17 @@ pub enum TextInputTarget {
     Workdir,
     MountDst,
     Role,
-    EnvKey { scope: SecretsScopeTag },
-    EnvValue { scope: SecretsScopeTag, key: String },
+    EnvKey {
+        scope: SecretsScopeTag,
+    },
+    EnvKeyWithValue {
+        scope: SecretsScopeTag,
+        value: jackin_core::EnvValue,
+    },
+    EnvValue {
+        scope: SecretsScopeTag,
+        key: String,
+    },
     AuthCredential,
 }
 

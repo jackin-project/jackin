@@ -5,7 +5,12 @@ use crate::{
     validate_workspace_config,
 };
 use jackin_core::JackinPaths;
+use jackin_core::WorkspaceName;
 use tempfile::tempdir;
+
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 
 #[test]
 fn deserializes_scoped_docker_mounts() {
@@ -74,6 +79,30 @@ readonly = true
 }
 
 #[test]
+fn deserializes_global_telemetry_config() {
+    let toml_str = r#"
+[telemetry]
+level = "trace"
+categories = ["docker", "launch"]
+"#;
+    let config: AppConfig = toml::from_str(toml_str).unwrap();
+
+    assert_eq!(
+        config.telemetry.level,
+        Some(crate::TelemetryLevelConfig::Trace)
+    );
+    assert_eq!(config.telemetry.categories, vec!["docker", "launch"]);
+}
+
+#[test]
+fn default_telemetry_config_is_not_serialized() {
+    let config = AppConfig::default();
+    let toml = toml::to_string_pretty(&config).unwrap();
+
+    assert!(!toml.contains("[telemetry]"), "{toml}");
+}
+
+#[test]
 fn rejects_workspace_with_workdir_outside_mounts() {
     let temp = tempdir().unwrap();
 
@@ -88,7 +117,9 @@ fn rejects_workspace_with_workdir_outside_mounts() {
         ..Default::default()
     };
 
-    let error = validate_workspace_config("big-monorepo", &workspace).unwrap_err();
+    let error =
+        validate_workspace_config(&WorkspaceName::parse("big-monorepo").unwrap(), &workspace)
+            .unwrap_err();
 
     assert!(error.to_string().contains(
         "must be equal to, inside, or a parent of one of the workspace mount destinations"
@@ -104,7 +135,7 @@ fn edit_workspace_does_not_persist_invalid_mutation() {
 
     config
         .create_workspace(
-            "big-monorepo",
+            &WorkspaceName::parse("big-monorepo").unwrap(),
             WorkspaceConfig {
                 workdir: "/workspace/project".to_owned(),
                 mounts: vec![MountConfig {
@@ -120,7 +151,7 @@ fn edit_workspace_does_not_persist_invalid_mutation() {
 
     let error = config
         .edit_workspace(
-            "big-monorepo",
+            &wn("big-monorepo"),
             WorkspaceEdit {
                 workdir: Some("/workspace/missing".to_owned()),
                 ..WorkspaceEdit::default()
@@ -207,7 +238,7 @@ trusted = true
         "absent [claude] block must deserialize to None"
     );
     assert_eq!(
-        resolve_mode(&config, Agent::Claude, "", "agent-smith",),
+        resolve_mode(&config, Agent::Claude, None, "agent-smith",),
         AuthForwardMode::Sync
     );
 }
@@ -335,7 +366,7 @@ fn edit_workspace_rejects_upsert_that_introduces_child_under_existing_parent() {
     let mut config = AppConfig::default();
     config
         .create_workspace(
-            "test",
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a".into(),
                 mounts: vec![MountConfig {
@@ -351,7 +382,7 @@ fn edit_workspace_rejects_upsert_that_introduces_child_under_existing_parent() {
 
     let err = config
         .edit_workspace(
-            "test",
+            &wn("test"),
             WorkspaceEdit {
                 upsert_mounts: vec![MountConfig {
                     src: "/a/b".into(),
@@ -378,7 +409,7 @@ fn edit_workspace_rejects_upsert_with_readonly_mismatch_vs_existing_child() {
     let mut config = AppConfig::default();
     config
         .create_workspace(
-            "test",
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a/b".into(),
                 mounts: vec![MountConfig {
@@ -394,7 +425,7 @@ fn edit_workspace_rejects_upsert_with_readonly_mismatch_vs_existing_child() {
 
     let err = config
         .edit_workspace(
-            "test",
+            &wn("test"),
             WorkspaceEdit {
                 upsert_mounts: vec![MountConfig {
                     src: "/a".into(),
@@ -421,7 +452,7 @@ fn edit_workspace_accepts_pre_collapsed_upsert_that_replaces_children() {
     let mut config = AppConfig::default();
     config
         .create_workspace(
-            "test",
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a/b".into(),
                 mounts: vec![
@@ -445,7 +476,7 @@ fn edit_workspace_accepts_pre_collapsed_upsert_that_replaces_children() {
 
     config
         .edit_workspace(
-            "test",
+            &wn("test"),
             WorkspaceEdit {
                 upsert_mounts: vec![MountConfig {
                     src: "/a".into(),
@@ -500,7 +531,7 @@ fn edit_workspace_rejects_leaving_pre_existing_violation() {
 
     let err = config
         .edit_workspace(
-            "legacy",
+            &wn("legacy"),
             WorkspaceEdit {
                 allowed_roles_to_add: vec!["agent-x".into()],
                 ..WorkspaceEdit::default()
@@ -522,7 +553,7 @@ fn create_workspace_errors_on_child_under_parent_in_initial_mounts() {
     let mut config = AppConfig::default();
     let err = config
         .create_workspace(
-            "test",
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a".into(),
                 mounts: vec![
@@ -558,7 +589,7 @@ fn create_workspace_errors_on_readonly_mismatch_in_initial_mounts() {
     let mut config = AppConfig::default();
     let err = config
         .create_workspace(
-            "test",
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a".into(),
                 mounts: vec![
@@ -590,7 +621,7 @@ fn create_workspace_accepts_already_collapsed_mount_set() {
     let mut config = AppConfig::default();
     config
         .create_workspace(
-            "test",
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a".into(),
                 mounts: vec![MountConfig {
@@ -626,7 +657,7 @@ fn auth_forward_mode_from_str_accepts_sync_and_ignore() {
 #[test]
 fn auth_forward_mode_from_str_rejects_unknown_values() {
     use std::str::FromStr;
-    assert!(AuthForwardMode::from_str("bogus").is_err());
+    AuthForwardMode::from_str("bogus").unwrap_err();
 }
 
 #[test]
@@ -732,6 +763,25 @@ fn reject_codex_oauth_token_field_at_app_config_layer() {
         msg.contains("unknown field"),
         "expected unknown-field rejection at AppConfig layer, got: {msg}"
     );
+}
+
+#[test]
+fn app_config_role_repo_refresh_ttl_defaults_when_absent() {
+    let cfg: AppConfig = toml::from_str("").unwrap();
+
+    assert_eq!(cfg.role_repo_refresh_ttl_seconds, None);
+    assert_eq!(
+        cfg.role_repo_refresh_ttl(),
+        std::time::Duration::from_secs(DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS)
+    );
+}
+
+#[test]
+fn app_config_role_repo_refresh_ttl_accepts_zero() {
+    let cfg: AppConfig = toml::from_str("role_repo_refresh_ttl_seconds = 0").unwrap();
+
+    assert_eq!(cfg.role_repo_refresh_ttl_seconds, Some(0));
+    assert_eq!(cfg.role_repo_refresh_ttl(), std::time::Duration::ZERO);
 }
 
 #[test]
@@ -868,9 +918,9 @@ fn github_auth_mode_from_str_round_trips() {
         GithubAuthMode::from_str("ignore").unwrap(),
         GithubAuthMode::Ignore
     );
-    assert!(GithubAuthMode::from_str("api_key").is_err());
-    assert!(GithubAuthMode::from_str("oauth_token").is_err());
-    assert!(GithubAuthMode::from_str("nope").is_err());
+    GithubAuthMode::from_str("api_key").unwrap_err();
+    GithubAuthMode::from_str("oauth_token").unwrap_err();
+    GithubAuthMode::from_str("nope").unwrap_err();
 }
 
 #[test]
@@ -900,7 +950,7 @@ fn resolve_github_mode_layered_precedence() {
     let mut cfg = AppConfig::default();
     // Default — Sync
     assert_eq!(
-        resolve_github_mode(&cfg, "proj", "smith"),
+        resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Sync
     );
     // Global only
@@ -909,7 +959,7 @@ fn resolve_github_mode_layered_precedence() {
         env: BTreeMap::new(),
     });
     assert_eq!(
-        resolve_github_mode(&cfg, "proj", "smith"),
+        resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Ignore
     );
     // Workspace overrides global
@@ -923,7 +973,7 @@ fn resolve_github_mode_layered_precedence() {
     };
     cfg.workspaces.insert("proj".into(), ws);
     assert_eq!(
-        resolve_github_mode(&cfg, "proj", "smith"),
+        resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Token
     );
     // Role override wins
@@ -940,7 +990,7 @@ fn resolve_github_mode_layered_precedence() {
         .roles
         .insert("smith".into(), ov);
     assert_eq!(
-        resolve_github_mode(&cfg, "proj", "smith"),
+        resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Sync
     );
 }

@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! PTY-based runner family: spawn `script(1)` wrapping `jackin load`, drive
 //! stdin with either a sentinel file watch, a transcript script, or a quick
 //! exit probe, then collect stdout / stderr into `Arc<Mutex<Vec<u8>>>`
@@ -7,7 +21,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
@@ -17,118 +31,8 @@ use jackin_image::derived_image::shell_quote;
 use super::common::apply_host_docker_config;
 use super::diagnostics::{diagnostics_snapshot, tail_text};
 use super::transcript::{
-    buffer_bytes, spawn_pipe_collector, transcript_contains, transcript_contains_all,
-    wait_for_transcript_text,
+    buffer_bytes, spawn_pipe_collector, transcript_contains, wait_for_transcript_text,
 };
-use super::{
-    BUILD_FAILED_MODAL_TEXT, CAPSULE_DETACH_KEYS, FAILURE_DIAGNOSTICS_LABEL, FAILURE_DISMISS_HINT,
-    REPORT_BEGIN, REPORT_END, TESTCONTAINERS_SMOKE_OK,
-};
-
-pub(super) fn run_in_pty_until_agent_report(
-    jackin: &str,
-    args: &[&str],
-    home: &Path,
-    cwd: &Path,
-    extra_env: &[(&str, &str)],
-) -> std::process::Output {
-    let mut child = pty_command(jackin, args, home, cwd, extra_env)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("script must spawn");
-    let mut stdin = child.stdin.take().expect("script stdin must be piped");
-    let stdout = child.stdout.take().expect("script stdout must be piped");
-    let stderr = child.stderr.take().expect("script stderr must be piped");
-    let done = Arc::new(AtomicBool::new(false));
-    let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
-    let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
-    let stdout_for_writer = Arc::clone(&stdout_buf);
-    let done_for_writer = Arc::clone(&done);
-    let stdin_writer = std::thread::spawn(move || {
-        let deadline = Instant::now() + Duration::from_mins(6);
-        while Instant::now() < deadline && !done_for_writer.load(Ordering::Relaxed) {
-            if transcript_contains(&stdout_for_writer, BUILD_FAILED_MODAL_TEXT) {
-                drop(stdin.write_all(b"\r"));
-                return;
-            }
-            if transcript_contains_all(
-                &stdout_for_writer,
-                &[FAILURE_DIAGNOSTICS_LABEL, FAILURE_DISMISS_HINT],
-            ) {
-                drop(stdin.write_all(b"\r"));
-                return;
-            }
-            if transcript_contains_all(
-                &stdout_for_writer,
-                &[REPORT_BEGIN, REPORT_END, TESTCONTAINERS_SMOKE_OK],
-            ) {
-                drop(stdin.write_all(CAPSULE_DETACH_KEYS.as_bytes()));
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    });
-
-    let output = wait_for_collected_pty_output(
-        child,
-        home,
-        Duration::from_mins(6),
-        &stdout_buf,
-        stdout_reader,
-        &stderr_buf,
-        stderr_reader,
-    );
-    done.store(true, Ordering::Relaxed);
-    stdin_writer.join().expect("stdin writer must finish");
-    output
-}
-
-pub(super) fn wait_for_collected_pty_output(
-    mut child: std::process::Child,
-    home: &Path,
-    timeout: Duration,
-    stdout_buf: &Arc<Mutex<Vec<u8>>>,
-    stdout_reader: std::thread::JoinHandle<()>,
-    stderr_buf: &Arc<Mutex<Vec<u8>>>,
-    stderr_reader: std::thread::JoinHandle<()>,
-) -> std::process::Output {
-    let deadline = Instant::now() + timeout;
-
-    loop {
-        if let Some(status) = child.try_wait().expect("script status must be readable") {
-            stdout_reader.join().expect("stdout reader must finish");
-            stderr_reader.join().expect("stderr reader must finish");
-            return std::process::Output {
-                status,
-                stdout: buffer_bytes(stdout_buf),
-                stderr: buffer_bytes(stderr_buf),
-            };
-        }
-
-        if Instant::now() >= deadline {
-            drop(child.kill());
-            let status = child.wait().expect("script must finish");
-            stdout_reader.join().expect("stdout reader must finish");
-            stderr_reader.join().expect("stderr reader must finish");
-            let output = std::process::Output {
-                status,
-                stdout: buffer_bytes(stdout_buf),
-                stderr: buffer_bytes(stderr_buf),
-            };
-            panic!(
-                "timed out waiting for PTY command after {}s\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
-                timeout.as_secs(),
-                diagnostics_snapshot(home),
-                tail_text(&String::from_utf8_lossy(&output.stdout)),
-                tail_text(&String::from_utf8_lossy(&output.stderr)),
-            );
-        }
-
-        std::thread::sleep(Duration::from_millis(100));
-    }
-}
 
 pub(super) fn pty_command(
     jackin: &str,

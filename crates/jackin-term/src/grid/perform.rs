@@ -37,8 +37,7 @@ impl vte::Perform for DamageGrid {
                 let next_tab = ((self.cursor_col / 8) + 1) * 8;
                 self.cursor_col = next_tab.min(self.cols.saturating_sub(1));
             }
-            // BEL — ignore.
-            0x07 => {}
+            // BEL and other ignored C0 controls.
             _ => {}
         }
     }
@@ -161,15 +160,18 @@ impl vte::Perform for DamageGrid {
             'L' => {
                 let n = p0.max(1) as usize;
                 let row = self.cursor_row as usize;
+                let top = self.scroll_top as usize;
                 let bottom = self.scroll_bottom as usize;
                 let cols = self.cols;
-                if row <= bottom {
-                    self.scroll_ops.push(ScrollOp::Down {
-                        top: self.cursor_row,
-                        bottom: self.scroll_bottom,
-                        rows: p0.max(1),
-                    });
+                if row < top || row > bottom {
+                    // xterm: IL/DL are no-ops outside the vertical scroll margins.
+                    return;
                 }
+                self.scroll_ops.push(ScrollOp::Down {
+                    top: self.cursor_row,
+                    bottom: self.scroll_bottom,
+                    rows: p0.max(1),
+                });
                 let grid = self.active_grid();
                 for _ in 0..n {
                     if bottom < grid.len() {
@@ -183,15 +185,18 @@ impl vte::Perform for DamageGrid {
             'M' => {
                 let n = p0.max(1) as usize;
                 let row = self.cursor_row as usize;
+                let top = self.scroll_top as usize;
                 let bottom = self.scroll_bottom as usize;
                 let cols = self.cols;
-                if row <= bottom {
-                    self.scroll_ops.push(ScrollOp::Up {
-                        top: self.cursor_row,
-                        bottom: self.scroll_bottom,
-                        rows: p0.max(1),
-                    });
+                if row < top || row > bottom {
+                    // xterm: IL/DL are no-ops outside the vertical scroll margins.
+                    return;
                 }
+                self.scroll_ops.push(ScrollOp::Up {
+                    top: self.cursor_row,
+                    bottom: self.scroll_bottom,
+                    rows: p0.max(1),
+                });
                 let grid = self.active_grid();
                 for _ in 0..n {
                     if row < grid.len() {

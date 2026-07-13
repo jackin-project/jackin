@@ -9,7 +9,7 @@ description: "Equip the-architect with a Rust code-intelligence stack — ast-gr
 
 Equip the the-architect role with a Rust code-intelligence stack and make the agent use it: structural search and refactor (`ast-grep`), semantic navigation (`rust-analyzer`), the cargo verifiers (`nextest`, `clippy`, `rustfmt`), and a resident file-search server (`fff`). A code-intelligence server, `codedb`, is carried as an A/B evaluation arm against native search. The guidance that tells the agent which tool to reach for — and, critically, the routing rule that stops two tools from both claiming "all search" — is authored once and applied to every runtime the role supports (`claude`, `codex`, `amp`, `kimi`, `opencode`) with no duplicated content. Deliver everything inside the external [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) repository, opt-in and role-scoped, with no change to jackin core.
 
-This item also records the **evaluation** of the candidate tools (`ast-grep`, `codedb`, `fff`, `ast-index`) that produced this stack, so the choice is auditable and the deferred candidates have a documented home. The broad market sweep and the token-economics A/B protocol live in the research dossier [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization/51-code-intelligence-tools/); this roadmap item is the **decision record** and the implementation plan, not a duplicate of that evidence.
+This item also records the **evaluation** of the candidate tools (`ast-grep`, `codedb`, `fff`, `ast-index`) that produced this stack, so the choice is auditable and the deferred candidates have a documented home. The broad market sweep and the token-economics A/B protocol live in the research dossier [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/); this roadmap item is the **decision record** and the implementation plan, not a duplicate of that evidence.
 
 ## Scope
 
@@ -69,7 +69,7 @@ These were confirmed against upstream source — they change *how* the tools are
 
 ### Broader alternative sweep
 
-The full market scan — `codedb`/`fff` benchmarked against `Serena`, `Code Context Engine`, `Augment`, `Sourcegraph`, `Qodo`, `Claude Context`, `CodeGraff`, and others, plus the token-economics equation, local measurements, the validation harness, and the acceptance rule — lives in the research dossier [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization/51-code-intelligence-tools/). That dossier is the evidence and the A/B protocol; this item is the decision and the implementation. The dossier's conclusion (keep the fff pilot; add a codedb A/B arm with a strict bounded-output policy; do not adopt CodeGraff Pro by default) is the basis for the stack above.
+The full market scan — `codedb`/`fff` benchmarked against `Serena`, `Code Context Engine`, `Augment`, `Sourcegraph`, `Qodo`, `Claude Context`, `CodeGraff`, and others, plus the token-economics equation, local measurements, the validation harness, and the acceptance rule — lives in the research dossier [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/). That dossier is the evidence and the A/B protocol; this item is the decision and the implementation. The dossier's conclusion (keep the fff pilot; add a codedb A/B arm with a strict bounded-output policy; do not adopt CodeGraff Pro by default) is the basis for the stack above.
 
 ## Design
 
@@ -329,7 +329,7 @@ The pilot succeeds when, across a handful of representative the-architect sessio
 - fewer edits land on wrong paths because symbols were resolved rather than guessed;
 - the same guidance is confirmed in context across `claude`, `codex`, `amp`, and `opencode` from the one source file;
 - `fff`'s resident index measurably beats the construct's ripgrep on this repo — or the pilot concludes it does not, and `fff` is dropped while the CLI and LSP tools stay;
-- `codedb` earns its standing MCP cost: it is used for structural queries (symbols / callers / deps / outline / context), returns bounded task-shaped output, and is not used as a general search tool (that is `fff`'s job). Token/latency measurement from the dossier's [validation harness](/reference/research/token-optimization/51-code-intelligence-tools/) is still worth running to size the win — but adoption is settled on architectural grounds (complementary layers), not gated on an `fff`-vs-`codedb` bake-off.
+- `codedb` earns its standing MCP cost: it is used for structural queries (symbols / callers / deps / outline / context), returns bounded task-shaped output, and is not used as a general search tool (that is `fff`'s job). Token/latency measurement from the dossier's [validation harness](/reference/research/token-optimization-tools/19-code-intelligence-tools/) is still worth running to size the win — but adoption is settled on architectural grounds (complementary layers), not gated on an `fff`-vs-`codedb` bake-off.
 
 ## Follow-ups (deferred)
 
@@ -345,7 +345,7 @@ The pilot succeeds when, across a handful of representative the-architect sessio
 ## References
 
 - [AGENTS.md](https://agents.md/) — the cross-tool agent-instructions standard, read globally by Codex at `~/.codex/AGENTS.md`, OpenCode at `~/.config/opencode/AGENTS.md`, and Amp at `~/.config/AGENTS.md`. Claude Code reads `~/.claude/CLAUDE.md`.
-- [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization/51-code-intelligence-tools/) — the research dossier behind this decision: market sweep, token economics, local measurements, validation harness, and acceptance rule.
+- [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/) — the research dossier behind this decision: market sweep, token economics, local measurements, validation harness, and acceptance rule.
 - [ast-grep](https://ast-grep.github.io/) — structural search/rewrite CLI (no Debian apt package; installed via mise). Official Claude skill: [ast-grep/agent-skill](https://github.com/ast-grep/agent-skill) (Claude-only).
 - [rust-analyzer](https://rust-analyzer.github.io/) — the Rust language server (rustup component).
 - [fff](https://github.com/dmtrKovalenko/fff) — resident file-search toolkit for AI agents with an MCP server.

@@ -209,6 +209,7 @@ pub const fn settings_shell_key_plan(
 
 #[must_use]
 pub const fn settings_general_key_plan(key: KeyCode, is_dirty: bool) -> SettingsGeneralKeyPlan {
+    use crate::tui::screens::edit_save::{EditSaveDisposition, plan_leave_when_dirty};
     match key {
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             SettingsGeneralKeyPlan::MoveSelection { delta: -1 }
@@ -217,10 +218,12 @@ pub const fn settings_general_key_plan(key: KeyCode, is_dirty: bool) -> Settings
             SettingsGeneralKeyPlan::MoveSelection { delta: 1 }
         }
         KeyCode::Char(' ') => SettingsGeneralKeyPlan::ToggleSelected,
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => {
-            SettingsGeneralKeyPlan::ConfirmDiscard
-        }
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsGeneralKeyPlan::ReturnToList,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => match plan_leave_when_dirty(is_dirty) {
+            EditSaveDisposition::ConfirmDiscard => SettingsGeneralKeyPlan::ConfirmDiscard,
+            EditSaveDisposition::Noop | EditSaveDisposition::SaveNow => {
+                SettingsGeneralKeyPlan::ReturnToList
+            }
+        },
         KeyCode::Char('s' | 'S') => SettingsGeneralKeyPlan::Save,
         _ => SettingsGeneralKeyPlan::Noop,
     }
@@ -241,11 +244,16 @@ pub const fn settings_env_key_plan(
     op_available: bool,
     selected_is_op_ref: bool,
 ) -> SettingsEnvKeyPlan {
+    use crate::tui::screens::edit_save::{EditSaveDisposition, plan_leave_when_dirty};
     match key {
         KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsEnvKeyPlan::MoveSelection { delta: -1 },
         KeyCode::Down | KeyCode::Char('j' | 'J') => SettingsEnvKeyPlan::MoveSelection { delta: 1 },
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => SettingsEnvKeyPlan::ConfirmDiscard,
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsEnvKeyPlan::ReturnToList,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => match plan_leave_when_dirty(is_dirty) {
+            EditSaveDisposition::ConfirmDiscard => SettingsEnvKeyPlan::ConfirmDiscard,
+            EditSaveDisposition::Noop | EditSaveDisposition::SaveNow => {
+                SettingsEnvKeyPlan::ReturnToList
+            }
+        },
         KeyCode::Char('a' | 'A') => SettingsEnvKeyPlan::OpenAdd,
         KeyCode::Char('s' | 'S') => SettingsEnvKeyPlan::Save,
         KeyCode::Char('d' | 'D') if plain_modifier => SettingsEnvKeyPlan::ConfirmDelete,
@@ -266,6 +274,7 @@ pub const fn settings_auth_key_plan(
     has_selected_kind: bool,
     selected_detail_row_is_focusable: bool,
 ) -> SettingsAuthKeyPlan {
+    use crate::tui::screens::edit_save::{EditSaveDisposition, plan_leave_when_dirty};
     match key {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') if has_selected_kind => {
             SettingsAuthKeyPlan::ClearKind
@@ -273,8 +282,12 @@ pub const fn settings_auth_key_plan(
         KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsAuthKeyPlan::MoveSelection { delta: -1 },
         KeyCode::Down | KeyCode::Char('j' | 'J') => SettingsAuthKeyPlan::MoveSelection { delta: 1 },
         KeyCode::Enter if !has_selected_kind => SettingsAuthKeyPlan::EnterKind,
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => SettingsAuthKeyPlan::ConfirmDiscard,
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsAuthKeyPlan::ReturnToList,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => match plan_leave_when_dirty(is_dirty) {
+            EditSaveDisposition::ConfirmDiscard => SettingsAuthKeyPlan::ConfirmDiscard,
+            EditSaveDisposition::Noop | EditSaveDisposition::SaveNow => {
+                SettingsAuthKeyPlan::ReturnToList
+            }
+        },
         KeyCode::Enter if selected_detail_row_is_focusable => SettingsAuthKeyPlan::OpenForm,
         KeyCode::Char('s' | 'S') => SettingsAuthKeyPlan::Save,
         _ => SettingsAuthKeyPlan::Noop,
@@ -427,6 +440,7 @@ pub fn settings_env_selected_delete_key<V>(
 
 #[must_use]
 pub const fn settings_trust_key_plan(key: KeyCode, is_dirty: bool) -> SettingsTrustKeyPlan {
+    use crate::tui::screens::edit_save::{EditSaveDisposition, plan_leave_when_dirty};
     match key {
         KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsTrustKeyPlan::MoveSelection { delta: -1 },
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
@@ -435,8 +449,12 @@ pub const fn settings_trust_key_plan(key: KeyCode, is_dirty: bool) -> SettingsTr
         KeyCode::Char('h' | 'H') => SettingsTrustKeyPlan::ScrollHorizontal { delta: -8 },
         KeyCode::Char('l' | 'L') => SettingsTrustKeyPlan::ScrollHorizontal { delta: 8 },
         KeyCode::Char(' ') => SettingsTrustKeyPlan::ToggleSelected,
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => SettingsTrustKeyPlan::ConfirmDiscard,
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsTrustKeyPlan::ReturnToList,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => match plan_leave_when_dirty(is_dirty) {
+            EditSaveDisposition::ConfirmDiscard => SettingsTrustKeyPlan::ConfirmDiscard,
+            EditSaveDisposition::Noop | EditSaveDisposition::SaveNow => {
+                SettingsTrustKeyPlan::ReturnToList
+            }
+        },
         KeyCode::Char('s' | 'S') => SettingsTrustKeyPlan::Save,
         _ => SettingsTrustKeyPlan::Noop,
     }
@@ -579,7 +597,7 @@ pub enum SettingsEnvTextCommitPlan {
     EmptyKey {
         scope: SettingsEnvScope,
     },
-    SetPendingPickerValue {
+    SetCarriedPickerValue {
         scope: SettingsEnvScope,
         key: String,
     },
@@ -602,7 +620,6 @@ pub enum SettingsEnvSourcePickerSelection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsEnvSourcePickerCommitPlan {
-    MissingPendingKey,
     OpenPlainText {
         scope: SettingsEnvScope,
         key: String,
@@ -610,18 +627,6 @@ pub enum SettingsEnvSourcePickerCommitPlan {
     OpenOpPicker {
         scope: SettingsEnvScope,
         key: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SettingsEnvOpPickerCommitPlan {
-    MissingTarget,
-    SetExisting {
-        scope: SettingsEnvScope,
-        key: String,
-    },
-    StashForNewKey {
-        scope: SettingsEnvScope,
     },
 }
 
@@ -712,10 +717,15 @@ pub const fn settings_global_mounts_key_plan(
             SettingsGlobalMountsKeyPlan::MoveSelection { delta: 1 }
         }
         KeyCode::Char('r' | 'R') => SettingsGlobalMountsKeyPlan::ToggleReadonly,
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => {
-            SettingsGlobalMountsKeyPlan::ConfirmDiscard
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
+            use crate::tui::screens::edit_save::{EditSaveDisposition, plan_leave_when_dirty};
+            match plan_leave_when_dirty(is_dirty) {
+                EditSaveDisposition::ConfirmDiscard => SettingsGlobalMountsKeyPlan::ConfirmDiscard,
+                EditSaveDisposition::Noop | EditSaveDisposition::SaveNow => {
+                    SettingsGlobalMountsKeyPlan::ReturnToList
+                }
+            }
         }
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsGlobalMountsKeyPlan::ReturnToList,
         KeyCode::Enter if settings_global_mounts_add_row_selected(selected, mount_count) => {
             SettingsGlobalMountsKeyPlan::OpenAdd
         }
@@ -952,7 +962,7 @@ pub fn global_mount_github_open_plan(
 pub fn settings_env_text_commit_plan(
     target: &SettingsEnvTextTarget,
     value: &str,
-    has_pending_picker_value: bool,
+    has_carried_picker_value: bool,
 ) -> SettingsEnvTextCommitPlan {
     match target {
         SettingsEnvTextTarget::EnvKey { scope } => {
@@ -962,8 +972,8 @@ pub fn settings_env_text_commit_plan(
                     scope: scope.clone(),
                 };
             }
-            if has_pending_picker_value {
-                SettingsEnvTextCommitPlan::SetPendingPickerValue {
+            if has_carried_picker_value {
+                SettingsEnvTextCommitPlan::SetCarriedPickerValue {
                     scope: scope.clone(),
                     key: key.to_owned(),
                 }
@@ -987,11 +997,9 @@ pub fn settings_env_text_commit_plan(
 #[must_use]
 pub fn settings_env_source_picker_commit_plan(
     selection: SettingsEnvSourcePickerSelection,
-    pending_env_key: Option<&(SettingsEnvScope, String)>,
+    source_key: &(SettingsEnvScope, String),
 ) -> SettingsEnvSourcePickerCommitPlan {
-    let Some((scope, key)) = pending_env_key else {
-        return SettingsEnvSourcePickerCommitPlan::MissingPendingKey;
-    };
+    let (scope, key) = source_key;
     match selection {
         SettingsEnvSourcePickerSelection::Plain => {
             SettingsEnvSourcePickerCommitPlan::OpenPlainText {
@@ -1003,22 +1011,6 @@ pub fn settings_env_source_picker_commit_plan(
             scope: scope.clone(),
             key: key.clone(),
         },
-    }
-}
-
-#[must_use]
-pub fn settings_env_op_picker_commit_plan(
-    pending_picker_target: Option<&(SettingsEnvScope, Option<String>)>,
-) -> SettingsEnvOpPickerCommitPlan {
-    match pending_picker_target {
-        Some((scope, Some(key))) => SettingsEnvOpPickerCommitPlan::SetExisting {
-            scope: scope.clone(),
-            key: key.clone(),
-        },
-        Some((scope, None)) => SettingsEnvOpPickerCommitPlan::StashForNewKey {
-            scope: scope.clone(),
-        },
-        None => SettingsEnvOpPickerCommitPlan::MissingTarget,
     }
 }
 
@@ -1259,7 +1251,7 @@ pub fn settings_env_selection_plan(
     let candidate = if delta.is_negative() {
         selected.saturating_sub(delta.unsigned_abs())
     } else {
-        selected.saturating_add(delta as usize).min(max)
+        selected.saturating_add(delta.unsigned_abs()).min(max)
     };
     let selected = if delta.is_negative() {
         step_cursor_up_by(candidate, |idx| {
@@ -1293,7 +1285,9 @@ pub fn settings_global_mounts_selection_plan(
     let selected = if delta.is_negative() {
         selected.saturating_sub(delta.unsigned_abs())
     } else {
-        selected.saturating_add(delta as usize).min(mount_count)
+        selected
+            .saturating_add(delta.unsigned_abs())
+            .min(mount_count)
     };
     SettingsSelectionScrollPlan {
         selected,

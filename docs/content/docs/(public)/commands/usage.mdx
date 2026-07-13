@@ -8,8 +8,7 @@ description: "Inspect cached Capsule usage and quota data for a running instance
 ```bash
 jackin usage cache accounts [--format human|json]
 jackin usage <INSTANCE> accounts [--sync-host-cache] [--format human|json]
-jackin usage <INSTANCE> workspace [WORKSPACE] [--window-seconds N] [--format human|json]
-jackin usage <INSTANCE> session <SESSION_ID> [--window-seconds N] [--format human|json]
+jackin usage <INSTANCE> verify [--format human|json]
 ```
 
 `jackin usage` reads the same daemon-cached usage and quota snapshots that the
@@ -48,24 +47,16 @@ account cache at `~/.jackin/data/daemon/accounts.db`. This is an explicit
 host-side write, intended as a diagnostic bridge until the long-running host
 daemon owns provider refresh and writes that cache itself.
 
-### workspace
+### verify
 
 ```bash
-jackin usage jk-k7p9m2xq workspace
-jackin usage jk-k7p9m2xq workspace myproj --window-seconds 2592000
+jackin usage jk-k7p9m2xq verify
 ```
 
-Prints cached token and cost attribution for the workspace. When the workspace
-argument is omitted, jackin❯ uses the workspace recorded for the selected
-instance.
-
-### session
-
-```bash
-jackin usage jk-k7p9m2xq session 3 --window-seconds 3600
-```
-
-Prints cached token and cost attribution for one Capsule session id.
+Checks that every provider quota row known to the Capsule daemon is present and
+trusted (fresh enough and from an expected source). Use this after auth or
+provider changes to confirm the status bar and usage overlay will see the same
+data.
 
 ## Output
 

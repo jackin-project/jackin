@@ -1,4 +1,7 @@
-//! Developer tooling for local jackin pull request verification.
+//! jackin-dev: local development helper binary.
+//!
+//! **Architecture Invariant:** T0.
+//! Entry point: [`main`] — binary entry for local dev helpers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
@@ -35,7 +38,7 @@ const LOCAL_CONSTRUCT_REGISTRY: &str = "jackin-local/construct";
 const CONSTRUCT_STABLE_TAG: &str = "trixie";
 
 #[derive(Parser)]
-#[command(name = "jackin-dev", about = "Developer tooling for jackin")]
+#[command(name = "jackin-dev", about = "Developer tooling for jackin", version)]
 struct Cli {
     #[command(subcommand)]
     command: TopCommand,
@@ -342,24 +345,77 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
     let json: Value = serde_json::from_slice(&output).context("parsing gh pr view JSON")?;
     let (head_ref_name, head_oid) = parse_pr_refs(&json)?;
 
-    // `gh pr view --json files` caps at 100 files, so a large PR (e.g. #528 with
-    // 113) silently drops changed paths like `docker/construct/*` — downgrading
-    // every `auto_prep` build decision to "not needed" and launching against a
-    // stale image. `gh pr diff --name-only` lists every changed path, uncapped.
-    let mut diff_cmd = command(
-        "gh",
-        ["pr", "diff", &pr.to_string(), "--repo", repo, "--name-only"],
-    );
-    let diff_output = run_output(&mut diff_cmd)?;
-    let diff_text = String::from_utf8(diff_output)
-        .context("`gh pr diff --name-only` output was not valid UTF-8")?;
-    let changed_files = parse_changed_files(&diff_text)?;
+    let changed_files = changed_files(pr, repo)?;
 
     Ok(PullRequestInfo {
         head_ref_name,
         head_oid,
         changed_files,
     })
+}
+
+/// The changed-file list for a PR, uncapped on both file count and diff size.
+///
+/// Two GitHub ceilings stand between us and the file list:
+///
+/// 1. `gh pr view --json files` caps at 100 paths, silently dropping the rest.
+///    A large PR (e.g. #528 with 113) then degrades every `auto_prep` build
+///    decision to "not needed" and launches against a stale image.
+/// 2. `gh pr diff --name-only` dodges that file cap, but GitHub rejects the
+///    diff resource entirely once it exceeds 20000 lines (HTTP 406
+///    `PullRequest.diff too_large`) — and the `--name-only` form routes
+///    through the same resource, so it dies on the same threshold. #713
+///    (~28k diff lines) was the first PR here to clear it.
+///
+/// Try the diff endpoint first (one call for normal PRs), then fall back to
+/// the paginated REST files endpoint — uncapped on both axes — only when the
+/// diff is too large. Any other failure is a real error, not a fallback
+/// trigger.
+fn changed_files(pr: u64, repo: &str) -> Result<Vec<String>> {
+    let mut diff_cmd = command(
+        "gh",
+        ["pr", "diff", &pr.to_string(), "--repo", repo, "--name-only"],
+    );
+    match run_output(&mut diff_cmd) {
+        Ok(diff_output) => {
+            let diff_text = String::from_utf8(diff_output)
+                .context("`gh pr diff --name-only` output was not valid UTF-8")?;
+            parse_changed_files(&diff_text)
+        }
+        Err(diff_err) if is_diff_too_large(&diff_err) => {
+            let mut api_cmd = command(
+                "gh",
+                [
+                    "api",
+                    &format!("repos/{repo}/pulls/{pr}/files"),
+                    "--paginate",
+                    "--jq",
+                    ".[].filename",
+                ],
+            );
+            let api_output = run_output(&mut api_cmd).with_context(|| {
+                format!(
+                    "`gh pr diff --name-only` was too large and the paginated files API \
+                     also failed; original diff error: {diff_err:#}"
+                )
+            })?;
+            let api_text =
+                String::from_utf8(api_output).context("`gh api .../files` output was not UTF-8")?;
+            parse_changed_files(&api_text)
+        }
+        Err(diff_err) => Err(diff_err),
+    }
+}
+
+/// True when an error from `gh pr diff` is GitHub's "diff exceeds 20000 lines"
+/// rejection (HTTP 406 / `PullRequest.diff too_large`) — the one case we route
+/// around via the files endpoint. Detects all three phrasings gh has emitted
+/// across versions.
+fn is_diff_too_large(err: &anyhow::Error) -> bool {
+    let msg = format!("{err:#}");
+    msg.contains("HTTP 406")
+        || msg.contains("too_large")
+        || msg.contains("exceeded the maximum number of lines")
 }
 
 /// The commit-pinned local construct image ref that `construct build-local`

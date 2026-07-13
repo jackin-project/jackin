@@ -17,7 +17,10 @@ use super::{BANNER, HELP_STYLES};
 // Launch-time toggles plus the
 // positional `selector` / `target` / `mounts` map directly to CLI flags;
 // bundling them into nested structs would obscure rather than clarify.
-#[allow(clippy::struct_excessive_bools)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     before_help = BANNER,
@@ -50,7 +53,7 @@ pub struct LoadArgs {
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
-    /// Agent to launch under (claude, codex, amp, kimi, or opencode). Overrides the
+    /// Agent to launch under (claude, codex, amp, kimi, opencode, or grok). Overrides the
     /// workspace's `default_agent` field for this launch only. When
     /// neither is set, defaults to claude.
     #[arg(long, value_parser = parse_agent)]
@@ -119,7 +122,7 @@ pub struct HardlineArgs {
     /// Start a new foreground agent process inside the selected running instance.
     #[arg(long, conflicts_with = "inspect")]
     pub new: bool,
-    /// Agent runtime for `--new` (claude, codex, amp, kimi, or opencode). Defaults to the instance manifest.
+    /// Agent runtime for `--new` (claude, codex, amp, kimi, opencode, or grok). Defaults to the instance manifest.
     #[arg(long, value_parser = parse_agent, requires = "new")]
     pub agent: Option<jackin_core::Agent>,
     /// Open a zsh shell in the selected running instance without an agent slug.

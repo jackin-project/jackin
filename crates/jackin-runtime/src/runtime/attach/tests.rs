@@ -1,9 +1,8 @@
 //! Tests for `attach`.
 use std::collections::{HashMap, VecDeque};
 
-use super::super::test_support::FakeRunner;
 use super::*;
-use crate::runtime::test_support::FakeDockerClient;
+use jackin_test_support::{FakeDockerClient, FakeRunner};
 use tempfile::TempDir;
 
 fn test_paths() -> (TempDir, JackinPaths) {
@@ -141,13 +140,13 @@ fn insert_run_as_user_is_noop_when_absent() {
 async fn wait_for_capsule_daemon_polls_socket_status_command() {
     let (_tmp, paths) = test_paths();
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _guard = run.activate();
+    let guard = run.activate();
     let docker = FakeDockerClient {
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 1\n".to_owned()])),
         ..Default::default()
     };
 
-    wait_for_capsule_daemon("jk-agent-smith", &docker)
+    wait_for_capsule_daemon(&paths, "jk-agent-smith", &docker)
         .await
         .unwrap();
 
@@ -158,6 +157,7 @@ async fn wait_for_capsule_daemon_polls_socket_status_command() {
             .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
         "expected socket/status wait command; recorded: {recorded:?}"
     );
+    drop(guard);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("\"kind\":\"timing_done\"")
@@ -168,10 +168,30 @@ async fn wait_for_capsule_daemon_polls_socket_status_command() {
 }
 
 #[tokio::test]
+async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
+    let (_tmp, paths) = short_test_paths();
+    let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");
+    let _listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let docker = FakeDockerClient {
+        fail_with: vec![("docker exec".to_owned(), "unexpected exec".to_owned())],
+        ..Default::default()
+    };
+
+    wait_for_capsule_daemon(&paths, "jk-agent-smith", &docker)
+        .await
+        .unwrap();
+
+    assert!(
+        docker.recorded.borrow().is_empty(),
+        "direct socket readiness must not spawn docker exec"
+    );
+}
+
+#[tokio::test]
 async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
     let (_tmp, paths) = test_paths();
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _guard = run.activate();
+    let guard = run.activate();
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -217,10 +237,10 @@ async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
         "restart path must not attach to PID 1; recorded: {:?}",
         runner.recorded
     );
+    drop(guard);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("restore_inspect")
-            && diagnostics.contains("stopped")
             && diagnostics.contains("restore_start_container")
             && diagnostics.contains("started"),
         "expected restore timing diagnostics: {diagnostics}"

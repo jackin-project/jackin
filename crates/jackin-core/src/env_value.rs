@@ -24,8 +24,11 @@
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum EnvValue {
+    /// 1Password `op://` reference table form.
     OpRef(OpRef),
+    /// Literal/`$VAR` table form with optional `on_demand`.
     Extended(Extended),
+    /// Scalar string literal or `$VAR` / `${VAR}` expansion.
     Plain(String),
 }
 
@@ -94,6 +97,7 @@ impl From<&str> for EnvValue {
 pub struct OpRef {
     /// Canonical `op://` URI.
     /// `op://<vault_id>/<item_id>/[<section_id>/]<field_id>[?attribute=<name>]`
+    #[serde(deserialize_with = "deserialize_op_uri")]
     pub op: String,
 
     /// Snapshot breadcrumb: `<Vault>/<Item>/[<Section>/]<Field>`.
@@ -112,6 +116,23 @@ pub struct OpRef {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_demand: bool,
 }
+
+fn deserialize_op_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+    if value.starts_with("op://") {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "op reference must start with op://: {value:?}"
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests;
 
 /// A literal/`$VAR` env value carrying optional on-demand metadata.
 ///
@@ -141,9 +162,17 @@ pub struct Extended {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldTarget {
     /// Overwrite the field with this exact op id.
-    Existing { id: String, label: String },
+    Existing {
+        /// Exact `op` field id.
+        id: String,
+        /// Display label for the field.
+        label: String,
+    },
     /// Append (or overwrite if same label exists) with this label.
-    New { label: String },
+    New {
+        /// Label for the new (or same-label) field.
+        label: String,
+    },
 }
 
 impl FieldTarget {

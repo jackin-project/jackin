@@ -26,6 +26,17 @@ use super::{
     restore_candidate_for_hardline, restore_hardline_instance, rich_prelaunch_choice,
 };
 
+/// Config used by post-console launch/prewarm after `run_console` returns.
+///
+/// The console owns and mutates this model in memory; successful saves write
+/// disk *and* replace the in-memory `AppConfig`. Returning that model skips a
+/// second `AppConfig::load_or_init` parse (launch-speed 008g). Callers must
+/// not re-read disk when the console proved no changes **or** when it already
+/// applied saves into this value.
+pub(crate) fn take_post_console_config(console_owned: AppConfig) -> AppConfig {
+    console_owned
+}
+
 pub(super) async fn handle_load(
     args: LoadArgs,
     config: &mut AppConfig,
@@ -102,7 +113,13 @@ pub(super) async fn handle_load(
     // build/launch (so a long Docker build doesn't see the host
     // sleep). Post-launch reconcile below catches the new role.
     let entry_claim = play_construct_intro_if_needed(paths, &docker).await;
-    runtime::reconcile_keep_awake(paths, &docker, runner).await;
+    runtime::reconcile_keep_awake_when_configured(
+        paths,
+        &docker,
+        runner,
+        any_keep_awake_enabled(config),
+    )
+    .await;
     let agent_slug = opts.agent.map(jackin_core::Agent::slug);
     let result = jackin_diagnostics::launch_trace(
         Some(&resolved_workspace.label),
@@ -129,7 +146,13 @@ pub(super) async fn handle_load(
     if result.is_err() {
         runtime::release_entry_if_idle(paths, &docker, &entry_claim).await;
     }
-    runtime::reconcile_keep_awake(paths, &docker, runner).await;
+    runtime::reconcile_keep_awake_when_configured(
+        paths,
+        &docker,
+        runner,
+        any_keep_awake_enabled(config),
+    )
+    .await;
     result
 }
 
@@ -169,6 +192,7 @@ pub(super) async fn handle_console(
                 runtime::background_prewarm_targets(&config),
                 debug,
             );
+            runtime::spawn_background_sidecar_prewarm(&paths, debug);
             (Some((docker, claim)), None)
         }
         Err(error) => (None, Some(docker_startup_error(&error))),
@@ -178,7 +202,7 @@ pub(super) async fn handle_console(
         .map(|(_, message)| anyhow::anyhow!(message.clone()));
 
     let op_available = console::effects::op_cli_available();
-    let Some(outcome) = console::run_console(
+    let (outcome, console_config) = console::run_console(
         config,
         &paths,
         &cwd,
@@ -190,8 +214,11 @@ pub(super) async fn handle_console(
         &mut in_place,
         &mut runner,
     )
-    .await?
-    else {
+    .await?;
+    // Prefer the in-memory config the console returned (updated on successful
+    // saves). Do not re-read disk — that is the launch-speed 008g win.
+    let mut config = take_post_console_config(console_config);
+    let Some(outcome) = outcome else {
         if let Some((docker, claim)) = &console_entry {
             runtime::release_entry_if_idle(&paths, docker, claim).await;
         }
@@ -201,9 +228,6 @@ pub(super) async fn handle_console(
         return Ok(());
     };
 
-    // config was consumed by run_console (the manager may have written to
-    // disk). Reload so the post-console path sees the latest state.
-    let mut config = AppConfig::load_or_init(&paths)?;
     let docker = connect_docker()?;
     let (class, workspace, selected_agent) = match outcome {
         console::ConsoleOutcome::Launch(class, workspace, selected_agent) => {
@@ -261,7 +285,13 @@ pub(super) async fn handle_console(
                             "cannot start a new agent session in `{container}` because its instance manifest is missing"
                         )
                     })?;
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+            runtime::reconcile_keep_awake_when_configured(
+                &paths,
+                &docker,
+                &mut runner,
+                any_keep_awake_enabled(&config),
+            )
+            .await;
             // The token is backfilled inside the container by the
             // daemon from `ZAI_API_KEY`, so pass overrides without it.
             let result = runtime::spawn_agent_session(
@@ -277,7 +307,13 @@ pub(super) async fn handle_console(
                 &mut runner,
             )
             .await;
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+            runtime::reconcile_keep_awake_when_configured(
+                &paths,
+                &docker,
+                &mut runner,
+                any_keep_awake_enabled(&config),
+            )
+            .await;
             if let Some((docker, claim)) = &console_entry {
                 runtime::release_entry_if_idle(&paths, docker, claim).await;
             }
@@ -294,7 +330,13 @@ pub(super) async fn handle_console(
             let mut opts = runtime::LoadOptions::for_launch(debug);
             opts.agent = Some(agent);
             opts.provider = Some(provider);
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+            runtime::reconcile_keep_awake_when_configured(
+                &paths,
+                &docker,
+                &mut runner,
+                any_keep_awake_enabled(&config),
+            )
+            .await;
             let result = jackin_diagnostics::launch_trace(
                 Some(&workspace.label),
                 Some(agent_slug),
@@ -317,7 +359,13 @@ pub(super) async fn handle_console(
                 &selector,
                 &result,
             );
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+            runtime::reconcile_keep_awake_when_configured(
+                &paths,
+                &docker,
+                &mut runner,
+                any_keep_awake_enabled(&config),
+            )
+            .await;
             if let Some((docker, claim)) = &console_entry {
                 runtime::release_entry_if_idle(&paths, docker, claim).await;
             }
@@ -332,7 +380,13 @@ pub(super) async fn handle_console(
     } else {
         play_construct_intro_if_needed(&paths, &docker).await
     };
-    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+    runtime::reconcile_keep_awake_when_configured(
+        &paths,
+        &docker,
+        &mut runner,
+        any_keep_awake_enabled(&config),
+    )
+    .await;
     let agent_slug = opts.agent.map(jackin_core::Agent::slug);
     let result = jackin_diagnostics::launch_trace(
         Some(&workspace.label),
@@ -353,10 +407,23 @@ pub(super) async fn handle_console(
     if result.is_err() {
         runtime::release_entry_if_idle(&paths, &docker, &entry_claim).await;
     }
-    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+    runtime::reconcile_keep_awake_when_configured(
+        &paths,
+        &docker,
+        &mut runner,
+        any_keep_awake_enabled(&config),
+    )
+    .await;
     // `screen` drops here, after any exit outro, restoring the
     // terminal exactly once.
     result
+}
+
+fn any_keep_awake_enabled(config: &AppConfig) -> bool {
+    config
+        .workspaces
+        .values()
+        .any(|workspace| workspace.keep_awake.enabled)
 }
 
 fn docker_startup_error(error: &anyhow::Error) -> (String, String) {

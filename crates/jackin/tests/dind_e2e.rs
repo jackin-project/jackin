@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! End-to-end smoke that drives `jackin load` against a real Docker daemon
 //! with proxy env declared in role config, then asserts the launched agent
 //! container's environment carries the `DinD` hostname in both `NO_PROXY`
@@ -5,19 +19,13 @@
 //! bug fixed in `src/runtime/launch.rs`.
 
 #![cfg(feature = "e2e")]
-#![allow(clippy::disallowed_methods)]
-#![expect(
-    clippy::panic,
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "Docker integration fixtures should fail immediately with source location and command context"
-)]
-
 use std::time::Duration;
 
 use jackin_runtime::instance::naming::is_dns_label;
 use tempfile::tempdir;
 
+#[path = "dind_e2e/chaos.rs"]
+mod chaos;
 #[path = "dind_e2e/common.rs"]
 mod common;
 #[path = "dind_e2e/diagnostics.rs"]
@@ -39,8 +47,8 @@ use fixtures::{
     write_sentinel_config, write_slow_exit_config,
 };
 use pty_runner::{
-    PtyFileSentinel, PtyQuickExit, run_in_pty_until_agent_report, run_in_pty_until_file,
-    run_in_pty_until_quick_exit_after_input, scripted_sentinel_launch_input,
+    PtyFileSentinel, PtyQuickExit, run_in_pty_until_file, run_in_pty_until_quick_exit_after_input,
+    scripted_sentinel_launch_input,
 };
 use util::{
     REPORT_BEGIN, REPORT_END, assert_sentinel_build_output_routed_to_log, assert_sentinel_report,
@@ -53,10 +61,6 @@ const SENTINEL_ROLE_KEY: &str = "jackin-e2e/sentinel";
 const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
 const SLOW_EXIT_ROLE_KEY: &str = "jackin-e2e/slow-exit";
 const SLOW_EXIT_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__slow-exit";
-const CAPSULE_DETACH_KEYS: &str = "\u{2}d";
-const BUILD_FAILED_MODAL_TEXT: &str = "Building the Docker container failed";
-const FAILURE_DIAGNOSTICS_LABEL: &str = "run diagnostics";
-const FAILURE_DISMISS_HINT: &str = "dismiss";
 const TESTCONTAINERS_SMOKE_OK: &str = "TESTCONTAINERS_SMOKE=ok";
 
 /// RAII cleanup so the test's Docker resources are removed even if an
@@ -112,20 +116,37 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     // pinned for validation purposes.
     let construct_image = e2e_construct_image();
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
-    let output = run_in_pty_until_agent_report(&jackin, &args, &home, &workspace_dir, &extra_env);
+    let report_path = workspace_dir.join("jackin-e2e-report.txt");
+    let output = run_in_pty_until_file(
+        &jackin,
+        &args,
+        &home,
+        &workspace_dir,
+        &extra_env,
+        &[],
+        PtyFileSentinel {
+            path: &report_path,
+            text: TESTCONTAINERS_SMOKE_OK,
+            timeout: Duration::from_mins(6),
+        },
+    );
 
-    // Agent prints its env + `docker ps` snapshot after a sentinel marker on
-    // its stdout, which the PTY captures into `output.stdout`. Reading from
-    // stdout instead of a `/workspace` bind-mount file keeps the test agnostic
-    // to whether the Docker daemon shares the test process's filesystem (DinD
-    // and remote daemons resolve bind-mount sources on the daemon side, where
-    // the test cannot read them). The capture is a rendered terminal
-    // transcript, so marker order and the closing marker's visibility can vary.
+    // The capsule multiplexer is a full-screen renderer, so agent stdout is a
+    // terminal transcript, not a stable report channel. The fake agent writes
+    // the same report into the bound workspace; the PTY remains only the launch
+    // driver.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let report = std::fs::read_to_string(&report_path).unwrap_or_else(|error| {
+        panic!(
+            "agent report file missing at {}: {error}\n{}",
+            report_path.display(),
+            e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
+        )
+    });
     assert!(
-        stdout.contains(REPORT_BEGIN),
-        "agent did not emit {REPORT_BEGIN} marker\n{}",
+        report.contains(REPORT_BEGIN),
+        "agent did not emit {REPORT_BEGIN} marker\nreport:\n{report}\n{}",
         e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
     // REPORT_END proves the report block completed. Without this check a
@@ -133,13 +154,12 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     // still satisfy the contains-substring asserts below on whatever
     // happened to land before the cut.
     assert!(
-        stdout.contains(REPORT_END),
-        "agent did not emit {REPORT_END} marker — report is truncated\n{}",
+        report.contains(REPORT_END),
+        "agent did not emit {REPORT_END} marker — report is truncated\nreport:\n{report}\n{}",
         e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
-    let report = stdout.as_ref();
 
-    let dind_hostname = find_report_value(report, "JACKIN_DIND_HOSTNAME=")
+    let dind_hostname = find_report_value(&report, "JACKIN_DIND_HOSTNAME=")
         .unwrap_or_else(|| panic!("report must include JACKIN_DIND_HOSTNAME\n{report}"));
     assert!(is_dns_label(dind_hostname), "{dind_hostname}");
     assert!(!dind_hostname.contains("__"));
@@ -379,4 +399,200 @@ fn jackin_load_double_ctrl_c_exits_launch_prompt_quickly() {
         output.status.success(),
         "double Ctrl+C should hard-exit successfully from the launch prompt\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
+}
+
+fn chaos_launch_until_report(
+    home: &std::path::Path,
+    workspace_dir: &std::path::Path,
+    role_source: &std::path::Path,
+) -> std::process::Output {
+    write_config(&home.join(".config/jackin/config.toml"), role_source);
+    seed_claude_installer_stub(home);
+    let jackin = std::env::var("CARGO_BIN_EXE_jackin").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .unwrap()
+            .join("target/debug/jackin")
+            .display()
+            .to_string()
+    });
+    let target = format!("{}:/workspace", workspace_dir.display());
+    let args = ["load", ROLE_KEY, &target, "--agent", "claude"];
+    let construct_image = e2e_construct_image();
+    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
+    let report_path = workspace_dir.join("jackin-e2e-report.txt");
+    run_in_pty_until_file(
+        &jackin,
+        &args,
+        home,
+        workspace_dir,
+        &extra_env,
+        &[],
+        PtyFileSentinel {
+            path: &report_path,
+            text: TESTCONTAINERS_SMOKE_OK,
+            timeout: Duration::from_mins(6),
+        },
+    )
+}
+
+fn wait_for_report_marker(path: &std::path::Path, marker: &str, timeout: Duration) {
+    let start = std::time::Instant::now();
+    while start.elapsed() < timeout {
+        if std::fs::read_to_string(path).is_ok_and(|contents| contents.contains(marker)) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    let contents = std::fs::read_to_string(path).unwrap_or_default();
+    panic!(
+        "timed out waiting for report marker {marker:?} in {}\nreport:\n{}",
+        path.display(),
+        contents
+    );
+}
+
+#[test]
+fn chaos_kill_container_mid_session() {
+    require_e2e_prereqs();
+    let seed = chaos::seed();
+    eprintln!("JACKIN_CHAOS_SEED={seed}");
+    let mut rng = chaos::ChaosRng::new(seed);
+    let planned = chaos::schedule(&mut rng, &[chaos::Fault::KillContainer], 1500);
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: ROLE_KEY,
+        container_prefix: ROLE_CONTAINER_PREFIX,
+    };
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    let config_dir = home.join(".config/jackin");
+    let role_source = temp.path().join("agent-smith-source");
+    let workspace_dir = temp.path().join("workspace");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&workspace_dir).unwrap();
+    seed_agent_smith_role_repo(&role_source);
+
+    let home_c = home.clone();
+    let ws_c = workspace_dir.clone();
+    let rs_c = role_source.clone();
+    let handle = std::thread::spawn(move || chaos_launch_until_report(&home_c, &ws_c, &rs_c));
+
+    let start = std::time::Instant::now();
+    let container = loop {
+        if let Some(name) = chaos::primary_running_container(ROLE_KEY) {
+            break name;
+        }
+        assert!(
+            start.elapsed() <= Duration::from_mins(6),
+            "chaos_kill: no container appeared for {ROLE_KEY}"
+        );
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    wait_for_report_marker(
+        &workspace_dir.join("jackin-e2e-report.txt"),
+        REPORT_END,
+        Duration::from_mins(3),
+    );
+    std::thread::sleep(planned.delay);
+    chaos::apply_fault(planned.fault, &container);
+
+    let _output = handle.join().expect("launch thread panicked");
+    chaos::wait_until_no_running(ROLE_KEY, Duration::from_secs(60));
+    cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
+    chaos::assert_no_orphaned_containers(ROLE_KEY);
+    chaos::assert_no_stale_state_dirs(&home.join(".local/share/jackin"), &[]);
+    chaos::assert_cleanup_classified(&home);
+}
+
+#[test]
+fn chaos_sigkill_capsule() {
+    require_e2e_prereqs();
+    let seed = chaos::seed();
+    eprintln!("JACKIN_CHAOS_SEED={seed}");
+    let mut rng = chaos::ChaosRng::new(seed.wrapping_add(1));
+    let planned = chaos::schedule(&mut rng, &[chaos::Fault::SigkillCapsule], 1500);
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: ROLE_KEY,
+        container_prefix: ROLE_CONTAINER_PREFIX,
+    };
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    let config_dir = home.join(".config/jackin");
+    let role_source = temp.path().join("agent-smith-source");
+    let workspace_dir = temp.path().join("workspace");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&workspace_dir).unwrap();
+    seed_agent_smith_role_repo(&role_source);
+
+    let home_c = home.clone();
+    let ws_c = workspace_dir.clone();
+    let rs_c = role_source.clone();
+    let handle = std::thread::spawn(move || chaos_launch_until_report(&home_c, &ws_c, &rs_c));
+
+    let start = std::time::Instant::now();
+    let container = loop {
+        if let Some(name) = chaos::primary_running_container(ROLE_KEY) {
+            break name;
+        }
+        assert!(
+            start.elapsed() <= Duration::from_mins(6),
+            "chaos_sigkill: no container appeared"
+        );
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    std::thread::sleep(planned.delay);
+    chaos::apply_fault(planned.fault, &container);
+
+    let _output = handle.join().expect("launch thread panicked");
+    chaos::wait_until_no_running(ROLE_KEY, Duration::from_secs(90));
+    cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
+    chaos::assert_no_orphaned_containers(ROLE_KEY);
+    chaos::assert_cleanup_classified(&home);
+}
+
+#[test]
+fn chaos_drop_control_socket() {
+    require_e2e_prereqs();
+    let seed = chaos::seed();
+    eprintln!("JACKIN_CHAOS_SEED={seed}");
+    let mut rng = chaos::ChaosRng::new(seed.wrapping_add(2));
+    let planned = chaos::schedule(&mut rng, &[chaos::Fault::DropControlSocket], 1500);
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: ROLE_KEY,
+        container_prefix: ROLE_CONTAINER_PREFIX,
+    };
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    let config_dir = home.join(".config/jackin");
+    let role_source = temp.path().join("agent-smith-source");
+    let workspace_dir = temp.path().join("workspace");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&workspace_dir).unwrap();
+    seed_agent_smith_role_repo(&role_source);
+
+    let home_c = home.clone();
+    let ws_c = workspace_dir.clone();
+    let rs_c = role_source.clone();
+    let handle = std::thread::spawn(move || chaos_launch_until_report(&home_c, &ws_c, &rs_c));
+
+    let start = std::time::Instant::now();
+    let container = loop {
+        if let Some(name) = chaos::primary_running_container(ROLE_KEY) {
+            break name;
+        }
+        assert!(
+            start.elapsed() <= Duration::from_mins(6),
+            "chaos_drop_socket: no container appeared"
+        );
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    std::thread::sleep(planned.delay);
+    chaos::apply_fault(planned.fault, &container);
+
+    let _output = handle.join().expect("launch thread panicked");
+    cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
+    chaos::assert_no_orphaned_containers(ROLE_KEY);
+    chaos::assert_cleanup_classified(&home);
 }

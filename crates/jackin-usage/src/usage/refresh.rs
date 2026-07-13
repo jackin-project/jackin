@@ -4,7 +4,10 @@
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(clippy::wildcard_imports)]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::*;
 use serde::Deserialize;
 
@@ -204,7 +207,7 @@ pub(crate) fn acquire_account_refresh_lock(account_key: &str) -> RefreshLockOutc
 }
 
 pub(crate) fn acquire_account_refresh_lock_in(dir: &Path, account_key: &str) -> RefreshLockOutcome {
-    use fs2::FileExt as _;
+    use fs4::FileExt;
     if fs::create_dir_all(dir).is_err() {
         return RefreshLockOutcome::Unavailable;
     }
@@ -220,7 +223,7 @@ pub(crate) fn acquire_account_refresh_lock_in(dir: &Path, account_key: &str) -> 
         .truncate(false)
         .open(&path);
     match file {
-        Ok(file) => match file.try_lock_exclusive() {
+        Ok(file) => match FileExt::try_lock(&file) {
             Ok(()) => RefreshLockOutcome::Acquired(file),
             Err(_) => RefreshLockOutcome::Held,
         },
@@ -379,18 +382,33 @@ pub(crate) fn usage_backoff_delay(base: Duration, failures: u32) -> Duration {
     Duration::from_secs(base.as_secs().saturating_mul(multiplier)).min(USAGE_REFRESH_BACKOFF_CAP)
 }
 
+/// Owned document shape for reading materialized accounts JSON (tests + any
+/// future consumers). Write path serializes via `MaterializedUsageAccountsRef`.
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "owned Deserialize twin; write path uses MaterializedUsageAccountsRef"
+    )
+)]
 pub(crate) struct MaterializedUsageAccounts {
     pub(crate) generated_at_epoch: i64,
     pub(crate) snapshots: Vec<FocusedUsageView>,
 }
 
+#[derive(Serialize)]
+struct MaterializedUsageAccountsRef<'a> {
+    generated_at_epoch: i64,
+    snapshots: &'a [&'a FocusedUsageView],
+}
+
 pub(crate) fn write_materialized_usage_accounts(
     path: &Path,
     generated_at_epoch: i64,
-    snapshots: Vec<FocusedUsageView>,
+    snapshots: &[&FocusedUsageView],
 ) -> Result<(), String> {
-    let document = MaterializedUsageAccounts {
+    let document = MaterializedUsageAccountsRef {
         generated_at_epoch,
         snapshots,
     };
@@ -399,7 +417,10 @@ pub(crate) fn write_materialized_usage_accounts(
     atomic_write_usage_json(path, &contents)
 }
 
-#[allow(clippy::disallowed_methods)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn atomic_write_usage_json(path: &Path, contents: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)

@@ -316,6 +316,10 @@ fn visible_agent_state_mapping_uses_protocol_state() {
         visible_agent_state_from_protocol(AgentState::Blocked),
         VisibleAgentState::Blocked
     );
+    assert_eq!(
+        visible_agent_state_from_protocol(AgentState::Unknown),
+        VisibleAgentState::Unknown
+    );
 }
 
 #[test]

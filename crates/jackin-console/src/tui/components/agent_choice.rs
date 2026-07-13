@@ -9,7 +9,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use jackin_tui::components::render_dialog_shell;
+use jackin_tui::components::{DialogBorder, render_dialog_shell};
 
 pub trait AgentChoice: Copy + Eq + 'static {
     const ALL: &'static [Self];
@@ -86,7 +86,7 @@ impl<A: AgentChoice> Default for AgentChoiceState<A> {
 pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentChoiceState<A>) {
     let bold = Style::default().add_modifier(Modifier::BOLD);
 
-    let inner = render_dialog_shell(frame, area, Some("Pick Agent"));
+    let inner = render_dialog_shell(frame, area, Some("Pick Agent"), DialogBorder::Default);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

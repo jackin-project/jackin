@@ -13,6 +13,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear};
 
 use crate::LaunchView;
+use crate::tui::components::cells::coalesce_cells;
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -305,23 +306,6 @@ fn push_wrapped_build_line(
         );
     }
     lines.push(Line::from(spans));
-}
-
-fn coalesce_cells<I>(cells: I) -> Vec<Span<'static>>
-where
-    I: IntoIterator<Item = (char, Style)>,
-{
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    for (ch, style) in cells {
-        if let Some(last) = spans.last_mut()
-            && last.style == style
-        {
-            last.content.to_mut().push(ch);
-            continue;
-        }
-        spans.push(Span::styled(ch.to_string(), style));
-    }
-    spans
 }
 
 #[cfg(test)]

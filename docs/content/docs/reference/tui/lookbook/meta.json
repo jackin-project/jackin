@@ -16,6 +16,8 @@
     "scrollable-panel",
     "status-footer",
     "text-input",
-    "toast"
+    "toast",
+    "container-info",
+    "diff-view"
   ]
 }

@@ -1,8 +1,8 @@
-//! Build-script helpers shared by jackin crates.
+//! jackin-build-meta: build-script helpers shared by jackin❯ crates.
 //!
-//! Each workspace binary crate derives a runtime version string of the
-//! form `<cargo-version>` or `<cargo-version>+<short-sha>` and arranges
-//! to re-run the build script when the git HEAD moves.
+//! **Architecture Invariant:** T0.
+//! Entry point: [`emit_build_info`] — build-script helper shared by crates.
+
 use std::process::Command;
 
 const WORKSPACE_GIT_DIR_FROM_CRATE: &str = "../../.git";
@@ -19,7 +19,7 @@ pub fn derive_workspace_crate_version() -> String {
 }
 
 /// `git_dir_relative` is the path to the workspace `.git/` directory,
-/// relative to the crate that owns the build script. Used to emit the
+/// relative to the crate that owns the build script. CI/release builds emit
 /// `cargo:rerun-if-changed` hooks so a new HEAD or ref triggers a rebuild.
 #[must_use]
 #[expect(
@@ -28,6 +28,17 @@ pub fn derive_workspace_crate_version() -> String {
 )]
 fn derive_version(git_dir_relative: &str) -> String {
     println!("cargo:rerun-if-env-changed=JACKIN_VERSION_OVERRIDE");
+    println!("cargo:rerun-if-env-changed=CI");
+    let cargo_version =
+        std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.6.0-dev".to_owned());
+    if let Some(version) = local_version_override(
+        std::env::var("JACKIN_VERSION_OVERRIDE").ok(),
+        std::env::var_os("CI").is_some(),
+        &cargo_version,
+    ) {
+        return version;
+    }
+
     println!("cargo:rerun-if-changed={git_dir_relative}/HEAD");
     println!("cargo:rerun-if-changed={git_dir_relative}/refs");
     // `git gc` / `git pack-refs` consolidates loose refs into
@@ -38,12 +49,6 @@ fn derive_version(git_dir_relative: &str) -> String {
     // repository uses.
     println!("cargo:rerun-if-changed={git_dir_relative}/packed-refs");
 
-    if let Ok(override_version) = std::env::var("JACKIN_VERSION_OVERRIDE") {
-        return override_version;
-    }
-
-    let cargo_version =
-        std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.6.0-dev".to_owned());
     #[expect(
         clippy::disallowed_methods,
         reason = "build metadata runs in Cargo build-script context, not on a render/runtime thread"
@@ -61,3 +66,20 @@ fn derive_version(git_dir_relative: &str) -> String {
         |sha| format!("{cargo_version}+{sha}"),
     )
 }
+
+fn local_version_override(
+    explicit_override: Option<String>,
+    is_ci: bool,
+    cargo_version: &str,
+) -> Option<String> {
+    if let Some(version) = explicit_override {
+        return Some(version);
+    }
+    if is_ci {
+        return None;
+    }
+    Some(cargo_version.to_owned())
+}
+
+#[cfg(test)]
+mod tests;

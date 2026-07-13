@@ -15,6 +15,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use super::host_colors::query_host_terminal_colors;
 use anyhow::{Context, Result, bail};
 use directories::UserDirs;
+use jackin_core::container_paths;
 use jackin_core::paths::JackinPaths;
 use jackin_protocol::attach::{
     ClientFrame, ClientTerminal, ClipboardImage, ClipboardImageChunk, ClipboardImageEnd,
@@ -77,7 +78,14 @@ fn log_clipboard_image_pasted_path_staged() {
 
 #[must_use]
 pub fn host_attach_enabled() -> bool {
-    std::env::var_os(JACKIN_HOST_ATTACH_ENV).is_some()
+    #[cfg(test)]
+    {
+        false
+    }
+    #[cfg(not(test))]
+    {
+        std::env::var_os(JACKIN_HOST_ATTACH_ENV).is_some()
+    }
 }
 
 pub(super) async fn run_host_attach_session(
@@ -798,10 +806,10 @@ fn host_file_export_root(export_subdir: &str) -> Result<PathBuf> {
 }
 
 fn export_source_path_category(source_path: &str) -> &'static str {
-    if source_path.starts_with("/jackin/run/") || source_path == "/jackin/run" {
+    if container_paths::is_run_owned(source_path) {
         return "jackin-run";
     }
-    if source_path.starts_with("/jackin/") || source_path == "/jackin" {
+    if container_paths::is_jackin_owned(source_path) {
         return "jackin-owned";
     }
     if source_path.starts_with('/') {
@@ -906,8 +914,10 @@ where
     W: AsyncWrite + Unpin,
 {
     let message = bounded_attach_message(message, MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
-    let msg = encode_client(ClientFrame::ClipboardImageError(message))
-        .context("encoding ClipboardImageError frame")?;
+    let msg = encode_client(ClientFrame::ClipboardImageError(
+        jackin_protocol::attach::ClipboardImageError::from_message(message),
+    ))
+    .context("encoding ClipboardImageError frame")?;
     writer
         .write_all(&msg)
         .await

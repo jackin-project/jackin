@@ -263,16 +263,61 @@ fn parse_changed_files_trims_and_drops_blank_lines() {
 }
 
 #[test]
+fn parse_changed_files_accepts_files_api_output() {
+    // The too-large-diff fallback uses `gh api .../files --jq '.[].filename'`,
+    // which is also newline-separated filenames, so the same parser applies.
+    let out = "a.rs\ndocker/construct/Dockerfile\nb.rs\n";
+    let files = parse_changed_files(out).unwrap();
+    assert_eq!(files, vec!["a.rs", "docker/construct/Dockerfile", "b.rs"]);
+}
+
+#[test]
 fn parse_changed_files_rejects_empty() {
-    assert!(parse_changed_files("\n  \n").is_err());
+    parse_changed_files("\n  \n").unwrap_err();
+}
+
+#[test]
+fn is_diff_too_large_matches_github_406_phrasings() {
+    // Reproduced from gh against #713 (the first PR here to clear 20k diff lines).
+    let live = anyhow::anyhow!(
+        "`gh pr diff 713 --repo jackin-project/jackin --name-only` failed with \
+         exit status: 1\n\
+         could not find pull request diff: HTTP 406: Sorry, the diff exceeded the \
+         maximum number of lines (20000) \
+         (https://api.github.com/repos/jackin-project/jackin/pulls/713)\n\
+         PullRequest.diff too_large"
+    );
+    assert!(is_diff_too_large(&live));
+
+    // Each detection phrasing on its own, in case gh rewords these later.
+    assert!(is_diff_too_large(&anyhow::anyhow!("HTTP 406: nope")));
+    assert!(is_diff_too_large(&anyhow::anyhow!(
+        "PullRequest.diff too_large"
+    )));
+    assert!(is_diff_too_large(&anyhow::anyhow!(
+        "the diff exceeded the maximum number of lines (20000)"
+    )));
+}
+
+#[test]
+fn is_diff_too_large_rejects_unrelated_errors() {
+    // A real failure (auth, network, missing PR) must stay a hard error, not
+    // trigger a misleading fallback to the files endpoint.
+    assert!(!is_diff_too_large(&anyhow::anyhow!("HTTP 404: Not Found")));
+    assert!(!is_diff_too_large(&anyhow::anyhow!(
+        "could not find pull request: HTTP 404"
+    )));
+    assert!(!is_diff_too_large(&anyhow::anyhow!(
+        "gh pr diff failed with exit status: 1\nauthentication required"
+    )));
 }
 
 #[test]
 fn json_string_rejects_missing_and_empty() {
     let json = serde_json::json!({ "headRefOid": "" });
 
-    assert!(json_string(&json, "headRefOid").is_err());
-    assert!(json_string(&json, "absent").is_err());
+    json_string(&json, "headRefOid").unwrap_err();
+    json_string(&json, "absent").unwrap_err();
     assert_eq!(
         json_string(&serde_json::json!({ "k": "v" }), "k").unwrap(),
         "v"

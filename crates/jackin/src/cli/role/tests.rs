@@ -53,7 +53,7 @@ fn load_args_parses_amp_agent_flag() {
 #[test]
 fn load_args_rejects_unknown_agent() {
     let res = Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "foo"]);
-    assert!(res.is_err());
+    res.unwrap_err();
 }
 
 #[test]
@@ -220,20 +220,16 @@ fn console_rejects_removed_flags() {
     // The console is always the full experience; the old --no-rain /
     // --no-tui / --intro / --outro toggles no longer exist.
     for flag in ["--no-rain", "--no-tui", "--intro", "--outro"] {
-        assert!(
-            Cli::try_parse_from(["jackin", "console", flag]).is_err(),
-            "console should reject {flag}"
-        );
+        Cli::try_parse_from(["jackin", "console", flag])
+            .expect_err(&format!("console should reject {flag}"));
     }
 }
 
 #[test]
 fn load_rejects_removed_surface_flags() {
     for flag in ["--no-rain", "--no-tui", "--no-intro"] {
-        assert!(
-            Cli::try_parse_from(["jackin", "load", flag]).is_err(),
-            "load should reject {flag}"
-        );
+        Cli::try_parse_from(["jackin", "load", flag])
+            .expect_err(&format!("load should reject {flag}"));
     }
 }
 
@@ -272,6 +268,18 @@ fn load_help_shows_mount_format() {
     );
 }
 
+#[test]
+fn load_help_lists_every_agent_slug() {
+    let help = help_text(&["jackin", "load", "--help"]);
+    for agent in jackin_core::Agent::ALL {
+        assert!(
+            help.contains(agent.slug()),
+            "load help should list `{}` from Agent::ALL: {help}",
+            agent.slug()
+        );
+    }
+}
+
 // ── Hardline help ───────────────────────────────────────────────────
 
 #[test]
@@ -283,6 +291,18 @@ fn hardline_help_shows_examples() {
         help.contains("jackin hardline ") && help.contains("auto-detect workspace"),
         "missing no-arg usage in hardline help: {help}"
     );
+}
+
+#[test]
+fn hardline_help_lists_every_agent_slug() {
+    let help = help_text(&["jackin", "hardline", "--help"]);
+    for agent in jackin_core::Agent::ALL {
+        assert!(
+            help.contains(agent.slug()),
+            "hardline help should list `{}` from Agent::ALL: {help}",
+            agent.slug()
+        );
+    }
 }
 
 #[test]
@@ -363,27 +383,27 @@ fn parses_hardline_shell_flag() {
 #[test]
 fn rejects_hardline_shell_with_new() {
     let res = Cli::try_parse_from(["jackin", "hardline", "--shell", "--new"]);
-    assert!(res.is_err());
+    res.unwrap_err();
 }
 
 #[test]
 fn rejects_hardline_shell_with_inspect() {
     let res = Cli::try_parse_from(["jackin", "hardline", "--shell", "--inspect"]);
-    assert!(res.is_err());
+    res.unwrap_err();
 }
 
 #[test]
 fn rejects_hardline_agent_without_new() {
     let res = Cli::try_parse_from(["jackin", "hardline", "--agent", "codex"]);
 
-    assert!(res.is_err());
+    res.unwrap_err();
 }
 
 #[test]
 fn rejects_hardline_inspect_with_new() {
     let res = Cli::try_parse_from(["jackin", "hardline", "--inspect", "--new"]);
 
-    assert!(res.is_err());
+    res.unwrap_err();
 }
 
 #[test]

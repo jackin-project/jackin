@@ -33,14 +33,16 @@ use crate::tui::op_picker::OpPickerState;
 
 pub use crate::mount_info_cache::MountInfoCache;
 pub use crate::tui::focus::MountScrollFocus;
+pub use crate::tui::model::SecretsPickerTarget;
 pub use crate::tui::screens::editor::model::{
     AuthRow as GenericAuthRow, CreateStep, EditorHoverTarget, EditorMode, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, SecretsEnterPlan, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
 pub use crate::tui::screens::settings::model::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,
-    SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
-    SettingsGeneralState, SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
+    SettingsEnvEnterPlan, SettingsEnvOpPickerTarget, SettingsEnvRow, SettingsEnvScope,
+    SettingsEnvTextTarget, SettingsGeneralState, SettingsHoverTarget, SettingsTab,
+    SettingsTrustRow, SettingsTrustState,
 };
 pub use crate::tui::screens::workspaces::model::{
     ManagerHoverTarget, ManagerListRow, WorkspaceSummary,
@@ -106,7 +108,7 @@ pub type ManagerStage<'a> = crate::tui::model::ConsoleManagerStage<
 
 pub type GlobalMountsState<'a> = crate::tui::screens::settings::model::GlobalMountsState<
     jackin_config::GlobalMountRow,
-    GlobalMountModal<'a>,
+    SettingsModal<'a>,
 >;
 
 pub type SettingsState<'a> = crate::tui::screens::settings::model::SettingsState<
@@ -132,41 +134,28 @@ pub type ConfirmTarget =
     crate::tui::screens::editor::model::ConfirmTarget<jackin_config::RoleSource, PendingSaveCommit>;
 
 pub type SettingsEnvState<'a> =
-    crate::tui::screens::settings::model::SettingsEnvState<EnvValue, SettingsEnvModal<'a>>;
+    crate::tui::screens::settings::model::SettingsEnvState<EnvValue, SettingsModal<'a>>;
 
-pub type SettingsEnvModal<'a> = crate::tui::screens::settings::model::SettingsEnvModal<
-    TextInputState<'a>,
-    SourcePickerState,
-    OpPickerState,
-    RolePickerState,
-    ScopePickerState,
-    ConfirmState,
->;
-
-pub type SettingsAuthState = crate::tui::screens::settings::model::SettingsAuthState<
+pub type SettingsModal<'a> = crate::tui::screens::settings::model::SettingsModal<
     EnvValue,
-    SettingsAuthModal<'static>,
-    PendingOpCommit,
->;
-
-pub type SettingsAuthModal<'a> = crate::tui::screens::settings::model::SettingsAuthModal<
     TextInputState<'a>,
     SourcePickerState,
     OpPickerState,
     FileBrowserState,
+    MountDstChoiceState,
+    RolePickerState,
+    ScopePickerState,
+    ConfirmState,
+    ConfirmSaveState<MountConfig>,
     AuthFormTarget,
     AuthForm,
     AuthFormFocus,
 >;
 
-pub type GlobalMountModal<'a> = crate::tui::screens::settings::model::GlobalMountModal<
-    TextInputState<'a>,
-    FileBrowserState,
-    MountDstChoiceState,
-    ScopePickerState,
-    RolePickerState,
-    ConfirmState,
-    ConfirmSaveState<MountConfig>,
+pub type SettingsAuthState = crate::tui::screens::settings::model::SettingsAuthState<
+    EnvValue,
+    SettingsModal<'static>,
+    PendingOpCommit,
 >;
 
 pub type PendingTokenGenerate = crate::tui::subscriptions::PendingTokenGenerate<
@@ -175,7 +164,6 @@ pub type PendingTokenGenerate = crate::tui::subscriptions::PendingTokenGenerate<
 >;
 
 pub type EditorState<'a> = crate::tui::screens::editor::model::EditorState<
-    WorkspaceConfig,
     MountInfoCache,
     Modal<'a>,
     EditorSaveFlow,
@@ -236,7 +224,10 @@ pub type CreatePreludeState<'a> = crate::tui::model::ConsoleCreatePreludeState<M
 // ── ManagerState ────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
-#[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)] // independent UI focus flags, not a config-style bag
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
     pub workspaces: Vec<WorkspaceSummary>,
@@ -259,7 +250,10 @@ pub struct ManagerState<'a> {
     /// the already-running daemon captured, so provider choice for a running
     /// container is made in the multiplexer (daemon-owned), not here. The
     /// field stays so a future daemon-queried list can populate it.
-    #[allow(clippy::type_complexity)]
+    #[allow(
+        clippy::type_complexity,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     pub inline_new_session_picker:
         Option<(String, AgentChoiceState, Vec<jackin_protocol::Provider>)>,
     /// Provider picker shown after the agent is committed in
@@ -305,6 +299,7 @@ pub struct ManagerState<'a> {
     /// state on disk can't change at the 20 Hz render cadence and the
     /// rebuild path walks every container directory.
     pub instances_last_refresh: Option<std::time::Instant>,
+    pub(in crate::tui) instances_refresh_interval: std::time::Duration,
     pub(in crate::tui) instances_refresh_generation: u64,
     pub(in crate::tui) instances_refresh_rx:
         Option<BlockingSubscription<(u64, Result<ManagerInstanceRefreshSnapshot, String>)>>,

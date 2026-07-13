@@ -674,7 +674,7 @@ fn console_manager_stage_polls_pending_role_load_from_editor_only() {
         panic!("expected pending role load");
     };
     assert_eq!(load, 3);
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(editor.poll_pending_role_load().is_none());
 
     assert!(Stage::List.poll_pending_role_load().is_none());
@@ -748,7 +748,7 @@ fn console_manager_stage_polls_pending_isolation_cleanup_from_editor_only() {
         panic!("expected pending isolation cleanup");
     };
     assert_eq!(cleanup, 5);
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(editor.poll_pending_isolation_cleanup().is_none());
 
     assert!(Stage::List.poll_pending_isolation_cleanup().is_none());
@@ -792,7 +792,7 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
         panic!("expected pending editor op commit");
     };
     assert_eq!(resolution.op_ref, 3);
-    assert!(resolution.result.is_ok());
+    resolution.result.unwrap();
     assert_eq!(
         resolution.origin,
         super::ConsolePendingOpCommitOrigin::Editor
@@ -806,7 +806,7 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
         panic!("expected pending settings op commit");
     };
     assert_eq!(resolution.op_ref, 5);
-    assert!(resolution.result.is_ok());
+    resolution.result.unwrap();
     assert_eq!(
         resolution.origin,
         super::ConsolePendingOpCommitOrigin::Settings
@@ -1005,7 +1005,7 @@ fn console_input_dispatch_plan_routes_stage_modal_precedence() {
             settings_auth_modal_open: true,
             ..base
         }),
-        ConsoleInputDispatchPlan::SettingsEnvModal
+        ConsoleInputDispatchPlan::SettingsEnvDialog
     );
     assert_eq!(
         console_input_dispatch_plan(ConsoleInputDispatchFacts {
@@ -1013,7 +1013,7 @@ fn console_input_dispatch_plan_routes_stage_modal_precedence() {
             create_prelude_modal_open: true,
             ..base
         }),
-        ConsoleInputDispatchPlan::SettingsAuthModal
+        ConsoleInputDispatchPlan::SettingsAuthDialog
     );
     assert_eq!(
         console_input_dispatch_plan(ConsoleInputDispatchFacts {
@@ -1439,6 +1439,7 @@ fn console_modal_letter_input_kind_maps_text_filters_and_other_modals() {
     );
     assert_eq!(
         RectTestModal::OpPicker {
+            secrets_target: None,
             state: Box::new(TestOpPicker(false)),
         }
         .letter_input_kind(),
@@ -1501,6 +1502,7 @@ fn console_modal_list_scroll_target_maps_scrollable_list_modals() {
     );
     assert_eq!(
         RectTestModal::OpPicker {
+            secrets_target: None,
             state: Box::new(TestOpPicker(false))
         }
         .list_scroll_target(),
@@ -1534,6 +1536,7 @@ fn console_modal_shared_scroll_target_maps_reused_picker_modals() {
     );
     assert_eq!(
         RectTestModal::OpPicker {
+            secrets_target: None,
             state: Box::new(TestOpPicker(false))
         }
         .shared_scroll_target(),
@@ -1548,11 +1551,13 @@ fn console_modal_shared_scroll_target_maps_reused_picker_modals() {
 #[test]
 fn console_modal_ticks_op_picker_animation_only() {
     let mut op_picker = RectTestModal::OpPicker {
+        secrets_target: None,
         state: Box::new(TestOpPicker(true)),
     };
     assert!(op_picker.tick_active_animation());
 
     let mut idle_op_picker = RectTestModal::OpPicker {
+        secrets_target: None,
         state: Box::new(TestOpPicker(false)),
     };
     assert!(!idle_op_picker.tick_active_animation());
@@ -2035,7 +2040,7 @@ fn console_modal_opens_auth_op_picker() {
             ..
         })
     ));
-    assert!(matches!(modal, Some(TestModal::OpPicker { state }) if *state == "op-picker"));
+    assert!(matches!(modal, Some(TestModal::OpPicker { state, .. }) if *state == "op-picker"));
 }
 
 #[test]

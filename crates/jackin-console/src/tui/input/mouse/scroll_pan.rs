@@ -264,7 +264,10 @@ pub fn scroll_active_panel(
 /// Dispatch a vertical scroll event to whichever content block the mouse is over.
 /// Horizontal-only blocks (List view mounts) are silently ignored here —
 /// their scroll is only driven by left/right events via `scroll_active_panel`.
-#[allow(clippy::missing_const_for_fn)]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn scroll_active_panel_vertical(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,

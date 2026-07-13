@@ -66,7 +66,7 @@ fn commit_with_services(
     state: &mut FileBrowserState,
     target: PathBuf,
 ) -> FileBrowserOutcome<PathBuf> {
-    let outcome = state.commit_or_reject(target);
+    let outcome = FileBrowserState::commit_or_reject(target);
     apply_with_services(state, outcome)
 }
 
@@ -294,7 +294,7 @@ fn enter_on_plain_folder_still_navigates() {
 /// overlay width = `min(84-4, 80) = 80`, height = 8 (`has_url = true`),
 /// centered inside listing. Five-slot dialog padding puts the URL row at 19.
 fn manufactured_modal_area() -> Rect {
-    // Mirrors `file_browser_modal_rect` for a term of 120x40:
+    // Mirrors the shared file-browser modal rect for a term of 120x40:
     //   w = 120 * 70 / 100 = 84; h = 22.
     //   x = 0 + (120 - 84)/2 = 18; y = 0 + (40 - 22)/2 = 9.
     Rect {

@@ -1,0 +1,35 @@
+---
+title: "Session Capture Research"
+---
+
+# Session Capture Research
+
+Research dossier on **AI coding-session capture**: how SpecStory works internally, what the rest of the market ships, where every agent in jackin❯'s roster stores its conversations, and what it all means for the [Déjà Vu](/reference/research/agent-orchestration/conversation-capture/deja-vu/) design proposal. Every external claim carries a source URL; every local number carries its method. **Research conducted: 2026-07-03.** Specification: [`prompt`](/reference/research/session-capture/prompt/).
+
+## Headline numbers
+
+- **1** production cross-agent capture pipeline exists — SpecStory CLI: Apache-2.0, 57,988 LOC Go (~40% tests), 6 providers, no PTY, pure fsnotify-on-native-stores; v2.0.0 (2026-06-29) added cross-agent resume + FTS search. ([02](/reference/research/session-capture/02-specstory-cli-internals/))
+- **~40** tools cataloged across exporters, viewers, analytics, platforms; **0** ship the cross-agent, host-side, purge-surviving archive Déjà Vu targets. ([11](/reference/research/session-capture/11-open-source-exporters/), [12](/reference/research/session-capture/12-platforms-and-observability/))
+- **2/6 to 3/6** — best off-the-shelf coverage of jackin❯'s six-agent roster (SpecStory: claude+codex; claude-replay: +opencode); **0 tools** cover Kimi or Grok. ([20](/reference/research/session-capture/20-comparison-matrix/))
+- **6/6** of jackin❯'s agents are capturable: five persist watchable local transcripts (Claude/Codex/Kimi/Grok append-only JSONL, OpenCode SQLite+SSE); Amp needs live `--stream-json` — and turns out to also keep an undocumented local `threads/T-*.json` materialization. ([10](/reference/research/session-capture/10-agent-session-stores/))
+- **30 days** — Claude Code's default transcript auto-delete; jackin❯'s own `eject`/`prune` deletes restored histories today. Capture is a race against retention on both sides. ([10](/reference/research/session-capture/10-agent-session-stores/), [30](/reference/research/session-capture/30-jackin-fit/))
+- **±5 s / per-turn git snapshots** — two independent implementations (SpecStory provenance engine, Mantra) of turn↔code attribution: the competitive layer above capture. ([12](/reference/research/session-capture/12-platforms-and-observability/))
+
+## How to read
+
+- Start: [00 — Executive summary](/reference/research/session-capture/00-executive-summary/) — the landscape and what changes for Déjà Vu.
+- SpecStory: [01 — Product, business, reception](/reference/research/session-capture/01-specstory-product/) · [02 — CLI internals](/reference/research/session-capture/02-specstory-cli-internals/) (the mechanism chapter — SPI, per-provider extraction, schema, index, resume, cloud, provenance, Lore).
+- Landscape: [10 — Agent session stores](/reference/research/session-capture/10-agent-session-stores/) (per-agent paths/formats/stability for jackin❯'s roster) · [11 — OSS exporters](/reference/research/session-capture/11-open-source-exporters/) · [12 — Platforms and observability](/reference/research/session-capture/12-platforms-and-observability/).
+- Synthesis: [20 — Comparison matrix and tiers](/reference/research/session-capture/20-comparison-matrix/) · [30 — jackin❯ fit and the Déjà Vu delta](/reference/research/session-capture/30-jackin-fit/).
+
+## Tool tier list
+
+Tier = usefulness to a jackin❯ session-capture effort (roster coverage × mechanism robustness × output quality × maintenance × license). Full rationale in [20](/reference/research/session-capture/20-comparison-matrix/).
+
+| Tier | Tools |
+|---|---|
+| **S** | SpecStory CLI — the reusable Apache-2.0 blueprint (SPI, schema, index, reconstruct) |
+| **A** | Mantra (closed; proves turn↔git attribution) · claude-replay (portable HTML replay, 3/6 roster) · coding_agent_session_search (11+ provider retrieval) · claude-code-log (Claude archival workhorse) |
+| **B** | claude-code-transcripts (publishing) · aichat search / claude-history / claude-code-history-viewer · Amp threads + opencode `/share` (native benchmarks) · Langfuse hook route |
+| **C** | claude-trace / LeanMCP (wire depth) · ccusage + usage monitors (metrics, different job) · Happy / vibe-kanban / Crystal / Conductor (captive history) |
+| **F** | cursor-chat-export · cclogviewer · sniffly · claude-code-otel · opcode · omnara · cui · claude-code-exporter — stale, archived, or deleted |

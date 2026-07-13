@@ -22,52 +22,53 @@ path = "src/bin/role.rs"
 
 [[bin]]
 name = "build-jackin-capsule"
-path = "src/bin/build_jackin_capsule.rs"
+path = "src/bin/build_jackin_capsule/main.rs"
 
 [dependencies]
-anyhow = "1.0"
-jackin-config = { version = "0.6.0-dev", path = "../jackin-config" }
-jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
-jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
-jackin-manifest = { version = "0.6.0-dev", path = "../jackin-manifest" }
-jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
-jackin-env = { version = "0.6.0-dev", path = "../jackin-env" }
-jackin-image = { version = "0.6.0-dev", path = "../jackin-image" }
-jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime" }
-jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
-jackin-launch-tui = { version = "0.6.0-dev", path = "../jackin-launch-tui" }
-jackin-console = { version = "0.6.0-dev", path = "../jackin-console" }
-jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
-clap = { version = "4.5", features = ["derive", "color", "env"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-toml = "1.1"
-directories = "6.0"
-thiserror = "2.0"
-tempfile = "3.20"
-turso = { version = "0.7.0-pre.7", default-features = false }
-owo-colors = { version = "4", features = ["supports-colors"] }
-ratatui = "0.30"
-crossterm = { version = "0.29", features = ["event-stream"] }
-dialoguer = "0.12"
-tabled = "0.21.0"
-clap_mangen = "0.3"
-tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
-futures-util = "0.3"
-fs2 = "0.4"
-rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+anyhow = { workspace = true }
+jackin-config = { workspace = true }
+jackin-core = { workspace = true }
+jackin-docker = { workspace = true }
+jackin-manifest = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-env = { workspace = true }
+jackin-image = { workspace = true }
+jackin-runtime = { workspace = true }
+jackin-tui = { workspace = true }
+jackin-launch-tui = { workspace = true }
+jackin-console = { workspace = true }
+jackin-protocol = { workspace = true }
+jackin-usage = { workspace = true }
+clap = { workspace = true, features = ["derive", "color", "env"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+toml = { workspace = true }
+directories = { workspace = true }
+thiserror = { workspace = true }
+tempfile = { workspace = true }
+owo-colors = { workspace = true, features = ["supports-colors"] }
+ratatui = { workspace = true }
+crossterm = { workspace = true, features = ["event-stream"] }
+dialoguer = { workspace = true }
+tabled = { workspace = true }
+clap_mangen = { workspace = true }
+tokio = { workspace = true, features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+futures-util = { workspace = true }
+fs4 = { workspace = true }
+rustls = { workspace = true, features = ["aws_lc_rs"] }
+reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 
 [build-dependencies]
-jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
+jackin-build-meta = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = "=2.2.2"
-jackin-config = { version = "0.6.0-dev", path = "../jackin-config", features = ["test-support"] }
-jackin-env = { version = "0.6.0-dev", path = "../jackin-env", features = ["test-support"] }
-jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime", features = ["test-support"] }
-criterion = { version = "=0.8.2", features = ["html_reports"] }
-predicates = "=3.1.4"
-tokio = { version = "=1.52.3", features = ["test-util"] }
+assert_cmd = { workspace = true }
+jackin-config = { workspace = true, features = ["test-support"] }
+jackin-env = { workspace = true, features = ["test-support"] }
+jackin-test-support = { workspace = true }
+criterion = { workspace = true, features = ["html_reports"] }
+predicates = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [[bench]]
 name = "console_frame"
@@ -88,7 +89,7 @@ e2e = []
 otlp = ["jackin-diagnostics/otlp"]
 # Enables `crate::operator_env::test_support::*` (the shared FakeOpWriter
 # fake used by rotate-cleanup tests). Mirrors the test-support features
-# in jackin-config, jackin-env, and jackin-runtime.
+# in jackin-config and jackin-env.
 test-support = ["jackin-env/test-support"]
 
 [lints]

@@ -2,6 +2,8 @@
 
 Quick nav for AI agents and human contributors. **Canonical detailed module map lives in docs** ([`reference/getting-oriented/codebase-map`](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/), served from [docs/content/docs/reference/getting-oriented/codebase-map.mdx](docs/content/docs/reference/getting-oriented/codebase-map.mdx)). This file is the short pointer agents land on first; covers **multi-repo ecosystem** and per-PR **code ↔ docs contract**, sends you to docs for rest.
 
+**For what a specific crate is for, its tier/allowed dependencies, its `src/` structure, and its public API, read that crate's README and AGENTS rules file directly** — they are the authoritative, always-current per-crate record (every `crates/*/` member carries both, plus a `CLAUDE.md` symlink, enforced by `cargo xtask lint agents`). The Codebase Map is the ecosystem/tier overview; the per-crate detail lives in the crate that owns it.
+
 ## What this file is for
 
 - **Ecosystem table** below — which repo owns what.
@@ -12,7 +14,7 @@ Deeper questions — module layout, what each `src/` subdir owns, where to start
 
 | Question | Page |
 |---|---|
-| "Where does the code for X live?" | [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/) (mirrored at [docs/content/docs/reference/getting-oriented/codebase-map.mdx](docs/content/docs/reference/getting-oriented/codebase-map.mdx)) |
+| "Where does the code for X live? / what does crate Y do?" | That crate's README + AGENTS file under `crates/<crate>/` (authoritative); [Behind jackin❯ — crates](https://jackin.tailrocks.com/reference/crates/) (generated from READMEs); [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/) for the tier overview |
 | "How does jackin❯ orchestrate containers?" | [Architecture](https://jackin.tailrocks.com/reference/getting-oriented/architecture/) |
 | "How do instance identity, restore, and parallel sessions work?" | [Runtime Instance Model](https://jackin.tailrocks.com/reference/runtime/runtime-instance-model/) |
 | "What does `~/.config/jackin/config.toml` look like?" | [Configuration File](https://jackin.tailrocks.com/reference/runtime/configuration/) |
@@ -36,36 +38,9 @@ jackin❯ split across multiple GitHub repos. This repo owns CLI; siblings own r
 | [`jackin-project/jackin-dev`](https://github.com/jackin-project/jackin-dev) | Legacy/internal dev tooling and shared dotfiles; the installed PR verification binary now lives in this repo under `crates/jackin-dev/` |
 | [`jackin-project/jackin-github-terraform`](https://github.com/jackin-project/jackin-github-terraform) | Terraform managing the `jackin-project` GitHub org |
 
-## Root files in this repo
+## Root files and crates
 
-Workspace source under [crates/](crates/); supporting files at repo root:
-
-| File | Purpose |
-|---|---|
-| [Cargo.toml](Cargo.toml) | Workspace manifest — members, dependencies, lints, MSRV |
-| [Cargo.lock](Cargo.lock) | Locked dependency versions |
-| [build.rs](build.rs) | Cargo build script (compile-time codegen / env) |
-| [AGENTS.md](AGENTS.md) | Slim index of agent rules — one line per rule, linking to topic file with detail |
-| [CLAUDE.md](CLAUDE.md) | Symlink to [AGENTS.md](AGENTS.md) (every dir with [AGENTS.md](AGENTS.md) has `CLAUDE.md` symlink beside it) |
-| [RULES.md](RULES.md) | Doc-location + symlink convention, brand spelling, deprecations, TUI labels/keybindings/modals |
-| [BRANCHING.md](BRANCHING.md) | Branch naming + merge policy + agent stay-on-active-branch rule |
-| [COMMITS.md](COMMITS.md) | Conventional Commits format + DCO sign-off + push-after-commit |
-| [PULL_REQUESTS.md](PULL_REQUESTS.md) | PR flow, body shape, review, roadmap & docs gates, solo-maintainer model |
-| [TESTING.md](TESTING.md) | Test runner setup, commands, capsule fixtures, operator `--debug` validation |
-| [ENGINEERING.md](ENGINEERING.md) | Cross-cutting code rules: prefer-libraries, DRY, two-tier telemetry, comments |
-| [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md) | Host-write ban + `/jackin/` container-path convention |
-| [PRERELEASE.md](PRERELEASE.md) | Breaking-change policy, schema versioning gate, changelog hold |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution flow + DCO v1.1 text |
-| [DEPRECATED.md](DEPRECATED.md) | Ledger of deprecated APIs / CLIs / config values |
-| [TODO.md](TODO.md) | Small follow-ups and per-PR stale-docs check |
-| [release.toml](release.toml) | Release configuration |
-| [mise.toml](mise.toml) | Tool versions and construct image task definitions |
-| `crates/jackin-dev/` | Installed developer helper binary (`jackin-dev`) for local PR checkout/sync/isolation workflows |
-| `crates/jackin-xtask/` | Workspace automation binary (`cargo xtask`): construct image tasks + PTY fixture extraction; full command inventory at [Workspace Automation](https://jackin.tailrocks.com/reference/getting-oriented/xtasks/) |
-| [docker-bake.hcl](docker-bake.hcl) | Declarative Docker Bake build graph for construct image |
-| `rust-toolchain.toml` | Pinned Rust toolchain (CI-enforced MSRV) |
-
-For **Rust source tree** — [crates/jackin/src/app/](crates/jackin/src/app/), [crates/jackin/src/cli/](crates/jackin/src/cli/), [crates/jackin-runtime/src/runtime/](crates/jackin-runtime/src/runtime/), [crates/jackin/src/workspace/](crates/jackin/src/workspace/), [crates/jackin/src/console/](crates/jackin/src/console/), and extracted subsystem crates under [crates/](crates/) — see [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/). That page (and this) updated in same PR as any module-level structural change (R1 added core/ansi_tokens.rs + launch-tui/launch_output.rs; R2 flipped arch gate + CI to --strict), so never falls behind.
+Workspace Rust source lives under [crates/](crates/). For what each crate owns, its tier, structure, and public API, read that crate's README (authoritative) or the generated docs section [Behind jackin❯ — crates](https://jackin.tailrocks.com/reference/crates/) (built from those READMEs at docs-build time). The [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/) is the ecosystem/tier overview only — do not duplicate per-crate prose here.
 
 ## Documentation site (`docs/`)
 
@@ -127,8 +102,8 @@ Changing behaviour: update both sides in same PR. This table = **per-PR contract
 | [crates/jackin-image/src/image_recipe.rs](crates/jackin-image/src/image_recipe.rs) (Dockerfile gen) | `docs/.../developing/construct-image.mdx` |
 | [crates/jackin-manifest/src/repo.rs](crates/jackin-manifest/src/repo.rs) / role repo validation paths | `docs/.../guides/role-repos.mdx` |
 | [docker/construct/Dockerfile](docker/construct/Dockerfile) | `docs/.../developing/construct-image.mdx` |
-| Module structure in [crates/](crates/) (added/split/renamed module) | `docs/.../reference/getting-oriented/codebase-map.mdx` |
+| Module structure in [crates/](crates/) (added/split/renamed module) | The affected `crates/<crate>/README.md` (see [`crates/AGENTS.md`](crates/AGENTS.md) "Per-crate README + AGENTS.md" rule); the docs build regenerates [Behind jackin❯ — crates](https://jackin.tailrocks.com/reference/crates/) from READMEs; update `docs/.../reference/getting-oriented/codebase-map.mdx` only for tier/DAG changes |
 
 ## Keeping the docs fresh
 
-Codebase Map and cross-reference table above = two places structural changes show up first. If your PR adds new module directory, splits file into subdir, introduces new cross-cutting helper, or renames public surface — **update `docs/.../reference/getting-oriented/codebase-map.mdx` and (if relevant) cross-reference table above in same PR**. See `TODO.md` for stale-docs check every structural PR runs.
+Per-crate README (source of truth), the generated crates section, the Codebase Map tier overview, and the cross-reference table above = the places structural changes show up first. If your PR adds a new module directory, splits a file into a subdir, introduces a new cross-cutting helper, or renames a public surface — **update the affected crate README in the same PR** (the docs build regenerates the site pages). Touch the Codebase Map only for tier/DAG changes. See [`crates/AGENTS.md`](crates/AGENTS.md) for the README-update rule and [`TODO.md`](TODO.md) for the stale-docs check every structural PR runs.

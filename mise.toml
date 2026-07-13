@@ -6,6 +6,9 @@ cargo-binstall = "1.20.1"
 "cargo:cargo-deny" = "0.19.8"
 "cargo:cargo-fuzz" = "0.13.1"
 "cargo:cargo-hack" = "0.6.45"
+"cargo:cargo-hakari" = "0.9.38"
+"cargo:cargo-llvm-cov" = "0.8.7"
+"cargo:cargo-mutants" = "27.1.0"
 "cargo:cargo-nextest" = "0.9.136"
 "cargo:cargo-shear" = "1.13.0"
 "cargo:cargo-zigbuild" = "0.23.0"
@@ -63,3 +66,7 @@ run = "cargo xtask construct publish-manifest"
 [tasks.construct-inspect]
 description = "Print the resolved construct Bake configuration"
 run = "cargo xtask construct inspect"
+
+[tasks.ci]
+description = "Run the local CI merge-readiness gate"
+run = "cargo xtask ci"

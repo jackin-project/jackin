@@ -29,23 +29,23 @@ path = "src/lib.rs"
 [dependencies]
 # vte: the canonical VT/ANSI parser. Never rebuilt — depend always.
 # This is the "parse" layer in our vte → DamageGrid → PassthroughEvents → WireDiff pipeline.
-vte = "0.15"
+vte = { workspace = true }
 
-unicode-width = "0.2"
+unicode-width = { workspace = true }
 
 # Phase 4: inline storage for grapheme clusters (≤24 bytes = no heap alloc for ASCII + most Unicode).
 # Eliminates the per-cell `String` alloc storm in the focused-pane render path.
 # canonical, actively maintained, >10M downloads. MIT/Apache-2.0.
-compact_str = "0.9"
-smallvec = "1.15"
+compact_str = { workspace = true }
+smallvec = { workspace = true }
 
 [dev-dependencies]
-criterion = { version = "=0.8.2", features = ["html_reports"] }
-dhat = "=0.3.3"
-jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
-jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
-ratatui-core = "=0.1.2"
-serde_json = "=1.0.150"
+criterion = { workspace = true, features = ["html_reports"] }
+dhat = { workspace = true }
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+ratatui-core = { workspace = true }
+serde_json = { workspace = true }
 
 [[bench]]
 name = "present_frame"
@@ -53,6 +53,10 @@ harness = false
 
 [[bench]]
 name = "scroll_throughput"
+harness = false
+
+[[bench]]
+name = "resize_storm"
 harness = false
 
 [lints]

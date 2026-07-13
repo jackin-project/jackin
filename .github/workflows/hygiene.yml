@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "23 11 * * *"
   workflow_dispatch:
+    inputs:
+      chaos_seed:
+        description: "Optional JACKIN_CHAOS_SEED for dind-chaos lane"
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -68,7 +73,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "cargo-binstall rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack"
+          install_args: "cargo-binstall rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack shellcheck"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -84,15 +89,75 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: cargo deny check advisories
       - run: cargo hack check --workspace --feature-powerset --all-targets --locked
+      - run: cargo test --doc --workspace --locked
+      - run: shellcheck docker/runtime/entrypoint.sh docker/runtime/agent-status/hooks/*/report-hook.sh scripts/*.sh
       - name: Long jackin-term fuzz run
         run: |
           cd crates/jackin-term
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=300
+      - name: Long config/manifest fuzz runs
+        run: |
+          cd crates/jackin-config
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu config_migrate -- -max_total_time=120
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu workspace_migrate -- -max_total_time=120
+          cd ../jackin-manifest
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_migrate -- -max_total_time=120
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_validate -- -max_total_time=120
+
+      - name: Long env resolve fuzz run
+        run: |
+          cd crates/jackin-env
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu env_resolve -- -max_total_time=120
+
+      # When plan 009 protocol fuzz targets land, add them here too.
+      - name: ASan jackin-term fuzz run
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cd crates/jackin-term
+          cargo +nightly fuzz run --sanitizer address --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=300
 
   native-macos:
     name: Native macOS smoke
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: native-macos-workspace-v2
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - run: cargo build --release --locked
+      - run: cargo nextest run --workspace --locked
+
+  # Advisory measured lane for criterion benches (plan 014). Compile failure
+  # fails the job; numbers are recorded as artifacts only — no threshold
+  # comparison until the plan 017 ratchet engine lands.
+  bench-run:
+    name: Criterion bench run (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -117,9 +182,547 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: native-macos-workspace-v2
+          shared-key: hygiene-bench-run-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - run: cargo build --release --locked
-      - run: cargo test --workspace --locked
+      - run: cargo bench --workspace --locked -- --quick 2>&1 | tee bench-output.txt
+      - name: Upload bench results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: criterion-results-${{ github.run_id }}
+          path: |
+            bench-output.txt
+            target/criterion/**/estimates.json
+          if-no-files-found: warn
+
+  # Advisory cold-start wall-clock for the jackin binary (plan 048).
+  # Measures process start + --help only — not TUI first frame.
+  cold-start-bench:
+    name: Cold-start hyperfine (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust hyperfine"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: cold-start-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - run: cargo build --release --locked -p jackin
+      - name: Hyperfine cold-start
+        run: |
+          set -euo pipefail
+          hyperfine --warmup 3 --min-runs 10 --export-json cold-start.json \
+            'target/release/jackin --help' \
+            'target/release/jackin console --help'
+          {
+            echo "### Cold-start hyperfine (advisory)"
+            echo
+            echo "| Command | Mean (s) |"
+            echo "| --- | ---: |"
+            jq -r '.results[] | "| `\(.command)` | \(.mean) |"' cold-start.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload cold-start artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cold-start-bench
+          path: cold-start.json
+          if-no-files-found: error
+
+  # Advisory rust-analyzer workspace load check (plan 048).
+  rust-analyzer-clean:
+    name: rust-analyzer clean (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: rust-analyzer-clean-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - run: rustup component add rust-analyzer
+      - name: rust-analyzer analysis-stats
+        run: |
+          set -euo pipefail
+          rust-analyzer analysis-stats . > ra-stats.txt 2>&1 || true
+          cat ra-stats.txt
+          {
+            echo "### rust-analyzer analysis-stats (advisory)"
+            echo
+            echo '```'
+            tail -40 ra-stats.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail on hard analysis errors (advisory continue-on-error)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if grep -i '^error' ra-stats.txt; then
+            echo "rust-analyzer reported error lines" >&2
+            exit 1
+          fi
+      - name: Upload RA stats
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-analyzer-clean
+          path: ra-stats.txt
+          if-no-files-found: error
+
+  # Advisory per-crate clean + incremental build times (plan 048).
+  # Shell wall-clock only — not a PR gate; feeds plan 017 later.
+  build-time-measure:
+    name: Per-crate build times (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: build-time-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - name: Fetch deps (exclude network from timings)
+        run: cargo fetch --locked
+      - name: Measure clean + incremental builds
+        run: |
+          set -euo pipefail
+          crates=(jackin-runtime jackin-capsule jackin-console jackin-term jackin-config)
+          echo '{' > build-times.json
+          first=1
+          {
+            echo "### Per-crate build times (advisory)"
+            echo
+            echo "| Crate | Clean (s) | Incremental (s) |"
+            echo "| --- | ---: | ---: |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for crate in "${crates[@]}"; do
+            cargo clean -p "$crate" --locked || cargo clean -p "$crate"
+            start=$(date +%s)
+            cargo build -p "$crate" --locked
+            end=$(date +%s)
+            clean_s=$((end - start))
+            # touch one source root if present for incremental recompile
+            lib_rs=$(cargo metadata --format-version 1 --no-deps --locked \
+              | jq -r --arg c "$crate" '.packages[] | select(.name==$c) | .targets[] | select(.kind[]?=="lib") | .src_path' \
+              | head -1)
+            if [[ -n "${lib_rs}" && -f "${lib_rs}" ]]; then
+              touch "$lib_rs"
+            fi
+            start=$(date +%s)
+            cargo build -p "$crate" --locked
+            end=$(date +%s)
+            incr_s=$((end - start))
+            if [[ $first -eq 0 ]]; then
+              echo ',' >> build-times.json
+            fi
+            first=0
+            printf '  "%s": {"clean_s": %s, "incremental_s": %s}' "$crate" "$clean_s" "$incr_s" >> build-times.json
+            printf "| \`%s\` | %s | %s |\n" "$crate" "$clean_s" "$incr_s" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo >> build-times.json
+          echo '}' >> build-times.json
+          cat build-times.json
+      - name: Upload build-time artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-time-measure
+          path: build-times.json
+          if-no-files-found: error
+
+  # Plan 022: beta-toolchain clippy canary (advisory — never blocks).
+  beta-clippy-canary:
+    name: Beta clippy canary (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-beta-clippy-v1
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: hygiene-beta-clippy-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - name: Install beta toolchain + clippy
+        run: rustup toolchain install beta --profile minimal --component clippy
+      - name: cargo +beta clippy
+        run: cargo +beta clippy --workspace --all-targets --all-features --locked 2>&1 | tee beta-clippy.log || true
+      - name: Summarize beta clippy
+        run: |
+          echo "### Beta clippy canary" >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^(warning|error)' beta-clippy.log | sort | uniq -c | sort -rn | head -20 >> "$GITHUB_STEP_SUMMARY" || echo "clean" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: beta-clippy-log
+          path: beta-clippy.log
+          retention-days: 7
+          if-no-files-found: warn
+
+  # Plan 035: coverage artifact lane (advisory).
+  coverage:
+    name: Coverage (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-llvm-cov cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: hygiene-coverage-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - run: rustup component add llvm-tools
+      - name: llvm-cov nextest
+        run: |
+          cargo llvm-cov nextest \
+            -p jackin-term -p jackin-core -p jackin-config -p jackin-manifest \
+            -p jackin-protocol -p jackin-env \
+            --lcov --output-path coverage.lcov
+          cargo llvm-cov report --summary-only >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-lcov
+          path: coverage.lcov
+          retention-days: 7
+          if-no-files-found: error
+
+  # Plan 035: Miri pure-crate lane (advisory).
+  miri:
+    name: Miri pure crates (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      # jackin-config tests use tempdirs.
+      MIRIFLAGS: -Zmiri-disable-isolation
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-nightly-miri-v1
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: hygiene-miri-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - name: Install nightly + miri
+        run: rustup toolchain install nightly --profile minimal --component miri
+      - name: miri pure crates
+        run: |
+          cargo +nightly miri test -p jackin-core -p jackin-config -p jackin-manifest --no-default-features --locked || \
+            cargo +nightly miri test -p jackin-core --no-default-features --locked
+          cargo +nightly miri test -p jackin-term --no-default-features --locked
+
+  # Plan 035: cargo-mutants on smallest pure crates (advisory; never fails job).
+  mutants:
+    name: cargo-mutants pure crates (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-mutants cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: hygiene-mutants-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - name: cargo mutants (manifest + config)
+        run: |
+          set +e
+          cargo mutants -p jackin-manifest -p jackin-config --timeout 120 --in-place -- --locked 2>&1 | tee mutants-summary.txt
+          echo "### cargo-mutants" >> "$GITHUB_STEP_SUMMARY"
+          tail -n 40 mutants-summary.txt >> "$GITHUB_STEP_SUMMARY" || true
+          # Advisory lane: never fail the hygiene job on mutant findings.
+          exit 0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-out
+          path: |
+            mutants.out/
+            mutants-summary.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  # Plan 035: hakari timing investigation only — do NOT create workspace-hack.
+  hakari-timing:
+    name: hakari timing investigation (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-hakari"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: hygiene-hakari-timing-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      # Adopt hakari only if timing artifacts prove a win (roadmap decision rule).
+      - name: hakari dry-run + workspace timings
+        run: |
+          echo "### hakari investigation" >> "$GITHUB_STEP_SUMMARY"
+          cargo hakari --version >> "$GITHUB_STEP_SUMMARY" || true
+          cargo hakari init --dry-run 2>&1 | tee hakari-dry-run.txt || true
+          cat hakari-dry-run.txt >> "$GITHUB_STEP_SUMMARY" || true
+          cargo build --workspace --timings --locked
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-hygiene-baseline
+          path: |
+            target/cargo-timings/*.html
+            hakari-dry-run.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  # Plan 048: hyperfine cold-start measurement (advisory).
+  dylint-advisory:
+    name: dylint render purity (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-dylint-v1
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-dylint cargo:dylint-link"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: hygiene-dylint-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - name: cargo dylint (advisory)
+        run: |
+          echo "### dylint render_thread_purity" >> "$GITHUB_STEP_SUMMARY"
+          if [ ! -d crates/jackin-lints ]; then
+            echo "crates/jackin-lints missing — skip" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cargo dylint --all -- --workspace 2>&1 | tee dylint-findings.txt || true
+          tail -n 80 dylint-findings.txt >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dylint-findings
+          path: dylint-findings.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  dind-chaos:
+    name: DinD chaos E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      JACKIN_CHAOS_SEED: ${{ inputs.chaos_seed }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: hygiene-dind-chaos-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - name: Export local capsule binary
+        run: |
+          set -euo pipefail
+          eval "$(cargo run -p jackin-dev --bin build-jackin-capsule -- --export)"
+          echo "JACKIN_CAPSULE_BIN=$JACKIN_CAPSULE_BIN" >> "$GITHUB_ENV"
+      - name: Run dind chaos scenarios
+        run: |
+          cargo nextest run -p jackin --features e2e --profile docker-e2e -E 'test(chaos)' --locked
+

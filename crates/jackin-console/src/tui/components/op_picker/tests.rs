@@ -1,4 +1,6 @@
 //! Tests for `op_picker` component.
+use std::collections::HashSet;
+
 use super::*;
 
 #[test]
@@ -144,6 +146,43 @@ fn probe_error_message_classifies_operator_states() {
     assert!(matches!(
         classify_probe_error_message("boom"),
         OpPickerError::Fatal(OpPickerFatalState::GenericFatal { .. })
+    ));
+}
+
+#[test]
+fn probe_error_downcast_classifies_without_substring() {
+    // Decoy messages prove the typed source wins over the fallback classifier.
+    let not_installed = anyhow::Error::new(jackin_core::OpProbeError::NotInstalled {
+        detail: "xyzzy".into(),
+    })
+    .context("xyzzy decoy — not a spawn phrase");
+    assert!(matches!(
+        classify_probe_error(&not_installed),
+        OpPickerError::Fatal(OpPickerFatalState::NotInstalled)
+    ));
+
+    let not_signed = anyhow::Error::new(jackin_core::OpProbeError::NotSignedIn {
+        detail: "xyzzy".into(),
+    })
+    .context("xyzzy decoy — not a signin phrase");
+    assert!(matches!(
+        classify_probe_error(&not_signed),
+        OpPickerError::Fatal(OpPickerFatalState::NotSignedIn)
+    ));
+
+    let timeout = anyhow::Error::new(jackin_core::OpProbeError::Timeout { seconds: 9 })
+        .context("xyzzy decoy timeout");
+    assert!(matches!(
+        classify_probe_error(&timeout),
+        OpPickerError::Fatal(OpPickerFatalState::GenericFatal { .. })
+    ));
+
+    let other = anyhow::Error::new(jackin_core::OpProbeError::Other {
+        message: "xyzzy".into(),
+    });
+    assert!(matches!(
+        classify_probe_error(&other),
+        OpPickerError::Fatal(OpPickerFatalState::GenericFatal { message }) if message.contains("xyzzy")
     ));
 }
 

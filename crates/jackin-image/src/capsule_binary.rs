@@ -28,6 +28,7 @@
 /// **Stable release** (no `-dev`, no `-preview`, cache miss):
 ///   Download the `.tar.gz` archive from the versioned `v<version>`
 ///   GitHub Release tag, verify it, and extract the binary.
+use crate::ImageError;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -49,11 +50,13 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
     // Explicit override: operator built the binary themselves and told us where it is.
     if let Some(bin_os) = std::env::var_os("JACKIN_CAPSULE_BIN") {
         let path = PathBuf::from(bin_os);
-        anyhow::ensure!(
-            is_executable_file(&path),
-            "JACKIN_CAPSULE_BIN={} does not exist or is not executable",
-            path.display()
-        );
+        if !is_executable_file(&path) {
+            return Err(ImageError::msg(format!(
+                "JACKIN_CAPSULE_BIN={} does not exist or is not executable",
+                path.display()
+            ))
+            .into());
+        }
         // Operator-trust note: this override path bypasses the
         // SHA-256 verification that the cache-miss download path
         // applies. The operator pointing at a local file is
@@ -83,24 +86,28 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
 /// `JACKIN_CAPSULE_BIN` for the whole nextest run).
 async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
     let arch = container_arch();
-    let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, arch);
+    let cache_version = cache_key_version(REQUIRED_VERSION);
+    let cached = cached_binary_path(&paths.cache_dir, &cache_version, arch);
 
     if is_executable_file(&cached) {
         jackin_diagnostics::debug_log!(
             "capsule_binary",
-            "cache hit for jackin-capsule {REQUIRED_VERSION} linux/{arch}"
+            "cache hit for jackin-capsule {REQUIRED_VERSION} linux/{arch} (cache key {cache_version})"
         );
         return Ok(cached);
     }
     if repair_executable_file(&cached)? {
         jackin_diagnostics::debug_log!(
             "capsule_binary",
-            "repaired executable bit for cached jackin-capsule {REQUIRED_VERSION} linux/{arch} at {}",
+            "repaired executable bit for cached jackin-capsule {REQUIRED_VERSION} linux/{arch} (cache key {cache_version}) at {}",
             cached.display()
         );
         record(
             "capsule_binary_cache_repaired",
-            &format!("{REQUIRED_VERSION} linux/{arch} at {}", cached.display()),
+            &format!(
+                "{REQUIRED_VERSION} linux/{arch} cache key {cache_version} at {}",
+                cached.display()
+            ),
         );
         return Ok(cached);
     }
@@ -148,6 +155,17 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
         .join(safe_version)
         .join(format!("linux-{arch}"))
         .join("jackin-capsule")
+}
+
+fn cache_key_version(version: &str) -> String {
+    if is_preview_version(version) {
+        let cargo_version = version
+            .split_once('+')
+            .map_or(version, |(prefix, _)| prefix);
+        format!("{cargo_version}+preview")
+    } else {
+        version.to_owned()
+    }
 }
 
 fn record(kind: &str, message: &str) {
@@ -309,10 +327,11 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     };
     if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
         remove_with_debug_log(&tmp_archive);
-        return Err(anyhow::anyhow!(
+        return Err(ImageError::msg(format!(
             "jackin-capsule SHA-256 mismatch for {url}\n  expected {expected_sha}\n  actual   {actual_sha}\n\
              refusing to cache the binary; investigate network tampering and retry."
-        ));
+        ))
+        .into());
     }
 
     if let Err(e) = extract_tar_gz_member(&tmp_archive, "jackin-capsule", &tmp) {
@@ -542,46 +561,57 @@ fn verify_rekor_body_binds_bundle(
     let body: RekorBody =
         serde_json::from_slice(&body_json).context("parsing Rekor payload body as hashedrekord")?;
 
-    anyhow::ensure!(
-        body.kind == "hashedrekord",
-        "Rekor entry kind is {:?}; expected \"hashedrekord\" — the signing workflow \
-         may have been reconfigured to use a different entry type",
-        body.kind
-    );
+    if body.kind != "hashedrekord" {
+        return Err(ImageError::msg(format!(
+            "Rekor entry kind is {:?}; expected \"hashedrekord\" — the signing workflow \
+             may have been reconfigured to use a different entry type",
+            body.kind
+        ))
+        .into());
+    }
 
     // 1. Verify the body covers these exact manifest bytes.
-    anyhow::ensure!(
-        body.spec.data.hash.algorithm == "sha256",
-        "Rekor entry uses unexpected hash algorithm {:?}; expected sha256",
-        body.spec.data.hash.algorithm
-    );
+    if body.spec.data.hash.algorithm != "sha256" {
+        return Err(ImageError::msg(format!(
+            "Rekor entry uses unexpected hash algorithm {:?}; expected sha256",
+            body.spec.data.hash.algorithm
+        ))
+        .into());
+    }
     let manifest_sha256 = sha256_hex(Sha256::digest(manifest_bytes));
-    anyhow::ensure!(
-        body.spec
-            .data
-            .hash
-            .value
-            .eq_ignore_ascii_case(&manifest_sha256),
-        "Rekor entry covers a different artifact (body hash {}, actual manifest hash {}); \
-         the bundle may have been transplanted from another signing event",
-        body.spec.data.hash.value,
-        manifest_sha256
-    );
+    if !body
+        .spec
+        .data
+        .hash
+        .value
+        .eq_ignore_ascii_case(&manifest_sha256)
+    {
+        return Err(ImageError::msg(format!(
+            "Rekor entry covers a different artifact (body hash {}, actual manifest hash {}); \
+             the bundle may have been transplanted from another signing event",
+            body.spec.data.hash.value, manifest_sha256
+        ))
+        .into());
+    }
 
     // 2. Verify the body covers the same certificate presented in bundle.cert.
     // The body is authenticated by the Rekor SET; bundle.cert is attacker-supplied.
-    anyhow::ensure!(
-        body.spec.signature.public_key.content == bundle.cert,
-        "Rekor log entry covers a different certificate than the one in bundle.cert; \
-         bundle.cert may have been substituted after the log entry was created"
-    );
+    if body.spec.signature.public_key.content != bundle.cert {
+        return Err(ImageError::msg(
+            "Rekor log entry covers a different certificate than the one in bundle.cert; \
+             bundle.cert may have been substituted after the log entry was created",
+        )
+        .into());
+    }
 
     // 3. Verify the body covers the same signature presented in bundle.base64_signature.
-    anyhow::ensure!(
-        body.spec.signature.content == bundle.base64_signature,
-        "Rekor log entry covers a different signature than bundle.base64_signature; \
-         bundle.base64_signature may have been substituted after the log entry was created"
-    );
+    if body.spec.signature.content != bundle.base64_signature {
+        return Err(ImageError::msg(
+            "Rekor log entry covers a different signature than bundle.base64_signature; \
+             bundle.base64_signature may have been substituted after the log entry was created",
+        )
+        .into());
+    }
 
     Ok(())
 }
@@ -607,10 +637,12 @@ fn normalize_sigstore_v03_bundle(raw: &str) -> Result<String> {
     let json: serde_json::Value =
         serde_json::from_str(raw).context("parsing Sigstore bundle v0.3 JSON")?;
     let media_type = json_pointer_string(&json, "/mediaType")?;
-    anyhow::ensure!(
-        media_type == "application/vnd.dev.sigstore.bundle.v0.3+json",
-        "unsupported capsule manifest bundle mediaType {media_type:?}"
-    );
+    if media_type != "application/vnd.dev.sigstore.bundle.v0.3+json" {
+        return Err(ImageError::msg(format!(
+            "unsupported capsule manifest bundle mediaType {media_type:?}"
+        ))
+        .into());
+    }
 
     let cert_der_b64 = json_pointer_string(&json, "/verificationMaterial/certificate/rawBytes")?;
     let cert_der = BASE64
@@ -655,19 +687,29 @@ fn json_pointer_string(json: &serde_json::Value, pointer: &str) -> Result<String
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
-        .ok_or_else(|| anyhow::anyhow!("missing string field {pointer}"))
+        .ok_or_else(|| {
+            anyhow::Error::from(ImageError::MissingJsonString {
+                pointer: pointer.to_owned(),
+            })
+        })
 }
 
 fn json_pointer_i64(json: &serde_json::Value, pointer: &str) -> Result<i64> {
-    let value = json
-        .pointer(pointer)
-        .ok_or_else(|| anyhow::anyhow!("missing integer field {pointer}"))?;
+    let value = json.pointer(pointer).ok_or_else(|| {
+        anyhow::Error::from(ImageError::MissingJsonInteger {
+            pointer: pointer.to_owned(),
+        })
+    })?;
     if let Some(number) = value.as_i64() {
         return Ok(number);
     }
     value
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("field {pointer} is not an integer string"))?
+        .ok_or_else(|| {
+            anyhow::Error::from(ImageError::JsonIntegerString {
+                pointer: pointer.to_owned(),
+            })
+        })?
         .parse()
         .with_context(|| format!("parsing integer field {pointer}"))
 }
@@ -756,11 +798,13 @@ async fn fetch_and_verify_manifest(
     // identity to the specific workflow files, preventing any other workflow in
     // the repo from producing a valid manifest bundle.
     let san = extract_cert_san_url(&cert_pem)?;
-    anyhow::ensure!(
-        is_allowed_signer_san(&san),
-        "capsule manifest signed by unexpected signer {san:?}; \
-         expected release.yml or preview.yml workflow in jackin-project/jackin"
-    );
+    if !is_allowed_signer_san(&san) {
+        return Err(ImageError::msg(format!(
+            "capsule manifest signed by unexpected signer {san:?}; \
+             expected release.yml or preview.yml workflow in jackin-project/jackin"
+        ))
+        .into());
+    }
 
     jackin_diagnostics::debug_log!(
         "capsule_binary",
@@ -782,13 +826,13 @@ async fn fetch_and_verify_manifest(
             "signed capsule manifest version: {} (host version: {version})",
             manifest.version
         );
-    } else {
-        anyhow::ensure!(
-            manifest.version == version,
+    } else if manifest.version != version {
+        return Err(ImageError::msg(format!(
             "signed capsule manifest carries version {:?} but expected {version:?}; \
              the release asset may have been replaced or the manifest is stale",
             manifest.version
-        );
+        ))
+        .into());
     }
 
     let target = linux_target(arch);
@@ -812,7 +856,7 @@ fn extract_cert_san_url(cert_pem: &str) -> Result<String> {
 
     let cert = Certificate::from_pem(cert_pem.as_bytes()).context("parsing PEM certificate")?;
 
-    for result in cert.tbs_certificate.filter::<SubjectAltName>() {
+    for result in cert.tbs_certificate().filter_extensions::<SubjectAltName>() {
         let (_, san) = result.context("parsing SubjectAltName extension")?;
         for name in &san.0 {
             if let GeneralName::UniformResourceIdentifier(uri) = name {
@@ -820,7 +864,7 @@ fn extract_cert_san_url(cert_pem: &str) -> Result<String> {
             }
         }
     }
-    anyhow::bail!("no URI SAN found in Fulcio certificate")
+    Err(ImageError::NoUriSan.into())
 }
 
 /// Return true if `san` is the OIDC identity of one of the two permitted signing
@@ -868,9 +912,11 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
 /// Returns a human-readable detail block; falls back to a signal-crash hint when
 /// both streams are empty.
 // Only called from the Linux `verify_version` exec path; on macOS/Windows the
-// sole non-test call site is compiled out (the unit test still exercises it),
-// so `allow` rather than `expect` — `expect` would be unfulfilled in the test build.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+// sole non-test call site is compiled out while unit tests still exercise it.
+#[cfg_attr(
+    all(not(target_os = "linux"), not(test)),
+    expect(dead_code, reason = "Linux-only verify_version exec detail formatter")
+)]
 fn format_exit_detail(stdout: &str, stderr: &str) -> String {
     let streams: Vec<String> = [("stdout", stdout.trim()), ("stderr", stderr.trim())]
         .into_iter()
@@ -911,31 +957,34 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
             let detail = format_exit_detail(&stdout, &stderr);
-            anyhow::bail!(
+            return Err(ImageError::msg(format!(
                 "jackin-capsule --version at {} exited with {}\n{detail}\n\
                  If the binary is corrupted, delete it and retry: rm -f {}",
                 binary.display(),
                 output.status,
                 binary.display()
-            );
+            ))
+            .into());
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         if is_preview {
             if !stdout.contains(ASSET_PREFIX) {
-                anyhow::bail!(
+                return Err(ImageError::msg(format!(
                     "downloaded binary does not identify as {ASSET_PREFIX} (got {stdout:?})"
-                );
+                ))
+                .into());
             }
             return Ok(());
         }
         if !stdout.contains(expected) {
-            anyhow::bail!(
+            return Err(ImageError::msg(format!(
                 "downloaded jackin-capsule reports {:?} but expected {expected}.\n\
                  Stable release ↔ asset mapping appears to have drifted.\n\
                  Delete and retry: rm -f {}",
                 stdout.trim(),
                 binary.display()
-            );
+            ))
+            .into());
         }
         Ok(())
     }
@@ -948,19 +997,21 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
         let bytes = std::fs::read(binary)
             .with_context(|| format!("reading {} for verification", binary.display()))?;
         if !contains_subslice(&bytes, ASSET_PREFIX.as_bytes()) {
-            anyhow::bail!(
+            return Err(ImageError::msg(format!(
                 "downloaded binary at {} does not contain the {ASSET_PREFIX} identity marker",
                 binary.display()
-            );
+            ))
+            .into());
         }
         if !is_preview && !contains_subslice(&bytes, expected.as_bytes()) {
-            anyhow::bail!(
+            return Err(ImageError::msg(format!(
                 "downloaded binary at {} does not contain expected version {expected}.\n\
                  Stable release ↔ asset mapping appears to have drifted.\n\
                  Delete and retry: rm -f {}",
                 binary.display(),
                 binary.display()
-            );
+            ))
+            .into());
         }
         Ok(())
     }

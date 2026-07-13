@@ -626,7 +626,7 @@ fn auth_form_save_persists_role_layer_into_pending() {
 
 /// Choosing 1Password from the credential source picker swaps the
 /// auth-form modal for an `OpPicker` and stashes the form context in
-/// `pending_auth_form_return`. Confirms the open path of the picker
+/// the modal parent stack. Confirms the open path of the picker
 /// round-trip wiring.
 #[test]
 fn auth_form_op_ref_picker_invocation_opens_op_picker_modal() {
@@ -886,8 +886,8 @@ fn auth_form_op_ref_picker_commit_applies_to_form() {
 }
 
 /// A failed vault read (e.g. biometric timeout) must NOT corrupt
-/// the form's credential. The form is re-stashed into
-/// `pending_auth_form_return` and `Modal::ErrorPopup` is mounted;
+/// the form's credential. The form stays on the modal parent stack and
+/// `Modal::ErrorPopup` is mounted;
 /// dismissing the popup must restore the form with the prior
 /// credential intact.
 #[test]
@@ -940,13 +940,13 @@ fn auth_form_op_ref_picker_failed_read_does_not_apply_op_ref() {
     );
 }
 
-/// Esc on an open auth form must drain `pending_auth_form_return`
+/// Esc on an open auth form must drain the modal parent stack
 /// alongside dismissing the modal — leaving it set would let a
 /// later `OpPicker` open from the Secrets tab silently inherit a
 /// stale auth-form context. Defensive cleanup against future
 /// picker flows.
 #[test]
-fn auth_form_esc_clears_pending_auth_form_return() {
+fn auth_form_esc_clears_modal_parent_stack() {
     let (cfg, mut state) = build_state();
     let ManagerStage::Editor(editor) = &mut state.stage else {
         panic!()
@@ -974,7 +974,7 @@ fn auth_form_esc_clears_pending_auth_form_return() {
     assert!(editor.modal.is_none(), "modal must be dropped");
     assert!(
         editor.modal_parents.is_empty(),
-        "Esc must drain pending_auth_form_return so future picker flows \
+        "Esc must drain modal parent auth form so future picker flows \
              don't inherit stale stash state"
     );
 }

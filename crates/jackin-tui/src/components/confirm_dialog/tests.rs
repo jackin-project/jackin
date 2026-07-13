@@ -1,5 +1,6 @@
 //! Tests for `confirm_dialog`.
 use super::*;
+use crate::components::ButtonFocus;
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -82,6 +83,40 @@ fn tab_cycles_focus() {
 }
 
 #[test]
+fn confirm_focus_ring_and_index_match_button_order() {
+    assert_eq!(ConfirmFocus::Yes.index(), 0);
+    assert_eq!(ConfirmFocus::No.index(), 1);
+    assert_eq!(ConfirmFocus::Yes.next(), ConfirmFocus::No);
+    assert_eq!(ConfirmFocus::No.next(), ConfirmFocus::Yes);
+    assert_eq!(ConfirmFocus::Yes.prev(), ConfirmFocus::No);
+    assert_eq!(ConfirmFocus::No.prev(), ConfirmFocus::Yes);
+}
+
+#[test]
+fn confirm_focus_keys_keep_existing_toggle_semantics() {
+    for code in [
+        KeyCode::Tab,
+        KeyCode::BackTab,
+        KeyCode::Left,
+        KeyCode::Right,
+        KeyCode::Char('h'),
+        KeyCode::Char('l'),
+    ] {
+        let mut state = ConfirmState::new("Delete?");
+        assert_eq!(state.focus, ConfirmFocus::No);
+        assert!(matches!(
+            state.handle_key(key(code)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(
+            state.focus,
+            ConfirmFocus::Yes,
+            "{code:?} should toggle focus"
+        );
+    }
+}
+
+#[test]
 fn enter_commits_focused_option() {
     let mut s = ConfirmState::new("Delete?");
     assert!(matches!(
@@ -141,6 +176,36 @@ fn details_prompt_renders_readable_source_details() {
     assert!(rendered.contains("Location: https://example.com/source.git"));
     assert!(rendered.contains("External content may run commands."));
     assert!(rendered.contains("Review the source before continuing."));
+}
+
+#[test]
+fn confirm_button_hit_matches_data_loss_rendered_buttons() {
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+    let s = exit_confirm_state_with_data_loss();
+    let area = Rect::new(0, 0, 80, required_height(&s));
+    let backend = TestBackend::new(area.width, area.height);
+    let mut term = Terminal::new(backend).unwrap();
+    term.draw(|f| render_confirm_dialog(f, area, &s)).unwrap();
+    let buf = term.backend().buffer();
+
+    let find = |needle: &str| {
+        for y in 0..area.height {
+            for x in 0..area.width {
+                if buf[(x, y)].symbol() == needle {
+                    return (x, y);
+                }
+            }
+        }
+        panic!("missing rendered button cell {needle:?}");
+    };
+
+    let yes = find("Y");
+    let no = find("N");
+
+    assert_eq!(confirm_button_hit(area, &s, yes.0, yes.1), Some(true));
+    assert_eq!(confirm_button_hit(area, &s, no.0, no.1), Some(false));
+    assert_eq!(confirm_button_hit(area, &s, area.x, area.y), None);
 }
 
 #[test]

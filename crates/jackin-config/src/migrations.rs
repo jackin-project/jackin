@@ -5,28 +5,35 @@
 //! crate's `manifest/migrations.rs`. One version bump per PR targeting the next
 //! version after `main`.
 
+use crate::ConfigError;
 use std::num::NonZeroU32;
 use std::path::Path;
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use toml_edit::DocumentMut;
 
 use crate::persist::atomic_write;
 use crate::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, LEGACY_VERSION};
 
+/// Transform applied to a TOML document for one version step.
 pub type Migration = fn(&mut DocumentMut) -> anyhow::Result<()>;
 
+/// One edge in a config or workspace migration registry.
 #[expect(
     missing_debug_implementations,
     reason = "MigrationStep stores a function pointer; debug output would not add useful migration evidence."
 )]
 #[derive(Clone, Copy)]
 pub struct MigrationStep {
+    /// Source version string (`legacy` or `vN…`).
     pub from: &'static str,
+    /// Destination version string after this step.
     pub to: &'static str,
+    /// Document transform (may be [`noop_migration`]).
     pub migrate: Migration,
 }
 
+/// Ordered `config.toml` migration chain from [`LEGACY_VERSION`] to current.
 pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         from: LEGACY_VERSION,
@@ -71,10 +78,18 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     // defaults; no transformation needed.
     MigrationStep {
         from: "v1alpha7",
+        to: "v1alpha8",
+        migrate: noop_migration,
+    },
+    // v1alpha8 -> v1alpha9: add optional `[telemetry]` settings to AppConfig.
+    // Additive with serde defaults; no transformation needed.
+    MigrationStep {
+        from: "v1alpha8",
         to: CURRENT_CONFIG_VERSION,
         migrate: noop_migration,
     },
 ];
+/// Ordered per-workspace file migration chain from [`LEGACY_VERSION`] to current.
 pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         from: LEGACY_VERSION,
@@ -148,10 +163,13 @@ pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Re
         None => return Ok(()),
         Some(item) => match item.as_str() {
             Some(s) => s.to_owned(),
-            None => bail!(
-                "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
-                 found {item:?}"
-            ),
+            None => {
+                return Err(ConfigError::msg(format!(
+                    "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
+                     found {item:?}"
+                ))
+                .into());
+            }
         },
     };
 
@@ -208,6 +226,7 @@ fn stamp_account_in_env_table(env: Option<&mut toml_edit::Item>, acct: &str) {
 pub enum SchemaVersion {
     /// File predates versioning (no `version` key in the document).
     Legacy,
+    /// Kubernetes-style `vN` / `vNalphaM` / `vNbetaM` version.
     Kubernetes(KubernetesVersion),
 }
 
@@ -216,7 +235,9 @@ pub enum SchemaVersion {
 /// ordering.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KubernetesVersion {
+    /// Major API version number (non-zero).
     pub major: NonZeroU32,
+    /// Stability channel and optional sequence.
     pub channel: Channel,
 }
 
@@ -227,8 +248,11 @@ pub struct KubernetesVersion {
 /// `channel_order_is_alpha_beta_stable` in this module's tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Channel {
+    /// `vNalphaM` channel with sequence `M`.
     Alpha(NonZeroU32),
+    /// `vNbetaM` channel with sequence `M`.
     Beta(NonZeroU32),
+    /// Stable `vN` (no channel suffix).
     Stable,
 }
 
@@ -251,6 +275,7 @@ impl std::fmt::Display for KubernetesVersion {
     }
 }
 
+/// Migrate a global `config.toml` to the current schema if needed.
 pub fn migrate_config_file_if_needed(path: &Path) -> anyhow::Result<bool> {
     Ok(
         migrate_file_if_needed(path, "config", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS)?
@@ -258,6 +283,7 @@ pub fn migrate_config_file_if_needed(path: &Path) -> anyhow::Result<bool> {
     )
 }
 
+/// Migrate a split workspace file to the current schema if needed.
 pub fn migrate_workspace_file_if_needed(path: &Path) -> anyhow::Result<bool> {
     Ok(migrate_file_if_needed(
         path,
@@ -292,9 +318,7 @@ pub fn migrate_file_if_needed(
     let current = parse_version(current_raw)?;
 
     if old_version > current {
-        bail!(
-            "{label} is at {old_version}, this binary only understands up to {current_raw}; upgrade jackin"
-        );
+        return Err(ConfigError::msg(format!("{label} is at {old_version}, this binary only understands up to {current_raw}; upgrade jackin")).into());
     }
     if old_version == current {
         return Ok(None);
@@ -324,17 +348,15 @@ pub fn apply_migrations(
     let mut cursor = old_version.clone();
     while &cursor < current_version {
         let Some(step) = find_step(&cursor, migrations)? else {
-            bail!(
-                "{label} is at {old_version}, but this binary no longer includes a migration path to {current_version}; upgrade through an older jackin first"
-            );
+            return Err(ConfigError::msg(format!("{label} is at {old_version}, but this binary no longer includes a migration path to {current_version}; upgrade through an older jackin first")).into());
         };
         let next = parse_registry_version(step.to)?;
         if next <= cursor {
-            bail!(
+            return Err(ConfigError::msg(format!(
                 "{label} migration registry is invalid: step {} -> {} does not move forward",
-                step.from,
-                step.to
-            );
+                step.from, step.to
+            ))
+            .into());
         }
         (step.migrate)(doc)
             .with_context(|| format!("running {label} migration {} -> {}", step.from, step.to))?;
@@ -342,7 +364,10 @@ pub fn apply_migrations(
         cursor = next;
     }
     if &cursor != current_version {
-        bail!("{label} migration registry stopped at {cursor}, expected {current_version}");
+        return Err(ConfigError::msg(format!(
+            "{label} migration registry stopped at {cursor}, expected {current_version}"
+        ))
+        .into());
     }
     Ok(())
 }
@@ -359,6 +384,7 @@ fn find_step<'a>(
     Ok(None)
 }
 
+/// Parse a registry `from`/`to` string (`legacy` or Kubernetes-style).
 pub fn parse_registry_version(version: &str) -> anyhow::Result<SchemaVersion> {
     if version == LEGACY_VERSION {
         return Ok(SchemaVersion::Legacy);
@@ -366,12 +392,13 @@ pub fn parse_registry_version(version: &str) -> anyhow::Result<SchemaVersion> {
     parse_version(version)
 }
 
+/// Read and parse the document's `version` field (`Legacy` when absent).
 pub fn doc_version(doc: &DocumentMut, label: &str) -> anyhow::Result<SchemaVersion> {
     let Some(item) = doc.get("version") else {
         return Ok(SchemaVersion::Legacy);
     };
     let Some(version) = item.as_str() else {
-        bail!("{label} version must be a string");
+        return Err(ConfigError::msg(format!("{label} version must be a string")).into());
     };
     parse_version(version).with_context(|| format!("{label} version is invalid"))
 }
@@ -381,15 +408,17 @@ pub fn doc_version(doc: &DocumentMut, label: &str) -> anyhow::Result<SchemaVersi
 // `kube`/`k8s_openapi` are heavy and pull a runtime, and the grammar here is
 // small enough that adding a dependency is overkill (per AGENTS.md
 // "Prefer libraries over hand-rolled parsers" carve-out).
+/// Parse a Kubernetes-style schema version string (`v1`, `v1alpha2`, …).
 pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
     let rest = version
         .strip_prefix('v')
-        .ok_or_else(|| anyhow::anyhow!("version must start with `v`"))?;
-    let (major_raw, suffix) =
-        split_first_nondigit(rest).ok_or_else(|| anyhow::anyhow!("missing major version"))?;
+        .ok_or_else(|| anyhow::Error::from(ConfigError::msg("version must start with `v`")))?;
+    let (major_raw, suffix) = split_first_nondigit(rest)
+        .ok_or_else(|| anyhow::Error::from(ConfigError::msg("missing major version")))?;
     let major = parse_canonical_u32(major_raw, "major version")?;
-    let major = NonZeroU32::new(major)
-        .ok_or_else(|| anyhow::anyhow!("major version must be greater than zero"))?;
+    let major = NonZeroU32::new(major).ok_or_else(|| {
+        anyhow::Error::from(ConfigError::msg("major version must be greater than zero"))
+    })?;
 
     let channel = if suffix.is_empty() {
         Channel::Stable
@@ -398,7 +427,7 @@ pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
     } else if let Some(seq_raw) = suffix.strip_prefix("beta") {
         Channel::Beta(parse_sequence("beta", seq_raw)?)
     } else {
-        bail!("version must look like v1, v1beta1, or v1alpha1");
+        return Err(ConfigError::msg("version must look like v1, v1beta1, or v1alpha1").into());
     };
 
     Ok(SchemaVersion::Kubernetes(KubernetesVersion {
@@ -409,11 +438,16 @@ pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
 
 fn parse_sequence(prefix: &str, raw: &str) -> anyhow::Result<NonZeroU32> {
     if raw.is_empty() {
-        bail!("{prefix} version must include a sequence number");
+        return Err(
+            ConfigError::msg(format!("{prefix} version must include a sequence number")).into(),
+        );
     }
     let value = parse_canonical_u32(raw, &format!("{prefix} sequence"))?;
-    NonZeroU32::new(value)
-        .ok_or_else(|| anyhow::anyhow!("{prefix} sequence must be greater than zero"))
+    NonZeroU32::new(value).ok_or_else(|| {
+        anyhow::Error::from(ConfigError::msg(format!(
+            "{prefix} sequence must be greater than zero"
+        )))
+    })
 }
 
 // Reject leading zeros so version strings round-trip canonically. Without
@@ -421,7 +455,7 @@ fn parse_sequence(prefix: &str, raw: &str) -> anyhow::Result<NonZeroU32> {
 // non-canonical form forever (the file is only rewritten when migrating).
 fn parse_canonical_u32(raw: &str, label: &str) -> anyhow::Result<u32> {
     if raw.len() > 1 && raw.starts_with('0') {
-        bail!("{label} must not have leading zeros");
+        return Err(ConfigError::msg(format!("{label} must not have leading zeros")).into());
     }
     raw.parse::<u32>()
         .with_context(|| format!("invalid {label} {raw:?}"))
@@ -435,6 +469,7 @@ fn split_first_nondigit(s: &str) -> Option<(&str, &str)> {
     Some(s.split_at(split))
 }
 
+/// Write `version` and sort the key so `version` appears first.
 pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
     doc["version"] = toml_edit::value(version);
     doc.as_table_mut().sort_values_by(|left, _, right, _| {
@@ -450,7 +485,11 @@ pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
 // `apply_migrations` writes `step.to` to the document after each step, so
 // these migrations are pure no-ops; content-changing migrations replace
 // this with their own fn.
-#[allow(clippy::unnecessary_wraps)]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+/// No-op content transform; the framework still stamps `step.to` as `version`.
 pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
     Ok(())
 }

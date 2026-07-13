@@ -116,11 +116,79 @@ jobs:
               ;;
           esac
 
-          args+=(--no-tests=pass --color=always --locked --offline)
+          args+=(--no-tests=pass --color=always --locked --offline --profile ci)
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
           cargo nextest run "${args[@]}"
+      - name: Upload junit + timing
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nextest-junit-${{ matrix.group }}-${{ matrix.config.lane }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+      - name: Slowest tests summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f target/nextest/ci/junit.xml ]; then
+            python3 - "$GITHUB_STEP_SUMMARY" "${{ matrix.group }}" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          summary_path = Path(sys.argv[1])
+          group = sys.argv[2]
+          junit_path = Path("target/nextest/ci/junit.xml")
+          root = ET.parse(junit_path).getroot()
+
+          cases = []
+          for case in root.iter("testcase"):
+              name = case.attrib.get("name", "")
+              try:
+                  seconds = float(case.attrib.get("time", "0") or 0)
+              except ValueError:
+                  seconds = 0.0
+              cases.append((seconds, name))
+
+          with summary_path.open("a", encoding="utf-8") as summary:
+              print(f"### Slowest tests ({group})", file=summary)
+              for seconds, name in sorted(cases, reverse=True)[:10]:
+                  print(f"- {seconds:g}s `{name}`", file=summary)
+              print("", file=summary)
+              print(
+                  f"Shard wall time (sum of testcase times): {sum(seconds for seconds, _ in cases):.3f}s",
+                  file=summary,
+              )
+          PY
+          fi
+      - name: Fail on unquarantined flakes
+        if: always()
+        shell: bash
+        run: |
+          [ -f target/nextest/ci/junit.xml ] || exit 0
+          if ! grep -q 'flaky="true"' target/nextest/ci/junit.xml; then
+            exit 0
+          fi
+          # Extract testcase names from lines that also carry flaky="true".
+          mapfile -t flaky_names < <(
+            grep 'flaky="true"' target/nextest/ci/junit.xml \
+              | sed -n 's/.*name="\([^"]*\)".*/\1/p'
+          )
+          unquarantined=()
+          for name in "${flaky_names[@]}"; do
+            [ -n "$name" ] || continue
+            if ! grep -Fq "name = \"$name\"" flaky-tests.toml 2>/dev/null; then
+              unquarantined+=("$name")
+            fi
+          done
+          if [ "${#unquarantined[@]}" -gt 0 ]; then
+            echo "::error::flaky test(s) detected and not quarantined in flaky-tests.toml"
+            printf "%s\n" "${unquarantined[@]}"
+            exit 1
+          fi
+
       - name: Capture sccache stats
         if: always()
         uses: ./.github/actions/sccache-stats
@@ -220,6 +288,37 @@ jobs:
             export TMPDIR="$VELNOR_DOCKER_HOST_TEMP"
           fi
           cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked --offline
+      - name: Upload Docker E2E junit + timing
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nextest-junit-docker-e2e-${{ matrix.config.lane }}
+          path: target/nextest/docker-e2e/junit.xml
+          if-no-files-found: ignore
+      - name: Fail on unquarantined Docker E2E flakes
+        if: always()
+        shell: bash
+        run: |
+          [ -f target/nextest/docker-e2e/junit.xml ] || exit 0
+          if ! grep -q 'flaky="true"' target/nextest/docker-e2e/junit.xml; then
+            exit 0
+          fi
+          mapfile -t flaky_names < <(
+            grep 'flaky="true"' target/nextest/docker-e2e/junit.xml \
+              | sed -n 's/.*name="\([^"]*\)".*/\1/p'
+          )
+          unquarantined=()
+          for name in "${flaky_names[@]}"; do
+            [ -n "$name" ] || continue
+            if ! grep -Fq "name = \"$name\"" flaky-tests.toml 2>/dev/null; then
+              unquarantined+=("$name")
+            fi
+          done
+          if [ "${#unquarantined[@]}" -gt 0 ]; then
+            echo "::error::flaky Docker E2E test(s) detected and not quarantined in flaky-tests.toml"
+            printf "%s\n" "${unquarantined[@]}"
+            exit 1
+          fi
       - name: Capture sccache stats
         if: always()
         uses: ./.github/actions/sccache-stats

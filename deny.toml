@@ -56,7 +56,6 @@ exceptions = [
     { crate = "potential_utf@0.1.5", allow = ["Unicode-3.0"] },
     { crate = "r-efi@5.3.0", allow = ["MIT", "Apache-2.0"] },
     { crate = "r-efi@6.0.0", allow = ["MIT", "Apache-2.0"] },
-    { crate = "ring@0.17.14", allow = ["Apache-2.0", "ISC"] },
     { crate = "rustix@1.1.4", allow = ["Apache-2.0 WITH LLVM-exception", "Apache-2.0", "MIT"] },
     { crate = "rustls", allow = ["Apache-2.0", "ISC", "MIT"] },
     { crate = "rustls-native-certs@0.8.4", allow = ["Apache-2.0", "ISC", "MIT"] },
@@ -105,16 +104,19 @@ license-files = [{ path = "LICENSE", hash = 0x18785531 }]
 ignore = true
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards = "deny"
 deny = [
     { crate = "openssl", reason = "Prefer rustls/aws-lc-rs-backed TLS in this workspace." },
     { crate = "yaml-rust", reason = "Use serde_yaml_ng for YAML parsing." },
 ]
-# Keep duplicate-version detection active for new drift while acknowledging
-# current transitive duplicate debt discovered when cargo-deny was introduced.
+# Duplicate-version detection is enforced. The skip list is the current
+# transitive duplicate allowlist; new duplicates must either be resolved
+# or added here with rationale.
 skip = [
+    { crate = "allocator-api2@0.2.21", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "base64@0.21.7", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "bindgen@0.69.5", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "bitflags@1.3.2", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "block-buffer@0.10.4", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "cfg_aliases@0.1.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
@@ -134,20 +136,40 @@ skip = [
     { crate = "hmac@0.12.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "inout@0.1.4", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "itertools@0.10.5", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "itertools@0.12.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "itertools@0.13.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "linux-raw-sys@0.4.15", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "nix@0.28.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "owo-colors@3.5.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "pbkdf2@0.12.2", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "r-efi@5.3.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "rand@0.8.6", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "rand@0.9.4", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "rand_chacha@0.3.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "rand_core@0.6.4", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "rand_core@0.9.5", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "rustc-hash@1.1.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "rustix@0.38.44", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "salsa20@0.10.2", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "scrypt@0.11.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "sha2@0.10.9", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "shlex@1.3.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "strum@0.26.3", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "strum@0.27.2", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "strum_macros@0.26.4", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "strum_macros@0.27.2", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "supports-color@2.1.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "thiserror@1.0.69", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "thiserror-impl@1.0.69", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "unicode-width@0.1.14", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "untrusted@0.7.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "which@4.4.2", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "der@0.7.10", reason = "sigstore 0.14.0 chain pins der 0.7; x509-cert 0.3 pulls der 0.8. Remove when sigstore updates." },
+    { crate = "der_derive@0.7.3", reason = "Transitive duplicate via sigstore chain (der 0.7) vs x509-cert 0.3 (der 0.8)." },
+    { crate = "pem-rfc7468@0.7.0", reason = "sigstore 0.14.0 chain pins pem-rfc7468 0.7; x509-cert 0.3 pulls 1.0. Remove when sigstore updates." },
+    { crate = "spki@0.7.3", reason = "sigstore 0.14.0 pins spki 0.7.3; x509-cert 0.3 pulls spki 0.8.0. Remove when sigstore updates." },
+    { crate = "windows-sys@0.61.2", reason = "Newer transitive duplicate; 0.59.0 already recorded." },
+    { crate = "x509-cert@0.2.5", reason = "sigstore 0.14.0 pins x509-cert 0.2.5; workspace direct dependency moved to 0.3. Remove when sigstore updates." },
 ]
 
 # Workspace-dependency hygiene: fails the gate when a workspace member
@@ -160,7 +182,7 @@ skip = [
 # reviewer's memory burden. See
 # docs/content/docs/roadmap/codebase-health-enforcement.mdx (W4).
 [bans.workspace-dependencies]
-duplicates = "warn"
+duplicates = "deny"
 include-path-dependencies = true
 unused = "deny"
 

@@ -1,14 +1,18 @@
 //! Tests for `cleanup`.
 use super::super::naming::matching_family;
-use super::super::test_support::FakeRunner;
 use super::*;
 use crate::instance::{DockerResources, InstanceManifest};
-use crate::runtime::test_support::FakeDockerClient;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::{ContainerRow, ContainerState, NetworkRow};
+use jackin_test_support::{FakeDockerClient, FakeRunner};
 use std::collections::{HashMap, VecDeque};
 use tempfile::tempdir;
+
+fn gc_test_paths() -> JackinPaths {
+    let temp = tempdir().unwrap();
+    JackinPaths::for_tests(temp.path())
+}
 
 #[tokio::test]
 async fn eject_all_targets_only_requested_class_family() {
@@ -424,7 +428,7 @@ async fn gc_removes_orphaned_dind_and_network() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         docker
@@ -477,7 +481,7 @@ async fn gc_skips_dind_when_agent_is_running() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         !docker
@@ -489,32 +493,88 @@ async fn gc_skips_dind_when_agent_is_running() {
 }
 
 #[tokio::test]
-async fn gc_ignores_prewarm_dind_resources() {
+async fn gc_keeps_state_owned_prewarm_dind_resources() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::launch::write_prewarmed_dind_state(
+        &paths,
+        &crate::runtime::launch::DindSidecarPrewarm {
+            dind: "jk-prewarm-dind-dind".to_owned(),
+            network: "jk-prewarm-dind-net".to_owned(),
+            certs_volume: "jk-prewarm-dind-certs".to_owned(),
+            ready_ms: 1,
+            kept: true,
+        },
+    )
+    .unwrap();
     let mut labels = HashMap::new();
     labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
     labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
     labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-prewarm-dind".to_owned());
     let docker = FakeDockerClient {
-        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
-            name: "jk-prewarm-dind-dind".to_owned(),
-            labels,
-        }]])),
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
+            vec![],
+            vec![ContainerRow {
+                name: "jk-prewarm-dind-dind".to_owned(),
+                labels,
+            }],
+        ])),
         list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&paths, &docker).await;
 
     let recorded = docker.recorded.borrow();
     assert!(
         recorded
             .iter()
-            .any(|call| call == "docker ps -a --filter jackin.kind=dind"),
-        "GC must keep scanning only role-owned dind sidecars: {recorded:?}"
+            .any(|call| call == "docker ps -a --filter jackin.kind=prewarm-dind"),
+        "GC must scan prewarm sidecars after role GC: {recorded:?}"
     );
     assert!(
         !recorded.iter().any(|call| call.contains("jk-prewarm-dind")),
-        "prewarm-owned sidecars are reserved for daemon/runtime adoption and must not be purged by role GC: {recorded:?}"
+        "state-owned prewarm sidecars are reserved for adoption: {recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn gc_removes_state_less_prewarm_dind_resources() {
+    let mut labels = HashMap::new();
+    labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+    labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
+            vec![],
+            vec![ContainerRow {
+                name: "jk-prewarm-dind-dind".to_owned(),
+                labels,
+            }],
+        ])),
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
+        ..Default::default()
+    };
+
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
+
+    let recorded = docker.recorded.borrow();
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker rm -f jk-prewarm-dind-dind"),
+        "state-less prewarm DinD container must be swept: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker volume rm jk-prewarm-dind-certs"),
+        "state-less prewarm cert volume must be swept: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker network rm jk-prewarm-dind-net"),
+        "state-less prewarm network must be swept: {recorded:?}"
     );
 }
 
@@ -526,7 +586,7 @@ async fn gc_does_nothing_when_no_orphans() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         !docker
@@ -557,7 +617,7 @@ async fn gc_removes_orphaned_network_without_dind() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         docker
@@ -594,7 +654,7 @@ async fn gc_cleans_multiple_orphans() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         docker
@@ -645,7 +705,7 @@ async fn gc_does_not_panic_when_collect_orphaned_dind_fails() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await; // must not panic
+    gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
 }
 
 #[tokio::test]
@@ -661,7 +721,7 @@ async fn gc_does_not_panic_when_network_ls_fails() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await; // must not panic
+    gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
 }
 
 #[tokio::test]
@@ -686,7 +746,7 @@ async fn gc_does_not_panic_when_list_role_names_fails_in_orphaned_networks() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await; // must not panic
+    gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
 
     assert!(
         !docker
@@ -836,7 +896,7 @@ async fn prune_instances_reconciles_stale_active_to_crashed() {
 
 #[tokio::test]
 async fn prune_instances_reaps_only_unheld_name_locks() {
-    use fs2::FileExt as _;
+    use fs4::FileExt;
     // D9: an orphaned `<name>.lock` (no live holder) is removed; one still held
     // by a live process is left untouched.
     let temp = tempdir().unwrap();
@@ -853,7 +913,7 @@ async fn prune_instances_reaps_only_unheld_name_locks() {
         reason = "test holds a real flock to verify the reaper skips a held lock"
     )]
     let held_file = std::fs::File::open(&held).unwrap();
-    held_file.try_lock_exclusive().unwrap();
+    FileExt::try_lock(&held_file).unwrap();
 
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
@@ -861,7 +921,7 @@ async fn prune_instances_reaps_only_unheld_name_locks() {
 
     assert!(held.exists(), "a held name-lock must not be reaped");
     assert!(!orphan.exists(), "an unheld name-lock must be reaped");
-    held_file.unlock().unwrap();
+    FileExt::unlock(&held_file).unwrap();
 }
 
 // ── prune_images ─────────────────────────────────────────────────────────

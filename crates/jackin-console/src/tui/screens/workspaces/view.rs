@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, ListItem, Paragraph},
 };
 
-use crate::tui::components::editor_rows::action_row_style;
+use crate::tui::components::editor_rows::{action_row_style, cursor_gutter};
 use crate::tui::mount_display::MountDisplayRow;
 use crate::tui::screens::workspaces::model::ManagerListRow;
 
@@ -547,11 +547,7 @@ fn push_tree_workspace_line(
         " "
     };
     if row.label.starts_with("+ ") {
-        let cursor_col = if row.selected && show_cursor {
-            "\u{25b8} "
-        } else {
-            "  "
-        };
+        let cursor_col = cursor_gutter(row.selected && show_cursor);
         *max_w = (*max_w).max(2 + jackin_tui::display_cols(&row.label));
         lines.push(Line::from(vec![
             Span::styled(cursor_col, action_row_style(row.selected)),
@@ -827,7 +823,7 @@ pub fn render_picker_sidebar(
         .selected(selected)
         .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
     list = list.highlight_symbol(if focused { "▸ " } else { "  " });
-    list.render(frame.buffer_mut(), inner);
+    frame.render_widget(list, inner);
 }
 
 pub fn render_provider_picker_sidebar(
@@ -1022,7 +1018,10 @@ pub fn render_global_mounts_subpanel(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn render_global_mount_rows_section(
     frame: &mut Frame<'_>,
     area: Rect,

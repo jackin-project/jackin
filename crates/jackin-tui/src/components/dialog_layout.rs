@@ -367,26 +367,56 @@ pub const fn dialog_inner_height(content_rows: u16) -> u16 {
         .saturating_add(1) // trailing spacer
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DialogBorder {
+    Default,
+    Danger,
+}
+
 /// Minimal dialog shell: renders backdrop + bordered block + returns the inner area.
 ///
 /// This is the structural skeleton that all dialogs share:
 /// 1. Clear the dialog area (hide the background content)  
-/// 2. Render the modal block (focused `PHOSPHOR_GREEN` border + title)
+/// 2. Render the modal block (`PHOSPHOR_GREEN` by default, `DANGER_RED` for errors)
 /// 3. Return the inner area for the caller to render content
 ///
 /// Callers use `dialog_inner_chunks(inner, content_rows)` to lay out the
 /// canonical five slots within the returned inner area.
 #[must_use]
-pub fn render_dialog_shell(frame: &mut Frame<'_>, area: Rect, title: Option<&str>) -> Rect {
+pub fn render_dialog_shell(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: Option<&str>,
+    border: DialogBorder,
+) -> Rect {
     use crate::components::panel::{Panel, PanelFocus, modal_block};
+    use ratatui::style::Style;
+    use ratatui::text::Span;
     use ratatui::widgets::Widget;
+    use ratatui::widgets::{Block, Borders};
 
     ratatui::widgets::Clear.render(area, frame.buffer_mut());
 
-    let block = if let Some(t) = title {
-        Panel::new().title(t).focus(PanelFocus::Focused).block()
-    } else {
-        modal_block()
+    let block = match border {
+        DialogBorder::Default => {
+            if let Some(t) = title {
+                Panel::new().title(t).focus(PanelFocus::Focused).block()
+            } else {
+                modal_block()
+            }
+        }
+        DialogBorder::Danger => {
+            let mut block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(crate::theme::DANGER_RED));
+            if let Some(t) = title {
+                block = block.title(Span::styled(
+                    format!(" {} ", t.trim()),
+                    crate::theme::DANGER,
+                ));
+            }
+            block
+        }
     };
 
     let inner = block.inner(area);

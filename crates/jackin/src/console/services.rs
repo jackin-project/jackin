@@ -34,6 +34,7 @@ pub(super) mod config {
         WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan,
     };
     use jackin_core::JackinPaths;
+    use jackin_core::WorkspaceName;
 
     pub(crate) use jackin_console::services::config_save::{SettingsSaveInput, save_settings};
 
@@ -89,7 +90,7 @@ pub(super) mod config {
 
     fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
-        editor_doc.remove_workspace(name)?;
+        editor_doc.remove_workspace(&WorkspaceName::parse(name).map_err(anyhow::Error::from)?)?;
         editor_doc.save()
     }
 
@@ -146,7 +147,10 @@ pub(super) mod config {
         pub pending_rename: Option<String>,
     }
 
-    #[allow(clippy::useless_let_if_seq)]
+    #[allow(
+        clippy::useless_let_if_seq,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     pub(crate) fn save_workspace(
         paths: &JackinPaths,
         input: WorkspaceSaveInput<'_>,
@@ -163,25 +167,34 @@ pub(super) mod config {
                 if let Some(new_name) = pending_name
                     && new_name != current_name
                 {
-                    editor_doc.rename_workspace(&current_name, &new_name)?;
+                    editor_doc.rename_workspace(
+                        &WorkspaceName::parse(&current_name).map_err(anyhow::Error::from)?,
+                        &WorkspaceName::parse(&new_name).map_err(anyhow::Error::from)?,
+                    )?;
                     current_name.clone_from(&new_name);
                     rename_to = Some(new_name);
                 }
 
                 let mut edit = build_workspace_edit(input.original, input.pending);
                 edit.remove_destinations = effective_removals;
-                editor_doc.edit_workspace(&current_name, edit)?;
+                editor_doc.edit_workspace(
+                    &WorkspaceName::parse(&current_name).map_err(anyhow::Error::from)?,
+                    edit,
+                )?;
                 (rename_to, current_name)
             }
             WorkspaceSaveMode::Create { name } => {
-                editor_doc.create_workspace(&name, input.pending.clone())?;
+                editor_doc.create_workspace(
+                    &WorkspaceName::parse(&name).map_err(anyhow::Error::from)?,
+                    input.pending.clone(),
+                )?;
                 (None, name)
             }
         };
 
         apply_workspace_save_diff_plan(
             &mut editor_doc,
-            &current_name,
+            &WorkspaceName::parse(&current_name).map_err(anyhow::Error::from)?,
             input.original,
             input.pending,
         )?;
@@ -269,7 +282,7 @@ pub(super) mod config {
 
     fn apply_workspace_save_diff_plan(
         editor_doc: &mut jackin_config::ConfigEditor,
-        workspace_name: &str,
+        workspace_name: &WorkspaceName,
         original: &WorkspaceConfig,
         pending: &WorkspaceConfig,
     ) -> anyhow::Result<()> {
@@ -325,6 +338,19 @@ pub(super) mod instances {
 
     use anyhow::Context;
     use jackin_console::tui::state::ManagerInstanceRefreshSnapshot;
+    use jackin_console::tui::subscriptions::instance_refresh_interval;
+    use jackin_runtime::runtime::snapshot::SnapshotTransport;
+
+    type SnapshotFetchResult = (
+        String,
+        anyhow::Result<(
+            Option<jackin_runtime::runtime::snapshot::InstanceSnapshot>,
+            SnapshotTransport,
+        )>,
+    );
+
+    #[cfg(test)]
+    mod tests;
 
     pub(crate) fn load_instance_refresh_snapshot(
         paths: &jackin_core::JackinPaths,
@@ -332,18 +358,17 @@ pub(super) mod instances {
         let index = jackin_runtime::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
             .map_err(|error| error.to_string())?;
         let mut instances = index.instances;
-        reconcile_live_running_instances(paths, &mut instances);
+        let running = running_role_containers_for_refresh(paths, &mut instances);
+        let running_filter = running
+            .as_ref()
+            .map(|containers| containers.iter().cloned().collect::<HashSet<String>>());
 
         let mut sessions = HashMap::new();
         let mut session_errors = HashSet::new();
         let mut snapshot_targets: Vec<String> = Vec::new();
 
         for entry in &instances {
-            if matches!(
-                entry.status,
-                jackin_runtime::instance::InstanceStatus::Active
-                    | jackin_runtime::instance::InstanceStatus::Running
-            ) {
+            if is_live_instance_status(entry.status) {
                 let state_dir = paths.data_dir.join(&entry.container_base);
                 match jackin_runtime::instance::InstanceManifest::read(&state_dir) {
                     Ok(manifest) if !manifest.sessions.is_empty() => {
@@ -359,18 +384,24 @@ pub(super) mod instances {
                         session_errors.insert(entry.container_base.clone());
                     }
                 }
+            }
+            if should_snapshot_instance(entry, running_filter.as_ref()) {
                 snapshot_targets.push(entry.container_base.clone());
             }
         }
 
         let mut snapshots = HashMap::new();
+        let mut exec_fallback_seen = false;
         let snapshot_results = fetch_snapshots_parallel(paths, &snapshot_targets);
         for (container, result) in snapshot_results {
             match result {
-                Ok(Some(snapshot)) => {
+                Ok((Some(snapshot), transport)) => {
+                    exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
                     snapshots.insert(container, snapshot);
                 }
-                Ok(None) => {}
+                Ok((None, transport)) => {
+                    exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
+                }
                 Err(e) => {
                     jackin_diagnostics::debug_log!(
                         "console",
@@ -385,6 +416,7 @@ pub(super) mod instances {
             sessions,
             session_errors,
             snapshots,
+            next_interval: instance_refresh_interval(exec_fallback_seen),
         })
     }
 
@@ -419,10 +451,10 @@ pub(super) mod instances {
             .collect())
     }
 
-    fn reconcile_live_running_instances(
+    fn running_role_containers_for_refresh(
         paths: &jackin_core::JackinPaths,
         instances: &mut Vec<jackin_runtime::instance::InstanceIndexEntry>,
-    ) {
+    ) -> Option<Vec<String>> {
         let running = match running_role_containers() {
             Ok(running) => running,
             Err(error) => {
@@ -430,10 +462,27 @@ pub(super) mod instances {
                     "error",
                     &live_instance_reconciliation_error_line(&format!("{error:#}")),
                 );
-                return;
+                return None;
             }
         };
         overlay_running_instances(paths, instances, &running);
+        Some(running)
+    }
+
+    fn is_live_instance_status(status: jackin_runtime::instance::InstanceStatus) -> bool {
+        matches!(
+            status,
+            jackin_runtime::instance::InstanceStatus::Active
+                | jackin_runtime::instance::InstanceStatus::Running
+        )
+    }
+
+    fn should_snapshot_instance(
+        entry: &jackin_runtime::instance::InstanceIndexEntry,
+        running_containers: Option<&HashSet<String>>,
+    ) -> bool {
+        is_live_instance_status(entry.status)
+            && running_containers.is_none_or(|running| running.contains(&entry.container_base))
     }
 
     fn live_instance_reconciliation_error_line(error: &str) -> String {
@@ -489,23 +538,24 @@ pub(super) mod instances {
     fn fetch_snapshots_parallel(
         paths: &jackin_core::JackinPaths,
         targets: &[String],
-    ) -> Vec<(
-        String,
-        anyhow::Result<Option<jackin_runtime::runtime::snapshot::InstanceSnapshot>>,
-    )> {
+    ) -> Vec<SnapshotFetchResult> {
         const SNAPSHOT_FANOUT_CHUNK: usize = 8;
         let mut results = Vec::with_capacity(targets.len());
         for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
             let chunk_results = std::thread::scope(|s| {
-                #[allow(clippy::needless_collect)]
+                #[allow(
+                    clippy::needless_collect,
+                    reason = "documented residual allow; prefer expect when site is lint-true"
+                )]
                 let handles: Vec<_> = chunk
                     .iter()
                     .map(|container| {
                         let container = container.clone();
                         s.spawn(move || {
-                            let result = jackin_runtime::runtime::snapshot::fetch_snapshot(
-                                paths, &container,
-                            );
+                            let result =
+                                jackin_runtime::runtime::snapshot::fetch_snapshot_with_transport(
+                                    paths, &container,
+                                );
                             (container, result)
                         })
                     })
@@ -603,9 +653,11 @@ pub(super) mod workspace_save {
         jackin_tui::runtime::spawn_named_async_subscription("jackin-drift-check", async move {
             async {
                 let docker = jackin_docker::docker_client::BollardDockerClient::connect()?;
+                let wn = jackin_core::WorkspaceName::parse(&workspace_name)
+                    .map_err(anyhow::Error::from)?;
                 jackin_runtime::runtime::drift::detect_workspace_edit_drift(
                     &paths,
-                    &workspace_name,
+                    &wn,
                     &prospective_mounts,
                     &docker,
                 )

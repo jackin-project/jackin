@@ -1,10 +1,13 @@
 // Per-agent PTY session: spawn, resize, write input, read output, and track
 // session state for the daemon.
 
-#[path = "session/osc_policy.rs"]
 mod osc_policy;
 
-#[allow(unused_imports, unreachable_pub)]
+#[allow(
+    unused_imports,
+    unreachable_pub,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
 
 //
@@ -33,6 +36,7 @@ pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
 /// switches (`\x1b[>{n}u`), synchronised output markers (`\x1b[?2026h/l`),
 /// and every other terminal extension the operator's outer terminal
 /// understands would vanish at the multiplexer boundary.
+use jackin_core::container_paths;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -162,9 +166,8 @@ pub struct Session {
     /// agent was actually in front).
     saw_agent_foreground: bool,
     /// Terminal-protocol evidence captured from the PTY parse and fed into the
-    /// evidence snapshot. The agent-authored signals (title, OSC 9;4 progress)
-    /// are wiped when the foreground is no longer the agent; the shell-authored
-    /// OSC 133 `shell_state` persists (it belongs to the shell, not the agent).
+    /// evidence snapshot. OSC signals are TTL-bounded or cleared with authority
+    /// so a stale terminal edge cannot pin session state indefinitely.
     osc: crate::agent_status::evidence::OscEvidence,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
@@ -737,6 +740,20 @@ impl Session {
         crate::tui::pane_snapshot::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
+    /// Content-coordinate snapshot of `content_rows` only (half-open).
+    /// Element `i` is absolute content row `content_rows.start + i` (after clamp).
+    pub(crate) fn render_content_snapshot_range(
+        &self,
+        viewport_cols: u16,
+        content_rows: std::ops::Range<usize>,
+    ) -> Vec<RowSnapshot> {
+        crate::tui::pane_snapshot::pane_content_range_from_damagegrid(
+            &self.shadow_grid,
+            viewport_cols,
+            content_rows,
+        )
+    }
+
     pub(crate) fn diagnostic_tail(&self, max_rows: usize) -> Option<String> {
         if max_rows == 0 {
             return None;
@@ -765,7 +782,7 @@ impl Session {
         // with the `rx ClientFrame::Input` line on the receive side so
         // a `--debug` trace shows the full path from operator keystroke
         // to slave fd write.
-        crate::cdebug!(
+        crate::ctrace_payload!(
             "session send_input: agent={:?} label={} bytes={:02x?}",
             self.agent,
             self.label,
@@ -810,13 +827,21 @@ impl Session {
         source_id: &str,
         runtime: &str,
         event: &str,
+        payload: Option<&str>,
         now: std::time::Instant,
     ) {
         use crate::agent_status::evidence::AuthorityEvidence;
-        use crate::agent_status::gating::{GateEffect, RuntimeEvent, map_event};
+        use crate::agent_status::gating::{GateEffect, RuntimeEvent, enrich_event_name, map_event};
 
+        let enriched = enrich_event_name(runtime, event, payload);
         let gate = self.gate_states.entry(source_id.to_owned()).or_default();
-        let effect = map_event(&RuntimeEvent { runtime, event }, gate);
+        let effect = map_event(
+            &RuntimeEvent {
+                runtime,
+                event: enriched.as_str(),
+            },
+            gate,
+        );
         let refresh_matching = |authority: &mut Option<AuthorityEvidence>| {
             if let Some(a) = authority
                 && a.source_id == source_id
@@ -907,19 +932,24 @@ impl Session {
         &mut self,
         now: std::time::Instant,
     ) -> crate::agent_status::evidence::ProcessEvidence {
+        let mut sampler = crate::agent_status::process::ProcfsProcessSampler;
+        self.sample_process_evidence_with(&mut sampler, now)
+    }
+
+    pub(crate) fn sample_process_evidence_with(
+        &mut self,
+        sampler: &mut impl crate::agent_status::process::ProcessSampler,
+        now: std::time::Instant,
+    ) -> crate::agent_status::evidence::ProcessEvidence {
         use crate::agent_status::evidence::ProcessEvidence;
-        use crate::agent_status::process::{
-            self, descendant_process_count, detect_foreground_agent, physics_available,
-            read_process_info, sample_cpu_jiffies_delta,
-        };
 
         let Some(pid) = self.child_pid else {
             return ProcessEvidence::default();
         };
-        if !physics_available() {
+        if !sampler.physics_available() {
             return ProcessEvidence::default();
         }
-        let Some(info) = read_process_info(pid) else {
+        let Some(info) = sampler.read_process_info(pid) else {
             // Linux + PID gone = a real process exit.
             self.cpu_sample = None;
             return ProcessEvidence {
@@ -929,12 +959,12 @@ impl Session {
             };
         };
 
-        let foreground = detect_foreground_agent(&info);
+        let foreground = sampler.foreground_group(&info);
         let foreground_is_agent = foreground.is_agent();
         let foreground_pgid = foreground.pgid();
-        let child_process_count = descendant_process_count(pid);
-        let cpu_jiffies_delta = sample_cpu_jiffies_delta(pid, &mut self.cpu_sample, now);
-        let root_is_agent = process::identify_agent(&info).is_some();
+        let child_process_count = sampler.descendant_process_count(pid);
+        let cpu_jiffies_delta = sampler.sample_cpu_jiffies_delta(pid, &mut self.cpu_sample, now);
+        let root_is_agent = crate::agent_status::process::identify_agent(&info).is_some();
 
         if foreground_is_agent {
             self.saw_agent_foreground = true;
@@ -971,6 +1001,16 @@ impl Session {
         rule_registry: Option<&crate::agent_status::rules::RulePackRegistry>,
         now: std::time::Instant,
     ) -> StatusTick {
+        let mut sampler = crate::agent_status::process::ProcfsProcessSampler;
+        self.advance_status_with_process_sampler(rule_registry, &mut sampler, now)
+    }
+
+    pub(crate) fn advance_status_with_process_sampler(
+        &mut self,
+        rule_registry: Option<&crate::agent_status::rules::RulePackRegistry>,
+        sampler: &mut impl crate::agent_status::process::ProcessSampler,
+        now: std::time::Instant,
+    ) -> StatusTick {
         use crate::agent_status::arbitrate::arbitrate;
         use crate::agent_status::evidence::{
             ActivityEvidence, EvidenceNote, EvidenceSnapshot, ScreenEvidence,
@@ -978,7 +1018,7 @@ impl Session {
         use crate::agent_status::policy::{apply_watchdog, debounce};
         use crate::agent_status::rules::VirtualRegions;
 
-        let process = self.sample_process_evidence(now);
+        let process = self.sample_process_evidence_with(sampler, now);
         let exiting = process.process_exited || process.foreground_returned_to_shell;
         // Screen rule-pack evaluation over the live viewport: the universal
         // detector and the sole state source for identity-only runtimes
@@ -1088,7 +1128,8 @@ impl Session {
         if !bytes.is_empty() {
             self.received_output = true;
         }
-        crate::cdebug!(
+        jackin_diagnostics::incr_terminal_bytes_received(bytes.len() as u64);
+        crate::ctrace_payload!(
             "session feed_pty bytes: agent={:?} label={} len={} bytes={:02x?}",
             self.agent,
             self.label,
@@ -1182,6 +1223,7 @@ impl Session {
                 OscShellMark::PromptStart => None,
             };
             if let Some(state) = shell_state {
+                self.osc.shell_state_marked_at = Some(std::time::Instant::now());
                 self.osc.shell_state = Some(state);
             }
         }
@@ -1446,7 +1488,10 @@ fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>)
 
 #[cfg(test)]
 impl Session {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     pub(crate) fn new_for_test(
         label: String,
         agent: Option<String>,
@@ -1550,13 +1595,13 @@ fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&s
     }
 }
 
-/// Authority grade for a runtime's semantic source. `opencode` ships a complete
-/// lifecycle event stream (Complete); `amp` and other event sources have partial
-/// coverage. Claude/Codex are identity-only (Decision 0a) and never reach this.
+/// Authority grade for a runtime's semantic source. `opencode` and the flagged
+/// Codex app-server prototype ship complete lifecycle streams; `amp` and other
+/// event sources have partial coverage.
 fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityGrade {
     use crate::agent_status::evidence::AuthorityGrade;
     match runtime {
-        "opencode" => AuthorityGrade::Complete,
+        "opencode" | "codex-app-server" => AuthorityGrade::Complete,
         _ => AuthorityGrade::Partial,
     }
 }
@@ -1576,7 +1621,7 @@ pub fn build_agent_command(
     cwd: &Path,
     codename: &str,
 ) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new("/jackin/runtime/entrypoint.sh");
+    let mut cmd = CommandBuilder::new(container_paths::ENTRYPOINT);
     for arg in agent_model_args(agent, model) {
         cmd.arg(arg);
     }

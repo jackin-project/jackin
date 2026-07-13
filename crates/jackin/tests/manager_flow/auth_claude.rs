@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! Claude-kind auth-form integration tests for the manager TUI.
 //!
 //! Extracted from `manager_flow.rs` to keep each test binary under the
@@ -31,7 +45,10 @@ use super::*;
 // separately) but the mode never reached disk; on reload, the resolver
 // fell back to the global default and ignored the freshly-written key.
 #[test]
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -138,6 +155,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     // Enter moves state to PendingCommit; flush the queued write to disk.
+    mark_pending_save_drift_checked_for_test(&mut state);
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
     wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 
@@ -251,7 +269,7 @@ fn auth_credential_source_enter_opens_source_picker() -> Result<()> {
 
 /// Cancelling the credential `Modal::TextInput` (the literal-text leg
 /// of the source-picker round trip) must restore `Modal::AuthForm` and
-/// drain `pending_auth_form_return` — not silently leave the operator
+/// drain the modal parent auth form — not silently leave the operator
 /// on a blank Auth tab.
 #[test]
 fn auth_credential_text_input_cancel_restores_form() -> Result<()> {

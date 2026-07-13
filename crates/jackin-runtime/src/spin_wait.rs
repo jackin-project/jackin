@@ -28,6 +28,48 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = anyhow::Result<()>>,
 {
+    spin_wait_with_intervals(message, max_attempts, |_| interval, &mut poll).await
+}
+
+pub async fn spin_wait_ramped<F, Fut>(
+    message: &str,
+    max_attempts: u32,
+    initial_interval: std::time::Duration,
+    max_interval: std::time::Duration,
+    mut poll: F,
+) -> anyhow::Result<()>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = anyhow::Result<()>>,
+{
+    spin_wait_with_intervals(
+        message,
+        max_attempts,
+        |attempt| ramped_interval(initial_interval, max_interval, attempt),
+        &mut poll,
+    )
+    .await
+}
+
+fn ramped_interval(
+    initial: std::time::Duration,
+    cap: std::time::Duration,
+    attempt: u32,
+) -> std::time::Duration {
+    let factor = 1_u32.checked_shl(attempt).unwrap_or(u32::MAX);
+    initial.saturating_mul(factor).min(cap)
+}
+
+async fn spin_wait_with_intervals<F, Fut>(
+    message: &str,
+    max_attempts: u32,
+    mut interval_for_attempt: impl FnMut(u32) -> std::time::Duration,
+    poll: &mut F,
+) -> anyhow::Result<()>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = anyhow::Result<()>>,
+{
     use owo_colors::OwoColorize as _;
 
     const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -41,7 +83,7 @@ where
     // its own waiting animation conveys progress, so the spinner must stay
     // silent or it streams over the alternate screen.
     let suppressed = rich_terminal_owned();
-    for _attempt in 0..max_attempts {
+    for attempt in 0..max_attempts {
         if debug && !suppressed {
             eprint!("\r\x1b[2K");
             drop(io::stderr().flush());
@@ -56,8 +98,8 @@ where
             }
             Err(e) => last_err = Some(e),
         }
-        let spins = interval.as_millis() as u64 / SPIN_MS;
-        for _ in 0..spins {
+        let mut remaining = interval_for_attempt(attempt);
+        while !remaining.is_zero() {
             if !suppressed {
                 let frame = FRAMES[frame_idx % FRAMES.len()];
                 eprint!(
@@ -67,7 +109,9 @@ where
                 );
                 drop(io::stderr().flush());
             }
-            tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
+            let sleep_for = remaining.min(std::time::Duration::from_millis(SPIN_MS));
+            tokio::time::sleep(sleep_for).await;
+            remaining = remaining.saturating_sub(sleep_for);
             frame_idx += 1;
         }
     }
@@ -77,3 +121,6 @@ where
     }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
 }
+
+#[cfg(test)]
+mod tests;

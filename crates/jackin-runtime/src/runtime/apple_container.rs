@@ -23,6 +23,7 @@ use crate::instance::{
     AppleContainerResources, BackendResources, DockerResources, InstanceManifest,
     NewInstanceManifest,
 };
+use jackin_core::container_paths;
 use jackin_core::paths::JackinPaths;
 
 const ATTACH_MAX_WAIT_MS: u64 = 60_000;
@@ -31,7 +32,10 @@ const ATTACH_POLL_MS: u64 = 500;
 /// Print the session contract — the security boundary summary shown to the
 /// operator before the interactive attach begins, so they see the isolation
 /// model and residual risks before the session starts.
-#[allow(clippy::print_stderr)]
+#[allow(
+    clippy::print_stderr,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn print_session_contract(
     container_name: &str,
     image: &str,
@@ -74,7 +78,10 @@ pub fn print_session_contract(
 
 /// DNS health check — an `nslookup` probe run after attach returns. macOS
 /// sleep/wake can drop DNS inside the VM; surface a "reconnect" hint if affected.
-#[allow(clippy::print_stderr)]
+#[allow(
+    clippy::print_stderr,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub async fn check_dns(container_name: &str) {
     let result = tokio::process::Command::new("container")
         .args([
@@ -141,12 +148,7 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 /// can record an attach outcome — a non-zero exit distinguishes a crash from a
 /// clean detach.
 pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<Option<i32>> {
-    let mut args: Vec<&str> = vec![
-        "exec",
-        "-it",
-        container_name,
-        "/jackin/runtime/jackin-capsule",
-    ];
+    let mut args: Vec<&str> = vec!["exec", "-it", container_name, container_paths::CAPSULE_BIN];
 
     let focus_str;
     if let Some(id) = focus_session {
@@ -215,7 +217,10 @@ pub struct AppleContainerLaunch<'a> {
 ///
 /// Called from `load_role_with` after the image build step when the resolved
 /// backend is `"apple-container"`.
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     let AppleContainerLaunch {
         paths,
@@ -263,6 +268,8 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         vec![("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned())];
     if debug {
         env.push(("JACKIN_DEBUG".to_owned(), "1".to_owned()));
+        // Temporary dual-inject for capsule-image skew (plan 043 / DEPRECATED.md).
+        env.push(("JACKIN_TELEMETRY_LEVEL".to_owned(), "debug".to_owned()));
     }
     for (k, v) in env_pairs {
         if k == "JACKIN_CAPSULE_FORCE_DAEMON" || k == "JACKIN_DEBUG" {
@@ -294,7 +301,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
     super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
     let mut mounts: Vec<(PathBuf, PathBuf)> = mount_pairs.to_vec();
-    mounts.push((socket_dir, PathBuf::from("/jackin/run")));
+    mounts.push((socket_dir, PathBuf::from(container_paths::RUN_DIR)));
 
     let spec = crate::apple_container_client::AppleContainerSpec {
         image: image.to_owned(),
@@ -445,7 +452,18 @@ pub async fn reconnect(
 /// directing the operator to eject first; an already-removed container is the
 /// success case (so purging a torn instance whose VM is gone is not blocked).
 pub async fn ensure_absent_for_purge(container_name: &str) -> Result<()> {
-    let exists = crate::apple_container_client::AppleContainerClient::new()
+    ensure_absent_for_purge_with(
+        &crate::apple_container_client::AppleContainerClient::new(),
+        container_name,
+    )
+    .await
+}
+
+pub async fn ensure_absent_for_purge_with(
+    client: &impl crate::apple_container_client::AppleContainerApi,
+    container_name: &str,
+) -> Result<()> {
+    let exists = client
         .list_containers(container_name)
         .await?
         .iter()
@@ -461,18 +479,36 @@ pub async fn ensure_absent_for_purge(container_name: &str) -> Result<()> {
 
 /// Stop the container (eject — preserves manifest).
 pub async fn stop(container_name: &str) -> Result<()> {
-    crate::apple_container_client::AppleContainerClient::new()
-        .stop_container(container_name)
-        .await
+    stop_with(
+        &crate::apple_container_client::AppleContainerClient::new(),
+        container_name,
+    )
+    .await
+}
+
+pub async fn stop_with(
+    client: &impl crate::apple_container_client::AppleContainerApi,
+    container_name: &str,
+) -> Result<()> {
+    client.stop_container(container_name).await
 }
 
 /// Remove the container (purge).
 pub async fn remove(container_name: &str) -> Result<()> {
+    remove_with(
+        &crate::apple_container_client::AppleContainerClient::new(),
+        container_name,
+    )
+    .await
+}
+
+pub async fn remove_with(
+    client: &impl crate::apple_container_client::AppleContainerApi,
+    container_name: &str,
+) -> Result<()> {
     // Stop first (ignore errors — may already be stopped).
-    drop(stop(container_name).await);
-    crate::apple_container_client::AppleContainerClient::new()
-        .remove_container(container_name)
-        .await
+    drop(client.stop_container(container_name).await);
+    client.remove_container(container_name).await
 }
 
 /// Probe the `container` CLI version. Returns `None` if not installed.

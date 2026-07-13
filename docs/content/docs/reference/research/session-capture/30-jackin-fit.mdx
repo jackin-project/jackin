@@ -1,0 +1,67 @@
+---
+title: "30 — jackin❯ Fit and the Déjà Vu Delta"
+---
+
+# 30 — jackin❯ Fit and the Déjà Vu Delta
+
+**Research conducted:** 2026-07-03. This chapter maps the evidence onto jackin❯. It makes no design decisions — feature shape belongs to a `brainstorm` run against [Déjà Vu](/reference/research/agent-orchestration/conversation-capture/deja-vu/), which is the existing design proposal this dossier now underpins.
+
+## Where this dossier sits relative to Déjà Vu
+
+Déjà Vu already proposes the capture-store-browse layer: per-agent providers → one normalized record → protobuf archive + SQLite index under `~/.jackin/data/deja-vu/` → TUI/CLI/MCP surfaces. This dossier is the market- and implementation-evidence layer under that design. Net result of the research: **Déjà Vu's core bets are confirmed; four inputs are new.**
+
+### Confirmed by this research
+
+- **Native-file reading is the winning vector.** SpecStory's entire 58k-LOC implementation ([02](/reference/research/session-capture/02-specstory-cli-internals/)) and effectively every OSS tool in [11](/reference/research/session-capture/11-open-source-exporters/) read the agents' own stores; nobody PTY-scrapes; hooks and OTel appear only as liveness/metrics side channels. Déjà Vu's vector ranking (A first, F last) matches the market unanimously.
+- **The SPI shape is proven.** SpecStory's provider interface (locate / parse / normalize / watch / reconstruct per agent, ~11 methods) is a production-tested template for Déjà Vu's provider layer, under a license (Apache-2.0) that permits studying and porting it.
+- **The gap is real.** As of 2026-07-03 no product ships a cross-agent, host-side, purge-surviving archive ([12](/reference/research/session-capture/12-platforms-and-observability/)): Mantra is closed and 3-agent, orchestrators keep history captive, vendor clouds are per-vendor silos. Déjà Vu's novelty claim survives contact with the market.
+
+### New input 1 — SpecStory v2.0.0 landed on Déjà Vu's roadmap first
+
+Four days before this research (2026-06-29), SpecStory shipped cross-project **cross-agent resume** and indexed FTS search: it reconstructs a normalized session into the *target* agent's native format, writes it into the target's live store, and launches it ([02 §cross-agent resume](/reference/research/session-capture/02-specstory-cli-internals/)). That is a working implementation of the "resume a Claude session in Codex" experience Déjà Vu defers as future work ("cross-agent `@thread` injection" non-goal). Implementation details worth stealing rather than rediscovering: `FlattenSessionData` (collapse tool/thinking into role-tagged turns), the prepended `MigrationNote` turn, per-provider `ReconstructSession`/`NativeSessionPath` with `ErrReconstructionUnsupported` as the graceful floor, and the disposable size+mtime+version-fingerprinted index.
+
+### New input 2 — the roster drift: six agents, and two of six are SpecStory-covered
+
+jackin❯ now runs **six** agents — the `Agent` enum (<RepoFile path="crates/jackin-core/src/agent.rs">crates/jackin-core/src/agent.rs</RepoFile>) is `Claude, Codex, Amp, Kimi, Opencode, Grok` — while Déjà Vu and several other surfaces still say five (stale spots found during recon: <RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile> doc-comment, the Déjà Vu page itself, and the `/jackin/{claude,codex,amp,kimi,opencode}/` credential-mount list in <RepoFile path="HOST_AND_CONTAINER.md">HOST_AND_CONTAINER.md</RepoFile>). SpecStory's providers (claude, cursor, codex, gemini, droid, deepseek) overlap jackin❯'s roster on exactly **two of six** — Claude Code and Codex. Any "just run SpecStory" shortcut caps out there; Amp, Kimi, OpenCode, and Grok need jackin❯-owned providers regardless. Grok's session store was the one blank spot in all prior research; [10](/reference/research/session-capture/10-agent-session-stores/) records what could be established and what must be verified live in a container.
+
+### New input 3 — the provenance frontier is live
+
+Two independent products now join conversation turns to code state: SpecStory's in-repo provenance engine (fsnotify + tool-use events correlated by path-suffix + ±5 s window; git-notes design recommended but unbuilt) and Mantra's per-turn git snapshots with diff/restore ([12](/reference/research/session-capture/12-platforms-and-observability/)). Déjà Vu lists change attribution as a V1 non-goal — correctly, per this evidence — but the market signal is that attribution is the next competitive layer, and jackin❯ owns more of the substrate (workspace mounts, git materialization, container boundary) than either competitor.
+
+### New input 4 — field-tested failure modes to design against
+
+From SpecStory's issue tracker ([01](/reference/research/session-capture/01-specstory-product/)): polling without debounce burns CPU (busy-wait 20–50% idle); silent incompleteness destroys trust faster than absence of the feature; transcripts landing un-gitignored in repos leak secrets (their #224 — and Lore v3.9.0 answered with redaction at the emit boundary); closed-store scraping (Cursor IDE) is a permanent breakage treadmill. None of these is hypothetical; all have issue numbers.
+
+## The substrate jackin❯ already has (recon findings)
+
+- **Histories already land on the host.** Agent homes are bind-mounted and restored under `~/.jackin/data/<container>/` — `.claude/`, `.codex/`, `.local/share/amp/`, `.kimi-code/`, `.local/share/opencode/`, `.grok/` per the `AgentStatePaths` contract (<RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile>), which is explicitly the single source of truth for what jackin❯ mounts under the agent home — the natural hook point for a capture reader. For file-store agents the capture step is a host-side read of paths jackin❯ already owns.
+- **Nothing reads them yet, and teardown deletes them.** No conversation capture exists in the codebase today; `jackin eject`/`prune` reclaims the per-instance dir. Raw PTY bytes in the capsule are parsed into the `DamageGrid` and dropped (<RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>) — no lossless replay source exists, exactly as Déjà Vu states.
+- **Adjacent machinery to reuse**: structured-JSONL launch diagnostics (<RepoFile path="crates/jackin-diagnostics/src/run.rs">crates/jackin-diagnostics/src/run.rs</RepoFile>) as the write-events-keyed-by-run pattern; the Turso/SQLite usage-telemetry store (<RepoFile path="crates/jackin-usage/src/telemetry_store.rs">crates/jackin-usage/src/telemetry_store.rs</RepoFile>) as the persistent-store precedent; schema-version machinery (<RepoFile path="crates/jackin-config/src/versions.rs">crates/jackin-config/src/versions.rs</RepoFile>) for any new versioned artifact; the live session inventory (<RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile>) and the capsule usage overlay as the closest existing TUI patterns a conversation browser would extend.
+
+## Per-agent coverage picture for jackin❯'s roster
+
+| Agent | Native store (details: [10](/reference/research/session-capture/10-agent-session-stores/)) | Existing ecosystem to lean on | Difficulty signal |
+|---|---|---|---|
+| Claude Code | JSONL, richest schema, on host already | Largest OSS tool belt; SpecStory provider (Apache-2.0) | Lowest |
+| Codex | rollout JSONL, vendor calls format unstable | SpecStory provider; thin viewer long tail | Low, needs hedge |
+| OpenCode | JSON store (mid JSON→SQLite migration) + `serve` HTTP/SSE | No SpecStory provider; SDK exists | Medium |
+| Kimi (`kimi-code`) | `wire.jsonl` per agent per session | Nothing found — jackin❯ would be first | Medium, verify live |
+| Amp | **no durable local file** — server-side threads | `--stream-json` capture only; native cloud sharing | Highest (live-capture only) |
+| Grok | see [10](/reference/research/session-capture/10-agent-session-stores/) | Nothing found | Verify live |
+
+## Option map (not decisions)
+
+1. **Port the mechanism, not the binary.** SpecStory's Go providers for Claude/Codex are Apache-2.0 reference implementations; Déjà Vu's Rust providers can mirror their parse rules (dedup by uuid, sidechain re-parenting, session_meta first-line contract) without running foreign binaries in the capsule. Covers 2/6 agents with high confidence.
+2. **Vendor-blessed side channels as hedges**, per Déjà Vu's own ranking: Codex `--json`/notify, OpenCode `serve`, hooks where present. SpecStory's issue history quantifies why the hedge matters.
+3. **Amp stays the special case** — live `--stream-json` capture at launch, exactly as Déjà Vu already concluded; nothing in the market changes that.
+4. **The index/store patterns are settled questions in the wild**: disposable fingerprinted SQLite index + FTS5 (SpecStory), full-rewrite idempotent rendering (SpecStory), content-addressed archive keyed by workspace (Déjà Vu's own design). Evidence supports Déjà Vu's storage shape; the protobuf-vs-JSONL ADR remains open there.
+5. **Defensive defaults the evidence demands**: gitignore/redaction posture decided up front (SpecStory #224 + Lore redaction), debounce discipline in any watcher, and "capture what the operator saw" as the completeness floor Déjà Vu already sets.
+
+## Open questions this research adds to Déjà Vu's list
+
+| Question | Why it's now live |
+|---|---|
+| Verify Grok and Kimi store layouts inside real jackin❯ containers | Only roster members with no third-party evidence base; [10](/reference/research/session-capture/10-agent-session-stores/) records the best external knowledge |
+| Does cross-agent *resume* (write into target store) enter the roadmap earlier than planned? | SpecStory v2.0.0 proves demand and mechanism; Déjà Vu currently defers it |
+| Update Déjà Vu's five-agent framing and the stale six-agent drift spots | Grok exists in the enum; capture must cover six |
+| Is turn↔git-state attribution a fast-follow rather than a distant non-goal? | Two competitors shipped/prototyped it; jackin❯ owns more substrate |

@@ -35,13 +35,14 @@ pub fn parse_osc7(payload: &str) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-/// Per-OSC operator opt-out switches. All default to `allow`; the
-/// values `deny`, `off`, `no` (case-sensitive) turn the matching
-/// passthrough off when the operator runs an untrusted role. tmux
-/// exposes the same family as `set-clipboard on|off` plus
-/// `allow-passthrough` for OSC; jackin keeps the surface per-OSC so
-/// the operator can leave the agent's terminal title alone but block
-/// notification spam, or vice versa.
+/// Per-OSC operator switches. OSC 52 clipboard writes default to deny and
+/// require `JACKIN_OSC52=allow`; the lower-risk title, notification, and
+/// hyperlink surfaces default to allow and accept `deny`, `off`, or `no`
+/// (case-sensitive) to turn the matching passthrough off when the operator
+/// runs an untrusted role. tmux exposes the same family as
+/// `set-clipboard on|off` plus `allow-passthrough` for OSC; jackin❯ keeps the
+/// surface per-OSC so the operator can leave the agent's terminal title alone
+/// but block notification spam, or vice versa.
 const ENV_OSC52: &str = "JACKIN_OSC52";
 const ENV_OSC_TITLE: &str = "JACKIN_OSC_TITLE";
 const ENV_OSC_NOTIFY: &str = "JACKIN_OSC_NOTIFY";
@@ -60,7 +61,7 @@ const ALLOW_HYPERLINK: u8 = 1 << 3;
 impl Default for OscPolicy {
     fn default() -> Self {
         Self {
-            flags: ALLOW_TITLE | ALLOW_OSC52 | ALLOW_NOTIFY | ALLOW_HYPERLINK,
+            flags: ALLOW_TITLE | ALLOW_NOTIFY | ALLOW_HYPERLINK,
         }
     }
 }
@@ -70,20 +71,24 @@ impl OscPolicy {
     /// background pane cannot toggle the gate at runtime by `export`ing
     /// into a focused shell.
     pub fn from_env() -> Self {
+        Self::from_lookup(|name| std::env::var(name).ok())
+    }
+
+    fn from_lookup(mut lookup: impl FnMut(&str) -> Option<String>) -> Self {
         Self {
-            flags: (if is_env_deny(ENV_OSC_TITLE) {
+            flags: (if is_deny(lookup(ENV_OSC_TITLE).as_deref()) {
                 0
             } else {
                 ALLOW_TITLE
-            }) | (if is_env_deny(ENV_OSC52) {
-                0
-            } else {
+            }) | (if is_allow(lookup(ENV_OSC52).as_deref()) {
                 ALLOW_OSC52
-            }) | (if is_env_deny(ENV_OSC_NOTIFY) {
+            } else {
+                0
+            }) | (if is_deny(lookup(ENV_OSC_NOTIFY).as_deref()) {
                 0
             } else {
                 ALLOW_NOTIFY
-            }) | (if is_env_deny(ENV_OSC_HYPERLINK) {
+            }) | (if is_deny(lookup(ENV_OSC_HYPERLINK).as_deref()) {
                 0
             } else {
                 ALLOW_HYPERLINK
@@ -115,8 +120,23 @@ impl OscPolicy {
     pub fn for_test_deny_all() -> Self {
         Self { flags: 0 }
     }
+
+    /// Test-only constructor with every passthrough gate open.
+    #[doc(hidden)]
+    pub fn for_test_allow_all() -> Self {
+        Self {
+            flags: ALLOW_TITLE | ALLOW_OSC52 | ALLOW_NOTIFY | ALLOW_HYPERLINK,
+        }
+    }
 }
 
-fn is_env_deny(name: &str) -> bool {
-    matches!(std::env::var(name).as_deref(), Ok("deny" | "off" | "no"))
+fn is_allow(value: Option<&str>) -> bool {
+    matches!(value, Some("allow"))
 }
+
+fn is_deny(value: Option<&str>) -> bool {
+    matches!(value, Some("deny" | "off" | "no"))
+}
+
+#[cfg(test)]
+mod tests;

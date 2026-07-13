@@ -8,14 +8,103 @@ use crate::parse_helpers::parse_host_ref;
 use jackin_config::AppConfig;
 use jackin_core::op_reference::parse_op_reference;
 use jackin_core::op_types::OpItem;
-use jackin_core::{EnvValue, OpRef};
+use jackin_core::{EnvValue, OpRef, WorkspaceName};
 
-pub use crate::env_layer::merge_layers;
+/// Typed failures for operator-env validation and `op://` URI resolution.
+///
+/// Constructed at the resolve boundary and either returned directly (pure
+/// validation paths) or attached as an `anyhow` source so classification
+/// survives `?` and is recovered by `downcast_ref` (mixed port-error paths).
+#[derive(Debug, thiserror::Error)]
+pub enum OperatorEnvError {
+    /// Operator env declares reserved runtime names that cannot be overridden.
+    #[error(
+        "operator env map contains {count} reserved runtime name(s):\n{details}\n\
+         These names are fixed by jackin and cannot be overridden. Remove them \
+         from your config.toml."
+    )]
+    ReservedNames {
+        /// Number of reserved-name offenses.
+        count: usize,
+        /// Multi-line detail listing each reserved key and layer.
+        details: String,
+    },
+    /// Value is not an `op://` reference.
+    #[error("not an op:// reference: {value}")]
+    NotOpRef {
+        /// The rejected input value.
+        value: String,
+    },
+    /// Shell variable substitution inside an `op://` URI is unsupported.
+    #[error(
+        "jackin does not support shell variable substitution inside `op://` URIs \
+         (`{value}`). Use a plain string value, or substitute before passing."
+    )]
+    ShellVarInRef {
+        /// The rejected URI containing shell substitution.
+        value: String,
+    },
+    /// `op://` URI path segment count is not 3 or 4.
+    #[error("malformed op:// URI (expected 3 or 4 path segments): {value}")]
+    MalformedRef {
+        /// The malformed URI.
+        value: String,
+    },
+    /// Named or id vault could not be found.
+    #[error("vault not found: {vault:?}")]
+    VaultNotFound {
+        /// Vault name or id that was not found.
+        vault: String,
+    },
+    /// Item name/id missing from the given vault.
+    #[error("item {item:?} not found in vault {vault:?}")]
+    ItemNotFound {
+        /// Item name or id that was not found.
+        item: String,
+        /// Vault that was searched.
+        vault: String,
+    },
+    /// Multiple items share the same name; disambiguation required.
+    #[error("{count} items named {item:?} in vault {vault:?}. Disambiguate with:\n{suggestions}")]
+    AmbiguousItem {
+        /// Number of matching items.
+        count: usize,
+        /// Ambiguous item name.
+        item: String,
+        /// Vault containing the matches.
+        vault: String,
+        /// Human-readable disambiguation hints.
+        suggestions: String,
+    },
+    /// Field label/id missing from the item.
+    #[error("field {field:?} not found in item {item:?}")]
+    FieldNotFound {
+        /// Field that was not found.
+        field: String,
+        /// Item that was searched.
+        item: String,
+    },
+    /// Resolution aborted due to an underlying port/runner error.
+    #[error("operator env resolution aborted: {source}")]
+    Aborted {
+        /// Underlying error that caused the abort.
+        #[source]
+        source: anyhow::Error,
+    },
+    /// Multiple env keys failed resolution; details are aggregated.
+    #[error("operator env resolution failed for {count} var(s):\n{summary}")]
+    Aggregated {
+        /// Number of failed variables.
+        count: usize,
+        /// Multi-line summary of failures.
+        summary: String,
+    },
+}
 
 /// Reject operator env maps that declare any reserved runtime name.
 /// Runs at config-load time so misconfigurations fail before launch.
 /// Conflicts across every layer are aggregated into one error.
-pub fn validate_reserved_names(config: &AppConfig) -> anyhow::Result<()> {
+pub fn validate_reserved_names(config: &AppConfig) -> Result<(), OperatorEnvError> {
     let mut offenses: Vec<String> = Vec::new();
     let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, EnvValue>| {
         for key in env.keys() {
@@ -48,13 +137,10 @@ pub fn validate_reserved_names(config: &AppConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    anyhow::bail!(
-        "operator env map contains {} reserved runtime name(s):\n{}\n\
-         These names are fixed by jackin and cannot be overridden. Remove them \
-         from your config.toml.",
-        offenses.len(),
-        offenses.join("\n")
-    )
+    Err(OperatorEnvError::ReservedNames {
+        count: offenses.len(),
+        details: offenses.join("\n"),
+    })
 }
 
 /// Resolve a user-supplied `op://...` URI into a canonical [`OpRef`].
@@ -75,21 +161,26 @@ pub fn validate_reserved_names(config: &AppConfig) -> anyhow::Result<()> {
 /// `None` when the call has no account context (e.g. ambient
 /// `op://...` resolution where the operator has not pinned an
 /// account).
+#[expect(
+    clippy::too_many_lines,
+    reason = "URI parsing + multi-protocol op:// resolution; split would obscure the single algorithm"
+)]
 pub fn resolve_op_uri_to_ref(
     input: &str,
     op: &dyn OpStructRunner,
     account: Option<&str>,
 ) -> anyhow::Result<OpRef> {
-    use anyhow::{anyhow, bail};
-
+    // Port errors from OpStructRunner stay as raw anyhow; validation failures
+    // are typed sources so pickers can downcast without substring matching.
     if !input.starts_with("op://") {
-        bail!("not an op:// reference: {input}");
+        return Err(anyhow::Error::new(OperatorEnvError::NotOpRef {
+            value: input.to_owned(),
+        }));
     }
     if input.contains("${") {
-        bail!(
-            "jackin does not support shell variable substitution inside `op://` URIs \
-             (`{input}`). Use a plain string value, or substitute before passing."
-        );
+        return Err(anyhow::Error::new(OperatorEnvError::ShellVarInRef {
+            value: input.to_owned(),
+        }));
     }
 
     // Peel off optional `?attribute=...` / `?attr=...` / `?ssh-format=...` suffix.
@@ -97,18 +188,27 @@ pub fn resolve_op_uri_to_ref(
         .find('?')
         .map_or((input, None), |i| (&input[..i], Some(&input[i..])));
     let Some(body) = path_part.strip_prefix("op://") else {
-        bail!("not an op:// reference: {input}");
+        return Err(anyhow::Error::new(OperatorEnvError::NotOpRef {
+            value: input.to_owned(),
+        }));
     };
     let segs: Vec<&str> = body.split('/').collect();
     let (vault_seg, item_seg, section_seg, field_seg) = match segs.as_slice() {
         [v, i, f] => (*v, *i, None::<&str>, *f),
         [v, i, s, f] => (*v, *i, Some(*s), *f),
-        _ => bail!("malformed op:// URI (expected 3 or 4 path segments): {input}"),
+        _ => {
+            return Err(anyhow::Error::new(OperatorEnvError::MalformedRef {
+                value: input.to_owned(),
+            }));
+        }
     };
 
     // Item segment may carry [subtitle] filter — a display extension from jackin❯.
     // Nested condition makes map_or awkward; allow the if-let pattern here.
-    #[allow(clippy::option_if_let_else)]
+    #[allow(
+        clippy::option_if_let_else,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     let (item_name, subtitle_filter): (&str, Option<&str>) = if let Some(open) = item_seg.rfind('[')
     {
         if item_seg.ends_with(']') && open < item_seg.len() - 1 {
@@ -128,7 +228,11 @@ pub fn resolve_op_uri_to_ref(
     let vault = vaults
         .iter()
         .find(|v| v.name.eq_ignore_ascii_case(vault_seg) || v.id == vault_seg)
-        .ok_or_else(|| anyhow!("vault not found: {vault_seg:?}"))?;
+        .ok_or_else(|| {
+            anyhow::Error::new(OperatorEnvError::VaultNotFound {
+                vault: vault_seg.to_owned(),
+            })
+        })?;
 
     // Resolve items in this vault, then filter by name (case-insensitive) or
     // UUID, and by subtitle filter when present.
@@ -151,11 +255,10 @@ pub fn resolve_op_uri_to_ref(
         let suffix = subtitle_filter
             .map(|s| format!("[{s}]"))
             .unwrap_or_default();
-        bail!(
-            "item {name:?} not found in vault {vault_name:?}",
-            name = format!("{item_name}{suffix}"),
-            vault_name = vault.name
-        );
+        return Err(anyhow::Error::new(OperatorEnvError::ItemNotFound {
+            item: format!("{item_name}{suffix}"),
+            vault: vault.name.clone(),
+        }));
     }
     if matches.len() > 1 {
         let suggestions: Vec<String> = matches
@@ -172,19 +275,18 @@ pub fn resolve_op_uri_to_ref(
                 format!("  op://{}/{label}{section_part}/{field_seg}{q}", vault.name)
             })
             .collect();
-        bail!(
-            "{n} items named {name:?} in vault {vault_name:?}. Disambiguate with:\n{lines}",
-            n = matches.len(),
-            name = item_name,
-            vault_name = vault.name,
-            lines = suggestions.join("\n")
-        );
+        return Err(anyhow::Error::new(OperatorEnvError::AmbiguousItem {
+            count: matches.len(),
+            item: item_name.to_owned(),
+            vault: vault.name.clone(),
+            suggestions: suggestions.join("\n"),
+        }));
     }
     let Some(item) = matches.pop() else {
-        bail!(
-            "item {item_name:?} not found in vault {vault_name:?}",
-            vault_name = vault.name
-        );
+        return Err(anyhow::Error::new(OperatorEnvError::ItemNotFound {
+            item: item_name.to_owned(),
+            vault: vault.name.clone(),
+        }));
     };
 
     // Resolve field by label (case-insensitive) or UUID.
@@ -193,10 +295,10 @@ pub fn resolve_op_uri_to_ref(
         .iter()
         .find(|f| f.label.eq_ignore_ascii_case(field_seg) || f.id == field_seg)
         .ok_or_else(|| {
-            anyhow!(
-                "field {field_seg:?} not found in item {name:?}",
-                name = item.name
-            )
+            anyhow::Error::new(OperatorEnvError::FieldNotFound {
+                field: field_seg.to_owned(),
+                item: item.name.clone(),
+            })
         })?;
 
     // Compute ambiguity for path snapshot (same rule as picker).
@@ -278,7 +380,7 @@ fn record_layer(
 fn build_attributed_layers(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
 ) -> std::collections::BTreeMap<String, (EnvLayer, EnvValue)> {
     let mut attributed: std::collections::BTreeMap<String, (EnvLayer, EnvValue)> =
         std::collections::BTreeMap::new();
@@ -294,18 +396,18 @@ fn build_attributed_layers(
         );
     }
     if let Some(ws_name) = workspace_name
-        && let Some(ws) = config.workspaces.get(ws_name)
+        && let Some(ws) = config.workspaces.get(ws_name.as_str())
     {
         record_layer(
             &mut attributed,
-            &EnvLayer::Workspace(ws_name.to_owned()),
+            &EnvLayer::Workspace(ws_name.as_str().to_owned()),
             &ws.env,
         );
         if let Some(role_name) = role_selector
             && let Some(ov) = ws.roles.get(role_name)
         {
             let ws_role_layer = EnvLayer::WorkspaceRole {
-                workspace: ws_name.to_owned(),
+                workspace: ws_name.as_str().to_owned(),
                 role: role_name.to_owned(),
             };
             record_layer(&mut attributed, &ws_role_layer, &ov.env);
@@ -320,7 +422,7 @@ fn build_attributed_layers(
 pub fn has_operator_env(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
 ) -> bool {
     !build_attributed_layers(config, role_selector, workspace_name).is_empty()
 }
@@ -330,7 +432,7 @@ pub fn has_operator_env(
 pub fn has_operator_env_matching<F>(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     include_key: F,
 ) -> bool
 where
@@ -347,7 +449,7 @@ where
 pub fn lookup_operator_env_raw(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     key: &str,
 ) -> Option<String> {
     build_attributed_layers(config, role_selector, workspace_name)
@@ -357,9 +459,8 @@ pub fn lookup_operator_env_raw(
 
 /// Env var Claude Code reads for the long-lived OAuth token.
 ///
-/// Centralised so [`crate::token_setup`], the launch
-/// diagnostic in [`crate::runtime::launch`], and
-/// [`crate::agent::Agent::required_env_var`] stay in sync. See
+/// Centralised so token-setup, launch diagnostics, and agent
+/// `required_env_var` stay in sync. See
 /// <https://code.claude.com/docs/en/iam> for upstream precedence
 /// semantics.
 pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
@@ -370,7 +471,7 @@ pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 pub fn resolve_operator_env(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
     // Each `op://` ref pins its own account at read time
     // (`OpRef::account`), so the runner carries no instance-level account.
@@ -386,7 +487,7 @@ pub fn resolve_operator_env(
 pub fn resolve_operator_env_matching<F>(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     include_key: F,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>>
 where
@@ -416,7 +517,7 @@ where
 pub fn collect_on_demand_bindings(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
 ) -> Vec<jackin_protocol::ExecBinding> {
     // BTreeMap iteration is already ordered by key, so the result is sorted.
     build_attributed_layers(config, role_selector, workspace_name)
@@ -447,7 +548,7 @@ pub fn collect_on_demand_bindings(
 pub fn resolve_operator_env_with<R, H>(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     op_runner: &R,
     host_env: H,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>>
@@ -470,7 +571,7 @@ where
 pub fn resolve_operator_env_with_matching<R, H, F>(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     op_runner: &R,
     host_env: H,
     include_key: F,
@@ -498,7 +599,7 @@ where
         .values()
         .any(|(_, v)| matches!(v, EnvValue::OpRef(_)));
     if uses_op && let Err(e) = op_runner.probe() {
-        anyhow::bail!("operator env resolution aborted: {e}");
+        return Err(anyhow::Error::new(OperatorEnvError::Aborted { source: e }));
     }
 
     std::thread::scope(|scope| {
@@ -554,11 +655,10 @@ where
         return Ok(resolved);
     }
 
-    anyhow::bail!(
-        "operator env resolution failed for {} var(s):\n{}",
-        errors.len(),
-        errors.join("\n")
-    );
+    Err(anyhow::Error::new(OperatorEnvError::Aggregated {
+        count: errors.len(),
+        summary: errors.join("\n"),
+    }))
 }
 
 /// Print a launch diagnostic to stderr. Values are NEVER printed —
@@ -567,7 +667,7 @@ where
 pub fn print_launch_diagnostic(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) {
@@ -609,7 +709,7 @@ pub(crate) fn emit_launch_diagnostic<W: std::io::Write>(
 pub(crate) fn format_launch_diagnostic_for_test(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) -> String {
@@ -630,7 +730,7 @@ fn write_launch_diagnostic<W: std::io::Write>(
     w: &mut W,
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) -> std::io::Result<()> {
@@ -733,3 +833,6 @@ fn classify_str(s: &str) -> String {
         "literal".to_owned()
     }
 }
+
+#[cfg(test)]
+mod tests;

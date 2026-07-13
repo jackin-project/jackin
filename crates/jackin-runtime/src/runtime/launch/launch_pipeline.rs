@@ -2,9 +2,10 @@
 
 use crate::instance::{InstanceManifest, InstanceStatus, RoleState};
 use jackin_config::AppConfig;
-use jackin_core::CommandRunner;
+use jackin_config::app_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
+use jackin_core::{CommandRunner, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 
 use super::launch_slot::{claim_container_name, claim_known_container_name};
@@ -14,6 +15,183 @@ use crate::runtime::naming::{image_name, image_name_for_branch};
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 mod launch_core;
+pub(super) mod launch_phases;
+
+pub(super) struct DeferredGitPull {
+    handle: tokio::task::JoinHandle<Vec<super::git_pull::GitPullResult>>,
+    print_results: bool,
+}
+
+enum DeferredOperatorEnv<'a> {
+    Spawned(tokio::task::JoinHandle<anyhow::Result<std::collections::BTreeMap<String, String>>>),
+    Inline(InlineOperatorEnv<'a>),
+    Ready(std::collections::BTreeMap<String, String>),
+}
+
+struct InlineOperatorEnv<'a> {
+    config: &'a AppConfig,
+    selector_key: String,
+    workspace_key: Option<String>,
+    op_runner: &'a dyn jackin_env::OpRunner,
+    host_env: Option<&'a std::collections::BTreeMap<String, String>>,
+    credential_agents: Vec<jackin_core::agent::Agent>,
+}
+
+pub(super) async fn finish_deferred_git_pull(
+    deferred: DeferredGitPull,
+    steps: &mut super::StepCounter,
+) -> anyhow::Result<()> {
+    let results = if let Some(progress) = steps.progress_mut() {
+        progress
+            .while_waiting(async move {
+                deferred
+                    .handle
+                    .await
+                    .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))
+            })
+            .await?
+    } else {
+        let results = deferred
+            .handle
+            .await
+            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
+        if deferred.print_results {
+            super::print_git_pull_results(&results);
+        }
+        results
+    };
+    let (ok, failed) = super::record_git_pull_results(&results);
+    let detail = git_pull_timing_detail(ok, failed);
+    jackin_diagnostics::active_timing_done("workspace", "git_pull_on_entry", Some(&detail));
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
+    }
+    Ok(())
+}
+
+fn git_pull_timing_detail(ok: usize, failed: usize) -> String {
+    if failed == 0 {
+        format!("{ok} repositories current")
+    } else {
+        format!("{ok} repositories current; {failed} failed")
+    }
+}
+
+fn defer_operator_env<'a>(
+    config: &'a AppConfig,
+    selector: &RoleSelector,
+    workspace_name: Option<&str>,
+    opts: &'a super::LoadOptions,
+    credential_agents: Vec<jackin_core::agent::Agent>,
+) -> DeferredOperatorEnv<'a> {
+    let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
+    let workspace_typed = workspace_name.and_then(|n| WorkspaceName::parse(n).ok());
+    if !jackin_env::has_operator_env_matching(
+        config,
+        Some(&selector.key()),
+        workspace_typed.as_ref(),
+        operator_env_needed,
+    ) {
+        jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
+        jackin_diagnostics::active_timing_done("credentials", "operator_env", Some("skipped"));
+        return DeferredOperatorEnv::Ready(std::collections::BTreeMap::new());
+    }
+
+    jackin_diagnostics::active_timing_started("credentials", "operator_env", Some("overlapped"));
+    let selector_key = selector.key().clone();
+    let workspace_key = workspace_name.map(String::from);
+    if let Some(op_runner) = opts.op_runner.as_deref() {
+        return DeferredOperatorEnv::Inline(InlineOperatorEnv {
+            config,
+            selector_key,
+            workspace_key,
+            op_runner,
+            host_env: opts.host_env.as_ref(),
+            credential_agents,
+        });
+    }
+
+    let config_clone = config.clone();
+    let host_env = opts.host_env.clone();
+    DeferredOperatorEnv::Spawned(tokio::task::spawn_blocking(move || {
+        let needed_agents = credential_agents;
+        if let Some(host_env) = host_env {
+            let default_runner = jackin_env::OpCli::new();
+            let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
+                host_env
+                    .get(name)
+                    .cloned()
+                    .ok_or(std::env::VarError::NotPresent)
+            };
+            let ws = workspace_key
+                .as_deref()
+                .and_then(|n| WorkspaceName::parse(n).ok());
+            jackin_env::resolve_operator_env_with_matching(
+                &config_clone,
+                Some(&selector_key),
+                ws.as_ref(),
+                &default_runner,
+                host_env_fn,
+                |key| credential_key_needed_for_role(&needed_agents, key),
+            )
+        } else {
+            let ws = workspace_key
+                .as_deref()
+                .and_then(|n| WorkspaceName::parse(n).ok());
+            jackin_env::resolve_operator_env_matching(
+                &config_clone,
+                Some(&selector_key),
+                ws.as_ref(),
+                |key| credential_key_needed_for_role(&needed_agents, key),
+            )
+        }
+    }))
+}
+
+async fn await_operator_env(
+    deferred: DeferredOperatorEnv<'_>,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+    let result = match deferred {
+        DeferredOperatorEnv::Spawned(handle) => handle
+            .await
+            .map_err(|e| anyhow::anyhow!("env resolver panicked: {e}"))?,
+        DeferredOperatorEnv::Inline(inline) => {
+            let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
+                inline.host_env.map_or_else(
+                    || std::env::var(name),
+                    |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
+                )
+            };
+            let ws = inline
+                .workspace_key
+                .as_deref()
+                .and_then(|n| WorkspaceName::parse(n).ok());
+            jackin_env::resolve_operator_env_with_matching(
+                inline.config,
+                Some(&inline.selector_key),
+                ws.as_ref(),
+                inline.op_runner,
+                host_env_fn,
+                |key| credential_key_needed_for_role(&inline.credential_agents, key),
+            )
+        }
+        DeferredOperatorEnv::Ready(env) => return Ok(env),
+    };
+    match result {
+        Ok(env) => {
+            jackin_diagnostics::active_timing_done(
+                "credentials",
+                "operator_env",
+                Some(&format!("{} vars overlapped", env.len())),
+            );
+            Ok(env)
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done("credentials", "operator_env", Some("error"));
+            Err(error)
+        }
+    }
+}
 
 // Boxed future required: load_role calls itself recursively via
 // RestoreResolution::RebuildRelatedRole — async fn recursion is not allowed.
@@ -185,7 +363,7 @@ pub(crate) async fn load_role_with(
 ) -> anyhow::Result<()> {
     // Pre-launch garbage collection is independent from git identity probes.
     let ((), git) = tokio::join!(
-        crate::runtime::cleanup::gc_orphaned_resources(docker),
+        crate::runtime::cleanup::gc_orphaned_resources(paths, docker),
         crate::runtime::identity::load_git_identity(runner)
     );
 
@@ -252,6 +430,9 @@ pub(crate) async fn load_role_with(
     let role_key = selector.key();
     let selected_agent_before_role = opts.agent.or(workspace.default_agent);
     let mut early_restore_agent = None;
+    // Typed early current-role scan (launch-speed 008c): reused later so the
+    // common path does not re-inspect current-role candidates.
+    let mut early_current_scan = super::EarlyCurrentRestoreScan::NotRun;
     // `--rebuild` is an explicit "force a fresh image" request, so it must not
     // take the attach/start/recreate fast paths — those short-circuit before
     // `decide_agent_image` and would silently skip the rebuild. Falling through
@@ -288,13 +469,32 @@ pub(crate) async fn load_role_with(
                     .await;
                 }
                 Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(super::RestoreResolution::RecreateCurrentRole(
+                            container.clone(),
+                        )),
+                    };
                     jackin_diagnostics::debug_log!(
                         "restore",
                         "recreating missing current instance {container} after role repo resolution"
                     );
                     Some(container)
                 }
-                Some(_) | None => None,
+                Some(other) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(other),
+                    };
+                    None
+                }
+                None => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: None,
+                    };
+                    None
+                }
             }
         } else {
             match super::resolve_unselected_current_restore_candidate_with_agent_timed(
@@ -325,13 +525,44 @@ pub(crate) async fn load_role_with(
                     agent,
                 }) => {
                     early_restore_agent = Some(agent);
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(super::RestoreResolution::RecreateCurrentRole(
+                            container.clone(),
+                        )),
+                    };
                     jackin_diagnostics::debug_log!(
                         "restore",
                         "recreating single-agent missing current instance {container} after role repo resolution"
                     );
                     Some(container)
                 }
-                Some(_) | None => None,
+                Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(resolution),
+                    };
+                    None
+                }
+                None => {
+                    // Unselected scan found no single-agent hit. When the role
+                    // also has no is_restore_candidate manifests, stash
+                    // ScannedUnselectedEmpty so a later selected agent skips a
+                    // pure-waste current-role re-inspect (008c residual).
+                    let role_empty = !super::restore::matching_current_role_manifests(
+                        paths,
+                        workspace_name.as_deref(),
+                        workspace.label.as_str(),
+                        &workspace.workdir,
+                        &role_key,
+                    )?
+                    .into_iter()
+                    .any(|m| m.is_restore_candidate());
+                    if role_empty {
+                        early_current_scan = super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
+                    }
+                    None
+                }
             }
         }
     } else {
@@ -420,7 +651,17 @@ pub(crate) async fn load_role_with(
         selector,
         &source.git,
         runner,
-        RepoResolveOptions::interactive(opts.debug).with_branch(opts.role_branch.as_deref()),
+        RepoResolveOptions::interactive(opts.debug)
+            .with_branch(opts.role_branch.as_deref())
+            .with_refresh_ttl(if opts.rebuild {
+                std::time::Duration::ZERO
+            } else {
+                std::time::Duration::from_secs(
+                    config
+                        .role_repo_refresh_ttl_seconds
+                        .unwrap_or(DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS),
+                )
+            }),
         &mut confirm_repo_removal,
     )
     .await;
@@ -553,7 +794,7 @@ pub(crate) async fn load_role_with(
         // `claim_container_name` reconciles any name collision downstream.
         None
     } else {
-        match super::resolve_restore_candidate(
+        match super::resolve_restore_candidate_reusing_early(
             paths,
             workspace_name.as_deref(),
             workspace.label.as_str(),
@@ -562,6 +803,7 @@ pub(crate) async fn load_role_with(
             agent,
             docker,
             steps.progress_mut(),
+            &early_current_scan,
         )
         .await?
         {
@@ -661,6 +903,7 @@ pub(crate) async fn load_role_with(
         }
     };
 
+    let mut git_pull_join: Option<DeferredGitPull> = None;
     // D7: skip git pull when restoring — restore replays the pinned recipe;
     // pulling would advance the role repo past the pinned SHA.
     if restore_container.is_none() && workspace.git_pull_on_entry {
@@ -689,27 +932,13 @@ pub(crate) async fn load_role_with(
                 );
                 let debug = opts.debug;
                 let git_program = git_pull_program(opts);
-                let pull = tokio::task::spawn_blocking(move || {
+                let handle = tokio::task::spawn_blocking(move || {
                     super::pull_git_sources_with_git(sources, debug, &git_program, false)
                 });
-                let results = progress
-                    .while_waiting(async move {
-                        pull.await
-                            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))
-                    })
-                    .await?;
-                let (ok, failed) = super::record_git_pull_results(&results);
-                let detail = if failed == 0 {
-                    format!("{ok} repositories current")
-                } else {
-                    format!("{ok} repositories current; {failed} failed")
-                };
-                jackin_diagnostics::active_timing_done(
-                    "workspace",
-                    "git_pull_on_entry",
-                    Some(&detail),
-                );
-                progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
+                git_pull_join = Some(DeferredGitPull {
+                    handle,
+                    print_results: false,
+                });
             }
         } else if !sources.is_empty() {
             jackin_diagnostics::active_timing_started(
@@ -721,26 +950,27 @@ pub(crate) async fn load_role_with(
             // single-threaded executor is never parked on the join.
             let debug = opts.debug;
             let git_program = git_pull_program(opts);
-            let results = tokio::task::spawn_blocking(move || {
+            let handle = tokio::task::spawn_blocking(move || {
                 super::pull_git_sources_with_git(sources, debug, &git_program, true)
-            })
-            .await
-            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
-            super::print_git_pull_results(&results);
-            let (ok, failed) = super::record_git_pull_results(&results);
-            let detail = if failed == 0 {
-                format!("{ok} repositories current")
-            } else {
-                format!("{ok} repositories current; {failed} failed")
-            };
-            jackin_diagnostics::active_timing_done("workspace", "git_pull_on_entry", Some(&detail));
+            });
+            git_pull_join = Some(DeferredGitPull {
+                handle,
+                print_results: true,
+            });
         }
     }
     let restoring = restore_container.is_some();
     let (container_name, _name_lock) = if let Some(container_name) = restore_container {
         claim_known_container_name(paths, &container_name, docker).await?
     } else {
-        claim_container_name(paths, workspace_name.as_deref(), selector, docker).await?
+        {
+            let workspace_typed = workspace_name
+                .as_deref()
+                .map(WorkspaceName::parse)
+                .transpose()
+                .map_err(anyhow::Error::from)?;
+            claim_container_name(paths, workspace_typed.as_ref(), selector, docker).await?
+        }
     };
 
     // Preliminary panel name only. The authoritative, commit-tagged image name
@@ -767,10 +997,25 @@ pub(crate) async fn load_role_with(
         );
     }
 
+    // Resolve every credential any agent the role can run might read from the
+    // container env, plus generic operator vars. The selected agent is one of
+    // these; sibling agents share the same container env and an ApiKey/OAuth
+    // tab reads its key from that env at `docker run`, so gating a supported
+    // agent's key out would start that tab without auth. Only credentials for
+    // agents the role cannot launch are skipped.
+    let credential_agents = supported_agents.clone();
+    let operator_env = defer_operator_env(
+        config,
+        selector,
+        workspace_name.as_deref(),
+        opts,
+        credential_agents.clone(),
+    );
+
     // Decide whether the selected image is already runnable before touching
-    // operator/manifest/GitHub env. Creating a fresh container still needs
-    // credentials later, but a warm recipe hit should be visible before any
-    // unrelated secret graph can block the launch.
+    // manifest/GitHub env. Operator-env reads are already running in the
+    // background so op:// latency can overlap local image verification and any
+    // build work that follows.
     let rebuild = opts.rebuild;
     if let Some(progress) = steps.progress_mut() {
         progress.stage_started(
@@ -819,86 +1064,11 @@ pub(crate) async fn load_role_with(
     // (tests only), `resolve_operator_env_with` is called with the
     // supplied seams, so tests never need to mutate `std::env` and the
     // crate-level `unsafe_code = "forbid"` lint stays intact.
-    let auth_mode = jackin_config::resolve_mode(
-        config,
-        agent,
-        workspace_name.as_deref().unwrap_or(""),
-        &role_key,
-    );
-    // Resolve every credential any agent the role can run might read from the
-    // container env, plus generic operator vars. The selected agent is one of
-    // these; sibling agents share the same container env and an ApiKey/OAuth
-    // tab reads its key from that env at `docker run`, so gating a supported
-    // agent's key out would start that tab without auth. Only credentials for
-    // agents the role cannot launch are skipped.
-    let credential_agents = supported_agents.clone();
-    let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
-    let operator_env = if jackin_env::has_operator_env_matching(
-        config,
-        Some(&selector.key()),
-        workspace_name.as_deref(),
-        operator_env_needed,
-    ) {
-        jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
-        let operator_env_result = if opts.op_runner.is_none() && opts.host_env.is_none() {
-            // Offload `op` CLI calls to the blocking pool so the tokio render
-            // thread stays responsive during 1Password lookups (Defect 43).
-            let config_clone = config.clone();
-            let selector_key = selector.key().clone();
-            let workspace_key = workspace_name.as_deref().map(String::from);
-            let credential_agents = credential_agents.clone();
-            tokio::task::spawn_blocking(move || {
-                jackin_env::resolve_operator_env_matching(
-                    &config_clone,
-                    Some(&selector_key),
-                    workspace_key.as_deref(),
-                    |key| credential_key_needed_for_role(&credential_agents, key),
-                )
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("env resolver panicked: {e}"))?
-        } else {
-            let default_runner = jackin_env::OpCli::new();
-            let runner: &dyn jackin_env::OpRunner =
-                opts.op_runner.as_deref().unwrap_or(&default_runner);
-            let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
-                opts.host_env.as_ref().map_or_else(
-                    || std::env::var(name),
-                    |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
-                )
-            };
-            jackin_env::resolve_operator_env_with_matching(
-                config,
-                Some(&selector.key()),
-                workspace_name.as_deref(),
-                runner,
-                host_env_fn,
-                operator_env_needed,
-            )
-        };
-        match operator_env_result {
-            Ok(env) => {
-                jackin_diagnostics::active_timing_done(
-                    "credentials",
-                    "operator_env",
-                    Some(&format!("{} vars", env.len())),
-                );
-                env
-            }
-            Err(error) => {
-                jackin_diagnostics::active_timing_done(
-                    "credentials",
-                    "operator_env",
-                    Some("error"),
-                );
-                return Err(error);
-            }
-        }
-    } else {
-        jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
-        jackin_diagnostics::active_timing_done("credentials", "operator_env", Some("skipped"));
-        std::collections::BTreeMap::new()
-    };
+    let auth_workspace = workspace_name
+        .as_deref()
+        .and_then(|n| WorkspaceName::parse(n).ok());
+    let auth_mode = jackin_config::resolve_mode(config, agent, auth_workspace.as_ref(), &role_key);
+    let operator_env = await_operator_env(operator_env).await?;
 
     // Resolve env vars (interactive prompts happen here, before build)
     jackin_diagnostics::active_timing_started("credentials", "manifest_env", None);
@@ -955,11 +1125,11 @@ pub(crate) async fn load_role_with(
     // always-available var the entrypoint turns into a system-prompt block. The
     // full (name, kind, source) triples flow host-side to the credential
     // resolver via `capsule_config.exec_bindings` below.
-    let exec_bindings = jackin_env::collect_on_demand_bindings(
-        config,
-        Some(role_key.as_str()),
-        workspace_name.as_deref(),
-    );
+    let exec_ws = workspace_name
+        .as_deref()
+        .and_then(|n| WorkspaceName::parse(n).ok());
+    let exec_bindings =
+        jackin_env::collect_on_demand_bindings(config, Some(role_key.as_str()), exec_ws.as_ref());
     if !exec_bindings.is_empty() {
         let names = super::exec_binding_names(&exec_bindings);
         merged_vars.retain(|(k, _)| k != "JACKIN_EXEC_BINDINGS");
@@ -973,10 +1143,13 @@ pub(crate) async fn load_role_with(
     // key → layer/reference kind ("OPERATOR_TOKEN: op://Personal/...
     // from workspace \"big-monorepo\"") — never values.
     if !operator_env.is_empty() {
+        let diag_ws = workspace_name
+            .as_deref()
+            .and_then(|n| WorkspaceName::parse(n).ok());
         jackin_env::print_launch_diagnostic(
             config,
             Some(&selector.key()),
-            workspace_name.as_deref(),
+            diag_ws.as_ref(),
             &operator_env,
             opts.debug,
         );
@@ -1038,6 +1211,7 @@ pub(crate) async fn load_role_with(
             rebuild,
             restore_pinned_sha,
             operator_env,
+            git_pull_join,
         })
         .await;
 

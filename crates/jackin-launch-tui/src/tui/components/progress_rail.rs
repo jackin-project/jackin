@@ -7,6 +7,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use crate::tui::components::cells::coalesce_cells;
 use crate::{LaunchStage, LaunchView, StageStatus, active_stage_index};
 
 const STAGE_PULSE_PERIOD: usize = 12;
@@ -106,10 +107,9 @@ pub fn labels_line(view: &LaunchView, frozen: bool, width: usize) -> Line<'stati
     let cells = (0..width).map(|x| {
         let index = start + x as isize;
         let cell = if index >= 0 {
-            strip
-                .get(index as usize)
-                .copied()
-                .unwrap_or_else(blank_label_cell)
+            #[expect(clippy::cast_sign_loss, reason = "index checked non-negative above")]
+            let idx = index as usize;
+            strip.get(idx).copied().unwrap_or_else(blank_label_cell)
         } else {
             blank_label_cell()
         };
@@ -190,6 +190,10 @@ pub fn faded_color(color: Color, factor: f32) -> Color {
     match color {
         Color::Rgb(r, g, b) => {
             let factor = factor.clamp(0.0, 1.0);
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "factor clamped to 0.0..=1.0; product stays in u8 range"
+            )]
             let scale = |c: u8| (f32::from(c) * factor) as u8;
             Color::Rgb(scale(r), scale(g), scale(b))
         }
@@ -220,24 +224,11 @@ pub fn animated_label_center(view: &LaunchView, centers: &[usize]) -> Option<usi
     let progress = elapsed as f32 / LABEL_SLIDE_FRAMES as f32;
     let eased = 1.0 - (1.0 - progress).powi(3);
     let center = (from as f32).mul_add(1.0 - eased, to as f32 * eased);
-    Some(center.round() as usize)
-}
-
-fn coalesce_cells(cells: impl IntoIterator<Item = (char, Style)>) -> Vec<Span<'static>> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut buf = String::new();
-    let mut cur: Option<Style> = None;
-    for (ch, style) in cells {
-        if cur != Some(style) {
-            if let Some(prev) = cur.take() {
-                spans.push(Span::styled(std::mem::take(&mut buf), prev));
-            }
-            cur = Some(style);
-        }
-        buf.push(ch);
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "from/to are usize indices; ease stays non-negative"
+    )]
+    {
+        Some(center.round() as usize)
     }
-    if let Some(prev) = cur {
-        spans.push(Span::styled(buf, prev));
-    }
-    spans
 }

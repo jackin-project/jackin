@@ -13,12 +13,14 @@
     "documentation",
     "infrastructure",
     "isolation",
+    "jackin-context-engine",
     "operator-surface",
     "product-growth",
     "runtime",
     "security",
+    "session-capture",
     "testing",
-    "token-optimization",
+    "token-optimization-techniques",
     "token-optimization-tools"
   ]
 }

@@ -220,6 +220,7 @@ fn reset_buildx(cfg: &Config) -> Result<()> {
 }
 
 fn build_local(cfg: &Config) -> Result<()> {
+    init_buildx(cfg)?;
     let mut cmd = docker([
         "buildx",
         "bake",
@@ -235,6 +236,7 @@ fn build_local(cfg: &Config) -> Result<()> {
 }
 
 fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
+    init_buildx(cfg)?;
     let mut cmd = docker([
         "buildx",
         "bake",
@@ -253,6 +255,7 @@ fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
 
 fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
     cfg.guard_local_publish()?;
+    init_buildx(cfg)?;
     fs::create_dir_all(&cfg.digest_dir)
         .with_context(|| format!("creating digest dir {}", cfg.digest_dir))?;
     let metadata_file = format!("{}/metadata-{}.json", cfg.digest_dir, platform.name());
@@ -331,12 +334,8 @@ fn version_published(cfg: &Config) -> Result<bool> {
         );
     }
     let reference = cfg.ref_for(&cfg.version_tag);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "build helper: synchronous registry probe, not a render/runtime thread"
-    )]
-    let output = docker(["buildx", "imagetools", "inspect", &reference])
-        .output()
+    let mut inspect = docker(["buildx", "imagetools", "inspect", &reference]);
+    let output = crate::cmd::output_raw(&mut inspect)
         .with_context(|| format!("running docker buildx imagetools inspect {reference}"))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     match classify_inspect(output.status.success(), &stderr) {
@@ -410,6 +409,7 @@ fn publish_manifest(cfg: &Config) -> Result<()> {
 }
 
 fn inspect(cfg: &Config) -> Result<()> {
+    init_buildx(cfg)?;
     let mut cmd = docker([
         "buildx",
         "bake",
@@ -502,34 +502,13 @@ fn docker<const N: usize>(args: [&str; N]) -> Command {
 }
 
 fn builder_exists(builder: &str) -> bool {
-    docker(["buildx", "inspect", builder])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+    let mut cmd = docker(["buildx", "inspect", builder]);
+    cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    crate::cmd::run(&mut cmd).is_ok()
 }
 
 fn run_checked(mut cmd: Command) -> Result<()> {
-    let status = cmd
-        .status()
-        .with_context(|| format!("failed to spawn `{}`", command_label(&cmd)))?;
-    if !status.success() {
-        bail!("`{}` failed with {status}", command_label(&cmd));
-    }
-    Ok(())
-}
-
-fn command_label(cmd: &Command) -> String {
-    let program = cmd.get_program().to_string_lossy();
-    let args: Vec<String> = cmd
-        .get_args()
-        .map(|arg| arg.to_string_lossy().into_owned())
-        .collect();
-    if args.is_empty() {
-        program.into_owned()
-    } else {
-        format!("{program} {}", args.join(" "))
-    }
+    crate::cmd::run(&mut cmd)
 }
 
 /// Env value if the variable is set, else the computed default. A set-but-empty
@@ -546,18 +525,10 @@ fn env_present(key: &str) -> Option<String> {
 }
 
 fn git_sha() -> Option<String> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "build helper: synchronous git probe, not a render/runtime thread"
-    )]
-    let output = Command::new("git")
-        .args(["rev-parse", "--short=12", "HEAD"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let sha = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    let mut cmd = Command::new("git");
+    cmd.args(["rev-parse", "--short=12", "HEAD"]);
+    let stdout = crate::cmd::output_string(&mut cmd).ok()?;
+    let sha = stdout.trim().to_owned();
     (!sha.is_empty()).then_some(sha)
 }
 
