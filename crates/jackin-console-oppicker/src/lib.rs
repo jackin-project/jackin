@@ -1,4 +1,4 @@
-//! `jackin-console-oppicker`: pure 1Password op-picker planning (no I/O).
+//! jackin-console-oppicker: pure 1Password op-picker planning (no I/O).
 //!
 //! **Architecture Invariant:** T3.
 //! Entry point: [`OpPickerPlan`] — pure picker planning result.
