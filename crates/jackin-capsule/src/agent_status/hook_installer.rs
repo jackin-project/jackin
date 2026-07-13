@@ -4,6 +4,7 @@
 //! hook/plugin configuration into the container-local agent home and verifies
 //! it matches the expected content. Drift is repaired on every session launch.
 
+use jackin_core::container_paths;
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -35,7 +36,7 @@ pub struct ClaudeHookInstaller {
 impl Default for ClaudeHookInstaller {
     fn default() -> Self {
         Self {
-            hook_script_path: "/jackin/runtime/agent-status/hooks/claude/report-hook.sh".to_owned(),
+            hook_script_path: container_paths::AGENT_STATUS_CLAUDE_HOOK.to_owned(),
         }
     }
 }
@@ -217,7 +218,7 @@ impl PluginInstaller {
     pub fn opencode() -> Self {
         Self {
             config_dir: "opencode",
-            plugin_path: "/jackin/runtime/agent-status/hooks/opencode/plugin.js".to_owned(),
+            plugin_path: container_paths::AGENT_STATUS_OPENCODE_PLUGIN.to_owned(),
         }
     }
 
@@ -274,7 +275,7 @@ pub struct CodexHookInstaller {
 impl Default for CodexHookInstaller {
     fn default() -> Self {
         Self {
-            hook_script_path: "/jackin/runtime/agent-status/hooks/codex/report-hook.sh".to_owned(),
+            hook_script_path: container_paths::AGENT_STATUS_CODEX_HOOK.to_owned(),
         }
     }
 }

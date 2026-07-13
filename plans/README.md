@@ -1,20 +1,23 @@
 # Implementation Plans
 
-Execution plans for in-flight workstreams. Each subfolder holds its own plans + README; completed
-plans are removed when they ship.
+Plans hold **unfinished** multi-step work. Fully shipped plan bodies are removed after source audit; code and git history are the source of truth.
 
-## Active folders
+## Active unfinished
 
-- **complexity-debt/** — `too_many_lines` / `cognitive_complexity` suppression burndown (opened as
-  plan 025 in the 2026-07-03 deep audit; PR #713 shipped the first slice, the rest stays open).
-- **launch-speed/** — deferred launch-pipeline performance items from PR #718.
-- **tui-review/** — review follow-ups from PR #721.
-- **agent-status/** — agent runtime status authority program.
+| Path | Scope | Status |
+|------|--------|--------|
+| [agent-status/](agent-status/) | Product detection (live goldens, pack rewrite, live authority, remote packs) | Deferred / open residuals |
 
-## Historical note
+## Removed (shipped)
 
-The 2026-07-03 deep audit (`improve` skill, against commit `46511939d`) produced 54 advisor plans
-(001-054). PR #713 (`feat(workspace): execute first wave of advisor improvement plans`) shipped them:
-the fully-done plans were removed and the one with remaining work (complexity-suppression burndown,
-025) moved into `complexity-debt/`. The original status table, finding→plan traceability, and audit
-coverage notes are preserved in git history at the pre-cleanup commit.
+These program tracks shipped on PR #759 (`chore/rust-code-health-roadmap`) and were deleted after multi-agent verification (2026-07-13):
+
+- Code-health numbered plans **003–069** + residual ledger (waves 0–6 drained)
+- Launch-speed **001–008** (including 008c early restore-scan reuse)
+- Goal prompts: `GOAL-CODE-HEALTH-AND-LAUNCH-SPEED`, `GOAL-CLOSE-ALL-REMAINING`
+
+Routine code-health roadmap (ongoing quality program, not a residual ledger): [codebase-health-enforcement](../docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx).
+
+Hard external pin only (no plan file): **iai-callgrind** — project CI has no valgrind; re-evaluate when a valgrind-capable runner exists.
+
+Do not re-add numbered plan files without new residual evidence large enough for a dedicated PR.

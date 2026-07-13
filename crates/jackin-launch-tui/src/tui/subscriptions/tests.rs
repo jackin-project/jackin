@@ -148,7 +148,7 @@ fn build_log_mouse_debug_telemetry_does_not_escape_to_compact_output() {
         view.build_log_open,
         &mut last_cell,
         crossterm::event::MouseEvent {
-            kind: MouseEventKind::Moved,
+            kind: MouseEventKind::ScrollDown,
             column: 10,
             row: 10,
             modifiers: KeyModifiers::NONE,

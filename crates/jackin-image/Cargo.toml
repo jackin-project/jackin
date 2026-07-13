@@ -25,6 +25,7 @@ sha2 = { workspace = true }
 tar = "0.4"
 flate2 = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

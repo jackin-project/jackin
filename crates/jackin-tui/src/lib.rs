@@ -1,29 +1,7 @@
-//! Shared TUI tokens, models, and components used by jackin❯'s
-//! terminal surfaces.
+//! jackin-tui: shared TUI widgets, theme, and render helpers.
 //!
-//! Backend-neutral types such as RGB tokens, tab-cell layout, hint
-//! spans, text-field state, and scroll metrics stay at the crate
-//! root or in small helper modules. Ratatui components live under
-//! [`components`], with color adapters in [`theme`]. Surface crates
-//! own domain state and compose these pieces instead of re-declaring
-//! palette values or reimplementing visual primitives.
-//!
-//! **Architecture Invariant:** L3 presentation crate (design system).
-//! Allowed dependencies: `jackin-core` (for the re-exported widget stubs
-//! `TailScroll`, `DialogBodyScroll`, `StatusFooterHover`, etc., plus
-//! shared tokens `Rgb`, `owo_rgb`, the `PHOSPHOR_*` palette, and
-//! `shorten_home`). Must NOT depend on infrastructure or higher-layer
-//! presentation surfaces (`jackin-launch-tui`, `jackin-console`,
-//! `jackin-capsule`). Surface crates depend on this one, never the
-//! reverse.
-//!
-//! # Shared TEA runtime contract
-//!
-//! The Elm-style runtime lives in [`runtime`]: one
-//! [`runtime::UpdateResult`] per `update` call, [`runtime::Component`]
-//! for event→message translation, and [`runtime::View`] for
-//! model→frame rendering. Surface crates (host, launch, capsule,
-//! console) implement these traits; `jackin-tui` only defines them.
+//! **Architecture Invariant:** T1.
+//! Entry point: [`Theme`] — shared TUI theme tokens.
 
 pub mod animation;
 pub mod ansi_text;

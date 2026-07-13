@@ -27,12 +27,12 @@ fn title_casing() {
 
 #[test]
 fn slug_validation() {
-    assert!(validate_slug("agent-codenames").is_ok());
-    assert!(validate_slug("a1-b2").is_ok());
-    assert!(validate_slug("Bad-Slug").is_err());
-    assert!(validate_slug("-leading").is_err());
-    assert!(validate_slug("double--hyphen").is_err());
-    assert!(validate_slug("").is_err());
+    validate_slug("agent-codenames").unwrap();
+    validate_slug("a1-b2").unwrap();
+    validate_slug("Bad-Slug").unwrap_err();
+    validate_slug("-leading").unwrap_err();
+    validate_slug("double--hyphen").unwrap_err();
+    validate_slug("").unwrap_err();
 }
 
 #[test]

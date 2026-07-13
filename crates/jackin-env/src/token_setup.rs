@@ -17,8 +17,8 @@
 //!    the workspace's `[claude]` block (`auth_forward = "oauth_token"`)
 //!    and `[env]` block (`CLAUDE_CODE_OAUTH_TOKEN = op://...`).
 //!
-//! Production callers use [`run_setup`]; tests inject mocks via
-//! [`run_setup_with_runner`].
+//! Production callers use [`run_setup`]; tests inject mocks via the
+//! crate-private `run_setup_with_runner` helper.
 //!
 //! Roadmap: `docs/src/content/docs/reference/roadmap/workspace-claude-token-setup.mdx`
 
@@ -28,7 +28,7 @@ use crate::op_runner::OpRunner;
 use crate::op_struct::OpWriteRunner;
 use crate::resolve::CLAUDE_OAUTH_TOKEN_ENV;
 use jackin_config::{AppConfig, AuthForwardMode, ConfigEditor, EnvScope};
-use jackin_core::{Agent, EnvValue, FieldTarget, JackinPaths, OpRef};
+use jackin_core::{Agent, EnvValue, FieldTarget, JackinPaths, OpRef, WorkspaceName};
 
 use secrecy::ExposeSecret;
 use sha2::Digest;
@@ -42,7 +42,7 @@ pub const DEFAULT_ITEM_TEMPLATE: &str = "Claude";
 
 /// Default `op` item category for OAuth tokens (1Password's API
 /// Credential category renders `token` as a concealed field).
-pub const DEFAULT_ITEM_CATEGORY: &str = "API_CREDENTIAL";
+pub(crate) const DEFAULT_ITEM_CATEGORY: &str = "API_CREDENTIAL";
 
 /// Default field label inside the created item.
 pub const DEFAULT_FIELD_LABEL: &str = "oauth-token";
@@ -51,7 +51,7 @@ pub const DEFAULT_FIELD_LABEL: &str = "oauth-token";
 /// filters can find them later.
 pub const JACKIN_TAG: &str = "jackin";
 /// Per-workspace tag prefix (`workspace=<name>`).
-pub const WORKSPACE_TAG_PREFIX: &str = "workspace=";
+pub(crate) const WORKSPACE_TAG_PREFIX: &str = "workspace=";
 
 /// True when an item's tags mark it as jackin-created (and therefore safe
 /// for rotate to delete). Keeps the [`JACKIN_TAG`] ownership rule in one
@@ -111,7 +111,12 @@ pub enum TokenSetupScope {
     Workspace(String),
     /// Wire `[workspaces.<name>.roles.<role>]` claude auth + that role's
     /// env slot — a per-role override inside the workspace.
-    WorkspaceRole { workspace: String, role: String },
+    WorkspaceRole {
+        /// Workspace name.
+        workspace: String,
+        /// Role name within the workspace.
+        role: String,
+    },
     /// Wire the global `[claude]` auth + the global env slot.
     Global,
 }
@@ -140,7 +145,9 @@ impl TokenSetupScope {
 /// during the interactive `--interactive` token-setup path.
 #[derive(Debug, Clone)]
 pub struct EditExistingTarget {
+    /// Vault id holding the item.
     pub vault_id: String,
+    /// Item id to update.
     pub item_id: String,
     /// Which field to write: an exact existing field id (overwrite,
     /// placement preserved) or a new field by label (see [`FieldTarget`]).
@@ -154,6 +161,7 @@ pub struct EditExistingTarget {
 /// Outcome of one orchestrator run.
 #[derive(Debug, Clone)]
 pub struct TokenSetupReport {
+    /// Scope label (workspace name, or `global`).
     pub workspace: String,
     /// Probed `claude` CLI version. `None` on `--reuse` because the
     /// orchestrator does not invoke `claude` on that path.
@@ -162,8 +170,11 @@ pub struct TokenSetupReport {
     /// `None` for the plain-text path, where the token is stored as a
     /// literal in config and there is no op item to reference.
     pub op_ref: Option<OpRef>,
+    /// 1Password account id/email used when the ref was written, if known.
     pub op_account: Option<String>,
+    /// First characters of the SHA-256 of the minted or reused token.
     pub token_sha256_prefix: String,
+    /// Whether a new 1Password item was created (`false` on reuse/edit).
     pub created: bool,
     /// `YYYY-MM-DD` estimate of when the captured token will lapse.
     /// `None` for the `--reuse` path (jackin did not mint the token,
@@ -173,7 +184,7 @@ pub struct TokenSetupReport {
 
 /// Run the orchestrator end-to-end against production runners.
 ///
-/// Equivalent to calling [`run_setup_with_runner`] with
+/// Equivalent to the internal `run_setup_with_runner` path with
 /// `host_claude::capture_setup_token` and a freshly constructed
 /// `OpCli`. Tests inject mocks via the `_with_runner` form.
 pub fn run_setup(
@@ -275,7 +286,11 @@ struct MintOutcome {
 /// Takes the same injection seams as [`run_setup_with_runner`]: a
 /// pre-resolved Claude probe (`None` on `--reuse`), a capture closure,
 /// an [`OpRunner`] for read-back, and an [`OpWriteRunner`] for create.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn mint_token_value_with_runner<F>(
     paths: &JackinPaths,
     config: &AppConfig,
@@ -290,7 +305,8 @@ where
     F: FnOnce() -> anyhow::Result<secrecy::SecretString>,
 {
     if let Some(workspace) = scope.workspace() {
-        config.require_workspace(workspace)?;
+        let wn = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
+        config.require_workspace(&wn)?;
     }
 
     // plain_text is op-incompatible: `reuse` adopts an existing op
@@ -435,9 +451,11 @@ where
     // The expiry stamp is keyed per workspace; the launch banner that
     // reads it is per-workspace too, so the `Global` scope has no
     // banner to feed and skips the stamp entirely.
-    if let (true, Some(workspace)) = (created, scope.workspace()) {
+    if let (true, Some(workspace)) = (created, scope.workspace())
+        && let Ok(wn) = WorkspaceName::parse(workspace)
+    {
         let expiry = upstream_expiry_stamp();
-        if let Err(e) = write_expiry_stamp(paths, workspace, &expiry) {
+        if let Err(e) = write_expiry_stamp(paths, &wn, &expiry) {
             crate::output::stderr_line(format_args!(
                 "[jackin] note: token stored, but expiry banner cache \
                  write failed: {e} — launch banner will not show 'expires in N days' \
@@ -467,8 +485,11 @@ where
 /// The orchestrator's mutation path is gated behind these injection
 /// seams so the unit tests in this module never spawn `op` or
 /// `claude`.
-#[allow(clippy::too_many_arguments)]
-pub fn run_setup_with_runner<F>(
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) fn run_setup_with_runner<F>(
     paths: &JackinPaths,
     config: &mut AppConfig,
     scope: &TokenSetupScope,
@@ -495,8 +516,9 @@ where
     let mut editor = ConfigEditor::open(paths)?;
     match scope {
         TokenSetupScope::Workspace(workspace) => {
+            let ws = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
             editor.set_workspace_auth_forward(
-                workspace,
+                &ws,
                 Agent::Claude,
                 Some(AuthForwardMode::OAuthToken),
             );
@@ -507,8 +529,9 @@ where
             )?;
         }
         TokenSetupScope::WorkspaceRole { workspace, role } => {
+            let ws = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
             editor.set_workspace_role_auth_forward(
-                workspace,
+                &ws,
                 role,
                 Agent::Claude,
                 Some(AuthForwardMode::OAuthToken),
@@ -539,8 +562,9 @@ where
     // will read. Only the `created` + workspace-scoped path has a
     // stamp to read back.
     let expiry_estimate = match (created, scope.workspace()) {
-        (true, Some(workspace)) => std::fs::read_to_string(expiry_cache_path(paths, workspace))
+        (true, Some(workspace)) => WorkspaceName::parse(workspace)
             .ok()
+            .and_then(|wn| std::fs::read_to_string(expiry_cache_path(paths, &wn)).ok())
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty()),
         _ => None,
@@ -585,12 +609,12 @@ enum WiredValue {
 pub fn run_revoke(
     paths: &JackinPaths,
     config: &mut AppConfig,
-    workspace: &str,
+    workspace: &WorkspaceName,
     delete_op_item: bool,
 ) -> anyhow::Result<RevokeReport> {
     let op_cli = op_cli_for_scope(
         config,
-        &TokenSetupScope::Workspace(workspace.to_owned()),
+        &TokenSetupScope::Workspace(workspace.as_str().to_owned()),
         None,
         OpTimeoutBudget::Quick,
     );
@@ -598,10 +622,10 @@ pub fn run_revoke(
 }
 
 /// Test-injectable variant of [`run_revoke`].
-pub fn run_revoke_with_runner(
+pub(crate) fn run_revoke_with_runner(
     paths: &JackinPaths,
     config: &mut AppConfig,
-    workspace: &str,
+    workspace: &WorkspaceName,
     delete_op_item: bool,
     op_writer: &dyn OpWriteRunner,
 ) -> anyhow::Result<RevokeReport> {
@@ -628,14 +652,14 @@ pub fn run_revoke_with_runner(
             }
             Some(EnvValue::Plain(_) | EnvValue::Extended(_)) => {
                 anyhow::bail!(
-                    "--delete-op-item requested but workspace {workspace:?} has a literal \
+                    "--delete-op-item requested but workspace {workspace} has a literal \
                      token slot (not an op:// reference); jackin does not know where the \
                      literal came from. Re-run without --delete-op-item to clear the slot."
                 );
             }
             None => {
                 anyhow::bail!(
-                    "--delete-op-item requested but workspace {workspace:?} has no \
+                    "--delete-op-item requested but workspace {workspace} has no \
                      CLAUDE_CODE_OAUTH_TOKEN slot to delete from."
                 );
             }
@@ -646,7 +670,7 @@ pub fn run_revoke_with_runner(
 
     let mut editor = ConfigEditor::open(paths)?;
     editor.remove_env_var(
-        &EnvScope::Workspace(workspace.to_owned()),
+        &EnvScope::Workspace(workspace.as_str().to_owned()),
         CLAUDE_OAUTH_TOKEN_ENV,
     );
     editor.set_workspace_auth_forward(workspace, Agent::Claude, Some(AuthForwardMode::Ignore));
@@ -658,16 +682,20 @@ pub fn run_revoke_with_runner(
     clear_expiry_stamp(paths, workspace);
 
     Ok(RevokeReport {
-        workspace: workspace.to_owned(),
+        workspace: workspace.as_str().to_owned(),
         deleted_op_item: deleted_item,
         cleared_slot: prior.is_some(),
     })
 }
 
+/// Outcome of a workspace Claude-token revoke run.
 #[derive(Debug, Clone)]
 pub struct RevokeReport {
+    /// Workspace that was revoked.
     pub workspace: String,
+    /// Whether the jackin-owned 1Password item was deleted.
     pub deleted_op_item: bool,
+    /// Whether a prior env slot value was cleared from config.
     pub cleared_slot: bool,
 }
 
@@ -677,18 +705,18 @@ pub struct RevokeReport {
 ///
 /// Without this, `jackin workspace claude-token rotate <ws>` (no
 /// `--vault`) — the documented default rotate flow — fails inside
-/// [`create_op_item`] AFTER the operator has already completed the
-/// PTY token capture, because `create_op_item` hard-errors when its
+/// item creation AFTER the operator has already completed the
+/// PTY token capture, because create hard-errors when its
 /// vault arg is `None`. The prior canonical slot stores a
 /// UUID-form `op://<vault_id>/<item_id>/<field_id>` URI, so the
-/// vault id round-trips through `create_op_item`'s vault arg
+/// vault id round-trips through the create vault arg
 /// without needing a separate name lookup.
 ///
 /// Returns `None` only when the CLI passed nothing AND the prior
 /// slot is absent or holds a literal (non-`op://`) value — both
 /// cases that legitimately require explicit `--vault`. The caller
 /// surfaces the resulting "no --vault supplied" error from
-/// `create_op_item` in that case.
+/// create in that case.
 #[must_use]
 pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> Option<String> {
     cli_vault.or_else(|| {
@@ -709,10 +737,10 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
 /// OAuth token is *valid* upstream is to launch a workspace and
 /// observe the auth banner; doctor's job is to confirm the
 /// canonical-slot config plumbing resolves without errors.
-pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorReport> {
+pub fn run_doctor(config: &AppConfig, workspace: &WorkspaceName) -> anyhow::Result<DoctorReport> {
     let op_cli = op_cli_for_scope(
         config,
-        &TokenSetupScope::Workspace(workspace.to_owned()),
+        &TokenSetupScope::Workspace(workspace.as_str().to_owned()),
         None,
         OpTimeoutBudget::Quick,
     );
@@ -720,9 +748,9 @@ pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorR
 }
 
 /// Test-injectable variant of [`run_doctor`].
-pub fn run_doctor_with_runner(
+pub(crate) fn run_doctor_with_runner(
     config: &AppConfig,
-    workspace: &str,
+    workspace: &WorkspaceName,
     op_reader: &dyn OpRunner,
 ) -> anyhow::Result<DoctorReport> {
     let ws = config.require_workspace(workspace)?;
@@ -733,13 +761,13 @@ pub fn run_doctor_with_runner(
         .unwrap_or_default();
     let token_decl = ws.env.get(CLAUDE_OAUTH_TOKEN_ENV).ok_or_else(|| {
         anyhow::anyhow!(
-            "workspace {workspace:?} has no CLAUDE_CODE_OAUTH_TOKEN in its env block — \
+            "workspace {workspace} has no CLAUDE_CODE_OAUTH_TOKEN in its env block — \
              run `jackin workspace claude-token setup` first"
         )
     })?;
     let account = effective_account(
         config,
-        &TokenSetupScope::Workspace(workspace.to_owned()),
+        &TokenSetupScope::Workspace(workspace.as_str().to_owned()),
         None,
     )
     .map(str::to_owned);
@@ -753,7 +781,7 @@ pub fn run_doctor_with_runner(
     let prefix = sha256_prefix(&token);
 
     Ok(DoctorReport {
-        workspace: workspace.to_owned(),
+        workspace: workspace.as_str().to_owned(),
         mode,
         op_ref: match token_decl {
             EnvValue::OpRef(r) => Some(r.clone()),
@@ -764,12 +792,18 @@ pub fn run_doctor_with_runner(
     })
 }
 
+/// Outcome of a workspace Claude-token doctor check.
 #[derive(Debug, Clone)]
 pub struct DoctorReport {
+    /// Workspace that was checked.
     pub workspace: String,
+    /// Effective Claude auth-forward mode for the workspace.
     pub mode: AuthForwardMode,
+    /// Canonical `op://` ref when the slot is op-backed.
     pub op_ref: Option<OpRef>,
+    /// Effective 1Password account used for the read, if known.
     pub op_account: Option<String>,
+    /// First characters of the SHA-256 of the resolved token value.
     pub token_sha256_prefix: String,
 }
 
@@ -1009,8 +1043,14 @@ fn now_utc_rfc3339() -> String {
 ///
 /// One file per workspace under
 /// `<cache_dir>/claude-token-expiry/<workspace>`. Removed on revoke.
-pub fn expiry_cache_path(paths: &JackinPaths, workspace: &str) -> std::path::PathBuf {
-    paths.cache_dir.join("claude-token-expiry").join(workspace)
+pub(crate) fn expiry_cache_path(
+    paths: &JackinPaths,
+    workspace: &WorkspaceName,
+) -> std::path::PathBuf {
+    paths
+        .cache_dir
+        .join("claude-token-expiry")
+        .join(workspace.as_str())
 }
 
 /// Write the workspace's expiry stamp.
@@ -1020,9 +1060,9 @@ pub fn expiry_cache_path(paths: &JackinPaths, workspace: &str) -> std::path::Pat
 /// which sets `TokenSetupReport.expiry_estimate = None` on failure
 /// so the banner-state shown to the operator matches what the
 /// launch path will read back.
-pub fn write_expiry_stamp(
+pub(crate) fn write_expiry_stamp(
     paths: &JackinPaths,
-    workspace: &str,
+    workspace: &WorkspaceName,
     expiry: &str,
 ) -> std::io::Result<()> {
     let path = expiry_cache_path(paths, workspace);
@@ -1038,7 +1078,7 @@ pub fn write_expiry_stamp(
 /// a warning so a `PermissionDenied` / `IsADirectory` cache
 /// collision does not silently leave a stale banner countdown in
 /// place for the next launch.
-pub fn clear_expiry_stamp(paths: &JackinPaths, workspace: &str) {
+pub(crate) fn clear_expiry_stamp(paths: &JackinPaths, workspace: &WorkspaceName) {
     let path = expiry_cache_path(paths, workspace);
     match std::fs::remove_file(&path) {
         Ok(()) => {}
@@ -1064,7 +1104,7 @@ pub fn clear_expiry_stamp(paths: &JackinPaths, workspace: &str) {
 /// stamp" (silent) from "broken stamp" (warn once).
 pub fn expiry_days_for_launch(
     paths: &JackinPaths,
-    workspace: &str,
+    workspace: &WorkspaceName,
 ) -> std::io::Result<Option<i64>> {
     let path = expiry_cache_path(paths, workspace);
     let raw = match std::fs::read_to_string(&path) {
@@ -1096,7 +1136,7 @@ pub fn expiry_days_for_launch(
 
 /// Days remaining until `expiry` (YYYY-MM-DD), or `None` when the
 /// stamp cannot be parsed. Negative values mean expired.
-pub fn days_until_expiry(expiry: &str) -> Option<i64> {
+pub(crate) fn days_until_expiry(expiry: &str) -> Option<i64> {
     let parsed = chrono::NaiveDate::parse_from_str(expiry, "%Y-%m-%d").ok()?;
     let today = chrono::Utc::now().date_naive();
     Some((parsed - today).num_days())

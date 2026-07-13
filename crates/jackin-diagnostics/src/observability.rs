@@ -52,6 +52,92 @@ pub mod otel_keys {
     pub const ACTION: &str = "jackin.action";
     /// Capsule tab/pane label.
     pub const TAB_LABEL: &str = "jackin.tab.label";
+
+    // Operation facade attributes (plan 041). Low-cardinality only.
+    pub const PROCESS_COMMAND: &str = "process.command";
+    pub const PROCESS_ARGS_REDACTED: &str = "process.args_redacted";
+    pub const PROCESS_EXIT_CODE: &str = "process.exit_code";
+    pub const EVENT_NAME: &str = "event.name";
+    pub const CATEGORY: &str = "jackin.category";
+    pub const ERROR_TYPE: &str = "error.type";
+    pub const EVENT_OUTCOME: &str = "event.outcome";
+}
+
+/// OTLP metric instrument names — single source of truth for wire metric names.
+/// Do not rename values: backends store history keyed by these strings.
+pub mod otel_metrics {
+    pub const PROCESS_CPU_UTILIZATION: &str = "process.cpu.utilization";
+    pub const PROCESS_MEMORY_USAGE: &str = "process.memory.usage";
+    pub const TOKIO_RUNTIME_WORKERS: &str = "tokio.runtime.workers";
+    pub const TOKIO_RUNTIME_ALIVE_TASKS: &str = "tokio.runtime.alive.tasks";
+    pub const TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH: &str = "tokio.runtime.global.queue.depth";
+    pub const JACKIN_DIAGNOSTICS_EVENTS: &str = "jackin.diagnostics.events";
+    pub const JACKIN_CACHE_HITS: &str = "jackin.cache.hits";
+    pub const JACKIN_CACHE_MISSES: &str = "jackin.cache.misses";
+    // Hot-path instruments (plan 042).
+    pub const TERMINAL_BYTES_SENT: &str = "jackin.terminal.bytes_sent";
+    pub const TERMINAL_BYTES_RECEIVED: &str = "jackin.terminal.bytes_received";
+    pub const TERMINAL_CURSOR_MOVES: &str = "jackin.terminal.cursor_moves";
+    pub const RENDER_DURATION: &str = "jackin.render.duration";
+    pub const RENDER_PAINTED_CELLS: &str = "jackin.render.painted_cells";
+    pub const RENDER_FRAMES: &str = "jackin.render.frames";
+    pub const INPUT_MOUSE_EVENTS: &str = "jackin.input.mouse_events";
+    pub const USAGE_ACCOUNTS_REFRESHED: &str = "jackin.usage.accounts_refreshed";
+    pub const ERRORS_COUNT: &str = "jackin.errors.count";
+    pub const ALL: &[&str] = &[
+        PROCESS_CPU_UTILIZATION,
+        PROCESS_MEMORY_USAGE,
+        TOKIO_RUNTIME_WORKERS,
+        TOKIO_RUNTIME_ALIVE_TASKS,
+        TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH,
+        JACKIN_DIAGNOSTICS_EVENTS,
+        JACKIN_CACHE_HITS,
+        JACKIN_CACHE_MISSES,
+        TERMINAL_BYTES_SENT,
+        TERMINAL_BYTES_RECEIVED,
+        TERMINAL_CURSOR_MOVES,
+        RENDER_DURATION,
+        RENDER_PAINTED_CELLS,
+        RENDER_FRAMES,
+        INPUT_MOUSE_EVENTS,
+        USAGE_ACCOUNTS_REFRESHED,
+        ERRORS_COUNT,
+    ];
+}
+
+/// Diagnostics event `kind` names referenced by the taxonomy layer.
+pub mod otel_events {
+    pub const STAGE_STARTED: &str = "stage_started";
+    pub const STAGE_DONE: &str = "stage_done";
+    pub const STAGE_FAILED: &str = "stage_failed";
+    pub const STAGE_SKIPPED: &str = "stage_skipped";
+    pub const TIMING_STARTED: &str = "timing_started";
+    pub const TIMING_DONE: &str = "timing_done";
+    pub const DEBUG: &str = "debug";
+    pub const SUBPROCESS_DONE: &str = "subprocess_done";
+    pub const OTLP_INTERNAL: &str = "otlp_internal";
+    pub const RUN_SUMMARY: &str = "run_summary";
+    pub const SLOW_FOREGROUND_WAIT: &str = "slow_foreground_wait";
+    pub const SESSION_DETACH: &str = "session_detach";
+    pub const CLEAN_SHUTDOWN: &str = "clean_shutdown";
+    /// Host subprocess span name (`ShellRunner` choke point, plan 041).
+    pub const PROCESS_EXECUTE: &str = "process.execute";
+    pub const ALL: &[&str] = &[
+        STAGE_STARTED,
+        STAGE_DONE,
+        STAGE_FAILED,
+        STAGE_SKIPPED,
+        TIMING_STARTED,
+        TIMING_DONE,
+        DEBUG,
+        SUBPROCESS_DONE,
+        OTLP_INTERNAL,
+        RUN_SUMMARY,
+        SLOW_FOREGROUND_WAIT,
+        SESSION_DETACH,
+        CLEAN_SHUTDOWN,
+        PROCESS_EXECUTE,
+    ];
 }
 
 /// Tracing layer that turns marked diagnostics events into run JSONL records.
@@ -153,7 +239,10 @@ impl Visit for OtelInternalVisitor {
 // `allow`, not `expect`: the body is trivially const only in the default
 // (no-otlp) build; the otlp build does non-const setup, so the lint fires in one
 // cfg and not the other and a single non-const signature is required.
-#[allow(clippy::missing_const_for_fn)]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<bool> {
     #[cfg(feature = "otlp")]
     {
@@ -215,7 +304,10 @@ pub fn unsupported_otlp_protocol() -> Option<String> {
 /// from `ActiveRunGuard::drop` so it runs on every exit path out of the run —
 /// including `?` error early-returns — rather than only the success path.
 /// No-op in default builds and when no endpoint was configured.
-#[allow(clippy::missing_const_for_fn)]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn shutdown_otlp() {
     #[cfg(feature = "otlp")]
     otlp::shutdown();
@@ -224,7 +316,10 @@ pub(crate) fn shutdown_otlp() {
 /// Flush and shut down the capsule's OTLP exporters at process exit. The public
 /// counterpart to the host's guard-driven [`shutdown_otlp`]; the capsule has no
 /// `ActiveRunGuard`, so it calls this explicitly before the daemon exits.
-#[allow(clippy::missing_const_for_fn)]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn shutdown_capsule_tracing() {
     #[cfg(feature = "otlp")]
     otlp::shutdown();
@@ -237,7 +332,10 @@ pub fn shutdown_capsule_tracing() {
 /// to the host run; `traceparent` (propagated W3C header) links the session
 /// back to the launch trace. Returns `Ok(true)` when export was activated,
 /// `Ok(false)` when no endpoint is configured (the common, no-op case).
-#[allow(clippy::missing_const_for_fn)]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn init_capsule_tracing(
     session_id: &str,
     run_id: Option<&str>,
@@ -284,6 +382,23 @@ pub fn configured_endpoint_summary() -> Option<String> {
     {
         None
     }
+}
+
+/// Operator-facing backend query line for a run id, when an OTLP endpoint is
+/// configured. Returns `None` when export is off (the JSONL path is enough).
+///
+/// Renders `parallax run <id>` when the endpoint summary looks like the
+/// Parallax reference backend; otherwise a backend-neutral
+/// `parallax.run.id=<id>` filter string.
+#[must_use]
+pub fn backend_query_hint(run_id: &str) -> Option<String> {
+    let endpoint = configured_endpoint_summary()?;
+    let query = if endpoint.to_ascii_lowercase().contains("parallax") {
+        format!("parallax run {run_id}")
+    } else {
+        format!("query your OTLP backend for parallax.run.id={run_id}")
+    };
+    Some(query)
 }
 
 /// Whether the operator set any OTLP endpoint env var (export intended), even if
@@ -667,7 +782,22 @@ mod otlp {
         Resource::builder().with_attributes(attributes).build()
     }
 
-    pub(super) fn init(debug: bool, run_id: &str, endpoints: &OtlpEndpoints) -> anyhow::Result<()> {
+    /// Shared OTLP tracer/logger provider construction for host and capsule.
+    ///
+    /// Owns the protocol check, the dedicated telemetry runtime enter-guard, and
+    /// both exporters + batch-processor providers so host/`init_capsule` cannot
+    /// drift. Callers differ only in resource, endpoints, layer composition, and
+    /// metrics handling. Returns the app runtime handle captured *before*
+    /// entering the telemetry runtime (for tokio gauges).
+    fn build_otlp_providers(
+        resource: Resource,
+        traces_endpoint: &str,
+        logs_endpoint: &str,
+    ) -> anyhow::Result<(
+        SdkTracerProvider,
+        SdkLoggerProvider,
+        Option<tokio::runtime::Handle>,
+    )> {
         ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
         let runtime = otel_runtime()?;
         // The tokio runtime gauges must report jackin❯'s app runtime, not the
@@ -681,24 +811,30 @@ mod otlp {
         let _runtime_guard = runtime.enter();
         let span_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
-            .with_endpoint(endpoints.traces.clone())
+            .with_endpoint(traces_endpoint.to_owned())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP span exporter init failed: {e}"))?;
         let log_exporter = opentelemetry_otlp::LogExporter::builder()
             .with_tonic()
-            .with_endpoint(endpoints.logs.clone())
+            .with_endpoint(logs_endpoint.to_owned())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP log exporter init failed: {e}"))?;
 
-        let resource = resource(run_id);
         let tracer_provider = SdkTracerProvider::builder()
             .with_span_processor(BatchSpanProcessor::builder(span_exporter, Tokio).build())
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
             .with_log_processor(BatchLogProcessor::builder(log_exporter, Tokio).build())
-            .with_resource(resource.clone())
+            .with_resource(resource)
             .build();
+        Ok((tracer_provider, logger_provider, app_handle))
+    }
+
+    pub(super) fn init(debug: bool, run_id: &str, endpoints: &OtlpEndpoints) -> anyhow::Result<()> {
+        let resource = resource(run_id);
+        let (tracer_provider, logger_provider, app_handle) =
+            build_otlp_providers(resource.clone(), &endpoints.traces, &endpoints.logs)?;
         // Metrics are best-effort: a failed exporter build must never block
         // span/log telemetry or the run itself. Defer reporting the failure —
         // emitting here would predate `try_init()` and the message would hit no
@@ -721,11 +857,14 @@ mod otlp {
         // Scope the export to jackin❯'s own telemetry. Dependency-internal
         // spans/logs stay out of OTLP unless the operator asks for them with
         // `JACKIN_OTEL_INTERNAL=1`.
-        let directive = export_filter_directive(export_level(debug));
+        let span_directive =
+            export_filter_directive(export_level_for(crate::TelemetrySink::OtlpSpans, debug));
+        let log_directive =
+            export_filter_directive(export_level_for(crate::TelemetrySink::OtlpLogs, debug));
         let installed = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
-            .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
-            .with(log_layer.with_filter(EnvFilter::new(directive)))
+            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(log_layer.with_filter(EnvFilter::new(log_directive)))
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
@@ -761,48 +900,31 @@ mod otlp {
 
     /// Install OTLP export for the capsule. Mirrors `init` but composes no
     /// `JackinDiagnosticsLayer` (the capsule has no JSONL run) and stamps the
-    /// capsule resource. The shared preamble (`ensure_grpc_protocol`, the
-    /// dedicated `otel_runtime().enter()` guard, the `with_tonic()` exporter and
-    /// Batch-processor builds) duplicates `init` because the layer composition
-    /// differs structurally; a change to any of that setup must touch both.
+    /// capsule resource; providers come from [`build_otlp_providers`].
     pub(super) fn init_capsule(
         session_id: &str,
         run_id: Option<&str>,
         traceparent: Option<&str>,
         endpoint: &str,
     ) -> anyhow::Result<()> {
-        ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
         let endpoint = grpc_endpoint(endpoint);
-        let runtime = otel_runtime()?;
-        let app_handle = tokio::runtime::Handle::try_current().ok();
-        let _runtime_guard = runtime.enter();
-        let span_exporter = opentelemetry_otlp::SpanExporter::builder()
-            .with_tonic()
-            .with_endpoint(endpoint.clone())
-            .build()
-            .map_err(|e| anyhow::anyhow!("OTLP span exporter init failed: {e}"))?;
-        let log_exporter = opentelemetry_otlp::LogExporter::builder()
-            .with_tonic()
-            .with_endpoint(endpoint.clone())
-            .build()
-            .map_err(|e| anyhow::anyhow!("OTLP log exporter init failed: {e}"))?;
-
         let resource = capsule_resource(session_id, run_id);
-        let tracer_provider = SdkTracerProvider::builder()
-            .with_span_processor(BatchSpanProcessor::builder(span_exporter, Tokio).build())
-            .with_resource(resource.clone())
-            .build();
-        let logger_provider = SdkLoggerProvider::builder()
-            .with_log_processor(BatchLogProcessor::builder(log_exporter, Tokio).build())
-            .with_resource(resource.clone())
-            .build();
+        let (tracer_provider, logger_provider, app_handle) =
+            build_otlp_providers(resource.clone(), &endpoint, &endpoint)?;
         let meter_provider = init_metrics(&resource, &endpoint, app_handle).ok();
 
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-        let directive = export_filter_directive(export_level(capsule_debug()));
+        let span_directive = export_filter_directive(export_level_for(
+            crate::TelemetrySink::OtlpSpans,
+            capsule_debug(),
+        ));
+        let log_directive = export_filter_directive(export_level_for(
+            crate::TelemetrySink::OtlpLogs,
+            capsule_debug(),
+        ));
         // Surface OTLP exporter/SDK diagnostics (export failures, refused
         // endpoint, gRPC errors) to the capsule's stderr — captured by
         // `docker logs` and mirrored into `multiplexer.log`. The OTLP span/log
@@ -818,8 +940,8 @@ mod otlp {
                 "off,opentelemetry=warn,opentelemetry_sdk=warn,opentelemetry_otlp=warn",
             ));
         let installed = tracing_subscriber::registry()
-            .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
-            .with(log_layer.with_filter(EnvFilter::new(directive)))
+            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(log_layer.with_filter(EnvFilter::new(log_directive)))
             .with(otlp_diag_layer)
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
@@ -884,12 +1006,8 @@ mod otlp {
         )
     }
 
-    fn export_level(debug: bool) -> &'static str {
-        match crate::telemetry_level(debug) {
-            crate::TelemetryLevel::Info => "info",
-            crate::TelemetryLevel::Debug => "debug",
-            crate::TelemetryLevel::Trace => "trace",
-        }
+    fn export_level_for(sink: crate::TelemetrySink, debug: bool) -> &'static str {
+        crate::telemetry_level_name(crate::sink_level(sink, debug))
     }
 
     fn export_filter_directive_with_internal(level: &str, internal: bool) -> String {
@@ -909,15 +1027,15 @@ mod otlp {
     }
 
     #[cfg(test)]
-    pub(super) struct TestExport {
-        pub(super) spans: opentelemetry_sdk::trace::InMemorySpanExporter,
-        pub(super) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
-        pub(super) tracer_provider: SdkTracerProvider,
-        pub(super) logger_provider: SdkLoggerProvider,
+    pub(crate) struct TestExport {
+        pub(crate) spans: opentelemetry_sdk::trace::InMemorySpanExporter,
+        pub(crate) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
+        pub(crate) tracer_provider: SdkTracerProvider,
+        pub(crate) logger_provider: SdkLoggerProvider,
     }
 
     #[cfg(test)]
-    pub(super) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
+    pub(crate) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
         use opentelemetry::trace::TracerProvider as _;
 
         let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
@@ -934,11 +1052,13 @@ mod otlp {
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
-        let directive = export_filter_directive(export_level(debug));
+        let test_level = if debug { "debug" } else { "info" };
+        let span_directive = export_filter_directive(test_level);
+        let log_directive = export_filter_directive(test_level);
         let subscriber = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
-            .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
-            .with(log_layer.with_filter(EnvFilter::new(directive)));
+            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(log_layer.with_filter(EnvFilter::new(log_directive)));
 
         (
             TestExport {
@@ -1073,111 +1193,97 @@ mod otlp {
                 cached: None,
             }));
             let cpu_sampler = std::sync::Arc::clone(&sampler);
-            drop(
-                meter
-                    // semconv: process.cpu.utilization, unit "1", 0..1 fraction
-                    // of the CPUs available to the process.
-                    .f64_observable_gauge("process.cpu.utilization")
-                    .with_unit("1")
-                    .with_description("Fraction of total host CPU used by the jackin process")
-                    .with_callback(move |observer| {
-                        if let Some((cpu_percent, _)) =
-                            cpu_sampler.lock().ok().and_then(|mut s| s.sample())
-                        {
-                            // `sysinfo` reports percent of one core; semconv
-                            // utilization is a 0..1 fraction of all cores.
-                            observer.observe(f64::from(cpu_percent) / 100.0 / cpu_count, &[]);
-                        }
-                    })
-                    .build(),
-            );
-            drop(
-                meter
-                    // semconv: process.memory.usage is an UpDownCounter (rises
-                    // and falls), not a gauge.
-                    .i64_observable_up_down_counter("process.memory.usage")
-                    .with_unit("By")
-                    .with_description("Resident set size of the jackin process")
-                    .with_callback(move |observer| {
-                        if let Some((_, memory_bytes)) =
-                            sampler.lock().ok().and_then(|mut s| s.sample())
-                        {
-                            observer.observe(i64::try_from(memory_bytes).unwrap_or(i64::MAX), &[]);
-                        }
-                    })
-                    .build(),
-            );
+            let _ = meter
+                // semconv: process.cpu.utilization, unit "1", 0..1 fraction
+                // of the CPUs available to the process.
+                .f64_observable_gauge(super::otel_metrics::PROCESS_CPU_UTILIZATION)
+                .with_unit("1")
+                .with_description("Fraction of total host CPU used by the jackin process")
+                .with_callback(move |observer| {
+                    if let Some((cpu_percent, _)) =
+                        cpu_sampler.lock().ok().and_then(|mut s| s.sample())
+                    {
+                        // `sysinfo` reports percent of one core; semconv
+                        // utilization is a 0..1 fraction of all cores.
+                        observer.observe(f64::from(cpu_percent) / 100.0 / cpu_count, &[]);
+                    }
+                })
+                .build();
+            let _ = meter
+                // semconv: process.memory.usage is an UpDownCounter (rises
+                // and falls), not a gauge.
+                .i64_observable_up_down_counter(super::otel_metrics::PROCESS_MEMORY_USAGE)
+                .with_unit("By")
+                .with_description("Resident set size of the jackin process")
+                .with_callback(move |observer| {
+                    if let Some((_, memory_bytes)) =
+                        sampler.lock().ok().and_then(|mut s| s.sample())
+                    {
+                        observer.observe(i64::try_from(memory_bytes).unwrap_or(i64::MAX), &[]);
+                    }
+                })
+                .build();
         }
 
         if let Some(handle) = app_handle {
             let workers = handle.clone();
-            drop(
-                meter
-                    .u64_observable_gauge("tokio.runtime.workers")
-                    .with_description("Worker threads driving the tokio runtime")
-                    .with_callback(move |observer| {
-                        observer.observe(workers.metrics().num_workers() as u64, &[]);
-                    })
-                    .build(),
-            );
+            let _ = meter
+                .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_WORKERS)
+                .with_description("Worker threads driving the tokio runtime")
+                .with_callback(move |observer| {
+                    observer.observe(workers.metrics().num_workers() as u64, &[]);
+                })
+                .build();
             let alive = handle.clone();
-            drop(
-                meter
-                    .u64_observable_gauge("tokio.runtime.alive.tasks")
-                    .with_description("Tasks currently alive in the tokio runtime")
-                    .with_callback(move |observer| {
-                        observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
-                    })
-                    .build(),
-            );
-            drop(
-                meter
-                    .u64_observable_gauge("tokio.runtime.global.queue.depth")
-                    .with_description("Tasks waiting in the tokio runtime's global queue")
-                    .with_callback(move |observer| {
-                        observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
-                    })
-                    .build(),
-            );
+            let _ = meter
+                .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_ALIVE_TASKS)
+                .with_description("Tasks currently alive in the tokio runtime")
+                .with_callback(move |observer| {
+                    observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
+                })
+                .build();
+            let _ = meter
+                .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH)
+                .with_description("Tasks waiting in the tokio runtime's global queue")
+                .with_callback(move |observer| {
+                    observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
+                })
+                .build();
         }
 
-        drop(
-            meter
-                .u64_observable_counter("jackin.diagnostics.events")
-                .with_description("Diagnostics events recorded during the active jackin run")
-                .with_callback(|observer| {
-                    let Some(run) = crate::active_run() else {
-                        return;
-                    };
-                    let snapshot = run.domain_metrics_snapshot();
-                    for (kind, count) in snapshot.event_counts {
-                        observer.observe(count, &[KeyValue::new("kind", kind)]);
-                    }
-                })
-                .build(),
-        );
-        drop(
-            meter
-                .u64_observable_counter("jackin.cache.hits")
-                .with_description("Cache-hit diagnostics recorded during the active jackin run")
-                .with_callback(|observer| {
-                    if let Some(run) = crate::active_run() {
-                        observer.observe(run.domain_metrics_snapshot().cache_hits, &[]);
-                    }
-                })
-                .build(),
-        );
-        drop(
-            meter
-                .u64_observable_counter("jackin.cache.misses")
-                .with_description("Cache-miss diagnostics recorded during the active jackin run")
-                .with_callback(|observer| {
-                    if let Some(run) = crate::active_run() {
-                        observer.observe(run.domain_metrics_snapshot().cache_misses, &[]);
-                    }
-                })
-                .build(),
-        );
+        let _ = meter
+            .u64_observable_counter(super::otel_metrics::JACKIN_DIAGNOSTICS_EVENTS)
+            .with_description("Diagnostics events recorded during the active jackin run")
+            .with_callback(|observer| {
+                let Some(run) = crate::active_run() else {
+                    return;
+                };
+                let snapshot = run.domain_metrics_snapshot();
+                for (kind, count) in snapshot.event_counts {
+                    observer.observe(count, &[KeyValue::new("kind", kind)]);
+                }
+            })
+            .build();
+        let _ = meter
+            .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_HITS)
+            .with_description("Cache-hit diagnostics recorded during the active jackin run")
+            .with_callback(|observer| {
+                if let Some(run) = crate::active_run() {
+                    observer.observe(run.domain_metrics_snapshot().cache_hits, &[]);
+                }
+            })
+            .build();
+        let _ = meter
+            .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_MISSES)
+            .with_description("Cache-miss diagnostics recorded during the active jackin run")
+            .with_callback(|observer| {
+                if let Some(run) = crate::active_run() {
+                    observer.observe(run.domain_metrics_snapshot().cache_misses, &[]);
+                }
+            })
+            .build();
+
+        crate::metrics::install_hot_path(&meter);
 
         Ok(provider)
     }
@@ -1188,9 +1294,47 @@ mod otlp {
         }
     }
 
+    /// Thin counter recorder for the operation facade. Plan 042 replaces this.
+    pub(super) fn record_operation_metric(
+        name: &'static str,
+        value: u64,
+        attrs: &[(&'static str, String)],
+    ) {
+        use opentelemetry::KeyValue;
+        use opentelemetry::metrics::MeterProvider as _;
+
+        let Some(providers) = PROVIDERS.get() else {
+            return;
+        };
+        let Some(meter_provider) = providers.meter.as_ref() else {
+            return;
+        };
+        let meter = meter_provider.meter("jackin");
+        let counter = meter.u64_counter(name).build();
+        let kvs: Vec<KeyValue> = attrs
+            .iter()
+            .map(|(k, v)| KeyValue::new(*k, v.clone()))
+            .collect();
+        counter.add(value, &kvs);
+    }
+
     #[cfg(test)]
     mod tests;
 }
+
+/// Crate-visible wrapper for [`crate::operation_metric`].
+#[cfg(feature = "otlp")]
+pub(crate) fn record_operation_metric(
+    name: &'static str,
+    value: u64,
+    attrs: &[(&'static str, String)],
+) {
+    otlp::record_operation_metric(name, value, attrs);
+}
+
+/// In-memory export rig for crate tests (operation facade, conformance).
+#[cfg(all(test, feature = "otlp"))]
+pub(crate) use otlp::{TestExport, test_layers};
 
 pub(crate) fn emit_jsonl_event(
     run_id: &str,
@@ -1271,23 +1415,27 @@ pub(crate) fn event_taxonomy(
 }
 
 fn operation_for(kind: &str, stage: Option<&str>, event_name: &str) -> String {
+    use otel_events::{
+        DEBUG, STAGE_DONE, STAGE_FAILED, STAGE_SKIPPED, STAGE_STARTED, TIMING_DONE, TIMING_STARTED,
+    };
     match kind {
-        "stage_started" | "stage_done" | "stage_failed" | "stage_skipped" => stage.map_or_else(
+        STAGE_STARTED | STAGE_DONE | STAGE_FAILED | STAGE_SKIPPED => stage.map_or_else(
             || "stage".to_owned(),
             |stage| format!("stage.{}", normalize_taxonomy_value(stage)),
         ),
-        "timing_started" | "timing_done" => stage.map_or_else(
+        TIMING_STARTED | TIMING_DONE => stage.map_or_else(
             || "timing".to_owned(),
             |stage| format!("timing.{}", normalize_taxonomy_value(stage)),
         ),
-        "debug" => "debug".to_owned(),
+        DEBUG => "debug".to_owned(),
         _ => event_name.to_owned(),
     }
 }
 
 fn category_for(kind: &str, stage: Option<&str>, detail: Option<&str>) -> String {
+    use otel_events::{DEBUG, OTLP_INTERNAL, RUN_SUMMARY, SLOW_FOREGROUND_WAIT, SUBPROCESS_DONE};
     match kind {
-        "debug" => detail.map_or_else(|| "debug".to_owned(), normalize_taxonomy_value),
+        DEBUG => detail.map_or_else(|| "debug".to_owned(), normalize_taxonomy_value),
         kind if kind.starts_with("docker_") || kind.starts_with("container_") => {
             "docker".to_owned()
         }
@@ -1296,10 +1444,10 @@ fn category_for(kind: &str, stage: Option<&str>, detail: Option<&str>) -> String
             || "timing".to_owned(),
             |stage| format!("timing.{}", normalize_taxonomy_value(stage)),
         ),
-        "subprocess_done" => "process".to_owned(),
-        "otlp_internal" => "telemetry".to_owned(),
-        "run_summary" => "summary".to_owned(),
-        "slow_foreground_wait" => "performance".to_owned(),
+        SUBPROCESS_DONE => "process".to_owned(),
+        OTLP_INTERNAL => "telemetry".to_owned(),
+        RUN_SUMMARY => "summary".to_owned(),
+        SLOW_FOREGROUND_WAIT => "performance".to_owned(),
         other => other.split_once('_').map_or_else(
             || normalize_taxonomy_value(other),
             |(prefix, _)| normalize_taxonomy_value(prefix),
@@ -1308,6 +1456,12 @@ fn category_for(kind: &str, stage: Option<&str>, detail: Option<&str>) -> String
 }
 
 fn outcome_for(kind: &str, error_type: Option<&str>, level: &str) -> &'static str {
+    use otel_events::{CLEAN_SHUTDOWN, SESSION_DETACH};
+    // Typed expected lifecycle outcomes must win over substring sniffing so a
+    // kind like `session_detach` is never failure-shaped.
+    if matches!(kind, SESSION_DETACH | CLEAN_SHUTDOWN) {
+        return "expected_shutdown";
+    }
     if error_type.is_some()
         || level.eq_ignore_ascii_case("ERROR")
         || kind.contains("failed")
@@ -1351,6 +1505,34 @@ fn normalize_taxonomy_value(value: &str) -> String {
         .join(".")
 }
 
+/// Correlation ids for a JSONL record.
+///
+/// When the active tracing span has a valid `OTel` context (OTLP installed and a
+/// span entered), returns the real 32-hex trace id and 16-hex span id. Otherwise
+/// falls back to `run_id` as `trace_id` (schema stability for offline file-only
+/// mode and historical fixtures) and the optional tracing-registry span id.
+pub(crate) fn correlation_ids(
+    run_id: &str,
+    fallback_span_id: Option<&str>,
+) -> (String, Option<String>) {
+    #[cfg(feature = "otlp")]
+    {
+        use opentelemetry::trace::TraceContextExt as _;
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+        let ctx = tracing::Span::current().context();
+        let span = ctx.span();
+        let span_ctx = span.span_context();
+        if span_ctx.is_valid() {
+            return (
+                span_ctx.trace_id().to_string(),
+                Some(span_ctx.span_id().to_string()),
+            );
+        }
+    }
+    (run_id.to_owned(), fallback_span_id.map(str::to_owned))
+}
+
 fn emit_jsonl_event_with_level(
     run_id: &str,
     kind: &str,
@@ -1374,7 +1556,9 @@ fn emit_jsonl_event_with_level(
             JsonlEventLevel::Error => "ERROR",
         },
     );
-    let span_id = tracing::Span::current()
+    // Prefer OTel hex ids inside record_direct; fall back to the tracing-registry
+    // u64 span id for file-only mode.
+    let fallback_span_id = tracing::Span::current()
         .id()
         .map(|id| id.into_u64().to_string());
     let run = crate::run::run_by_id(run_id).or_else(crate::active_run);
@@ -1384,8 +1568,8 @@ fn emit_jsonl_event_with_level(
             message.as_ref(),
             stage,
             detail,
-            span_id.as_deref(),
-            if kind == "debug" && !matches!(level, JsonlEventLevel::Error) {
+            fallback_span_id.as_deref(),
+            if kind == otel_events::DEBUG && !matches!(level, JsonlEventLevel::Error) {
                 "DEBUG"
             } else {
                 match level {
@@ -1400,7 +1584,7 @@ fn emit_jsonl_event_with_level(
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
     // exported records carry attributes but an empty body.
-    if kind == "debug" && !matches!(level, JsonlEventLevel::Error) {
+    if kind == otel_events::DEBUG && !matches!(level, JsonlEventLevel::Error) {
         emit_debug_jsonl_event(
             run_id,
             kind,

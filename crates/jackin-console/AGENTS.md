@@ -1,0 +1,2 @@
+- Effects-as-data: the console reaches runtime/Docker through effect types it emits, not direct calls. Preserve that boundary so the console stays testable and runtime-free.
+- Pure decisions stay pure: product decisions and planning are pure functions; side-effect adapters are thin. Follow the `jackin-console-oppicker` split pattern for new pickers/planners.

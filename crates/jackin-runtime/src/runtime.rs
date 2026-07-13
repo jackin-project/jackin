@@ -26,11 +26,8 @@ pub(crate) mod shared_runner;
 pub mod snapshot;
 pub mod universe;
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 pub mod test_support;
-
-#[cfg(any(test, feature = "test-support"))]
-pub use self::test_support::FakeRunner;
 
 pub use self::attach::docker_unavailable_msg;
 pub use self::attach::{

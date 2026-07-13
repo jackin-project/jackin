@@ -24,8 +24,11 @@
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum EnvValue {
+    /// 1Password `op://` reference table form.
     OpRef(OpRef),
+    /// Literal/`$VAR` table form with optional `on_demand`.
     Extended(Extended),
+    /// Scalar string literal or `$VAR` / `${VAR}` expansion.
     Plain(String),
 }
 
@@ -159,9 +162,17 @@ pub struct Extended {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldTarget {
     /// Overwrite the field with this exact op id.
-    Existing { id: String, label: String },
+    Existing {
+        /// Exact `op` field id.
+        id: String,
+        /// Display label for the field.
+        label: String,
+    },
     /// Append (or overwrite if same label exists) with this label.
-    New { label: String },
+    New {
+        /// Label for the new (or same-label) field.
+        label: String,
+    },
 }
 
 impl FieldTarget {

@@ -15,35 +15,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 // `<name>.tmp` workspace file.
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Reject workspace file stems that are not valid [`WorkspaceName`](jackin_core::WorkspaceName)s.
 pub fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
-    if name.is_empty() {
-        anyhow::bail!("workspace name cannot be empty");
-    }
-    if name == "." || name == ".." {
-        anyhow::bail!("workspace name {name:?} is reserved");
-    }
-    if name.contains('/') || name.contains('\\') {
-        anyhow::bail!("workspace name {name:?} cannot contain path separators");
-    }
-    #[cfg(windows)]
-    {
-        const RESERVED: &[&str] = &[
-            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
-            "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-        ];
-        if RESERVED
-            .iter()
-            .any(|reserved| name.eq_ignore_ascii_case(reserved))
-        {
-            anyhow::bail!("workspace name {name:?} is reserved on Windows");
-        }
-        if name.ends_with('.') || name.ends_with(' ') {
-            anyhow::bail!("workspace name {name:?} cannot end with a dot or space on Windows");
-        }
-    }
-    Ok(())
+    jackin_core::WorkspaceName::parse(name)
+        .map(drop)
+        .map_err(Into::into)
 }
 
+/// Write `contents` to `path` via a unique staged file then rename.
 pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)

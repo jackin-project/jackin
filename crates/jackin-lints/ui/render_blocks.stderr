@@ -1,0 +1,11 @@
+warning: blocking call `std::fs::read` reachable from render path: render → helper_reads
+  --> $DIR/render_blocks.rs:2:13
+   |
+LL |     let _ = std::fs::read("$TEST_BUILD_DIR/x");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: render/draw path must not perform blocking I/O, process spawn, sleep, or std::sync locks
+   = note: `#[warn(render_thread_purity)]` on by default
+
+warning: 1 warning emitted
+
