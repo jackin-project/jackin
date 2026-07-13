@@ -105,5 +105,4 @@ impl TryFrom<&str> for WorkspaceName {
 }
 
 #[cfg(test)]
-#[path = "workspace_name/tests.rs"]
 mod tests;

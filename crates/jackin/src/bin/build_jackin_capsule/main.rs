@@ -1,5 +1,7 @@
 //! Builds `jackin-capsule` for Linux via cargo-zigbuild and caches the result.
 //!
+//! Directory-based bin layout keeps its unit tests at `tests.rs` without `#[path]`.
+//!
 //! Usage:
 //!   cargo run --bin build-jackin-capsule [-- [--arch arm64|amd64] [--profile debug] [--features dhat-heap] [--export]]
 //!
@@ -438,5 +440,4 @@ fn cargo_command_with_fd_limit(args: &[&str]) -> process::Command {
 }
 
 #[cfg(test)]
-#[path = "build_jackin_capsule/tests.rs"]
 mod tests;

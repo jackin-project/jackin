@@ -264,5 +264,4 @@ pub(crate) fn print_budget(measured: &Measured) -> String {
 }
 
 #[cfg(test)]
-#[path = "suppressions/tests.rs"]
 mod tests;

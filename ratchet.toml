@@ -33,12 +33,6 @@ id = "test-layout"
 kind = "presence"
 provider = "test_layout_violations"
 mode = "enforce"
-[[family.entry]]
-key = "crates/jackin-lints/src/lib.rs"
-[[family.entry]]
-key = "crates/jackin-xtask/src/docs/brand.rs"
-[[family.entry]]
-key = "crates/jackin-xtask/src/docs/specs.rs"
 
 [[family]]
 id = "bare-allow-per-crate"
@@ -375,8 +369,8 @@ provider = "agent_doc_bytes"
 mode = "report"
 # Report-only Phase 6 context-economy seed; never fails.
 
-# Plan 044 export-volume budgets (R-export-volume-ratchet): constants live in
-# crates/jackin-diagnostics/src/conformance.rs; shrink-only via this family.
+# Telemetry-conformance export-volume budgets: constants live in the canonical
+# crates/jackin-diagnostics/src/tests.rs suite; shrink-only via this family.
 [[family]]
 id = "export-volume"
 kind = "numeric"

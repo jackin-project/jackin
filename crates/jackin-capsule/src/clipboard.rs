@@ -301,5 +301,4 @@ fn validate_image_magic(image: &ClipboardImage) -> Result<()> {
 }
 
 #[cfg(test)]
-#[path = "clipboard/tests.rs"]
 mod tests;

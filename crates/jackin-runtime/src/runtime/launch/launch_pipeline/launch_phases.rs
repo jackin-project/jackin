@@ -199,5 +199,4 @@ pub async fn cleanup_after_grant_failure(cleanup: &LoadCleanup, docker: &impl Do
 }
 
 #[cfg(test)]
-#[path = "launch_phases/tests.rs"]
-mod suite_a_tests;
+mod tests;

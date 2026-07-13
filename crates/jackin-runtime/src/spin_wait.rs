@@ -123,5 +123,4 @@ where
 }
 
 #[cfg(test)]
-#[path = "spin_wait/tests.rs"]
 mod tests;

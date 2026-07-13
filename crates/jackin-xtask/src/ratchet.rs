@@ -452,9 +452,9 @@ fn measure_perf_dhat_budgets(root: &Path) -> Result<BTreeMap<String, usize>> {
     Ok(out)
 }
 
-/// Read plan 044 `MAX_DEBUG_LOGS` / `MAX_SPANS` constants from conformance.rs.
+/// Read the telemetry-conformance `MAX_DEBUG_LOGS` / `MAX_SPANS` constants.
 fn measure_export_volume_constants(root: &Path) -> Result<BTreeMap<String, usize>> {
-    let path = root.join("crates/jackin-diagnostics/src/conformance.rs");
+    let path = root.join("crates/jackin-diagnostics/src/tests.rs");
     let text = fs::read_to_string(&path)
         .with_context(|| format!("reading export-volume constants at {}", path.display()))?;
     let mut out = BTreeMap::new();
@@ -550,5 +550,4 @@ fn emit(line: &str) {
 }
 
 #[cfg(test)]
-#[path = "ratchet/tests.rs"]
 mod tests;

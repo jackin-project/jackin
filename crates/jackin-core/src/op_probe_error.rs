@@ -33,5 +33,4 @@ pub enum OpProbeError {
 }
 
 #[cfg(test)]
-#[path = "op_probe_error/tests.rs"]
 mod tests;

@@ -339,5 +339,4 @@ fn compact_export_error_reason(err: &anyhow::Error) -> &'static str {
 }
 
 #[cfg(test)]
-#[path = "file_export/tests.rs"]
-mod export_category_tests;
+mod tests;

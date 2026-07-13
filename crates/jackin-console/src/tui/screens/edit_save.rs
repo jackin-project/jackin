@@ -61,5 +61,4 @@ pub const fn plan_explicit_save(is_dirty: bool) -> EditSaveDisposition {
 }
 
 #[cfg(test)]
-#[path = "edit_save/tests.rs"]
 mod tests;

@@ -1,5 +1,7 @@
 //! Hot-path metric instrument recording tests.
 
+#![cfg(feature = "otlp")]
+
 use opentelemetry::metrics::MeterProvider as _;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 

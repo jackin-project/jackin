@@ -64,5 +64,4 @@ impl PersistencePort for DefaultDaemonPorts {
 pub(crate) const PORTS: DefaultDaemonPorts = DefaultDaemonPorts;
 
 #[cfg(test)]
-#[path = "ports/tests.rs"]
 mod tests;

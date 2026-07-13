@@ -22,7 +22,6 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 | [`run.rs`](src/run.rs) · [`run/`](src/run) | structured run diagnostics | [`tests.rs`](src/run/tests.rs) |
 | [`summary.rs`](src/summary.rs) · [`summary/`](src/summary) | run summary | [`tests.rs`](src/summary/tests.rs) |
 | [`operation.rs`](src/operation.rs) · [`operation/`](src/operation) | typed operation facade | [`tests.rs`](src/operation/tests.rs) |
-| [`conformance.rs`](src/conformance.rs) · [`conformance/`](src/conformance) | telemetry acceptance scenario | [`tests.rs`](src/conformance/tests.rs) |
 | [`metrics.rs`](src/metrics.rs) · [`metrics/`](src/metrics) | hot-path metric instruments | [`tests.rs`](src/metrics/tests.rs) |
 | [`observability.rs`](src/observability.rs) · [`observability/`](src/observability) | OTLP tier | [`tests.rs`](src/observability/tests.rs) |
 | [`debug_log_adapter.rs`](src/debug_log_adapter.rs) | host sink install for `jackin-core::debug_log!` | — |
@@ -33,7 +32,7 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 | [`operator_notice.rs`](src/operator_notice.rs) · [`operator_notice/`](src/operator_notice) | operator notices | [`tests.rs`](src/operator_notice/tests.rs) |
 | [`screen.rs`](src/screen.rs) · [`screen/`](src/screen) | screen reporting | [`tests.rs`](src/screen/tests.rs) |
 | [`terminal.rs`](src/terminal.rs) | terminal reporting | — |
-| [`tests.rs`](src/tests.rs) | integration tests | — |
+| [`tests.rs`](src/tests.rs) | crate integration and telemetry-conformance scenarios | — |
 
 ## Public API
 
@@ -48,4 +47,3 @@ cargo nextest run -p jackin-diagnostics
 cargo clippy -p jackin-diagnostics --all-targets -- -D warnings
 cargo bench --bench summarize_jsonl -p jackin-diagnostics -- --quick
 ```
-

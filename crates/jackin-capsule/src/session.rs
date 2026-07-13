@@ -1,7 +1,6 @@
 // Per-agent PTY session: spawn, resize, write input, read output, and track
 // session state for the daemon.
 
-#[path = "session/osc_policy.rs"]
 mod osc_policy;
 
 #[allow(

@@ -175,5 +175,4 @@ pub(crate) fn check_header(
 }
 
 #[cfg(test)]
-#[path = "headers/tests.rs"]
 mod tests;

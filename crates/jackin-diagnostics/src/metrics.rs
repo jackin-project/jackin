@@ -252,5 +252,5 @@ fn sum_resource_counters(
     }
 }
 
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 mod tests;

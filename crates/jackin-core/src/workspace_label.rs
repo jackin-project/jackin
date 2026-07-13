@@ -86,5 +86,4 @@ impl From<WorkspaceName> for WorkspaceLabel {
 }
 
 #[cfg(test)]
-#[path = "workspace_label/tests.rs"]
 mod tests;

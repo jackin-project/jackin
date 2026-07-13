@@ -66,5 +66,4 @@ impl Clock for ManualClock {
 }
 
 #[cfg(test)]
-#[path = "clock/tests.rs"]
 mod tests;

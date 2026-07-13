@@ -305,7 +305,5 @@ fn _keep(symbol: Symbol, id: HirId, kind: ItemKind<'_>, impl_kind: ImplItemKind<
     let _ = (symbol, id, kind, impl_kind);
 }
 
-#[test]
-fn ui() {
-    dylint_testing::ui_test(env!("CARGO_PKG_NAME"), "ui");
-}
+#[cfg(test)]
+mod tests;

@@ -4,8 +4,6 @@
 //! Entry point: [`debug_log!`] — compact always-on telemetry macro.
 
 pub mod build_log;
-#[cfg(all(test, feature = "otlp"))]
-mod conformance;
 mod debug_log_adapter;
 pub mod logging;
 pub mod metrics;

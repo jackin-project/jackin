@@ -5,7 +5,6 @@
 //! R-snapshot-helpers).
 
 #[cfg(test)]
-#[path = "snapshot/tests.rs"]
 mod tests;
 
 /// Replace sequences of digits that look like epoch ms / large counters with

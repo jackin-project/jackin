@@ -132,5 +132,4 @@ pub fn is_run_owned(path: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "container_paths/tests.rs"]
 mod tests;

@@ -203,5 +203,5 @@ const _FACADE_KEYS: &[&str] = &[
     otel_keys::EVENT_OUTCOME,
 ];
 
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 mod tests;

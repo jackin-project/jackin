@@ -1833,13 +1833,5 @@ impl DamageGrid {
     }
 }
 
-// ── Parse helpers ─────────────────────────────────────────────────────────
-
-/// Reconstruct the raw bytes of a CSI sequence from its parsed components,
-/// for forwarding unhandled sequences verbatim to the outer terminal.
-/// Sub-params (vte's `&[u16]` per top-level param) are joined with `:`,
-/// top-level params with `;`. Example: `[[1, 2], [3]]` with final `m`
-/// → `\x1b[1:2;3m`.
-
 #[cfg(test)]
 mod tests;

@@ -21,6 +21,7 @@ Keep this page as the source of truth for sensitive-boundary enforcement items t
 3. **Dependency review beyond advisories.** `cargo deny`/`cargo audit` catch known-bad dependencies; they say nothing about unreviewed code. <RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> records a deliberate cargo-vet/cargo-crev no-adopt while jackin❯ is solo-maintainer; this item is that decision's named revisit trigger. Trial [cargo-vet](https://mozilla.github.io/cargo-vet/) as an advisory lane in exemptions-heavy mode, importing shared audits so the marginal cost of an explicit audit record per new/updated dependency stays near zero. Promote to a gate only if audit-import coverage proves the burden negligible, and update the AGENTS entry when the trial starts.
 4. **Auditable binaries.** Build releases with [cargo-auditable](https://github.com/rust-secure-code/cargo-auditable) so the exact dependency graph is embedded in the shipped binary and `cargo audit bin` works on artifacts in the wild — the binary-side complement of the syft SBOM the release pipeline already produces.
 5. **License and advisory rationale.** Require every non-Apache/MIT license exception and every advisory ignore to carry a rationale or grouped policy note so the current strict supply-chain posture stays reviewable.
+6. **Transitive-unsafe dependency census.** Run a pinned one-time or advisory `cargo geiger` census and document its scope, false positives, and revisit trigger. Then explicitly adopt a scheduled metric or record an evidence-backed no-adopt decision; first-party `unsafe_code = "forbid"` does not cover dependency implementations.
 
 ### Sensitive shared contracts
 
@@ -35,6 +36,7 @@ Keep this page as the source of truth for sensitive-boundary enforcement items t
 2. **Telemetry and error redaction.** Golden/property tests feed canary credentials through launch/auth paths and assert credential-shaped strings never appear in `clog!`/`cdebug!` output, error chains, diagnostics JSONL, or OTLP export.
 3. **Control-socket authorization.** Tests pin who may connect/attach/displace and what an unauthenticated peer can observe, so a protocol refactor cannot silently widen the control surface.
 4. **Credential env-only posture.** Under hardened Docker profiles, prefer env-only or otherwise reduced credential exposure and emit a posture decision per agent auth type. Coordinate with [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-contract/) and [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
+5. **Shared sensitive-test fixtures.** Once two or more launch, auth, or telemetry suites need them, provide one downward-only shared canary-secret corpus and sink-agnostic negative-assertion API in `jackin-test-support`. Acceptance: console, capsule file, diagnostics JSONL, and OTLP conformance reuse the same corpus/assertions; a digit-only snapshot normalizer or an unused helper is not completion evidence.
 
 ### Telemetry safety gates
 

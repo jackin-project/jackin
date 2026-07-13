@@ -3212,9 +3212,11 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
+ "proc-macro2",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "syn 2.0.118",
  "tempfile",
  "toml",
 ]

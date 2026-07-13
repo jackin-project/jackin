@@ -200,5 +200,4 @@ fn read_allowlist(root: &Path) -> Result<Allowlist> {
 }
 
 #[cfg(test)]
-#[path = "container_paths_gate/tests.rs"]
 mod tests;

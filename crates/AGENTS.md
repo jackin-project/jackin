@@ -67,7 +67,9 @@ Avoid clever abbreviations unless established domain terms (`tui`, `cli`, `dind`
 
 No inline `#[cfg(test)] mod tests { … }` in source. Logic + tests split, always.
 
-`foo.rs` declares `#[cfg(test)] mod tests;`. Tests live in `foo/tests.rs` (self-named, no `mod.rs`).
+`foo.rs` declares exactly `#[cfg(test)] mod tests;` — no `#[path]`, alias, visibility, or intervening attribute. Tests live in `foo/tests.rs` (self-named, no `mod.rs`). Rust resolves that sibling path by default.
+
+The only non-suite exception is an external module named `test_support`. It may contain fixtures but no `#[test]` functions, and exists only when two or more sibling suites or feature-enabled downstream tests consume the same fixture. Keep it in `test_support.rs`; never use an inline `mod test_support { … }` body as a second test suite. Every approved parent is explicit in the test-layout gate's fixture registry; adding one requires documenting its consumers in review.
 
 ```text
 crates/jackin-console/src/workspace.rs        ← logic + `#[cfg(test)] mod tests;`
