@@ -68,6 +68,31 @@
       "matchStrings": ["ARG CTX7_VERSION=(?<currentValue>[\\d.]+)"],
       "datasourceTemplate": "npm",
       "packageNameTemplate": "ctx7"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG UV_VERSION=(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "astral-sh/uv",
+      "extractVersionTemplate": "^(?<version>.+)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG RTK_VERSION=(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "rtk-ai/rtk",
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG HEADROOM_VERSION=(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "pypi",
+      "packageNameTemplate": "headroom-ai"
     }
   ],
   "prHourlyLimit": 0,
