@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Generic list picker state helpers.
 
 /// Wrap-around cursor move for any list-style picker. `delta` is `-1`

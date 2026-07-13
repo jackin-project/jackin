@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Agent picker used in the Auth-tab "+ Add" flow.
 //!
 //! Arrow keys move focus, Enter commits, Esc cancels.

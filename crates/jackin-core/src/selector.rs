@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Role and container selector types used across the CLI, workspace
 //! resolution, and launch pipeline to identify the operator's target.
 //!

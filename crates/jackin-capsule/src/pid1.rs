@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! PID 1 responsibilities inside the container: reap orphaned child processes
 //! and forward signals to managed children.
 //!

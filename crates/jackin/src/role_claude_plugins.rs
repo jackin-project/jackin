@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Claude plugin marketplace validation for role-authoring commands.
 //!
 //! Runtime image builds intentionally keep using Claude Code's own marketplace

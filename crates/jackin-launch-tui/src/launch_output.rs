@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `LaunchTuiOutputSink`: adapter from the `LaunchOutputSink` port (in
 //! jackin-core) to the `jackin-tui` output + animation helpers.
 //!

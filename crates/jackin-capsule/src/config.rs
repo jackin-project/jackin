@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule runtime configuration: load and validate `CapsuleConfig` from the
 //! TOML file written by the host at container launch.
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Top-level dispatch helpers.
 //!
 //! This module owns the decision logic that drives bare `jackin` and the

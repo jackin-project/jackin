@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Editor save flow: two-phase commit with planner validation, a
 //! `ConfirmSave` preview modal, and service-backed config writes.
 #![allow(

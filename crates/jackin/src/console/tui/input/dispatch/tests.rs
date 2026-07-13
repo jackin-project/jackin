@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Cross-flow tests that genuinely span multiple stages. Stage-local
 //! tests live in the matching `input/<stage>.rs` test module:
 //! `input/list.rs`, `input/editor.rs`, `input/save.rs`,

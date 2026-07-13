@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace-list footer facts, mode resolver, and the matching hint-span
 //! builders for the workspace-list screen.
 

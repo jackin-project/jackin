@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Pane-body rendering benchmark: custom cell widget vs raw-ANSI baseline.
 //!
 //! **Background for ADR-004:** The custom cell widget blits `DamageGrid` cells

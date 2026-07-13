@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `UsageDialogTab` type and usage method family extracted from the dialog
 //! coordinator. Free type re-exported from parent. `usage_tab_index_at` and
 //! `usage_provider_tab_target` promoted per plan.

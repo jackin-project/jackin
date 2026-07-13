@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `session`.
 use super::{
     AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,

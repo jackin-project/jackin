@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Interactive terminal prompts: yes/no confirmation and single-item selection used by CLI flows.
 //!
 //! Invariant: callers must check `require_interactive_stdin` (or call it themselves)

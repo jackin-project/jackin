@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Container naming: generate stable names, class-family matching, and slug derivation.
 //!
 //! Names encode workspace, role, and a random instance-id component so they

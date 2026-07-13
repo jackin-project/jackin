@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Apple Container backend client.
 //!
 //! Unlike the Docker backend which uses the bollard async Rust API,

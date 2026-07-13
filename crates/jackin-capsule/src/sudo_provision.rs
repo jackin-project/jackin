@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `sudo-provision` subcommand — called host-side via `docker exec --user root`
 //! after container start to enforce the per-profile sudo grant.
 //!
