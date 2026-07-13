@@ -239,6 +239,8 @@ where
         grants_validated.profile_source,
     );
     let dind_started = grants_validated.dind_started;
+    // Phase: image decision classified (typestate; pure, no Docker I/O).
+    let image_phase = super::launch_phases::classify_image_phase(&image_decision);
     // Start the sidecar future before image materialization so network/DinD
     // setup can make progress while runtime binaries and Docker build run.
     if let Some(progress) = steps.progress_mut() {
@@ -286,9 +288,12 @@ where
 
     // Step 2: Prepare runtime assets and build the derived image when the
     // earlier image decision proved the local recipe is missing/stale.
-    let (image, selected_image_reused) = match image_decision {
-        decision @ (crate::runtime::image::ImageDecision::Reuse { .. }
-        | crate::runtime::image::ImageDecision::RefreshInBackground { .. }) => {
+    let (image, selected_image_reused) = match (image_phase.class, image_decision) {
+        (
+            super::launch_phases::ImagePhaseClass::ReuseOrBackgroundRefresh,
+            decision @ (crate::runtime::image::ImageDecision::Reuse { .. }
+            | crate::runtime::image::ImageDecision::RefreshInBackground { .. }),
+        ) => {
             let (image, materialization_reason) = match decision {
                 crate::runtime::image::ImageDecision::Reuse { image } => {
                     (image, "recipe_hash_match")
@@ -315,10 +320,14 @@ where
                     "reused local image",
                 );
             }
+            debug_assert!(image_phase.selected_image_reused);
             (image, true)
         }
-        build_decision @ (crate::runtime::image::ImageDecision::BuildFromPublished { .. }
-        | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. }) => {
+        (
+            super::launch_phases::ImagePhaseClass::BuildRequired,
+            build_decision @ (crate::runtime::image::ImageDecision::BuildFromPublished { .. }
+            | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. }),
+        ) => {
             let (reason, role_git_sha, build_source, build_base_image_override) =
                 match build_decision {
                     crate::runtime::image::ImageDecision::BuildFromPublished {
@@ -457,7 +466,15 @@ where
                     return Err(error);
                 }
             };
+            debug_assert!(!image_phase.selected_image_reused);
             (image, false)
+        }
+        _ => {
+            // Class and decision variants must stay in lock-step.
+            cleanup.run(docker).await;
+            return Err(anyhow::anyhow!(
+                "internal: image phase class does not match ImageDecision variant"
+            ));
         }
     };
     let host_workdir_fingerprint = super::super::manifest_host_workdir_fingerprint(workspace);
@@ -804,7 +821,8 @@ where
     let interactive = true;
     // Path/display label (may be a workdir path for ad-hoc workspaces) — not
     // the config-stem WorkspaceName used for saved-workspace identity.
-    let workspace_label = jackin_core::WorkspaceLabel::parse(workspace.label.as_str())
+    let workspace_label = workspace
+        .as_workspace_label()
         .map_err(anyhow::Error::from)?;
     jackin_diagnostics::debug_log!(
         "isolation",

@@ -20,6 +20,44 @@ use jackin_manifest::RoleManifest;
 use super::super::LoadCleanup;
 use super::{bail_on_grant_errors, tag_errors, tagged_grant_errors};
 
+/// Pure classification of an image decision for the launch typestate chain
+/// (`GrantsValidated` → [`ImagePhaseClassified`] → materialize → run).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImagePhaseClass {
+    /// Local image is reusable (or background refresh only).
+    ReuseOrBackgroundRefresh,
+    /// Derived image must be built before container create.
+    BuildRequired,
+}
+
+/// Classified image phase after grants (injectable; no Docker I/O).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImagePhaseClassified {
+    /// Whether the pipeline builds or reuses.
+    pub class: ImagePhaseClass,
+    /// True when the selected agent image is reused without a foreground build.
+    pub selected_image_reused: bool,
+}
+
+/// Classify [`jackin_image::image_decision::ImageDecision`] without I/O.
+#[must_use]
+pub fn classify_image_phase(
+    decision: &crate::runtime::image::ImageDecision,
+) -> ImagePhaseClassified {
+    match decision {
+        crate::runtime::image::ImageDecision::Reuse { .. }
+        | crate::runtime::image::ImageDecision::RefreshInBackground { .. } => ImagePhaseClassified {
+            class: ImagePhaseClass::ReuseOrBackgroundRefresh,
+            selected_image_reused: true,
+        },
+        crate::runtime::image::ImageDecision::BuildFromPublished { .. }
+        | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. } => ImagePhaseClassified {
+            class: ImagePhaseClass::BuildRequired,
+            selected_image_reused: false,
+        },
+    }
+}
+
 /// Grant + profile resolution succeeded (phase 1 → 2).
 #[derive(Debug, Clone)]
 pub struct GrantsValidated {

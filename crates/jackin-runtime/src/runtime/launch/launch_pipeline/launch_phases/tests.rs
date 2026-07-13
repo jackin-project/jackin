@@ -149,6 +149,79 @@ async fn mid_pipeline_failed_setup_still_runs_cleanup() {
 }
 
 #[test]
+fn classify_image_phase_reuse_vs_build() {
+    use crate::runtime::image::ImageDecision;
+    let reuse = ImageDecision::Reuse {
+        image: "jk_role:abc".into(),
+    };
+    let classified = classify_image_phase(&reuse);
+    assert_eq!(
+        classified.class,
+        ImagePhaseClass::ReuseOrBackgroundRefresh
+    );
+    assert!(classified.selected_image_reused);
+
+    let build = ImageDecision::BuildFromWorkspace {
+        reason: crate::runtime::image::ImageInvalidationReason::LocalImageMissing,
+        role_git_sha: Some("deadbeef".into()),
+    };
+    let classified = classify_image_phase(&build);
+    assert_eq!(classified.class, ImagePhaseClass::BuildRequired);
+    assert!(!classified.selected_image_reused);
+}
+
+#[tokio::test]
+async fn grant_failure_then_cleanup_matches_run_launch_core_order() {
+    // Mirrors run_launch_core: validate_launch_grants Err → cleanup_after_grant_failure.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.docker.grants = Some(DockerGrants {
+        user: Some("root".to_owned()),
+        sudo: Some(true),
+        ..Default::default()
+    });
+    let selector = RoleSelector::new(None, "agent-smith");
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        "version = \"v1alpha4\"\ndockerfile = \"Dockerfile\"\nagents = [\"claude\"]\n\n[claude]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let role_manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+    let err = validate_launch_grants(GrantPhaseInput {
+        config: &config,
+        workspace_label: "workspace",
+        workspace_docker: None,
+        opts_docker_profile: None,
+        selector: &selector,
+        role_manifest: &role_manifest,
+    });
+    assert!(err.is_err(), "bad grants must fail before Docker ops");
+    drop(err.unwrap_err());
+    let docker = FakeDockerClient::default();
+    let cleanup = LoadCleanup::new(
+        "jk-order".into(),
+        "jk-order-dind".into(),
+        "jk-order-certs".into(),
+        "jk-order-net".into(),
+        std::env::temp_dir().join("jackin-order-sock"),
+    );
+    cleanup_after_grant_failure(&cleanup, &docker).await;
+    let recorded = docker.recorded.borrow();
+    assert!(
+        recorded.iter().any(|c| c == "docker rm -f jk-order-dind"),
+        "post-grant-failure cleanup must tear down DinD; recorded: {recorded:?}"
+    );
+}
+
+#[test]
 fn typestate_grants_validated_carries_dind_flag() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

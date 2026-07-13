@@ -1,6 +1,6 @@
 //! Tests for `resolve`.
 use super::*;
-use jackin_core::{Agent, MountIsolation};
+use jackin_core::{Agent, MountIsolation, WorkspaceName};
 use tempfile::tempdir;
 
 use crate::AppConfig;
@@ -477,5 +477,37 @@ fn resolve_rejects_duplicate_effective_global_workspace_destination() {
         error
             .to_string()
             .contains("global mount destination conflicts")
+    );
+}
+
+#[test]
+fn resolved_workspace_as_workspace_label_accepts_path_and_stem() {
+    let stem = ResolvedWorkspace {
+        name: "chainargos".into(),
+        label: "chainargos".into(),
+        workdir: "/workspace".into(),
+        mounts: vec![],
+        keep_awake_enabled: false,
+        default_agent: None,
+        git_pull_on_entry: false,
+    };
+    let label = stem.as_workspace_label().unwrap();
+    assert_eq!(label.as_str(), "chainargos");
+    assert!(WorkspaceName::parse(label.as_str()).is_ok());
+
+    let path_label = ResolvedWorkspace {
+        name: "/home/op/proj".into(),
+        label: "/home/op/proj".into(),
+        workdir: "/workspace".into(),
+        mounts: vec![],
+        keep_awake_enabled: false,
+        default_agent: None,
+        git_pull_on_entry: false,
+    };
+    let label = path_label.as_workspace_label().unwrap();
+    assert_eq!(label.as_str(), "/home/op/proj");
+    assert!(
+        WorkspaceName::parse(label.as_str()).is_err(),
+        "path labels must not be valid config stems"
     );
 }

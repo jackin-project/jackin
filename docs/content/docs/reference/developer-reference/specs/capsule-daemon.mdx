@@ -61,7 +61,7 @@ Roadmap-named ownership boundaries used to group invariants:
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
 | INV-D14 | Clipboard image errors use stable compact reason codes (not free-form strings) | clipboard error mapping | `jackin_capsule::daemon::tests::clipboard_image_error_reason_uses_stable_compact_codes` |
-| INV-D15 | Clipboard transfer idle expiry is driven by an injected `Clock` (not wall-clock `Instant::now`) | capsule clipboard expiry path + `jackin_core::clock` | MISSING (plan 024 landed the seam; dedicated expiry unit still thin) |
+| INV-D15 | Clipboard transfer idle expiry is driven by an injected `Clock` (not wall-clock `Instant::now`) | capsule clipboard expiry path + `jackin_core::clock` | `jackin_capsule::clipboard::tests::abort_idle_older_than_drops_transfer_past_timeout` `jackin_capsule::clipboard::tests::abort_idle_only_drops_idle_of_two_transfers` `jackin_capsule::clipboard::tests::abort_idle_boundary_idle_exactly_timeout_is_aborted` |
 
 ### Git / PR watch
 
@@ -94,9 +94,8 @@ Roadmap-named ownership boundaries used to group invariants:
 
 1. **INV-D1 full displace policy** — reattach palette test exists; a second-client “stream B becomes active, stream A is closed” characterization is still thin (feeds plan 033).
 2. **PTY failure recovery** — writer-lock failure / closed channel / PTY EOF paths in session writer loops are largely unexercised (TEST-pty-recovery; plan 033).
-3. **INV-D15 clipboard expiry** — seam exists; drive a `ManualClock` past TTL in a unit test.
 
-INV-D8 / INV-D19 / INV-D20 closed with Multiplexer real-path + port-wired characterization tests.
+INV-D8 / INV-D15 / INV-D19 / INV-D20 closed with Multiplexer / ManualClock characterization tests.
 
 ## Undetermined behaviors
 

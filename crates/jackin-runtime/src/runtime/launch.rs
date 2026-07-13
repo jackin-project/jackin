@@ -48,7 +48,8 @@ pub(crate) use trust::{
 
 mod launch_pipeline;
 pub use launch_pipeline::launch_phases::{
-    GrantPhaseInput, GrantsValidated, cleanup_after_grant_failure, validate_launch_grants,
+    GrantPhaseInput, GrantsValidated, ImagePhaseClass, ImagePhaseClassified,
+    classify_image_phase, cleanup_after_grant_failure, validate_launch_grants,
 };
 
 use super::discovery::list_running_agent_names;

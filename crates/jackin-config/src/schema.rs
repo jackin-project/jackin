@@ -580,6 +580,23 @@ pub struct ResolvedWorkspace {
     pub git_pull_on_entry: bool,
 }
 
+impl ResolvedWorkspace {
+    /// Parse the path/display label as a typed [`jackin_core::WorkspaceLabel`].
+    ///
+    /// Dual-semantics boundary: [`Self::name`] may be a config stem or ad-hoc
+    /// workdir path; [`Self::label`] is the operator-facing label used for
+    /// isolation records and materialization (not always a valid
+    /// [`jackin_core::WorkspaceName`] stem).
+    ///
+    /// # Errors
+    /// Returns when the label is empty.
+    pub fn as_workspace_label(
+        &self,
+    ) -> Result<jackin_core::WorkspaceLabel, jackin_core::WorkspaceLabelError> {
+        jackin_core::WorkspaceLabel::parse(&self.label)
+    }
+}
+
 // AppConfig stays in the binary crate — it has many inherent impl blocks
 // (load_or_init, edit_workspace, sync_builtin_agents, etc.) that depend on
 // binary-only types (ConfigEditor, fs4, JackinPaths). Moving AppConfig would
