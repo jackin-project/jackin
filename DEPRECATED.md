@@ -26,3 +26,12 @@ _None._
 Deprecate something? Append new section to **Active deprecations** above. Use same field structure. If deprecation ships behind CLI warning, link warning's source location.
 
 Removing entry = opposite of adding: in commit removing deprecated code/config, also delete entry from this file (or move to brief "Removed in <release>" appendix if want historical record).
+
+## JACKIN_DEBUG as telemetry control (alias only)
+
+`JACKIN_DEBUG=1` remains a **compat alias** for `JACKIN_TELEMETRY_LEVEL=debug` when
+the latter is unset. Resolution is centralized in `jackin_diagnostics::telemetry_level`.
+Host container injection still dual-sets `JACKIN_DEBUG` + `JACKIN_TELEMETRY_LEVEL`
+for one capsule-image skew window; remove the dual inject after the capsule image
+floor moves past this release. Prefer `JACKIN_TELEMETRY_LEVEL` / per-sink
+`JACKIN_TELEMETRY_<SINK>_LEVEL` for new operator docs.

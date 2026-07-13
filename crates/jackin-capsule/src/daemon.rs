@@ -143,6 +143,7 @@ mod input_dispatch;
 mod mouse_input;
 mod multiplexer_utils;
 mod pane_layout;
+mod ports;
 mod resource_metrics;
 mod session_lifecycle;
 
@@ -685,10 +686,6 @@ fn clipboard_image_error_reason(err: &anyhow::Error) -> &'static str {
     classify_clipboard_image_error(&format!("{err:#}"))
 }
 
-fn clipboard_image_host_error_reason(message: &str) -> &'static str {
-    classify_clipboard_image_error(message)
-}
-
 fn classify_clipboard_image_error(message: &str) -> &'static str {
     let lower = message.to_ascii_lowercase();
     if lower.contains("empty") {
@@ -761,6 +758,12 @@ fn build_exit_inspect_rows(repos: &[crate::exit_assess::DirtyRepo]) -> Arc<[Insp
 /// (re-entry guard). With policy `ask` and dirty isolated work the modal is
 /// shown (no teardown); otherwise the container drains and exits, preserving the
 /// original non-clean-exit reason.
+/// Pure classifier for INV-D19: when a dialog is already open, last-session
+/// exit handling must defer so the operator can finish the modal.
+pub(crate) const fn should_defer_last_session_exit(dialog_open: bool) -> bool {
+    dialog_open
+}
+
 async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>) -> bool {
     // Called from two sites: the session-exit event handler (once, on last-session
     // exit) and the client-frame handler (on every frame while no sessions remain).
@@ -769,7 +772,8 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     // the dirty-exit flow is already active. Re-entering would push a fresh modal
     // and re-run the git assessment on every keypress, resetting selection to 0 —
     // so the operator could never move past the first row. Defer until resolved.
-    if mux.dialog_open() {
+    use ports::{PORTS, PersistencePort};
+    if PORTS.defer_last_session_exit(mux.dialog_open()) {
         return false;
     }
     match crate::exit_assess::decide_exit(&mux.launch_config).await {
@@ -1187,10 +1191,14 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         pending_spawn_failure = Some(spawn_request_failure_message(&label, &err));
                     }
                 }
-                // Take over from any existing attach client. The shared
-                // helper sends Shutdown, gives the writer side a brief
-                // drain window, then aborts the old reader task.
-                detach_attached_task(&mut mux, "takeover").await;
+                // Take over from any existing attach client (INV-D1). The
+                // port decides displace; the helper sends Shutdown, drains
+                // briefly, then aborts the old reader task.
+                let has_active_client = mux.attached_task.is_some();
+                use ports::{AttachPort, PORTS};
+                if PORTS.should_displace_on_hello(has_active_client) {
+                    detach_attached_task(&mut mux, "takeover").await;
+                }
                 // Drain any stale frames the old client task pushed
                 // into cmd_tx before its abort actually took effect —
                 // without this drain, the next `cmd_rx.recv()` after
@@ -1273,21 +1281,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             Some(frame) = cmd_rx.recv() => {
                 // Coalesce consecutive Resize frames: process only the latest size
                 // so a SIGWINCH storm produces one reflow instead of N full repaints.
-                let frame = if let ClientFrame::Resize { .. } = &frame {
-                    let mut latest = frame;
-                    let mut coalesced: u32 = 0;
-                    while let Ok(ClientFrame::Resize { rows, cols }) = cmd_rx.try_recv() {
-                        latest = ClientFrame::Resize { rows, cols };
-                        coalesced = coalesced.saturating_add(1);
+                let (frames, coalesced) = coalesce_client_frames(frame, || cmd_rx.try_recv().ok());
+                if coalesced > 0 {
+                    crate::cdebug!(
+                        "resize: coalesced {coalesced} pending resize(s), using latest"
+                    );
+                }
+                for frame in frames {
+                    handle_client_frame(&mut mux, frame);
+                    if mux.detach_requested {
+                        break;
                     }
-                    if coalesced > 0 {
-                        crate::cdebug!("resize: coalesced {coalesced} pending resize(s), using latest");
-                    }
-                    latest
-                } else {
-                    frame
-                };
-                handle_client_frame(&mut mux, frame).await;
+                }
                 if mux.detach_requested {
                     mux.detach_requested = false;
                     detach_client(&mut mux).await;

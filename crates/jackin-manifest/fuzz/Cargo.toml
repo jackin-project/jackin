@@ -1,0 +1,28 @@
+[package]
+name = "jackin-manifest-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+jackin-manifest = { path = ".." }
+libfuzzer-sys = "0.4"
+tempfile = "3"
+toml = "0.8"
+
+[[bin]]
+name = "manifest_migrate"
+path = "src/manifest_migrate.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "manifest_validate"
+path = "src/manifest_validate.rs"
+test = false
+bench = false

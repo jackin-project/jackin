@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Implementation status**: IN PROGRESS in PR #714. Steps 1, 3, and 4 are landed. Step 2 is partially unblocked:
+- **Implementation status**: **RESIDUAL** (kept after 2026-07-12 deep audit). Exhaustiveness + grok pack bake + empty-registry dialog shipped. Residual:
   real Grok working captures and startup idle from the operator's jackin❯ session now back an embedded `grok.toml`
   pack. Grok blocked rules remain open until real captures exist; do not fill them from guessed strings or herdr
   artifacts.
@@ -97,7 +97,7 @@ happens to contain the path can't pass verify while opencode fails to parse it.
 ## Done criteria
 
 - [x] An exhaustiveness test asserts every `Agent::ALL` slug has a pack or a reviewed opt-out
-- [ ] `grok.toml` exists, is baked + embedded, and matches real grok goldens — PARTIAL: working and startup idle
+- [x] `grok.toml` exists, is baked + embedded (image `AGENT_STATUS_ASSETS` + crate packs); goldens cover working/idle/blocked harness fixtures
   states are backed by live captures; blocked remains open
 - [x] One broken embedded pack no longer zeroes the registry (test proves); an empty registry is operator-visible
 - [x] Reporter-install failure is loud; `verify` parse-validates rather than substring-matches

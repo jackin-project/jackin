@@ -1,8 +1,4 @@
 #![expect(
-    clippy::disallowed_methods,
-    reason = "profile-matrix is a synchronous xtask CLI that shells out to Docker probes"
-)]
-#![expect(
     clippy::print_stdout,
     reason = "profile-matrix writes its matrix report to stdout"
 )]
@@ -188,12 +184,11 @@ struct CommandResult {
 
 impl CommandResult {
     fn args<const N: usize>(mut self, args: [&str; N]) -> Result<()> {
-        let output = self
-            .command
+        self.command
             .args(args)
             .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .output()
+            .stderr(Stdio::piped());
+        let output = crate::cmd::output_raw(&mut self.command)
             .with_context(|| format!("spawning {:?}", self.command))?;
         if output.status.success() {
             Ok(())
@@ -204,25 +199,18 @@ impl CommandResult {
 }
 
 fn command_output(program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .with_context(|| format!("spawning {program}"))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-    } else {
-        bail!("{}", String::from_utf8_lossy(&output.stderr).trim())
-    }
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    crate::cmd::output_string(&mut cmd)
 }
 
 fn docker_rm(name: &str) {
-    drop(
-        Command::new("docker")
-            .args(["rm", "-f", name])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .output(),
-    );
+    let mut cmd = Command::new("docker");
+    cmd.args(["rm", "-f", name])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // Best-effort cleanup; ignore failure.
+    let _unused = crate::cmd::run(&mut cmd);
 }
 
 struct ContainerGuard(String);

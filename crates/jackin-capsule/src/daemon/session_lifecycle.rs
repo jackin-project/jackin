@@ -163,7 +163,12 @@ impl Multiplexer {
                 let was_active = tab_idx == self.active_tab;
                 let closed_codename = self.tabs[tab_idx].codename.clone();
                 self.tabs.remove(tab_idx);
-                self.retire_codename(&closed_codename);
+                // INV-D8: retire codename so tab labels drop the exited name.
+                let remaining_live = self.sessions.len().saturating_sub(1);
+                use super::ports::{PORTS, StatusPort};
+                if PORTS.should_retire_codename_on_exit(remaining_live) {
+                    self.retire_codename(&closed_codename);
+                }
                 if was_active {
                     // Move to the tab on the left when it exists;
                     // otherwise stay at index 0 (the leftmost tab

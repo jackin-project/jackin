@@ -11,7 +11,7 @@ use jackin_config::{
     AppConfig, AuthForwardMode, EnvScope, EnvValue, GithubAuthMode, MountConfig, Removal,
     WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride, plan_create, plan_edit,
 };
-use jackin_core::{Agent, env_model};
+use jackin_core::{Agent, WorkspaceName, env_model};
 use jackin_tui::shorten_home;
 
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
@@ -65,7 +65,7 @@ pub enum WorkspaceSaveDiffOp {
 
 #[must_use]
 pub fn workspace_save_diff_plan(
-    workspace_name: &str,
+    workspace_name: &WorkspaceName,
     original: &WorkspaceConfig,
     pending: &WorkspaceConfig,
 ) -> Vec<WorkspaceSaveDiffOp> {
@@ -186,7 +186,11 @@ pub fn pre_existing_redundant_mounts_message(original_name: &str, collapses: &[R
     )
 }
 
-#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::needless_pass_by_value,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn plan_editor_save_preview(
     config: &AppConfig,
     input: EditorSavePreviewInput<'_>,
@@ -244,7 +248,10 @@ pub fn plan_editor_save_preview(
     }
 }
 
-#[allow(unfulfilled_lint_expectations)]
+#[allow(
+    unfulfilled_lint_expectations,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
@@ -355,17 +362,18 @@ fn push_sync_source_dir_diff(
 
 fn push_env_diff(
     ops: &mut Vec<WorkspaceSaveDiffOp>,
-    workspace_name: &str,
+    workspace_name: &WorkspaceName,
     original: &WorkspaceConfig,
     pending: &WorkspaceConfig,
 ) {
-    let ws_scope = EnvScope::Workspace(workspace_name.to_owned());
+    let ws_key = workspace_name.as_str().to_owned();
+    let ws_scope = EnvScope::Workspace(ws_key.clone());
     push_env_map_diff(ops, ws_scope, &original.env, &pending.env);
 
     let empty = BTreeMap::<String, EnvValue>::new();
     let orig_ws_github_env = original.github.as_ref().map_or(&empty, |g| &g.env);
     let pend_ws_github_env = pending.github.as_ref().map_or(&empty, |g| &g.env);
-    let ws_github_scope = EnvScope::WorkspaceGithub(workspace_name.to_owned());
+    let ws_github_scope = EnvScope::WorkspaceGithub(ws_key.clone());
     push_env_map_diff(ops, ws_github_scope, orig_ws_github_env, pend_ws_github_env);
 
     let role_keys: BTreeSet<&String> = original.roles.keys().chain(pending.roles.keys()).collect();
@@ -373,7 +381,7 @@ fn push_env_diff(
         let orig_env = original.roles.get(role).map_or(&empty, |o| &o.env);
         let pend_env = pending.roles.get(role).map_or(&empty, |p| &p.env);
         let scope = EnvScope::WorkspaceRole {
-            workspace: workspace_name.to_owned(),
+            workspace: ws_key.clone(),
             role: role.clone(),
         };
         push_env_map_diff(ops, scope, orig_env, pend_env);
@@ -389,7 +397,7 @@ fn push_env_diff(
             .and_then(|p| p.github.as_ref())
             .map_or(&empty, |g| &g.env);
         let role_github_scope = EnvScope::WorkspaceRoleGithub {
-            workspace: workspace_name.to_owned(),
+            workspace: ws_key.clone(),
             role: role.clone(),
         };
         push_env_map_diff(
@@ -456,7 +464,11 @@ pub struct SettingsSaveInput<'a> {
 }
 
 /// Save all settings tabs and return the reloaded config model.
-#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::needless_pass_by_value,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn save_settings(
     paths: &jackin_core::JackinPaths,
     input: SettingsSaveInput<'_>,
