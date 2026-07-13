@@ -75,7 +75,7 @@ impl FileBrowserState {
                     .highlighted()
                     .filter(|e| !e.is_parent)
                     .map_or_else(|| self.cwd.clone(), |e| e.path.clone());
-                self.commit_or_reject(target)
+                Self::commit_or_reject(target)
             }
             KeyCode::Esc => {
                 // Esc steps back one directory when the operator has
@@ -111,7 +111,7 @@ impl FileBrowserState {
 
     /// Shared commit-or-reject logic used by `s` and the git-repo prompt's
     /// "Mount this repository" option. Enforces the same sandbox rules.
-    pub(super) fn commit_or_reject(&mut self, target: PathBuf) -> FileBrowserOutcome<PathBuf> {
+    pub(super) fn commit_or_reject(target: PathBuf) -> FileBrowserOutcome<PathBuf> {
         FileBrowserOutcome::RequestCommit(target)
     }
 

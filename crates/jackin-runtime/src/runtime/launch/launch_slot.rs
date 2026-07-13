@@ -3,9 +3,10 @@
 
 //! Container name slot management: claim, lock, and credential verification.
 
-use fs2::FileExt;
+use fs4::FileExt;
 
 use super::super::attach::{ContainerState, docker_unavailable_msg};
+use jackin_core::WorkspaceName;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
@@ -22,7 +23,7 @@ const CLAIM_MAX_ATTEMPTS: u32 = 64;
 /// vanishingly small random-collision window and concurrent launch races.
 pub(crate) async fn claim_container_name(
     paths: &JackinPaths,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     selector: &RoleSelector,
     docker: &impl DockerApi,
 ) -> anyhow::Result<(String, std::fs::File)> {
@@ -153,7 +154,8 @@ fn try_acquire_name_lock(
         Ok(f) => f,
         Err(lock) => return Err(NameLockError { lock, unlink: None }),
     };
-    if let Err(lock) = lock_file.try_lock_exclusive() {
+    if let Err(lock) = FileExt::try_lock(&lock_file) {
+        let lock = std::io::Error::from(lock);
         drop(lock_file);
         let unlink = std::fs::remove_file(&lock_path).err().inspect(|err| {
             jackin_diagnostics::debug_log!(
@@ -177,7 +179,7 @@ fn try_acquire_name_lock(
 pub(crate) fn verify_github_token_present(
     github_mode: jackin_config::GithubAuthMode,
     resolved_token: Option<&str>,
-    workspace: &str,
+    workspace: &WorkspaceName,
     role: &str,
 ) -> anyhow::Result<()> {
     if !matches!(github_mode, jackin_config::GithubAuthMode::Token) {
@@ -209,7 +211,7 @@ pub(crate) fn resolve_github_env_map(
     if declarations.is_empty() {
         return Ok(resolved);
     }
-    let default_runner = jackin_env::OpCli::new();
+    let default_runner = jackin_env::OpCli::new_launch_env();
     let runner: &dyn jackin_env::OpRunner = opts.op_runner.as_deref().unwrap_or(&default_runner);
     let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
         opts.host_env.as_ref().map_or_else(
@@ -350,7 +352,7 @@ pub(crate) fn verify_credential_env_present(
     merged_env: &std::collections::BTreeMap<String, String>,
     mode_resolution: &[(String, Option<jackin_config::AuthForwardMode>)],
     env_layers: &[(String, super::EnvLayerState)],
-    workspace: &str,
+    workspace: &WorkspaceName,
     role: &str,
 ) -> Result<(), super::LaunchError> {
     let Some(env_var) = agent.required_env_var(mode) else {
@@ -365,7 +367,7 @@ pub(crate) fn verify_credential_env_present(
         agent,
         mode,
         env_var,
-        workspace: workspace.to_owned(),
+        workspace: workspace.as_str().to_owned(),
         role: role.to_owned(),
         mode_resolution: mode_resolution.to_vec(),
         env_layers: env_layers.to_vec(),

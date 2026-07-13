@@ -2,9 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Cell width + row helpers extracted from grid.rs.
-#[allow(unused_imports, clippy::wildcard_imports)]
+#[allow(
+    unused_imports,
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::*;
 
+/// Display width of a cell: 2 for wide lead, 1 for a filled narrow cell, else 0.
 pub fn cell_width(cell: &Cell) -> u16 {
     if cell.is_wide {
         2
@@ -13,6 +18,7 @@ pub fn cell_width(cell: &Cell) -> u16 {
     }
 }
 
+/// Set lead/continuation wide-cell flags for `row[col]` after writing a glyph.
 pub fn set_cell_width(row: &mut [Cell], col: usize, width: u16, attrs: Attrs, cols: usize) {
     row[col].is_wide = width > 1;
     row[col].is_wide_continuation = false;
@@ -37,30 +43,17 @@ pub fn set_cell_width(row: &mut [Cell], col: usize, width: u16, attrs: Attrs, co
 
 // ── Grid construction helpers ─────────────────────────────────────────────
 
+/// Allocate a row of default (blank) cells.
 pub fn blank_row(cols: u16) -> Vec<Cell> {
     vec![Cell::default(); cols as usize]
 }
 
+/// Build a blank `RowStore` of `rows` × `cols` using `arena` for row reuse.
 pub fn make_blank_grid(rows: u16, cols: u16, arena: RowArena) -> RowStore {
     RowStore::blank(rows, cols, arena)
 }
 
-pub fn resize_grid(grid: &RowStore, rows: u16, cols: u16) -> RowStore {
-    let mut new = make_blank_grid(rows, cols, grid.arena.clone());
-    for (r, row) in grid.iter().enumerate() {
-        if r >= rows as usize {
-            break;
-        }
-        new.wraps[r] = grid.wrap(r).unwrap_or_default();
-        for (c, cell) in row.iter().enumerate() {
-            if c < cols as usize {
-                new[r][c] = cell.clone();
-            }
-        }
-    }
-    new
-}
-
+/// Length of a trailing incomplete UTF-8 sequence that should be buffered.
 pub fn incomplete_utf8_suffix_len(bytes: &[u8]) -> usize {
     let Some(last) = bytes.last() else {
         return 0;

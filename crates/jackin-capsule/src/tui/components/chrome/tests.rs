@@ -5,6 +5,7 @@
 use super::*;
 use crate::tui::components::status_bar::status_bar_plan;
 use crate::tui::layout::Tab;
+use crate::tui::model::VisibleAgentState;
 use ratatui::{Terminal, backend::TestBackend};
 
 #[test]
@@ -99,6 +100,59 @@ fn status_bar_resets_canvas_across_unused_columns() {
 }
 
 #[test]
+fn status_bar_renders_working_idle_done_and_unknown_glyphs() {
+    let tabs = [
+        Tab::new_single("Work", 1, "test"),
+        Tab::new_single("Idle", 2, "test"),
+        Tab::new_single("Done", 3, "test"),
+        Tab::new_single("None", 4, "test"),
+    ];
+    let states = [
+        (1, VisibleAgentState::Working),
+        (2, VisibleAgentState::Idle),
+        (3, VisibleAgentState::Done),
+        (4, VisibleAgentState::Unknown),
+    ];
+    let backend = TestBackend::new(100, 2);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let plan = status_bar_plan(100, &tabs, 0, &states, PrefixMode::Idle);
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                StatusBarWidget {
+                    plan: &plan,
+                    prefix_mode: PrefixMode::Idle,
+                    hovered_tab: None,
+                    menu_hovered: false,
+                    focused: false,
+                },
+                frame.area(),
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let glyph_cell = |cell: &StatusTabCell| {
+        let x = cell
+            .start_col0
+            .saturating_add(u16::try_from(jackin_tui::display_cols(&cell.name)).unwrap())
+            .saturating_add(2);
+        (buf[(x, 0)].symbol().to_owned(), buf[(x, 0)].fg)
+    };
+
+    assert_eq!(
+        glyph_cell(&plan.cells[0]),
+        ("▶".to_owned(), jackin_tui::theme::DEBUG_AMBER)
+    );
+    assert_eq!(
+        glyph_cell(&plan.cells[1]),
+        ("◆".to_owned(), jackin_tui::theme::PHOSPHOR_GREEN)
+    );
+    assert_eq!(glyph_cell(&plan.cells[2]).0, "○");
+    assert_eq!(glyph_cell(&plan.cells[3]).0, " ");
+}
+
+#[test]
 fn dialog_backdrop_fills_with_black() {
     let backend = TestBackend::new(10, 5);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -155,71 +209,57 @@ fn unfocused_pane_border_uses_shared_panel_palette() {
     assert_eq!(buf[(0, 0)].fg, jackin_tui::theme::PHOSPHOR_DARK);
 }
 
-// ── truncate_spans_to_cols ────────────────────────────────────────────────────
+// ── wrapped hint rows ─────────────────────────────────────────────────────────
 
-#[test]
-fn truncate_spans_empty_returns_empty() {
-    assert!(truncate_spans_to_cols(&[], 80).is_empty());
+fn row_text(buf: &Buffer, row: u16) -> String {
+    (0..buf.area.width)
+        .map(|x| buf[(x, row)].symbol().to_owned())
+        .collect()
+}
+
+fn hint_row(area: Rect) -> u16 {
+    area.height.saturating_sub(3)
 }
 
 #[test]
-fn truncate_spans_all_fit() {
-    let spans: &[jackin_tui::HintSpan<'_>] = &[
-        jackin_tui::HintSpan::Key("A"),
-        jackin_tui::HintSpan::Text("action"),
-        jackin_tui::HintSpan::GroupSep,
-        jackin_tui::HintSpan::Key("B"),
-        jackin_tui::HintSpan::Text("other"),
-    ];
-    let result = truncate_spans_to_cols(spans, 80);
-    assert_eq!(result.len(), spans.len(), "all spans must fit in 80 cols");
-}
+fn hint_row_sits_between_one_blank_row_above_and_below() {
+    let area = Rect::new(0, 0, 24, 5);
+    let mut buf = Buffer::empty(area);
+    render_hint_spans_row(
+        &mut buf,
+        area,
+        &[
+            jackin_tui::HintSpan::Key("A"),
+            jackin_tui::HintSpan::Text("alpha"),
+            jackin_tui::HintSpan::GroupSep,
+            jackin_tui::HintSpan::Key("B"),
+            jackin_tui::HintSpan::Text("bravo"),
+            jackin_tui::HintSpan::GroupSep,
+            jackin_tui::HintSpan::Key("C"),
+            jackin_tui::HintSpan::Text("charlie"),
+        ],
+    );
 
-#[test]
-fn truncate_spans_first_group_too_wide_returns_empty() {
-    // A single span wider than max_cols → nothing rendered.
-    let spans: &[jackin_tui::HintSpan<'_>] = &[jackin_tui::HintSpan::Key(
-        "a very long key that exceeds the narrow terminal",
-    )];
-    let result = truncate_spans_to_cols(spans, 5);
+    let row_above = row_text(&buf, hint_row(area).saturating_sub(1));
+    let row = row_text(&buf, hint_row(area));
+    let row_below = row_text(&buf, hint_row(area).saturating_add(1));
     assert!(
-        result.is_empty(),
-        "first-group overflow must return empty slice"
-    );
-}
-
-#[test]
-fn truncate_spans_keeps_fitting_groups_drops_overflowing() {
-    // Three groups; limit set so only groups 1+2 fit.
-    let spans: &[jackin_tui::HintSpan<'_>] = &[
-        jackin_tui::HintSpan::Key("A"),
-        jackin_tui::HintSpan::Text("short"),
-        jackin_tui::HintSpan::GroupSep,
-        jackin_tui::HintSpan::Key("B"),
-        jackin_tui::HintSpan::Text("short"),
-        jackin_tui::HintSpan::GroupSep,
-        jackin_tui::HintSpan::Key("C"),
-        jackin_tui::HintSpan::Text("overflows-the-budget-clearly"),
-    ];
-    let full = jackin_tui::hint_row_cols(spans);
-    let two_groups = jackin_tui::hint_row_cols(&spans[..5]); // A short GroupSep B short
-    let result = truncate_spans_to_cols(spans, two_groups + 2);
-    // Should keep groups 1+2 (spans[0..5]); trailing GroupSep is stripped.
-    assert!(
-        result.len() <= 5,
-        "overflow group must be dropped: got {} spans",
-        result.len()
+        row_above.trim().is_empty(),
+        "top spacer polluted: {row_above:?}"
     );
     assert!(
-        !matches!(result.last(), Some(jackin_tui::HintSpan::GroupSep)),
-        "trailing GroupSep must be stripped"
+        row.contains("A alpha"),
+        "first visible hint group missing: {row:?}"
     );
-    let _ = full; // suppress unused warning
+    assert!(
+        row_below.trim().is_empty(),
+        "bottom spacer polluted: {row_below:?}"
+    );
 }
 
 #[test]
 fn dynamic_key_hint_uses_key_style() {
-    let area = Rect::new(0, 0, 40, 4);
+    let area = Rect::new(0, 0, 40, 5);
     let mut buf = Buffer::empty(area);
     render_hint_spans_row(
         &mut buf,
@@ -230,14 +270,38 @@ fn dynamic_key_hint_uses_key_style() {
         ],
     );
 
+    let y = hint_row(area);
     let key_cell = (0..area.width)
-        .find(|x| buf[(*x, 1)].symbol() == "C")
+        .find(|x| buf[(*x, y)].symbol() == "C")
         .expect("key rendered");
-    assert_eq!(buf[(key_cell, 1)].fg, color(jackin_tui::WHITE));
+    assert_eq!(buf[(key_cell, y)].fg, jackin_tui::theme::WHITE);
     assert!(
-        buf[(key_cell, 1)]
+        buf[(key_cell, y)]
             .style()
             .add_modifier
             .contains(Modifier::BOLD)
     );
+}
+
+#[test]
+fn separator_hint_uses_shared_border_gray() {
+    let area = Rect::new(0, 0, 40, 5);
+    let mut buf = Buffer::empty(area);
+    render_hint_spans_row(
+        &mut buf,
+        area,
+        &[
+            jackin_tui::HintSpan::Key("A"),
+            jackin_tui::HintSpan::Text("alpha"),
+            jackin_tui::HintSpan::Sep,
+            jackin_tui::HintSpan::Key("B"),
+            jackin_tui::HintSpan::Text("bravo"),
+        ],
+    );
+
+    let y = hint_row(area);
+    let sep_cell = (0..area.width)
+        .find(|x| buf[(*x, y)].symbol() == "·")
+        .expect("separator rendered");
+    assert_eq!(buf[(sep_cell, y)].fg, jackin_tui::theme::BORDER_GRAY);
 }

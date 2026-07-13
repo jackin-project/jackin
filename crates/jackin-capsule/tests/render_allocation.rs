@@ -51,12 +51,14 @@ fn focused_full_snapshot_render_core_allocation_stays_bounded_after_warmup() {
     let after = dhat::HeapStats::get();
     let blocks = after.total_blocks - before.total_blocks;
     let bytes = after.total_bytes - before.total_bytes;
+    let max_blocks = jackin_capsule::perf_budgets::FOCUSED_FULL_SNAPSHOT_MAX_BLOCKS as u64;
+    let max_bytes = jackin_capsule::perf_budgets::FOCUSED_FULL_SNAPSHOT_MAX_BYTES as u64;
     dhat::assert!(
-        blocks <= 3,
+        blocks <= max_blocks,
         "expected only Ratatui Buffer::diff allocations"
     );
     dhat::assert!(
-        bytes <= 1024,
+        bytes <= max_bytes,
         "expected only Ratatui Buffer::diff allocations"
     );
 }
@@ -99,12 +101,14 @@ fn focused_full_borrowed_view_render_core_allocation_stays_bounded_after_warmup(
     let after = dhat::HeapStats::get();
     let blocks = after.total_blocks - before.total_blocks;
     let bytes = after.total_bytes - before.total_bytes;
+    let max_blocks = jackin_capsule::perf_budgets::FOCUSED_BORROWED_VIEW_MAX_BLOCKS as u64;
+    let max_bytes = jackin_capsule::perf_budgets::FOCUSED_BORROWED_VIEW_MAX_BYTES as u64;
     dhat::assert!(
-        blocks <= 3,
+        blocks <= max_blocks,
         "expected only Ratatui Buffer::diff allocations"
     );
     dhat::assert!(
-        bytes <= 1024,
+        bytes <= max_bytes,
         "expected only Ratatui Buffer::diff allocations"
     );
 }

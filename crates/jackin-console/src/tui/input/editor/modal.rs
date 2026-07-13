@@ -12,13 +12,11 @@ use crate::tui::screens::editor::view::{
     secret_empty_key_label, secret_key_input_state_from_pending, secret_source_picker_state,
 };
 use crate::tui::state::{
-    EditorState, FieldFocus, Modal, SecretsScopeTag, TextInputTarget, open_role_input_error,
+    EditorState, FieldFocus, Modal, SecretsPickerTarget, SecretsScopeTag, TextInputTarget,
+    open_role_input_error,
 };
 use crate::tui::update::{CreateOpPickerPlan, create_op_picker_plan};
 
-/// `pending_picker_target` records `(scope, Some(key))` for key rows
-/// (commit replaces value) or `(scope, None)` for sentinels (commit
-/// stashes path, opens `EnvKey` modal). Headers / spacers are no-ops.
 pub fn open_secrets_picker_modal(
     editor: &mut EditorState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
@@ -28,8 +26,12 @@ pub fn open_secrets_picker_modal(
     let Some(target) = editor_update::secret_picker_target_for_row(rows.get(n)) else {
         return;
     };
-    editor.pending_picker_target = Some(target);
+    let secrets_target = match target {
+        (scope, Some(key)) => SecretsPickerTarget::Existing { scope, key },
+        (scope, None) => SecretsPickerTarget::NewKey { scope },
+    };
     editor.modal = Some(Modal::OpPicker {
+        secrets_target: Some(secrets_target),
         state: Box::new(OpPickerState::new_with_cache(op_cache)),
     });
 }
@@ -56,7 +58,7 @@ fn generate_scope_for_target(
 /// [`PendingTokenGenerate`] that mints the token. The minted literal is
 /// staged into the stashed auth form (via the re-mount the loop runs on
 /// completion) and persisted only when the operator Saves — the form
-/// stash in `pending_auth_form_return` survives `clear_modal_chain`.
+/// modal parent stack survives `clear_modal_chain`.
 pub fn start_plain_token_generate(editor: &mut EditorState<'_>) {
     let Some(target) = editor.generating_token_target.take() else {
         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
@@ -92,6 +94,7 @@ pub fn open_create_op_picker_for_generate(
     // `generating_token_target` stays set so the OpPicker commit routes
     // back through `handle_token_generate_pick`.
     editor.modal = Some(Modal::OpPicker {
+        secrets_target: None,
         state: Box::new(OpPickerState::new_create_with_cache(
             op_cache,
             generated_token_op_item_name(jackin_env::DEFAULT_ITEM_TEMPLATE, &workspace_name),
@@ -288,18 +291,30 @@ pub fn apply_text_input_to_pending(
                 return;
             }
             let key = trimmed.to_owned();
-            // Sentinel-picker fast path: P committed an OpRef before the
-            // key existed; both fields land here.
-            if let Some(stashed) = editor.pending_picker_value.take() {
-                set_pending_env_value_typed(editor, scope, &key, stashed);
-                // env_key context now in Modal::SourcePicker
-                editor.clear_modal_chain();
-                return;
-            }
             editor.open_sub_modal(Modal::SourcePicker {
                 state: secret_source_picker_state(key.clone(), op_available),
                 env_key: Some((scope.clone(), key)),
             });
+        }
+        TextInputTarget::EnvKeyWithValue {
+            scope,
+            value: carried_value,
+        } => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                let state =
+                    env_key_input_state(editor, scope, secret_empty_key_label(), String::new());
+                editor.modal = Some(Modal::TextInput {
+                    target: TextInputTarget::EnvKeyWithValue {
+                        scope: scope.clone(),
+                        value: carried_value.clone(),
+                    },
+                    state,
+                });
+                return;
+            }
+            set_pending_env_value_typed(editor, scope, trimmed, carried_value.clone());
+            editor.clear_modal_chain();
         }
         TextInputTarget::EnvValue { scope, key } => {
             set_pending_env_value(editor, scope, key, value);

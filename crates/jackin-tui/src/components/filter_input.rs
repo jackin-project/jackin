@@ -9,7 +9,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
-use crate::theme::{PHOSPHOR_DARK, WHITE};
+use crate::theme::{INK, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FilterInput<'a> {
@@ -43,8 +43,9 @@ pub fn filter_input_line(filter: &str) -> Line<'static> {
             Span::styled(
                 "\u{2588}",
                 Style::default()
-                    .fg(WHITE)
-                    .add_modifier(Modifier::SLOW_BLINK),
+                    .fg(INK)
+                    .bg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD),
             ),
         ])
     }

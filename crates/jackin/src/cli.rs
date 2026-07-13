@@ -27,6 +27,8 @@ pub(super) const BANNER: &str = jackin_tui::ansi::BRAND_BANNER;
 
 pub mod cleanup;
 pub mod config;
+#[cfg(unix)]
+pub mod daemon;
 pub mod diagnostics;
 pub mod dispatch;
 pub mod doctor;
@@ -44,6 +46,8 @@ pub use config::{
     AuthCommand, CoauthorTrailerCommand, ConfigCommand, DcoCommand, EnvCommand, GitCommand,
     MountCommand, TrustCommand,
 };
+#[cfg(unix)]
+pub use daemon::DaemonCommand;
 pub use diagnostics::DiagnosticsCommand;
 pub use logs::LogsArgs;
 pub use prewarm::PrewarmArgs;
@@ -133,6 +137,10 @@ pub enum Command {
     /// View and modify operator configuration
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
+    /// Manage the per-user jackin❯ host daemon
+    #[cfg(unix)]
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Daemon(DaemonCommand),
     Logs(LogsArgs),
     /// Run pre-flight health checks for your jackin❯ setup
     #[command(before_help = BANNER, styles = HELP_STYLES)]

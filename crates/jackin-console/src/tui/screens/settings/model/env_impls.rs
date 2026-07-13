@@ -6,6 +6,7 @@ use super::{
     BTreeMap, SettingsEnvConfig, SettingsEnvScope, SettingsModalSlot, SettingsPanelChangeCount,
     SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved, SettingsPanelTakeError,
 };
+use jackin_tui::components::ModalStack;
 
 pub fn settings_env_config_from_app_config(
     config: &jackin_config::AppConfig,
@@ -27,9 +28,6 @@ pub struct SettingsEnvState<EnvValue, Modal> {
     pub original: SettingsEnvConfig<EnvValue>,
     pub modal: Option<Modal>,
     pub modal_parents: Vec<Modal>,
-    pub pending_env_key: Option<(SettingsEnvScope, String)>,
-    pub pending_picker_target: Option<(SettingsEnvScope, Option<String>)>,
-    pub pending_picker_value: Option<EnvValue>,
     pub unmasked_rows: std::collections::BTreeSet<(SettingsEnvScope, String)>,
     pub expanded: std::collections::BTreeSet<String>,
     pub error: Option<String>,
@@ -63,9 +61,6 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
             pending,
             modal: None,
             modal_parents: Vec::new(),
-            pending_env_key: None,
-            pending_picker_target: None,
-            pending_picker_value: None,
             unmasked_rows: std::collections::BTreeSet::default(),
             expanded: std::collections::BTreeSet::default(),
             error: None,
@@ -101,11 +96,11 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
             )
             .saturating_sub(1),
         );
-        self.modal = None;
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
 
-        self.pending_picker_target = None;
-        self.pending_picker_value = None;
         self.unmasked_rows.clear();
         self.expanded.clear();
         self.error = None;
@@ -152,65 +147,17 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     }
 
     pub fn open_sub_modal(&mut self, child: Modal) {
-        if let Some(parent) = self.modal.take() {
-            self.modal_parents.push(parent);
-        }
-        self.modal = Some(child);
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.open_sub(child);
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn pop_modal_chain(&mut self) {
-        self.modal = self.modal_parents.pop();
-        if self.modal.is_none() {
-            self.drop_modal_scratch();
-        }
-    }
-
-    pub fn pop_modal_chain_and_clear_pending_env_key_if_closed(&mut self) {
-        self.pop_modal_chain();
-        if self.modal.is_none() {
-            self.pending_env_key = None;
-        }
-    }
-
-    pub fn pop_modal_chain_and_clear_pending_env_key(&mut self) {
-        self.pop_modal_chain();
-        self.pending_env_key = None;
-        self.pending_picker_value = None;
-    }
-
-    pub fn pop_modal_chain_and_clear_picker_target(&mut self) {
-        self.pop_modal_chain();
-        self.pending_picker_target = None;
-        self.pending_picker_value = None;
-    }
-
-    pub fn set_pending_picker_target(&mut self, target: (SettingsEnvScope, Option<String>)) {
-        self.pending_picker_target = Some(target);
-    }
-
-    pub fn set_pending_env_key(&mut self, scope: SettingsEnvScope, key: String) {
-        self.pending_env_key = Some((scope, key));
-    }
-
-    pub fn clear_pending_env_key(&mut self) {
-        self.pending_env_key = None;
-    }
-
-    pub fn clear_pending_picker_target(&mut self) {
-        self.pending_picker_target = None;
-    }
-
-    pub fn stash_pending_picker_value(&mut self, value: EnvValue) {
-        self.pending_picker_value = Some(value);
-    }
-
-    #[must_use]
-    pub fn has_pending_picker_value(&self) -> bool {
-        self.pending_picker_value.is_some()
-    }
-
-    pub fn take_pending_picker_value(&mut self) -> Option<EnvValue> {
-        self.pending_picker_value.take()
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.pop();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn set_value(&mut self, scope: &SettingsEnvScope, key: &str, value: EnvValue) {
@@ -236,9 +183,10 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     }
 
     pub fn clear_modal_chain(&mut self) {
-        self.modal = None;
-        self.modal_parents.clear();
-        self.drop_modal_scratch();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn set_error(&mut self, error: impl Into<String>) {
@@ -247,10 +195,6 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
 
     pub fn take_error(&mut self) -> Option<String> {
         self.error.take()
-    }
-
-    fn drop_modal_scratch(&mut self) {
-        self.pending_picker_value = None;
     }
 
     pub fn mark_saved(&mut self)

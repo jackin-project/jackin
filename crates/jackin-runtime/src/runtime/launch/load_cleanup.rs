@@ -29,7 +29,9 @@ pub(crate) fn write_if_changed_atomic(
     Ok(())
 }
 
-pub(crate) struct LoadCleanup {
+/// Coordinates Docker resource teardown for a failed or completed launch.
+#[derive(Debug)]
+pub struct LoadCleanup {
     container_name: String,
     dind: String,
     certs_volume: String,
@@ -49,7 +51,9 @@ pub(crate) struct LoadCleanup {
 }
 
 impl LoadCleanup {
-    pub(crate) const fn new(
+    /// Arm cleanup for the named role container + `DinD` + network + certs volume.
+    #[must_use]
+    pub const fn new(
         container_name: String,
         dind: String,
         certs_volume: String,
@@ -80,32 +84,62 @@ impl LoadCleanup {
         self.clean_socket_dir = false;
     }
 
-    pub(crate) async fn run(&self, docker: &impl DockerApi) {
+    /// Best-effort remove role/DinD containers, cert volume, network, and socket dir.
+    pub async fn run(&self, docker: &impl DockerApi) {
         if !self.armed {
             return;
         }
 
+        jackin_diagnostics::active_timing_started("cleanup", "cancel_cleanup", None);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.compact("cleanup", "cancel cleanup started");
+        }
+
         if let Err(e) = docker.remove_container(&self.container_name).await {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact("cleanup", &format!("cleanup failed (container): {e}"));
+            }
             launch_output().step_fail(&format!("cleanup failed (container): {e}"));
         }
         if let Err(e) = docker.remove_container(&self.dind).await {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact("cleanup", &format!("cleanup failed (dind): {e}"));
+            }
             launch_output().step_fail(&format!("cleanup failed (dind): {e}"));
         }
         if let Err(e) = docker.remove_volume(&self.certs_volume).await {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact("cleanup", &format!("cleanup failed (certs volume): {e}"));
+            }
             launch_output().step_fail(&format!("cleanup failed (certs volume): {e}"));
         }
         if let Err(e) = docker.remove_network(&self.network).await {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact("cleanup", &format!("cleanup failed (network): {e}"));
+            }
             launch_output().step_fail(&format!("cleanup failed (network): {e}"));
         }
         if self.clean_socket_dir {
             match std::fs::remove_dir_all(&self.socket_dir) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => launch_output().step_fail(&format!(
-                    "cleanup failed (socket dir {}): {error}",
-                    self.socket_dir.display()
-                )),
+                Err(error) => {
+                    if let Some(run) = jackin_diagnostics::active_run() {
+                        run.compact(
+                            "cleanup",
+                            &format!(
+                                "cleanup failed (socket dir {}): {error}",
+                                self.socket_dir.display()
+                            ),
+                        );
+                    }
+                    launch_output().step_fail(&format!(
+                        "cleanup failed (socket dir {}): {error}",
+                        self.socket_dir.display()
+                    ));
+                }
             }
         }
+        jackin_diagnostics::active_timing_done("cleanup", "cancel_cleanup", None);
     }
 }

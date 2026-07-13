@@ -739,7 +739,10 @@ pub fn auth_credential_env_keys() -> BTreeSet<&'static str> {
         .collect()
 }
 
-#[allow(clippy::missing_const_for_fn)]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn settings_auth_env_map_mut<'a>(
     kind: AuthKind,
     github_env: &'a mut BTreeMap<String, EnvValue>,
@@ -1100,11 +1103,13 @@ pub fn resolve_panel_mode(
             let Some(agent) = auth_kind_agent(kind) else {
                 return AuthMode::Ignore;
             };
-            let mode = resolve_mode(cfg, agent, workspace, role);
+            let ws = jackin_core::WorkspaceName::parse(workspace).ok();
+            let mode = resolve_mode(cfg, agent, ws.as_ref(), role);
             auth_mode_from_auth_forward(mode)
         }
         AuthKind::Github => {
-            let mode = resolve_github_mode(cfg, workspace, role);
+            let ws = jackin_core::WorkspaceName::parse(workspace).ok();
+            let mode = resolve_github_mode(cfg, ws.as_ref(), role);
             auth_mode_from_github(mode)
         }
         AuthKind::Zai | AuthKind::Minimax => {

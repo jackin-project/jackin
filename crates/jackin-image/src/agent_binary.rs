@@ -7,6 +7,7 @@
 //! with a 1-hour TTL. Not responsible for injecting binaries into the Docker
 //! build context — callers in `runtime::image` handle that step.
 
+use crate::ImageError;
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
     parse_sha256_hex, repair_executable_file,
@@ -17,6 +18,7 @@ use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
+use tokio::sync::OnceCell;
 
 const CACHE_TTL: Duration = Duration::from_hours(1);
 const KIMI_DOWNLOAD_BASE_URL: &str = "https://code.kimi.com/kimi-code";
@@ -24,6 +26,8 @@ const KIMI_BINARY_BASE_URL: &str = "https://code.kimi.com/kimi-code/binaries";
 
 const GROK_BASE_PRIMARY: &str = "https://x.ai/cli";
 const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-public-artifacts/cli";
+
+static GITHUB_AUTH_TOKEN: OnceCell<Option<String>> = OnceCell::const_new();
 
 #[derive(Debug, Clone)]
 pub struct AgentBinary {
@@ -66,9 +70,19 @@ pub async fn latest_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRe
 }
 
 pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<AgentBinary> {
+    ensure_available_impl(paths, agent, true).await
+}
+
+async fn ensure_available_impl(
+    paths: &JackinPaths,
+    agent: Agent,
+    install_stub: bool,
+) -> Result<AgentBinary> {
+    #[cfg(not(test))]
+    let _ = install_stub;
     let stub_path = test_stub_path(paths, agent);
     #[cfg(test)]
-    if !is_executable_file(&stub_path) {
+    if install_stub && !is_executable_file(&stub_path) {
         install_test_stub(paths, agent).context("installing in-process agent binary test stub")?;
     }
     if is_executable_file_async(&stub_path).await {
@@ -97,6 +111,13 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         )
         .await
         .with_context(|| format!("preparing cached {} binary", agent.slug()));
+    }
+
+    if let Some((_, fallback_release, fallback_path)) =
+        newest_cached_executable_release_async(paths, agent).await
+    {
+        spawn_release_metadata_refresh(paths.clone(), agent);
+        return ensure_binary_for_release(agent, &fallback_release, &fallback_path).await;
     }
 
     record(
@@ -137,6 +158,43 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         "latest binary download failed",
     )
     .await
+}
+
+fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
+    #[cfg(test)]
+    {
+        drop((paths, agent));
+    }
+    #[cfg(not(test))]
+    tokio::spawn(async move {
+        record(
+            "agent_binary_resolve_started",
+            &format!("{} latest release background", agent.slug()),
+        );
+        match resolve_latest_release(agent).await {
+            Ok(release) => {
+                record(
+                    "agent_binary_resolved",
+                    &format!(
+                        "{} {} from {} background",
+                        agent.slug(),
+                        release.version,
+                        release.url
+                    ),
+                );
+                persist_release_cache_async(&paths, &release).await;
+            }
+            Err(error) => {
+                record(
+                    "warning",
+                    &format!(
+                        "{} background latest version lookup failed: {error:#}",
+                        agent.slug()
+                    ),
+                );
+            }
+        }
+    });
 }
 
 /// Build `release` into `cached`; on failure, fall back to the newest cached
@@ -423,7 +481,10 @@ async fn resolve_grok() -> Result<AgentRelease> {
         };
 
     if version.is_empty() {
-        anyhow::bail!("failed to fetch Grok version pointer from {base}/stable");
+        return Err(ImageError::msg(format!(
+            "failed to fetch Grok version pointer from {base}/stable"
+        ))
+        .into());
     }
 
     let grok_arch = match container_arch() {
@@ -464,12 +525,22 @@ async fn fetch_text(url: &str) -> Result<String> {
     jackin_docker::net::fetch_text(url).await
 }
 
-/// Like `fetch_text` but retries transient HTTP/network errors up to 3 times
-/// with exponential back-off. Every HTTP GET uses this path so release pointers,
-/// manifests, and checksum sidecars share one retry contract.
+/// Returns true when `error` is a TCP connect-phase timeout. Unlike a slow
+/// response or a server-side error, a connect timeout means the endpoint is
+/// unreachable and retrying immediately will not help.
+fn is_connect_timeout(error: &anyhow::Error) -> bool {
+    error.chain().any(|e| {
+        e.downcast_ref::<reqwest::Error>()
+            .is_some_and(|re| re.is_connect() && re.is_timeout())
+    })
+}
+
+/// Like `fetch_text` but retries transient HTTP/network errors up to 2 times
+/// with exponential back-off. Connect timeouts are not retried: on a warm cache,
+/// this lets the caller fall back immediately to the cached executable.
 async fn fetch_text_with_retry(url: &str) -> Result<String> {
     let url = url.to_owned();
-    retry_with_backoff(3, Duration::from_millis(500), || {
+    retry_metadata_with_backoff(2, Duration::from_millis(500), || {
         let url = url.clone();
         async move { fetch_text(&url).await }
     })
@@ -477,6 +548,13 @@ async fn fetch_text_with_retry(url: &str) -> Result<String> {
 }
 
 async fn github_auth_token() -> Option<String> {
+    GITHUB_AUTH_TOKEN
+        .get_or_init(github_auth_token_uncached)
+        .await
+        .clone()
+}
+
+async fn github_auth_token_uncached() -> Option<String> {
     // Degrade to unauthenticated (60 req/hr) on any failure, but log which one:
     // `gh` missing is expected on CI, while present-but-erroring (not logged in)
     // is the case an operator hitting a rate-limit 403 needs to see in --debug.
@@ -519,7 +597,7 @@ async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubRelea
         headers.insert(reqwest::header::AUTHORIZATION, val);
     }
     let client = jackin_docker::net::http_client(headers)?;
-    let body = retry_with_backoff(3, Duration::from_millis(500), || {
+    let body = retry_metadata_with_backoff(2, Duration::from_millis(500), || {
         let c = client.clone();
         let u = api_url.clone();
         async move {
@@ -542,6 +620,40 @@ async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubRelea
     })
 }
 
+async fn retry_metadata_with_backoff<T, F, Fut>(
+    max_attempts: u32,
+    initial_delay: Duration,
+    f: F,
+) -> Result<T>
+where
+    F: Fn() -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let mut last_err = ImageError::NoAttemptsMade.into();
+    for attempt in 0..max_attempts {
+        if attempt > 0 {
+            let delay = initial_delay * (1 << (attempt - 1));
+            record(
+                "retry_backoff",
+                &format!("attempt {attempt}/{max_attempts}, waiting {delay:?}"),
+            );
+            tokio::time::sleep(delay).await;
+        }
+        match f().await {
+            Ok(v) => return Ok(v),
+            Err(e) if is_connect_timeout(&e) => return Err(e),
+            Err(e) => {
+                record(
+                    "retry_failed",
+                    &format!("attempt {}/{max_attempts}: {e:#}", attempt + 1),
+                );
+                last_err = e;
+            }
+        }
+    }
+    Err(last_err).with_context(|| format!("giving up after {max_attempts} attempts"))
+}
+
 async fn retry_with_backoff<T, F, Fut>(
     max_attempts: u32,
     initial_delay: Duration,
@@ -551,7 +663,7 @@ where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T>>,
 {
-    let mut last_err = anyhow::anyhow!("no attempts made");
+    let mut last_err = ImageError::NoAttemptsMade.into();
     for attempt in 0..max_attempts {
         if attempt > 0 {
             let delay = initial_delay * (1 << (attempt - 1));
@@ -627,22 +739,25 @@ async fn download_and_cache_inner(
             .await
             .context("hash worker join")?
             .with_context(|| format!("hashing {}", tmp_download.display()))?;
-        anyhow::ensure!(
-            actual.eq_ignore_ascii_case(expected),
-            "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
-            release.agent.slug(),
-            release.url,
-            expected,
-            actual
-        );
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err(ImageError::msg(format!(
+                "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
+                release.agent.slug(),
+                release.url,
+                expected,
+                actual
+            ))
+            .into());
+        }
     } else if release.agent != Agent::Grok {
         // Future agents without checksums should be explicitly handled (or
         // provide one). Only Grok is currently allowed to skip SHA.
-        anyhow::bail!(
+        return Err(ImageError::msg(format!(
             "{} release {} has no published checksum; refusing to install an unverified binary",
             release.agent.slug(),
             release.version
-        );
+        ))
+        .into());
     }
     if let Some(member) = &release.archive_member {
         let archive = tmp_download.to_owned();
@@ -684,12 +799,13 @@ async fn download_and_cache_inner(
                 )
             })?;
         if !status.success() {
-            anyhow::bail!(
+            return Err(ImageError::msg(format!(
                 "{} {} failed --version smoke test after download (status: {:?})",
                 release.agent.slug(),
                 release.version,
                 status
-            );
+            ))
+            .into());
         }
     }
 
@@ -710,19 +826,6 @@ fn test_stub_path(paths: &JackinPaths, agent: Agent) -> PathBuf {
         .cache_dir
         .join("agent-binaries-test-stub")
         .join(agent.slug())
-}
-
-/// Host path to the agent's executable for run-time bind-mounting onto the
-/// container's PATH. Returns the test stub when one is installed (so tests don't
-/// need real downloads), otherwise the newest cached real binary. `None` when no
-/// binary is available for the agent. Used by the launch path to mount agent
-/// binaries read-only instead of baking them into the derived image.
-pub fn runtime_mount_binary_path(paths: &JackinPaths, agent: Agent) -> Option<PathBuf> {
-    let stub = test_stub_path(paths, agent);
-    if is_executable_file(&stub) {
-        return Some(stub);
-    }
-    newest_cached_executable_release(paths, agent).map(|(_, _, path)| path)
 }
 
 pub fn install_test_stub(paths: &JackinPaths, agent: Agent) -> Result<()> {

@@ -1,7 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-# SPDX-License-Identifier: Apache-2.0
-
-version = "v1alpha8"
+version = "v1alpha9"
 data_dir = "/tmp/jackin"
 
 [claude]

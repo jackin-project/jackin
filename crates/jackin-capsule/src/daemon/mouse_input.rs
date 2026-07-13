@@ -605,8 +605,14 @@ impl Multiplexer {
             return false;
         }
         let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
-        let rows = session.render_content_snapshot(inner.cols);
-        if rows.get(usize::from(cursor_row)).is_none() {
+        // Live-screen content index: scrollback oldest-first, then screen rows.
+        let content_row = session
+            .shadow_grid
+            .scrollback_len()
+            .saturating_add(usize::from(cursor_row));
+        let rows = session
+            .render_content_snapshot_range(inner.cols, content_row..content_row.saturating_add(1));
+        if rows.is_empty() {
             crate::cdebug!(
                 "visible url open skipped: focused session={session_id} cursor row={cursor_row} missing"
             );
@@ -615,7 +621,8 @@ impl Multiplexer {
         let Some(target) = self.resolve_host_open_target_at_content_cell(
             session_id,
             &rows,
-            usize::from(cursor_row),
+            content_row,
+            content_row,
             cursor_col,
             Some("focused-cursor"),
         ) else {
@@ -653,20 +660,35 @@ impl Multiplexer {
             }
             return None;
         };
-        let rows = session.render_content_snapshot(candidate.inner.cols);
+        // Hover/click URL resolution inspects only the anchor row:
+        // single-row word_bounds_in_row; OSC8 uses absolute content coords.
+        // Window = 1 row (this function).
+        let content_row = candidate.anchor_row;
+        let range_start = content_row;
+        let rows = session.render_content_snapshot_range(
+            candidate.inner.cols,
+            content_row..content_row.saturating_add(1),
+        );
         self.resolve_host_open_target_at_content_cell(
             candidate.session_id,
             &rows,
-            candidate.anchor_row,
+            range_start,
+            content_row,
             candidate.anchor_col,
             log_suffix,
         )
     }
 
+    /// Resolve a host-open target at an absolute content cell.
+    ///
+    /// `rows` may be a full content snapshot or a range slice; `rows_base` is
+    /// the absolute content-row index of `rows[0]` so absolute coordinates keep
+    /// working without re-basing selection/hyperlink semantics.
     fn resolve_host_open_target_at_content_cell(
         &self,
         session_id: u64,
         rows: &[RowSnapshot],
+        rows_base: usize,
         row_idx: usize,
         anchor_col: u16,
         log_suffix: Option<&str>,
@@ -708,7 +730,8 @@ impl Multiplexer {
             });
         }
 
-        let Some(row) = rows.get(row_idx) else {
+        let local_row = row_idx.saturating_sub(rows_base);
+        let Some(row) = rows.get(local_row) else {
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
                     "visible url open skipped ({log_suffix}): row {row_idx} missing for session={session_id}"

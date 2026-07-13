@@ -23,9 +23,14 @@ use tempfile::tempdir;
 #[derive(Debug, Default)]
 pub(crate) struct FakeDockerClient {
     pub list_containers_queue: RefCell<VecDeque<Vec<ContainerRow>>>,
+    pub list_calls: RefCell<usize>,
 }
 
 impl DockerApi for FakeDockerClient {
+    async fn ping(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     async fn inspect_container_state(&self, _name: &str) -> ContainerState {
         ContainerState::NotFound
     }
@@ -37,6 +42,7 @@ impl DockerApi for FakeDockerClient {
         _label_filters: &[&str],
         _all: bool,
     ) -> anyhow::Result<Vec<ContainerRow>> {
+        *self.list_calls.borrow_mut() += 1;
         Ok(self
             .list_containers_queue
             .borrow_mut()
@@ -146,9 +152,24 @@ async fn count_keep_awake_agents_counts_nonempty_lines() {
                 labels: HashMap::default(),
             },
         ]])),
+        ..Default::default()
     };
     let count = count_keep_awake_agents(&docker).await.unwrap();
     assert_eq!(count, 2);
+}
+
+#[tokio::test]
+async fn reconcile_gate_false_with_no_pidfile_skips_docker_count() {
+    let tmp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    reconcile_inner(&paths, &docker, &mut runner, false)
+        .await
+        .unwrap();
+
+    assert_eq!(*docker.list_calls.borrow(), 0);
 }
 
 #[test]
@@ -275,7 +296,9 @@ async fn reconcile_inner_is_noop_when_no_agents_and_no_pid_file() {
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
 
-    reconcile_inner(&paths, &docker, &mut runner).await.unwrap();
+    reconcile_inner(&paths, &docker, &mut runner, true)
+        .await
+        .unwrap();
 
     assert!(!pid_path_for_tests(&paths).exists());
 }
@@ -290,7 +313,9 @@ async fn reconcile_inner_clears_stale_pid_file_when_no_agents() {
 
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
-    reconcile_inner(&paths, &docker, &mut runner).await.unwrap();
+    reconcile_inner(&paths, &docker, &mut runner, true)
+        .await
+        .unwrap();
 
     assert!(!pid_path.exists(), "stale PID file should be removed");
 }
@@ -305,7 +330,9 @@ async fn reconcile_inner_clears_pid_file_when_pid_belongs_to_unrelated_process()
 
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
-    reconcile_inner(&paths, &docker, &mut runner).await.unwrap();
+    reconcile_inner(&paths, &docker, &mut runner, true)
+        .await
+        .unwrap();
 
     assert!(
         !pid_path.exists(),

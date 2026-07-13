@@ -4,11 +4,12 @@
 //! `AppConfig` load/init behavior: TOML read, workspace-split migration,
 //! reserved-env validation, and builtin-agent sync.
 
+use crate::ConfigError;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use jackin_core::JackinPaths;
+use jackin_core::{JackinPaths, WorkspaceName};
 use toml_edit::DocumentMut;
 
 use super::AppConfig;
@@ -21,6 +22,7 @@ pub(crate) fn workspace_file_path(paths: &JackinPaths, name: &str) -> PathBuf {
     paths.workspaces_dir.join(format!("{name}.toml"))
 }
 
+/// Load global config plus split workspace files, migrating legacy embedded workspaces.
 pub fn load_split_config(
     paths: &JackinPaths,
     contents_opt: Option<String>,
@@ -55,6 +57,7 @@ pub fn load_split_config(
     Ok(config)
 }
 
+/// Read and migrate every `*.toml` workspace file under `workspaces_dir`.
 pub fn load_workspace_files(
     workspaces_dir: &Path,
 ) -> anyhow::Result<BTreeMap<String, WorkspaceConfig>> {
@@ -77,18 +80,20 @@ pub fn load_workspace_files(
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| anyhow::anyhow!("invalid workspace filename {}", path.display()))?;
-        validate_workspace_file_stem(stem)
+        let stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+            anyhow::Error::from(ConfigError::msg(format!(
+                "invalid workspace filename {}",
+                path.display()
+            )))
+        })?;
+        let name = WorkspaceName::parse(stem)
             .with_context(|| format!("invalid workspace filename {}", path.display()))?;
         migrations::migrate_workspace_file_if_needed(&path)?;
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading workspace config {}", path.display()))?;
         let workspace = toml::from_str(&raw)
             .with_context(|| format!("parsing workspace config {}", path.display()))?;
-        workspaces.insert(stem.to_owned(), workspace);
+        workspaces.insert(name.into_inner(), workspace);
     }
     Ok(workspaces)
 }
@@ -118,7 +123,10 @@ fn legacy_workspace_op_accounts(contents: &str) -> anyhow::Result<BTreeMap<Strin
                 out.insert(name.to_owned(), acct.to_owned());
             }
             None => {
-                anyhow::bail!("workspace {name:?}: `op_account` must be a string, found {item:?}")
+                return Err(ConfigError::msg(format!(
+                    "workspace {name:?}: `op_account` must be a string, found {item:?}"
+                ))
+                .into());
             }
         }
     }
@@ -154,7 +162,7 @@ fn migrate_legacy_workspaces(
                 let mut doc: DocumentMut = contents
                     .parse()
                     .with_context(|| format!("re-parsing serialized workspace {name:?}"))?;
-                doc["op_account"] = toml_edit::value(acct.as_str());
+                doc.insert("op_account", toml_edit::value(acct.as_str()));
                 migrations::migrate_workspace_op_account_to_refs(&mut doc).with_context(|| {
                     format!("stamping legacy op_account onto refs for workspace {name:?}")
                 })?;
@@ -177,13 +185,14 @@ fn migrate_legacy_workspaces(
             if existing == desired {
                 continue;
             }
-            anyhow::bail!(
+            return Err(ConfigError::msg(format!(
                 "cannot migrate workspace {name:?}: {} already exists with different contents \
                  than the legacy config.toml. Reconcile the two copies (delete the split file to \
                  take the legacy version, or remove [workspaces.{name}] from config.toml to take \
                  the split file) and re-run.",
                 path.display()
-            );
+            ))
+            .into());
         }
         atomic_write(&path, &contents)?;
     }
@@ -231,12 +240,14 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> anyhow::Result<()> {
     if offenses.is_empty() {
         return Ok(());
     }
-    anyhow::bail!(
+    Err(ConfigError::msg(format!(
         "config contains reserved jackin runtime env vars:\n{}",
         offenses.join("\n")
-    )
+    ))
+    .into())
 }
 
+/// `true` when `raw` is legacy-versioned and still embeds non-empty `[workspaces]`.
 pub fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {
     let doc: DocumentMut = raw.parse().context("parsing config.toml")?;
     let version = migrations::doc_version(&doc, "config")?;
@@ -248,6 +259,7 @@ pub fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {
 }
 
 impl AppConfig {
+    /// Load `config.toml` (migrate as needed), split workspaces, sync builtins, validate.
     pub fn load_or_init(paths: &JackinPaths) -> anyhow::Result<Self> {
         paths.ensure_base_dirs()?;
 

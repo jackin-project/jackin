@@ -4,11 +4,11 @@
 //! Shared Ratatui tab strip.
 
 use ratatui::{
-    Frame,
+    buffer::Buffer,
     layout::{Position, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, Widget},
 };
 
 use crate::{
@@ -45,10 +45,6 @@ impl<'a> TabStrip<'a> {
     pub const fn hovered(mut self, hovered: Option<usize>) -> Self {
         self.hovered = hovered;
         self
-    }
-
-    pub fn render(self, frame: &mut Frame<'_>, area: Rect) {
-        frame.render_widget(self.paragraph(), area);
     }
 
     /// Return the tab under a 0-based terminal coordinate.
@@ -111,6 +107,12 @@ impl<'a> TabStrip<'a> {
     #[must_use]
     pub fn cells(self, start_col: u16) -> Vec<TabCell<'a>> {
         lay_out_tabs(self.labels, start_col)
+    }
+}
+
+impl Widget for TabStrip<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        self.paragraph().render(area, buf);
     }
 }
 

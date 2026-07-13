@@ -16,14 +16,18 @@ use crate::constants::CONTAINER_PREFIX_DASH;
 /// Top-level selector: either a role (by org/name) or a bare container name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Selector {
+    /// Role identified by optional namespace and name.
     Role(RoleSelector),
+    /// Bare Docker container name (must use the jackin container prefix).
     Container(String),
 }
 
 /// Identifies a role by optional namespace and name (e.g. `chainargos/the-architect`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleSelector {
+    /// Optional org/namespace segment before `/`.
     pub namespace: Option<String>,
+    /// Role name segment.
     pub name: String,
 }
 
@@ -37,16 +41,20 @@ impl fmt::Display for RoleSelector {
     }
 }
 
+/// Why a selector string could not be parsed.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum SelectorError {
+    /// Input was empty.
     #[error("selector cannot be empty")]
     Empty,
+    /// Input failed segment/container-name validation.
     #[error("invalid selector: {0}")]
     Invalid(String),
 }
 
 impl RoleSelector {
+    /// Construct a role selector from optional namespace and name (already validated).
     pub fn new(namespace: Option<&str>, name: &str) -> Self {
         Self {
             namespace: namespace.map(str::to_owned),
@@ -85,6 +93,7 @@ impl RoleSelector {
         Err(SelectorError::Invalid(input.to_owned()))
     }
 
+    /// Canonical key string (`name` or `namespace/name`).
     pub fn key(&self) -> String {
         self.to_string()
     }
@@ -113,6 +122,7 @@ impl TryFrom<&str> for RoleSelector {
 }
 
 impl Selector {
+    /// Parse either a container name (jackin prefix) or a role selector.
     pub fn parse(input: &str) -> Result<Self, SelectorError> {
         if input.is_empty() {
             return Err(SelectorError::Empty);

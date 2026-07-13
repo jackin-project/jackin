@@ -1,14 +1,23 @@
-#![expect(
-
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
+#![allow(
     clippy::unwrap_used,
-    reason = "integration test fixture setup should fail immediately with source location"
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
 
 use jackin::workspace::{self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved};
 use jackin_config::ConfigEditor;
+use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use jackin_core::paths::JackinPaths;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
@@ -64,7 +73,7 @@ fn workspace_create_resolves_relative_workdir_and_mounts() {
         let expanded_workdir = workspace::resolve_path("jackin");
         let mount = parse_mount_spec_resolved("sibling-project").unwrap();
         editor.create_workspace(
-            "jackin",
+            &WorkspaceName::parse("jackin").unwrap(),
             WorkspaceConfig {
                 workdir: expanded_workdir.clone(),
                 mounts: vec![
@@ -109,7 +118,7 @@ fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
         let mount = parse_mount_spec_resolved("../jackin-agent-smith").unwrap();
         mount_for_assert = Some(mount.clone());
         editor.create_workspace(
-            "jackin",
+            &WorkspaceName::parse("jackin").unwrap(),
             WorkspaceConfig {
                 workdir: expanded_workdir.clone(),
                 mounts: vec![
@@ -152,7 +161,7 @@ fn workspace_create_requires_explicit_mount() {
     let mut editor = ConfigEditor::open(&paths).unwrap();
     let err = editor
         .create_workspace(
-            "my-app",
+            &WorkspaceName::parse("my-app").unwrap(),
             WorkspaceConfig {
                 workdir: expanded_workdir,
                 mounts: vec![],
@@ -189,7 +198,7 @@ fn workspace_create_uses_only_explicit_mounts() {
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .create_workspace(
-            "monorepo",
+            &WorkspaceName::parse("monorepo").unwrap(),
             WorkspaceConfig {
                 workdir: "/workspace".to_owned(),
                 mounts: all_mounts,
@@ -226,7 +235,7 @@ fn workspace_create_preserves_explicit_workdir_mount() {
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .create_workspace(
-            "project",
+            &WorkspaceName::parse("project").unwrap(),
             WorkspaceConfig {
                 workdir: expanded_workdir,
                 mounts: all_mounts,
@@ -259,7 +268,7 @@ fn workspace_edit_resolves_relative_mount() {
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .create_workspace(
-            "jackin",
+            &WorkspaceName::parse("jackin").unwrap(),
             WorkspaceConfig {
                 workdir: workdir_abs.clone(),
                 mounts: vec![workspace::MountConfig {
@@ -279,7 +288,7 @@ fn workspace_edit_resolves_relative_mount() {
     let result = with_cwd(temp.path(), || {
         let mount = parse_mount_spec_resolved("jackin-dev").unwrap();
         editor2.edit_workspace(
-            "jackin",
+            &wn("jackin"),
             WorkspaceEdit {
                 upsert_mounts: vec![mount],
                 ..WorkspaceEdit::default()
@@ -314,7 +323,7 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .create_workspace(
-            "my-app",
+            &WorkspaceName::parse("my-app").unwrap(),
             WorkspaceConfig {
                 workdir: workdir_abs.clone(),
                 mounts: vec![
@@ -345,7 +354,7 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     editor2
         .edit_workspace(
-            "my-app",
+            &wn("my-app"),
             WorkspaceEdit {
                 no_workdir_mount: true,
                 ..WorkspaceEdit::default()
@@ -374,7 +383,7 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .create_workspace(
-            "monorepo",
+            &WorkspaceName::parse("monorepo").unwrap(),
             WorkspaceConfig {
                 workdir: "/workspace".to_owned(),
                 mounts: vec![workspace::MountConfig {
@@ -392,7 +401,7 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     let err = editor2
         .edit_workspace(
-            "monorepo",
+            &wn("monorepo"),
             WorkspaceEdit {
                 no_workdir_mount: true,
                 ..WorkspaceEdit::default()

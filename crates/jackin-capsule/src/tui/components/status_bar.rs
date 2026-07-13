@@ -281,20 +281,26 @@ pub fn status_bar_plan(
     }
 }
 
-/// State glyph the status-bar paints in the rightmost slot of a tab
-/// cell. The `●` Blocked variant is rendered in red so the operator
-/// can spot "agent is waiting for you" without reading labels.
+/// State glyph the status-bar paints in the rightmost slot of a tab cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TabGlyph {
-    /// `Working` / `Idle` — single space placeholder. The slot is
-    /// always reserved so cell width stays stable across state
-    /// transitions.
-    None,
-    /// `Done` — `○`, default tab foreground colour.
-    Done,
-    /// `Blocked` — `●`, rendered in bright red as the high-visibility
-    /// "agent waiting" indicator.
     Blocked,
+    Done,
+    Working,
+    Idle,
+    Unknown,
+}
+
+impl From<VisibleAgentState> for TabGlyph {
+    fn from(state: VisibleAgentState) -> Self {
+        match state {
+            VisibleAgentState::Blocked => Self::Blocked,
+            VisibleAgentState::Done => Self::Done,
+            VisibleAgentState::Working => Self::Working,
+            VisibleAgentState::Idle => Self::Idle,
+            VisibleAgentState::Unknown => Self::Unknown,
+        }
+    }
 }
 
 /// Resolve the base name + state glyph for a tab. The caller builds
@@ -303,25 +309,33 @@ pub(crate) enum TabGlyph {
 /// surrounding tab foreground.
 fn tab_label(tab: &Tab, states: &[(u64, VisibleAgentState)]) -> (String, TabGlyph) {
     let ids = tab.tree.all_ids();
-    let has_blocked = ids.iter().any(|id| {
-        states
-            .iter()
-            .any(|(sid, st)| sid == id && *st == VisibleAgentState::Blocked)
-    });
-    let has_done = ids.iter().any(|id| {
-        states
-            .iter()
-            .any(|(sid, st)| sid == id && *st == VisibleAgentState::Done)
-    });
-
-    let glyph = if has_blocked {
-        TabGlyph::Blocked
-    } else if has_done {
-        TabGlyph::Done
-    } else {
-        TabGlyph::None
-    };
+    let state = ids
+        .iter()
+        .filter_map(|id| states.iter().find(|(sid, _)| sid == id).map(|(_, st)| *st))
+        .fold(VisibleAgentState::Unknown, roll_up_tab_state);
+    let glyph = TabGlyph::from(state);
     (tab.label_owned(), glyph)
+}
+
+fn roll_up_tab_state(
+    current: VisibleAgentState,
+    candidate: VisibleAgentState,
+) -> VisibleAgentState {
+    if state_priority(candidate) > state_priority(current) {
+        candidate
+    } else {
+        current
+    }
+}
+
+const fn state_priority(state: VisibleAgentState) -> u8 {
+    match state {
+        VisibleAgentState::Unknown => 0,
+        VisibleAgentState::Idle => 1,
+        VisibleAgentState::Working => 2,
+        VisibleAgentState::Done => 3,
+        VisibleAgentState::Blocked => 4,
+    }
 }
 
 fn tab_display_label(name: &str) -> String {

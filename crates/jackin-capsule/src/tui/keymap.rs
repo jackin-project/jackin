@@ -10,6 +10,7 @@
 //! that follow the prefix key — those are registered here.
 
 use jackin_tui::components::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
+use jackin_tui::keymap::glyph;
 
 use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand};
 
@@ -383,10 +384,10 @@ pub(crate) static READ_ONLY_DISMISS_KEYMAP: Keymap<ReadOnlyDismissAction> =
 
 // ── Normal mode: pane resize ─────────────────────────────────────────────────
 
-/// Actions for the main view's Alt+Shift+Arrow pane-resize bindings.
+/// Actions for the main view's Alt-Shift-Arrow pane-resize bindings.
 ///
 /// Each variant corresponds to one direction; the `Up` binding carries the
-/// shared grouped glyph `"Alt+Shift+↑↓←→"` so the hint bar shows a single
+/// shared grouped glyph so the hint bar shows a single
 /// entry for all four directions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResizePaneAction {
@@ -408,7 +409,7 @@ impl ResizePaneAction {
     }
 }
 
-/// Keymap for the multiplexer's Alt+Shift+Arrow pane-resize shortcut.
+/// Keymap for the multiplexer's Alt-Shift-Arrow pane-resize shortcut.
 ///
 /// The `Up` binding is [`Visibility::Shown`] with a grouped glyph covering
 /// all four directions; `Down`, `Left`, and `Right` are
@@ -421,7 +422,7 @@ pub(crate) static RESIZE_PANE_KEYMAP: Keymap<ResizePaneAction> = Keymap::new(&[
         action: ResizePaneAction::Up,
         hint: Some("resize pane"),
         visibility: Visibility::Shown,
-        glyph: Some("Alt+Shift+↑↓←→"),
+        glyph: Some(glyph::ALT_SHIFT_ALL_ARROWS),
     },
     KeyBinding {
         chords: &[KeyChord::alt_shift(LogicalKey::Down)],

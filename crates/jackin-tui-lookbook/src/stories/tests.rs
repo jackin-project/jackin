@@ -12,6 +12,7 @@ fn every_exported_component_has_a_story() {
         "ButtonStrip",
         "ConfirmDialog",
         "ContainerInfoState",
+        "DiffView",
         "ErrorDialog",
         "FilterInput",
         "HintBar",

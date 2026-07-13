@@ -7,6 +7,7 @@
 //! hook/plugin configuration into the container-local agent home and verifies
 //! it matches the expected content. Drift is repaired on every session launch.
 
+use jackin_core::container_paths;
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -38,7 +39,7 @@ pub struct ClaudeHookInstaller {
 impl Default for ClaudeHookInstaller {
     fn default() -> Self {
         Self {
-            hook_script_path: "/jackin/runtime/agent-status/hooks/claude/report-hook.sh".to_owned(),
+            hook_script_path: container_paths::AGENT_STATUS_CLAUDE_HOOK.to_owned(),
         }
     }
 }
@@ -220,7 +221,7 @@ impl PluginInstaller {
     pub fn opencode() -> Self {
         Self {
             config_dir: "opencode",
-            plugin_path: "/jackin/runtime/agent-status/hooks/opencode/plugin.js".to_owned(),
+            plugin_path: container_paths::AGENT_STATUS_OPENCODE_PLUGIN.to_owned(),
         }
     }
 
@@ -250,7 +251,21 @@ impl HookInstaller for PluginInstaller {
     }
 
     fn verify(&self, agent_home: &Path) -> bool {
-        json_file_contains_string(&self.config_path(agent_home), &self.plugin_path)
+        let path = self.config_path(agent_home);
+        let Ok(content) = fs::read_to_string(path) else {
+            return false;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
+            return false;
+        };
+        value
+            .get("plugins")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|plugins| {
+                plugins
+                    .iter()
+                    .any(|plugin| plugin.as_str() == Some(self.plugin_path.as_str()))
+            })
     }
 }
 
@@ -263,7 +278,7 @@ pub struct CodexHookInstaller {
 impl Default for CodexHookInstaller {
     fn default() -> Self {
         Self {
-            hook_script_path: "/jackin/runtime/agent-status/hooks/codex/report-hook.sh".to_owned(),
+            hook_script_path: container_paths::AGENT_STATUS_CODEX_HOOK.to_owned(),
         }
     }
 }

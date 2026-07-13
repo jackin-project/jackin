@@ -10,7 +10,7 @@ use crate::workspace::{
     self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved, resolve_path,
 };
 use jackin_config::AppConfig;
-use jackin_core::JackinPaths;
+use jackin_core::{JackinPaths, WorkspaceName};
 use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::BollardDockerClient;
 
@@ -96,7 +96,10 @@ pub(super) async fn handle(
                 docker: None,
             };
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
-            editor.create_workspace(&name, ws)?;
+            editor.create_workspace(
+                &WorkspaceName::parse(&name).map_err(anyhow::Error::from)?,
+                ws,
+            )?;
             editor.save()?;
             println!(
                 "Created workspace {name:?} (workdir: {}, {mount_count} mount(s)).",
@@ -177,7 +180,8 @@ pub(super) async fn handle(
         }
         WorkspaceCommand::Show(show_args) => {
             let name = &show_args.name;
-            let workspace = config.require_workspace(name)?;
+            let workspace = config
+                .require_workspace(&WorkspaceName::parse(name).map_err(anyhow::Error::from)?)?;
             if cli::format::OutputFormat::parse(&show_args.fmt.format)
                 == cli::format::OutputFormat::Json
             {
@@ -253,7 +257,9 @@ pub(super) async fn handle(
                 .map(|value| parse_mount_spec_resolved(value))
                 .collect::<Result<Vec<_>>>()?;
 
-            let current_ws = config.require_workspace(&name)?.clone();
+            let current_ws = config
+                .require_workspace(&WorkspaceName::parse(&name).map_err(anyhow::Error::from)?)?
+                .clone();
 
             let plan = workspace::planner::plan_edit(
                 &current_ws,
@@ -413,16 +419,15 @@ pub(super) async fn handle(
             // exist. Connecting first ensures the daemon is reachable
             // before we query it; skip the connection entirely when there
             // is nothing to check (common in fresh or test environments).
-            let has_records = jackin_runtime::isolation::state::list_records_for_workspace(
-                &paths.data_dir,
-                &name,
-            )
-            .is_ok_and(|r| !r.is_empty());
+            let wn = WorkspaceName::parse(&name).map_err(anyhow::Error::from)?;
+            let has_records =
+                jackin_runtime::isolation::state::list_records_for_workspace(&paths.data_dir, &wn)
+                    .is_ok_and(|r| !r.is_empty());
             let detection = if has_records {
                 let docker = connect_docker()?;
                 jackin_runtime::runtime::drift::detect_workspace_edit_drift(
                     paths,
-                    &name,
+                    &wn,
                     &prospective_mounts,
                     &docker,
                 )
@@ -462,7 +467,7 @@ pub(super) async fn handle(
 
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.edit_workspace(
-                &name,
+                &WorkspaceName::parse(&name).map_err(anyhow::Error::from)?,
                 WorkspaceEdit {
                     workdir: workdir.map(|w| resolve_path(&w)),
                     upsert_mounts,
@@ -493,7 +498,9 @@ pub(super) async fn handle(
             Ok(())
         }
         WorkspaceCommand::Prune { name, assume_yes } => {
-            let current_ws = config.require_workspace(&name)?.clone();
+            let current_ws = config
+                .require_workspace(&WorkspaceName::parse(&name).map_err(anyhow::Error::from)?)?
+                .clone();
 
             // All existing mounts; nothing new.
             let plan = workspace::plan_collapse(&current_ws.mounts, &[])?;
@@ -530,7 +537,7 @@ pub(super) async fn handle(
                 plan.removed.iter().map(|r| r.child.dst.clone()).collect();
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.edit_workspace(
-                &name,
+                &WorkspaceName::parse(&name).map_err(anyhow::Error::from)?,
                 WorkspaceEdit {
                     remove_destinations: remove_dsts,
                     ..WorkspaceEdit::default()
@@ -545,7 +552,7 @@ pub(super) async fn handle(
         }
         WorkspaceCommand::Remove { name } => {
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
-            editor.remove_workspace(&name)?;
+            editor.remove_workspace(&WorkspaceName::parse(&name).map_err(anyhow::Error::from)?)?;
             editor.save()?;
             println!("Removed workspace {name:?}.");
             Ok(())
@@ -566,7 +573,9 @@ pub(super) async fn handle(
                         "env name {key:?} is reserved by the jackin runtime and cannot be set"
                     );
                 }
-                config.require_workspace(&workspace)?;
+                config.require_workspace(
+                    &WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?,
+                )?;
                 if let Some(ref agent_key) = role
                     && !config.roles.contains_key(agent_key)
                 {
@@ -595,7 +604,9 @@ pub(super) async fn handle(
                 if key.is_empty() {
                     anyhow::bail!("env var key cannot be empty");
                 }
-                let ws = config.require_workspace(&workspace)?;
+                let ws = config.require_workspace(
+                    &WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?,
+                )?;
                 // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned
                 // by the claude-token orchestrator; an unset here would
                 // silently break auth at the next launch.
@@ -623,7 +634,9 @@ pub(super) async fn handle(
                 Ok(())
             }
             cli::WorkspaceEnvCommand::List { workspace, role } => {
-                let ws = config.require_workspace(&workspace)?;
+                let ws = config.require_workspace(
+                    &WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?,
+                )?;
                 let vars: Vec<(String, String)> = role.as_ref().map_or_else(
                     || {
                         ws.env

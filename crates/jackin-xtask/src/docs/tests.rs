@@ -27,12 +27,12 @@ fn title_casing() {
 
 #[test]
 fn slug_validation() {
-    assert!(validate_slug("agent-codenames").is_ok());
-    assert!(validate_slug("a1-b2").is_ok());
-    assert!(validate_slug("Bad-Slug").is_err());
-    assert!(validate_slug("-leading").is_err());
-    assert!(validate_slug("double--hyphen").is_err());
-    assert!(validate_slug("").is_err());
+    validate_slug("agent-codenames").unwrap();
+    validate_slug("a1-b2").unwrap();
+    validate_slug("Bad-Slug").unwrap_err();
+    validate_slug("-leading").unwrap_err();
+    validate_slug("double--hyphen").unwrap_err();
+    validate_slug("").unwrap_err();
 }
 
 #[test]
@@ -130,14 +130,41 @@ fn repo_links_scan_root_and_docs_markdown_files() {
         &root.join("PROJECT_STRUCTURE.md"),
         "See `crates/jackin-host/src/host_desktop.rs`.\n",
     );
+    write(
+        &root.join("TODO.md"),
+        "See `crates/jackin-host/src/host_desktop.rs`.\n",
+    );
 
     let err = check_repo_links_in(root, &root.join(DOCS_ROOT))
         .unwrap_err()
         .to_string();
 
     assert!(
-        err.contains("docs/AGENTS.md") && err.contains("PROJECT_STRUCTURE.md"),
+        err.contains("docs/AGENTS.md")
+            && err.contains("PROJECT_STRUCTURE.md")
+            && err.contains("TODO.md"),
         "should include docs markdown outside content/docs: {err}"
+    );
+}
+
+#[test]
+fn repo_links_flag_restored_top_level_governance_files() {
+    let repo = repo_link_fixture("---\ntitle: Guide\n---\n");
+    let root = repo.path();
+    write(&root.join("BRANCHING.md"), "# Branching\n");
+    write(&root.join("COMMITS.md"), "# Commits\n");
+    write(
+        &root.join("README.md"),
+        "See `BRANCHING.md` and `COMMITS.md`.\n",
+    );
+
+    let err = check_repo_links_in(root, &root.join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("BRANCHING.md") && err.contains("COMMITS.md"),
+        "should flag inline top-level governance paths: {err}"
     );
 }
 

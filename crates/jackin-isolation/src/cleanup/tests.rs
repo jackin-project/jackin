@@ -5,7 +5,7 @@
 use super::*;
 use crate::MountIsolation;
 use crate::state::{CleanupStatus, read_records, write_records};
-use jackin_runtime::runtime::test_support::FakeRunner;
+use jackin_test_support::FakeRunner;
 use tempfile::TempDir;
 
 fn rec_for(repo: &Path, container_dir: &Path) -> IsolationRecord {

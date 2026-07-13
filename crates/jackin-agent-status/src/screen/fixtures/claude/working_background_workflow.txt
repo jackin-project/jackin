@@ -1,0 +1,29 @@
+❯ Anything, just random anyone.
+  ⎿  Async hook UserPromptSubmit completed
+  ⎿  Async hook Stop completed
+
+∴ User wants random topic, any. We can pick a random topic and do deep research. Use deep-research skill. Need invoke skill with args. The skill
+  args expects refined question weaving answers. Since user doesn't care, pick a current, researchable topic.
+
+● Skill(deep-research)
+  ⎿  Successfully loaded skill
+  ⎿  Async hook UserPromptSubmit completed
+  ⎿  Async hook PreToolUse completed
+  ⎿  Async hook PostToolUse completed
+
+∴ Need invoke Workflow tool with name deep-research and args.
+
+● Workflow(dynamic workflow: deep-research)
+  ⎿  Running in background · /workflows to monitor and save
+
+· Bunning… (8s · ↓ 1.4k tokens · thinking)
+  ⎿  Tip: /loop runs any prompt on a recurring schedule. Great for monitoring deploys, babysitting PRs, or polling status.
+
+                                                                                                                                    37136 tokens
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [CAVEMAN:ULTRA]
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
+
+  ◯ deep-research  Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a ci… 0/1 agents done · 2s

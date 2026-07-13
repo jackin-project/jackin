@@ -13,16 +13,40 @@
 
 use crate::repo_contract::MANIFEST_FILENAME;
 use anyhow::Context;
-pub use jackin_core::env_model::{
-    JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_ENV_NAME, JACKIN_ENV_VALUE,
-};
+/// Env var name for the `DinD` hostname injected into role containers.
+pub use jackin_core::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME;
+/// Env var name of the in-container jackin❯ sentinel (`JACKIN`).
+pub use jackin_core::env_model::JACKIN_ENV_NAME;
+/// Value written to [`JACKIN_ENV_NAME`].
+pub use jackin_core::env_model::JACKIN_ENV_VALUE;
 use std::path::Path;
 
-pub use jackin_core::manifest::{
-    AmpConfig, ClaudeConfig, ClaudeMarketplaceConfig, CodexConfig, EnvVarDecl, HookEntry,
-    HooksConfig, IdentityConfig, KimiConfig, ManifestDockerConfig, ManifestWarning, OpencodeConfig,
-    RoleManifest,
-};
+/// Per-role Amp configuration table.
+pub use jackin_core::manifest::AmpConfig;
+/// Per-role Claude Code configuration.
+pub use jackin_core::manifest::ClaudeConfig;
+/// Claude Code marketplace entry declared in the role manifest.
+pub use jackin_core::manifest::ClaudeMarketplaceConfig;
+/// Per-role Codex configuration.
+pub use jackin_core::manifest::CodexConfig;
+/// Declaration of one role-level environment variable.
+pub use jackin_core::manifest::EnvVarDecl;
+/// One hook path entry with label and in-image filename.
+pub use jackin_core::manifest::HookEntry;
+/// Optional setup/source/preflight hook paths.
+pub use jackin_core::manifest::HooksConfig;
+/// Git identity (`user.name`) from the role manifest.
+pub use jackin_core::manifest::IdentityConfig;
+/// Per-role Kimi configuration.
+pub use jackin_core::manifest::KimiConfig;
+/// Optional role-level Docker security settings (manifest `docker` table).
+pub use jackin_core::manifest::ManifestDockerConfig;
+/// Non-fatal manifest validation warning.
+pub use jackin_core::manifest::ManifestWarning;
+/// Per-role `OpenCode` configuration.
+pub use jackin_core::manifest::OpencodeConfig;
+/// Top-level role manifest parsed from `jackin.role.toml`.
+pub use jackin_core::manifest::RoleManifest;
 
 /// Load and validate a `jackin.role.toml` from `repo_dir`.
 ///

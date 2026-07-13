@@ -11,6 +11,7 @@ use jackin_core::EnvValue;
 /// Single-reference 1Password read seam. Implemented by `OpCli` (production)
 /// and various test stubs.
 pub trait OpRunner: Send + Sync {
+    /// Resolve an `op://` reference (or equivalent) to a secret string.
     fn read(&self, reference: &str) -> anyhow::Result<String>;
 
     /// Read pinned to a specific 1Password account. Default ignores `account`

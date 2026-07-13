@@ -7,13 +7,19 @@
 //! mechanics, or GitHub CLI interaction — only the three-layer config
 //! precedence lookup that yields `AuthForwardMode`.
 
+use crate::ConfigError;
 use std::collections::BTreeMap;
 
-use jackin_core::{Agent, AuthForwardMode, EnvValue, RoleSelector};
+use jackin_core::{Agent, AuthForwardMode, EnvValue, RoleSelector, WorkspaceName};
 
 use super::AppConfig;
 use crate::auth::GithubAuthMode;
 use crate::schema::RoleSource;
+
+/// Map key for workspace-scoped lookups. `None` = global-only (empty map key).
+fn workspace_key(workspace: Option<&WorkspaceName>) -> &str {
+    workspace.map_or("", WorkspaceName::as_str)
+}
 
 /// Resolve the effective auth-forward mode for an agent in a (workspace, role) scope.
 ///
@@ -26,11 +32,16 @@ use crate::schema::RoleSource;
 /// Returns [`AuthForwardMode::Sync`] if no layer is set. The `<agent>`
 /// selector picks the matching per-agent field at each layer.
 ///
-/// Passing `workspace = ""` (or any name not present in the config)
+/// Passing `workspace = None` (or a name not present in the config)
 /// naturally falls through to the global layer; this is the supported
 /// way for non-workspace-scoped callers (e.g. `jackin config auth show`)
 /// to read the global default through the same code path.
-pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) -> AuthForwardMode {
+pub fn resolve_mode(
+    cfg: &AppConfig,
+    agent: Agent,
+    workspace: Option<&WorkspaceName>,
+    role: &str,
+) -> AuthForwardMode {
     resolve_mode_with_trace(cfg, agent, workspace, role).0
 }
 
@@ -42,18 +53,19 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
 pub fn resolve_mode_with_trace(
     cfg: &AppConfig,
     agent: Agent,
-    workspace: &str,
+    workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> (AuthForwardMode, Vec<(String, Option<AuthForwardMode>)>) {
+    let ws = workspace_key(workspace);
     let agent_at_global = cfg.auth_forward_for(agent);
     let agent_at_workspace = cfg
         .workspaces
-        .get(workspace)
-        .and_then(|ws| ws.auth_forward_for(agent));
+        .get(ws)
+        .and_then(|w| w.auth_forward_for(agent));
     let agent_at_ws_role = cfg
         .workspaces
-        .get(workspace)
-        .and_then(|ws| ws.roles.get(role))
+        .get(ws)
+        .and_then(|w| w.roles.get(role))
         .and_then(|ro| ro.auth_forward_for(agent));
     let winning = agent_at_ws_role
         .or(agent_at_workspace)
@@ -79,11 +91,16 @@ pub fn resolve_mode_with_trace(
 /// Returns [`GithubAuthMode::Sync`] when no layer is set. Unlike
 /// Claude / Codex, the GitHub axis has no agent dimension because
 /// `.config/gh/` is shared by every agent in the container.
-pub fn resolve_github_mode(cfg: &AppConfig, workspace: &str, role: &str) -> GithubAuthMode {
+pub fn resolve_github_mode(
+    cfg: &AppConfig,
+    workspace: Option<&WorkspaceName>,
+    role: &str,
+) -> GithubAuthMode {
+    let ws = workspace_key(workspace);
     if let Some(m) = cfg
         .workspaces
-        .get(workspace)
-        .and_then(|ws| ws.roles.get(role))
+        .get(ws)
+        .and_then(|w| w.roles.get(role))
         .and_then(|ro| ro.github.as_ref().map(|g| g.auth_forward))
     {
         return m;
@@ -91,8 +108,8 @@ pub fn resolve_github_mode(cfg: &AppConfig, workspace: &str, role: &str) -> Gith
 
     if let Some(m) = cfg
         .workspaces
-        .get(workspace)
-        .and_then(|ws| ws.github.as_ref().map(|g| g.auth_forward))
+        .get(ws)
+        .and_then(|w| w.github.as_ref().map(|g| g.auth_forward))
     {
         return m;
     }
@@ -118,10 +135,10 @@ pub fn resolve_github_mode(cfg: &AppConfig, workspace: &str, role: &str) -> Gith
 pub fn resolve_sync_source_dir(
     cfg: &AppConfig,
     agent: Agent,
-    workspace: &str,
+    workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> Option<std::path::PathBuf> {
-    let ws = cfg.workspaces.get(workspace);
+    let ws = cfg.workspaces.get(workspace_key(workspace));
     // Most-specific first: workspace × role override.
     if let Some(dir) = ws
         .and_then(|ws| ws.roles.get(role))
@@ -145,10 +162,10 @@ pub fn resolve_sync_source_dir(
 /// them under the regular role/workspace `[*.env]` blocks.
 pub fn build_github_env_layers(
     cfg: &AppConfig,
-    workspace: &str,
+    workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> BTreeMap<String, EnvValue> {
-    let ws = cfg.workspaces.get(workspace);
+    let ws = cfg.workspaces.get(workspace_key(workspace));
     let layers = [
         cfg.github.as_ref().map(|g| &g.env),
         ws.and_then(|w| w.github.as_ref()).map(|g| &g.env),
@@ -165,6 +182,7 @@ pub fn build_github_env_layers(
     merged
 }
 
+/// Built-in role name → git URL pairs shipped with the binary.
 pub const BUILTIN_ROLES: &[(&str, &str)] = &[
     (
         "agent-smith",
@@ -181,7 +199,8 @@ impl AppConfig {
     ///
     /// Returns `(source, is_new)`. When `is_new` is `true` the source has been
     /// inserted into the in-memory config but **not** persisted — the caller
-    /// should call [`save`] after validating that the repository is reachable.
+    /// should call [`ConfigEditor::save`](crate::ConfigEditor::save) after
+    /// validating that the repository is reachable.
     pub fn resolve_role_source(
         &mut self,
         selector: &RoleSelector,
@@ -190,10 +209,12 @@ impl AppConfig {
             return Ok((source.clone(), false));
         }
 
-        let namespace = selector
-            .namespace
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("unknown selector {}", selector.key()))?;
+        let namespace = selector.namespace.as_ref().ok_or_else(|| {
+            anyhow::Error::from(ConfigError::msg(format!(
+                "unknown selector {}",
+                selector.key()
+            )))
+        })?;
 
         // Agent roles on GitHub always follow the `jackin-{name}` convention.
         // When a namespaced selector is given as `owner/short-name`, we
@@ -229,7 +250,7 @@ impl AppConfig {
 
     /// Revoke trust for a role source.  Returns `true` when the flag changed.
     /// Note: does not prevent revoking builtins — the caller should check
-    /// [`is_builtin_agent`] first.
+    /// [`Self::is_builtin_agent`] first.
     // pub(crate): test-only affordance; production callers use ConfigEditor.
     pub fn untrust_agent(&mut self, key: &str) -> bool {
         if let Some(source) = self.roles.get_mut(key)

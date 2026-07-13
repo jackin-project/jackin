@@ -12,6 +12,8 @@
 
 mod config_cmd;
 pub(crate) mod context;
+#[cfg(unix)]
+mod daemon_cmd;
 mod helpers;
 mod load_cmd;
 mod prune_cmd;
@@ -92,6 +94,7 @@ async fn play_construct_intro_if_needed(
 pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
     jackin_diagnostics::set_debug_mode(debug);
+    jackin_diagnostics::install_host_panic_hook();
 
     // Fail fast and loud on an unsupported OTLP protocol: jackin exports over
     // gRPC only. An OTLP endpoint configured with a non-grpc protocol would
@@ -109,8 +112,13 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
     };
+    if let Command::Role(command) = command {
+        return crate::role_authoring::run(command);
+    }
 
     let paths = JackinPaths::detect()?;
+    let mut config = AppConfig::load_or_init(&paths)?;
+    apply_telemetry_config(&config);
     let command_name = command_name(&command);
     // Installs the global tracing subscriber (Defect 47.1 foundation) with
     // the freshly minted run id, so OTLP export (when configured) stamps the
@@ -123,19 +131,11 @@ pub async fn run(cli: Cli) -> Result<()> {
     // depending on the L2 diagnostics layer. Per the A5 unblock
     // work in `codebase-health-enforcement`.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
-    jackin_diagnostics::debug_log::install_debug_log_sink();
+    jackin_diagnostics::install_debug_log_sink();
     jackin_launch_tui::install_standalone_dialog_sink();
-    jackin_diagnostics::prune_old_runs(&paths);
     if debug {
         announce_debug_run(&diagnostics);
     }
-    let command = match command {
-        // OTLP flush on this early return is handled by `_diagnostics_guard`'s
-        // Drop, same as every other exit path.
-        Command::Role(command) => return crate::role_authoring::run(command),
-        command => command,
-    };
-    let mut config = AppConfig::load_or_init(&paths)?;
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
 
@@ -174,6 +174,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             .await?
         }
         Command::Config(config_cmd) => config_cmd::handle(config_cmd, &mut config, &paths, debug),
+        #[cfg(unix)]
+        Command::Daemon(command) => daemon_cmd::handle(command, &paths).await,
         Command::Workspace(command) => {
             workspace_cmd::handle(command, &mut config, &paths, debug).await
         }
@@ -194,10 +196,60 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
     };
+    record_run_error(&result);
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
     // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
+    announce_run_teardown(&diagnostics);
     result
+}
+
+fn apply_telemetry_config(config: &AppConfig) {
+    let level = config.telemetry.level.map(|level| match level {
+        jackin_config::TelemetryLevelConfig::Info => jackin_diagnostics::TelemetryLevel::Info,
+        jackin_config::TelemetryLevelConfig::Debug => jackin_diagnostics::TelemetryLevel::Debug,
+        jackin_config::TelemetryLevelConfig::Trace => jackin_diagnostics::TelemetryLevel::Trace,
+    });
+    jackin_diagnostics::set_config_telemetry(level, &config.telemetry.categories);
+}
+
+fn record_run_error(result: &Result<()>) {
+    let Err(error) = result else {
+        return;
+    };
+    if runtime::progress::LaunchCancelled::is_cancel(error) {
+        return;
+    }
+    let Some(run) = jackin_diagnostics::active_run() else {
+        return;
+    };
+    if let Some(jackin_err) = error.downcast_ref::<crate::error::JackinError>() {
+        let code = jackin_err.user_message().code.as_str();
+        run.error_typed(code, &jackin_err.to_string(), Some(code));
+    } else {
+        run.error_typed("error", &format!("{error:#}"), Some("error"));
+    }
+}
+
+fn announce_run_teardown(diagnostics: &jackin_diagnostics::RunDiagnostics) {
+    let line = if diagnostics.persists() {
+        format!(
+            "telemetry: run {} - file {}",
+            diagnostics.run_id(),
+            diagnostics.path().display()
+        )
+    } else {
+        let backend = jackin_diagnostics::configured_endpoint_summary().map_or_else(
+            || "your OpenTelemetry backend".to_owned(),
+            |endpoint| format!("your OpenTelemetry backend ({endpoint})"),
+        );
+        format!(
+            "telemetry: run {} - query {backend} for parallax.run.id={}",
+            diagnostics.run_id(),
+            diagnostics.run_id()
+        )
+    };
+    jackin_diagnostics::emit_operator_notice(&line);
 }
 
 const fn command_name(command: &Command) -> &'static str {
@@ -213,6 +265,8 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Role(_) => "role",
         Command::Workspace(_) => "workspace",
         Command::Config(_) => "config",
+        #[cfg(unix)]
+        Command::Daemon(_) => "daemon",
         Command::Logs(_) => "logs",
         Command::Doctor(_) => "doctor",
         Command::Diagnostics(_) => "diagnostics",
@@ -345,7 +399,10 @@ pub(super) fn resolve_new_session_agent(
     // single-agent, or non-TTY context. Prefer the workspace default;
     // fall back to the manifest's recorded agent.
     prompt_agent_choice_if_needed(paths, &class, workspace_default_agent)?.map_or_else(
-        || workspace_default_agent.map_or_else(|| manifest.agent(), Ok),
+        || {
+            workspace_default_agent
+                .map_or_else(|| manifest.agent().map_err(anyhow::Error::from), Ok)
+        },
         Ok,
     )
 }
@@ -371,11 +428,11 @@ const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
 /// runtime in the no-context output until/unless an `--agent` flag is added.
 fn render_auth_show(config: &AppConfig) -> String {
     use std::fmt::Write as _;
-    let claude_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Claude, "", "");
-    let codex_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Codex, "", "");
-    let amp_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Amp, "", "");
-    let kimi_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Kimi, "", "");
-    let opencode_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Opencode, "", "");
+    let claude_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Claude, None, "");
+    let codex_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Codex, None, "");
+    let amp_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Amp, None, "");
+    let kimi_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Kimi, None, "");
+    let opencode_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Opencode, None, "");
     let mut out = String::new();
     let _unused = writeln!(out, "claude: {claude_mode}");
     let _unused = writeln!(out, "codex:  {codex_mode}");

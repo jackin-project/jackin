@@ -1,11 +1,9 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! `SQLite` reader for `OpenCode` token usage, via the workspace-standard
-//! `turso` client (never `rusqlite`). Reads `opencode.db`'s `message` table
-//! incrementally by `rowid`.
+//! `SQLite` reader for `OpenCode` token usage, via the crate's store-backend
+//! chokepoint (workspace-standard turso client, never `rusqlite`). Reads
+//! `opencode.db`'s `message` table incrementally by `rowid`.
 
 use super::TokenSession;
+use crate::store_backend::{connect_local, params};
 
 const DB_PATH: &str = "/home/agent/.local/share/opencode/opencode.db";
 
@@ -14,17 +12,13 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> bool {
         return false;
     }
 
-    let Ok(db) = turso::Builder::new_local(DB_PATH).build().await else {
+    let Ok(conn) = connect_local(DB_PATH).await else {
         crate::cdebug!("token monitor: opencode db open failed: {DB_PATH:?}");
-        return false;
-    };
-    let Ok(conn) = db.connect() else {
-        crate::cdebug!("token monitor: opencode db connect failed");
         return false;
     };
 
     let query = "SELECT rowid, input, output, cost FROM message WHERE rowid > ? ORDER BY rowid ASC LIMIT 1000";
-    let Ok(mut rows) = conn.query(query, turso::params![session.last_rowid]).await else {
+    let Ok(mut rows) = conn.query(query, params![session.last_rowid]).await else {
         // Pre-v1.2 OpenCode stored messages as JSON files, not SQLite; a missing
         // `message` table lands here. Reading that legacy format is not yet
         // implemented — treat as "no new data".

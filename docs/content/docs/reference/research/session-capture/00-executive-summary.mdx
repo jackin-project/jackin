@@ -1,0 +1,24 @@
+---
+title: "00 — Executive Summary"
+---
+
+# 00 — Executive Summary
+
+**Research conducted:** 2026-07-03. Mission per the [brief](/reference/research/session-capture/prompt/): how SpecStory works, what else exists, what it means for jackin❯. This dossier is the evidence layer under the existing [Déjà Vu](/reference/research/agent-orchestration/conversation-capture/deja-vu/) design proposal.
+
+## The landscape in six sentences
+
+Session capture — persisting every AI coding conversation into durable, searchable artifacts — has one production-grade cross-agent implementation: **SpecStory**, whose open-source (Apache-2.0) Go CLI reads six agents' native on-disk stores via fsnotify, normalizes them into one schema, and renders markdown into `.specstory/history/` ([01](/reference/research/session-capture/01-specstory-product/), [02](/reference/research/session-capture/02-specstory-cli-internals/)). The entire market — SpecStory, the closed competitor Mantra, and ~40 OSS exporters/viewers — has converged on the same mechanism: **read the agent's own session files**; nobody PTY-scrapes, and hooks/OTel/wire-taps appear only as side channels ([11](/reference/research/session-capture/11-open-source-exporters/), [12](/reference/research/session-capture/12-platforms-and-observability/), [20](/reference/research/session-capture/20-comparison-matrix/)). Every agent jackin❯ runs persists a watchable local transcript except Amp, which requires live `--stream-json` capture — and the two agents nobody covers, Kimi and Grok, turn out to have good native surfaces (versioned `wire.jsonl`; documented session dirs + ACP streams) ([10](/reference/research/session-capture/10-agent-session-stores/)). Capture itself is commoditized to $0 by its own vendor; value has moved up-stack to search, cross-agent resume, skill-mining (Lore), and turn↔code attribution (Mantra's git time-travel, SpecStory's provenance engine). Four days before this research, SpecStory v2.0.0 shipped cross-project **cross-agent resume** — reconstructing a session into a *different* agent's native format — proving demand for exactly the cross-agent layer Déjà Vu targets. As of 2026-07-03 **no product ships a cross-agent, host-side, purge-surviving archive**: Déjà Vu's slot in the market is still empty.
+
+## Headline findings
+
+1. **Déjà Vu's core bets are confirmed by the whole market.** Native-file reading first, vendor streams as hedge, screen-scrape used by literally nobody ([20 §mechanism scorecard](/reference/research/session-capture/20-comparison-matrix/)).
+2. **SpecStory's implementation is a reusable blueprint, not just inspiration**: 58k LOC Apache-2.0 Go — provider SPI (11 methods), unified `SessionData` schema, disposable FTS5 index fingerprinted by size+mtime+version, full-rewrite idempotent markdown rendering, cross-agent reconstruction with `MigrationNote` ([02](/reference/research/session-capture/02-specstory-cli-internals/)).
+3. **Best-case off-the-shelf coverage of jackin❯'s six agents is 2/6 (SpecStory) to 3/6 (claude-replay)**; zero tools cover Kimi or Grok — first-mover ground for jackin❯ ([20 §coverage](/reference/research/session-capture/20-comparison-matrix/)).
+4. **OTel cannot cover the fleet**: only Claude/Codex/Gemini export it at all; for Amp, OpenCode, Kimi, Grok there is no telemetry channel — files and vendor APIs are the only fleet-wide capture path ([10](/reference/research/session-capture/10-agent-session-stores/)).
+5. **The failure modes are documented, not hypothetical**: editor-update breakage, CPU-burning polls, silent incompleteness, un-gitignored transcripts leaking secrets — each with SpecStory issue numbers to design against ([01 §complaints](/reference/research/session-capture/01-specstory-product/)).
+6. **jackin❯'s substrate advantage is real and already shipped**: agent homes are restored host-side under `~/.jackin/data/<container>/`, so capture for five of six agents is a read of paths jackin❯ already owns — while today `eject`/`prune` deletes those very histories ([30](/reference/research/session-capture/30-jackin-fit/)).
+
+## What changes for Déjà Vu
+
+Confirmed: vector ranking, provider architecture, storage shape, market-gap claim. New inputs: the roster is six agents now (Grok added; several docs still say five); SpecStory shipped cross-agent resume ahead of plan — mechanism worth studying; attribution (turn↔git-state) has moved from "distant non-goal" to "two competitors are on it"; Kimi/Grok store layouts are now mapped externally but need in-container verification. Full delta in [30](/reference/research/session-capture/30-jackin-fit/).

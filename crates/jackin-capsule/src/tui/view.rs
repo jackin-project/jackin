@@ -74,9 +74,6 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) main_scroll_axes: jackin_tui::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
     pub(crate) dialog_hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
-    /// Spawn-failure notice painted over the top row until the next
-    /// operator keystroke clears it.
-    pub(crate) spawn_failure: Option<&'a str>,
     /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
     /// Forwarded to the hint builder so the palette-key glyph reflects the
     /// operator's `JACKIN_PALETTE_KEY` setting.
@@ -218,7 +215,6 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             frame.area(),
         );
         render_clipboard_image_notice(frame, &view);
-        render_spawn_failure_banner(frame, &view);
         return;
     }
 
@@ -323,16 +319,6 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         },
         frame.area(),
     );
-    render_spawn_failure_banner(frame, &view);
-}
-
-fn render_spawn_failure_banner(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_>) {
-    if let Some(reason) = view.spawn_failure {
-        frame.render_widget(
-            crate::tui::components::chrome::SpawnFailureBannerWidget { reason },
-            frame.area(),
-        );
-    }
 }
 
 fn render_clipboard_image_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_>) {

@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for `repo_cache`.
-use super::super::test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
 use super::*;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
+use jackin_test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
+use std::time::Duration;
 use tempfile::tempdir;
 
 #[test]
@@ -211,7 +212,7 @@ plugins = []
     )
     .await;
 
-    assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
+    result.expect("expected recovery to succeed");
     assert!(
         runner.recorded.iter().any(|c| c.contains("clone")),
         "expected a git clone after removal"
@@ -362,7 +363,7 @@ plugins = []
     )
     .await;
 
-    assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
+    result.expect("expected recovery to succeed");
     assert!(runner.run_recorded.iter().any(|call| {
         call.contains("git clone https://github.com/jackin-project/jackin-agent-smith.git")
     }));
@@ -407,10 +408,7 @@ plugins = []
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "expected clean repo update to succeed: {result:?}"
-    );
+    result.expect("expected clean repo update to succeed");
     assert!(
         runner
             .run_recorded
@@ -426,6 +424,202 @@ plugins = []
             .any(|call| call.contains("git -C") && call.contains("merge --ff-only")),
         "expected a git merge --ff-only: {:?}",
         runner.run_recorded
+    );
+}
+
+#[tokio::test]
+async fn resolve_agent_repo_skips_fetch_when_fetch_head_is_fresh() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
+    seed_valid_role_repo(&repo_dir);
+    std::fs::write(repo_dir.join(".git/FETCH_HEAD"), "fresh\n").unwrap();
+
+    let mut runner = FakeRunner::with_capture_queue([
+        "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+    ]);
+
+    let result = resolve_agent_repo_with(
+        &paths,
+        &selector,
+        "https://github.com/jackin-project/jackin-agent-smith.git",
+        &mut runner,
+        RepoResolveOptions::interactive(false).with_refresh_ttl(Duration::from_mins(1)),
+        || Ok(false),
+    )
+    .await;
+
+    result.expect("expected fresh cached repo to validate");
+    assert!(
+        !runner
+            .run_recorded
+            .iter()
+            .any(|call| call.contains("fetch origin")),
+        "fresh FETCH_HEAD should skip fetch: {:?}",
+        runner.run_recorded
+    );
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("rev-parse --abbrev-ref")),
+        "fresh FETCH_HEAD should skip branch lookup: {:?}",
+        runner.recorded
+    );
+}
+
+#[tokio::test]
+async fn resolve_agent_repo_fetches_when_fetch_head_is_missing() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
+    seed_valid_role_repo(&repo_dir);
+
+    let mut runner = FakeRunner::with_capture_queue([
+        "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+    ]);
+
+    let result = resolve_agent_repo_with(
+        &paths,
+        &selector,
+        "https://github.com/jackin-project/jackin-agent-smith.git",
+        &mut runner,
+        RepoResolveOptions::interactive(false).with_refresh_ttl(Duration::from_mins(1)),
+        || Ok(false),
+    )
+    .await;
+
+    result.expect("expected missing FETCH_HEAD path to fetch");
+    assert!(
+        runner
+            .run_recorded
+            .iter()
+            .any(|call| call.contains("fetch origin main")),
+        "missing FETCH_HEAD should fetch: {:?}",
+        runner.run_recorded
+    );
+}
+
+#[tokio::test]
+async fn resolve_agent_repo_fetches_when_refresh_ttl_is_zero() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
+    seed_valid_role_repo(&repo_dir);
+    std::fs::write(repo_dir.join(".git/FETCH_HEAD"), "fresh\n").unwrap();
+
+    let mut runner = FakeRunner::with_capture_queue([
+        "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+    ]);
+
+    let result = resolve_agent_repo_with(
+        &paths,
+        &selector,
+        "https://github.com/jackin-project/jackin-agent-smith.git",
+        &mut runner,
+        RepoResolveOptions::interactive(false).with_refresh_ttl(Duration::ZERO),
+        || Ok(false),
+    )
+    .await;
+
+    result.expect("expected zero TTL path to fetch");
+    assert!(
+        runner
+            .run_recorded
+            .iter()
+            .any(|call| call.contains("fetch origin main")),
+        "zero TTL should fetch: {:?}",
+        runner.run_recorded
+    );
+}
+
+#[tokio::test]
+async fn resolve_agent_repo_fetches_when_fetch_head_is_expired() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
+    seed_valid_role_repo(&repo_dir);
+    std::fs::write(repo_dir.join(".git/FETCH_HEAD"), "expired\n").unwrap();
+    tokio::time::sleep(Duration::from_millis(2)).await;
+
+    let mut runner = FakeRunner::with_capture_queue([
+        "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+    ]);
+
+    let result = resolve_agent_repo_with(
+        &paths,
+        &selector,
+        "https://github.com/jackin-project/jackin-agent-smith.git",
+        &mut runner,
+        RepoResolveOptions::interactive(false).with_refresh_ttl(Duration::from_nanos(1)),
+        || Ok(false),
+    )
+    .await;
+
+    result.expect("expected expired FETCH_HEAD path to fetch");
+    assert!(
+        runner
+            .run_recorded
+            .iter()
+            .any(|call| call.contains("fetch origin main")),
+        "expired FETCH_HEAD should fetch: {:?}",
+        runner.run_recorded
+    );
+}
+
+#[tokio::test]
+async fn resolve_agent_repo_fetches_branch_override_without_branch_lookup() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let repo_dir = CachedRepo::for_branch(&paths, &selector, "feature").repo_dir;
+    seed_valid_role_repo(&repo_dir);
+    std::fs::write(repo_dir.join(".git/FETCH_HEAD"), "fresh\n").unwrap();
+
+    let mut runner = FakeRunner::with_capture_queue([
+        "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+    ]);
+
+    let result = resolve_agent_repo_with(
+        &paths,
+        &selector,
+        "https://github.com/jackin-project/jackin-agent-smith.git",
+        &mut runner,
+        RepoResolveOptions::interactive(false)
+            .with_branch(Some("feature"))
+            .with_refresh_ttl(Duration::from_mins(1)),
+        || Ok(false),
+    )
+    .await;
+
+    result.expect("expected branch override path to fetch");
+    assert!(
+        runner
+            .run_recorded
+            .iter()
+            .any(|call| call.contains("fetch origin feature")),
+        "branch override should fetch despite fresh FETCH_HEAD: {:?}",
+        runner.run_recorded
+    );
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("rev-parse --abbrev-ref")),
+        "branch override should not ask git for HEAD branch: {:?}",
+        runner.recorded
     );
 }
 

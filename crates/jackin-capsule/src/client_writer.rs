@@ -92,7 +92,7 @@ impl ClientWriter {
         buf.extend_from_slice(SYNC_BEGIN);
         buf.extend_from_slice(&frame);
         buf.extend_from_slice(SYNC_END);
-        self.log_emission(&buf);
+        Self::log_emission(&buf);
         self.send_encoded(encode_server(ServerFrame::Output(buf)));
     }
 
@@ -105,7 +105,7 @@ impl ClientWriter {
         for oob in self.out_of_band.drain(..) {
             buf.extend_from_slice(&oob);
         }
-        self.log_emission(&buf);
+        Self::log_emission(&buf);
         self.send_encoded(encode_server(ServerFrame::Output(buf)));
     }
 
@@ -126,12 +126,17 @@ impl ClientWriter {
         }
     }
 
-    fn log_emission(&self, bytes: &[u8]) {
-        if !crate::logging::debug_enabled() {
-            return;
-        }
+    fn log_emission(bytes: &[u8]) {
+        // Metrics always; detail scan is a single linear pass (acceptable on
+        // the emit path — render_allocation budgets cover this).
         let metrics = scan_emitted_frame(bytes);
-        crate::cdebug!(
+        jackin_diagnostics::record_frame(
+            metrics.bytes as u64,
+            metrics.cursor_moves as u64,
+            metrics.painted_cells as u64,
+        );
+        // Per-frame text row demoted to TRACE (metrics replace the firehose).
+        crate::ctrace_payload!(
             "send: bytes={} cursor_moves={} sgr_resets={} osc8_opens={} osc8_closes={} max_row_addressed={} max_col_addressed={} full_screen_erases={} painted_cells={} full_frame_repaint={}",
             metrics.bytes,
             metrics.cursor_moves,
@@ -147,7 +152,7 @@ impl ClientWriter {
         // Verbatim dump of only the smallest emissions (chrome / out-of-band
         // only). Capped tight so a steady-state run can't balloon the log.
         if bytes.len() <= 1200 {
-            crate::cdebug!("send-bytes: {}", escape_for_log(bytes));
+            crate::ctrace_payload!("send-bytes: {}", escape_for_log(bytes));
         }
     }
 }

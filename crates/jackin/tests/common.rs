@@ -1,15 +1,20 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 
 //! Shared test helpers for launch integration tests.
 // pub items in a private test-helper module are intentionally unreachable
 // from outside this crate; they exist for code organisation, not export.
-
-#![expect(
-    clippy::expect_used,
-    reason = "integration test binary stub setup should fail immediately with source location"
-)]
-#![allow(unreachable_pub)]
 
 use jackin_core::paths::JackinPaths;
 use jackin_docker::docker_client::{
@@ -45,6 +50,10 @@ const _: fn(&JackinPaths) = install_agent_binary_stubs;
 pub struct NoOpDocker;
 
 impl DockerApi for NoOpDocker {
+    async fn ping(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     async fn inspect_container_state(&self, _name: &str) -> ContainerState {
         ContainerState::NotFound
     }

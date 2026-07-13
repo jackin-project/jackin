@@ -7,9 +7,10 @@
 
 use super::{
     ClientFrame, ClientMsg, ClipboardImageInsertMode, Instant, Multiplexer, PathBuf, Result,
-    ServerMsg, Session, TokenTotals, clipboard_image_host_error_reason, explicit_redraw_reason,
-    log_clipboard_image_rejection, prefix_mode_for_mux_mode,
+    ServerMsg, Session, TokenTotals, explicit_redraw_reason, log_clipboard_image_rejection,
+    prefix_mode_for_mux_mode,
 };
+use jackin_core::container_paths;
 
 /// Write a capture fixture for `session`: its live visible grid (`visible.txt`)
 /// and the current evidence report (`evidence.json`), under
@@ -19,8 +20,8 @@ pub fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
     let seq = CAPTURE_SEQ.fetch_add(1, Ordering::Relaxed);
-    let dir =
-        PathBuf::from("/jackin/state/agent-status/captures").join(format!("{session_id}-{seq}"));
+    let dir = PathBuf::from(container_paths::AGENT_STATUS_CAPTURES_DIR)
+        .join(format!("{session_id}-{seq}"));
     std::fs::create_dir_all(&dir)?;
     std::fs::write(
         dir.join("visible.txt"),
@@ -54,13 +55,27 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             source_id,
             runtime,
             event,
-            payload: _,
+            payload,
         } => {
+            let session_known = mux.sessions.contains_key(&session_id);
             if let Some(session) = mux.sessions.get_mut(&session_id) {
-                session.apply_runtime_event(&source_id, &runtime, &event, Instant::now());
+                session.apply_runtime_event(
+                    &source_id,
+                    &runtime,
+                    &event,
+                    payload.as_deref(),
+                    Instant::now(),
+                );
             } else {
                 crate::cdebug!("agent-status: runtime event for unknown session {session_id}");
             }
+            // INV-D12: agent hooks never block — ACK even when session is unknown
+            // (port documents the always-ack policy at this call site).
+            use super::ports::{ControlPort, PORTS};
+            debug_assert!(
+                PORTS.should_ack_unknown_session_runtime_event(session_known),
+                "control port must ACK runtime events (session_known={session_known})"
+            );
             ServerMsg::Ack
         }
         // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
@@ -108,7 +123,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
     }
 }
 
-pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
+pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     match frame {
         ClientFrame::Hello { .. } => {
             // The initial Hello is consumed by the accept handler; any
@@ -128,7 +143,7 @@ pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             // canonical trace for "key X did nothing" triage: chunk
             // line proves the byte reached the daemon, event line
             // proves the parser classified it.
-            crate::cdebug!(
+            crate::ctrace_payload!(
                 "rx ClientFrame::Input len={} bytes={:02x?}",
                 bytes.len(),
                 bytes
@@ -136,7 +151,7 @@ pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             let events = mux.input_parser.parse(&bytes);
             for event in events {
                 let mode = mux.mux_mode();
-                crate::cdebug!("  → InputEvent::{:?} mode={mode:?}", event,);
+                crate::ctrace_payload!("  -> InputEvent::{:?} mode={mode:?}", event,);
                 mux.handle_input(event);
             }
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
@@ -176,12 +191,12 @@ pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         },
-        ClientFrame::ClipboardImageError(message) => {
-            let reason = clipboard_image_host_error_reason(&message);
+        ClientFrame::ClipboardImageError(error) => {
+            let reason = error.reason_code();
             crate::clog!("clipboard-image: host request failed reason={reason}");
-            crate::cdebug!("clipboard-image: host request failed detail={message}");
+            crate::cdebug!("clipboard-image: host request failed detail={error}");
             mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
-            mux.set_clipboard_image_notice(format!("Image paste rejected: {message}"));
+            mux.set_clipboard_image_notice(format!("Image paste rejected: {error}"));
         }
         ClientFrame::HostNotice(message) => {
             crate::clog!("host-affordance: {message}");
@@ -214,3 +229,36 @@ pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
     }
 }
+
+/// Coalesce a run of consecutive `Resize` frames into the latest size and
+/// return the ordered frames the daemon must process, plus how many resizes
+/// were coalesced away.
+///
+/// A non-`Resize` frame pulled from the channel while draining is preserved and
+/// returned after the coalesced resize (previously it was silently dropped
+/// because `try_recv()` removes a frame before the `while let` pattern rejects
+/// it). Order is preserved because the stray frame may depend on the new
+/// geometry.
+pub(crate) fn coalesce_client_frames(
+    first: ClientFrame,
+    mut next: impl FnMut() -> Option<ClientFrame>,
+) -> (Vec<ClientFrame>, u32) {
+    if !matches!(first, ClientFrame::Resize { .. }) {
+        return (vec![first], 0);
+    }
+    let mut latest = first;
+    let mut coalesced: u32 = 0;
+    loop {
+        match next() {
+            Some(ClientFrame::Resize { rows, cols }) => {
+                latest = ClientFrame::Resize { rows, cols };
+                coalesced = coalesced.saturating_add(1);
+            }
+            Some(other) => return (vec![latest, other], coalesced),
+            None => return (vec![latest], coalesced),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

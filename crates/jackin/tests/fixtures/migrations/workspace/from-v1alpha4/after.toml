@@ -9,8 +9,8 @@ src = "/home/operator/projects/prod"
 dst = "/workspace/prod"
 
 [env]
-CLAUDE_CODE_OAUTH_TOKEN = { op = "op://v/i/f", path = "Vault/Item/Field", account = "ACCT123" }
+CLAUDE_CODE_OAUTH_TOKEN = { op = "op://v/i/f", path = "Vault/Item/Field" , account = "ACCT123" }
 PLAIN_ENV = "literal-value"
 
 [roles."org/agent".env]
-ROLE_TOKEN = { op = "op://rv/ri/rf", path = "RVault/RItem/RField", account = "ACCT123" }
+ROLE_TOKEN = { op = "op://rv/ri/rf", path = "RVault/RItem/RField" , account = "ACCT123" }

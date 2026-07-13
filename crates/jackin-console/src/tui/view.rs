@@ -443,7 +443,7 @@ pub fn render_modal(frame: &mut Frame<'_>, modal: &crate::tui::state::Modal<'_>)
         Modal::StatusPopup { state } => {
             jackin_tui::components::render_status_popup(frame, modal_area, state);
         }
-        Modal::OpPicker { state } => {
+        Modal::OpPicker { state, .. } => {
             crate::tui::components::op_picker::render_picker(frame, modal_area, state.as_ref());
         }
         Modal::RolePicker { state }

@@ -22,7 +22,10 @@ pub fn sentinel_line(text: &str, _is_selected: bool) -> Line<'static> {
     Line::from(Span::styled(text.to_owned(), jackin_tui::theme::DIM))
 }
 
-#[allow(unfulfilled_lint_expectations)]
+#[allow(
+    unfulfilled_lint_expectations,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Trait cannot use anonymous lifetimes for borrowed ref DTOs on stable Rust"
@@ -43,7 +46,10 @@ pub fn account_lines<'a>(
         .collect()
 }
 
-#[allow(unfulfilled_lint_expectations)]
+#[allow(
+    unfulfilled_lint_expectations,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Trait cannot use anonymous lifetimes for borrowed ref DTOs on stable Rust"
@@ -63,7 +69,10 @@ pub fn vault_lines<'a>(
         .collect()
 }
 
-#[allow(unfulfilled_lint_expectations)]
+#[allow(
+    unfulfilled_lint_expectations,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Trait cannot use anonymous lifetimes for borrowed ref DTOs on stable Rust"

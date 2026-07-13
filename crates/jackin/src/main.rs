@@ -1,3 +1,8 @@
+//! jackin: host CLI binary and top-level dispatch.
+//!
+//! **Architecture Invariant:** T6.
+//! Entry point: [`main`] — host CLI binary entry.
+
 #![expect(
 
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov

@@ -5,7 +5,7 @@
 //! `append_save_and_escape` / `append_open_in_github` helpers used by
 //! every screen footer.
 
-use jackin_tui::HintSpan;
+use jackin_tui::{HintSpan, keymap::glyph};
 
 use crate::tui::keymap::{
     EDITOR_CONTENT_KEYMAP, EDITOR_GLOBAL_KEYMAP, EDITOR_TAB_BAR_KEYMAP, EditorContentAction,
@@ -20,7 +20,7 @@ pub fn tab_bar_footer_items(
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         // UNREGISTERABLE(multi-key-display-group): combined prev/next tab display; EDITOR_TAB_BAR_KEYMAP splits these into separate PrevTab (←/⇤) and NextTab (→) entries.
-        HintSpan::Key("←/→"),
+        HintSpan::Key(glyph::LEFT_RIGHT),
         HintSpan::Text("switch tab"),
     ];
     if enter_content {

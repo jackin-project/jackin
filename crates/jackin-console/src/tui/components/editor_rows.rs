@@ -15,6 +15,54 @@ use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT, PHOSPHOR_GREEN, WHITE}
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 
 pub const AUTH_LABEL_COL_WIDTH: usize = 14;
+pub const SECRET_LABEL_COL_WIDTH: usize = 22;
+
+#[must_use]
+pub const fn cursor_gutter(selected: bool) -> &'static str {
+    if selected { "\u{25b8} " } else { "  " }
+}
+
+#[must_use]
+pub fn cursor_span(selected: bool) -> Span<'static> {
+    if selected {
+        Span::styled(cursor_gutter(true), jackin_tui::theme::BOLD_WHITE)
+    } else {
+        Span::raw(cursor_gutter(false))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldEmphasis {
+    Normal,
+    SelectedValue,
+}
+
+#[must_use]
+pub fn labeled_field_line(
+    selected: bool,
+    indent: &str,
+    label: &str,
+    label_width: usize,
+    value: impl Into<String>,
+    emphasis: FieldEmphasis,
+) -> Line<'static> {
+    let label_style = if selected {
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(WHITE)
+    };
+    let value_style = match (selected, emphasis) {
+        (true, FieldEmphasis::SelectedValue) => Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD),
+        _ => Style::default().fg(PHOSPHOR_GREEN),
+    };
+    Line::from(vec![
+        Span::raw(cursor_gutter(selected).to_owned()),
+        Span::styled(format!("{indent}{label:<label_width$}"), label_style),
+        Span::styled(value.into(), value_style),
+    ])
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretValueDisplay<'a> {
@@ -52,6 +100,36 @@ pub struct AuthSourceFolderDisplay {
 pub enum AuthSourceValue {
     Plain(String),
     OpRefPath(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthLineRow {
+    AuthKind { label: String },
+    WorkspaceMode { mode_label: String, inherited: bool },
+    WorkspaceSource { display: AuthSourceDisplay },
+    WorkspaceSourceFolder { display: AuthSourceFolderDisplay },
+    RoleHeader { role: String, expanded: bool },
+    RoleMode { mode_label: String },
+    RoleSource { display: AuthSourceDisplay },
+    RoleSourceFolder { display: AuthSourceFolderDisplay },
+    AddSentinel { eligible: usize },
+    Spacer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecretLineRow<S> {
+    Key { scope: S, key: String },
+    WorkspaceAddSentinel,
+    RoleHeader { role: String, expanded: bool },
+    RoleAddSentinel(String),
+    SectionSpacer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SecretEnvLineFrame {
+    pub cursor: usize,
+    pub show_cursor: bool,
+    pub area_width: u16,
 }
 
 #[must_use]
@@ -112,10 +190,296 @@ pub fn render_tab_strip(
     tab_bar_focused: bool,
     hovered: Option<usize>,
 ) {
-    jackin_tui::components::TabStrip::new(labels)
-        .focused(tab_bar_focused)
-        .hovered(hovered)
-        .render(frame, area);
+    frame.render_widget(
+        jackin_tui::components::TabStrip::new(labels)
+            .focused(tab_bar_focused)
+            .hovered(hovered),
+        area,
+    );
+}
+
+#[must_use]
+pub fn auth_lines(rows: &[AuthLineRow], cursor: usize, show_cursor: bool) -> Vec<Line<'static>> {
+    rows.iter()
+        .enumerate()
+        .map(|(i, row)| render_auth_line(show_cursor && (i == cursor), row))
+        .collect()
+}
+
+#[must_use]
+pub fn auth_line_width(row: &AuthLineRow) -> usize {
+    match row {
+        AuthLineRow::AuthKind { label } => padded_width(&format!("  {label}")),
+        AuthLineRow::WorkspaceMode {
+            mode_label,
+            inherited,
+        } => {
+            let suffix = if *inherited { " (inherited)" } else { "" };
+            padded_width(&format!(
+                "  {:<AUTH_LABEL_COL_WIDTH$}{mode_label}{suffix}",
+                "Mode"
+            ))
+        }
+        AuthLineRow::WorkspaceSource { display } => auth_source_line_width("Source", display, 0),
+        AuthLineRow::WorkspaceSourceFolder { display } => {
+            source_folder_line_width("Source folder", display, 0)
+        }
+        AuthLineRow::RoleHeader { role, .. } => padded_width(&format!("\u{25bc} Role: {role}")),
+        AuthLineRow::RoleMode { mode_label } => padded_width(&format!(
+            "      {:<AUTH_LABEL_COL_WIDTH$}{mode_label}",
+            "Mode"
+        )),
+        AuthLineRow::RoleSource { display } => auth_source_line_width("Source", display, 6),
+        AuthLineRow::RoleSourceFolder { display } => {
+            source_folder_line_width("Source folder", display, 6)
+        }
+        AuthLineRow::AddSentinel { .. } => padded_width("  + Override for a role"),
+        AuthLineRow::Spacer => 0,
+    }
+}
+
+fn render_auth_line(selected: bool, row: &AuthLineRow) -> Line<'static> {
+    let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let dim_green = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
+    let phosphor = Style::default().fg(PHOSPHOR_GREEN);
+
+    match row {
+        AuthLineRow::AuthKind { label } => Line::from(vec![
+            Span::raw(cursor_gutter(selected)),
+            Span::styled(label.clone(), bold_white),
+        ]),
+        AuthLineRow::WorkspaceMode {
+            mode_label,
+            inherited,
+        } => {
+            let suffix = if *inherited { " (inherited)" } else { "" };
+            Line::from(vec![
+                Span::raw(cursor_gutter(selected)),
+                Span::styled(format!("{:<AUTH_LABEL_COL_WIDTH$}", "Mode"), bold_white),
+                Span::styled(mode_label.clone(), phosphor),
+                Span::styled(suffix.to_owned(), dim_green),
+            ])
+        }
+        AuthLineRow::WorkspaceSource { display } => {
+            render_auth_source_line("Source", display, 0, selected)
+        }
+        AuthLineRow::WorkspaceSourceFolder { display } => {
+            render_source_folder_line("Source folder", display, 0, selected)
+        }
+        AuthLineRow::RoleHeader { role, expanded } => {
+            let glyph = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
+            Line::from(vec![
+                Span::styled(glyph.to_owned(), disclosure_style()),
+                Span::styled(format!(" Role: {role}"), disclosure_style()),
+            ])
+        }
+        AuthLineRow::RoleMode { mode_label } => Line::from(vec![
+            Span::raw("      "),
+            Span::styled(format!("{:<AUTH_LABEL_COL_WIDTH$}", "Mode"), bold_white),
+            Span::styled(mode_label.clone(), phosphor),
+        ]),
+        AuthLineRow::RoleSource { display } => render_auth_source_line("Source", display, 6, false),
+        AuthLineRow::RoleSourceFolder { display } => {
+            render_source_folder_line("Source folder", display, 6, false)
+        }
+        AuthLineRow::AddSentinel { .. } => {
+            let gutter = cursor_gutter(selected);
+            Line::from(vec![
+                Span::styled(gutter, action_row_style(selected)),
+                Span::styled("+ Override for a role", action_row_style(selected)),
+            ])
+        }
+        AuthLineRow::Spacer => Line::from(""),
+    }
+}
+
+fn source_folder_line_width(
+    label: &str,
+    display: &AuthSourceFolderDisplay,
+    indent: usize,
+) -> usize {
+    let gutter_width = if indent == 0 { 2 } else { indent };
+    let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
+    let prefix_width = gutter_width + text_width(&format!("{label:<label_width$}"));
+    let value = source_folder_display_text(display);
+    padded_width_cols(prefix_width + text_width(&value), gutter_width)
+}
+
+fn render_source_folder_line(
+    label: &str,
+    display: &AuthSourceFolderDisplay,
+    indent: usize,
+    selected: bool,
+) -> Line<'static> {
+    let prefix = if indent == 0 {
+        cursor_gutter(selected).to_owned()
+    } else {
+        " ".repeat(indent)
+    };
+    let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
+    let value = source_folder_display_text(display);
+    Line::from(vec![
+        Span::raw(prefix),
+        Span::styled(
+            format!("{label:<label_width$}"),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(value, Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM)),
+    ])
+}
+
+fn source_folder_display_text(display: &AuthSourceFolderDisplay) -> String {
+    match display.kind {
+        AuthSourceFolderKind::Default => format!("default: {}", display.path),
+        AuthSourceFolderKind::Explicit => display.path.clone(),
+        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
+    }
+}
+
+fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usize) -> usize {
+    let gutter_width = if indent == 0 { 2 } else { indent };
+    let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
+    let prefix_width = gutter_width + text_width(&format!("{label:<label_width$}"));
+    let value_width = match display {
+        AuthSourceDisplay::NotRequired => text_width("not required"),
+        AuthSourceDisplay::OpRefPath(path) => {
+            text_width("[op] ")
+                + crate::tui::op_breadcrumb::parse_path_breadcrumb(path).map_or_else(
+                    || text_width("<unparseable path - re-pick>"),
+                    |parts| crate::tui::op_breadcrumb::breadcrumb_display_width(&parts),
+                )
+        }
+        AuthSourceDisplay::MaskedPlain { chars } => {
+            text_width(&"\u{25cf}".repeat((*chars).clamp(1, 12)))
+        }
+        AuthSourceDisplay::Unset {
+            env_name,
+            mode_label,
+        } => text_width(&format!("unset  ({env_name} for {mode_label})")),
+    };
+    padded_width_cols(prefix_width + value_width, gutter_width)
+}
+
+fn render_auth_source_line(
+    label: &str,
+    display: &AuthSourceDisplay,
+    indent: usize,
+    selected: bool,
+) -> Line<'static> {
+    let prefix = if indent == 0 {
+        cursor_gutter(selected).to_owned()
+    } else {
+        " ".repeat(indent)
+    };
+    let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
+    let mut spans = vec![
+        Span::raw(prefix),
+        Span::styled(
+            format!("{label:<label_width$}"),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+    ];
+
+    match display {
+        AuthSourceDisplay::NotRequired => {
+            spans.push(Span::styled(
+                "not required",
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ));
+        }
+        AuthSourceDisplay::OpRefPath(path) => {
+            spans.push(Span::styled(
+                "[op] ",
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ));
+            push_op_breadcrumb_spans(&mut spans, path);
+        }
+        AuthSourceDisplay::MaskedPlain { chars } => {
+            spans.push(Span::styled(
+                "\u{25cf}".repeat((*chars).clamp(1, 12)),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ));
+        }
+        AuthSourceDisplay::Unset {
+            env_name,
+            mode_label,
+        } => {
+            spans.push(Span::styled(
+                format!("unset  ({env_name} for {mode_label})"),
+                Style::default().fg(jackin_tui::theme::DANGER_RED),
+            ));
+        }
+    }
+
+    Line::from(spans)
+}
+
+#[must_use]
+pub fn secret_env_lines<'a, S>(
+    rows: &[SecretLineRow<S>],
+    frame: SecretEnvLineFrame,
+    value_for: impl Fn(&S, &str) -> Option<SecretValueDisplay<'a>>,
+    is_unmasked: impl Fn(&S, &str) -> bool,
+    role_in_registry: impl Fn(&str) -> bool,
+    role_var_count: impl Fn(&str) -> usize,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::with_capacity(rows.len());
+
+    for (i, row) in rows.iter().enumerate() {
+        let selected = frame.show_cursor && (i == frame.cursor);
+        let gutter = cursor_gutter(selected);
+        match row {
+            SecretLineRow::Key { scope, key } => {
+                let Some(value) = value_for(scope, key) else {
+                    continue;
+                };
+                lines.push(render_secret_key_line(
+                    selected,
+                    gutter,
+                    key,
+                    value,
+                    !is_unmasked(scope, key),
+                    frame.area_width,
+                    SECRET_LABEL_COL_WIDTH,
+                ));
+            }
+            SecretLineRow::WorkspaceAddSentinel => {
+                lines.push(Line::from(Span::styled(
+                    format!("{gutter}+ Add environment variable"),
+                    action_row_style(selected),
+                )));
+            }
+            SecretLineRow::RoleHeader { role, expanded } => {
+                let arrow = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
+                let mut spans = vec![
+                    Span::raw(format!("{gutter}     ")),
+                    Span::styled(arrow, disclosure_style()),
+                    Span::styled(
+                        format!(" Role: {role}  ({} vars)", role_var_count(role)),
+                        disclosure_style(),
+                    ),
+                ];
+                if !role_in_registry(role) {
+                    spans.push(Span::styled(
+                        "  (not in registry)",
+                        Style::default()
+                            .fg(jackin_tui::theme::PHOSPHOR_DIM)
+                            .add_modifier(Modifier::ITALIC),
+                    ));
+                }
+                lines.push(Line::from(spans));
+            }
+            SecretLineRow::RoleAddSentinel(role) => {
+                lines.push(Line::from(Span::styled(
+                    format!("{gutter}     + Add {role} environment variable"),
+                    action_row_style(selected),
+                )));
+            }
+            SecretLineRow::SectionSpacer => lines.push(Line::from("")),
+        }
+    }
+
+    lines
 }
 
 /// `OpRef` rows skip masking and render as a breadcrumb (3-segment:
@@ -199,6 +563,21 @@ pub fn render_secret_key_line(
     };
     spans.push(Span::styled(rendered_value, value_style));
     Line::from(spans)
+}
+
+fn padded_width(text: &str) -> usize {
+    padded_width_cols(
+        text_width(text),
+        text.chars().take_while(|c| *c == ' ').count(),
+    )
+}
+
+const fn padded_width_cols(width: usize, leading_spaces: usize) -> usize {
+    width + leading_spaces
+}
+
+fn text_width(text: &str) -> usize {
+    jackin_tui::display_cols(text)
 }
 
 #[cfg(test)]

@@ -8,7 +8,7 @@ fn error_popup_returns_ok_when_no_sink_installed() {
     // No global sink installed in this test process → must be a
     // silent no-op success so non-UI call sites do not have to
     // branch on the install race.
-    assert!(error_popup("title", "message").is_ok());
+    error_popup("title", "message").unwrap();
 }
 
 #[test]

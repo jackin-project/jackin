@@ -2,6 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from_version = "v1alpha1"
-target_version = "v1alpha8"
-target_version_shipped = "2026-05-17"
+target_version = "v1alpha9"
+target_version_shipped = "2026-07-06"
 summary = "Restamps config from v1alpha1 through v1alpha2, v1alpha3, v1alpha4, to v1alpha5, moving version to the first line."

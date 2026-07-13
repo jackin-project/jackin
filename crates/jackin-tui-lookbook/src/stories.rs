@@ -9,13 +9,13 @@
 use jackin_tui::{
     HintSpan,
     components::{
-        ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, ErrorPopupState, Panel, PanelFocus,
-        SaveDiscardFocus, SaveDiscardState, SelectListState, StatusFooterHover, TabStrip,
-        TextInputState, Toast, panel_body_area, render_brand_header, render_confirm_dialog,
-        render_container_info, render_error_dialog, render_filter_input,
-        render_save_discard_dialog, render_scrollable_block, render_select_list,
-        render_status_footer, render_status_popup, render_text_input, render_toast,
-        render_wrapped_hint_bar,
+        ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, DiffViewState, ErrorPopupRow,
+        ErrorPopupState, Panel, PanelFocus, SaveDiscardFocus, SaveDiscardState, SelectListState,
+        SinglePaneKind, StatusFooterHover, TabStrip, TextInputState, Toast, hint_line,
+        panel_body_area, render_brand_header, render_confirm_dialog, render_container_info,
+        render_diff_view, render_error_dialog, render_filter_input, render_save_discard_dialog,
+        render_scrollable_block, render_select_list, render_status_footer, render_status_popup,
+        render_text_input, render_toast, render_wrapped_hint_bar,
     },
 };
 use ratatui::{
@@ -161,6 +161,15 @@ pub(crate) fn stories() -> Vec<Story> {
             story_error_default,
         ),
         Story::new(
+            "error/structured-rows",
+            "Error dialog rows",
+            "ErrorDialog",
+            "Failure modal with structured run and diagnostics rows.",
+            72,
+            11, // 2 borders + 1 leading + 1 body + 2 rows + 1 spacer + 1 button + 1 trailing
+            story_error_structured_rows,
+        ),
+        Story::new(
             "save-discard/default",
             "Save/discard dialog",
             "SaveDiscardDialog",
@@ -267,6 +276,24 @@ pub(crate) fn stories() -> Vec<Story> {
             72,
             12,
             story_container_info_debug,
+        ),
+        Story::new(
+            "diff-view/side-by-side",
+            "Diff view side-by-side",
+            "DiffView",
+            "Modified-file diff with paired removed and added rows.",
+            74,
+            11,
+            story_diff_view_side_by_side,
+        ),
+        Story::new(
+            "diff-view/single-pane",
+            "Diff view single-pane",
+            "DiffView",
+            "Added-file diff rendered as one scrollable pane.",
+            58,
+            9,
+            story_diff_view_single_pane,
         ),
         Story::new(
             "select-list/empty",
@@ -386,9 +413,7 @@ fn story_button_strip(frame: &mut Frame<'_>, area: Rect) {
         Constraint::Fill(1),
     ])
     .areas(area);
-    ButtonStrip::new(&items)
-        .focused(0)
-        .render(frame, strip_area);
+    frame.render_widget(ButtonStrip::new(&items).focused(0), strip_area);
 }
 
 fn story_tab_strip(frame: &mut Frame<'_>, area: Rect) {
@@ -398,10 +423,7 @@ fn story_tab_strip(frame: &mut Frame<'_>, area: Rect) {
         ("Roles", false),
         ("Secrets", false),
     ];
-    TabStrip::new(&labels)
-        .focused(true)
-        .hovered(Some(2))
-        .render(frame, area);
+    frame.render_widget(TabStrip::new(&labels).focused(true).hovered(Some(2)), area);
 }
 
 fn story_confirm_default(frame: &mut Frame<'_>, area: Rect) {
@@ -435,6 +457,16 @@ fn story_error_default(frame: &mut Frame<'_>, area: Rect) {
         "Launch failed",
         "Derived image build failed while installing role dependencies.\nOpen diagnostics run jk-run-3d7e23 for the full log.",
     );
+    render_error_dialog(frame, area, &state);
+}
+
+fn story_error_structured_rows(frame: &mut Frame<'_>, area: Rect) {
+    let state =
+        ErrorPopupState::new("Launch failed", "Derived image build failed.").with_rows(vec![
+            ErrorPopupRow::new("Run ID", "jk-run-3d7e23"),
+            ErrorPopupRow::new("Diagnostics", "/tmp/jackin/jk-run-3d7e23.jsonl")
+                .hyperlink("file:///tmp/jackin/jk-run-3d7e23.jsonl"),
+        ]);
     render_error_dialog(frame, area, &state);
 }
 
@@ -583,12 +615,18 @@ fn story_text_input_workspace_name(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_toast_selection_copied(frame: &mut Frame<'_>, area: Rect) {
+    let hints = [
+        HintSpan::Key("Ctrl-\\"),
+        HintSpan::Text("menu"),
+        HintSpan::GroupSep,
+        HintSpan::Text("click focus pane"),
+    ];
     frame.render_widget(
         Paragraph::new(vec![
             Line::from("Capsule pane content remains visible behind the toast."),
             Line::from("The footer rows below are reserved for available actions."),
             Line::from(""),
-            Line::from("Ctrl+\\ menu   click focus pane"),
+            hint_line(&hints),
             Line::from("PR #495 · refactor: finish TUI architecture epic"),
         ]),
         area,
@@ -632,6 +670,35 @@ fn story_container_info_debug(frame: &mut Frame<'_>, area: Rect) {
     render_container_info(frame, area, &state);
 }
 
+fn story_diff_view_side_by_side(frame: &mut Frame<'_>, area: Rect) {
+    let before = r#"roles:
+  architect:
+    agent: claude
+    trust: prompt
+env:
+  JACKIN_DEBUG: "0"
+"#;
+    let after = r#"roles:
+  architect:
+    agent: claude
+    trust: full
+env:
+  JACKIN_DEBUG: "1"
+"#;
+    let mut state = DiffViewState::side_by_side(before, after, "before", "after");
+    render_diff_view(frame, area, &mut state);
+}
+
+fn story_diff_view_single_pane(frame: &mut Frame<'_>, area: Rect) {
+    let content = r#"name = "capsule-tools"
+image = "ghcr.io/jackin-project/capsule-tools"
+agent = "codex"
+trust = "prompt"
+"#;
+    let mut state = DiffViewState::single_pane(content, SinglePaneKind::Added, "added role.toml");
+    render_diff_view(frame, area, &mut state);
+}
+
 fn story_select_list_empty(frame: &mut Frame<'_>, area: Rect) {
     let state = SelectListState::new(vec![]);
     render_select_list(frame, area, &state, "No roles found", &[]);
@@ -655,9 +722,7 @@ fn story_button_strip_all_disabled(frame: &mut Frame<'_>, area: Rect) {
         Constraint::Fill(1),
     ])
     .areas(area);
-    ButtonStrip::new(&items)
-        .focused(0)
-        .render(frame, strip_area);
+    frame.render_widget(ButtonStrip::new(&items).focused(0), strip_area);
 }
 
 fn story_save_discard_focus_save(frame: &mut Frame<'_>, area: Rect) {

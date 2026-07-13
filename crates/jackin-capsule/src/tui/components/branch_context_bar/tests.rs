@@ -318,7 +318,7 @@ fn hit_rejects_columns_outside_region() {
 #[test]
 fn hover_highlights_click_targets() {
     let pr = pull_request_fixture(434);
-    let hover_bg = ratatui::style::Color::Rgb(225, 245, 255);
+    let hover_fg = jackin_tui::theme::DEBUG_AMBER;
     let (_, ctx) = widget_bar(
         120,
         Some("asa/pr-context"),
@@ -328,7 +328,11 @@ fn hover_highlights_click_targets() {
         "jk-test-container",
         Some(crate::tui::model::HoverTarget::BranchContext),
     );
-    assert_eq!(ctx[(1, 23)].bg, hover_bg, "hovered context chunk lifts");
+    assert_eq!(
+        ctx[(1, 23)].fg,
+        hover_fg,
+        "hovered context chunk uses shared footer hover"
+    );
 
     let (text, container) = widget_bar(
         120,
@@ -342,9 +346,9 @@ fn hover_highlights_click_targets() {
     assert!(text.contains("jk-test-container"));
     let chunk_x = text.find("jk-test-container").expect("container chunk") as u16;
     assert_eq!(
-        container[(chunk_x, 23)].bg,
-        hover_bg,
-        "hovered container chunk lifts"
+        container[(chunk_x, 23)].fg,
+        hover_fg,
+        "hovered container chunk uses shared footer hover"
     );
 
     let (text, usage) = widget_bar(
@@ -358,9 +362,9 @@ fn hover_highlights_click_targets() {
     );
     let chunk_x = text.find("Session 37%").expect("usage chunk") as u16;
     assert_eq!(
-        usage[(chunk_x, 23)].bg,
-        hover_bg,
-        "hovered usage chunk lifts"
+        usage[(chunk_x, 23)].fg,
+        hover_fg,
+        "hovered usage chunk uses shared footer hover"
     );
 }
 

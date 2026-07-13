@@ -1,5 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
+//! jackin-pr-trailers: PR trailer rewrite helper binary.
+//!
+//! **Architecture Invariant:** T0.
+//! Entry point: [`main`] — binary entry for trailer rewrites.
 
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;

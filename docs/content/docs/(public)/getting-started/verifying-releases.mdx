@@ -38,6 +38,30 @@ gh attestation verify <file> --repo jackin-project/jackin
 
 This checks that the file was produced by a jackin❯ GitHub Actions run and is linked to the source commit. No extra tools required.
 
+## Verify everything with one local gate
+
+From a checkout of this repository, download an archive and its sidecars, then run:
+
+```sh
+cargo xtask release-verify <file>.tar.gz
+```
+
+The gate checks the archive against `<file>.tar.gz.sha256`, verifies `<file>.tar.gz.bundle` with the same cosign identity and issuer policy shown below, verifies the GitHub artifact attestation for `jackin-project/jackin`, and parses `<file>.tar.gz.sbom.json`.
+
+For example:
+
+```sh
+gh release download jackin-dev-v0.1.13 \
+  --repo jackin-project/jackin \
+  --pattern 'jackin-dev-0.1.13-aarch64-unknown-linux-gnu.tar.gz*' \
+  --dir /tmp/jackin-release-check
+
+cargo xtask release-verify \
+  /tmp/jackin-release-check/jackin-dev-0.1.13-aarch64-unknown-linux-gnu.tar.gz
+```
+
+The command fails closed. If the archive content changes after the `.sha256` file is published, the digest mismatch aborts verification before signature or provenance checks run.
+
 ## Verify with cosign bundle
 
 Requires `cosign` installed locally (`brew install cosign` or `mise install cosign`).

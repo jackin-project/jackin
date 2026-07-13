@@ -1,7 +1,7 @@
-#![allow(clippy::too_many_lines)]
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
+#![allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 //! Attach protocol handshake: initial capability negotiation and session-ID
 //! assignment when a client connects.
 //!
@@ -31,47 +31,83 @@ use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 // Client → server tags.
+/// Wire/protocol constant `TAG_HELLO`.
 pub const TAG_HELLO: u8 = 0x01;
+/// Wire/protocol constant `TAG_RESIZE`.
 pub const TAG_RESIZE: u8 = 0x02;
+/// Wire/protocol constant `TAG_INPUT`.
 pub const TAG_INPUT: u8 = 0x03;
+/// Wire/protocol constant `TAG_COMMAND`.
 pub const TAG_COMMAND: u8 = 0x04;
+/// Wire/protocol constant `TAG_DETACH`.
 pub const TAG_DETACH: u8 = 0x05;
+/// Wire/protocol constant `TAG_FOCUS_IN`.
 pub const TAG_FOCUS_IN: u8 = 0x06;
+/// Wire/protocol constant `TAG_FOCUS_OUT`.
 pub const TAG_FOCUS_OUT: u8 = 0x07;
+/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE`.
 pub const TAG_CLIPBOARD_IMAGE: u8 = 0x08;
+/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE_START`.
 pub const TAG_CLIPBOARD_IMAGE_START: u8 = 0x09;
+/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE_CHUNK`.
 pub const TAG_CLIPBOARD_IMAGE_CHUNK: u8 = 0x0a;
+/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE_END`.
 pub const TAG_CLIPBOARD_IMAGE_END: u8 = 0x0b;
+/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE_ERROR`.
 pub const TAG_CLIPBOARD_IMAGE_ERROR: u8 = 0x0c;
+/// Wire/protocol constant `TAG_HOST_NOTICE`.
 pub const TAG_HOST_NOTICE: u8 = 0x0d;
 
 // Server → client tags. The top bit is set as a convention so a future
 // reader can tell direction by glancing at the byte.
+/// Wire/protocol constant `TAG_WELCOME`.
 pub const TAG_WELCOME: u8 = 0x81;
+/// Wire/protocol constant `TAG_OUTPUT`.
 pub const TAG_OUTPUT: u8 = 0x82;
+/// Wire/protocol constant `TAG_SESSION_LIST`.
 pub const TAG_SESSION_LIST: u8 = 0x83;
+/// Wire/protocol constant `TAG_SHUTDOWN`.
 pub const TAG_SHUTDOWN: u8 = 0x84;
+/// Wire/protocol constant `TAG_BELL`.
 pub const TAG_BELL: u8 = 0x85;
+/// Wire/protocol constant `TAG_HOST_OPEN_URL`.
 pub const TAG_HOST_OPEN_URL: u8 = 0x86;
+/// Wire/protocol constant `TAG_FILE_EXPORT_START`.
 pub const TAG_FILE_EXPORT_START: u8 = 0x87;
+/// Wire/protocol constant `TAG_FILE_EXPORT_CHUNK`.
 pub const TAG_FILE_EXPORT_CHUNK: u8 = 0x88;
+/// Wire/protocol constant `TAG_FILE_EXPORT_END`.
 pub const TAG_FILE_EXPORT_END: u8 = 0x89;
+/// Wire/protocol constant `TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH`.
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH: u8 = 0x8a;
+/// Wire/protocol constant `TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD`.
 pub const TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD: u8 = 0x8b;
+/// Wire/protocol constant `TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD`.
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD: u8 = 0x8c;
+/// Wire/protocol constant `TAG_HOST_REVEAL_PATH`.
 pub const TAG_HOST_REVEAL_PATH: u8 = 0x8d;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
+/// Wire/protocol constant `MAX_FILE_EXPORT_PATH_BYTES`.
 pub const MAX_FILE_EXPORT_PATH_BYTES: usize = 4096;
+/// Wire/protocol constant `MAX_FILE_EXPORT_NAME_BYTES`.
 pub const MAX_FILE_EXPORT_NAME_BYTES: usize = 255;
+/// Wire/protocol constant `MAX_FILE_EXPORT_CHUNK_BYTES`.
 pub const MAX_FILE_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
+/// Wire/protocol constant `FILE_EXPORT_DIGEST_BYTES`.
 pub const FILE_EXPORT_DIGEST_BYTES: usize = 32;
+/// Wire/protocol constant `MAX_CLIPBOARD_IMAGE_ERROR_BYTES`.
 pub const MAX_CLIPBOARD_IMAGE_ERROR_BYTES: usize = 1024;
+/// Wire/protocol constant `MAX_HOST_NOTICE_BYTES`.
 pub const MAX_HOST_NOTICE_BYTES: usize = 2048;
+/// Wire/protocol constant `MAX_HOST_REVEAL_PATH_BYTES`.
 pub const MAX_HOST_REVEAL_PATH_BYTES: usize = 4096;
+/// Wire/protocol constant `MAX_CLIPBOARD_IMAGE_CHUNK_BYTES`.
 pub const MAX_CLIPBOARD_IMAGE_CHUNK_BYTES: usize = 1024 * 1024;
+/// Wire/protocol constant `MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES`.
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
+/// Wire/protocol constant `MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64`.
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES as u64;
 /// Maximum image byte payload that fits in one clipboard-image attach
 /// frame after the one-byte image-format discriminator. Normal
@@ -79,6 +115,7 @@ pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRAN
 /// paste gets a narrowly-scoped cap because screenshots routinely exceed
 /// 4 MiB while still being small enough for a bounded local frame.
 pub const MAX_CLIPBOARD_IMAGE_BYTES: usize = MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD - 1;
+/// Wire/protocol constant `MAX_HELLO_ENV`.
 pub const MAX_HELLO_ENV: usize = 64;
 /// Per-entry cap on Hello env-value byte length. Operator-supplied env
 /// values in jackin❯ are short (slugs, booleans, file paths); cap at
@@ -107,14 +144,19 @@ const COLORTERM_LABEL: &str = "COLORTERM";
 const FRAME_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `SpawnRequest` protocol enum.
 pub enum SpawnRequest {
+    /// `Shell` variant.
     Shell,
+    /// `Agent` variant.
     Agent(String),
     /// Agent spawn where the provider was already selected by the console
     /// before `docker exec`-ing. The daemon uses `provider_label` directly
     /// as the tab suffix instead of showing the in-mux `ProviderPicker` dialog.
     AgentWithProvider {
+        /// `slug` field.
         slug: String,
+        /// `provider_label` field.
         provider_label: String,
     },
 }
@@ -143,15 +185,20 @@ pub const MAX_HELLO_PROVIDER_LABEL: usize = 64;
 /// container can be reattached from a different terminal later.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ClientTerminal {
+    /// `term` field.
     pub term: Option<String>,
+    /// `term_program` field.
     pub term_program: Option<String>,
+    /// `colorterm` field.
     pub colorterm: Option<String>,
     /// Default foreground/background the client read from its terminal via
     /// OSC 10/11 before the handshake. `None` when the terminal did not
     /// answer. The daemon feeds these into every pane grid so agent OSC 10/11
     /// queries are answered with the colors the operator actually sees.
     pub default_fg: Option<(u8, u8, u8)>,
+    /// `default_bg` field.
     pub default_bg: Option<(u8, u8, u8)>,
+    /// `capability_overrides` field.
     pub capability_overrides: AttachCapabilityOverrides,
 }
 
@@ -176,12 +223,19 @@ pub struct ClientTerminal {
               site without changing observable behavior."
 )]
 pub struct AttachCapabilities {
+    /// `pointer_shapes` field.
     pub pointer_shapes: bool,
+    /// `truecolor` field.
     pub truecolor: bool,
+    /// `synchronized_output` field.
     pub synchronized_output: bool,
+    /// `osc8_hyperlinks` field.
     pub osc8_hyperlinks: bool,
+    /// `underline_style` field.
     pub underline_style: bool,
+    /// `image_protocol` field.
     pub image_protocol: ImageProtocolCapability,
+    /// `sources` field.
     pub sources: AttachCapabilitySources,
 }
 
@@ -194,32 +248,49 @@ pub struct AttachCapabilities {
               resolved the way it did. Named-field reads are clearer than bit-position \
               lookups in capability-debug output."
 )]
+/// `AttachCapabilitySources` protocol type.
 pub struct AttachCapabilitySources {
+    /// `handshake_identity` field.
     pub handshake_identity: bool,
+    /// `terminfo_name` field.
     pub terminfo_name: bool,
+    /// `safe_color_probe` field.
     pub safe_color_probe: bool,
+    /// `user_override` field.
     pub user_override: bool,
+    /// `denylist` field.
     pub denylist: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// `AttachCapabilityOverrides` protocol type.
 pub struct AttachCapabilityOverrides {
+    /// `pointer_shapes` field.
     pub pointer_shapes: Option<bool>,
+    /// `truecolor` field.
     pub truecolor: Option<bool>,
+    /// `synchronized_output` field.
     pub synchronized_output: Option<bool>,
+    /// `osc8_hyperlinks` field.
     pub osc8_hyperlinks: Option<bool>,
+    /// `underline_style` field.
     pub underline_style: Option<bool>,
+    /// `image_protocol` field.
     pub image_protocol: Option<ImageProtocolCapability>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// `ImageProtocolCapability` protocol enum.
 pub enum ImageProtocolCapability {
     #[default]
+    /// `Unsupported` variant.
     Unsupported,
+    /// `Kitty` variant.
     Kitty,
 }
 
 impl ClientTerminal {
+    /// `from_env` associated function.
     pub fn from_env() -> Self {
         Self {
             term: non_empty_env(TERM_LABEL),
@@ -232,11 +303,13 @@ impl ClientTerminal {
     }
 
     #[must_use]
+    /// `pointer_shapes_supported` method.
     pub fn pointer_shapes_supported(&self) -> bool {
         self.attach_capabilities().pointer_shapes
     }
 
     #[must_use]
+    /// `attach_capabilities` method.
     pub fn attach_capabilities(&self) -> AttachCapabilities {
         let term = self.term.as_deref().unwrap_or("").to_ascii_lowercase();
         let term_program = self
@@ -292,6 +365,7 @@ impl ClientTerminal {
 
 impl AttachCapabilityOverrides {
     #[must_use]
+    /// `from_env` associated function.
     pub fn from_env() -> Self {
         Self {
             pointer_shapes: env_bool("JACKIN_ATTACH_POINTER_SHAPES"),
@@ -304,6 +378,7 @@ impl AttachCapabilityOverrides {
     }
 
     #[must_use]
+    /// `any` method.
     pub const fn any(self) -> bool {
         self.pointer_shapes.is_some()
             || self.truecolor.is_some()
@@ -356,16 +431,23 @@ fn env_image_protocol(key: &str) -> Option<ImageProtocolCapability> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `ClipboardImageFormat` protocol enum.
 pub enum ClipboardImageFormat {
+    /// `Png` variant.
     Png,
+    /// `Jpeg` variant.
     Jpeg,
+    /// `Gif` variant.
     Gif,
+    /// `Webp` variant.
     Webp,
+    /// `Tiff` variant.
     Tiff,
 }
 
 impl ClipboardImageFormat {
     #[must_use]
+    /// `extension` method.
     pub fn extension(&self) -> &'static str {
         match self {
             Self::Png => "png",
@@ -399,36 +481,55 @@ impl ClipboardImageFormat {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `ClipboardImage` protocol type.
 pub struct ClipboardImage {
+    /// `format` field.
     pub format: ClipboardImageFormat,
+    /// `bytes` field.
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `ClipboardImageStart` protocol type.
 pub struct ClipboardImageStart {
+    /// `transfer_id` field.
     pub transfer_id: u64,
+    /// `format` field.
     pub format: ClipboardImageFormat,
+    /// `size` field.
     pub size: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `ClipboardImageChunk` protocol type.
 pub struct ClipboardImageChunk {
+    /// `transfer_id` field.
     pub transfer_id: u64,
+    /// `offset` field.
     pub offset: u64,
+    /// `bytes` field.
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `ClipboardImageEnd` protocol type.
 pub struct ClipboardImageEnd {
+    /// `transfer_id` field.
     pub transfer_id: u64,
+    /// `sha256` field.
     pub sha256: [u8; FILE_EXPORT_DIGEST_BYTES],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `FileExportStart` protocol type.
 pub struct FileExportStart {
+    /// `transfer_id` field.
     pub transfer_id: u64,
+    /// `source_path` field.
     pub source_path: String,
+    /// `file_name` field.
     pub file_name: String,
+    /// `size` field.
     pub size: u64,
     /// When true, the host attach client reveals the verified exported copy
     /// after the digest-matched rename. This is still an explicit operator
@@ -442,19 +543,149 @@ pub struct FileExportStart {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `FileExportChunk` protocol type.
 pub struct FileExportChunk {
+    /// `transfer_id` field.
     pub transfer_id: u64,
+    /// `offset` field.
     pub offset: u64,
+    /// `bytes` field.
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `FileExportEnd` protocol type.
 pub struct FileExportEnd {
+    /// `transfer_id` field.
     pub transfer_id: u64,
+    /// `sha256` field.
     pub sha256: [u8; FILE_EXPORT_DIGEST_BYTES],
 }
 
+/// Why a clipboard image transfer failed (capsule→host or host→capsule).
+/// Machine-matchable kinds; display text is for operator surfaces only.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClipboardImageError {
+    /// Transfer assembled zero bytes.
+    Empty,
+    /// Assembled image exceeded the transfer size bound.
+    TooLarge,
+    /// Payload failed magic/signature checks for a supported format.
+    UnsupportedFormat,
+    /// End-frame digest did not match assembled bytes.
+    DigestMismatch,
+    /// Chunks arrived out of order or a chunk went missing.
+    ChunkSequence,
+    /// Chunk/end arrived without an active start.
+    MissingTransfer,
+    /// A second start arrived while another transfer was active.
+    DuplicateTransfer,
+    /// Host clipboard backend (xclip/wl-paste/etc.) was unavailable.
+    BackendUnavailable,
+    /// Host filesystem or clipboard I/O failed.
+    Io,
+    /// Host probe/response failed or any other free-form failure.
+    Other(String),
+}
+
+impl ClipboardImageError {
+    /// Operator-facing message (also the wire payload).
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Empty => "clipboard image transfer is empty",
+            Self::TooLarge => "clipboard image transfer exceeds cap",
+            Self::UnsupportedFormat => {
+                "clipboard image magic bytes do not match a supported format"
+            }
+            Self::DigestMismatch => "clipboard image transfer SHA-256 mismatch",
+            Self::ChunkSequence => "clipboard image transfer chunk offset did not match expected",
+            Self::MissingTransfer => "clipboard image transfer has no active start",
+            Self::DuplicateTransfer => "clipboard image transfer already active",
+            Self::BackendUnavailable => "host clipboard backend unavailable (xclip/wl-paste)",
+            Self::Io => "clipboard image host I/O failed while reading/writing",
+            Self::Other(message) => message.as_str(),
+        }
+    }
+
+    /// Stable compact reason codes for clog/cdebug classification.
+    #[must_use]
+    pub fn reason_code(&self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::TooLarge => "oversize",
+            Self::UnsupportedFormat => "signature-mismatch",
+            Self::DigestMismatch => "digest-mismatch",
+            Self::ChunkSequence => "offset-mismatch",
+            Self::MissingTransfer => "missing-transfer",
+            Self::DuplicateTransfer => "duplicate-transfer",
+            Self::BackendUnavailable => "backend-unavailable",
+            Self::Io => "io",
+            Self::Other(_) => "other",
+        }
+    }
+
+    /// Classify a free-form host/capsule message into a typed kind.
+    /// Unknown shapes become [`Self::Other`].
+    #[must_use]
+    pub fn from_message(message: String) -> Self {
+        let lower = message.to_ascii_lowercase();
+        if lower.contains("empty") {
+            Self::Empty
+        } else if lower.contains("exceeds cap")
+            || lower.contains("too large")
+            || lower.contains("over cap")
+        {
+            Self::TooLarge
+        } else if lower.contains("magic")
+            || lower.contains("signature")
+            || lower.contains("not an image")
+            || lower.contains("unsupported image")
+        {
+            Self::UnsupportedFormat
+        } else if lower.contains("sha-256") || lower.contains("digest") {
+            Self::DigestMismatch
+        } else if lower.contains("offset") || lower.contains("did not match expected") {
+            Self::ChunkSequence
+        } else if lower.contains("no active start") {
+            Self::MissingTransfer
+        } else if lower.contains("already active") {
+            Self::DuplicateTransfer
+        } else if lower.contains("display")
+            || lower.contains("wayland")
+            || lower.contains("xclip")
+            || lower.contains("wl-paste")
+            || lower.contains("wl-copy")
+        {
+            Self::BackendUnavailable
+        } else if lower.contains("create")
+            || lower.contains("creating")
+            || lower.contains("open")
+            || lower.contains("opening")
+            || lower.contains("write")
+            || lower.contains("writing")
+            || lower.contains("flush")
+            || lower.contains("flushing")
+            || lower.contains("permission")
+            || lower.contains("metadata")
+            || lower.contains("read")
+            || lower.contains("reading")
+        {
+            Self::Io
+        } else {
+            Self::Other(message)
+        }
+    }
+}
+
+impl std::fmt::Display for ClipboardImageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// `ClientFrame` protocol enum.
 pub enum ClientFrame {
     /// First frame from a newly-connected client. Plain attach sets
     /// `spawn` to None; `jackin-capsule new` uses `Shell` or
@@ -463,9 +694,13 @@ pub enum ClientFrame {
     /// that the short-lived `docker exec` client must forward to the
     /// long-lived daemon.
     Hello {
+        /// `rows` field.
         rows: u16,
+        /// `cols` field.
         cols: u16,
+        /// `spawn` field.
         spawn: Option<SpawnRequest>,
+        /// `env` field.
         env: Vec<(String, String)>,
         /// Optional pane-focus request: when `Some(session_id)` the
         /// daemon switches its active tab + that tab's `focused_id`
@@ -477,39 +712,74 @@ pub enum ClientFrame {
         /// ignored — the daemon attaches at the current focus and
         /// the operator can navigate.
         focus_session: Option<u64>,
+        /// `terminal` field.
         terminal: ClientTerminal,
     },
+    /// `Resize` variant.
     Resize {
+        /// `rows` field.
         rows: u16,
+        /// `cols` field.
         cols: u16,
     },
+    /// `Input` variant.
     Input(Vec<u8>),
+    /// `Command` variant.
     Command(Vec<u8>),
+    /// `Detach` variant.
     Detach,
+    /// `FocusIn` variant.
     FocusIn,
+    /// `FocusOut` variant.
     FocusOut,
+    /// `ClipboardImage` variant.
     ClipboardImage(ClipboardImage),
+    /// `ClipboardImageStart` variant.
     ClipboardImageStart(ClipboardImageStart),
+    /// `ClipboardImageChunk` variant.
     ClipboardImageChunk(ClipboardImageChunk),
+    /// `ClipboardImageEnd` variant.
     ClipboardImageEnd(ClipboardImageEnd),
-    ClipboardImageError(String),
+    /// `ClipboardImageError` variant.
+    ClipboardImageError(ClipboardImageError),
+    /// `HostNotice` variant.
     HostNotice(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `ServerFrame` protocol enum.
 pub enum ServerFrame {
-    Welcome { session_count: u32 },
+    /// `Welcome` variant.
+    Welcome {
+        /// Number of sessions currently known to the capsule.
+        session_count: u32,
+    },
+    /// `Output` variant.
     Output(Vec<u8>),
+    /// `SessionList` variant.
     SessionList(Vec<u8>),
-    Shutdown { reason: Option<String> },
+    /// `Shutdown` variant.
+    Shutdown {
+        /// Optional human-readable shutdown reason.
+        reason: Option<String>,
+    },
+    /// `Bell` variant.
     Bell,
+    /// `HostOpenUrl` variant.
     HostOpenUrl(String),
+    /// `FileExportStart` variant.
     FileExportStart(FileExportStart),
+    /// `FileExportChunk` variant.
     FileExportChunk(FileExportChunk),
+    /// `FileExportEnd` variant.
     FileExportEnd(FileExportEnd),
+    /// `HostRevealPath` variant.
     HostRevealPath(String),
+    /// `HostStageImageFromClipboardPath` variant.
     HostStageImageFromClipboardPath,
+    /// `HostPasteImageFromClipboard` variant.
     HostPasteImageFromClipboard,
+    /// `HostStageImageFromClipboard` variant.
     HostStageImageFromClipboard,
 }
 
@@ -716,8 +986,8 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
         ClientFrame::ClipboardImageStart(start) => encode_clipboard_image_start(start),
         ClientFrame::ClipboardImageChunk(chunk) => encode_clipboard_image_chunk(chunk),
         ClientFrame::ClipboardImageEnd(end) => encode_clipboard_image_end(end),
-        ClientFrame::ClipboardImageError(message) => {
-            let message = message.as_bytes();
+        ClientFrame::ClipboardImageError(error) => {
+            let message = error.message().as_bytes();
             if message.is_empty() {
                 bail!("clipboard image error message is empty");
             }
@@ -932,7 +1202,10 @@ where
     let mut chunk = [0u8; 16 * 1024];
     while remaining > 0 {
         let n = chunk.len().min(remaining);
-        match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(&mut chunk[..n])).await {
+        let Some(dest) = chunk.get_mut(..n) else {
+            bail!("attach frame: chunk slice out of range");
+        };
+        match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(dest)).await {
             Ok(Ok(_)) => {}
             Ok(Err(e)) => {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -942,7 +1215,10 @@ where
             }
             Err(_) => bail!("attach frame: timed out reading payload"),
         }
-        payload.extend_from_slice(&chunk[..n]);
+        let Some(filled) = chunk.get(..n) else {
+            bail!("attach frame: chunk slice out of range");
+        };
+        payload.extend_from_slice(filled);
         remaining -= n;
     }
     Ok(Some((first_byte, payload)))
@@ -959,6 +1235,10 @@ fn max_frame_payload_for_tag(tag: u8) -> usize {
 
 /// Read the next client frame from the stream. `first_byte` is the
 /// already-peeked first byte (used by the channel-dispatch layer).
+#[expect(
+    clippy::large_futures,
+    reason = "attach frame reader decodes full ClientFrame/ServerFrame payloads; boxing every call site would add hot-path indirection"
+)]
 pub async fn read_client_frame<R>(stream: &mut R, first_byte: u8) -> Result<Option<ClientFrame>>
 where
     R: AsyncRead + Unpin,
@@ -971,6 +1251,10 @@ where
 
 /// Read the next server frame from the stream. `first_byte` is the
 /// already-read tag byte.
+#[expect(
+    clippy::large_futures,
+    reason = "attach frame reader decodes full ClientFrame/ServerFrame payloads; boxing every call site would add hot-path indirection"
+)]
 pub async fn read_server_frame<R>(stream: &mut R, first_byte: u8) -> Result<Option<ServerFrame>>
 where
     R: AsyncRead + Unpin,
@@ -988,6 +1272,7 @@ where
               The flat per-tag-decode shape preserves the per-tag wire format. \
               Body extraction follows the deferred-parallel-pass plan."
 )]
+/// `decode_client` protocol helper.
 pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
     Ok(match tag {
         TAG_HELLO => {
@@ -1080,12 +1365,17 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
             }
         }
         TAG_RESIZE => {
-            if payload.len() < 4 {
-                bail!("resize payload too short");
-            }
+            let rows: [u8; 2] = payload
+                .get(..2)
+                .and_then(|b| b.try_into().ok())
+                .ok_or_else(|| anyhow::anyhow!("resize payload too short"))?;
+            let cols: [u8; 2] = payload
+                .get(2..4)
+                .and_then(|b| b.try_into().ok())
+                .ok_or_else(|| anyhow::anyhow!("resize payload too short"))?;
             ClientFrame::Resize {
-                rows: u16::from_be_bytes([payload[0], payload[1]]),
-                cols: u16::from_be_bytes([payload[2], payload[3]]),
+                rows: u16::from_be_bytes(rows),
+                cols: u16::from_be_bytes(cols),
             }
         }
         TAG_INPUT => ClientFrame::Input(payload),
@@ -1094,11 +1384,10 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
         TAG_FOCUS_IN => ClientFrame::FocusIn,
         TAG_FOCUS_OUT => ClientFrame::FocusOut,
         TAG_CLIPBOARD_IMAGE => {
-            if payload.len() < 2 {
+            let Some((&format_tag, bytes)) = payload.split_first() else {
                 bail!("clipboard image payload too short");
-            }
-            let format = ClipboardImageFormat::from_tag(payload[0])?;
-            let bytes = payload[1..].to_vec();
+            };
+            let format = ClipboardImageFormat::from_tag(format_tag)?;
             if bytes.is_empty() {
                 bail!("clipboard image payload is empty");
             }
@@ -1108,7 +1397,10 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                     bytes.len()
                 );
             }
-            ClientFrame::ClipboardImage(ClipboardImage { format, bytes })
+            ClientFrame::ClipboardImage(ClipboardImage {
+                format,
+                bytes: bytes.to_vec(),
+            })
         }
         TAG_CLIPBOARD_IMAGE_START => {
             let mut cursor = PayloadCursor::new(&payload);
@@ -1181,7 +1473,7 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
             }
             let message = std::str::from_utf8(&payload)
                 .context("clipboard image error message is not valid UTF-8")?;
-            ClientFrame::ClipboardImageError(message.to_owned())
+            ClientFrame::ClipboardImageError(ClipboardImageError::from_message(message.to_owned()))
         }
         TAG_HOST_NOTICE => {
             if payload.is_empty() {
@@ -1201,14 +1493,16 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
     })
 }
 
+/// `decode_server` protocol helper.
 pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
     Ok(match tag {
         TAG_WELCOME => {
-            if payload.len() < 4 {
-                bail!("welcome payload too short");
-            }
+            let count: [u8; 4] = payload
+                .get(..4)
+                .and_then(|b| b.try_into().ok())
+                .ok_or_else(|| anyhow::anyhow!("welcome payload too short"))?;
             ServerFrame::Welcome {
-                session_count: u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]),
+                session_count: u32::from_be_bytes(count),
             }
         }
         TAG_OUTPUT => ServerFrame::Output(payload),
@@ -1359,22 +1653,27 @@ impl<'a> PayloadCursor<'a> {
     }
 
     fn read_u8(&mut self, field: &str) -> Result<u8> {
-        if self.pos >= self.payload.len() {
+        let Some(value) = self.payload.get(self.pos).copied() else {
             bail!("hello payload ended before {field}");
-        }
-        let value = self.payload[self.pos];
+        };
         self.pos += 1;
         Ok(value)
     }
 
     fn read_u16(&mut self, field: &str) -> Result<u16> {
         let bytes = self.read_bytes(2, field)?;
-        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+        let arr: [u8; 2] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("hello {field}: short slice"))?;
+        Ok(u16::from_be_bytes(arr))
     }
 
     fn read_u32(&mut self, field: &str) -> Result<u32> {
         let bytes = self.read_bytes(4, field)?;
-        Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        let arr: [u8; 4] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("hello {field}: short slice"))?;
+        Ok(u32::from_be_bytes(arr))
     }
 
     fn read_u64(&mut self, field: &str) -> Result<u64> {
@@ -1393,10 +1692,9 @@ impl<'a> PayloadCursor<'a> {
     }
 
     fn read_remaining(&mut self, field: &str) -> Result<&'a [u8]> {
-        if self.pos > self.payload.len() {
+        let Some(bytes) = self.payload.get(self.pos..) else {
             bail!("hello payload ended before {field}");
-        }
-        let bytes = &self.payload[self.pos..];
+        };
         self.pos = self.payload.len();
         Ok(bytes)
     }
@@ -1406,13 +1704,12 @@ impl<'a> PayloadCursor<'a> {
             .pos
             .checked_add(len)
             .ok_or_else(|| anyhow::anyhow!("hello {field} length overflow"))?;
-        if end > self.payload.len() {
+        let Some(bytes) = self.payload.get(self.pos..end) else {
             bail!(
                 "hello {field} length {len} exceeds remaining payload {}",
                 self.payload.len().saturating_sub(self.pos)
             );
-        }
-        let bytes = &self.payload[self.pos..end];
+        };
         self.pos = end;
         Ok(bytes)
     }

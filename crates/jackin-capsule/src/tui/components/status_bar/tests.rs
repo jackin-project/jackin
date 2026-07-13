@@ -3,7 +3,7 @@
 
 //! Tests for `status_bar`.
 use super::*;
-use crate::tui::layout::Tab;
+use crate::tui::layout::{PaneTree, Tab};
 
 #[test]
 fn tab_click_region_width_matches_layout() {
@@ -30,6 +30,57 @@ fn tab_display_label_has_no_name_centering_padding() {
     assert_eq!(tab_display_label("Kimi"), "Kimi X");
     assert_eq!(tab_display_label("OpenCode"), "OpenCode X");
     assert!(!tab_display_label("Kimi").starts_with(' '));
+}
+
+#[test]
+fn each_visible_agent_state_maps_to_a_distinct_tab_glyph() {
+    assert_eq!(
+        TabGlyph::from(VisibleAgentState::Blocked),
+        TabGlyph::Blocked
+    );
+    assert_eq!(TabGlyph::from(VisibleAgentState::Done), TabGlyph::Done);
+    assert_eq!(
+        TabGlyph::from(VisibleAgentState::Working),
+        TabGlyph::Working
+    );
+    assert_eq!(TabGlyph::from(VisibleAgentState::Idle), TabGlyph::Idle);
+    assert_eq!(
+        TabGlyph::from(VisibleAgentState::Unknown),
+        TabGlyph::Unknown
+    );
+}
+
+#[test]
+fn tab_label_shows_working_and_idle_instead_of_blank_none() {
+    let tab = Tab::new_single("Claude", 1, "test");
+
+    let (_, working) = tab_label(&tab, &[(1, VisibleAgentState::Working)]);
+    let (_, idle) = tab_label(&tab, &[(1, VisibleAgentState::Idle)]);
+    let (_, unknown) = tab_label(&tab, &[(1, VisibleAgentState::Unknown)]);
+
+    assert_eq!(working, TabGlyph::Working);
+    assert_eq!(idle, TabGlyph::Idle);
+    assert_eq!(unknown, TabGlyph::Unknown);
+}
+
+#[test]
+fn tab_label_rolls_up_attention_priority() {
+    let mut tab = Tab::new_single("Mix", 1, "test");
+    tab.tree = PaneTree::HSplit {
+        left: Box::new(PaneTree::Leaf(1)),
+        right: Box::new(PaneTree::Leaf(2)),
+        ratio: 0.5,
+    };
+
+    let (_, glyph) = tab_label(
+        &tab,
+        &[
+            (1, VisibleAgentState::Working),
+            (2, VisibleAgentState::Blocked),
+        ],
+    );
+
+    assert_eq!(glyph, TabGlyph::Blocked);
 }
 
 #[test]

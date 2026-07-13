@@ -89,7 +89,7 @@ impl FileBrowserState {
         match key.code {
             KeyCode::Char('m' | 'M') => {
                 self.dismiss_git_prompt();
-                self.commit_or_reject(path)
+                Self::commit_or_reject(path)
             }
             // `p` for "pick a subdirectory" — matches the button label
             // (renamed from `Enter` to `Pick` in batch 16).
@@ -115,7 +115,7 @@ impl FileBrowserState {
                 let focus = self.pending_git_focus;
                 self.dismiss_git_prompt();
                 match focus {
-                    GitPromptFocus::MountHere => self.commit_or_reject(path),
+                    GitPromptFocus::MountHere => Self::commit_or_reject(path),
                     GitPromptFocus::EnterIn => FileBrowserOutcome::NavigateTo(path),
                     GitPromptFocus::Cancel => FileBrowserOutcome::Continue,
                 }
@@ -268,8 +268,12 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
         return;
     };
 
-    let inner =
-        jackin_tui::components::render_dialog_shell(frame, area, Some("Git repository detected"));
+    let inner = jackin_tui::components::render_dialog_shell(
+        frame,
+        area,
+        Some("Git repository detected"),
+        jackin_tui::components::DialogBorder::Default,
+    );
 
     let content_rows = if has_url { 2 } else { 1 };
     let chunks = jackin_tui::components::dialog_inner_chunks(inner, Some(content_rows));

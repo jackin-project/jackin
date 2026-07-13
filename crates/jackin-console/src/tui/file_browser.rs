@@ -14,8 +14,8 @@ use crate::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState,
 use crate::tui::effect::FileBrowserEffectContext;
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{
-    AuthFormFocus, CreatePreludeState, FileBrowserTarget, GlobalMountModal, ManagerStage,
-    ManagerState, Modal, SettingsAuthModal,
+    AuthFormFocus, CreatePreludeState, FileBrowserTarget, ManagerStage, ManagerState, Modal,
+    SettingsModal,
 };
 
 pub type AuthSourceFolderValidator =
@@ -198,7 +198,7 @@ fn apply_file_browser_open_result(
                 Ok(file_browser) => {
                     settings
                         .mounts
-                        .open_sub_modal(GlobalMountModal::FileBrowser {
+                        .open_sub_modal(SettingsModal::MountFileBrowser {
                             state: file_browser,
                         });
                 }
@@ -214,7 +214,7 @@ fn apply_file_browser_open_result(
             };
             match result {
                 Ok(file_browser) => {
-                    let Some(SettingsAuthModal::AuthForm {
+                    let Some(SettingsModal::AuthForm {
                         target,
                         state,
                         focus,
@@ -224,7 +224,7 @@ fn apply_file_browser_open_result(
                         return false;
                     };
                     if !state.shows_source_folder() {
-                        settings.auth.set_modal(SettingsAuthModal::AuthForm {
+                        settings.auth.set_modal(SettingsModal::AuthForm {
                             target,
                             state,
                             focus,
@@ -233,13 +233,13 @@ fn apply_file_browser_open_result(
                         return false;
                     }
                     settings.auth.open_child_modal(
-                        SettingsAuthModal::AuthForm {
+                        SettingsModal::AuthForm {
                             target,
                             state,
                             focus: AuthFormFocus::SourceFolder,
                             literal_buffer,
                         },
-                        SettingsAuthModal::SourceFolderPicker {
+                        SettingsModal::AuthSourceFolderPicker {
                             state: *file_browser,
                         },
                     );
@@ -413,7 +413,7 @@ fn active_file_browser_commit_facts(
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return None;
             };
-            let Some(SettingsAuthModal::SourceFolderPicker { state: browser }) =
+            let Some(SettingsModal::AuthSourceFolderPicker { state: browser }) =
                 settings.auth.modal.as_mut()
             else {
                 return None;
@@ -482,7 +482,7 @@ fn apply_file_browser_commit(
             }
             settings
                 .mounts
-                .open_sub_modal(GlobalMountModal::MountDstChoice {
+                .open_sub_modal(SettingsModal::MountDstChoice {
                     state: crate::tui::components::mount_dst_choice::MountDstChoiceState::new(src),
                 });
             true
@@ -635,7 +635,7 @@ fn execute_settings_file_browser_outcome(
     };
     if !matches!(
         settings.mounts.modal,
-        Some(GlobalMountModal::FileBrowser { .. })
+        Some(SettingsModal::MountFileBrowser { .. })
     ) {
         return false;
     }
@@ -647,7 +647,7 @@ fn execute_settings_file_browser_outcome(
             }
             settings
                 .mounts
-                .open_sub_modal(GlobalMountModal::MountDstChoice {
+                .open_sub_modal(SettingsModal::MountDstChoice {
                     state: crate::tui::components::mount_dst_choice::MountDstChoiceState::new(src),
                 });
         }
@@ -709,7 +709,7 @@ fn active_file_browser_state_mut<'a>(
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return None;
             };
-            let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut()
+            let Some(SettingsModal::MountFileBrowser { state }) = settings.mounts.modal.as_mut()
             else {
                 return None;
             };
@@ -719,7 +719,7 @@ fn active_file_browser_state_mut<'a>(
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return None;
             };
-            let Some(SettingsAuthModal::SourceFolderPicker { state }) =
+            let Some(SettingsModal::AuthSourceFolderPicker { state }) =
                 settings.auth.modal.as_mut()
             else {
                 return None;
@@ -729,7 +729,10 @@ fn active_file_browser_state_mut<'a>(
     }
 }
 
-#[allow(clippy::option_if_let_else)]
+#[allow(
+    clippy::option_if_let_else,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn execute_file_browser_git_url_resolution(
     state: &mut ManagerState<'_>,
     path: &std::path::Path,
@@ -789,11 +792,11 @@ fn attach_modal_file_browser_git_url(modal: &mut Modal<'_>, path: std::path::Pat
 }
 
 fn attach_global_mount_file_browser_git_url(
-    modal: &mut GlobalMountModal<'_>,
+    modal: &mut SettingsModal<'_>,
     path: std::path::PathBuf,
 ) -> bool {
     match modal {
-        GlobalMountModal::FileBrowser { state } => {
+        SettingsModal::MountFileBrowser { state } => {
             crate::services::file_browser::request_git_url_resolution(state, path);
             true
         }
@@ -842,9 +845,9 @@ fn poll_modal_file_browser_git_url(modal: &mut Modal<'_>) -> bool {
     }
 }
 
-fn poll_global_mount_file_browser_git_url(modal: &mut GlobalMountModal<'_>) -> bool {
+fn poll_global_mount_file_browser_git_url(modal: &mut SettingsModal<'_>) -> bool {
     match modal {
-        GlobalMountModal::FileBrowser { state } => state.poll_git_url_resolution(),
+        SettingsModal::MountFileBrowser { state } => state.poll_git_url_resolution(),
         _ => false,
     }
 }

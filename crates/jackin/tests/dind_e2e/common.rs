@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 
 //! Shared e2e prereq checks: `docker` daemon + `buildx` + `script(1)` probe,
 //! capsule-binary ELF + executable assertions, and the e2e serial lock that
@@ -10,7 +21,7 @@ use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use fs2::FileExt as _;
+use fs4::FileExt;
 
 pub(super) fn require_e2e_prereqs() {
     require_capsule_binary_override();
@@ -140,8 +151,7 @@ pub(super) fn script_available() -> bool {
 pub(super) fn e2e_serial_lock() -> std::fs::File {
     let path = std::env::temp_dir().join("jackin-dind-e2e.lock");
     let lock = std::fs::File::create(path).expect("e2e lock file must be creatable");
-    lock.lock_exclusive()
-        .expect("e2e lock file must be lockable");
+    FileExt::lock(&lock).expect("e2e lock file must be lockable");
     lock
 }
 

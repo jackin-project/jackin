@@ -13,5 +13,6 @@
 /// `jackin-docker` or lower layers only. The implementation lives in
 /// `jackin-launch-tui`.
 pub trait BuildLogSink: Send + Sync + std::fmt::Debug {
+    /// Append one build-log line for live display.
     fn push_line(&self, line: &str);
 }

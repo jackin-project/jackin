@@ -150,7 +150,7 @@ fn hello_rejects_empty_provider_label_at_decode() {
     let mut payload = vec![0, 24, 0, 80, 3, 0, 6];
     payload.extend(b"claude");
     payload.extend_from_slice(&0u16.to_be_bytes()); // provider_label_len = 0
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -160,14 +160,14 @@ fn hello_rejects_oversized_agent_len() {
     // decode must bail rather than slice past the buffer.
     let mut payload = vec![0, 42, 0, 100, 2, 0, 99];
     payload.extend(b"only-7-bytes");
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
 fn hello_rejects_non_utf8_agent_bytes() {
     let mut payload = vec![0, 42, 0, 100, 2, 0, 3];
     payload.extend(&[0xFF, 0xFE, 0xFD]);
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -175,13 +175,13 @@ fn hello_rejects_truncated_env_value() {
     let mut payload = vec![0, 42, 0, 100, 0, 0, 0, 0, 1, 0, 3, 0, 0, 0, 99];
     payload.extend(b"KEY");
     payload.extend(b"short");
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
 fn hello_rejects_truncated_4_byte_payload() {
     let payload = vec![0, 24, 0, 80];
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn hello_shell_with_non_empty_agent_slug_rejected() {
     payload.extend(b"claud");
     payload.extend(&[0, 0]);
     payload.push(0);
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn hello_with_trailing_bytes_rejected() {
     .expect("encode_client for a valid Hello must succeed");
     bytes.push(0xFF);
     let payload = bytes[5..].to_vec();
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -224,7 +224,7 @@ fn welcome_decodes_session_count() {
 
 #[test]
 fn welcome_rejects_truncated_payload() {
-    assert!(decode_server(TAG_WELCOME, vec![0, 0]).is_err());
+    decode_server(TAG_WELCOME, vec![0, 0]).unwrap_err();
 }
 
 #[test]
@@ -303,9 +303,9 @@ fn file_export_server_frames_roundtrip() {
 
 #[test]
 fn file_export_decode_rejects_malformed_payloads() {
-    assert!(decode_server(TAG_FILE_EXPORT_START, Vec::new()).is_err());
-    assert!(decode_server(TAG_FILE_EXPORT_CHUNK, vec![0; 16]).is_err());
-    assert!(decode_server(TAG_FILE_EXPORT_END, vec![0; 8]).is_err());
+    decode_server(TAG_FILE_EXPORT_START, Vec::new()).unwrap_err();
+    decode_server(TAG_FILE_EXPORT_CHUNK, vec![0; 16]).unwrap_err();
+    decode_server(TAG_FILE_EXPORT_END, vec![0; 8]).unwrap_err();
 
     let mut bad_reveal_flag = Vec::new();
     bad_reveal_flag.extend_from_slice(&1u64.to_be_bytes());
@@ -315,7 +315,7 @@ fn file_export_decode_rejects_malformed_payloads() {
     bad_reveal_flag.push(2);
     bad_reveal_flag.extend_from_slice(b"s");
     bad_reveal_flag.extend_from_slice(b"n");
-    assert!(decode_server(TAG_FILE_EXPORT_START, bad_reveal_flag).is_err());
+    decode_server(TAG_FILE_EXPORT_START, bad_reveal_flag).unwrap_err();
 
     let mut bad_open_flag = Vec::new();
     bad_open_flag.extend_from_slice(&1u64.to_be_bytes());
@@ -326,7 +326,7 @@ fn file_export_decode_rejects_malformed_payloads() {
     bad_open_flag.push(2);
     bad_open_flag.extend_from_slice(b"s");
     bad_open_flag.extend_from_slice(b"n");
-    assert!(decode_server(TAG_FILE_EXPORT_START, bad_open_flag).is_err());
+    decode_server(TAG_FILE_EXPORT_START, bad_open_flag).unwrap_err();
 }
 
 #[test]
@@ -355,7 +355,9 @@ fn clipboard_image_transfer_client_frames_roundtrip() {
 
 #[test]
 fn clipboard_image_error_client_frame_roundtrips() {
-    let frame = ClientFrame::ClipboardImageError("host path is not an image".to_owned());
+    let frame = ClientFrame::ClipboardImageError(ClipboardImageError::from_message(
+        "host path is not an image".to_owned(),
+    ));
     let bytes = encode_client(frame.clone()).unwrap();
     assert_eq!(bytes[0], TAG_CLIPBOARD_IMAGE_ERROR);
 
@@ -375,26 +377,26 @@ fn host_notice_client_frame_roundtrips() {
 
 #[test]
 fn clipboard_image_transfer_decode_rejects_malformed_payloads() {
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, Vec::new()).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_START, Vec::new()).unwrap_err();
 
     let mut empty_size = Vec::new();
     empty_size.extend_from_slice(&1u64.to_be_bytes());
     empty_size.push(ClipboardImageFormat::Png.tag());
     empty_size.extend_from_slice(&0u64.to_be_bytes());
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, empty_size).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_START, empty_size).unwrap_err();
 
     let mut empty_chunk = Vec::new();
     empty_chunk.extend_from_slice(&1u64.to_be_bytes());
     empty_chunk.extend_from_slice(&0u64.to_be_bytes());
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_CHUNK, empty_chunk).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_CHUNK, empty_chunk).unwrap_err();
 
     let mut short_end = Vec::new();
     short_end.extend_from_slice(&1u64.to_be_bytes());
     short_end.extend_from_slice(&[0; 3]);
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_END, short_end).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_END, short_end).unwrap_err();
 
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_ERROR, Vec::new()).is_err());
-    assert!(decode_client(TAG_HOST_NOTICE, Vec::new()).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_ERROR, Vec::new()).unwrap_err();
+    decode_client(TAG_HOST_NOTICE, Vec::new()).unwrap_err();
 }
 
 #[test]
@@ -421,12 +423,12 @@ fn clipboard_image_rejects_empty_payload() {
     .expect_err("empty image payload must be rejected");
     assert!(format!("{err:#}").contains("empty"));
 
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE, vec![1]).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE, vec![1]).unwrap_err();
 }
 
 #[test]
 fn clipboard_image_rejects_unknown_format() {
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE, vec![99, 0x42]).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE, vec![99, 0x42]).unwrap_err();
 }
 
 #[test]
@@ -461,13 +463,13 @@ fn clipboard_image_rejects_over_cap_payload_at_decode() {
 
 #[test]
 fn host_open_url_rejects_disallowed_schemes() {
-    assert!(decode_server(TAG_HOST_OPEN_URL, b"file:///tmp/report.html".to_vec()).is_err());
-    assert!(decode_server(TAG_HOST_OPEN_URL, b"javascript:alert(1)".to_vec()).is_err());
+    decode_server(TAG_HOST_OPEN_URL, b"file:///tmp/report.html".to_vec()).unwrap_err();
+    decode_server(TAG_HOST_OPEN_URL, b"javascript:alert(1)".to_vec()).unwrap_err();
 }
 
 #[test]
 fn unknown_server_tag_rejected() {
-    assert!(decode_server(0xFE, Vec::new()).is_err());
+    decode_server(0xFE, Vec::new()).unwrap_err();
 }
 
 #[test]
@@ -484,10 +486,7 @@ fn read_client_frame_rejects_oversize() {
         a.write_all(&oversize_len.to_be_bytes()).await.unwrap();
         a.shutdown().await.unwrap();
         let result = read_client_frame(&mut b, TAG_INPUT).await;
-        assert!(
-            result.is_err(),
-            "expected oversize rejection, got {result:?}"
-        );
+        result.expect_err("expected oversize rejection, got");
     });
 }
 
@@ -980,5 +979,141 @@ fn hello_rejects_unknown_color_presence_byte() {
     assert!(
         err.to_string().contains("default bg presence"),
         "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn decode_client_rejects_truncated_payloads_without_panic() {
+    // For every known client tag, a deliberately-too-short payload must not panic.
+    for tag in 0u8..=40 {
+        // 0-byte and 1-byte payloads exercise the length-prefix / field readers.
+        drop(decode_client(tag, Vec::new()));
+        drop(decode_client(tag, vec![0x00]));
+        drop(decode_client(tag, vec![0xFF, 0xFF, 0xFF, 0xFF]));
+    }
+    // The point is no panic; reaching here is the assertion.
+}
+
+#[test]
+fn decode_server_rejects_truncated_payloads_without_panic() {
+    for tag in 0u8..=40 {
+        drop(decode_server(tag, Vec::new()));
+        drop(decode_server(tag, vec![0x00]));
+        drop(decode_server(tag, vec![0xFF, 0xFF, 0xFF, 0xFF]));
+    }
+    // Server tags live in the 0x80+ range; cover those too.
+    for tag in 0x80u8..=0x8f {
+        drop(decode_server(tag, Vec::new()));
+        drop(decode_server(tag, vec![0x00]));
+        drop(decode_server(tag, vec![0xFF, 0xFF, 0xFF, 0xFF]));
+    }
+}
+
+#[test]
+fn decode_rejects_unknown_tags() {
+    // 0xFE is not a defined client or server frame tag.
+    decode_client(0xFE, Vec::new()).unwrap_err();
+    decode_server(0xFE, Vec::new()).unwrap_err();
+}
+
+#[test]
+fn truncated_valid_frame_fails_closed() {
+    // Welcome requires a 4-byte body; lopping a byte off a valid encoding
+    // must fail closed (Err), never panic. TAG_OUTPUT would tolerate a
+    // shorter body by design, so Welcome is the load-bearing case.
+    let frame = encode_server(ServerFrame::Welcome { session_count: 7 });
+    // frame = [tag, len(4 bytes BE), body…]
+    let tag = frame[0];
+    assert!(frame.len() > 5, "encoded welcome must carry a body");
+    let body = &frame[5..frame.len() - 1];
+    decode_server(tag, body.to_vec()).expect_err("truncated welcome body must decode as Err");
+}
+
+#[test]
+fn resize_rejects_short_payload_without_panic() {
+    let err = decode_client(TAG_RESIZE, vec![0x00, 0x01]).expect_err("resize needs 4 bytes");
+    assert!(
+        err.to_string().contains("resize payload too short"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn welcome_rejects_short_payload_without_panic() {
+    let err =
+        decode_server(TAG_WELCOME, vec![0x00, 0x01, 0x02]).expect_err("welcome needs 4 bytes");
+    assert!(
+        err.to_string().contains("welcome payload too short"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn clipboard_image_rejects_empty_payload_without_panic() {
+    let err = decode_client(TAG_CLIPBOARD_IMAGE, Vec::new())
+        .expect_err("clipboard image needs format byte");
+    assert!(
+        err.to_string()
+            .contains("clipboard image payload too short"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn clipboard_image_error_variants_roundtrip() {
+    let variants = [
+        ClipboardImageError::Empty,
+        ClipboardImageError::TooLarge,
+        ClipboardImageError::UnsupportedFormat,
+        ClipboardImageError::DigestMismatch,
+        ClipboardImageError::ChunkSequence,
+        ClipboardImageError::MissingTransfer,
+        ClipboardImageError::DuplicateTransfer,
+        ClipboardImageError::BackendUnavailable,
+        ClipboardImageError::Io,
+        ClipboardImageError::Other("host clipboard image probe failed: boom".to_owned()),
+    ];
+    for original in variants {
+        let bytes = encode_client(ClientFrame::ClipboardImageError(original.clone())).unwrap();
+        let tag = bytes[0];
+        let payload = bytes[5..].to_vec();
+        let decoded = decode_client(tag, payload).unwrap();
+        match decoded {
+            ClientFrame::ClipboardImageError(got) => {
+                assert_eq!(got.reason_code(), original.reason_code());
+                // Other preserves the free-form message; static kinds use canonical text.
+                if matches!(original, ClipboardImageError::Other(_)) {
+                    assert_eq!(got, original);
+                } else {
+                    assert_eq!(got.reason_code(), original.reason_code());
+                    assert!(!got.message().is_empty());
+                }
+            }
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn clipboard_image_error_from_message_classifies_known_shapes() {
+    assert_eq!(
+        ClipboardImageError::from_message("clipboard image transfer is empty".into()).reason_code(),
+        "empty"
+    );
+    assert_eq!(
+        ClipboardImageError::from_message("transfer 9 exceeds cap 8".into()).reason_code(),
+        "oversize"
+    );
+    assert_eq!(
+        ClipboardImageError::from_message("host path is not an image".into()).reason_code(),
+        "signature-mismatch"
+    );
+    assert_eq!(
+        ClipboardImageError::from_message("SHA-256 mismatch".into()).reason_code(),
+        "digest-mismatch"
+    );
+    assert_eq!(
+        ClipboardImageError::from_message("offset 4 did not match expected 8".into()).reason_code(),
+        "offset-mismatch"
     );
 }

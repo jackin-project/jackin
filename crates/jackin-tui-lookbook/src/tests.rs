@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_tui::components::{KeyChord, LogicalKey};
+use jackin_tui::keymap::glyph;
 
 use crate::{PREVIEW_KEYMAP, PreviewAction, SIDEBAR_KEYMAP, SidebarAction};
 
@@ -197,7 +198,10 @@ fn preview_hints_advertise_back_and_interact() {
         text.contains("J/K"),
         "must advertise J/K move preview: {text}"
     );
-    assert!(text.contains("PgUp/PgDn"), "must advertise page: {text}");
+    assert!(
+        text.contains(glyph::PGUP_PGDN),
+        "must advertise page: {text}"
+    );
     // BackTab is HiddenAlias — must NOT appear in hint bar separately
     assert!(
         !text.contains("BackTab"),

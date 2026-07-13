@@ -29,7 +29,6 @@ use super::{
     tab_labels,
 };
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -48,7 +47,6 @@ pub(crate) fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas 
     }
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn render_editor_screen<
     Modal,
     SaveFlow,
@@ -126,7 +124,6 @@ pub(crate) fn render_editor_screen<
     render_footer(frame, areas.footer, &items);
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn editor_contextual_footer_items<
     Modal,
     SaveFlow,
@@ -158,7 +155,6 @@ pub(crate) fn editor_contextual_footer_items<
     )
 }
 
-#[allow(clippy::type_complexity)]
 fn editor_context_footer_mode<
     Modal,
     SaveFlow,
@@ -262,7 +258,6 @@ fn editor_context_footer_mode<
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn workspace_mount_scroll_axes<
     Modal,
     SaveFlow,
@@ -297,7 +292,6 @@ fn workspace_mount_scroll_axes<
     )
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn render_general_tab<
     Modal,
     SaveFlow,
@@ -336,7 +330,6 @@ pub(crate) fn render_general_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn render_mounts_tab<
     Modal,
     SaveFlow,
@@ -374,7 +367,6 @@ pub(crate) fn render_mounts_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn render_roles_tab<
     Modal,
     SaveFlow,
@@ -414,7 +406,6 @@ pub(crate) fn render_roles_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn render_secrets_tab<
     Modal,
     SaveFlow,
@@ -454,7 +445,6 @@ pub(crate) fn render_secrets_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn render_auth_tab<
     Modal,
     SaveFlow,
@@ -497,7 +487,6 @@ pub(crate) fn render_auth_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 fn editor_tab_content_focused<
     Modal,
     SaveFlow,
@@ -524,7 +513,6 @@ fn editor_tab_content_focused<
     !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none()
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn editor_general_lines_for_state<
     Modal,
     SaveFlow,
@@ -551,7 +539,6 @@ pub(crate) fn editor_general_lines_for_state<
     super::general_tab::general_state_lines(state, editor_tab_content_focused(state))
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn editor_mount_lines_for_state<
     Modal,
     SaveFlow,
@@ -581,7 +568,6 @@ pub(crate) fn editor_mount_lines_for_state<
     super::mounts_tab::mount_state_lines(state, show_cursor)
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn editor_role_lines_for_state<
     Modal,
     SaveFlow,
@@ -613,7 +599,6 @@ pub(crate) fn editor_role_lines_for_state<
     )
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn editor_secret_lines_for_state<
     Modal,
     SaveFlow,
@@ -647,7 +632,6 @@ pub(crate) fn editor_secret_lines_for_state<
     )
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn editor_auth_lines_for_state<
     Modal,
     SaveFlow,
@@ -675,7 +659,6 @@ pub(crate) fn editor_auth_lines_for_state<
     super::auth_tab::auth_state_lines(state, config, editor_tab_content_focused(state))
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn prepare_editor_for_render<
     Modal,
     SaveFlow,
@@ -705,7 +688,6 @@ pub(crate) fn prepare_editor_for_render<
     prepare_editor_tab_for_area(body, state, config);
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn prepare_editor_tab_for_area<
     Modal,
     SaveFlow,
@@ -753,7 +735,6 @@ pub(crate) fn prepare_editor_tab_for_area<
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn editor_tab_geometry<
     Modal,
     SaveFlow,

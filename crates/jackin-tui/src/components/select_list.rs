@@ -252,143 +252,97 @@ impl SelectListState {
     }
 }
 
-#[derive(Debug)]
-pub struct SelectList<'a> {
-    state: &'a SelectListState,
-    title: &'a str,
-    context: &'a [Line<'a>],
-    empty_label: &'a str,
-}
+fn render_select_list_in(
+    area: Rect,
+    buf: &mut Buffer,
+    state: &SelectListState,
+    title: &str,
+    context: &[Line<'_>],
+) {
+    // SelectList is always a modal overlay — always the active container
+    // when visible. Use PHOSPHOR_GREEN border per the focus-visible rule.
+    // Build the title string first so the borrow lives long enough.
+    let title_str = format!(" {title} ");
+    let block = Panel::new()
+        .title(&title_str)
+        .focus(PanelFocus::Focused)
+        .block();
+    let inner = block.inner(area);
+    Clear.render(area, buf);
+    block.render(area, buf);
 
-impl<'a> SelectList<'a> {
-    #[must_use]
-    pub const fn new(state: &'a SelectListState, title: &'a str) -> Self {
-        Self {
-            state,
-            title,
-            context: &[],
-            empty_label: "no matches",
-        }
+    let mut constraints = vec![Constraint::Length(1), Constraint::Length(1)];
+    if !context.is_empty() {
+        constraints.push(Constraint::Length(
+            u16::try_from(context.len()).unwrap_or(u16::MAX),
+        ));
+        constraints.push(Constraint::Length(1));
+    }
+    constraints.push(Constraint::Min(1));
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(inner);
+
+    FilterInput::new(&state.filter).render(rows[0], buf);
+
+    let Some(list_area) = rows.last().copied() else {
+        return;
+    };
+    if !context.is_empty() {
+        Paragraph::new(context.to_vec()).render(rows[2], buf);
     }
 
-    #[must_use]
-    pub const fn context(mut self, context: &'a [Line<'a>]) -> Self {
-        self.context = context;
-        self
-    }
-
-    /// Override the placeholder shown when the list has no items (empty or filtered-to-nothing).
-    #[must_use]
-    pub const fn empty_label(mut self, label: &'a str) -> Self {
-        self.empty_label = label;
-        self
-    }
-}
-
-impl Widget for SelectList<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        // SelectList is always a modal overlay — always the active container
-        // when visible. Use PHOSPHOR_GREEN border per the focus-visible rule.
-        // Build the title string first so the borrow lives long enough.
-        let title_str = format!(" {} ", self.title);
-        let block = Panel::new()
-            .title(&title_str)
-            .focus(PanelFocus::Focused)
-            .block();
-        let inner = block.inner(area);
-        Clear.render(area, buf);
-        block.render(area, buf);
-
-        let mut constraints = vec![Constraint::Length(1), Constraint::Length(1)];
-        if !self.context.is_empty() {
-            constraints.push(Constraint::Length(
-                u16::try_from(self.context.len()).unwrap_or(u16::MAX),
-            ));
-            constraints.push(Constraint::Length(1));
-        }
-        constraints.push(Constraint::Min(1));
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(constraints)
-            .split(inner);
-
-        FilterInput::new(&self.state.filter).render(rows[0], buf);
-
-        let Some(list_area) = rows.last().copied() else {
-            return;
-        };
-        if !self.context.is_empty() {
-            Paragraph::new(self.context.to_vec()).render(rows[2], buf);
-        }
-
-        if self.state.filtered.is_empty() {
-            // Distinguish "genuinely empty" (no items) from "filtered to nothing".
-            let placeholder = if self.state.items.is_empty() {
-                self.empty_label
-            } else {
-                "no matches"
-            };
-            // Dim centered placeholder so operators can distinguish "empty" from "broken".
-            Paragraph::new(Line::from(Span::styled(
-                placeholder.to_owned(),
-                crate::theme::DIM,
-            )))
+    if state.filtered.is_empty() {
+        // Dim centered placeholder so operators can distinguish "empty" from "broken".
+        Paragraph::new(Line::from(Span::styled("no matches", crate::theme::DIM)))
             .alignment(Alignment::Center)
             .render(list_area, buf);
-            return;
+        return;
+    }
+    let viewport_cols = usize::from(list_area.width);
+    let content_width = usize::from(state.max_label_width());
+    let scroll_x = crate::components::scrollable_panel::effective_offset(
+        content_width,
+        viewport_cols,
+        state.scroll_x,
+    );
+    let has_horizontal_scroll = is_scrollable(content_width, viewport_cols);
+    let list_body_area = if has_horizontal_scroll {
+        Rect {
+            height: list_area.height.saturating_sub(1),
+            ..list_area
         }
-        let viewport_cols = usize::from(list_area.width);
-        let content_width = usize::from(self.state.max_label_width());
-        let scroll_x = crate::components::scrollable_panel::effective_offset(
-            content_width,
-            viewport_cols,
-            self.state.scroll_x,
-        );
-        let has_horizontal_scroll = is_scrollable(content_width, viewport_cols);
-        let list_body_area = if has_horizontal_scroll {
-            Rect {
-                height: list_area.height.saturating_sub(1),
-                ..list_area
-            }
-        } else {
-            list_area
-        };
-        if list_body_area.height == 0 {
-            return;
-        }
-        let rows: Vec<PickerRow<'_>> = self
-            .state
-            .filtered
-            .iter()
-            .map(|&item| {
-                let label = &self.state.items[item];
-                let skip = usize::from(scroll_x);
-                // With no horizontal scroll, keep the ellipsis affordance for
-                // over-wide labels. Once scrolled, render the exact window.
-                let label_str = if skip == 0 && crate::display_cols(label) > viewport_cols {
-                    let mut s =
-                        crate::display_cols_slice(label, skip, viewport_cols.saturating_sub(1));
-                    s.push('…');
-                    s
-                } else {
-                    crate::display_cols_slice(label, skip, viewport_cols)
-                };
-                PickerRow::Item(ListItem::new(Line::from(Span::styled(
-                    label_str,
-                    Style::default().fg(PHOSPHOR_GREEN),
-                ))))
-            })
-            .collect();
-        render_picker_list(list_body_area, buf, rows, self.state.selected);
-        if has_horizontal_scroll {
-            render_picker_horizontal_scrollbar(
-                list_area,
-                buf,
-                content_width,
-                viewport_cols,
-                scroll_x,
-            );
-        }
+    } else {
+        list_area
+    };
+    if list_body_area.height == 0 {
+        return;
+    }
+    let rows: Vec<PickerRow<'_>> = state
+        .filtered
+        .iter()
+        .map(|&item| {
+            let label = &state.items[item];
+            let skip = usize::from(scroll_x);
+            // With no horizontal scroll, keep the ellipsis affordance for
+            // over-wide labels. Once scrolled, render the exact window.
+            let label_str = if skip == 0 && crate::display_cols(label) > viewport_cols {
+                let mut s = crate::display_cols_slice(label, skip, viewport_cols.saturating_sub(1));
+                s.push('…');
+                s
+            } else {
+                crate::display_cols_slice(label, skip, viewport_cols)
+            };
+            PickerRow::Item(ListItem::new(Line::from(Span::styled(
+                label_str,
+                Style::default().fg(PHOSPHOR_GREEN),
+            ))))
+        })
+        .collect();
+    render_picker_list(list_body_area, buf, rows, state.selected);
+    if has_horizontal_scroll {
+        render_picker_horizontal_scrollbar(list_area, buf, content_width, viewport_cols, scroll_x);
     }
 }
 
@@ -399,7 +353,7 @@ pub fn render_select_list(
     title: &str,
     context: &[Line<'_>],
 ) {
-    frame.render_widget(SelectList::new(state, title).context(context), area);
+    render_select_list_in(area, frame.buffer_mut(), state, title, context);
 }
 
 /// A row in a modal picker list.
@@ -513,7 +467,7 @@ pub fn render_picker_list(
         .highlight_spacing(HighlightSpacing::Always)
         .offset(offset)
         .selected(selected)
-        .render(buf, area);
+        .render(area, buf);
 
     // Repaint section dividers edge-to-edge over the gutter the List reserved.
     let offset = usize::from(offset);

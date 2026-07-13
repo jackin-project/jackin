@@ -164,7 +164,7 @@ fn roles_prewarm_does_not_require_image_targets() {
         ..PrewarmFlags::default()
     });
 
-    assert!(PrewarmImageTarget::resolve(&args, &config).is_err());
+    PrewarmImageTarget::resolve(&args, &config).unwrap_err();
     assert_eq!(binary_prewarm_agents(&args, &[]), Agent::ALL.to_vec());
     assert!(!should_prewarm_sidecar_image(&args));
 }

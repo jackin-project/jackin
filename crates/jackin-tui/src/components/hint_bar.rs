@@ -5,6 +5,7 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
@@ -58,10 +59,24 @@ pub fn render_wrapped_hint_bar(frame: &mut ratatui::Frame<'_>, area: Rect, spans
 
 #[must_use]
 pub fn line(spans: &[HintSpan<'_>]) -> Line<'static> {
-    let key = crate::theme::BOLD_WHITE;
-    let text = crate::theme::GREEN;
-    let dim = crate::theme::DIM;
-    let sep = crate::theme::BORDER;
+    Line::from(styled_hint_spans(spans, |color| color))
+}
+
+/// The canonical span-to-style mapping for hint rendering.
+///
+/// `remap` lets compositor surfaces translate shared palette colors to host
+/// colors while keeping the same text/style vocabulary.
+#[must_use]
+pub fn styled_hint_spans(
+    spans: &[HintSpan<'_>],
+    remap: impl Fn(Color) -> Color,
+) -> Vec<Span<'static>> {
+    let key = Style::default()
+        .fg(remap(crate::theme::WHITE))
+        .add_modifier(Modifier::BOLD);
+    let text = Style::default().fg(remap(crate::theme::PHOSPHOR_GREEN));
+    let dim = Style::default().fg(remap(crate::theme::PHOSPHOR_DIM));
+    let sep = Style::default().fg(remap(crate::theme::BORDER_GRAY));
     let mut out: Vec<Span<'static>> = Vec::with_capacity(spans.len());
     for span in spans {
         match span {
@@ -73,7 +88,7 @@ pub fn line(spans: &[HintSpan<'_>]) -> Line<'static> {
             HintSpan::GroupSep => out.push(Span::raw("   ")),
         }
     }
-    Line::from(out)
+    out
 }
 
 #[must_use]
@@ -81,7 +96,8 @@ pub fn wrapped_height(spans: &[HintSpan<'_>], width: u16) -> u16 {
     u16::try_from(wrapped_lines(spans, width).len().clamp(1, 64)).unwrap_or(64)
 }
 
-fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
+#[must_use]
+pub fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum SepKind {
         Group,
@@ -92,11 +108,6 @@ fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
         width: usize,
         sep: SepKind,
     }
-
-    let key = crate::theme::BOLD_WHITE;
-    let text = crate::theme::GREEN;
-    let dim = crate::theme::DIM;
-    let sep_style = crate::theme::BORDER;
 
     let mut chunks: Vec<Chunk> = Vec::new();
     let mut cur: Vec<Span<'static>> = Vec::new();
@@ -114,21 +125,21 @@ fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
     };
     for span in spans {
         match span {
-            HintSpan::Key(k) => {
+            HintSpan::Key(_) => {
                 cur_w += span.display_cols();
-                cur.push(Span::styled((*k).to_owned(), key));
+                cur.extend(styled_hint_spans(std::slice::from_ref(span), |color| color));
             }
-            HintSpan::DynKey(k) => {
+            HintSpan::DynKey(_) => {
                 cur_w += span.display_cols();
-                cur.push(Span::styled(k.clone(), key));
+                cur.extend(styled_hint_spans(std::slice::from_ref(span), |color| color));
             }
-            HintSpan::Text(t) => {
+            HintSpan::Text(_) => {
                 cur_w += span.display_cols();
-                cur.push(Span::styled(format!(" {t}"), text));
+                cur.extend(styled_hint_spans(std::slice::from_ref(span), |color| color));
             }
-            HintSpan::Dyn(t) => {
+            HintSpan::Dyn(_) => {
                 cur_w += span.display_cols();
-                cur.push(Span::styled(format!(" {t}"), dim));
+                cur.extend(styled_hint_spans(std::slice::from_ref(span), |color| color));
             }
             HintSpan::Sep => {
                 flush(&mut chunks, &mut cur, &mut cur_w, next_sep);
@@ -158,7 +169,7 @@ fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
         }
         if !row.is_empty() {
             match chunk.sep {
-                SepKind::Dot => row.push(Span::styled(" · ", sep_style)),
+                SepKind::Dot => row.extend(styled_hint_spans(&[HintSpan::Sep], |color| color)),
                 SepKind::Group => row.push(Span::raw("   ")),
             }
             row_w += 3;

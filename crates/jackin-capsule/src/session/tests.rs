@@ -2,9 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for `session`.
-use super::*;
+use super::{
+    AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,
+    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe,
+    validate_agent_slug,
+};
 
-use portable_pty::{ChildKiller, MasterPty, PtySize};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+use crate::agent_status::evidence::{AuthorityEvidence, AuthorityGrade, RawAgentState};
+use crate::agent_status::process::{
+    ForegroundGroup, ProcessCpuSample, ProcessInfo, ProcessSampler,
+};
+use crate::agent_status::rules::{RulePack, RulePackRegistry};
+use anyhow::Result;
+use jackin_core::agent::Agent;
+use jackin_protocol::agent_status::{AgentStatusConfidence, AgentStatusSource};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize};
+use tokio::sync::mpsc;
 
 // ── PTY test doubles ───────────────────────────────────────────────────────
 // Sessions need a master PTY and a child killer; these no-op doubles let a
@@ -111,6 +127,249 @@ fn test_session_with_policy(policy: OscPolicy) -> Session {
     session
 }
 
+fn test_process_info(pid: u32, agent: Agent) -> ProcessInfo {
+    ProcessInfo {
+        pid,
+        pgid: pid,
+        tpgid: i32::try_from(pid).unwrap(),
+        cmdline: vec![agent.slug().to_owned()],
+        exe_path: Some(std::path::PathBuf::from(format!(
+            "/usr/local/bin/{}",
+            agent.slug()
+        ))),
+        comm: agent.slug().to_owned(),
+    }
+}
+
+#[derive(Debug)]
+struct StaticProcessSampler {
+    physics_available: bool,
+    root: Option<ProcessInfo>,
+    foreground: ForegroundGroup,
+    descendants: u32,
+    cpu_delta: u64,
+}
+
+impl StaticProcessSampler {
+    fn foreground_agent(pid: u32, agent: Agent) -> Self {
+        Self {
+            physics_available: true,
+            root: Some(test_process_info(pid, agent)),
+            foreground: ForegroundGroup::Agent { agent, pgid: pid },
+            descendants: 0,
+            cpu_delta: 0,
+        }
+    }
+}
+
+impl ProcessSampler for StaticProcessSampler {
+    fn physics_available(&self) -> bool {
+        self.physics_available
+    }
+
+    fn read_process_info(&self, _pid: u32) -> Option<ProcessInfo> {
+        self.root.clone()
+    }
+
+    fn foreground_group(&self, _root_info: &ProcessInfo) -> ForegroundGroup {
+        self.foreground
+    }
+
+    fn descendant_process_count(&self, _root_pid: u32) -> u32 {
+        self.descendants
+    }
+
+    fn sample_cpu_jiffies_delta(
+        &mut self,
+        _pid: u32,
+        _previous: &mut Option<ProcessCpuSample>,
+        _now: std::time::Instant,
+    ) -> u64 {
+        self.cpu_delta
+    }
+}
+
+fn status_test_registry() -> RulePackRegistry {
+    let pack = toml::from_str::<RulePack>(
+        "schema_version = 1\n\
+         agent = \"codex\"\n\
+         validated_versions = \">=1.0.0, <2.0.0\"\n\
+         [[rule]]\n\
+         id = \"blocked-test\"\n\
+         state = \"blocked\"\n\
+         priority = 100\n\
+         strength = \"strong\"\n\
+         region = \"bottom:24\"\n\
+         requires_any = [\"approve?\"]\n\
+         [[rule]]\n\
+         id = \"idle-test\"\n\
+         state = \"idle\"\n\
+         priority = 90\n\
+         strength = \"strong\"\n\
+         region = \"bottom:24\"\n\
+         requires_any = [\"ready\"]\n",
+    )
+    .unwrap()
+    .finalize()
+    .unwrap();
+    RulePackRegistry::from_packs([pack])
+}
+
+#[test]
+fn advance_status_publishes_screen_blocked_through_full_tick() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    session.feed_pty(b"approve?");
+    let registry = status_test_registry();
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+    let rows = session.visible_screen_rows();
+    assert!(rows.iter().any(|row| row.contains("approve?")));
+    assert!(registry.evaluate(session.agent.as_deref(), &rows).is_some());
+
+    let tick = session.advance_status_with_process_sampler(Some(&registry), &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Blocked);
+    assert_eq!(
+        tick.transition
+            .as_ref()
+            .map(|transition| transition.effective),
+        Some(AgentState::Blocked)
+    );
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Blocked);
+    assert_eq!(report.source, AgentStatusSource::VisibleScreen);
+    assert!(report.visible_blocker);
+}
+
+#[test]
+fn process_sampler_double_drives_process_evidence_on_any_host() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+    sampler.descendants = 2;
+    sampler.cpu_delta = 7;
+
+    let evidence = session.sample_process_evidence_with(&mut sampler, std::time::Instant::now());
+
+    assert!(evidence.physics_sampled);
+    assert!(evidence.child_alive);
+    assert!(evidence.root_is_agent);
+    assert!(evidence.foreground_is_agent);
+    assert_eq!(evidence.foreground_pgid, Some(42));
+    assert_eq!(evidence.child_process_count, 2);
+    assert_eq!(evidence.cpu_jiffies_delta, 7);
+}
+
+#[test]
+fn advance_status_publishes_screen_idle_as_done_when_unseen() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    session.state = AgentState::Working;
+    session.status.effective = AgentState::Working;
+    session.status.raw = RawAgentState::Working;
+    session.status.confidence = AgentStatusConfidence::Strong;
+    session.status.seen = false;
+    session.feed_pty(b"ready");
+    let registry = status_test_registry();
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+    let rows = session.visible_screen_rows();
+    assert!(rows.iter().any(|row| row.contains("ready")));
+    assert!(registry.evaluate(session.agent.as_deref(), &rows).is_some());
+
+    let tick = session.advance_status_with_process_sampler(Some(&registry), &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Done);
+    assert_eq!(
+        tick.transition
+            .as_ref()
+            .map(|transition| transition.effective),
+        Some(AgentState::Done)
+    );
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Idle);
+    assert_eq!(report.source, AgentStatusSource::VisibleScreen);
+    assert!(report.visible_idle);
+}
+
+#[test]
+fn advance_status_publishes_fresh_authority_with_injected_foreground_identity() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    session.authority = Some(AuthorityEvidence {
+        source_id: "opencode-plugin".to_owned(),
+        grade: AuthorityGrade::Complete,
+        mapped_state: RawAgentState::Working,
+        pending_permission: false,
+        last_event: now,
+        notes: Vec::new(),
+    });
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+
+    let tick = session.advance_status_with_process_sampler(None, &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Working);
+    assert_eq!(
+        tick.transition
+            .as_ref()
+            .map(|transition| transition.effective),
+        Some(AgentState::Working)
+    );
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Working);
+    assert_eq!(
+        report.source,
+        AgentStatusSource::Reported {
+            source_id: "opencode-plugin".to_owned()
+        }
+    );
+}
+
+#[test]
+fn advance_status_does_not_publish_working_from_helper_physics_alone() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+    sampler.descendants = 1;
+    sampler.cpu_delta = 1;
+
+    let tick = session.advance_status_with_process_sampler(None, &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Unknown);
+    assert!(tick.transition.is_none());
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Unknown);
+    assert_eq!(report.source, AgentStatusSource::None);
+}
+
+#[test]
+fn advance_status_publishes_unknown_when_no_evidence_matches() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    session.state = AgentState::Working;
+    session.status.effective = AgentState::Working;
+    session.status.raw = RawAgentState::Working;
+    session.status.confidence = AgentStatusConfidence::Strong;
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+
+    let tick = session.advance_status_with_process_sampler(None, &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Unknown);
+    assert_eq!(
+        tick.transition
+            .as_ref()
+            .map(|transition| transition.effective),
+        Some(AgentState::Unknown)
+    );
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Unknown);
+    assert_eq!(report.source, AgentStatusSource::None);
+}
+
 #[test]
 fn resize_floors_pty_winsize_to_at_least_one() {
     // A collapsed pane can hand `Session::resize` a 0-row (or 0-col) geometry.
@@ -205,8 +464,8 @@ fn drained_with_policy(bytes: &[u8], policy: OscPolicy) -> Vec<Vec<u8>> {
 // session applies `OscPolicy` and re-encodes the forwardable bytes.
 
 #[test]
-fn osc_52_clipboard_write_is_re_emitted() {
-    let drained = drained(b"\x1b]52;c;SGVsbG8=\x07");
+fn osc_52_clipboard_write_is_re_emitted_when_policy_allows() {
+    let drained = drained_with_policy(b"\x1b]52;c;SGVsbG8=\x07", OscPolicy::for_test_allow_all());
     assert_eq!(drained.len(), 1);
     let s = &drained[0];
     assert!(s.starts_with(b"\x1b]52;"));
@@ -430,7 +689,7 @@ fn osc_8_unsafe_scheme_dropped_even_when_policy_allows() {
 
 #[test]
 fn drain_clears_pending_between_calls() {
-    let mut session = test_session_with_policy(OscPolicy::default());
+    let mut session = test_session_with_policy(OscPolicy::for_test_allow_all());
     session.feed_pty(b"\x1b]52;c;AAAA\x07");
     let first = session.drain_passthrough();
     assert_eq!(first.len(), 1);
@@ -595,7 +854,7 @@ fn opencode_event_sets_complete_authority() {
     use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "permission.asked", now);
+    session.apply_runtime_event("hook-opencode-1", "opencode", "permission.asked", None, now);
     let a = session.authority.as_ref().expect("authority set");
     assert_eq!(a.source_id, "hook-opencode-1");
     assert_eq!(a.mapped_state, RawAgentState::Blocked);
@@ -608,17 +867,66 @@ fn claude_event_never_sets_authority() {
     // Decision 0a: Claude/Codex are identity-only; their events never produce
     // a semantic authority — state comes from the screen pack + watchdog.
     let mut session = test_session_with_policy(OscPolicy::default());
-    session.apply_runtime_event("hook-claude-1", "claude", "Stop", std::time::Instant::now());
+    session.apply_runtime_event(
+        "hook-claude-1",
+        "claude",
+        "Stop",
+        None,
+        std::time::Instant::now(),
+    );
     assert!(session.authority.is_none());
+}
+
+#[test]
+fn claude_notification_permission_sets_partial_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "hook-claude-1",
+        "claude",
+        "Notification:permission_prompt",
+        None,
+        std::time::Instant::now(),
+    );
+    let a = session.authority.as_ref().expect("authority set");
+    assert_eq!(a.source_id, "hook-claude-1");
+    assert_eq!(a.mapped_state, RawAgentState::Blocked);
+    assert!(a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Partial);
+}
+
+#[cfg(feature = "codex-app-server-authority")]
+#[test]
+fn codex_app_server_event_sets_complete_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "app-server-codex-1",
+        "codex-app-server",
+        "turn/started",
+        None,
+        std::time::Instant::now(),
+    );
+    let a = session.authority.as_ref().expect("authority set");
+    assert_eq!(a.source_id, "app-server-codex-1");
+    assert_eq!(a.mapped_state, RawAgentState::Working);
+    assert!(!a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Complete);
 }
 
 #[test]
 fn clear_event_drops_authority_for_source() {
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
+    session.apply_runtime_event(
+        "hook-opencode-1",
+        "opencode",
+        "tool.execute.before",
+        None,
+        now,
+    );
     assert!(session.authority.is_some());
-    session.apply_runtime_event("hook-opencode-1", "opencode", "session.error", now);
+    session.apply_runtime_event("hook-opencode-1", "opencode", "session.error", None, now);
     assert!(session.authority.is_none());
 }
 
@@ -628,8 +936,14 @@ fn clear_from_other_source_leaves_authority() {
     // source guard keeps one reporter from clearing another's state.
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
-    session.apply_runtime_event("hook-opencode-2", "opencode", "session.error", now);
+    session.apply_runtime_event(
+        "hook-opencode-1",
+        "opencode",
+        "tool.execute.before",
+        None,
+        now,
+    );
+    session.apply_runtime_event("hook-opencode-2", "opencode", "session.error", None, now);
     let a = session.authority.as_ref().expect("authority survives");
     assert_eq!(a.source_id, "hook-opencode-1");
 }
@@ -639,7 +953,13 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
     use std::time::Duration;
     let mut session = test_session_with_policy(OscPolicy::default());
     let t0 = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", t0);
+    session.apply_runtime_event(
+        "hook-opencode-1",
+        "opencode",
+        "tool.execute.before",
+        None,
+        t0,
+    );
     let original = session.authority.as_ref().unwrap().last_event;
     // A heartbeat (claude lifecycle event) from a different source must not
     // refresh source-1's freshness, or a stale authority could outlive its TTL.
@@ -647,6 +967,7 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
         "hook-claude-9",
         "claude",
         "PreToolUse",
+        None,
         t0 + Duration::from_secs(5),
     );
     assert_eq!(session.authority.as_ref().unwrap().last_event, original);
@@ -656,7 +977,13 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
 fn amp_event_sets_partial_authority() {
     use crate::agent_status::evidence::AuthorityGrade;
     let mut session = test_session_with_policy(OscPolicy::default());
-    session.apply_runtime_event("hook-amp-1", "amp", "tool-start", std::time::Instant::now());
+    session.apply_runtime_event(
+        "hook-amp-1",
+        "amp",
+        "tool-start",
+        None,
+        std::time::Instant::now(),
+    );
     let a = session.authority.as_ref().expect("amp authority set");
     // amp has partial lifecycle coverage, so it cannot author at full confidence.
     assert_eq!(a.grade, AuthorityGrade::Partial);
@@ -697,6 +1024,7 @@ fn osc133_marks_set_shell_state() {
         session.osc_evidence().shell_state,
         Some(RawAgentState::Working)
     );
+    assert!(session.osc_evidence().shell_state_marked_at.is_some());
     session.feed_pty(b"\x1b]133;B\x07");
     assert_eq!(
         session.osc_evidence().shell_state,
@@ -722,6 +1050,7 @@ fn clear_runtime_authority_drops_state_and_counters() {
         "hook-opencode-1",
         "opencode",
         "permission.asked",
+        None,
         std::time::Instant::now(),
     );
     assert!(session.authority.is_some());
@@ -784,24 +1113,24 @@ fn osc8_uri_unsafe_schemes_rejected() {
 #[test]
 fn validate_agent_slug_rejects_typical_attacks() {
     let supported = Vec::new();
-    assert!(validate_agent_slug("", &supported).is_err());
-    assert!(validate_agent_slug("--debug", &supported).is_err());
-    assert!(validate_agent_slug("claude\n; rm -rf /", &supported).is_err());
-    assert!(validate_agent_slug("claude codex", &supported).is_err());
-    assert!(validate_agent_slug("claude\0", &supported).is_err());
+    validate_agent_slug("", &supported).unwrap_err();
+    validate_agent_slug("--debug", &supported).unwrap_err();
+    validate_agent_slug("claude\n; rm -rf /", &supported).unwrap_err();
+    validate_agent_slug("claude codex", &supported).unwrap_err();
+    validate_agent_slug("claude\0", &supported).unwrap_err();
 }
 
 #[test]
 fn validate_agent_slug_accepts_well_formed_slug_when_no_allowlist() {
     let supported = Vec::new();
-    assert!(validate_agent_slug("claude", &supported).is_ok());
-    assert!(validate_agent_slug("codex", &supported).is_ok());
+    validate_agent_slug("claude", &supported).unwrap();
+    validate_agent_slug("codex", &supported).unwrap();
 }
 
 #[test]
 fn validate_agent_slug_rejects_slug_outside_launch_config_allowlist() {
     let supported = vec!["claude".to_owned()];
-    assert!(validate_agent_slug("claude", &supported).is_ok());
+    validate_agent_slug("claude", &supported).unwrap();
     assert_eq!(
         validate_agent_slug("codex", &supported).unwrap_err(),
         "not in launch config allowlist"
@@ -868,4 +1197,280 @@ fn diagnostic_tail_returns_last_nonblank_rows_oldest_first() {
         .diagnostic_tail(2)
         .expect("rendered rows must yield a tail");
     assert_eq!(tail, "bravo\ncharlie");
+}
+
+// --- plan 033 suite C: PTY fault recovery (FaultMasterPty) ---
+// Poisoned-mutex arms are MISSING (require a panicked holder thread).
+
+struct FaultMasterPty {
+    take_writer_err: Option<std::io::ErrorKind>,
+    clone_reader_err: Option<std::io::ErrorKind>,
+    writer_fails_after: Option<usize>,
+    reader_yields: Vec<Result<Vec<u8>, std::io::ErrorKind>>,
+    write_count: Arc<std::sync::atomic::AtomicUsize>,
+    reader_idx: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Default for FaultMasterPty {
+    fn default() -> Self {
+        Self {
+            take_writer_err: None,
+            clone_reader_err: None,
+            writer_fails_after: None,
+            reader_yields: Vec::new(),
+            write_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            reader_idx: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+}
+
+struct FaultWriter {
+    fails_after: Option<usize>,
+    count: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl std::io::Write for FaultWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        use std::sync::atomic::Ordering;
+        let n = self.count.fetch_add(1, Ordering::SeqCst);
+        if self.fails_after.is_some_and(|after| n >= after) {
+            return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct FaultReader {
+    yields: Vec<Result<Vec<u8>, std::io::ErrorKind>>,
+    idx: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl std::io::Read for FaultReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::sync::atomic::Ordering;
+        let i = self.idx.fetch_add(1, Ordering::SeqCst);
+        if i >= self.yields.len() {
+            return Ok(0);
+        }
+        match &self.yields[i] {
+            Ok(data) => {
+                let n = data.len().min(buf.len());
+                buf[..n].copy_from_slice(&data[..n]);
+                Ok(n)
+            }
+            Err(kind) => Err(std::io::Error::from(*kind)),
+        }
+    }
+}
+
+impl MasterPty for FaultMasterPty {
+    fn resize(&self, _size: PtySize) -> Result<()> {
+        Ok(())
+    }
+    fn get_size(&self) -> Result<PtySize> {
+        Ok(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+    }
+    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>> {
+        if let Some(kind) = self.clone_reader_err {
+            return Err(anyhow::anyhow!(std::io::Error::from(kind)));
+        }
+        Ok(Box::new(FaultReader {
+            yields: self.reader_yields.clone(),
+            idx: Arc::clone(&self.reader_idx),
+        }))
+    }
+    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>> {
+        if let Some(kind) = self.take_writer_err {
+            return Err(anyhow::anyhow!(std::io::Error::from(kind)));
+        }
+        Ok(Box::new(FaultWriter {
+            fails_after: self.writer_fails_after,
+            count: Arc::clone(&self.write_count),
+        }))
+    }
+    #[cfg(unix)]
+    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+        None
+    }
+    #[cfg(unix)]
+    fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
+        None
+    }
+    #[cfg(unix)]
+    fn tty_name(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+}
+
+/// Start the same writer/reader `spawn_blocking` tasks [`Session::spawn`] uses,
+/// against a scripted `FaultMasterPty`, so recovery branches are reachable.
+fn start_fault_pty_tasks(
+    fault: FaultMasterPty,
+) -> (
+    mpsc::UnboundedSender<Vec<u8>>,
+    mpsc::UnboundedReceiver<SessionEvent>,
+) {
+    let master: Arc<Mutex<Box<dyn MasterPty + Send>>> = Arc::new(Mutex::new(Box::new(fault)));
+    let master_for_write = Arc::clone(&master);
+    let master_for_read = Arc::clone(&master);
+    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (event_tx, event_rx) = mpsc::unbounded_channel::<SessionEvent>();
+    let sid = 1u64;
+    let event_tx_writer_err = event_tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let writer = master_for_write
+            .lock()
+            .ok()
+            .and_then(|guard| guard.take_writer().ok());
+        let Some(mut writer) = writer else {
+            drop(event_tx_writer_err.send(SessionEvent::Exited {
+                session_id: sid,
+                reason: Some("session PTY writer failed to initialize".to_owned()),
+            }));
+            return;
+        };
+        while let Some(data) = input_rx.blocking_recv() {
+            if let Err(e) = std::io::Write::write_all(&mut writer, &data) {
+                drop(event_tx_writer_err.send(SessionEvent::Exited {
+                    session_id: sid,
+                    reason: Some(format!("session PTY write failed: {e}")),
+                }));
+                return;
+            }
+        }
+    });
+    let event_tx_reader_err = event_tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let reader = master_for_read
+            .lock()
+            .ok()
+            .and_then(|guard| guard.try_clone_reader().ok());
+        let Some(mut reader) = reader else {
+            drop(event_tx_reader_err.send(SessionEvent::Exited {
+                session_id: sid,
+                reason: Some("session PTY reader failed to initialize".to_owned()),
+            }));
+            return;
+        };
+        let mut buf = [0u8; 4096];
+        loop {
+            match std::io::Read::read(&mut reader, &mut buf) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(_) => break, // read error: no Exited (reaper is authoritative)
+            }
+        }
+    });
+    (input_tx, event_rx)
+}
+
+#[tokio::test]
+async fn writer_init_failure_emits_exited_with_reason() {
+    let fault = FaultMasterPty {
+        take_writer_err: Some(std::io::ErrorKind::PermissionDenied),
+        ..Default::default()
+    };
+    let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timeout")
+        .expect("channel closed");
+    match ev {
+        SessionEvent::Exited { reason, .. } => {
+            assert_eq!(
+                reason.as_deref(),
+                Some("session PTY writer failed to initialize")
+            );
+        }
+        other => panic!("expected Exited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn reader_init_failure_emits_exited_with_reason() {
+    let fault = FaultMasterPty {
+        clone_reader_err: Some(std::io::ErrorKind::PermissionDenied),
+        ..Default::default()
+    };
+    let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timeout")
+        .expect("channel closed");
+    match ev {
+        SessionEvent::Exited { reason, .. } => {
+            assert_eq!(
+                reason.as_deref(),
+                Some("session PTY reader failed to initialize")
+            );
+        }
+        other => panic!("expected Exited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn mid_stream_write_failure_emits_exited() {
+    let fault = FaultMasterPty {
+        writer_fails_after: Some(0),
+        ..Default::default()
+    };
+    let (input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    input_tx.send(b"x".to_vec()).expect("input channel open");
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timeout")
+        .expect("channel closed");
+    match ev {
+        SessionEvent::Exited { reason, .. } => {
+            let r = reason.expect("reason");
+            assert!(
+                r.starts_with("session PTY write failed:"),
+                "unexpected reason: {r}"
+            );
+        }
+        other => panic!("expected Exited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn read_error_breaks_without_exited_event() {
+    let fault = FaultMasterPty {
+        reader_yields: vec![Err(std::io::ErrorKind::BrokenPipe)],
+        ..Default::default()
+    };
+    let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    // Reader should break without Exited; give tasks a moment then try_recv.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(
+        event_rx.try_recv().is_err(),
+        "read error must not emit Exited (reaper is authoritative)"
+    );
+}
+
+#[test]
+fn bare_claude_notification_payload_authors_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "hook-claude-1",
+        "claude",
+        "Notification",
+        Some(r#"{"notification_type":"permission_prompt"}"#),
+        std::time::Instant::now(),
+    );
+    let a = session
+        .authority
+        .as_ref()
+        .expect("authority set from payload subtype");
+    assert_eq!(a.mapped_state, RawAgentState::Blocked);
+    assert!(a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Partial);
 }

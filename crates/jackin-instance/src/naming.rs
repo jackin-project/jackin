@@ -8,6 +8,7 @@
 //! responsible for Docker label writes or image naming — only string
 //! derivation.
 
+use jackin_core::WorkspaceName;
 pub use jackin_core::constants::{
     CONTAINER_PREFIX, CONTAINER_PREFIX_DASH, instance_id_from_container_base,
 };
@@ -19,12 +20,15 @@ const ROLE_BASE_DNS_BUDGET: usize = 58;
 
 pub use jackin_core::runtime_slug;
 
-pub fn new_container_name(workspace_name: Option<&str>, selector: &RoleSelector) -> String {
+pub fn new_container_name(
+    workspace_name: Option<&WorkspaceName>,
+    selector: &RoleSelector,
+) -> String {
     container_name_with_id(workspace_name, selector, &random_instance_id())
 }
 
 pub fn container_name_with_id(
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     selector: &RoleSelector,
     instance_id: &str,
 ) -> String {
@@ -32,7 +36,7 @@ pub fn container_name_with_id(
     let role = compact_component(&selector.name, "role");
 
     let components = if let Some(workspace_name) = workspace_name {
-        let workspace = compact_component(workspace_name, "workspace");
+        let workspace = compact_component(workspace_name.as_str(), "workspace");
         let budget = ROLE_BASE_DNS_BUDGET - CONTAINER_PREFIX.len() - instance_id.len() - 3;
         let (ws_part, role_part) = if workspace.len() + role.len() <= budget {
             (workspace, role)

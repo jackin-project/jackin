@@ -1,21 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! Canonical host-console product surface.
+//! jackin-console: operator console state machine and screens.
 //!
-//! This crate owns reusable console state, update/input planning, view
-//! composition, components, pure product decisions, and effects-as-data. The
-//! binary crate (`jackin`) remains responsible for CLI dispatch, host terminal
-//! ownership, Docker/runtime/config IO, and interpreting effects into real
-//! side effects.
-//!
-//! **Architecture Invariant:** L3 presentation crate. Allowed dependencies:
-//! `jackin-core`, `jackin-config`, `jackin-diagnostics`, `jackin-env`,
-//! `jackin-protocol`, `jackin-tui`. The `ConsoleHostTerminal` trait at
-//! the crate root lets the host (binary) inject terminal-ownership
-//! primitives into console components without depending on `jackin`
-//! directly. Must NOT depend on `jackin-runtime`, `jackin-launch-tui`,
-//! or `jackin-capsule`.
+//! **Architecture Invariant:** T4.
+//! Entry point: [`ConsoleApp`] — operator console application shell.
 
 pub mod github_mounts;
 pub mod mount_diff;

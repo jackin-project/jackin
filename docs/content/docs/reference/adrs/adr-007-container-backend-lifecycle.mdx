@@ -1,0 +1,50 @@
+---
+title: "ADR-007: Container backend lifecycle trait"
+---
+
+**Status**: Accepted  
+**Current state**: persisted instance lifecycle commands dispatch through `ContainerBackend`; Docker remains the default backend, and Apple Container lifecycle gaps are explicit.  
+**Date**: 2026-07-04  
+**Deciders**: Operator + agent
+
+## Context
+
+jackin❯ now has two local container backends. Docker uses the typed Bollard API and owns the default role
+container, `DinD` sidecar, network, and cert volume lifecycle. Apple Container uses the `container` CLI and
+records its ownership in the instance manifest through `BackendResources::AppleContainer`.
+
+Before this decision, backend selection existed at fresh launch time only. Persisted-instance commands such
+as `eject`, `purge`, and `hardline` assumed Docker resources even when a manifest recorded Apple Container
+ownership. That made non-Docker instances launchable but not consistently manageable.
+
+## Decision
+
+Introduce `runtime::backend::ContainerBackend` as the lifecycle contract for persisted instances. The trait
+requires backend implementations to provide:
+
+- `eject`
+- `ensure_absent_for_purge`
+- `reconnect`
+- `hardline`
+- `finalize`
+
+`DockerBackend` delegates to the existing Docker/Bollard lifecycle paths. `AppleContainerBackend` delegates
+stop and purge guards to the `AppleContainerApi` client seam, routes reconnect through the existing
+Apple Container attach path, and returns an explicit Phase 0 error from `finalize` until the VM behavior is
+validated on macOS 26 ARM hardware.
+
+Launch is intentionally left outside the trait for now. The two launch paths have different input shapes:
+Docker needs private network, `DinD`, grant, image-build, and container spec details; Apple Container needs
+CLI mount/env formatting, VM session-contract output, and Phase 0 gates. Persisted lifecycle parity is the
+stable shared surface.
+
+## Consequences
+
+- `eject`, purge guards, `exile_all`, and `hardline` choose the backend from the persisted instance manifest.
+- Legacy manifests with no `backend` field continue to resolve to Docker.
+- Apple Container finalization is no longer a silent skip; it is a typed runtime error that points at the
+  Phase 0 validation gate.
+- Future lifecycle operations should be added to `ContainerBackend`, forcing both backends to make an
+  explicit decision at compile time.
+- The real Apple Container finalization flow remains blocked on hardware validation; this ADR records that
+  as an intentional follow-up, not as completed behavior.

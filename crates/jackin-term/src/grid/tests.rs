@@ -136,6 +136,14 @@ fn cell_text(grid: &DamageGrid, row: u16, col: u16) -> String {
         .unwrap_or_default()
 }
 
+fn first_col_text(grid: &DamageGrid, rows: u16) -> Vec<String> {
+    (0..rows).map(|row| cell_text(grid, row, 0)).collect()
+}
+
+fn seed_first_col(grid: &mut DamageGrid) {
+    grid.process(b"\x1b[1;1HA\x1b[2;1HB\x1b[3;1HC\x1b[4;1HD\x1b[5;1HE");
+}
+
 #[test]
 fn unknown_csi_is_default_denied_and_carried_as_dropped() {
     let mut grid = DamageGrid::new(5, 20, 10);
@@ -801,6 +809,49 @@ fn scroll_ops_record_insert_delete_line_and_reverse_index() {
 }
 
 #[test]
+fn insert_delete_line_noop_when_cursor_above_scroll_region() {
+    let mut g = DamageGrid::new(5, 10, 100);
+    seed_first_col(&mut g);
+    g.process(b"\x1b[3;5r");
+    let before = first_col_text(&g, 5);
+
+    g.process(b"\x1b[L\x1b[M");
+
+    assert_eq!(first_col_text(&g, 5), before);
+    assert!(g.drain_scroll_ops().is_empty());
+}
+
+#[test]
+fn insert_delete_line_noop_when_cursor_below_scroll_region() {
+    let mut g = DamageGrid::new(5, 10, 100);
+    seed_first_col(&mut g);
+    g.process(b"\x1b[1;3r\x1b[5;1H");
+    let before = first_col_text(&g, 5);
+
+    g.process(b"\x1b[L\x1b[M");
+
+    assert_eq!(first_col_text(&g, 5), before);
+    assert!(g.drain_scroll_ops().is_empty());
+}
+
+#[test]
+fn insert_line_inside_scroll_region_inserts_blank_and_drops_region_bottom() {
+    let mut g = DamageGrid::new(5, 10, 100);
+    seed_first_col(&mut g);
+    g.process(b"\x1b[2;4r\x1b[3;1H\x1b[L");
+
+    assert_eq!(first_col_text(&g, 5), vec!["A", "B", "", "C", "E"]);
+    assert_eq!(
+        g.drain_scroll_ops(),
+        vec![ScrollOp::Down {
+            top: 2,
+            bottom: 3,
+            rows: 1
+        }]
+    );
+}
+
+#[test]
 fn scroll_ops_record_csi_scroll_up_and_down() {
     // CSI S (scroll up) and CSI T (scroll down) both shift the scroll region
     // and must each record a ScrollOp so the deferred scroll-region optimizer
@@ -910,4 +961,155 @@ fn dump_dirty_patch_tracks_changed_cell_span() {
             .collect::<Vec<_>>(),
         [(1, 2, 1)]
     );
+}
+
+// ── Resize equivalence oracle (plan 040) ────────────────────────────────────
+//
+// `naive_resize` is a verbatim copy of the pre-rewrite `resize_grid` body
+// (crates/jackin-term/src/grid/write.rs), transcribed here BEFORE the
+// production in-place rewrite so it stands as an independent reference. Every
+// resize path (same/grow/shrink on rows and cols, including 1x1 and wide-cell
+// truncation at the new right edge) is asserted to produce byte-identical
+// `RowStore` state — cells, wraps, and dims — whether reached via the naive
+// rebuild or the in-place `RowStore::resize`. This is the characterization
+// that pins current behavior before the rewrite and proves equivalence after.
+fn naive_resize(grid: &RowStore, rows: u16, cols: u16) -> RowStore {
+    let mut new = RowStore::blank(rows, cols, grid.arena.clone());
+    for (r, row) in grid.iter().enumerate() {
+        if r >= rows as usize {
+            break;
+        }
+        new.wraps[r] = grid.wrap(r).unwrap_or_default();
+        for (c, cell) in row.iter().enumerate() {
+            if c < cols as usize {
+                new[r][c] = cell.clone();
+            }
+        }
+    }
+    new
+}
+
+/// Content for a `start_rows x start_cols` grid: `(start_cols + 3)` repeated
+/// characters per line with no line breaks, so DECAWM auto-wrap kicks in at
+/// the right margin and every retained row carries a mix of `Hard`/`Soft`
+/// wrap provenance (the first row of each burst is `Hard`, the continuation
+/// rows are `Soft`).
+fn fill_bytes(start_rows: u16, start_cols: u16) -> Vec<u8> {
+    let mut out = Vec::new();
+    for r in 0..(start_rows as usize * 2) {
+        let ch = b'a' + (r % 26) as u8;
+        out.extend(std::iter::repeat_n(ch, start_cols as usize + 3));
+    }
+    out
+}
+
+/// Builds a grid with both primary and alternate screens populated (content,
+/// soft-wrap provenance, and — when `start_cols` allows it — a wide CJK cell
+/// pair near the left edge so shrinking to 1 column exercises wide-cell
+/// truncation).
+fn populated_grid(start_rows: u16, start_cols: u16) -> DamageGrid {
+    let mut g = DamageGrid::new(start_rows, start_cols, 50);
+    g.process(&fill_bytes(start_rows, start_cols));
+    if start_cols >= 3 {
+        g.process(b"\x1b[1;1H\xe4\xbd\xa0\xe4\xbd\xa0"); // two wide CJK cells
+    }
+    g.process(b"\x1b[?1049h"); // enter alternate screen
+    g.process(&fill_bytes(start_rows, start_cols));
+    if start_cols >= 3 {
+        g.process(b"\x1b[1;1H\xe4\xbd\xa0\xe4\xbd\xa0");
+    }
+    g
+}
+
+#[test]
+fn resize_equivalence_against_naive_reference() {
+    let starts: &[(u16, u16)] = &[(10, 40), (3, 8), (1, 1)];
+    let row_deltas: &[i32] = &[-5, 0, 5];
+    let col_deltas: &[i32] = &[-30, 0, 15];
+
+    for &(start_rows, start_cols) in starts {
+        let mut targets: Vec<(u16, u16)> = Vec::new();
+        for &dr in row_deltas {
+            for &dc in col_deltas {
+                let rows = u16::try_from((i32::from(start_rows) + dr).max(1)).unwrap_or(1);
+                let cols = u16::try_from((i32::from(start_cols) + dc).max(1)).unwrap_or(1);
+                targets.push((rows, cols));
+            }
+        }
+        targets.push((1, 1));
+
+        for (target_rows, target_cols) in targets {
+            let mut grid = populated_grid(start_rows, start_cols);
+
+            let expected_primary = naive_resize(&grid.primary, target_rows, target_cols);
+            let expected_alternate = naive_resize(&grid.alternate, target_rows, target_cols);
+
+            grid.set_size(target_rows, target_cols);
+
+            assert_eq!(
+                grid.primary.rows, expected_primary.rows,
+                "primary cells mismatch: {start_rows}x{start_cols} -> {target_rows}x{target_cols}"
+            );
+            assert_eq!(
+                grid.primary.wraps, expected_primary.wraps,
+                "primary wraps mismatch: {start_rows}x{start_cols} -> {target_rows}x{target_cols}"
+            );
+            assert_eq!(
+                grid.alternate.rows, expected_alternate.rows,
+                "alternate cells mismatch: {start_rows}x{start_cols} -> {target_rows}x{target_cols}"
+            );
+            assert_eq!(
+                grid.alternate.wraps, expected_alternate.wraps,
+                "alternate wraps mismatch: {start_rows}x{start_cols} -> {target_rows}x{target_cols}"
+            );
+            assert_eq!(grid.size(), (target_rows, target_cols));
+        }
+    }
+}
+
+#[test]
+fn resize_same_size_and_width_only_do_not_grow_arena_pool() {
+    // A dedicated (non-shared) arena, so parallel test-suite activity on the
+    // process-wide `RowArena::shared()` can't make this assertion flaky.
+    let arena = RowArena::default();
+    let mut g = DamageGrid::with_row_arena(10, 40, 10, arena.clone());
+    g.process(&fill_bytes(10, 40));
+
+    let before = arena.recycled_rows();
+
+    g.set_size(10, 40); // same dims: fast path returns before touching storage
+    assert_eq!(
+        arena.recycled_rows(),
+        before,
+        "same-size resize touched the arena pool"
+    );
+
+    g.set_size(10, 20); // width-only: rows mutate in place, none leave/enter the pool
+    assert_eq!(
+        arena.recycled_rows(),
+        before,
+        "width-only resize touched the arena pool"
+    );
+}
+
+#[test]
+fn hyperlink_id_map_stays_bounded() {
+    let mut grid = DamageGrid::new(4, 20, 100);
+    for i in 0..(OSC8_HYPERLINK_CAP * 2) {
+        let _ = grid.alloc_hyperlink_token(&format!("id-{i}"));
+    }
+    assert!(grid.osc8_id_to_token.len() <= OSC8_HYPERLINK_CAP);
+}
+
+#[test]
+fn reset_modes_clears_hyperlink_maps() {
+    let mut grid = DamageGrid::new(4, 20, 100);
+    let _ = grid.alloc_hyperlink_token("some-id");
+    // also seed a target entry the way OSC 8 does
+    grid.hyperlink_targets
+        .insert(1, "https://example.test".to_owned());
+    assert!(!grid.osc8_id_to_token.is_empty());
+    grid.reset_modes();
+    assert!(grid.osc8_id_to_token.is_empty());
+    assert!(grid.hyperlink_targets.is_empty());
 }

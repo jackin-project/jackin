@@ -41,7 +41,7 @@ const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refres
 fn validate_rejects_non_directory() {
     let temp = tempdir().unwrap();
     let missing = temp.path().join("nope");
-    assert!(validate_sync_source_dir(Agent::Codex, &missing, temp.path()).is_err());
+    validate_sync_source_dir(Agent::Codex, &missing, temp.path()).unwrap_err();
 }
 
 #[test]
@@ -50,14 +50,17 @@ fn validate_claude_accepts_file_credentials_rejects_bare_folder() {
     let good = temp.path().join("claude-good");
     std::fs::create_dir_all(&good).unwrap();
     std::fs::write(good.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
-    assert!(validate_sync_source_dir(Agent::Claude, &good, temp.path()).is_ok());
+    validate_sync_source_dir(Agent::Claude, &good, temp.path()).unwrap();
 
     // No .credentials.json file; host_home is a temp dir so the macOS
     // Keychain probe is skipped — must be rejected, not accepted.
     let bare = temp.path().join("claude-bare");
     std::fs::create_dir_all(&bare).unwrap();
     let err = validate_sync_source_dir(Agent::Claude, &bare, temp.path()).unwrap_err();
-    assert!(err.contains("Claude"), "msg should name the agent: {err}");
+    assert!(
+        err.to_string().contains("Claude"),
+        "msg should name the agent: {err}"
+    );
 }
 
 #[test]
@@ -73,20 +76,17 @@ fn validate_single_file_agents() {
         std::fs::create_dir_all(&dir).unwrap();
         // Empty file is rejected.
         std::fs::write(dir.join(name), "").unwrap();
-        assert!(
-            validate_sync_source_dir(agent, &dir, temp.path()).is_err(),
-            "{agent:?}: empty {name} must be rejected"
-        );
+        validate_sync_source_dir(agent, &dir, temp.path())
+            .expect_err("empty credential file must be rejected");
         // Non-empty credential file is accepted.
         std::fs::write(dir.join(name), "{\"token\":\"x\"}").unwrap();
-        assert!(
-            validate_sync_source_dir(agent, &dir, temp.path()).is_ok(),
-            "{agent:?}: valid {name} must be accepted"
-        );
+        validate_sync_source_dir(agent, &dir, temp.path()).unwrap_or_else(|_| {
+            panic!("valid {name} must be accepted");
+        });
         // Wrong folder (no credential file) is rejected.
         let bad = temp.path().join(format!("{agent:?}-bad"));
         std::fs::create_dir_all(&bad).unwrap();
-        assert!(validate_sync_source_dir(agent, &bad, temp.path()).is_err());
+        validate_sync_source_dir(agent, &bad, temp.path()).unwrap_err();
     }
 }
 
@@ -96,13 +96,13 @@ fn validate_kimi_requires_config_and_credentials_tree() {
     let good = temp.path().join("kimi-good");
     std::fs::create_dir_all(good.join("credentials")).unwrap();
     std::fs::write(good.join("config.toml"), "x = 1\n").unwrap();
-    assert!(validate_sync_source_dir(Agent::Kimi, &good, temp.path()).is_ok());
+    validate_sync_source_dir(Agent::Kimi, &good, temp.path()).unwrap();
 
     // config.toml present but no credentials/ dir → rejected.
     let bad = temp.path().join("kimi-bad");
     std::fs::create_dir_all(&bad).unwrap();
     std::fs::write(bad.join("config.toml"), "x = 1\n").unwrap();
-    assert!(validate_sync_source_dir(Agent::Kimi, &bad, temp.path()).is_err());
+    validate_sync_source_dir(Agent::Kimi, &bad, temp.path()).unwrap_err();
 }
 
 /// Set up a fake host auth environment in the temp dir.
@@ -203,6 +203,62 @@ fn sync_mode_copies_host_auth_on_first_run() {
         TEST_CREDENTIALS
     );
     assert_eq!(outcome, AuthProvisionOutcome::Synced);
+}
+
+#[test]
+fn copy_host_claude_json_copies_present_file() {
+    let temp = tempdir().unwrap();
+    let host = temp.path().join(".claude.json");
+    let dest_dir = temp.path().join("state");
+    let dest = dest_dir.join(".claude.json");
+    std::fs::create_dir_all(&dest_dir).unwrap();
+    std::fs::write(
+        &host,
+        r#"{"oauthAccount":{"emailAddress":"test@example.com"}}"#,
+    )
+    .unwrap();
+
+    super::copy_host_claude_json(&host, &dest).unwrap();
+
+    assert!(
+        std::fs::read_to_string(dest)
+            .unwrap()
+            .contains("test@example.com")
+    );
+}
+
+#[test]
+fn copy_host_claude_json_writes_empty_object_when_absent() {
+    let temp = tempdir().unwrap();
+    let host = temp.path().join("missing.claude.json");
+    let dest_dir = temp.path().join("state");
+    let dest = dest_dir.join(".claude.json");
+    std::fs::create_dir_all(&dest_dir).unwrap();
+
+    super::copy_host_claude_json(&host, &dest).unwrap();
+
+    assert_eq!(std::fs::read_to_string(dest).unwrap(), "{}");
+}
+
+#[test]
+fn copy_host_claude_json_propagates_read_errors_without_writing_empty_object() {
+    let temp = tempdir().unwrap();
+    let host = temp.path().join(".claude.json");
+    let dest_dir = temp.path().join("state");
+    let dest = dest_dir.join(".claude.json");
+    std::fs::create_dir_all(&host).unwrap();
+    std::fs::create_dir_all(&dest_dir).unwrap();
+
+    let err = super::copy_host_claude_json(&host, &dest).unwrap_err();
+
+    assert!(
+        err.to_string().contains("reading Claude account metadata"),
+        "error should preserve context: {err}"
+    );
+    assert!(
+        !dest.exists(),
+        "read errors must not write a synthetic empty account file"
+    );
 }
 
 #[test]
@@ -2198,20 +2254,26 @@ fn round_trip_ignore_sync_token_ignore_state_clean() {
 /// guard; a regression that drops the content-equal check would
 /// fire `write_private_file` (atomic rename) on every launch.
 #[test]
-fn sync_skips_write_when_content_unchanged() {
+fn sync_idempotent_skips_write_when_content_unchanged() {
     let temp = tempdir().unwrap();
     let host_home = stage_host_hosts_yml(&temp, "ghp_unchanged");
     let hosts_yml = temp.path().join("role-state-hosts.yml");
 
     RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
         .unwrap();
-    let mtime_first = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();
-
+    let forced_mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
     #[expect(
         clippy::disallowed_methods,
-        reason = "mtime idempotency test needs a wall-clock boundary before checking no rewrite"
+        reason = "test fixture forces mtime on an already-created hosts.yml file"
     )]
-    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::File::options()
+        .write(true)
+        .open(&hosts_yml)
+        .unwrap()
+        .set_modified(forced_mtime)
+        .unwrap();
+    let mtime_first = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();
+
     RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
         .unwrap();
     let mtime_second = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();

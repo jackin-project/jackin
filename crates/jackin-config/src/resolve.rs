@@ -8,6 +8,7 @@
 //! parsing from CLI strings (`workspace::mounts`) or sensitive-path detection
 //! (`workspace::sensitive`).
 
+use crate::ConfigError;
 use std::path::{Path, PathBuf};
 
 use jackin_core::{MountIsolation, RoleSelector};
@@ -16,7 +17,9 @@ use crate::app_config::AppConfig;
 use crate::paths::expand_tilde;
 use crate::schema::{MountConfig, ResolvedWorkspace, WorkspaceConfig, validate_mount_paths};
 use crate::validation::validate_workspace_config;
+use jackin_core::WorkspaceName;
 
+/// Build an ad-hoc workspace whose workdir and sole mount are `cwd`.
 pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
     let cwd = cwd.canonicalize()?;
     let path = cwd.display().to_string();
@@ -33,10 +36,19 @@ pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
     })
 }
 
+/// How the operator selected the workspace to load.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadWorkspaceInput {
+    /// Use the process current working directory as an ad-hoc workspace.
     CurrentDir,
-    Path { src: String, dst: String },
+    /// Bind host `src` to container `dst` as an ad-hoc workspace.
+    Path {
+        /// Host source path (tilde-expanded / resolved).
+        src: String,
+        /// Container destination (or same as `src` for identity bind).
+        dst: String,
+    },
+    /// Load a named saved workspace from config.
     Saved(String),
 }
 
@@ -51,6 +63,7 @@ fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
     }
 }
 
+/// Match depth of `workspace` against `cwd` (workdir exact, mounts as prefix); higher wins.
 pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> Option<usize> {
     let canonical_cwd = cwd.canonicalize().ok()?;
 
@@ -77,6 +90,7 @@ pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> O
         .max()
 }
 
+/// Resolve `input` into a [`ResolvedWorkspace`] with global mounts merged.
 pub fn resolve_load_workspace(
     config: &AppConfig,
     selector: &RoleSelector,
@@ -103,9 +117,11 @@ pub fn resolve_load_workspace(
             } else {
                 cwd.join(&expanded_src)
             };
-            let canonical_src = abs_src
-                .canonicalize()
-                .map_err(|e| anyhow::anyhow!("cannot resolve path {expanded_src}: {e}"))?;
+            let canonical_src = abs_src.canonicalize().map_err(|e| {
+                anyhow::Error::from(ConfigError::msg(format!(
+                    "cannot resolve path {expanded_src}: {e}"
+                )))
+            })?;
             let src_str = canonical_src.display().to_string();
             let workdir = if dst == src || dst == expanded_src {
                 src_str.clone()
@@ -130,14 +146,19 @@ pub fn resolve_load_workspace(
             (ws, label)
         }
         LoadWorkspaceInput::Saved(name) => {
-            let workspace = config.require_workspace(&name)?.clone();
+            let wn = WorkspaceName::parse(&name).map_err(anyhow::Error::from)?;
+            let workspace = config.require_workspace(&wn)?.clone();
             if !workspace.allowed_roles.is_empty()
                 && !workspace
                     .allowed_roles
                     .iter()
                     .any(|role| role == &selector.key())
             {
-                anyhow::bail!("role {} is not allowed by workspace {name}", selector.key());
+                return Err(ConfigError::msg(format!(
+                    "role {} is not allowed by workspace {name}",
+                    selector.key()
+                ))
+                .into());
             }
             (workspace, name)
         }
@@ -150,15 +171,19 @@ pub fn resolve_load_workspace(
             .iter()
             .any(|existing| existing.dst == ad_hoc.dst)
         {
-            anyhow::bail!(
+            return Err(ConfigError::msg(format!(
                 "ad-hoc mount destination conflicts with workspace mount destination: {}",
                 ad_hoc.dst
-            );
+            ))
+            .into());
         }
         workspace.mounts.push(ad_hoc.clone());
     }
 
-    validate_workspace_config("runtime", &workspace)?;
+    validate_workspace_config(
+        &WorkspaceName::parse("runtime").map_err(anyhow::Error::from)?,
+        &workspace,
+    )?;
     validate_mount_paths(&workspace.mounts)?;
 
     let mut mounts = workspace.mounts.clone();
@@ -172,10 +197,11 @@ pub fn resolve_load_workspace(
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {
-            anyhow::bail!(
+            return Err(ConfigError::msg(format!(
                 "global mount destination conflicts with workspace destination: {}",
                 mount.dst
-            );
+            ))
+            .into());
         }
         mounts.push(mount);
     }

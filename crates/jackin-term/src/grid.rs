@@ -3,16 +3,16 @@
 
 //! `DamageGrid` — the Phase 2 v0 terminal model implementation.
 
-#![allow(clippy::empty_line_after_doc_comments)]
+#![allow(clippy::empty_line_after_doc_comments, reason = "residual lint budget")]
 
 #[path = "grid/parse.rs"]
 mod parse;
 #[path = "grid/write.rs"]
 mod write;
 
-#[allow(unused_imports, unreachable_pub)]
+#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use parse::*;
-#[allow(unused_imports, unreachable_pub)]
+#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use write::*;
 
 use std::{
@@ -38,10 +38,27 @@ pub enum RowWrap {
     Soft,
 }
 
+/// Recorded scroll-region shift for consumers that animate or patch rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollOp {
-    Up { top: u16, bottom: u16, rows: u16 },
-    Down { top: u16, bottom: u16, rows: u16 },
+    /// Scroll the region up by `rows` lines (content moves toward `top`).
+    Up {
+        /// Inclusive top of the scroll region (0-based).
+        top: u16,
+        /// Inclusive bottom of the scroll region (0-based).
+        bottom: u16,
+        /// Number of rows scrolled.
+        rows: u16,
+    },
+    /// Scroll the region down by `rows` lines (content moves toward `bottom`).
+    Down {
+        /// Inclusive top of the scroll region (0-based).
+        top: u16,
+        /// Inclusive bottom of the scroll region (0-based).
+        bottom: u16,
+        /// Number of rows scrolled.
+        rows: u16,
+    },
 }
 
 /// Mouse protocol modes (DEC modes 1000/1002/1003).
@@ -54,6 +71,7 @@ pub enum ScrollOp {
 /// - `AnyMotion` = mode 1003 alias, identical to `AnyEvent`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MouseProtocolMode {
+    /// Mouse reporting disabled.
     #[default]
     None,
     /// Mode 1000: report button press only.
@@ -73,10 +91,14 @@ pub enum MouseProtocolMode {
 /// Mouse protocol encodings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MouseProtocolEncoding {
+    /// X10-style default encoding.
     #[default]
     Default,
+    /// UTF-8 extended coordinates (mode 1005).
     Utf8,
+    /// SGR mouse encoding (mode 1006).
     Sgr,
+    /// urxvt mouse encoding (mode 1015).
     Urxvt,
 }
 
@@ -93,6 +115,7 @@ const FOCUS_EVENTS: u8 = 1 << 4;
 const PENDING_WRAP: u8 = 1 << 5;
 const MUTATED_SINCE_PRESERVE: u8 = 1 << 6;
 
+/// Owned terminal grid with damage tracking and PTY parser state.
 pub struct DamageGrid {
     // ── Parser — must persist across process() calls to handle split sequences ──
     // vte::Parser maintains internal state for multi-byte escape sequences.
@@ -171,7 +194,9 @@ pub struct DamageGrid {
     kitty_kb_stack: Vec<u32>,
 
     // ── Damage + passthrough ──────────────────────────────────────────────────
+    /// Rows/cells mutated since the last dirty drain.
     pub dirty: DirtyTracker,
+    /// OSC/CSI events that leave the grid and must be handled by the capsule.
     pub passthrough: PassthroughBuffer,
 }
 
@@ -203,6 +228,12 @@ impl std::fmt::Debug for DamageGrid {
 /// looping `\x1b[>1u` would otherwise grow `kitty_kb_stack` without bound;
 /// 64 is well past any real terminal program's nested keymap-mode depth.
 const KITTY_KB_STACK_CAP: usize = 64;
+
+/// Upper bound on retained OSC 8 hyperlink mappings. OSC content is untrusted
+/// model output; an agent emitting many distinct `id=` hyperlinks would
+/// otherwise grow these maps without bound. On overflow both maps are cleared
+/// together (stale off-screen link hover is lost; memory stays bounded).
+const OSC8_HYPERLINK_CAP: usize = 8192;
 
 /// Ring-backed row storage.
 ///
@@ -266,10 +297,12 @@ impl RowStore {
         self.wraps.get(row).copied()
     }
 
+    /// Iterate rows from top to bottom.
     pub fn iter(&self) -> vec_deque::Iter<'_, Vec<Cell>> {
         self.rows.iter()
     }
 
+    /// Iterate rows mutably from top to bottom.
     pub fn iter_mut(&mut self) -> vec_deque::IterMut<'_, Vec<Cell>> {
         self.rows.iter_mut()
     }
@@ -314,6 +347,46 @@ impl RowStore {
     fn recycle_front(&mut self) {
         if let Some(row) = self.pop_front() {
             self.arena.recycle(row);
+        }
+    }
+
+    /// Resizes in place instead of rebuilding the grid: same dims is a no-op
+    /// (nothing allocated, nothing touched); a width change truncates/extends
+    /// each retained row's `Vec<Cell>`; a height shrink pops rows off the back
+    /// through the arena (mirroring `Drop`/`clear`); a height grow pulls blank
+    /// rows from the arena — the arena is hit only for genuinely new rows.
+    /// Every row is assumed to be exactly the current column count wide (the
+    /// grid's own invariant), so the front row's length stands in for "current
+    /// cols" without `RowStore` needing to track it separately.
+    pub(crate) fn resize(&mut self, rows: u16, cols: u16) {
+        let target_rows = rows as usize;
+        let target_cols = cols as usize;
+
+        let width_changed = self
+            .rows
+            .front()
+            .is_some_and(|row| row.len() != target_cols);
+
+        if self.rows.len() == target_rows && !width_changed {
+            return;
+        }
+
+        if width_changed {
+            for row in &mut self.rows {
+                row.resize(target_cols, Cell::default());
+            }
+        }
+
+        while self.rows.len() > target_rows {
+            if let Some(row) = self.rows.pop_back() {
+                self.arena.recycle(row);
+            }
+            self.wraps.pop_back();
+        }
+
+        while self.rows.len() < target_rows {
+            self.rows.push_back(self.arena.blank_row(cols));
+            self.wraps.push_back(RowWrap::default());
         }
     }
 }
@@ -637,13 +710,14 @@ impl DamageGrid {
             .collect()
     }
 
-    /// Dump a scrollback VIEW as a [`GridSnapshot`]: the scrollback rows at
-    /// `offset` as a top prefix, then the live screen rows filling the rest of
-    /// the `viewport_rows`. `offset == 0` (or empty scrollback) returns the
-    /// live `dump()`. This is the snapshot the capsule's Ratatui pane-body
-    /// widget renders when the operator has scrolled up — the Ratatui parallel
-    /// of `render::pane_snapshot_from_damagegrid_with_scrollback`, kept here so
-    /// it composes the same prefix/tail layout from one place.
+    /// Dump a scrollback VIEW as a [`crate::snapshot::GridSnapshot`]: the
+    /// scrollback rows at `offset` as a top prefix, then the live screen rows
+    /// filling the rest of the `viewport_rows`. `offset == 0` (or empty
+    /// scrollback) returns the live `dump()`. This is the snapshot the capsule's
+    /// Ratatui pane-body widget renders when the operator has scrolled up — the
+    /// Ratatui parallel of
+    /// `render::pane_snapshot_from_damagegrid_with_scrollback`, kept here so it
+    /// composes the same prefix/tail layout from one place.
     #[must_use]
     pub fn dump_scrollback_view(
         &self,
@@ -750,8 +824,8 @@ impl DamageGrid {
         let cols = cols.max(1);
         self.rows = rows;
         self.cols = cols;
-        self.primary = resize_grid(&self.primary, rows, cols);
-        self.alternate = resize_grid(&self.alternate, rows, cols);
+        self.primary.resize(rows, cols);
+        self.alternate.resize(rows, cols);
         self.cursor_row = self.cursor_row.min(rows.saturating_sub(1));
         self.cursor_col = self.cursor_col.min(cols.saturating_sub(1));
         // Resize is a cursor-moving path: cancel any deferred (DECAWM) wrap so a
@@ -810,6 +884,7 @@ impl DamageGrid {
         self.scrollback_offset = 0;
     }
 
+    /// Take and clear recorded scroll operations since the last drain.
     pub fn drain_scroll_ops(&mut self) -> Vec<ScrollOp> {
         std::mem::take(&mut self.scroll_ops)
     }
@@ -832,14 +907,17 @@ impl DamageGrid {
         self.mouse_encoding
     }
 
+    /// Whether the cursor is hidden (DECTCEM off).
     pub fn hide_cursor(&self) -> bool {
         self.mode_flags & HIDE_CURSOR != 0
     }
 
+    /// Whether bracketed paste mode is enabled (DEC 2004).
     pub fn bracketed_paste(&self) -> bool {
         self.mode_flags & BRACKETED_PASTE != 0
     }
 
+    /// Whether application cursor keys mode is enabled (DEC 1).
     pub fn application_cursor(&self) -> bool {
         self.mode_flags & APPLICATION_CURSOR != 0
     }
@@ -867,6 +945,7 @@ impl DamageGrid {
         self.mode_flags &= !FOCUS_EVENTS;
         self.scrollback_offset = 0;
         self.clear_active_hyperlink_state();
+        self.clear_hyperlink_maps();
     }
 
     /// Top of the kitty-keyboard stack (`0` when empty). The capsule
@@ -895,6 +974,9 @@ impl DamageGrid {
     fn alloc_hyperlink_token(&mut self, id: &str) -> u32 {
         if let Some(&token) = self.osc8_id_to_token.get(id) {
             return token;
+        }
+        if self.osc8_id_to_token.len() >= OSC8_HYPERLINK_CAP {
+            self.clear_hyperlink_maps();
         }
         let token = self.next_hyperlink_token;
         self.next_hyperlink_token = self.next_hyperlink_token.saturating_add(1);
@@ -950,6 +1032,11 @@ impl DamageGrid {
 
     fn clear_active_hyperlink_state(&mut self) {
         self.active_hyperlink_token = 0;
+    }
+
+    fn clear_hyperlink_maps(&mut self) {
+        self.osc8_id_to_token.clear();
+        self.hyperlink_targets.clear();
     }
 
     /// Write a character at the current cursor position, advance cursor.
@@ -1365,14 +1452,14 @@ impl DamageGrid {
                 let grid = self.active_grid();
                 grid[cursor_row][cursor_col..cols_usize].fill(blank);
                 for row in grid.iter_mut().take(rows).skip(cursor_row + 1) {
-                    *row = blank_row.clone();
+                    row.clone_from(&blank_row);
                 }
             }
             1 => {
                 let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(cursor_row) {
-                    *row = blank_row.clone();
+                    row.clone_from(&blank_row);
                 }
                 grid[cursor_row][0..=cursor_col.min(cols_usize - 1)].fill(blank);
             }
@@ -1384,7 +1471,7 @@ impl DamageGrid {
                 let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(rows) {
-                    *row = blank_row.clone();
+                    row.clone_from(&blank_row);
                 }
             }
             3 => {
@@ -1393,7 +1480,7 @@ impl DamageGrid {
                 let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(rows) {
-                    *row = blank_row.clone();
+                    row.clone_from(&blank_row);
                 }
                 // Emit ScrollbackClear so the capsule can clear its retained history.
                 self.passthrough.push(PassthroughEvent::ScrollbackClear);
@@ -1509,6 +1596,9 @@ impl DamageGrid {
                 } else {
                     let token = self.alloc_hyperlink_token(&id);
                     self.active_hyperlink_token = token;
+                    if self.hyperlink_targets.len() >= OSC8_HYPERLINK_CAP {
+                        self.clear_hyperlink_maps();
+                    }
                     self.hyperlink_targets.insert(token, uri.clone());
                 }
                 // OSC 8 is modeled as cell metadata (both the interned token for
@@ -1635,8 +1725,6 @@ impl DamageGrid {
                 self.passthrough
                     .push(PassthroughEvent::ApplicationCursorKeys(enabled));
             }
-            // Alternate screen (simple form, no cursor save).
-            47 => self.set_alt_screen(enabled),
             // Focus events — track state and emit for passthrough.
             1004 => {
                 if enabled {
@@ -1658,9 +1746,9 @@ impl DamageGrid {
                     .push(PassthroughEvent::BracketedPaste(enabled));
             }
             // Alternate screen (save/restore cursor).
-            // Mode 1047: switch only (no cursor save/restore).
+            // Alternate screen simple (47) and 1047: switch only (no cursor save/restore).
             // Mode 1049: save cursor before entering alt screen, restore after leaving.
-            1047 => self.set_alt_screen(enabled),
+            47 | 1047 => self.set_alt_screen(enabled),
             1049 => {
                 if enabled {
                     self.saved_cursor_row = self.cursor_row;
@@ -1731,11 +1819,8 @@ impl DamageGrid {
                     MouseProtocolEncoding::Default
                 };
             }
-            // Synchronized output (?2026): absorbed. The capsule's own frame
-            // brackets supersede the agent's — forwarding the agent's BSU/ESU
-            // on its own schedule decoupled them from frame timing, and a
-            // dropped ESU froze the outer terminal (D6).
-            2026 => {}
+            // Synchronized output (?2026) and other unhandled private modes:
+            // absorbed. The capsule's own frame brackets supersede the agent's.
             _ => {}
         }
     }
@@ -1750,14 +1835,6 @@ impl DamageGrid {
         self.dirty.mark_all();
     }
 }
-
-// ── Parse helpers ─────────────────────────────────────────────────────────
-
-/// Reconstruct the raw bytes of a CSI sequence from its parsed components,
-/// for forwarding unhandled sequences verbatim to the outer terminal.
-/// Sub-params (vte's `&[u16]` per top-level param) are joined with `:`,
-/// top-level params with `;`. Example: `[[1, 2], [3]]` with final `m`
-/// → `\x1b[1:2;3m`.
 
 #[cfg(test)]
 mod tests;

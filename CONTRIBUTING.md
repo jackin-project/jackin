@@ -13,8 +13,10 @@ Employer contributions: confirm authorization before submitting. Use personal em
 ## How to Submit
 
 1. Fork. Branch feature off `main`.
-2. Change. Sign every commit: `git commit -s`.
-3. Open PR describing problem solved. CI must pass.
+2. Run `mise install` from the repo root to install the pinned toolchain and dev tools.
+3. Change. Sign every commit: `git commit -s`.
+4. Open PR describing problem solved. CI must pass.
+5. Optional blame hygiene: `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` skips mass layout/fmt sweeps listed in that file.
 
 ## Branching
 
@@ -74,11 +76,19 @@ DCO fail on PR: fix first, before anything else.
 Run when PR ready to merge (not before every commit):
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo check --all-targets
-cargo nextest run --all-features
-cargo nextest run -p jackin --features e2e --profile docker-e2e
+cargo xtask ci
+# or
+mise run ci
 ```
+
+For a faster local pass that skips feature-powerset and Docker-backed smoke tests:
+
+```sh
+cargo xtask ci --fast
+```
+
+`cargo xtask ci --e2e` includes the Docker-backed lane. It first checks that Docker is running, builds and exports the local capsule binary, then runs `cargo nextest run -p jackin --features e2e --profile docker-e2e`. In PR checkouts, `jackin-dev pr sync <PR_NUMBER>` still prepares the isolated env and capsule export for manual smoke tests; source `$(jackin-dev pr path <PR_NUMBER>)/env.sh` before manual `jackin` commands.
+
+Local builds outside CI default to the package version for `JACKIN_VERSION` / `JACKIN_CAPSULE_VERSION` so each commit does not invalidate every build-meta consumer and capsule cache entry. GitHub Actions sets `CI`, so release, preview, construct, and CI builds still stamp the real `<version>+<sha>`. Set `JACKIN_VERSION_OVERRIDE=<value>` only when you need an explicit local version.
 
 Fmt fail → `cargo fmt`, re-check. See [TESTING.md](TESTING.md).

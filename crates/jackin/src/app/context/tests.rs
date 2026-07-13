@@ -102,7 +102,6 @@ fn resolve_target_name_neither_errors() {
     let config = AppConfig::default();
     let cwd = std::env::temp_dir();
     let result = resolve_target_name("nonexistent-thing", &config, &cwd);
-    assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("neither a saved workspace nor a directory"));
 }
@@ -328,7 +327,7 @@ fn config_with_workspace(
     config
 }
 
-fn fake_docker_with_running_agents(names: &[&str]) -> runtime::test_support::FakeDockerClient {
+fn fake_docker_with_running_agents(names: &[&str]) -> jackin_test_support::FakeDockerClient {
     use jackin_docker::docker_client::ContainerRow;
     let rows: Vec<ContainerRow> = names
         .iter()
@@ -337,7 +336,7 @@ fn fake_docker_with_running_agents(names: &[&str]) -> runtime::test_support::Fak
             labels: std::collections::HashMap::default(),
         })
         .collect();
-    runtime::test_support::FakeDockerClient {
+    jackin_test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([rows])),
         ..Default::default()
     }
@@ -420,7 +419,7 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
     // inspect returns Running → indexed candidate is live
-    let docker = runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             jackin_docker::docker_client::ContainerState::Running,
         ])),
@@ -471,7 +470,7 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
     // inspect returns Running → ad-hoc indexed candidate is live
-    let docker = runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             jackin_docker::docker_client::ContainerState::Running,
         ])),

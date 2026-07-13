@@ -12,7 +12,8 @@
 
 use std::{collections::HashMap, ffi::OsStr, process::Command, sync::OnceLock};
 
-use anyhow::{Context, bail};
+use crate::DockerError;
+use anyhow::Context;
 use bollard::Docker;
 use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
@@ -184,7 +185,7 @@ fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
                 .with_context(|| format!("connect to Docker host {host}"))
         }
         ConnectionChoice::Unsupported { reason, host } => {
-            bail!(ConnectionChoice::unsupported_message(&reason, &host))
+            Err(DockerError::Message(ConnectionChoice::unsupported_message(&reason, &host)).into())
         }
     }
 }
@@ -326,6 +327,14 @@ fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<Stri
 }
 
 impl DockerApi for BollardDockerClient {
+    async fn ping(&self) -> anyhow::Result<()> {
+        self.inner
+            .ping()
+            .await
+            .map(|_| ())
+            .context("pinging Docker daemon")
+    }
+
     async fn inspect_container_state(&self, name: &str) -> ContainerState {
         jackin_diagnostics::debug_log!("docker", "inspect container {name}");
         let result = self
@@ -608,7 +617,12 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String> {
-        jackin_diagnostics::debug_log!("docker", "exec {} {}", container, cmd.join(" "));
+        let redacted_cmd = cmd
+            .iter()
+            .map(|arg| jackin_diagnostics::redact::redact_text(arg).into_owned())
+            .collect::<Vec<_>>()
+            .join(" ");
+        jackin_diagnostics::debug_log!("docker", "exec {} {}", container, redacted_cmd);
         let exec = self
             .inner
             .create_exec(
@@ -641,9 +655,10 @@ impl DockerApi for BollardDockerClient {
                 }
             }
             StartExecResults::Detached => {
-                anyhow::bail!(
-                    "exec in {container} returned Detached — attach_stdout was set but exec ran detached"
-                );
+                return Err(DockerError::ExecDetached {
+                    container: container.to_owned(),
+                }
+                .into());
             }
         }
 
@@ -654,10 +669,12 @@ impl DockerApi for BollardDockerClient {
             .with_context(|| format!("inspecting exec result in {container}"))?;
         let exit_code = inspect.exit_code.unwrap_or(-1);
         if exit_code != 0 {
-            anyhow::bail!(
-                "exec in {container} exited with code {exit_code}: {}",
-                output_buf.trim()
-            );
+            return Err(DockerError::ExecNonZero {
+                container: container.to_owned(),
+                exit_code,
+                output: output_buf.trim().to_owned(),
+            }
+            .into());
         }
 
         Ok(output_buf.trim().to_owned())

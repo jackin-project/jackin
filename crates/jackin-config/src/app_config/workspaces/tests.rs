@@ -5,6 +5,10 @@
 use super::*;
 use crate::MountConfig;
 use crate::{CURRENT_WORKSPACE_VERSION, KeepAwakeConfig};
+use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use tempfile::tempdir;
 
 #[test]
@@ -40,12 +44,15 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
         docker: None,
     };
     config
-        .create_workspace("big-monorepo", original.clone())
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
+            original.clone(),
+        )
         .unwrap();
 
     let err = config
         .edit_workspace(
-            "big-monorepo",
+            &wn("big-monorepo"),
             WorkspaceEdit {
                 workdir: Some("/workspace/elsewhere".to_owned()),
                 ..WorkspaceEdit::default()
@@ -68,7 +75,7 @@ fn edit_workspace_toggles_keep_awake_when_set() {
     let mut config = AppConfig::default();
     config
         .create_workspace(
-            "my-app",
+            &WorkspaceName::parse("my-app").unwrap(),
             WorkspaceConfig {
                 version: CURRENT_WORKSPACE_VERSION.to_owned(),
                 workdir: "/workspace/proj".to_owned(),
@@ -86,7 +93,7 @@ fn edit_workspace_toggles_keep_awake_when_set() {
 
     config
         .edit_workspace(
-            "my-app",
+            &wn("my-app"),
             WorkspaceEdit {
                 keep_awake_enabled: Some(true),
                 ..WorkspaceEdit::default()
@@ -100,7 +107,7 @@ fn edit_workspace_toggles_keep_awake_when_set() {
     // --workdir` not silently flip power-management state.
     config
         .edit_workspace(
-            "my-app",
+            &wn("my-app"),
             WorkspaceEdit {
                 workdir: Some("/workspace/proj".to_owned()),
                 ..WorkspaceEdit::default()
@@ -114,7 +121,7 @@ fn edit_workspace_toggles_keep_awake_when_set() {
 
     config
         .edit_workspace(
-            "my-app",
+            &wn("my-app"),
             WorkspaceEdit {
                 keep_awake_enabled: Some(false),
                 ..WorkspaceEdit::default()
@@ -130,7 +137,7 @@ fn edit_workspace_sets_and_clears_agent() {
     let mut config = AppConfig::default();
     config
         .create_workspace(
-            "my-app",
+            &WorkspaceName::parse("my-app").unwrap(),
             WorkspaceConfig {
                 version: CURRENT_WORKSPACE_VERSION.to_owned(),
                 workdir: "/workspace/proj".to_owned(),
@@ -147,7 +154,7 @@ fn edit_workspace_sets_and_clears_agent() {
 
     config
         .edit_workspace(
-            "my-app",
+            &wn("my-app"),
             WorkspaceEdit {
                 default_agent: Some(Some(jackin_core::Agent::Codex)),
                 ..WorkspaceEdit::default()
@@ -161,7 +168,7 @@ fn edit_workspace_sets_and_clears_agent() {
 
     config
         .edit_workspace(
-            "my-app",
+            &wn("my-app"),
             WorkspaceEdit {
                 workdir: Some("/workspace/proj".to_owned()),
                 ..WorkspaceEdit::default()
@@ -176,7 +183,7 @@ fn edit_workspace_sets_and_clears_agent() {
 
     config
         .edit_workspace(
-            "my-app",
+            &wn("my-app"),
             WorkspaceEdit {
                 default_agent: Some(None),
                 ..WorkspaceEdit::default()
@@ -202,12 +209,15 @@ fn create_workspace_rejects_duplicate_name_and_preserves_existing_value() {
         ..Default::default()
     };
     config
-        .create_workspace("big-monorepo", original.clone())
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
+            original.clone(),
+        )
         .unwrap();
 
     let err = config
         .create_workspace(
-            "big-monorepo",
+            &WorkspaceName::parse("big-monorepo").unwrap(),
             WorkspaceConfig {
                 version: CURRENT_WORKSPACE_VERSION.to_owned(),
                 workdir: "/workspace/other".to_owned(),
@@ -251,12 +261,15 @@ fn edit_workspace_rejects_duplicate_upsert_destinations() {
         ..Default::default()
     };
     config
-        .create_workspace("big-monorepo", original.clone())
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
+            original.clone(),
+        )
         .unwrap();
 
     let err = config
         .edit_workspace(
-            "big-monorepo",
+            &wn("big-monorepo"),
             WorkspaceEdit {
                 upsert_mounts: vec![
                     MountConfig {
@@ -303,12 +316,15 @@ fn edit_workspace_rejects_missing_remove_destination() {
         ..Default::default()
     };
     config
-        .create_workspace("big-monorepo", original.clone())
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
+            original.clone(),
+        )
         .unwrap();
 
     let err = config
         .edit_workspace(
-            "big-monorepo",
+            &wn("big-monorepo"),
             WorkspaceEdit {
                 remove_destinations: vec!["/workspace/missing".to_owned()],
                 ..WorkspaceEdit::default()
@@ -327,7 +343,7 @@ fn edit_workspace_rejects_missing_remove_destination() {
 fn remove_workspace_errors_when_missing() {
     let mut config = AppConfig::default();
 
-    let err = config.remove_workspace("missing").unwrap_err();
+    let err = config.remove_workspace(&wn("missing")).unwrap_err();
 
     assert!(err.to_string().contains("unknown workspace missing"));
 }

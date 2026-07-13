@@ -197,7 +197,6 @@ plugins = []
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("FOO"));
 }
 
@@ -222,7 +221,6 @@ options = ["a", "b"]
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("options"));
 }
 
@@ -248,7 +246,6 @@ prompt = "Branch:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("NONEXISTENT"));
 }
 
@@ -274,7 +271,6 @@ prompt = "Value:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("self"));
 }
 
@@ -305,7 +301,6 @@ prompt = "B:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("cycle"));
 }
 
@@ -335,7 +330,6 @@ prompt = "Branch:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("env."));
 }
 
@@ -393,7 +387,6 @@ default = "docker"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("JACKIN"));
 }
 
@@ -417,7 +410,6 @@ default = "sidecar"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(
         result
             .unwrap_err()
@@ -449,7 +441,6 @@ default = "override"
         let manifest = load_role_manifest(temp.path()).unwrap();
         let result = validate_role_manifest(&manifest);
 
-        assert!(result.is_err(), "{var} should be rejected as reserved");
         assert!(
             result.unwrap_err().to_string().contains(var),
             "error message should mention {var}"
@@ -560,7 +551,6 @@ prompt = "Branch for ${env.NONEXISTENT}:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("NONEXISTENT"));
 }
 
@@ -590,7 +580,6 @@ prompt = "Branch for ${env.PROJECT}:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("PROJECT"));
     assert!(msg.contains("depends_on"));
@@ -619,7 +608,6 @@ prompt = "Branch:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("GHOST"));
 }
 
@@ -643,7 +631,6 @@ default = "value"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("MY-VAR"));
 }
 
@@ -667,7 +654,6 @@ default = "value"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("1FOO"));
 }
 
@@ -697,7 +683,7 @@ default = "c"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[test]
@@ -728,7 +714,6 @@ prompt = "Branch:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(
         result
             .unwrap_err()
@@ -789,7 +774,6 @@ default = "feature/${env.PROJECT}"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("PROJECT"));
     assert!(msg.contains("depends_on"));
@@ -822,7 +806,6 @@ prompt = "Label for ${env.PROJECT} in ${env.MISSING}:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("MISSING"));
 }
 
@@ -847,7 +830,6 @@ prompt = "Value: ${env.}"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("empty"));
 }
 
@@ -873,7 +855,6 @@ prompt = "Value: ${env.MY-VAR}"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(
         result
             .unwrap_err()
@@ -904,7 +885,6 @@ default = "prefix-${env.}"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("empty"));
 }
 
@@ -930,7 +910,6 @@ prompt = "Value:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("empty"));
 }
 
@@ -956,7 +935,6 @@ prompt = "Value:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(
         result
             .unwrap_err()
@@ -992,6 +970,5 @@ prompt = "Branch:"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let result = validate_role_manifest(&manifest);
 
-    assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("duplicate"));
 }

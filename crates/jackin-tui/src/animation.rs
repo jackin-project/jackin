@@ -13,7 +13,10 @@ use owo_colors::OwoColorize as _;
 use std::io::{self, Write};
 
 use crate::output::clear_screen;
-use crate::{BRAND_BLOCK, Rgb, WHITE, owo_rgb};
+use crate::{
+    BRAND_BLOCK, RAIN_BODY, RAIN_DARK, RAIN_DIM, RAIN_FRESH, RAIN_HEAD, RAIN_MID, Rgb, WHITE,
+    owo_rgb,
+};
 
 fn stderr_fragment(args: std::fmt::Arguments<'_>) {
     let mut stderr = io::stderr().lock();
@@ -142,6 +145,19 @@ const fn xorshift(seed: &mut u64) -> u64 {
 
 fn random_char(seed: &mut u64) -> char {
     RAIN_CHARS[(xorshift(seed) as usize) % RAIN_CHARS.len()] as char
+}
+
+#[must_use]
+pub const fn rain_age_to_color(age: u16) -> Option<Rgb> {
+    match age {
+        0 => Some(RAIN_HEAD),
+        1..=2 => Some(RAIN_FRESH),
+        3..=5 => Some(RAIN_BODY),
+        6..=10 => Some(RAIN_MID),
+        11..=16 => Some(RAIN_DIM),
+        17..=24 => Some(RAIN_DARK),
+        _ => None,
+    }
 }
 
 // ── Session warp (hyperspace intro / outro) ───────────────────────────────
@@ -316,15 +332,22 @@ pub fn warp_end_caption(elapsed: Option<std::time::Duration>, host_screen_owned:
 
 fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
     let t = t.clamp(0.0, 1.0);
-    (f32::from(b) - f32::from(a))
-        .mul_add(t, f32::from(a))
-        .round() as u8
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "t clamped to 0.0..=1.0; lerp stays in u8 range"
+    )]
+    {
+        (f32::from(b) - f32::from(a))
+            .mul_add(t, f32::from(a))
+            .round() as u8
+    }
 }
 
 #[allow(
     clippy::too_many_lines,
     clippy::suboptimal_flops,
-    clippy::type_complexity
+    clippy::type_complexity,
+    reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 #[allow(
     clippy::excessive_nesting,
@@ -400,6 +423,10 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
                 star.speed = 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0;
                 continue;
             }
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "warp_factor is non-negative; steps is at least 1"
+            )]
             let steps = ((1.0 + warp_factor * 1.4) as usize).max(1);
             for s in 0..=steps {
                 let rr = prev + (star.radius - prev) * (s as f32 / steps as f32);
@@ -408,6 +435,7 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
                 if x < 0.0 || y < 0.0 {
                     continue;
                 }
+                #[expect(clippy::cast_sign_loss, reason = "x/y rejected when negative above")]
                 let (xu, yu) = (x as usize, y as usize);
                 if xu >= cols || yu >= rows {
                     continue;
@@ -421,6 +449,10 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
                     '·'
                 };
                 let bright = (frac * 0.7 + warp_factor / 5.2 * 0.3).clamp(0.0, 1.0);
+                #[expect(
+                    clippy::cast_sign_loss,
+                    reason = "entry_fade is a non-negative animation alpha"
+                )]
                 let scale = |c: u8| (f32::from(c) * entry_fade) as u8;
                 let color = (
                     scale(lerp_channel(60, 235, bright)),

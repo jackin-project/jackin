@@ -17,9 +17,13 @@
 /// <https://developer.1password.com/docs/cli/secret-reference-syntax/>.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpReferenceParts {
+    /// Vault name or ID segment.
     pub vault: String,
+    /// Item name or ID segment.
     pub item: String,
+    /// Optional section between item and field.
     pub section: Option<String>,
+    /// Field name or ID segment.
     pub field: String,
 }
 
@@ -42,6 +46,7 @@ impl OpReferenceParts {
     }
 }
 
+/// Parse an `op://vault/item/field` (or sectioned) secret reference.
 #[must_use]
 pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     let path = value.strip_prefix("op://")?;

@@ -321,5 +321,5 @@ fn format_traceparent(ctx: &SpanContext) -> String {
     )
 }
 
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 mod tests;

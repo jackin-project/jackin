@@ -145,3 +145,24 @@ fn topological_env_order_is_deterministic_for_independent_prompts() {
         ["FREE_TEXT", "SELECT_PROJECT", "BRANCH"]
     );
 }
+
+#[test]
+fn env_cycle_error_message_parity() {
+    fn decl(depends_on: &[&str]) -> crate::manifest::EnvVarDecl {
+        crate::manifest::EnvVarDecl {
+            default_value: None,
+            interactive: true,
+            skippable: false,
+            prompt: None,
+            options: Vec::new(),
+            depends_on: depends_on.iter().map(|dep| (*dep).to_owned()).collect(),
+        }
+    }
+    let declarations = std::collections::BTreeMap::from([
+        ("A".to_owned(), decl(&["env.B"])),
+        ("B".to_owned(), decl(&["env.A"])),
+    ]);
+    let err = topological_env_order(&declarations).unwrap_err();
+    assert_eq!(err.to_string(), "env var dependency cycle detected");
+    let _: EnvCycleError = err;
+}

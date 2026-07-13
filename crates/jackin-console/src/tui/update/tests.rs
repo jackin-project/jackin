@@ -301,19 +301,19 @@ fn modal_scroll_targets_route_by_modal_facts() {
 
     assert_eq!(
         settings_env_modal_scroll_target(true, true),
-        SettingsEnvModalScrollTarget::OpPicker
+        SettingsModalScrollTarget::EnvOpPicker
     );
     assert_eq!(
         settings_env_modal_scroll_target(false, true),
-        SettingsEnvModalScrollTarget::RolePicker
+        SettingsModalScrollTarget::EnvRolePicker
     );
     assert_eq!(
         settings_auth_modal_scroll_target(true),
-        SettingsAuthModalScrollTarget::OpPicker
+        SettingsModalScrollTarget::AuthOpPicker
     );
     assert_eq!(
         global_mount_modal_scroll_target(true),
-        GlobalMountModalScrollTarget::RolePicker
+        SettingsModalScrollTarget::MountRolePicker
     );
 }
 

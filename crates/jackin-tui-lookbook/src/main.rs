@@ -1,13 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! Terminal browser and SVG generator for the jackin-tui component lookbook.
+//! jackin-tui-lookbook: interactive lookbook for shared TUI components.
 //!
-//! Usage:
-//!   `tui-lookbook`                            — write SVGs to target/tui-lookbook/
-//!   `tui-lookbook <out-dir>`                  — write SVGs to <out-dir>
-//!   `tui-lookbook --check <dir>`              — verify SVGs are current
-//!   `tui-lookbook --terminal`                 — launch interactive browser
+//! **Architecture Invariant:** T2.
+//! Entry point: [`main`] — lookbook binary entry.
 
 mod interactors;
 mod stories;
@@ -34,6 +28,7 @@ use jackin_tui::{
         render_brand_header,
         scrollable_panel::max_offset,
     },
+    keymap::glyph,
     scroll::{self, ScrollSpan},
     theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, PREVIEW_CARD},
 };
@@ -145,14 +140,14 @@ static PREVIEW_KEYMAP: Keymap<PreviewAction> = Keymap::new(&[
         action: PreviewAction::Forward,
         hint: Some("interact"),
         visibility: Visibility::Shown,
-        glyph: Some("↑↓←→"),
+        glyph: Some(glyph::ALL_ARROWS),
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::PageDown)],
         action: PreviewAction::PageDown,
         hint: Some("page"),
         visibility: Visibility::Shown,
-        glyph: Some("PgUp/PgDn"),
+        glyph: Some(glyph::PGUP_PGDN),
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::PageUp)],

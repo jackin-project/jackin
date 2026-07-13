@@ -20,7 +20,8 @@
 //!   - If the file cannot be opened for append, the logger silently
 //!     falls back to stderr-only. Logging must never block startup.
 
-use std::fs::{File, OpenOptions};
+use jackin_core::container_paths;
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,6 +32,7 @@ use chrono::{SecondsFormat, Utc};
 static LOG_FILE: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 static PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
 static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
+static TRACE_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// `true` when `JACKIN_DEBUG=1` (or any truthy value) was set in the
 /// container's env. Captured once at `init()` time so per-line emit
@@ -41,9 +43,16 @@ pub fn debug_enabled() -> bool {
     DEBUG_ENABLED.load(Ordering::Relaxed)
 }
 
+/// `true` when the operator explicitly requested the trace telemetry tier. Raw
+/// PTY, input, and emitted-frame payloads live here instead of the debug tier.
+pub fn trace_enabled() -> bool {
+    TRACE_ENABLED.load(Ordering::Relaxed)
+}
+
 /// Default in-container path. The host's state-dir mount makes this
 /// readable from outside the container.
-const DEFAULT_LOG_PATH: &str = "/jackin/state/multiplexer.log";
+const DEFAULT_LOG_PATH: &str = container_paths::MULTIPLEXER_LOG;
+const MAX_LOG_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Resolve the log path. Honours `JACKIN_CAPSULE_LOG_PATH` first,
 /// falls back to the default.
@@ -52,36 +61,75 @@ fn resolve_log_path() -> PathBuf {
         .map_or_else(|| PathBuf::from(DEFAULT_LOG_PATH), PathBuf::from)
 }
 
+fn rotate_if_oversized(path: &PathBuf) -> std::io::Result<()> {
+    if path
+        .metadata()
+        .is_ok_and(|metadata| metadata.len() > MAX_LOG_BYTES)
+    {
+        let rotated_name = path.file_name().map_or_else(
+            || "multiplexer.log.1".to_owned(),
+            |name| format!("{}.1", name.to_string_lossy()),
+        );
+        let rotated = path.with_file_name(rotated_name);
+        match fs::remove_file(&rotated) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        fs::rename(path, rotated)?;
+    }
+    Ok(())
+}
+
 /// Open the log file for append. Called once from the daemon entry
 /// point. Failures (path not writable, dir missing) are swallowed —
 /// the logger keeps emitting to stderr.
 pub fn init() {
-    // Honour the same env var the host CLI sets when the operator
-    // launches with `--debug`. Truthy values: `1`, `true`, `yes`, `on`
-    // (case-insensitive). Anything else (including unset) leaves the
-    // verbose surface off.
+    // Honour the legacy env var the host CLI sets for `--debug` plus the newer
+    // telemetry-level contract. Truthy `JACKIN_DEBUG` values: `1`, `true`,
+    // `yes`, `on` (case-insensitive). `JACKIN_TELEMETRY_LEVEL=debug|trace`
+    // also enables the verbose local capsule log surface.
+    let telemetry_level = std::env::var("JACKIN_TELEMETRY_LEVEL")
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase());
     let debug = std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
         matches!(
             v.trim().to_ascii_lowercase().as_str(),
             "1" | "true" | "yes" | "on"
         )
-    });
+    }) || telemetry_level
+        .as_deref()
+        .is_some_and(|level| matches!(level, "debug" | "trace"));
+    let trace = telemetry_level.as_deref() == Some("trace");
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
+    TRACE_ENABLED.store(trace, Ordering::Relaxed);
 
     let path = resolve_log_path();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "capsule log opens once during logging initialization, before render loop work"
-    )]
-    let file = match OpenOptions::new().create(true).append(true).open(&path) {
-        Ok(f) => Some(f),
-        Err(e) => {
+    let file = if crate::telemetry::otlp_active() {
+        None
+    } else {
+        // Rotate only at daemon start so `tail -f` remains stable for a live session.
+        if let Err(e) = rotate_if_oversized(&path) {
             crate::output::stderr_line(format_args!(
-                "[jackin-capsule] log file open failed for {}: {e} (errno={:?})",
+                "[jackin-capsule] log rotation failed for {}: {e} (errno={:?})",
                 path.display(),
                 e.raw_os_error()
             ));
-            None
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "capsule log opens once during logging initialization, before render loop work"
+        )]
+        match OpenOptions::new().create(true).append(true).open(&path) {
+            Ok(f) => Some(f),
+            Err(e) => {
+                crate::output::stderr_line(format_args!(
+                    "[jackin-capsule] log file open failed for {}: {e} (errno={:?})",
+                    path.display(),
+                    e.raw_os_error()
+                ));
+                None
+            }
         }
     };
     if let Some(mut f) = file.as_ref().and_then(|f| f.try_clone().ok()) {
@@ -95,8 +143,30 @@ pub fn init() {
         let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let _unused = writeln!(
             f,
-            "{ts} ---- multiplexer start pid={pid} debug={debug} path={} ----",
+            "{ts} ---- multiplexer start pid={pid} debug={debug} trace={trace} path={} ----",
             path.display()
+        );
+        // One context banner lets the file correlate offline to the host run /
+        // OTLP timeline. Per-line stamping is deliberately out (volume).
+        let (run_id, session_id, traceparent) = crate::telemetry::session_context().map_or_else(
+            || {
+                (
+                    std::env::var("JACKIN_RUN_ID").unwrap_or_else(|_| "-".to_owned()),
+                    "-".to_owned(),
+                    std::env::var("TRACEPARENT").unwrap_or_else(|_| "-".to_owned()),
+                )
+            },
+            |(session_id, run_id, traceparent)| {
+                (
+                    run_id.unwrap_or_else(|| "-".to_owned()),
+                    session_id,
+                    traceparent.unwrap_or_else(|| "-".to_owned()),
+                )
+            },
+        );
+        let _unused = writeln!(
+            f,
+            "{ts} [jackin-capsule] context run_id={run_id} session_id={session_id} traceparent={traceparent}"
         );
     }
     drop(LOG_FILE.set(Mutex::new(file)));
@@ -108,6 +178,13 @@ pub fn init() {
             let bt = std::backtrace::Backtrace::force_capture();
             write_line(&format!("[jackin-capsule] PANIC: {info}"));
             write_line(&format!("[jackin-capsule] BACKTRACE:\n{bt}"));
+            // The hook runs while unwinding; keep the bridged record one-line
+            // and leave the backtrace in the local multiplexer log.
+            crate::telemetry::bridge_log(
+                crate::telemetry::BridgeLevel::Error,
+                &format!("PANIC: {info}"),
+            );
+            crate::telemetry::shutdown();
             default_hook(info);
         }));
     });
@@ -145,7 +222,7 @@ macro_rules! clog {
     ($($arg:tt)*) => {{
         let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
         $crate::logging::write_line(&line);
-        $crate::telemetry::bridge_log(false, &line);
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Info, &line);
     }};
 }
 
@@ -161,7 +238,52 @@ macro_rules! cdebug {
         if $crate::logging::debug_enabled() {
             let line = format!("[jackin-capsule debug] {}", format_args!($($arg)*));
             $crate::logging::write_line(&line);
-            $crate::telemetry::bridge_log(true, &line);
+            $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Debug, &line);
         }
     }};
 }
+
+/// Trace-only payload telemetry. When OTLP is active, raw payload records are
+/// exported at TRACE and are not mirrored to stderr or `multiplexer.log`; when
+/// OTLP is inactive, they fall back to the local capsule log for offline triage.
+#[macro_export]
+macro_rules! ctrace_payload {
+    ($($arg:tt)*) => {{
+        if $crate::logging::trace_enabled() {
+            let line = format!("[jackin-capsule trace] {}", format_args!($($arg)*));
+            if $crate::telemetry::otlp_active() {
+                $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Trace, &line);
+            } else {
+                $crate::logging::write_line(&line);
+            }
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! cdebug_local {
+    ($($arg:tt)*) => {{
+        $crate::ctrace_payload!($($arg)*);
+    }};
+}
+
+#[macro_export]
+macro_rules! cwarn {
+    ($($arg:tt)*) => {{
+        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
+        $crate::logging::write_line(&line);
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Warn, &line);
+    }};
+}
+
+#[macro_export]
+macro_rules! cerror {
+    ($($arg:tt)*) => {{
+        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
+        $crate::logging::write_line(&line);
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Error, &line);
+    }};
+}
+
+#[cfg(test)]
+mod tests;

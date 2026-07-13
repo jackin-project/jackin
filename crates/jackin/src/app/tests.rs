@@ -12,7 +12,7 @@ fn parse_auth_forward_mode_from_cli_accepts_sync() {
 
 #[test]
 fn parse_auth_forward_mode_from_cli_rejects_bogus() {
-    assert!(parse_auth_forward_mode_from_cli("bogus").is_err());
+    parse_auth_forward_mode_from_cli("bogus").unwrap_err();
 }
 
 #[test]
@@ -335,7 +335,7 @@ async fn stop_failure_leaves_running_manifest_when_container_still_exists() {
     let paths = JackinPaths::for_tests(temp.path());
     let container =
         write_stop_test_manifest(&paths, temp.path(), instance::InstanceStatus::Running);
-    let docker = runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             runtime::ContainerState::Running,
         ])),
@@ -356,7 +356,7 @@ async fn stop_failure_marks_restore_available_when_container_is_gone() {
     let paths = JackinPaths::for_tests(temp.path());
     let container =
         write_stop_test_manifest(&paths, temp.path(), instance::InstanceStatus::Running);
-    let docker = runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
 
     mark_instance_restore_available_after_stop(&paths, &container, &docker, false).await;
 
@@ -402,7 +402,7 @@ async fn hardline_restore_candidate_marks_missing_manifest_available() {
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
     // inspect returns NotFound → manifest marked RestoreAvailable
-    let docker = runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
 
     let candidate = restore_candidate_for_hardline(&paths, container, &docker)
         .await
@@ -450,7 +450,7 @@ async fn hardline_restore_candidate_errors_when_docker_unavailable() {
     manifest.mark_status(instance::InstanceStatus::Crashed);
     manifest.write(&paths.data_dir.join(container)).unwrap();
     // inspect returns InspectUnavailable → Docker is unavailable error
-    let docker = runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             runtime::ContainerState::InspectUnavailable(
                 "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_owned(),
@@ -859,7 +859,7 @@ use std::collections::HashMap;
 async fn resolve_role_no_match_errors() {
     let selector = RoleSelector::new(None, "agent-smith");
     // list_containers returns empty → no match
-    let docker = runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let err = resolve_role_to_container(&selector, &docker)
         .await
         .unwrap_err();
@@ -873,7 +873,7 @@ async fn resolve_role_no_match_errors() {
 async fn resolve_role_multiple_matches_errors_with_names() {
     let selector = RoleSelector::new(None, "agent-smith");
     // list_containers returns two containers → multiple match error
-    let docker = runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-k7p9m2xq-agentsmith".to_owned(),
@@ -899,7 +899,7 @@ async fn resolve_role_multiple_matches_errors_with_names() {
 async fn resolve_role_single_match_returns_name() {
     let selector = RoleSelector::new(None, "agent-smith");
     // list_containers returns one container → single match
-    let docker = runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-k7p9m2xq-agentsmith".to_owned(),

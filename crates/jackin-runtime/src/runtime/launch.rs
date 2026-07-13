@@ -27,10 +27,13 @@
 mod launch_dind;
 pub use launch_dind::DIND_IMAGE;
 pub(super) use launch_dind::create_role_network;
+pub(crate) use launch_dind::prewarmed_dind_state_container_name;
 pub use launch_dind::{
     DindSidecarPrewarm, prewarm_dind_sidecar_container, write_prewarmed_dind_state,
 };
 use launch_dind::{adopt_prewarmed_dind_sidecar, run_dind_sidecar_headless};
+#[cfg(not(test))]
+pub(crate) use launch_dind::{prewarmed_dind_state_is_live, try_lock_prewarmed_dind};
 
 mod launch_slot;
 #[cfg(test)]
@@ -47,6 +50,10 @@ pub(crate) use trust::{
 };
 
 mod launch_pipeline;
+pub use launch_pipeline::launch_phases::{
+    GrantPhaseInput, GrantsValidated, ImagePhaseClass, ImagePhaseClassified, classify_image_phase,
+    cleanup_after_grant_failure, validate_launch_grants,
+};
 
 use super::discovery::list_running_agent_names;
 
@@ -217,26 +224,34 @@ pub(crate) use failure::{
 
 mod launch_plan;
 pub(crate) use launch_plan::{
-    LaunchPlan, emit_image_materialization_plan, emit_launch_plan, emit_prewarm_launch_plan,
-    emit_rejected_launch_plan,
+    LaunchPlan, emit_image_materialization_plan, emit_launch_plan, emit_launch_plan_for_run,
+    emit_prewarm_launch_plan, emit_rejected_launch_plan_for_run,
 };
 
 mod load_cleanup;
-pub(crate) use load_cleanup::{LoadCleanup, write_if_changed_atomic};
+pub use load_cleanup::LoadCleanup;
+pub(crate) use load_cleanup::write_if_changed_atomic;
 
 mod restore_resolve;
-#[cfg(test)]
-pub(crate) use restore_resolve::resolve_unselected_current_restore_candidate_timed;
 pub(crate) use restore_resolve::{
-    RestoreResolution, UnselectedCurrentRestoreResolution, resolve_current_restore_candidate_timed,
-    resolve_restore_candidate, resolve_unselected_current_restore_candidate_with_agent_timed,
+    EarlyCurrentRestoreScan, RestoreResolution, UnselectedCurrentRestoreResolution,
+    resolve_current_restore_candidate_timed, resolve_restore_candidate_reusing_early,
+    resolve_unselected_current_restore_candidate_with_agent_timed,
+};
+#[cfg(test)]
+pub(crate) use restore_resolve::{
+    resolve_restore_candidate, resolve_unselected_current_restore_candidate_timed,
 };
 
 mod launch_runtime;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use launch_runtime::{
-    LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm, debug_runtime_envs,
-    host_runtime_passthrough_env, launch_role_runtime, spawn_sibling_auth_prewarm,
+    LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,
+    SidecarPrewarmReplenish, debug_runtime_envs, host_runtime_passthrough_env, launch_role_runtime,
+    spawn_sibling_auth_prewarm,
 };
 
 /// Present the stale-instance decision. "Start fresh" is always the

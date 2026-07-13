@@ -33,6 +33,28 @@ fn line_styles_keys_and_text_distinctly() {
 }
 
 #[test]
+fn styled_hint_spans_identity_matches_line() {
+    let spans = [
+        HintSpan::Key("Esc"),
+        HintSpan::Text("close"),
+        HintSpan::Sep,
+        HintSpan::DynKey("Ctrl-\\".to_owned()),
+        HintSpan::Dyn("menu".to_owned()),
+        HintSpan::GroupSep,
+        HintSpan::Key("q"),
+        HintSpan::Text("quit"),
+    ];
+    let direct = styled_hint_spans(&spans, |color| color);
+    let via_line = line(&spans);
+
+    assert_eq!(direct.len(), via_line.spans.len());
+    for (direct, via_line) in direct.iter().zip(&via_line.spans) {
+        assert_eq!(direct.content, via_line.content);
+        assert_eq!(direct.style, via_line.style);
+    }
+}
+
+#[test]
 fn wrapped_long_wraps_within_width() {
     let items = [
         HintSpan::Key("↑↓"),

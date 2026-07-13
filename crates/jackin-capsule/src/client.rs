@@ -100,8 +100,9 @@ async fn try_report_event(args: &[String]) -> Result<()> {
     let source_id = std::env::var("JACKIN_STATUS_SOURCE").context("JACKIN_STATUS_SOURCE unset")?;
     let runtime = std::env::var("JACKIN_AGENT_RUNTIME").context("JACKIN_AGENT_RUNTIME unset")?;
 
-    // Drain stdin when asked so the hook's pipe never breaks; the payload is
-    // forwarded but unused by gating today.
+    // Drain stdin when asked so the hook's pipe never breaks. The daemon uses
+    // the payload to enrich bare Claude `Notification` events into typed
+    // `Notification:<subtype>` keys for gating (plan 009b).
     let payload = if args.iter().any(|a| a == "--payload-stdin") {
         let mut buf = String::new();
         let _read = tokio::io::stdin().read_to_string(&mut buf).await;
@@ -377,7 +378,7 @@ pub async fn run_usage_verify() -> Result<()> {
     Ok(())
 }
 
-pub async fn run_usage_claude_cli() -> Result<()> {
+pub fn run_usage_claude_cli() -> Result<()> {
     let diagnostic = crate::usage::run_claude_usage_diagnostic()
         .map_err(|error| anyhow::anyhow!("Claude CLI usage diagnostic failed: {error}"))?;
     crate::output::stdout_line(format_args!(

@@ -202,7 +202,9 @@ pub fn emit_image_reuse(image: &str) {
                 "create_derived_build_context",
                 "resolve_github_token",
                 "docker_build",
-                "selected_agent_version_probe"
+                "selected_agent_version_probe",
+                "published_image_pull",
+                "agent_version_check"
             ],
         })
         .to_string();

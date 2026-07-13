@@ -171,6 +171,7 @@ impl ManagerState<'_> {
                 height: 24,
             },
             instances_last_refresh: None,
+            instances_refresh_interval: crate::tui::subscriptions::INSTANCE_REFRESH_INTERVAL,
             instances_refresh_generation: 0,
             instances_refresh_rx: None,
             mount_info_refresh_rx: None,
@@ -196,7 +197,10 @@ impl ManagerState<'_> {
         std::mem::take(&mut self.pending_effects)
     }
 
-    #[allow(clippy::missing_const_for_fn)]
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     pub fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
         self.stage.take_pending_token_generate()
     }
@@ -590,6 +594,7 @@ impl ManagerState<'_> {
             InstanceRefreshThrottleState {
                 in_flight: self.instances_refresh_rx.is_some(),
                 last_refresh: self.instances_last_refresh,
+                interval: self.instances_refresh_interval,
                 generation: self.instances_refresh_generation,
             },
             now,
@@ -857,6 +862,7 @@ impl ManagerState<'_> {
         self.instance_sessions = snapshot.sessions;
         self.instance_session_errors = snapshot.session_errors;
         self.instance_snapshots = snapshot.snapshots;
+        self.instances_refresh_interval = snapshot.next_interval;
         self.instances_last_error = None;
         // Evict preview cursors keyed on containers that no longer have
         // a live snapshot, otherwise the map accumulates indefinitely
@@ -1166,7 +1172,7 @@ impl ManagerState<'_> {
             jackin_diagnostics::debug_log!(
                 "auth",
                 "AUTH005 apply_op_picker_op_ref_committed_for_editor: \
-                 pending_auth_form_return missing — async OpRef commit dropped"
+                 modal parent auth form missing — async OpRef commit dropped"
             );
         }
     }
@@ -1184,7 +1190,7 @@ impl ManagerState<'_> {
         let ManagerStage::Settings(settings) = &mut self.stage else {
             return;
         };
-        let Some(super::SettingsAuthModal::AuthForm {
+        let Some(super::SettingsModal::AuthForm {
             target,
             mut state,
             literal_buffer,
@@ -1199,7 +1205,7 @@ impl ManagerState<'_> {
             return;
         };
         state.set_op_ref(op_ref);
-        settings.auth.set_modal(super::SettingsAuthModal::AuthForm {
+        settings.auth.set_modal(super::SettingsModal::AuthForm {
             target,
             state,
             focus: crate::tui::screens::settings::model::AuthFormFocus::Save,

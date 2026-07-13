@@ -11,12 +11,12 @@
 //! plus the host-derived [`container_arch`] both callers key their cache paths
 //! on.
 
-use std::path::Path;
-
+use crate::ImageError;
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
 use sha2::{Digest, Sha256};
 use std::io::Read as _;
+use std::path::Path;
 
 /// Linux container arch for the current host, used to pick release assets and
 /// build cache paths.
@@ -124,11 +124,12 @@ pub fn hash_file_sha256(path: &Path) -> Result<String> {
 /// surfacing later as a confusing "checksum mismatch against empty".
 pub fn parse_sha256_hex(text: &str) -> Result<String> {
     let hex = text.split_whitespace().next().unwrap_or("").to_lowercase();
-    anyhow::ensure!(
-        hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()),
-        "expected a 64-char hex sha256, got {:?}",
-        hex.chars().take(80).collect::<String>()
-    );
+    if !(hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit())) {
+        return Err(ImageError::InvalidSha256Hex {
+            got: hex.chars().take(80).collect(),
+        }
+        .into());
+    }
     Ok(hex)
 }
 
@@ -165,7 +166,11 @@ pub fn extract_tar_gz_member(archive: &Path, member: &str, dest: &Path) -> Resul
             return Ok(());
         }
     }
-    anyhow::bail!("{} is missing member {member}", archive.display())
+    Err(ImageError::ArchiveMemberMissing {
+        archive: archive.to_path_buf(),
+        member: member.to_owned(),
+    }
+    .into())
 }
 
 #[cfg(test)]

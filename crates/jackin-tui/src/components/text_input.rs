@@ -8,13 +8,13 @@ use std::marker::PhantomData;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
+use ratatui::widgets::{Block, Clear, Paragraph, Widget};
 
 use crate::centered_rect;
 use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Mods, Visibility};
-use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{DANGER_RED, INK, INPUT_BG_DIM, PHOSPHOR_GREEN};
 use crate::{HintSpan, ModalOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -387,106 +387,75 @@ impl TextInputState<'_> {
     }
 }
 
-#[derive(Debug)]
-pub struct TextInput<'a> {
-    state: &'a TextInputState<'a>,
-}
+fn render_text_input_in(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) {
+    Clear.render(area, buf);
 
-impl<'a> TextInput<'a> {
-    #[must_use]
-    pub const fn new(state: &'a TextInputState<'a>) -> Self {
-        Self { state }
-    }
-}
-
-impl Widget for TextInput<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        Clear.render(area, buf);
-
-        let title = Span::styled(format!(" {} ", self.state.label), crate::theme::BOLD_WHITE);
-        let border_color = match self.state.border_style() {
+    let block = crate::components::Panel::new()
+        .title(&state.label)
+        .focus(crate::components::PanelFocus::Focused)
+        .block()
+        .border_style(Style::default().fg(match state.border_style() {
             BorderStyle::Error => DANGER_RED,
             BorderStyle::Default => PHOSPHOR_GREEN,
+        }));
+
+    let inner = block.inner(area);
+    block.render(area, buf);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let input_row = rows[1];
+    let input_area = Rect {
+        x: input_row.x.saturating_add(1),
+        y: input_row.y,
+        width: input_row.width.saturating_sub(2),
+        height: input_row.height,
+    };
+    Block::default()
+        .style(Style::default().bg(INPUT_BG_DIM))
+        .render(input_area, buf);
+    render_input_value(input_area, buf, state);
+
+    if state.is_duplicate() {
+        let key = state.trimmed_value();
+        let message = if state.forbidden_label.is_empty() {
+            format!("\u{26a0} \"{key}\" already exists")
+        } else {
+            format!(
+                "\u{26a0} \"{key}\" already exists in {}",
+                state.forbidden_label
+            )
         };
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .title(title);
-
-        let inner = block.inner(area);
-        block.render(area, buf);
-
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Min(1),
-                Constraint::Length(1),
-            ])
-            .split(inner);
-
-        let input_row = rows[1];
-        let input_area = Rect {
-            x: input_row.x.saturating_add(1),
-            y: input_row.y,
-            width: input_row.width.saturating_sub(2),
-            height: input_row.height,
-        };
-        Block::default()
-            .style(Style::default().bg(INPUT_BG_DIM))
-            .render(input_area, buf);
-        render_input_value(input_area, buf, self.state);
-
-        if self.state.is_duplicate() {
-            let key = self.state.trimmed_value();
-            let message = if self.state.forbidden_label.is_empty() {
-                format!("\u{26a0} \"{key}\" already exists")
-            } else {
-                format!(
-                    "\u{26a0} \"{key}\" already exists in {}",
-                    self.state.forbidden_label
-                )
-            };
-            Paragraph::new(message)
-                .style(
-                    Style::default()
-                        .fg(DANGER_RED)
-                        .add_modifier(Modifier::BOLD | Modifier::ITALIC),
-                )
-                .render(rows[2], buf);
-        }
+        Paragraph::new(message)
+            .style(
+                Style::default()
+                    .fg(DANGER_RED)
+                    .add_modifier(Modifier::BOLD | Modifier::ITALIC),
+            )
+            .render(rows[2], buf);
     }
 }
 
 fn render_input_value(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) {
-    let value = state.field.value();
-    let cursor = state.field.cursor().min(value.len());
-    let (before, after) = value.split_at(cursor);
-    let base_style = crate::theme::GREEN.bg(INPUT_BG_DIM);
-    let cursor_style = Style::default()
-        .bg(WHITE)
-        .fg(Color::Black)
-        .add_modifier(Modifier::SLOW_BLINK);
-    let mut spans = vec![Span::styled(before.to_owned(), base_style)];
-    if let Some(ch) = after.chars().next() {
-        spans.push(Span::styled(ch.to_string(), cursor_style));
-        spans.push(Span::styled(after[ch.len_utf8()..].to_string(), base_style));
-    } else {
-        spans.push(Span::styled(" ", cursor_style));
-    }
-    Paragraph::new(Line::from(spans)).render(area, buf);
+    render_input_value_from_parts(area, buf, state.field.value(), state.field.cursor());
 }
 
 pub fn render_text_input(frame: &mut ratatui::Frame<'_>, area: Rect, state: &TextInputState<'_>) {
-    frame.render_widget(TextInput::new(state), area);
+    render_text_input_in(area, frame.buffer_mut(), state);
 }
 
 /// Canonical outer rectangle for one-label text-input prompts.
 ///
 /// Launch currently owns the only variable-width prompt surface, so this helper
-/// preserves that 60%-of-content sizing while moving the geometry into the
-/// shared component next to the renderer. Console modal rects intentionally keep
-/// their fixed 160-column reference sizing until that modal layer is migrated.
+/// preserves that 60%-of-content sizing while keeping prompt geometry in the
+/// shared crate next to the renderer and modal sizing registry.
 #[must_use]
 pub fn text_input_prompt_rect(area: Rect) -> Rect {
     let min_w = 50.min(area.width);
@@ -536,16 +505,15 @@ fn render_input_value_from_parts(area: Rect, buf: &mut Buffer, value: &str, curs
     let cursor = cursor.min(value.len());
     let (before, after) = value.split_at(cursor);
     let cursor_style = Style::default()
-        .fg(Color::Black)
+        .fg(INK)
         .bg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
-    let mut spans = vec![Span::styled(before.to_owned(), crate::theme::GREEN)];
+    let base_style = crate::theme::GREEN.bg(INPUT_BG_DIM);
+    let tail_style = crate::theme::DIM.bg(INPUT_BG_DIM);
+    let mut spans = vec![Span::styled(before.to_owned(), base_style)];
     if let Some(ch) = after.chars().next() {
         spans.push(Span::styled(ch.to_string(), cursor_style));
-        spans.push(Span::styled(
-            after[ch.len_utf8()..].to_owned(),
-            crate::theme::DIM,
-        ));
+        spans.push(Span::styled(after[ch.len_utf8()..].to_owned(), tail_style));
     } else {
         spans.push(Span::styled(" ", cursor_style));
     }

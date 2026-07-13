@@ -15,7 +15,7 @@ async fn read_control_msg_rejects_oversize_length_prefix() {
     a.write_all(&len_bytes[1..]).await.unwrap();
     a.shutdown().await.unwrap();
     let result = read_control_msg(&mut b, len_bytes[0]).await;
-    assert!(result.is_err(), "expected oversize rejection: {result:?}");
+    result.expect_err("expected oversize rejection");
 }
 
 #[tokio::test]
@@ -27,7 +27,7 @@ async fn read_control_msg_rejects_malformed_json() {
     a.write_all(body).await.unwrap();
     a.shutdown().await.unwrap();
     let result = read_control_msg(&mut b, len_buf[0]).await;
-    assert!(result.is_err(), "expected JSON parse error: {result:?}");
+    result.expect_err("expected JSON parse error");
 }
 
 #[tokio::test]

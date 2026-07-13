@@ -29,31 +29,36 @@ pub struct TailScroll {
 }
 
 impl TailScroll {
+    /// Create a tail scroll with the given distance from the bottom.
     #[must_use]
     pub const fn new(offset: usize) -> Self {
         Self { offset }
     }
 
+    /// Distance from the content tail (0 = pinned to bottom).
     #[must_use]
     pub const fn offset(self) -> usize {
         self.offset
     }
 
+    /// Adjust offset by `delta`, clamped to `filled` lines of scroll room.
     pub fn scroll_by(&mut self, filled: usize, delta: isize) -> usize {
         let current = self.offset.min(filled);
         self.offset = if delta.is_negative() {
             current.saturating_sub(delta.unsigned_abs())
         } else {
-            current.saturating_add(delta as usize).min(filled)
+            current.saturating_add(delta.unsigned_abs()).min(filled)
         };
         self.offset
     }
 
+    /// Clamp offset so it never exceeds `filled`.
     pub fn clamp(&mut self, filled: usize) -> usize {
         self.offset = self.offset.min(filled);
         self.offset
     }
 
+    /// Convert a tail-relative offset into a top-relative scroll origin.
     #[must_use]
     pub fn to_top_offset(self, content_len: usize, viewport_len: usize) -> usize {
         let max = max_offset(content_len, viewport_len);
@@ -64,11 +69,14 @@ impl TailScroll {
 /// Scroll-body state for dialog content with vertical + horizontal axes.
 #[derive(Debug, Clone, Default)]
 pub struct DialogBodyScroll {
+    /// Vertical scroll offset in rows.
     pub scroll_y: u16,
+    /// Horizontal scroll offset in columns.
     pub scroll_x: u16,
 }
 
 impl DialogBodyScroll {
+    /// Zeroed scroll state.
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -89,18 +97,26 @@ impl DialogBodyScroll {
 )]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatusFooterHover {
+    /// Pointer is over the left footer segment.
     pub left: bool,
+    /// Pointer is over the usage segment.
     pub usage: bool,
+    /// Pointer is over the right footer segment.
     pub right: bool,
+    /// Pointer is over the right-debug footer segment.
     pub right_debug: bool,
 }
 
 /// Bottom-chrome layout areas (body + hint + spacer + footer rows).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BottomChromeAreas {
+    /// Main body rect above the chrome rows.
     pub body: Rect,
+    /// Hint row rect.
     pub hint: Rect,
+    /// Spacer row between hint and footer.
     pub spacer: Rect,
+    /// Status footer row rect.
     pub footer: Rect,
 }
 
@@ -118,6 +134,7 @@ pub const fn bottom_chrome_areas(area: Rect) -> BottomChromeAreas {
     }
 }
 
+/// Number of rows reserved for bottom chrome (hint + spacer + footer).
 pub const BOTTOM_CHROME_ROWS: u16 = 3;
 
 const fn row_from_bottom(area: Rect, offset: u16) -> Rect {
@@ -129,16 +146,19 @@ const fn row_from_bottom(area: Rect, offset: u16) -> Rect {
     }
 }
 
+/// Maximum display width among `lines` (0 when empty).
 #[must_use]
 pub fn max_line_width(lines: &[Line<'_>]) -> usize {
     lines.iter().map(Line::width).max().unwrap_or(0)
 }
 
+/// Whether content taller than the viewport can scroll.
 #[must_use]
 pub const fn is_scrollable(content_len: usize, viewport_len: usize) -> bool {
     viewport_len > 0 && content_len > viewport_len
 }
 
+/// Maximum top-relative scroll offset for the given content/viewport sizes.
 #[must_use]
 pub const fn max_offset(content_len: usize, viewport_len: usize) -> usize {
     if viewport_len == 0 || content_len <= viewport_len {

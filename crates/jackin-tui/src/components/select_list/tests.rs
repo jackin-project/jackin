@@ -1,12 +1,9 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-use super::{PickerRow, SelectList, SelectListState, render_picker_list};
+use super::{PickerRow, SelectListState, render_picker_list, render_select_list_in};
 use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::widgets::{ListItem, Widget};
+use ratatui::widgets::ListItem;
 
 fn row_symbols(buf: &Buffer, y: u16, width: u16) -> String {
     (0..width)
@@ -119,7 +116,7 @@ fn select_list_renders_horizontal_scroll_window() {
         height: 6,
     };
     let mut buf = Buffer::empty(area);
-    SelectList::new(&state, "pick").render(area, &mut buf);
+    render_select_list_in(area, &mut buf, &state, "pick", &[]);
 
     let rendered = row_symbols(&buf, 3, 12);
     assert!(

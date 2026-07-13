@@ -4,7 +4,7 @@
 //! Editor-screen footer facts + hint-span builders for the editor's
 //! per-row contextual footer (general / mount / role / secret / auth).
 
-use jackin_tui::HintSpan;
+use jackin_tui::{HintSpan, keymap::glyph};
 use ratatui::layout::Rect;
 
 use crate::tui::keymap::{
@@ -226,7 +226,7 @@ pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> 
             HintSpan::Text("expand"),
             HintSpan::Sep,
             // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
-            HintSpan::Key("←/→"),
+            HintSpan::Key(glyph::LEFT_RIGHT),
             HintSpan::Text("collapse/expand"),
             HintSpan::Sep,
             // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.

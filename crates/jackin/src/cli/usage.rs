@@ -76,7 +76,7 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     let target = resolve_usage_target(paths, &args.instance)?;
     match &args.scope {
         UsageScope::Accounts(scope_args) => run_accounts(args, paths, &target, scope_args).await,
-        UsageScope::Verify => run_verify(paths, &target).await,
+        UsageScope::Verify => run_verify(paths, &target),
     }
 }
 
@@ -157,7 +157,7 @@ async fn run_accounts(
     Ok(())
 }
 
-async fn run_verify(paths: &JackinPaths, target: &UsageTarget) -> Result<()> {
+fn run_verify(paths: &JackinPaths, target: &UsageTarget) -> Result<()> {
     let accounts = snapshot::fetch_usage_accounts(paths, &target.container)?.unwrap_or_default();
     let checks = verify_usage_accounts(&accounts);
     print!("{BANNER}");

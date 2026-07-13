@@ -14,6 +14,7 @@ use crate::agent_status::AgentStatusReport;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+/// `ClientMsg` protocol enum.
 pub enum ClientMsg {
     /// Request the current session inventory.
     Status,
@@ -26,6 +27,7 @@ pub enum ClientMsg {
     /// reporter only forwards. Acked immediately so the reporter never blocks
     /// an agent hook.
     ReportRuntimeEvent {
+        /// `session_id` field.
         session_id: u64,
         /// Unique per session+runtime, e.g. `hook-<runtime>-<session>`.
         source_id: String,
@@ -41,7 +43,10 @@ pub enum ClientMsg {
     /// new capture fixture directory (a contributor diagnostic: turn a live
     /// mis-detection into a regression fixture). The daemon owns the grid, so it
     /// writes the files; the client only triggers and is Acked.
-    StatusCapture { session_id: u64 },
+    StatusCapture {
+        /// Target session id for the capture fixture.
+        session_id: u64,
+    },
     /// Request the usage/quota snapshot for the currently focused pane.
     UsageFocused,
     /// Ask the daemon to refresh focused usage/quota data, then return the
@@ -53,10 +58,18 @@ pub enum ClientMsg {
     /// on-demand credentials injected at exec time. The daemon shows the
     /// credential picker, resolves selections via the host socket, runs the
     /// command, and replies with `ExecResult` or `ExecDenied`.
-    ExecCommand { command: String, args: Vec<String> },
+    ExecCommand {
+        /// Command basename to exec.
+        command: String,
+        /// Positional arguments for the command.
+        args: Vec<String>,
+    },
     /// Request the per-session token-spend summary for one session, read from
     /// the daemon's token monitor (provider JSONL/SQLite totals).
-    TokenUsage { session_id: u64 },
+    TokenUsage {
+        /// Session whose token spend should be summarized.
+        session_id: u64,
+    },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -83,44 +96,67 @@ impl ServerMsg {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+/// `ServerMsg` protocol enum.
 pub enum ServerMsg {
     /// Current session inventory.
-    SessionList { sessions: Vec<SessionInfo> },
+    SessionList {
+        /// Current session inventory.
+        sessions: Vec<SessionInfo>,
+    },
     /// Tab/pane tree snapshot. `tabs` is in render order;
     /// `active_tab` indexes into it. Each `TabSnapshot::panes` lists
     /// the pane leaves of that tab in `PaneTree` in-order traversal
     /// order; `TabSnapshot::focused_pane` carries the session id of
     /// the focused leaf (matches a `PaneSnapshot::session_id`).
     Snapshot {
+        /// `tabs` field.
         tabs: Vec<TabSnapshot>,
+        /// `active_tab` field.
         active_tab: u32,
     },
     /// Agent registry: every tab ever opened in this container lifetime.
-    AgentRegistry { records: Vec<AgentRegistryEntry> },
+    AgentRegistry {
+        /// Every tab/agent record known for this container lifetime.
+        records: Vec<AgentRegistryEntry>,
+    },
     /// Acknowledgement for a fire-and-forget request (e.g. `ReportRuntimeEvent`).
     Ack,
     /// Usage/quota data for the focused pane.
-    UsageFocused { usage: Box<FocusedUsageView> },
+    UsageFocused {
+        /// Focused-pane usage/quota view.
+        usage: Box<FocusedUsageView>,
+    },
     /// Account/quota snapshots known to the daemon cache.
     UsageAccounts {
+        /// `accounts` field.
         accounts: Vec<AccountUsageSnapshotView>,
     },
     /// Result of a `jackin-exec` invocation: the child's exit code and its
     /// (capped, secret-redacted) stdout/stderr. `redacted_count` reports how
     /// many secret patterns were scrubbed from the output.
     ExecResult {
+        /// `exit_code` field.
         exit_code: i32,
+        /// `stdout` field.
         stdout: String,
+        /// `stderr` field.
         stderr: String,
+        /// `redacted_count` field.
         redacted_count: u32,
     },
     /// A `jackin-exec` invocation the daemon refused to run (operator cancelled
     /// the picker, the host resolver was unavailable, or `op read` failed). No
     /// command was executed.
-    ExecDenied { reason: String },
+    ExecDenied {
+        /// Why the daemon refused to run the command.
+        reason: String,
+    },
     /// Per-session token-spend summary; `None` when the session is unknown to
     /// the token monitor (never registered, or already exited).
-    TokenUsage { summary: Option<TokenUsageSummary> },
+    TokenUsage {
+        /// Per-session token summary, if the monitor knows the session.
+        summary: Option<TokenUsageSummary>,
+    },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -130,9 +166,13 @@ pub enum ServerMsg {
 /// Mirrors `token_monitor::TokenTotals::to_summary` on the wire.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TokenUsageSummary {
+    /// `input_tokens` field.
     pub input_tokens: u64,
+    /// `output_tokens` field.
     pub output_tokens: u64,
+    /// `cache_read_tokens` field.
     pub cache_read_tokens: u64,
+    /// `cache_write_tokens` field.
     pub cache_write_tokens: u64,
     /// Provider-supplied cost when the source reports it directly.
     pub cost_usd: Option<f64>,
@@ -141,44 +181,72 @@ pub struct TokenUsageSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// `AccountUsageSnapshotView` protocol type.
 pub struct AccountUsageSnapshotView {
+    /// `provider` field.
     pub provider: String,
+    /// `account_label` field.
     pub account_label: String,
+    /// `source` field.
     pub source: String,
+    /// `confidence` field.
     pub confidence: String,
+    /// `window_kind` field.
     pub window_kind: String,
+    /// `used_amount` field.
     pub used_amount: Option<i64>,
+    /// `used_unit` field.
     pub used_unit: Option<String>,
+    /// `limit_amount` field.
     pub limit_amount: Option<i64>,
+    /// `limit_unit` field.
     pub limit_unit: Option<String>,
+    /// `resets_at` field.
     pub resets_at: Option<i64>,
+    /// `fetched_at` field.
     pub fetched_at: i64,
+    /// `expires_at` field.
     pub expires_at: Option<i64>,
+    /// `status` field.
     pub status: String,
+    /// `last_error` field.
     pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// `FocusedUsageView` protocol type.
 pub struct FocusedUsageView {
+    /// `focused_agent` field.
     pub focused_agent: Option<String>,
+    /// `focused_provider` field.
     pub focused_provider: Option<String>,
+    /// `account` field.
     pub account: FocusedAccountHeader,
+    /// `buckets` field.
     pub buckets: Vec<QuotaBucketView>,
+    /// `status` field.
     pub status: UsageSnapshotStatus,
+    /// `source` field.
     pub source: UsageSource,
+    /// `confidence` field.
     pub confidence: UsageConfidence,
+    /// `fetched_at_epoch` field.
     pub fetched_at_epoch: i64,
+    /// `updated_label` field.
     pub updated_label: String,
     /// Status-bar headline. Carries the percentage windows and, when the
     /// focused account has a monetary spend window, the spend joined in:
     /// `Session 89% · Weekly 73% · SGD 78 of 260`.
     pub status_bar_label: String,
+    /// `tabs` field.
     pub tabs: Vec<UsageProviderTab>,
+    /// `last_error` field.
     pub last_error: Option<String>,
 }
 
 impl FocusedUsageView {
     #[must_use]
+    /// `unavailable` associated function.
     pub fn unavailable(reason: impl Into<String>, now_epoch: i64) -> Self {
         let reason = reason.into();
         Self {
@@ -210,16 +278,23 @@ impl FocusedUsageView {
     pub fn refreshing(provider: Option<&str>, now_epoch: i64) -> Self {
         let mut view = Self::unavailable("refreshing", now_epoch);
         view.focused_provider = provider.map(str::to_owned);
-        view.account.provider_label = provider.unwrap_or("Usage").to_owned();
+        view.account.provider_label.clear();
+        view.account
+            .provider_label
+            .push_str(provider.unwrap_or("Usage"));
         view.account.account_label = String::new();
-        view.status_bar_label = "refreshing".to_owned();
-        view.updated_label = "Refreshing".to_owned();
+        view.status_bar_label.clear();
+        view.status_bar_label.push_str("refreshing");
+        view.updated_label.clear();
+        view.updated_label.push_str("Refreshing");
         view
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// `FocusedAccountHeader` protocol type.
 pub struct FocusedAccountHeader {
+    /// `provider_label` field.
     pub provider_label: String,
     /// Account identity: the real account email when the provider exposes one,
     /// otherwise empty (no fabricated identity). Auth method/source belongs in
@@ -228,6 +303,7 @@ pub struct FocusedAccountHeader {
     /// Account username/handle, when distinct from the email.
     #[serde(default)]
     pub username: Option<String>,
+    /// `plan_label` field.
     pub plan_label: Option<String>,
     /// Where the credential came from (the auth source), never the secret:
     /// e.g. `OAuth · keychain`, `API token · env ZAI_API_KEY`,
@@ -243,7 +319,9 @@ pub struct FocusedAccountHeader {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum StatusSlot {
+    /// `Session` variant.
     Session,
+    /// `Weekly` variant.
     Weekly,
     /// Monetary spend against a cap (Claude `extra_usage`/`spend`, Codex credits).
     /// Rendered in the status bar as money (`$53/$300`) from the bucket's
@@ -269,6 +347,7 @@ pub struct Money {
 
 impl Money {
     #[must_use]
+    /// `new` associated function.
     pub fn new(amount_minor: i64, currency: impl Into<String>, exponent: u8) -> Self {
         Self {
             amount_minor,
@@ -328,17 +407,26 @@ impl std::fmt::Display for Money {
 #[serde(rename_all = "snake_case")]
 pub enum UsageSeverity {
     #[default]
+    /// `Normal` variant.
     Normal,
+    /// `Warn` variant.
     Warn,
+    /// `Danger` variant.
     Danger,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// `QuotaBucketView` protocol type.
 pub struct QuotaBucketView {
+    /// `label` field.
     pub label: String,
+    /// `used_label` field.
     pub used_label: Option<String>,
+    /// `limit_label` field.
     pub limit_label: Option<String>,
+    /// `remaining_percent` field.
     pub remaining_percent: Option<u8>,
+    /// `reset_label` field.
     pub reset_label: Option<String>,
     /// Raw reset timestamp (epoch seconds) behind `reset_label`. Kept so the
     /// CLI report (`usage accounts`) can emit `resets_at` instead of dropping
@@ -348,7 +436,9 @@ pub struct QuotaBucketView {
     /// Which status-bar headline slot this window fills, if any.
     #[serde(default)]
     pub status_slot: Option<StatusSlot>,
+    /// `pace_label` field.
     pub pace_label: Option<String>,
+    /// `status` field.
     pub status: UsageSnapshotStatus,
     /// Structured spent amount behind `used_label`, when the window is monetary
     /// (the `Spend` slot). Carried as [`Money`] so the status bar can format
@@ -365,45 +455,70 @@ pub struct QuotaBucketView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// `UsageProviderTab` protocol type.
 pub struct UsageProviderTab {
+    /// `label` field.
     pub label: String,
+    /// `status_label` field.
     pub status_label: String,
+    /// `account_label` field.
     pub account_label: String,
+    /// `plan_label` field.
     pub plan_label: Option<String>,
     /// Freshness + source tag for the Overview row, e.g. "fresh · provider"
     /// or "stale · local estimate". `None` until the daemon enriches the tab.
     pub source_label: Option<String>,
+    /// `active` field.
     pub active: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// `UsageSnapshotStatus` protocol enum.
 pub enum UsageSnapshotStatus {
+    /// `Fresh` variant.
     Fresh,
+    /// `Stale` variant.
     Stale,
+    /// `NeedsLogin` variant.
     NeedsLogin,
+    /// `NeedsSecret` variant.
     NeedsSecret,
+    /// `Unsupported` variant.
     Unsupported,
+    /// `Unavailable` variant.
     Unavailable,
+    /// `Error` variant.
     Error,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// `UsageSource` protocol enum.
 pub enum UsageSource {
+    /// `ProviderApi` variant.
     ProviderApi,
+    /// `Cli` variant.
     Cli,
+    /// `LocalLogs` variant.
     LocalLogs,
+    /// `Cache` variant.
     Cache,
+    /// `None` variant.
     None,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// `UsageConfidence` protocol enum.
 pub enum UsageConfidence {
+    /// `Authoritative` variant.
     Authoritative,
+    /// `Estimated` variant.
     Estimated,
+    /// `PresenceOnly` variant.
     PresenceOnly,
+    /// `None` variant.
     None,
 }
 
@@ -434,30 +549,42 @@ pub struct AgentRegistryEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// `SessionInfo` protocol type.
 pub struct SessionInfo {
+    /// `id` field.
     pub id: u64,
+    /// `label` field.
     pub label: String,
+    /// `agent` field.
     pub agent: Option<String>,
+    /// `state` field.
     pub state: AgentState,
+    /// `active` field.
     pub active: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// `TabSnapshot` protocol type.
 pub struct TabSnapshot {
+    /// `label` field.
     pub label: String,
     /// `session_id` of the focused leaf in this tab. Always matches
     /// one of the `panes[*].session_id` entries.
     pub focused_pane: u64,
+    /// `panes` field.
     pub panes: Vec<PaneSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// `PaneSnapshot` protocol type.
 pub struct PaneSnapshot {
+    /// `session_id` field.
     pub session_id: u64,
     /// Session label (agent slug or "Shell").
     pub label: String,
     /// `None` for shell sessions; the agent slug otherwise.
     pub agent: Option<String>,
+    /// `state` field.
     pub state: AgentState,
     /// Full evidence-arbitration status report. `None` until the capsule
     /// populates it from `SessionStatus::report` (Phase 3/10 wiring); the host
@@ -468,16 +595,22 @@ pub struct PaneSnapshot {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// `AgentState` protocol enum.
 pub enum AgentState {
+    /// `Working` variant.
     Working,
+    /// `Blocked` variant.
     Blocked,
+    /// `Done` variant.
     Done,
+    /// `Idle` variant.
     Idle,
     /// No reliable evidence about the agent's state. Safer than guessing.
     Unknown,
 }
 
 impl AgentState {
+    /// `label` method.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Working => "working",

@@ -8,6 +8,7 @@
 //! resolution) lives in the child modules `mounts`, `persist`,
 //! `roles`, and `workspaces`.
 
+use crate::ConfigError;
 use std::collections::BTreeMap;
 
 use jackin_core::EnvValue;
@@ -19,48 +20,73 @@ use jackin_core::AuthForwardMode;
 
 use crate::auth::{AgentAuthConfig, GithubAuthConfig};
 use crate::schema::{
-    DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, RuntimeConfig, WorkspaceConfig,
+    DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, RuntimeConfig, TelemetryConfig,
+    WorkspaceConfig,
 };
 use crate::versions::CURRENT_CONFIG_VERSION;
+
+/// Default launch-time role-repo refresh window when the config omits a TTL.
+pub const DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS: u64 = 60;
 
 /// Top-level operator configuration (`~/.config/jackin/config.toml`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    /// On-disk schema version (`version` key in `config.toml`).
     #[serde(
         default = "crate::versions::current_config_version",
         rename = "version"
     )]
     pub version: String,
+    /// Global Claude auth-forward policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<AgentAuthConfig>,
+    /// Global Codex auth-forward policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<AgentAuthConfig>,
+    /// Global Amp auth-forward policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amp: Option<AgentAuthConfig>,
+    /// Global Kimi auth-forward policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kimi: Option<AgentAuthConfig>,
+    /// Global `OpenCode` auth-forward policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode: Option<AgentAuthConfig>,
+    /// Global Grok auth-forward policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grok: Option<AgentAuthConfig>,
+    /// Global GitHub (`gh`) auth-forward policy and token env.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
+    /// Global operator env map injected into every launch.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, EnvValue>,
+    /// Named role sources (`[roles.<name>]`).
     #[serde(default)]
     pub roles: BTreeMap<String, RoleSource>,
+    /// Global Docker security and named mount tables.
     #[serde(default)]
     pub docker: DockerConfig,
+    /// Host-wide container backend defaults.
     #[serde(default, skip_serializing_if = "RuntimeConfig::is_default")]
     pub runtime: RuntimeConfig,
+    /// Host-wide telemetry filtering.
+    #[serde(default, skip_serializing_if = "TelemetryConfig::is_default")]
+    pub telemetry: TelemetryConfig,
+    /// Global git co-author / DCO settings.
     #[serde(default, skip_serializing_if = "GitConfig::is_default")]
     pub git: GitConfig,
+    /// In-memory workspace map (loaded from split workspace files).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
     /// Global dirty-exit policy (D8). Per-workspace `dirty_exit_policy`
     /// overrides this. Defaults to `ask` when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dirty_exit_policy: Option<DirtyExitPolicy>,
+    /// Freshness window for launch-time role repo fetches. `None` uses the
+    /// built-in default; `Some(0)` preserves always-fetch behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_repo_refresh_ttl_seconds: Option<u64>,
 }
 
 impl AppConfig {
@@ -82,10 +108,11 @@ impl AppConfig {
                         .supported_modes()
                         .contains(&AuthForwardMode::OAuthToken)
             }) {
-                anyhow::bail!(
+                return Err(ConfigError::msg(format!(
                     "auth_forward 'oauth_token' is not supported for {}",
                     agent.slug()
-                );
+                ))
+                .into());
             }
         }
         Ok(())
@@ -141,6 +168,14 @@ impl AppConfig {
             .or(self.dirty_exit_policy)
             .unwrap_or_default()
     }
+
+    /// Resolved role-repo fetch freshness window (config TTL or built-in default).
+    pub fn role_repo_refresh_ttl(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(
+            self.role_repo_refresh_ttl_seconds
+                .unwrap_or(DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS),
+        )
+    }
 }
 
 impl Default for AppConfig {
@@ -158,9 +193,11 @@ impl Default for AppConfig {
             roles: BTreeMap::new(),
             docker: DockerConfig::default(),
             runtime: RuntimeConfig::default(),
+            telemetry: TelemetryConfig::default(),
             git: GitConfig::default(),
             workspaces: BTreeMap::new(),
             dirty_exit_policy: None,
+            role_repo_refresh_ttl_seconds: None,
         }
     }
 }

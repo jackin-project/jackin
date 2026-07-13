@@ -4,6 +4,10 @@
 //! Tests for `editor`.
 use super::*;
 use crate::RoleSource;
+use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use tempfile::tempdir;
 
 fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
@@ -816,7 +820,7 @@ workdir = "/tmp/proj"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_auth_forward("proj", Agent::Claude, Some(AuthForwardMode::ApiKey));
+    editor.set_workspace_auth_forward(&wn("proj"), Agent::Claude, Some(AuthForwardMode::ApiKey));
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -842,7 +846,7 @@ auth_forward = "api_key"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_auth_forward("proj", Agent::Claude, None);
+    editor.set_workspace_auth_forward(&wn("proj"), Agent::Claude, None);
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -871,7 +875,11 @@ workdir = "/tmp/proj"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_sync_source_dir("proj", Agent::Claude, Some(Path::new("/host/claude")));
+    editor.set_workspace_sync_source_dir(
+        &wn("proj"),
+        Agent::Claude,
+        Some(Path::new("/host/claude")),
+    );
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -879,7 +887,7 @@ workdir = "/tmp/proj"
     assert!(out.contains(r#"sync_source_dir = "/host/claude""#), "{out}");
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_sync_source_dir("proj", Agent::Claude, None);
+    editor.set_workspace_sync_source_dir(&wn("proj"), Agent::Claude, None);
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -903,7 +911,7 @@ workdir = "/tmp/proj"
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.set_workspace_role_auth_forward(
-        "proj",
+        &wn("proj"),
         "smith",
         Agent::Codex,
         Some(AuthForwardMode::ApiKey),
@@ -933,7 +941,7 @@ auth_forward = "oauth_token"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_auth_forward("proj", "smith", Agent::Claude, None);
+    editor.set_workspace_role_auth_forward(&wn("proj"), "smith", Agent::Claude, None);
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -956,7 +964,7 @@ workdir = "/tmp/proj"
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.set_workspace_role_sync_source_dir(
-        "proj",
+        &wn("proj"),
         "smith",
         Agent::Codex,
         Some(Path::new("/host/codex")),
@@ -968,7 +976,7 @@ workdir = "/tmp/proj"
     assert!(out.contains(r#"sync_source_dir = "/host/codex""#), "{out}");
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_sync_source_dir("proj", "smith", Agent::Codex, None);
+    editor.set_workspace_role_sync_source_dir(&wn("proj"), "smith", Agent::Codex, None);
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -1016,7 +1024,9 @@ fn create_workspace_adds_table() {
     };
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.create_workspace("new-ws", ws).unwrap();
+    editor
+        .create_workspace(&WorkspaceName::parse("new-ws").unwrap(), ws)
+        .unwrap();
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "new-ws");
@@ -1052,7 +1062,9 @@ fn create_workspace_rejects_invalid_workdir_mount_combo() {
     };
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    let err = editor.create_workspace("bad-ws", ws).unwrap_err();
+    let err = editor
+        .create_workspace(&WorkspaceName::parse("bad-ws").unwrap(), ws)
+        .unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("workspace") || msg.contains("mount") || msg.contains("workdir"),
@@ -1072,7 +1084,7 @@ default_role = "agent-smith"
     std::fs::write(&paths.config_file, original).unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_last_agent("prod", "agent-smith");
+    editor.set_last_agent(&WorkspaceName::parse("prod").unwrap(), "agent-smith");
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "prod");
@@ -1127,7 +1139,7 @@ workdir = "/b"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.remove_workspace("a").unwrap();
+    editor.remove_workspace(&wn("a")).unwrap();
     editor.save().unwrap();
 
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -1154,7 +1166,12 @@ dst = "/a"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.rename_workspace("old-name", "new-name").unwrap();
+    editor
+        .rename_workspace(
+            &WorkspaceName::parse("old-name").unwrap(),
+            &WorkspaceName::parse("new-name").unwrap(),
+        )
+        .unwrap();
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "new-name");
@@ -1182,7 +1199,12 @@ fn rename_workspace_write_failure_preserves_old_file() {
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.rename_workspace("old-name", "new-name").unwrap();
+    editor
+        .rename_workspace(
+            &WorkspaceName::parse("old-name").unwrap(),
+            &WorkspaceName::parse("new-name").unwrap(),
+        )
+        .unwrap();
     std::fs::create_dir(paths.workspaces_dir.join("new-name.toml")).unwrap();
 
     let err = editor.save().unwrap_err();
@@ -1215,19 +1237,19 @@ workdir = "/b"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    let err = editor.rename_workspace("a", "b").unwrap_err();
+    let err = editor
+        .rename_workspace(
+            &WorkspaceName::parse("a").unwrap(),
+            &WorkspaceName::parse("b").unwrap(),
+        )
+        .unwrap_err();
     assert!(err.to_string().contains("already exists"), "{err}");
 }
 
 #[test]
 fn rename_workspace_rejects_empty_new_name() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(&paths.config_file, "[workspaces.a]\nworkdir = \"/a\"\n").unwrap();
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    let err = editor.rename_workspace("a", "").unwrap_err();
-    assert!(err.to_string().contains("empty"), "{err}");
+    let err = WorkspaceName::parse("").unwrap_err();
+    assert!(err.to_string().contains("empty"));
 }
 
 #[test]
@@ -1344,7 +1366,7 @@ workdir = "/workspace/prod"
     // Seed: `[workspaces.prod.github]` with auth_forward + a
     // GH_TOKEN env entry.
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_github_auth_forward("prod", Some(GithubAuthMode::Token));
+    editor.set_workspace_github_auth_forward(&wn("prod"), Some(GithubAuthMode::Token));
     let env_scope = EnvScope::WorkspaceGithub("prod".to_owned());
     editor
         .set_env_var(&env_scope, "GH_TOKEN", "op://Work/gh/pat".into())
@@ -1360,7 +1382,7 @@ workdir = "/workspace/prod"
     // Operator presses `D` on github WorkspaceMode (mode → None)
     // and the env diff drops GH_TOKEN.
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_github_auth_forward("prod", None);
+    editor.set_workspace_github_auth_forward(&wn("prod"), None);
     assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
     editor.save().unwrap();
 
@@ -1396,7 +1418,11 @@ workdir = "/workspace/prod"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_github_auth_forward("prod", "scratch", Some(GithubAuthMode::Token));
+    editor.set_workspace_role_github_auth_forward(
+        &wn("prod"),
+        "scratch",
+        Some(GithubAuthMode::Token),
+    );
     let env_scope = EnvScope::WorkspaceRoleGithub {
         workspace: "prod".to_owned(),
         role: "scratch".to_owned(),
@@ -1407,7 +1433,7 @@ workdir = "/workspace/prod"
     editor.save().unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_github_auth_forward("prod", "scratch", None);
+    editor.set_workspace_role_github_auth_forward(&wn("prod"), "scratch", None);
     assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
     editor.save().unwrap();
 
@@ -1443,7 +1469,7 @@ auth_forward = "ignore"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_github_auth_forward("prod", None);
+    editor.set_workspace_github_auth_forward(&wn("prod"), None);
     editor.save().unwrap();
 
     let cleaned = workspace_file_contents(&paths, "prod");
@@ -1527,7 +1553,7 @@ GH_TOKEN = "ghp_real"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_github_auth_forward("prod", None);
+    editor.set_workspace_github_auth_forward(&wn("prod"), None);
     let env_scope = EnvScope::WorkspaceGithub("prod".to_owned());
     assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
     editor.save().unwrap();
@@ -1572,7 +1598,7 @@ auth_forward = "ignore"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_github_auth_forward("github", None);
+    editor.set_workspace_github_auth_forward(&wn("github"), None);
     editor.save().unwrap();
 
     let cleaned = workspace_file_contents(&paths, "github");

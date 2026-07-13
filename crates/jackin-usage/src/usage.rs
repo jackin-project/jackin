@@ -7,6 +7,7 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
+use jackin_core::container_paths;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -36,14 +37,23 @@ mod refresh;
 mod view;
 mod zai;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::amp::{
     AmpApiUsage, AmpCliUsage, amp_free_reset_label, amp_snapshot, fetch_amp_api_usage,
     fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
 };
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub use self::claude::ClaudeUsageDiagnostic;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::claude::{
     ClaudeCliUsage, ClaudeOAuthCredentials, ClaudeOAuthExtraUsage, ClaudeOAuthLimit,
     ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney, ClaudeOAuthSpend,
@@ -55,12 +65,21 @@ pub(crate) use self::claude::{
     load_claude_account_email, normalize_claude_spend, push_claude_dollar_windows,
 };
 #[cfg(test)]
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::claude::{load_claude_oauth_credentials, load_claude_organization_type};
 #[cfg(test)]
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::codex::load_codex_oauth_credentials;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::codex::{
     CodexAdditionalRateLimit, CodexCreditDetails, CodexOAuthCredentials, CodexRateLimitDetails,
     CodexResetCredit, CodexResetCredits, CodexRpcAccountDetails, CodexRpcAccountResponse,
@@ -74,7 +93,10 @@ pub(crate) use self::codex::{
     fetch_codex_rpc_usage, push_codex_window, refresh_codex_access_token, resolve_codex_base_url,
     resolve_codex_reset_credits_url, resolve_codex_usage_url,
 };
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::grok::{
     GrokBillingCycle, GrokBillingResponse, GrokBillingSnapshot, GrokBillingUsage, GrokCent,
     GrokWebBillingSnapshot, fetch_grok_billing, fetch_grok_rpc_billing, fetch_grok_web_billing,
@@ -84,20 +106,29 @@ pub(crate) use self::grok::{
     grok_snapshot, grok_snapshot_from_rpc_result, grpc_web_data_frames,
     parse_grok_web_billing_response, scan_protobuf,
 };
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::kimi::{
     KimiRateLimit, KimiUsageDetail, KimiUsageItem, KimiUsageResponse, KimiWindow, fetch_kimi_usage,
     kimi_bucket, kimi_local_token_from_value, kimi_snapshot, kimi_window_seconds,
     load_kimi_local_token, load_kimi_local_token_from_home,
 };
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::minimax::{
     MiniMaxBaseResponse, MiniMaxComboCard, MiniMaxModelRemain, MiniMaxUsageData,
     MiniMaxUsageResponse, MiniMaxWindow, fetch_minimax_usage, minimax_bucket, minimax_bucket_label,
     minimax_is_general_model, minimax_remains_host, minimax_reset_epoch, minimax_snapshot,
     minimax_usage_count_line, resolve_minimax_remains_urls, resolve_minimax_remains_urls_from,
 };
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::refresh::{
     MATERIALIZED_TMP_COUNTER, MaterializedUsageAccounts, RefreshLockOutcome,
     acquire_account_refresh_lock, acquire_account_refresh_lock_in, atomic_write_usage_json,
@@ -110,7 +141,10 @@ pub(crate) use self::refresh::{
     usage_error_is_unauthorized, usage_rate_limit_delay, write_materialized_usage_accounts,
     write_shared_usage_cooldown_marker, write_shared_usage_snapshot,
 };
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::view::{
     UsageViewInput, account_snapshot_views_from_cache, amp_credit_status_label,
     amp_status_bar_headline, bucket, cached_refreshing_view, cached_unavailable_view,
@@ -121,7 +155,10 @@ pub(crate) use self::view::{
     status_bar_headline_for_surface, status_bar_label, status_bar_quota_labels, surface_from_text,
     timed_bucket, usage_tab_source_label, usage_tab_status_label, usage_view, with_status_slot,
 };
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use self::zai::{
     ZaiLimitRaw, ZaiQuotaData, ZaiQuotaResponse, fetch_zai_usage, json_epoch_seconds,
     provider_key_snapshot, resolve_zai_quota_url, resolve_zai_quota_url_from, zai_bucket,
@@ -148,13 +185,13 @@ pub(crate) const CLAUDE_VERSION_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) const CLAUDE_CODE_USER_AGENT_FALLBACK: &str = "claude-code/2.1.0";
 pub(crate) const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 pub(crate) const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
-pub(crate) const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = "/jackin/run/usage/accounts.json";
-pub(crate) const CODEX_HANDOFF_AUTH_PATH: &str = "/jackin/codex/auth.json";
-pub(crate) const AMP_HANDOFF_SECRETS_PATH: &str = "/jackin/amp/secrets.json";
-pub(crate) const KIMI_HANDOFF_HOME: &str = "/jackin/kimi-code";
-pub(crate) const GROK_HANDOFF_AUTH_PATH: &str = "/jackin/grok/auth.json";
-pub(crate) const CLAUDE_HANDOFF_CREDENTIALS_PATH: &str = "/jackin/claude/credentials.json";
-pub const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
+pub(crate) const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = container_paths::USAGE_ACCOUNTS;
+pub(crate) const CODEX_HANDOFF_AUTH_PATH: &str = container_paths::CODEX_AUTH;
+pub(crate) const AMP_HANDOFF_SECRETS_PATH: &str = container_paths::AMP_SECRETS;
+pub(crate) const KIMI_HANDOFF_HOME: &str = container_paths::KIMI_CODE_DIR;
+pub(crate) const GROK_HANDOFF_AUTH_PATH: &str = container_paths::GROK_AUTH;
+pub(crate) const CLAUDE_HANDOFF_CREDENTIALS_PATH: &str = container_paths::CLAUDE_CREDENTIALS;
+pub const TELEMETRY_STORE_PATH: &str = container_paths::TELEMETRY_STORE;
 
 #[derive(Debug, Clone)]
 pub struct UsageCache {
@@ -163,6 +200,10 @@ pub struct UsageCache {
     grok_rpc_gate: ManagedCliLaunchGate,
     refresh_schedule: UsageRefreshSchedule,
     telemetry_store_path: PathBuf,
+    /// Destination for accounts.json materialization. Production uses
+    /// [`MATERIALIZED_USAGE_ACCOUNTS_PATH`]; benches/tests inject a temp path
+    /// via [`UsageCache::set_accounts_materialize_path`].
+    accounts_materialize_path: PathBuf,
     /// Latched on persistence failure so a persistent fault (e.g. read-only
     /// `/jackin/state`, disk-full, DB corruption) logs once on transition via
     /// always-on `clog!` rather than every 5-minute refresh — and is never
@@ -313,6 +354,20 @@ impl UsageCache {
         );
     }
 
+    /// Bench/test helper: write materialized accounts to `path` instead of the
+    /// container path. Cross-crate like `insert_snapshot_for_test`.
+    #[doc(hidden)]
+    pub fn set_accounts_materialize_path(&mut self, path: PathBuf) {
+        self.accounts_materialize_path = path;
+    }
+
+    /// Bench/test entry: materialize the cache to the configured path.
+    /// Production refresh calls the same body via [`Self::materialize_accounts`].
+    #[doc(hidden)]
+    pub fn materialize_accounts_for_bench(&self, generated_at_epoch: i64) -> Result<(), String> {
+        self.materialize_accounts(generated_at_epoch)
+    }
+
     pub fn focused_status_bar_label(
         &self,
         focused_agent: Option<&str>,
@@ -459,6 +514,7 @@ impl UsageCache {
         let codex_rpc_gate = self.codex_rpc_gate.clone();
         let grok_rpc_gate = self.grok_rpc_gate.clone();
         let provider_keys = provider_keys.clone();
+        jackin_diagnostics::incr_accounts_refreshed(due_targets.len() as u64);
         let results = collect_usage_refresh_results(due_targets, move |target| {
             let mut codex_rpc_gate = codex_rpc_gate.clone();
             let mut grok_rpc_gate = grok_rpc_gate.clone();
@@ -528,15 +584,12 @@ impl UsageCache {
     }
 
     pub(crate) fn materialize_accounts(&self, generated_at_epoch: i64) -> Result<(), String> {
-        let snapshots = self
-            .snapshots
-            .values()
-            .map(|cached| cached.view.clone())
-            .collect::<Vec<_>>();
+        let snapshots: Vec<&FocusedUsageView> =
+            self.snapshots.values().map(|cached| &cached.view).collect();
         write_materialized_usage_accounts(
-            Path::new(MATERIALIZED_USAGE_ACCOUNTS_PATH),
+            &self.accounts_materialize_path,
             generated_at_epoch,
-            snapshots,
+            &snapshots,
         )
     }
 }
@@ -549,6 +602,7 @@ impl Default for UsageCache {
             grok_rpc_gate: ManagedCliLaunchGate::default(),
             refresh_schedule: UsageRefreshSchedule::default(),
             telemetry_store_path: PathBuf::from(TELEMETRY_STORE_PATH),
+            accounts_materialize_path: PathBuf::from(MATERIALIZED_USAGE_ACCOUNTS_PATH),
             telemetry_persist_failed: false,
             accounts_materialize_failed: false,
         }

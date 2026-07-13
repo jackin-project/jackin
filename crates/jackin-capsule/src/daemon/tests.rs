@@ -67,33 +67,88 @@ impl MasterPty for NullMasterPty {
 }
 
 #[test]
-fn spawn_failure_banner_rides_the_frame_until_a_keystroke_clears_it() {
+fn status_tick_select_arm_stays_above_pty_output() {
+    let source = include_str!("../daemon.rs");
+    let tick_arm = source
+        .find("_ = state_ticker.tick()")
+        .unwrap_or_else(|| panic!("state ticker select arm missing"));
+    let output_arm = source
+        .find("Some(event) = mux.event_rx.recv()")
+        .unwrap_or_else(|| panic!("PTY event select arm missing"));
+    assert!(
+        tick_arm < output_arm,
+        "state ticker must stay above PTY output in the biased select"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn ready_status_tick_wins_over_ready_pty_output() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let mut state_ticker = interval(STATE_TICK_INTERVAL);
+    state_ticker.tick().await;
+    tokio::time::advance(STATE_TICK_INTERVAL).await;
+    tx.send(SessionEvent::Output {
+        session_id: 1,
+        data: b"busy".to_vec(),
+    })
+    .unwrap_or_else(|_| panic!("test receiver must be open"));
+
+    let selected = tokio::select! {
+        biased;
+        _ = state_ticker.tick() => "tick",
+        Some(_) = rx.recv() => "output",
+    };
+
+    assert_eq!(
+        selected, "tick",
+        "ready status tick must beat ready PTY output under biased select"
+    );
+}
+
+#[test]
+fn spawn_failure_popup_stays_open_until_dismissed() {
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
     let mut mux = single_pane_tab_mux();
     let (session, rx) = test_session(20, 78);
     drop(rx);
     mux.sessions.insert(1, session);
-    mux.spawn_failure = Some("boom: agent slug rejected".to_owned());
-    let frame = compose_after(&mut mux, FullRedrawReason::StatusChange);
+    mux.open_spawn_failure_dialog("boom: agent slug rejected".to_owned());
+    let frame = compose_after(&mut mux, FullRedrawReason::DialogChange);
     assert!(
         contains(&frame, b"boom: agent slug rejected"),
-        "banner must ride the composed frame: {:?}",
+        "spawn failure popup must ride the composed frame: {:?}",
         String::from_utf8_lossy(&frame)
     );
+    assert!(matches!(mux.dialog_top(), Some(Dialog::SpawnFailure(_))));
 
-    // The next operator keystroke dismisses it.
     drop(handle_input_frame(
         &mut mux,
         InputEvent::Data(b"x".to_vec()),
     ));
     assert!(
-        mux.spawn_failure.is_none(),
-        "keystroke must clear the banner"
+        matches!(mux.dialog_top(), Some(Dialog::SpawnFailure(_))),
+        "printable input must not dismiss the failure popup"
     );
-    let after = compose_after(&mut mux, FullRedrawReason::StatusChange);
+
+    drop(handle_input_frame(
+        &mut mux,
+        InputEvent::Data(b"\x1b".to_vec()),
+    ));
+    assert!(mux.dialog_top().is_none(), "Esc must dismiss the popup");
+}
+
+#[test]
+fn screen_detection_disabled_message_is_operator_visible() {
+    let err = anyhow::anyhow!("bad embedded pack");
+    let message = screen_detection_disabled_message(&err);
+
     assert!(
-        !contains(&after, b"boom: agent slug rejected"),
-        "cleared banner must not repaint"
+        message.contains("Agent status screen detection is off"),
+        "message must name the disabled feature: {message}"
+    );
+    assert!(
+        message.contains("bad embedded pack"),
+        "message must carry the load failure: {message}"
     );
 }
 
@@ -829,10 +884,9 @@ fn assert_wheel_cursor_fallback_sent(
             .expect("wheel fallback should reach PTY"),
         expected_bytes,
     );
-    assert!(
-        input_rx.try_recv().is_err(),
-        "wheel should not produce extra PTY input"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("wheel should not produce extra PTY input");
 }
 
 fn feed_top_anchored_inline_history(session: &mut Session, region_bottom: u16, lines: usize) {
@@ -904,6 +958,64 @@ fn split_metadata_inherits_focused_provider() {
     assert_eq!(agent.as_deref(), Some("claude"));
     assert_eq!(provider.as_deref(), Some("Z.AI"));
     assert_eq!(env, expected_env);
+}
+
+#[test]
+fn zoom_state_is_independent_per_tab() {
+    let mut mux = split_tab_mux();
+    mux.toggle_zoom();
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+
+    let mut tab_b = Tab::new_single("Shell", 3, "test-b");
+    assert!(tab_b.tree.split_h(3, 4, SplitPosition::After));
+    tab_b.focused_id = 4;
+    mux.tabs.push(tab_b);
+    mux.active_tab = 1;
+    mux.toggle_zoom();
+
+    assert_eq!(mux.active_zoomed_id(), Some(4));
+    assert_eq!(mux.tabs[0].zoomed, Some(1));
+    assert_eq!(mux.tabs[1].zoomed, Some(4));
+
+    mux.active_tab = 0;
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+}
+
+#[test]
+fn unzooming_active_tab_does_not_clear_other_tab_zoom() {
+    let mut mux = split_tab_mux();
+    mux.toggle_zoom();
+    let mut tab_b = Tab::new_single("Shell", 3, "test-b");
+    assert!(tab_b.tree.split_h(3, 4, SplitPosition::After));
+    mux.tabs.push(tab_b);
+    mux.active_tab = 1;
+    mux.toggle_zoom();
+
+    mux.toggle_zoom();
+
+    assert_eq!(mux.tabs[1].zoomed, None);
+    assert_eq!(mux.tabs[0].zoomed, Some(1));
+    mux.active_tab = 0;
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+}
+
+#[test]
+fn killing_zoomed_pane_clears_only_owning_tab_zoom() {
+    let mut mux = split_tab_mux();
+    mux.toggle_zoom();
+    let mut tab_b = Tab::new_single("Shell", 3, "test-b");
+    assert!(tab_b.tree.split_h(3, 4, SplitPosition::After));
+    mux.tabs.push(tab_b);
+    mux.active_tab = 1;
+    mux.toggle_zoom();
+
+    mux.close_focused_pane();
+
+    assert_eq!(mux.tabs[0].zoomed, Some(1));
+    assert_eq!(mux.tabs[1].zoomed, None);
+    assert_eq!(mux.tabs[1].focused_id, 4);
+    mux.active_tab = 0;
+    assert_eq!(mux.active_zoomed_id(), Some(1));
 }
 
 pub(super) fn split_tab_mux() -> Multiplexer {
@@ -1449,8 +1561,8 @@ fn palette_close_split_tab_opens_target_picker() {
 fn branch_context_visibility_keeps_content_area_reserved() {
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
-    // 24 rows − STATUS_BAR_ROWS(2) − BRANCH_CONTEXT_BAR_ROWS(1) − CAPSULE_HINT_BAR_ROWS(1) − CAPSULE_HINT_SEPARATOR_ROWS(1) = 19
-    assert_eq!(mux.content_rows, 19);
+    // 24 rows - status(2) - top spacer(1) - hint(1) - bottom spacer(1) - branch(1) = 18
+    assert_eq!(mux.content_rows, 18);
 
     mux.pull_request_context_cache.insert(
         branch("asa/pr-context"),
@@ -1461,7 +1573,7 @@ fn branch_context_visibility_keeps_content_area_reserved() {
         },
     );
     assert!(mux.apply_git_branch_context(Some("asa/pr-context"), now));
-    assert_eq!(mux.content_rows, 19);
+    assert_eq!(mux.content_rows, 18);
     assert_eq!(
         mux.pull_request_context.as_deref().map(|pr| pr.number),
         Some(434)
@@ -1476,11 +1588,11 @@ fn branch_context_visibility_keeps_content_area_reserved() {
         },
     );
     assert!(mux.apply_git_branch_context(Some("feature/no-pr"), now));
-    assert_eq!(mux.content_rows, 19);
+    assert_eq!(mux.content_rows, 18);
     assert!(mux.pull_request_context.is_none());
 
     assert!(mux.apply_git_branch_context(Some("main"), now));
-    assert_eq!(mux.content_rows, 19);
+    assert_eq!(mux.content_rows, 18);
     assert!(mux.pull_request_context.is_none());
 }
 
@@ -1491,8 +1603,8 @@ fn git_branch_context_updates_status_before_github_lookup() {
     mux.pull_request_context_branch = Some(branch("old/pr"));
     mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
     mux.reconcile_content_rows();
-    // 24 rows − STATUS_BAR_ROWS(2) − BRANCH_CONTEXT_BAR_ROWS(1) − CAPSULE_HINT_BAR_ROWS(1) − CAPSULE_HINT_SEPARATOR_ROWS(1) = 19
-    assert_eq!(mux.content_rows, 19);
+    // 24 rows - status(2) - top spacer(1) - hint(1) - bottom spacer(1) - branch(1) = 18
+    assert_eq!(mux.content_rows, 18);
 
     mux.pull_request_context_cache.insert(
         branch("new/local-branch"),
@@ -1509,7 +1621,7 @@ fn git_branch_context_updates_status_before_github_lookup() {
         Some("new/local-branch")
     );
     assert!(mux.pull_request_context.is_none());
-    assert_eq!(mux.content_rows, 19);
+    assert_eq!(mux.content_rows, 18);
 }
 
 #[test]
@@ -2615,10 +2727,9 @@ fn wheel_forwards_to_mouse_enabled_tui() {
         input_rx.try_recv().expect("wheel should reach PTY"),
         b"\x1b[<64;1;1M"
     );
-    assert!(
-        input_rx.try_recv().is_err(),
-        "wheel should not produce extra PTY input"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("wheel should not produce extra PTY input");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
 }
 
@@ -2646,10 +2757,9 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
             redraw.is_some(),
             "{pane_kind} pane scrollback should redraw jackin❯"
         );
-        assert!(
-            input_rx.try_recv().is_err(),
+        input_rx.try_recv().expect_err(&format!(
             "mouse-disabled {pane_kind} panes must not receive raw wheel bytes"
-        );
+        ));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     }
 }
@@ -3017,10 +3127,7 @@ fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
             redraw.is_none(),
             "{pane_kind} normal-screen pane without scrollback should not redraw jackin❯"
         );
-        assert!(
-            input_rx.try_recv().is_err(),
-            "normal-screen {pane_kind} pane without scrollback must not receive cursor-key wheel fallback"
-        );
+        input_rx.try_recv().expect_err(&format!("normal-screen {pane_kind} pane without scrollback must not receive cursor-key wheel fallback"));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
     }
 }
@@ -3048,10 +3155,9 @@ fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
         );
 
         let frame = redraw.expect("inline history wheel should redraw");
-        assert!(
-            input_rx.try_recv().is_err(),
+        input_rx.try_recv().expect_err(&format!(
             "{pane_kind} pane must not receive cursor-key wheel fallback"
-        );
+        ));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
         assert_focused_scroll_chrome(
             &frame,
@@ -3085,10 +3191,9 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
     )
     .expect("inline history wheel should redraw");
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "Codex-style inline history scroll must not forward wheel bytes"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("Codex-style inline history scroll must not forward wheel bytes");
     let rendered = String::from_utf8_lossy(&frame);
     assert!(
         rendered.contains("\x1b[38;5;1mred history"),
@@ -3147,10 +3252,9 @@ fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
         );
 
         let frame = redraw.expect("clear-preserved history wheel should redraw");
-        assert!(
-            input_rx.try_recv().is_err(),
+        input_rx.try_recv().expect_err(&format!(
             "{pane_kind} pane must not receive cursor-key wheel fallback"
-        );
+        ));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
         assert_focused_scroll_chrome(
             &frame,
@@ -3186,10 +3290,9 @@ fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
         );
 
         let frame = redraw.expect("CSI S inline history wheel should redraw");
-        assert!(
-            input_rx.try_recv().is_err(),
+        input_rx.try_recv().expect_err(&format!(
             "{pane_kind} pane must not receive cursor-key wheel fallback"
-        );
+        ));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 2);
         assert_focused_scroll_chrome(
             &frame,
@@ -3401,7 +3504,8 @@ fn pointer_shape_updates_only_when_shape_changes() {
 
     mux.update_pointer_shape_for_mouse(23, hit.start, SGR_NO_BUTTON_MOTION);
     mux.client.flush_out_of_band();
-    assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
+    rx.try_recv()
+        .expect_err("unchanged shape should not re-emit");
 }
 
 #[tokio::test]
@@ -3739,7 +3843,7 @@ fn bottom_context_click_opens_github_context_dialog() {
     let bottom_row = mux.term_rows;
     assert!(
         rendered.contains(&format!("\x1b[{hint_row};")),
-        "dialog hint should render one row above the spacer: {rendered:?}"
+        "dialog hint should render in the reserved hint region: {rendered:?}"
     );
     // Outside a debug launch the bottom branch/context bar is hidden under a
     // dialog (commit 5f2076a6); this mux has no debug run id, so the final row
@@ -4608,10 +4712,9 @@ fn apply_action_wheel_scrolls_scrollback() {
     )
     .expect("wheel over retained scrollback should redraw");
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "mouse-disabled pane must not receive raw wheel bytes"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("mouse-disabled pane must not receive raw wheel bytes");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     assert!(
         !frame.is_empty(),
@@ -4666,10 +4769,9 @@ fn image_path_paste_uses_plain_bytes_when_bracketed_paste_is_off() {
         input_rx.try_recv().unwrap(),
         b"/jackin/run/clipboard/clipboard-test.png"
     );
-    assert!(
-        input_rx.try_recv().is_err(),
-        "plain paste should not produce extra PTY input"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("plain paste should not produce extra PTY input");
 }
 
 #[test]
@@ -4689,10 +4791,9 @@ fn image_path_paste_uses_bracketed_paste_when_enabled() {
         input_rx.try_recv().unwrap(),
         b"\x1b[200~/jackin/run/clipboard/clipboard-test.png\x1b[201~"
     );
-    assert!(
-        input_rx.try_recv().is_err(),
-        "bracketed paste should be one PTY input chunk"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("bracketed paste should be one PTY input chunk");
 }
 
 #[test]
@@ -4728,10 +4829,9 @@ fn apply_action_wheel_noops_at_scrollback_boundary() {
         }
     }
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "mouse-disabled pane must not receive raw wheel bytes"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("mouse-disabled pane must not receive raw wheel bytes");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), filled);
     assert!(
         last.is_none(),
@@ -4823,10 +4923,9 @@ fn apply_action_pane_primary_press_only_arms_selection_for_shell() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "mouse-disabled pane should arm selection instead of receiving raw mouse"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("mouse-disabled pane should arm selection instead of receiving raw mouse");
     assert!(mux.selection.is_none(), "plain press should not select yet");
     assert!(
         mux.pending_selection.is_some(),
@@ -5349,10 +5448,8 @@ fn double_click_selects_word_and_copies_once() {
         "word selection stays highlighted after release"
     );
     mux.client.flush_out_of_band();
-    assert!(
-        rx.try_recv().is_err(),
-        "release after a word click must not write the clipboard twice"
-    );
+    rx.try_recv()
+        .expect_err("release after a word click must not write the clipboard twice");
 }
 
 #[test]
@@ -5464,10 +5561,8 @@ fn open_host_url_dialog_action_honors_operator_opt_out() {
         false,
     );
 
-    assert!(
-        rx.try_recv().is_err(),
-        "disabled host URL opening must not emit a host-open frame"
-    );
+    rx.try_recv()
+        .expect_err("disabled host URL opening must not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link opening disabled by JACKIN_OPEN_LINKS")
@@ -5482,10 +5577,8 @@ fn open_host_url_dialog_action_rejects_unsupported_scheme() {
 
     mux.open_host_url_from_dialog("file:///Users/operator/private.txt".to_owned(), true);
 
-    assert!(
-        rx.try_recv().is_err(),
-        "unsupported host URL schemes must not emit a host-open frame"
-    );
+    rx.try_recv()
+        .expect_err("unsupported host URL schemes must not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link rejected: unsupported URL scheme")
@@ -5525,9 +5618,8 @@ async fn modified_click_visible_url_sends_typed_protocol_frame() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "host-open URL gesture should not forward mouse bytes to a mouse-disabled pane"
+    input_rx.try_recv().expect_err(
+        "host-open URL gesture should not forward mouse bytes to a mouse-disabled pane",
     );
     let bytes = rx.try_recv().expect("host-open-url frame");
     let tag = bytes[0];
@@ -5570,10 +5662,8 @@ async fn modified_click_in_mouse_enabled_pane_forwards_to_pty() {
         forwarded.starts_with(b"\x1b[<8;"),
         "unexpected forwarded mouse bytes: {forwarded:02x?}"
     );
-    assert!(
-        rx.try_recv().is_err(),
-        "mouse-enabled pane should not emit a host-open-url frame"
-    );
+    rx.try_recv()
+        .expect_err("mouse-enabled pane should not emit a host-open-url frame");
 }
 
 #[tokio::test]
@@ -5606,10 +5696,9 @@ async fn modified_click_visible_file_path_sends_file_export_frames() {
     );
     mux.client.flush_out_of_band();
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified file export must not forward mouse bytes to the pane"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("modified file export must not forward mouse bytes to the pane");
     let bytes = rx.try_recv().expect("file-export-start frame");
     let tag = bytes[0];
     let mut payload = &bytes[1..];
@@ -5656,10 +5745,8 @@ fn modified_click_plain_word_without_file_falls_through_quietly() {
     );
     mux.client.flush_out_of_band();
 
-    assert!(
-        rx.try_recv().is_err(),
-        "plain modified-click must not emit host frames"
-    );
+    rx.try_recv()
+        .expect_err("plain modified-click must not emit host frames");
     assert_eq!(mux.clipboard_image_notice.as_deref(), None);
 }
 
@@ -5686,10 +5773,9 @@ async fn modified_click_prefers_osc8_target_over_visible_text() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified-click should stay host-open path"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("modified-click should stay host-open path");
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should prefer OSC 8 target");
@@ -5728,10 +5814,9 @@ async fn modified_click_accepts_mailto_osc8_target() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified-click should stay host-open path"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("modified-click should stay host-open path");
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should allow mailto OSC 8 target");
@@ -5768,10 +5853,9 @@ async fn modified_click_accepts_visible_mailto_token() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified-click should stay host-open path"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("modified-click should stay host-open path");
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should allow visible mailto target");
@@ -5808,14 +5892,11 @@ async fn modified_click_rejects_unsafe_visible_url_without_forwarding() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "unsafe host-open gesture should not forward mouse bytes"
-    );
-    assert!(
-        rx.try_recv().is_err(),
-        "unsafe host-open gesture should not emit a host-open frame"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("unsafe host-open gesture should not forward mouse bytes");
+    rx.try_recv()
+        .expect_err("unsafe host-open gesture should not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link rejected: unsupported URL scheme")
@@ -5845,14 +5926,11 @@ async fn modified_click_rejects_unsafe_osc8_url_without_forwarding() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "unsafe OSC8 host-open gesture should not forward mouse bytes"
-    );
-    assert!(
-        rx.try_recv().is_err(),
-        "unsafe OSC8 host-open gesture should not emit a host-open frame"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("unsafe OSC8 host-open gesture should not forward mouse bytes");
+    rx.try_recv()
+        .expect_err("unsafe OSC8 host-open gesture should not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link rejected: unsupported URL scheme")
@@ -5872,10 +5950,9 @@ async fn open_link_under_cursor_palette_action_sends_typed_protocol_frame() {
 
     mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "open-link command must not forward bytes to the pane"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("open-link command must not forward bytes to the pane");
     let bytes = rx.try_recv().expect("host-open-url frame");
     let tag = bytes[0];
     let mut payload = &bytes[1..];
@@ -5910,10 +5987,9 @@ fn modified_url_hover_renders_visible_target_without_forwarding_to_pty() {
     )
     .expect("hovering a link should repaint the notice");
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified hover must not write bytes into a mouse-disabled pane"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("modified hover must not write bytes into a mouse-disabled pane");
     assert_eq!(
         mux.link_hover_url.as_deref(),
         Some("https://example.com/visible")
@@ -5988,10 +6064,9 @@ async fn open_link_under_cursor_palette_prefers_osc8_target_over_visible_text() 
 
     mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "open-link must stay attach path"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("open-link must stay attach path");
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should prefer OSC 8 target");
@@ -6020,14 +6095,11 @@ async fn open_link_under_cursor_palette_rejects_unsafe_visible_url() {
 
     mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "unsafe open-link command must not forward bytes to the pane"
-    );
-    assert!(
-        rx.try_recv().is_err(),
-        "unsafe open-link command must not emit a host-open frame"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("unsafe open-link command must not forward bytes to the pane");
+    rx.try_recv()
+        .expect_err("unsafe open-link command must not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link rejected: unsupported URL scheme")
@@ -6047,10 +6119,8 @@ async fn open_link_under_cursor_palette_action_reports_missing_url() {
 
     mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
 
-    assert!(
-        rx.try_recv().is_err(),
-        "missing URL must not emit a host-open frame"
-    );
+    rx.try_recv()
+        .expect_err("missing URL must not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("No host-open link under focused cursor")
@@ -6079,10 +6149,9 @@ async fn export_file_under_cursor_palette_action_sends_file_export_frames() {
     mux.handle_palette_command(PaletteCommand::ExportFileUnderCursorAndReveal);
     mux.client.flush_out_of_band();
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "export-under-cursor command must not forward bytes to the pane"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("export-under-cursor command must not forward bytes to the pane");
     let bytes = rx.try_recv().expect("file-export-start frame");
     let tag = bytes[0];
     let mut payload = &bytes[1..];
@@ -6144,10 +6213,9 @@ async fn export_selected_file_palette_action_sends_file_export_frames() {
     mux.handle_palette_command(PaletteCommand::ExportSelectedFileAndOpen);
     mux.client.flush_out_of_band();
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "export-selected command must not forward bytes to the pane"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("export-selected command must not forward bytes to the pane");
     let bytes = rx.try_recv().expect("file-export-start frame");
     let tag = bytes[0];
     let mut payload = &bytes[1..];
@@ -6191,10 +6259,8 @@ fn export_file_under_cursor_palette_action_reports_missing_path_token() {
     mux.handle_palette_command(PaletteCommand::ExportFileUnderCursor);
     mux.client.flush_out_of_band();
 
-    assert!(
-        rx.try_recv().is_err(),
-        "missing path token must not emit file-export frames"
-    );
+    rx.try_recv()
+        .expect_err("missing path token must not emit file-export frames");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("No exportable file path under focused cursor")
@@ -6210,10 +6276,8 @@ fn export_selected_file_palette_action_reports_missing_selection() {
     mux.handle_palette_command(PaletteCommand::ExportSelectedFile);
     mux.client.flush_out_of_band();
 
-    assert!(
-        rx.try_recv().is_err(),
-        "missing selection must not emit file-export frames"
-    );
+    rx.try_recv()
+        .expect_err("missing selection must not emit file-export frames");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("No selected file path to export")
@@ -6299,8 +6363,7 @@ async fn chunked_image_start_reports_visible_receiving_notice() {
             format: jackin_protocol::attach::ClipboardImageFormat::Png,
             size: 16 * 1024 * 1024,
         }),
-    )
-    .await;
+    );
 
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
@@ -6324,8 +6387,7 @@ async fn chunked_stage_image_start_reports_staging_receiving_notice() {
             format: jackin_protocol::attach::ClipboardImageFormat::Png,
             size: 4 * 1024 * 1024,
         }),
-    )
-    .await;
+    );
 
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
@@ -6352,10 +6414,9 @@ fn stage_only_clipboard_image_response_does_not_paste_path() {
         |_| Ok(PathBuf::from("/jackin/run/clipboard/clipboard-test.png")),
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "stage-only response must not paste into the focused pane"
-    );
+    input_rx
+        .try_recv()
+        .expect_err("stage-only response must not paste into the focused pane");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Image staged: /jackin/run/clipboard/clipboard-test.png (8 bytes)")
@@ -6623,10 +6684,9 @@ fn reattach_updates_capabilities_without_resetting_model_palette() {
 // direct `compose_pending_frame` / `compose_full_redraw` calls, no ticker,
 // no sleeps.
 //
-// Scenarios that still fail after PR 1 of the capsule rendering plan are the
-// executable spec for PR 3 / PR 4 and carry `#[ignore]` tags naming the
-// fixing PR. Recorded fixtures land in `tests/fixtures/pty/` once a Stage-0
-// operator run id exists; until then the byte streams below are synthetic.
+// Synthetic streams below cover focused regressions; recorded PTY fixtures
+// under `tests/fixtures/pty/` keep the same harness exercised against real
+// CLI/TUI output captured outside the unit test process.
 
 use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
 use jackin_term::{Cell, DamageGrid};
@@ -6981,6 +7041,24 @@ fn alt_screen_session_enter_exit_keeps_screen_equal_to_model() {
 
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[?1049l");
     assert_frame_conformance(&mut mux, &client, "after alt-screen exit");
+}
+
+#[test]
+fn recorded_pty_fixtures_keep_screen_equal_to_model() {
+    for (label, bytes) in [
+        (
+            "codex version fixture",
+            include_bytes!("../../tests/fixtures/pty/codex-version.bin").as_slice(),
+        ),
+        (
+            "vim alt-screen fixture",
+            include_bytes!("../../tests/fixtures/pty/vim-tiny-open-edit-quit.bin").as_slice(),
+        ),
+    ] {
+        let (mut mux, mut client, sid) = attached_single_pane();
+        feed_and_compose(&mut mux, &mut client, sid, bytes);
+        assert_frame_conformance(&mut mux, &client, label);
+    }
 }
 
 #[test]
@@ -7342,7 +7420,15 @@ fn render_perf_probe() {
     }
     durations_us.sort_unstable();
     bytes.sort_unstable();
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "percentile q is 0.0..=1.0; index stays within v.len()"
+    )]
     let pick = |v: &[u128], q: f64| v[((v.len() - 1) as f64 * q) as usize];
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "percentile q is 0.0..=1.0; index stays within v.len()"
+    )]
     let pick_b = |v: &[usize], q: f64| v[((v.len() - 1) as f64 * q) as usize];
     {
         println!(
@@ -7612,4 +7698,146 @@ fn build_exit_inspect_rows_groups_repos_with_header_and_file_rows() {
         })
         .collect();
     assert_eq!(file_rows, ["M src/main.rs", "? new.rs"]);
+}
+
+// --- plan 033 suite B: displace seams ---
+// The select-loop drain + initial-burst ordering inside run_daemon remains
+// covered only by the daemon loop itself (plan 032 MISSING worklist).
+
+#[tokio::test(start_paused = true)]
+async fn detach_attached_task_sends_shutdown_and_aborts_reader() {
+    use crate::attach_protocol::detach_attached_task;
+    use jackin_protocol::attach::TAG_SHUTDOWN;
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    mux.client.attach(tx);
+    let parked = tokio::spawn(async {
+        std::future::pending::<()>().await;
+    });
+    mux.attached_task = Some(parked);
+    detach_attached_task(&mut mux, "takeover").await;
+    let frame = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("timeout waiting shutdown")
+        .expect("channel closed without shutdown");
+    assert_eq!(frame[0], TAG_SHUTDOWN);
+    assert!(
+        mux.attached_task.is_none()
+            || mux
+                .attached_task
+                .as_ref()
+                .is_some_and(tokio::task::JoinHandle::is_finished)
+    );
+}
+
+#[tokio::test]
+async fn client_writer_attach_displaces_prior_sender() {
+    use jackin_protocol::attach::{ServerFrame, TAG_BELL};
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+
+    let mut mux = single_pane_tab_mux();
+    let (tx_a, mut rx_a) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (tx_b, mut rx_b) = mpsc::unbounded_channel::<Vec<u8>>();
+    mux.client.attach(tx_a);
+    mux.client.attach(tx_b);
+    mux.client.send_protocol_frame(ServerFrame::Bell);
+    assert!(
+        rx_a.try_recv().is_err(),
+        "prior client must be displaced (A must not receive)"
+    );
+    let got = tokio::time::timeout(Duration::from_secs(1), rx_b.recv())
+        .await
+        .expect("timeout waiting for B")
+        .expect("B closed");
+    assert_eq!(got[0], TAG_BELL);
+}
+
+#[tokio::test]
+async fn input_frames_apply_to_post_takeover_mux() {
+    use crate::attach_protocol::detach_attached_task;
+    use crate::daemon::control::handle_client_frame;
+    use jackin_protocol::attach::ClientFrame;
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_session(24, 80);
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Test", 1, "test");
+
+    let (tx_old, _rx_old) = mpsc::unbounded_channel::<Vec<u8>>();
+    mux.client.attach(tx_old);
+    detach_attached_task(&mut mux, "takeover").await;
+    let (tx_new, _rx_new) = mpsc::unbounded_channel::<Vec<u8>>();
+    mux.client.attach(tx_new);
+
+    handle_client_frame(&mut mux, ClientFrame::Input(b"x".to_vec()));
+    let got = tokio::time::timeout(Duration::from_secs(1), input_rx.recv())
+        .await
+        .expect("timeout waiting for session input")
+        .expect("session input channel closed");
+    assert_eq!(got, b"x");
+}
+
+#[test]
+fn remove_exited_session_retires_codename_inv_d8() {
+    // INV-D8: removing an exited session retires its codename so labels update.
+    let mut mux = single_pane_tab_mux();
+    let (session, _rx) = test_session(24, 80);
+    mux.sessions.insert(1, session);
+    // Seed live set the way spawn_session would after pick_next_codename.
+    mux.codename_live.insert("test".to_owned());
+    assert!(
+        mux.codename_live.contains("test"),
+        "precondition: codename live before exit"
+    );
+    assert!(
+        !mux.codename_retired.contains("test"),
+        "precondition: not yet retired"
+    );
+
+    mux.remove_exited_session(1);
+
+    assert!(
+        !mux.codename_live.contains("test"),
+        "exited session codename must leave live set"
+    );
+    assert!(
+        mux.codename_retired.contains("test"),
+        "exited session codename must enter retired set"
+    );
+    assert!(
+        mux.sessions.is_empty(),
+        "session map must drop the exited id"
+    );
+    assert!(
+        mux.tabs.is_empty(),
+        "sole tab owning the session must be removed"
+    );
+}
+
+#[tokio::test]
+async fn last_session_exit_defers_when_dialog_already_open_inv_d19() {
+    // INV-D19: when a dirty-exit (or any) dialog is open, last-session exit
+    // handling must not re-enter and drain.
+    let mut mux = single_pane_tab_mux();
+    mux.dialog_push(Dialog::new_exit_dirty(
+        vec!["repo   1 changed".to_owned()],
+        std::sync::Arc::from([]),
+    ));
+    assert!(mux.dialog_open(), "precondition: dialog open");
+
+    let should_exit = handle_last_session_exit(&mut mux, Some("test-exit".into())).await;
+    assert!(
+        !should_exit,
+        "handle_last_session_exit must return false while dialog is open"
+    );
+    assert!(
+        mux.dialog_open(),
+        "dialog must remain open after deferred last-session exit"
+    );
 }

@@ -13,6 +13,7 @@ use crate::agent::runtime::{
 const FALLBACK_INSTALL_COMMAND: &str =
     bounded_fallback_curl!("https://opencode.ai/install", " | bash");
 
+/// [`crate::agent::runtime::AgentRuntime`] adapter for `OpenCode`.
 #[derive(Debug)]
 pub struct OpencodeRuntime;
 

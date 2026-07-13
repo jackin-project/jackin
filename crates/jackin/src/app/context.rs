@@ -16,8 +16,7 @@ use std::path::Path;
 
 use crate::workspace::{LoadWorkspaceInput, WorkspaceConfig, expand_tilde};
 use jackin_config::AppConfig;
-use jackin_core::JackinPaths;
-use jackin_core::RoleSelector;
+use jackin_core::{JackinPaths, RoleSelector, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 use jackin_runtime::instance;
 use jackin_runtime::runtime;
@@ -582,7 +581,11 @@ pub(crate) fn remember_last_agent(
             return;
         }
     };
-    editor.set_last_agent(workspace_name, &class.key());
+    let Ok(workspace) = WorkspaceName::parse(workspace_name) else {
+        eprintln!("warning: invalid workspace name for last-used-role save: {workspace_name:?}");
+        return;
+    };
+    editor.set_last_agent(&workspace, &class.key());
     match editor.save() {
         Ok(reloaded) => *config = reloaded,
         Err(error) => eprintln!("warning: failed to save last-used role: {error}"),

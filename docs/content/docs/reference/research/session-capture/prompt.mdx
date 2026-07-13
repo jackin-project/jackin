@@ -1,0 +1,52 @@
+---
+title: "Session Capture Research Brief"
+---
+
+# Session Capture Research Brief
+
+> **How to run this file:** `/goal Follow session-capture/prompt.mdx`. You — the agent reading this — are the researcher; this brief is your full specification. This dossier's initial run executed the brief via parallel evidence agents (SpecStory deep-dive, agent-store survey, market sweep, jackin❯ codebase recon) plus a direct source-code reading of the SpecStory repository clone.
+
+## 1. Mission
+
+Produce a research dossier on **AI coding-session capture** — the capability SpecStory popularized: automatically persisting every AI coding-agent conversation (prompts, responses, tool calls) into durable, searchable, shareable artifacts. The dossier must answer three questions with evidence:
+
+1. **How does SpecStory actually work?** Product surface, and the concrete extraction machinery: what it reads, where, how it normalizes and renders sessions, what is open source and what is not.
+2. **What else exists?** Every notable alternative — per-agent exporters, viewers, analytics dashboards, hosted sharing, observability pipelines — with capture mechanism, output, license, and maintenance status.
+3. **What does this mean for jackin❯?** Where session data already flows through jackin❯, which capture surfaces its container architecture uniquely enables, and which gaps a session-capture feature would fill. Evidence and option-mapping only — product design decisions belong to a later `brainstorm` run, not this dossier.
+
+## 2. Role and mindset
+
+Act as a systems researcher writing for the jackin❯ maintainer. Catalog exhaustively first, rank second. Treat vendor claims as suspect until confirmed in source code or reproduced. Prefer reading implementations over reading marketing. When a mechanism is undocumented, say so explicitly rather than guessing.
+
+## 3. Evidence rules (non-negotiable)
+
+1. Every external claim carries a source URL; every local number carries its method.
+2. Evidence tiers on tool records: **A** = read from source code during the run, **B** = official documentation or marketplace listing, **C** = community documentation (OSS readmes, reverse-engineering writeups), **D** = unverified — labeled `[UNVERIFIED]`.
+3. Date-stamp volatile facts (versions, stars, pricing) with the retrieval date.
+4. Distinguish officially documented storage formats from reverse-engineered ones — the difference is the maintenance risk of any capture feature built on them.
+
+## 4. Method
+
+- **Primary source pass:** clone `specstoryai/getspecstory`; read the CLI implementation (provider SPI, providers, session schema, sessions DB, watch loop, markdown rendering, cloud sync, provenance engine) and its internal engineering docs directly.
+- **Web pass:** parallel sourced sweeps — (a) SpecStory product/business/reception, (b) native session-store formats for every major coding agent, (c) market sweep for capture/export/viewer/analytics tools, each with strict citation requirements.
+- **Codebase pass:** read-only recon of the jackin❯ repository — agent roster, capsule filesystem layout, existing transcript/telemetry handling, per-workspace persistence patterns, related roadmap items.
+
+## 5. Chapters (the deliverable)
+
+| File | Contents |
+|---|---|
+| `index.mdx` | Headline numbers, how-to-read, tool tier list |
+| `00-executive-summary.mdx` | The landscape in one page; what matters for jackin❯ |
+| `01-specstory-product.mdx` | Product surface, business model, licensing split, reception |
+| `02-specstory-cli-internals.mdx` | Provider SPI, per-provider extraction, session schema, sessions DB, watch loop, markdown output, cloud sync, provenance, Lore/Workthreads |
+| `10-agent-session-stores.mdx` | Where every major agent persists sessions: paths, formats, schemas, stability |
+| `11-open-source-exporters.mdx` | OSS exporters/viewers/analytics per agent |
+| `12-platforms-and-observability.mdx` | Hosted sharing, cloud platforms, OpenTelemetry-style pipelines |
+| `20-comparison-matrix.mdx` | Cross-tool capability matrix and tier rationale |
+| `30-jackin-fit.mdx` | jackin❯ attach points, unique advantages, gaps, open questions for a future brainstorm |
+
+Per-tool record schema (chapters 11–12): what/maker · license/price · surfaces covered · capture mechanism · output · maintenance signals · differentiator vs SpecStory · evidence tier · sources. Per-agent record schema (chapter 10): store paths · format · schema essentials · native session features · programmatic observer access · stability · sources.
+
+## 6. Out of scope
+
+Product design decisions for jackin❯ (feature shape, config surface, naming); implementation planning; any modification to jackin❯ source code. The dossier ends at evidence, comparison, and option mapping.

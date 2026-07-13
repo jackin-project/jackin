@@ -23,13 +23,12 @@ fn general_lines_highlight_selected_row() {
     let lines = general_lines(2, true, "demo", "~/repo", true, false);
 
     assert_eq!(lines.len(), 4);
-    assert_eq!(lines[0].spans[0].content.as_ref(), "  Name           ");
-    assert_eq!(
-        lines[2].spans[0].content.as_ref(),
-        "\u{25b8} Keep awake     "
-    );
-    assert_eq!(lines[2].spans[1].content.as_ref(), "enabled (macOS only)");
-    assert_eq!(lines[3].spans[1].content.as_ref(), "disabled");
+    assert_eq!(lines[0].spans[0].content.as_ref(), "  ");
+    assert_eq!(lines[0].spans[1].content.as_ref(), "Name           ");
+    assert_eq!(lines[2].spans[0].content.as_ref(), "\u{25b8} ");
+    assert_eq!(lines[2].spans[1].content.as_ref(), "Keep awake     ");
+    assert_eq!(lines[2].spans[2].content.as_ref(), "enabled (macOS only)");
+    assert_eq!(lines[3].spans[2].content.as_ref(), "disabled");
 }
 
 #[test]

@@ -5,13 +5,18 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
-# Function-length / complexity / nesting thresholds. Measured against the
-# pre-Workstream-A baseline (2026-06-28) and set just above the current maxima
-# so the lints fire no warnings on day one. Ratchet these down over time;
-# every new violation is either refactored or grandfathered with a narrow
+# Land with first slice/index panic-coverage adoption (plan 019 / roadmap Phase 1).
+allow-indexing-slicing-in-tests = true
+allow-dbg-in-tests = true
+# Function-length / complexity / nesting thresholds.
+# cognitive-complexity: measured max 58 (2026-07-11 census — diagnostics
+# observability helpers) — ratcheted 60 → 58 (R-complexity-threshold / plan 058).
+# too-many-lines still 150 (workspace max measured ≥145 at thr 140).
+# Nesting/arguments unchanged from pre-Workstream-A baseline.
+# Every new violation is either refactored or grandfathered with a narrow
 # `#[expect(clippy::<lint>, reason = "tracked in codebase-health-enforcement")]`.
 too-many-lines-threshold = 150
-cognitive-complexity-threshold = 60
+cognitive-complexity-threshold = 58
 excessive-nesting-threshold = 5
 too-many-arguments-threshold = 7
 disallowed-methods = [

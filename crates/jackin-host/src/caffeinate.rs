@@ -41,7 +41,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::Context;
-use fs2::FileExt;
+use fs4::{FileExt, TryLockError};
 
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
@@ -61,11 +61,20 @@ pub async fn reconcile(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) {
+    reconcile_when_configured(paths, docker, runner, true).await;
+}
+
+pub async fn reconcile_when_configured(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    any_keep_awake_enabled: bool,
+) {
     if !is_supported_platform() {
         return;
     }
 
-    if let Err(err) = reconcile_inner(paths, docker, runner).await {
+    if let Err(err) = reconcile_inner(paths, docker, runner, any_keep_awake_enabled).await {
         jackin_diagnostics::emit_compact_line(
             "keep_awake",
             &format!("[jackin] keep_awake reconciler: {err}"),
@@ -81,6 +90,7 @@ async fn reconcile_inner(
     paths: &JackinPaths,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
+    any_keep_awake_enabled: bool,
 ) -> anyhow::Result<()> {
     std::fs::create_dir_all(&paths.data_dir).with_context(|| {
         format!(
@@ -106,17 +116,20 @@ async fn reconcile_inner(
     // errors (EBADF, EIO, fcntl-unsupported FS) are NOT contention;
     // surface them so the operator sees that locking is broken on
     // this host instead of a permanent silent no-op.
-    match lock_file.try_lock_exclusive() {
+    match FileExt::try_lock(&lock_file) {
         Ok(()) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
-        Err(err) => {
+        Err(TryLockError::WouldBlock) => return Ok(()),
+        Err(TryLockError::Error(err)) => {
             return Err(anyhow::Error::new(err).context(format!("locking {}", lock_path.display())));
         }
     }
 
-    let want_running = count_keep_awake_agents(docker).await? > 0;
     let pid_path = paths.data_dir.join(PID_FILENAME);
     let current_pid = read_pid_file(&pid_path)?;
+    if !any_keep_awake_enabled && current_pid.is_none() {
+        return Ok(());
+    }
+    let want_running = any_keep_awake_enabled && count_keep_awake_agents(docker).await? > 0;
     // Offload the synchronous `ps` check to the blocking pool so it never
     // stalls the tokio render thread (Defect 43 — async-first rule).
     let liveness = if let Some(pid) = current_pid {

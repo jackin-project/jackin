@@ -1,10 +1,15 @@
-#![expect(
-
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
-    reason = "integration test stub prompter must fail immediately if unexpectedly called"
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
 
 mod common;
@@ -81,7 +86,10 @@ impl CommandRunner for ScriptedRunner {
 }
 
 #[tokio::test]
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 async fn materialize_then_clean_exit_removes_record_and_branch() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
@@ -117,9 +125,9 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
         &cdir,
         "the-architect",
         "jackin-the-architect",
-        "jackin",
+        &jackin_core::WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: jackin_core::WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },

@@ -24,6 +24,9 @@ exclude = [
   # The package script remaps them to the Contents API so lychee can validate
   # paths, but broad docs scans regularly trip GitHub's secondary 403 limit.
   "https://api\\.github\\.com/repos/[^/]+/[^/]+/contents/",
+  # Research pages cite GitHub API evidence for external repositories. Those
+  # endpoints can return 403 from Actions even for public repos.
+  "https://api\\.github\\.com/repos/",
   # ACM DOI pages are public in browsers/search but return 403 to lychee in CI.
   "https://dl\\.acm\\.org/doi/10\\.1145/3735636",
   # Milvus pages below loop through redirects infinitely (verified locally:
@@ -52,6 +55,9 @@ exclude = [
   # xtermjs.org is browser-visible but CI lychee fails to connect to it.
   # Cited from reference/roadmap/clipboard-image-bridge.
   "https://xtermjs\\.org/",
+  # Reddit returns 403 to automated clients for this curated Clippy lint list.
+  # Cited from roadmap/codebase-health-enforcement.
+  "https://www\\.reddit\\.com/r/rust/comments/1rxbygj/curated_list_of_clippy_lints_worth_adding_to_the/",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]

@@ -414,7 +414,10 @@ pub(crate) fn usage_overview_reset_columns(reset: &str) -> (&str, Option<&str>) 
     (reset, None)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn usage_header_lines(
     value: &str,
     updated: Option<&str>,

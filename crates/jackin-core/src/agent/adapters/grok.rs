@@ -13,6 +13,7 @@ use crate::agent::runtime::{
 const FALLBACK_INSTALL_COMMAND: &str =
     bounded_fallback_curl!("https://x.ai/cli/install.sh", " | bash");
 
+/// [`crate::agent::runtime::AgentRuntime`] adapter for Grok Build.
 #[derive(Debug)]
 pub struct GrokRuntime;
 

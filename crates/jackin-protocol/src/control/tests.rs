@@ -23,8 +23,8 @@ fn missing_tag_field_still_bails() {
     // Structural malformations (no `type` key, non-string tag) are
     // not absorbed by `#[serde(other)]` — peers must still emit
     // well-formed tagged JSON.
-    assert!(serde_json::from_str::<ClientMsg>(r#"{"foo":"bar"}"#).is_err());
-    assert!(serde_json::from_str::<ServerMsg>(r#"{"type":42}"#).is_err());
+    serde_json::from_str::<ClientMsg>(r#"{"foo":"bar"}"#).unwrap_err();
+    serde_json::from_str::<ServerMsg>(r#"{"type":42}"#).unwrap_err();
 }
 
 #[test]

@@ -196,6 +196,7 @@ pub enum VisibleAgentState {
     Working,
     Done,
     Blocked,
+    Unknown,
 }
 
 pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState {
@@ -204,12 +205,7 @@ pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState
         AgentState::Working => VisibleAgentState::Working,
         AgentState::Done => VisibleAgentState::Done,
         AgentState::Blocked => VisibleAgentState::Blocked,
-        // The tab-strip glyph is attention-only: it flags blocked/done and shows
-        // nothing for working/idle. `unknown` ("no evidence") is likewise not an
-        // attention state, so it shares the no-glyph path. The full
-        // working/blocked/done/idle/unknown vocabulary is shown by the host
-        // console's per-pane state label (`AgentState::label`).
-        AgentState::Unknown => VisibleAgentState::Idle,
+        AgentState::Unknown => VisibleAgentState::Unknown,
     }
 }
 

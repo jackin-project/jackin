@@ -1,13 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! Host OS integration for jackin❯: desktop, clipboard, caffeinate/keep-awake.
+//! jackin-host: host desktop integration (clipboard, open, reveal).
 //!
-//! Architecture Invariant: this crate is a **L2 infrastructure** crate.
-//! Allowed workspace dependencies are the core ports/types, diagnostics,
-//! Docker client trait, protocol messages, and shared TUI helpers. Domain crates
-//! (L0) must not depend on this; presentation crates (L3) reach host-clipboard
-//! through the `ContainerHost` port trait in `jackin-core`.
+//! **Architecture Invariant:** T4.
+//! Entry point: [`HostClipboard`] — host clipboard integration.
 
 pub mod caffeinate;
 pub mod host_clipboard;

@@ -12,8 +12,10 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 
+use crate::DockerError;
 use anyhow::{Context, Result};
 use fast_down::{
     Event, Proxy,
@@ -54,6 +56,14 @@ pub fn http_client(headers: HeaderMap) -> Result<reqwest::Client> {
         .context("building HTTP client")
 }
 
+fn default_http_client() -> Result<&'static reqwest::Client> {
+    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| http_client(HeaderMap::new()).map_err(|error| format!("{error:#}")))
+        .as_ref()
+        .map_err(|error| DockerError::HttpClientBuild(error.clone()).into())
+}
+
 /// GET `url` with `client`, erroring on a non-success status, and return the
 /// body as text.
 pub async fn get_text(client: &reqwest::Client, url: &str) -> Result<String> {
@@ -63,7 +73,13 @@ pub async fn get_text(client: &reqwest::Client, url: &str) -> Result<String> {
         .await
         .with_context(|| format!("GET {url}"))?;
     let status = resp.status();
-    anyhow::ensure!(status.is_success(), "{url} failed: HTTP {status}");
+    if !status.is_success() {
+        return Err(DockerError::HttpStatus {
+            url: url.to_owned(),
+            status: status.to_string(),
+        }
+        .into());
+    }
     resp.text()
         .await
         .with_context(|| format!("{url} body is not valid UTF-8"))
@@ -71,7 +87,7 @@ pub async fn get_text(client: &reqwest::Client, url: &str) -> Result<String> {
 
 /// GET `url` with a default (header-less) client and return the body as text.
 pub async fn fetch_text(url: &str) -> Result<String> {
-    get_text(&http_client(HeaderMap::new())?, url).await
+    get_text(default_http_client()?, url).await
 }
 
 /// Download `url` to `dest` using fast-down parallel chunks.
@@ -106,20 +122,24 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
         None,
     )
     .context("building HTTP client")?;
-    let (info, _resp) = client
-        .prefetch(parsed)
-        .await
-        .map_err(|(err, _)| anyhow::anyhow!("prefetch {url}: {err:?}"))?;
+    let (info, _resp) = client.prefetch(parsed).await.map_err(|(err, _)| {
+        anyhow::Error::from(DockerError::Prefetch {
+            url: url.to_owned(),
+            detail: format!("{err:?}"),
+        })
+    })?;
     jackin_diagnostics::debug_log!(
         "download",
         "{url}: size={}, parallel={}",
         info.size,
         info.fast_download
     );
-    anyhow::ensure!(
-        info.fast_download,
-        "server at {url} does not support Range requests; cannot download in parallel"
-    );
+    if !info.fast_download {
+        return Err(DockerError::RangeUnsupported {
+            url: url.to_owned(),
+        }
+        .into());
+    }
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent)
             .await
@@ -181,14 +201,20 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
                 _ => {}
             }
         }
-        result
-            .join()
-            .await
-            .map_err(|e| anyhow::anyhow!("download task panicked for {url}: {e}"))
+        result.join().await.map_err(|e| {
+            anyhow::Error::from(DockerError::DownloadTaskPanicked {
+                url: url.to_owned(),
+                detail: e.to_string(),
+            })
+        })
     };
     let Ok(outcome) = tokio::time::timeout(DOWNLOAD_TIMEOUT, drive).await else {
         result.abort();
-        anyhow::bail!("download of {url} timed out after {DOWNLOAD_TIMEOUT:?}");
+        return Err(DockerError::DownloadTimeout {
+            url: url.to_owned(),
+            timeout: DOWNLOAD_TIMEOUT,
+        }
+        .into());
     };
     outcome
 }

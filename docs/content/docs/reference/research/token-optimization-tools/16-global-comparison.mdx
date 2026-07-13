@@ -1,0 +1,127 @@
+---
+title: "16 — Global comparison: every tool, every feature, one page"
+---
+
+# 16 — Global comparison: every tool, every feature, one page
+
+The single-page summary of the whole research program: all eleven tools ever analyzed across the dossier and this hub, one identity strip, one feature-by-feature has/lacks matrix, and one **best-implementation-per-feature** table naming who does each thing best and why. Every cell is backed by the source-verified pages ([01 — Caveman: design teardown](/reference/research/token-optimization-tools/01-caveman-design/)–[04 — lean-ctx: design teardown](/reference/research/token-optimization-tools/04-leanctx-design/), [12 — Implementation deep-dive: rival features, source-compared](/reference/research/token-optimization-tools/12-implementation-comparison/)–[15 — Verification pass and the extended matrix](/reference/research/token-optimization-tools/15-verification-pass-and-extended-matrix/), hub [19 — Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/)/[25 — sem and mq: entity-level retrieval and structural markdown queries](/reference/research/token-optimization-tools/25-sem-and-mq-structural-and-markdown-retrieval/)); this page adds no new claims — it is the one-screen view. Data for the original ten-tool matrix is as of 2026-07-03; pxpipe and maintenance data are as of 2026-07-05 — see the [latest-versions refresh](/reference/research/token-optimization-tools/18-latest-versions-refresh/). Legend: ✅ has it · 🏆 has it and is the best implementation · ◐ partial/conditional · ✗ absent.
+
+## Identity strip
+
+| | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Class | output-register prompt plugin | MCP memory store | full coding agent (pi-code fork) | shell-output filter (hook+CLI) | input-compression pipeline | integrated context runtime | code-intelligence server | semantic version control / entity engine | resident lexical search SDK | Markdown query language | cache-aligned prompt re-encoding proxy (optical context compression) |
+| Language | JS (prompts) | TS | TS | Rust | Python + Rust core | Rust | Zig | Rust | Rust | Rust | TS |
+| License | MIT | MIT | MIT | Apache-2.0 (invalid SPDX string) | Apache-2.0 | Apache-2.0 | BSD-3 | MIT/Apache-2.0 | MIT | MIT | MIT |
+| Embeddable in Rust | prompt text | port 1 tokenizer | constants only | vendor corpus + port | reimplement to spec | port kernels | design donor (Zig) | **crates.io dep** (`sem-core`) | **crates.io dep** (`fff-search`) | **crates.io dep** (`mq-lang`/`mq-markdown`) | port kernels (savings accounting, cache invariants) |
+| Maintenance (07-05) | active again — v1.9.1 shipped 2026-07-03 | revived 2026-07-03 (issues 44 → 4) | active | active | active | very active | active (main frozen at audited HEAD; release branch busy) | very active | active | active (weekly) | very active (10 releases in 10 days); ~6.5 wks old, bus factor 1 |
+| Stars vs watchers (honesty) | 83.8k / 194 (promoted) | 581 / 1 | 703 / 3 (organic) | 68.5k / 166 (promoted) | 56.5k / 176 (promoted) | ~3.1k / 21 | 1.3k / 9 | 3.1k / 6 (trending) | 9.5k / 20 | 955 / 2 | 1.7k / 9 (press-driven) |
+| Best evidence for its headline | local re-run: ~50% over terse control | **misses own targets** (33% vs 60% marketed) | artifact-backed 1.93× vs Codex (caveated, −1/−2 tasks) | per-command self-counter only (T4) | self-report + historical fleet median 4.8% ("independent 47.5%" was its own benchmark) | mechanisms locally reproduced; tokbench R1 net-negative at defaults | publishes its own losses (FTS5 beat it) | circular n=3 self-benchmark; mechanisms trivially reproducible | ~14% one-task self-benchmark; nushell ships the crate | 12–53× section retrieval measured here (micro) | author-reported 59–70% via per-request `count_tokens` counterfactual (methodology verified, numbers unreproduced) |
+| Telemetry / egress | none | none | none | consent-gated opt-in (arg-leak nuance) | opt-in since 0.27 (beacon removed) | none by default; opt-in cloud | **default-on, uploads to vendor on session close** | default-on (opt-out); opt-in cloud clones repos | update-check ping (flag off) | none | local-only events log; free `count_tokens` probes to the same upstream provider |
+
+pxpipe joined the set on 2026-07-05 with its full teardown in [17 — pxpipe: design teardown](/reference/research/token-optimization-tools/17-pxpipe-design/). Its cells below are intentionally caveated: mechanism and methodology are source-read, but headline savings are author-reported and unreproduced, and the transform is lossy.
+
+## Feature matrix
+
+### Output side (the 5×-priced class)
+
+| Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Output register (prose compression) | 🏆 6 levels, verbatim guards, auto-clarity | ✗ | ✅ 3 levels, 120–195 tok | ✗ | ◐ shaper off by default | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Commit/PR-text policy | ◐ compresses them (`/caveman-commit` — anti-pattern) | ✗ | 🏆 exempt at every level | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Subagent report shaping | 🏆 cavecrew format registers (−43.9% measured) | ✗ | ✅ output contract ("file:line over prose") | ✗ | ✗ | ◐ handoff bundles | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Effort/thinking shaping | ✗ | ✗ | ◐ via model config | ✗ | 🏆 effort downgrade on mechanical continuations (only tool touching the thinking bucket at all) | ◐ proxy effort module | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+### Observation side (write-time input compression)
+
+| Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Shell-output filtering | ✗ | ✗ | ◐ line budgets + RTK bridge | 🏆 breadth: 77 cmds + 63 user-extensible TOML filters, 86 rewrite rules | ◐ content-typed log compressor (exit-code-blind) | ✅ depth/safety: 77 modules, verbatim-policy classifier, never-compress-errors | ✗ (hostile: blocks shell tools) | ✗ | ✗ | ✗ | ◐ large `tool_result`s after source; lossy |
+| Native-read compression | ✗ | ✗ | ◐ read budget + dedup | ◐ wrappers only (`rtk read/grep`) | ✅ on the wire (sees everything) | 🏆 13 read modes + auto-mode + quality scores | ◐ substitutes retrieval | ◐ substitutes entities | ✗ | ◐ substitutes sections | ◐ large read/tool payloads after emission; lossy |
+| Structured-data crushing (JSON/tables/logs) | ✗ | ✗ | ◐ semantic JSON/XML extraction | ◐ schema/keys-only, dedup, grouping | 🏆 SmartCrusher (stats-compaction, anomalies kept) | ✅ deterministic ports (json/tabular/yaml_crush) | ✗ | ✗ | ✗ | ◐ query-shaped extraction | ✗ (renders bytes, no semantic crushing) |
+| Prose/docs structural handling | ✗ (output only) | ◐ lossy, refunded at read | ✗ | ✗ | ◐ TextCrusher extractive (opt-in) | ✗ (7.5% on MD; wisely defaults never-compress) | ✗ | ✗ | ✗ | 🏆 TOC/section/typed slicing, 12–53× | ✗ (compression, not retrieval) |
+| Lossless reversible tier | ✗ | ✗ | ✗ | ✗ | 🏆 `--lossless` mode w/ runtime round-trip self-check | ◐ `anchored` mode (hash anchors) | ✗ | ✗ | ✗ | ✅ queries are non-destructive by nature | ✗ |
+| Recovery from lossy compression | ✗ (re-ask) | ◐ partial expand, semantically unsafe | ✗ | ◐ tee (default failures; Always mode; pagination hints) | 🏆 CCR store + retrieve tool (reversibility as architecture) | ✅ archive + `ctx_expand`, FTS-searchable + recovery footers | ✗ | ✗ | ✗ | n/a | ◐ `keepSharp`/`emitRecoverable` caller opt-in |
+| Never-worse output guard | n/a | ✗ | ✗ | 🏆 token-level guard + per-filter panic isolation + `[N more lines]` contract | ✅ per-block token-validation gate | ✅ shorter-only gate | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Media policy (PDF/screenshot→text) | ✗ | ✗ | ✗ | ✗ | ✗ | ◐ PDF ingestion (unreleased) | ✗ | ✗ | ✗ | ◐ HTML→markdown conversion | ◐ text→image only; opposite direction |
+
+### Retrieval and code intelligence (prevent the read)
+
+| Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Resident lexical search | ✗ | ✗ | ✗ | ✗ | ✗ | ◐ BM25(+SPLADE) | ✅ word+trigram+BM25 | ◐ orient (term×centrality) | 🏆 frecency + typo-tolerant + git-aware, sub-10 ms warm | ✗ | ✗ |
+| Persistent symbol/call graph | ✗ | ✗ | ✗ | ✗ | ✗ | ✅ property graph + LSP refactor (broadest) | 🏆 deterministic call/dep graph + callers/callpath verbs (best query surface) | ✅ entity graph + scope chains | ✗ | ✗ | ✗ |
+| Entity-level diff / blame / history axis | ✗ | ✗ | ✗ | ✗ | ✗ | ◐ Context Time Machine (state snapshots) | ◐ co-change boost | 🏆 structural-hash diff, entity blame, hotspots, commit index — uncontested | ✗ | ✗ | ✗ |
+| Markdown/doc structure queries | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ◐ markdown as data format | ✗ | 🏆 the whole product | ✗ |
+| Task-shaped budget-packed context | ✗ | ✗ | ✗ | ✗ | ◐ IntelligentContext (search-domain evidence) | ✅ CFT Φ + knapsack (most sophisticated scoring) | 🏆 `codedb_context` value-ordered two-step pack w/ disclosed omissions (best engineering) | ✅ tiered packer + test folding | ✗ | ◐ compiled section programs | ✗ |
+| Re-read suppression (stubs / attention ledger) | ✗ | ✗ | ✅ fingerprint stubs | ✗ | ✗ | ✅ `[unchanged]` stubs + conversation/task scoping (best shipped) | ◐ `unchanged:HASH` | 🏆 delta-fills against what *this session* saw (best idea) | ✗ | ✗ | ◐ collapses old history into images; no semantic ledger |
+| Output-shape discipline (bounded, escalation footers, pagination) | n/a | ✗ | ✅ budgets | ✅ caps + `reduced()` guards | ◐ | ✅ handles + views | 🏆 skeleton `{ … N lines }`, paths_only, offset tails, escalation footers — the coherent grammar | ✅ compact trees (3.7× vs JSON), disclosed omissions | ✅ frecency-words, import de-noise, cursor pagination | ✅ grep-with-node-context | ✗ |
+| Anti-loop / agent-behavior guards | ✗ | ✗ | ✗ | ✅ anti-confusion marker | ◐ learn loop-detector (offline) | ✅ bounce auto-upgrade | 🏆 ConvergenceGovernor (live, in-band) | ◐ guard hook (blunt) | ◐ "stop after 2 greps" doctrine | ✗ | ✗ |
+
+### Memory, state, and multi-agent
+
+| Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Persistent memory | ◐ cavemem (refuted) | ✅ but refuted as shipped | ◐ delegates to cavemem | ✗ | 🏆 reversible, cross-agent, dedup (best architecture) | ✅ bitemporal KG + supersede semantics (most featureful, unproven) | ✗ | ◐ commit index = code history | ◐ frecency/query history | ✗ | ✗ |
+| Cross-session handoff | ✗ | ◐ session summaries (unsearchable) | ✅ session branching + checkpoints | ✗ | ◐ learn → memory files | ✅ CCP snapshots | ◐ reader.md (hash-verified orientation) | ✗ | ✗ | ✗ | ✗ |
+| Multi-agent coordination | ◐ cavecrew convention | ✗ | ✅ 5 worktree-isolated subagents | ✗ | ◐ SharedContext (RAM dict) | 🏆 event bus + scent-field stigmergy (novel) | ✅ agent registry + per-path locks | ✗ | ✗ | ✗ | ✗ |
+
+### Measurement and verification (the differentiating layer)
+
+| Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Savings ledger | ◐ hook tally | ✗ | ◐ per-layer claims | ◐ SQLite gross `len/4` | ◐ per-session + holdout (no results) | 🏆 bounce-netted, hash-chained, **net-of-injection** | ◐ telemetry counters | ✅ ledger w/ measured suppression | ✗ | ✗ | 🏆 per-request `count_tokens` counterfactual + billed usage |
+| Bounce/re-read netting | ✗ | ✗ | ✗ | ✗ | ✗ | 🏆 negative events + auto-upgrade + edit-force exclusion | ✗ | ◐ (delta-fill implies it) | ✗ | ✗ | ◐ same-cache-state baseline; no task bounce netting |
+| Self-footprint accounting | ✗ (~940-tok listing unmetered) | ✗ (uncapped injection) | ◐ register budget documented | n/a (zero rent) | ◐ | 🏆 `doctor overhead --gate` CI gate + footprint self-ablation — unique | ✗ (5.2k schema unmetered) | ✗ | ✗ | ✗ | ◐ logs proxy/probe events; no full self-rent gate |
+| Holdout / control-arm design | ✅ terse-control eval arm | ✗ | ✅ real-process A/B harness (best template) | ✗ | 🏆 conversation-stable cohorts + stratified CI (design) | ✅ same-budget arms + seeded bootstrap | ✅ microVM A/B, per-response token axis | ◐ | ◐ | ✗ | ✅ ON/OFF eval receipts; not independently rerun |
+| Benchmark honesty culture | ◐ README self-corrects to 65% | ✗ (3 inconsistent numbers in one repo) | ✅ raw artifacts + config fingerprints | ✗ (vendor pcts hardcoded in rules) | ◐ candid splits, marketing persists | ✅ regenerated numbers, honest gates | 🏆 publishes own losses + failed-experiments ledger | ✅ regressions stated plainly | ◐ | ◐ | ✅ publishes negatives, lossiness, and excluded best case |
+| Claude-tokenizer-correct counting | ✗ (o200k) | ✗ (chars/4) | ✗ | ✗ (chars/4) | ✗ (cl100k×1.1) | ✗ (o200k/cl100k) | ✗ (bytes/4) | ✗ (words×1.3) | ✗ | ✗ | 🏆 `count_tokens` counterfactual; best per-request accounting |
+
+### Safety, cache, and delivery
+
+| Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Cache-safe by construction | ✅ output side | n/a | ✅ | 🏆 write-time at tool boundary, zero MCP rent | ◐ MCP/lib safe; proxy risky | ✅ hook/MCP safe + measured `cache_safe_ratio` (best instrumented) | ◐ | ✅ write-time | ✅ | ✅ | ◐ cache-aligned by engineering, not by construction |
+| Deterministic (no ML hot path) | ✅ prompt | ✅ regex | ✅ (ML opt-in) | 🏆 pure rules | ◐ kompress default fallback (gated) | ✅ default core | ✅ | ✅ | ✅ | ✅ | ✅ bitmap atlas + PNG encoder; no ML transform |
+| MCP schema rent | ~940 tok skills | ~300 tok (lean) | n/a | 🏆 zero | tools in MCP mode | ◐ lazy 5–11 advertised + invoker (of 82) | ~5.2k tok (23 tools) | 6 tools | 3 tools (lean) | 4 tools (lean) | 🏆 zero MCP rent; proxy/env-var instead |
+| Host-write surface | 2 hooks | hooks ×5 IDEs | own config dir | hook + binary | config + model download | **19 installers + self-healing hooks (widest)** | hook + settings self-grants + 6 client configs | git-config rewiring + hooks (opt paths) | none (lib) / binary | none (lib) / binary | ◐ `~/.pxpipe/` only; local proxy surface |
+| Auth-mode awareness (PAYG vs subscription) | ✗ | ✗ | ✗ | ◐ quota tiers in `gain` | 🏆 per-request policy gating aggressiveness + stealth | ◐ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Binary/runtime footprint | none | node + ONNX worker | node app | 🏆 ~4–8 MB single binary | Python stack + ~600 MB model (opt) | 75.9 MiB + daemon + dashboard | single binary, **1.7 GB RSS** @6.3k files | single binary + sidecar socket | ~26 MB/14k files in-proc | ~single binary / crate | ◐ TypeScript proxy; no model download; young package |
+
+## Best implementation per feature (the selection table)
+
+What the [engine spec](/reference/research/jackin-context-engine/) actually takes, feature by feature — the "who won" column of the whole program:
+
+| Feature | Best implementation | Why it wins | Runner-up |
+|---|---|---|---|
+| Output register | **caveman** | graduated levels + verbatim guards + auto-clarity; zero machinery; honest ~50–58.5% on visible prose | caveman-code (adds the commit/PR exemption the engine adopts) |
+| Shell-output filtering, breadth | **RTK** | 77 commands + 63 TOML filters with inline tests + 86-rule classifier; user-extensible without recompiling | lean-ctx (deeper per-command parsers) |
+| Shell-output filtering, safety | **lean-ctx** | verbatim-policy classifier, never-compress-errors, shorter-only gate | RTK v0.43 (`never_worse` + panic isolation closed most of the gap) |
+| Fail-open contracts | **RTK** | never_worse + three-tier ParseResult + `[N more lines]` anti-confusion marker + panic isolation — the most complete guard set | lean-ctx |
+| Native-read compression | **lean-ctx** | 13 modes, auto-mode with no-lossy-override, self-rated quality, bounce feedback | headroom (broadest reach, less code-aware) |
+| Code outlining | **lean-ctx** | tree-sitter 26 grammars + quality scores (vs RTK's regex brace-counting, codedb's line heuristics) | headroom (tree-sitter, 8 langs) |
+| Structured-data crushing | **headroom** | SmartCrusher stats-compaction with anomaly retention; strongest eval trail | lean-ctx (deterministic byte-stable port) |
+| Reversibility | **headroom** | CCR as architecture: marker⇄tool⇄TTL coupling, plus the new lossless round-trip-self-check tier | lean-ctx (FTS-searchable archive + recovery footers) |
+| Cache-safety instrumentation | **lean-ctx** | measured `cache_safe_ratio` on /status; byte-stable-prefix invariant tested | pxpipe (best prompt-mutating cache-alignment tests), headroom (economics gate) |
+| Cache-write economics | **headroom** | `net_mutation_gain` with the corrected S+ΔT penalty for text compression | pxpipe (symmetric cache-burn pricing for mode flips) |
+| Lexical search | **fff** | resident index, frecency + git ranking, typo tolerance, production-proven crate (nushell) | codedb (trigram+BM25, but its own shootout lost to FTS5) |
+| Symbol/call-graph queries | **codedb** | callers/callpath/deps verbs, fused one-round-trip answers, ms-latency warm daemon | lean-ctx (graph + LSP, heavier), sem (entities + scope chains) |
+| Code history axis | **sem** | structural-hash diff (rename/cosmetic detection), entity blame, hotspots, pre-diffed commit index — uncontested | — |
+| Docs/prose retrieval | **mq** | structural sections/TOC at 12–53×; the only tool on the bucket that dominates docs workloads | — |
+| Context packing | **codedb** | value-ordered two-step pack under budget with one-line disclosed omissions + evidence-gated extras (80-char reader gate) | lean-ctx CFT (most sophisticated scoring), sem (tiered + test folding) |
+| Re-read suppression | **sem** (idea) / **lean-ctx** (shipped) | sem's delta-fills against session state are the strongest design; lean-ctx ships stubs with conversation+subagent scoping today | caveman-code (fingerprint stubs) |
+| Anti-loop guards | **codedb** | ConvergenceGovernor: in-band, ~20 lines, tool-layer | lean-ctx (bounce auto-upgrade), RTK (marker contract) |
+| Memory architecture | **headroom** | reversible + cross-agent + dedup — the only design where a corrupted memory can be verified against ground truth | lean-ctx (bitemporal KG, unproven); cavemem is the counterexample |
+| Savings accounting | **lean-ctx** | bounce-netted, hash-chained, net-of-injection, CI-gated self-footprint | **pxpipe** wins the per-request counterfactual method; codedb/caveman-code for culture/template |
+| Per-request counterfactual accounting | **pxpipe** | parallel `count_tokens` baseline on the uncompressed body, same-observed-cache-state pricing, and unfloored negative rows — the anti-K1 gold standard | lean-ctx (net-of-injection over tasks) |
+| Self-footprint discipline | **lean-ctx** | `doctor overhead --gate` + footprint self-ablation — unique; every other tool leaves its own rent unmetered | — |
+| Holdout/eval design | **headroom** (cohorts) + **caveman-code** (harness) + **lean-ctx** (same-budget arms) | three complementary pieces; no single tool has the full loop — the engine composes all three | codedb (per-response token axis) |
+| Multi-agent coordination | **lean-ctx** | event bus + the novel zero-token scent field | codedb (locks + registry) |
+| Auth-mode policy | **headroom** | PAYG/OAuth/Subscription gating aggressiveness; subscription write-quarantine | — |
+| Minimal footprint | **RTK** | one small binary, zero MCP rent, zero state to provision | fff (crate, ~26 MB in-proc); pxpipe has zero MCP rent but adds a local proxy |
+| Cache-read bucket attack | **pxpipe** | only surveyed tool that directly shrinks the stable cached corpus itself; caveat: lossy image modality and provider-fragile economics | none |
+| Trust-boundary conduct | **fff / mq / sem-core** (clean crates) | library form, no host writes, no default egress | anti-podium: codedb's installer (blocking hook, self-granted perms, vendor telemetry upload) |
+
+## What no tool has (the engine-only rows)
+
+Even with pxpipe added, the runtime-owner gaps remain in the [engine spec](/reference/research/jackin-context-engine/), because only the runtime owner can build them: **whole-boundary Claude-tokenizer-correct accounting** (pxpipe is the best per-request counterfactual, but not a whole-runtime ledger); **whole-boundary attention ledger** (every tool sees only its own slice); **media policy** (PDF/screenshot→text enforcement); **fleet spawn choreography and cap metering** (stagger/pre-warm, `excludeDynamicSections`, tasks-per-cap); **zero-delivery-tax deployment** (no installers, no hooks into foreign config, no drift healing — capsule config is generated); **thinking-bucket routing** (effort/model policy; headroom's shaper is the only partial exception). And the composed verdict stands: none of the eleven — nor all of them stacked — touches the 20%-of-dollars thinking bucket or beats the ≈2.5×/≈5–6.2× ceiling; the engine's claim is banking the realizable share *by default, measured honestly*, not exceeding physics.

@@ -44,14 +44,14 @@ fn rich_exit_dialog_keeps_all_when_rich_dialog_is_unavailable() {
     );
 }
 
-use jackin_runtime::runtime::test_support::FakeRunner;
+use jackin_test_support::FakeRunner;
 
 #[tokio::test]
 async fn still_running_with_zero_sessions_cleans() {
     let dir = TempDir::new().unwrap();
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 0\n".to_owned()])),
         ..Default::default()
     };
@@ -75,7 +75,7 @@ async fn still_running_with_unparseable_status_preserves_records() {
     let dir = TempDir::new().unwrap();
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from([String::new()])),
         ..Default::default()
     };
@@ -99,7 +99,7 @@ async fn still_running_with_sessions_preserves() {
     let dir = TempDir::new().unwrap();
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
             "Sessions: 1\n  [3] work (claude) state=working active=true\n".to_owned(),
         ])),
@@ -125,7 +125,7 @@ async fn stopped_non_zero_preserves_records() {
     let dir = TempDir::new().unwrap();
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -146,7 +146,7 @@ async fn oom_killed_preserves_records() {
     let dir = TempDir::new().unwrap();
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -210,7 +210,7 @@ async fn clean_worktree_with_head_equal_base_deletes_record() {
     let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
     let mut runner = fake_with_outputs(&["", &branches, "refs/heads/jackin/scratch/x"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -251,7 +251,7 @@ async fn clean_worktree_with_pushed_commits_deletes_record() {
     );
     let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/jackin/scratch/x"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -289,7 +289,7 @@ async fn clean_worktree_with_unpushed_commits_preserves() {
     );
     let mut runner = fake_with_outputs(&["", &branches, "deadbeef\n"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -320,7 +320,7 @@ async fn clean_worktree_no_upstream_preserves_when_head_diverged() {
     let branches = format!("{}\n", ferow("jackin/scratch/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -387,7 +387,7 @@ async fn dirty_worktree_interactive_preserve_choice_keeps_state() {
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::KeepAll]));
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -413,7 +413,7 @@ async fn dirty_worktree_interactive_force_delete_runs_cleanup() {
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -444,7 +444,7 @@ async fn dirty_worktree_interactive_return_to_agent_signals_caller() {
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -470,7 +470,7 @@ async fn dirty_worktree_non_interactive_prints_warning_and_preserves() {
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -513,7 +513,7 @@ async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
     // status --porcelain errors → must NOT be treated as clean tree.
     let mut runner = fake_failing_capture(&[], "status --porcelain");
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -549,7 +549,7 @@ async fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
     // status clean, then for-each-ref refs/heads/ errors.
     let mut runner = fake_failing_capture(&[""], "for-each-ref");
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -594,7 +594,7 @@ async fn assess_cleanup_rev_list_failure_preserves_unpushed() {
     );
     let mut runner = fake_failing_capture(&["", &branches], "rev-list");
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -652,7 +652,7 @@ async fn multi_mount_force_delete_on_each_cleans_all_records() {
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
     // Operator chooses option 2 (force delete) for both.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -695,7 +695,7 @@ async fn multi_mount_keep_all_signals_preserved() {
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
     // D23: one dialog for all records; operator picks keep all.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::KeepAll]));
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -731,7 +731,7 @@ async fn multi_mount_return_to_agent_signals_return_to_agent() {
     let mut runner = fake_with_outputs(&[" M f1\n", " M f2\n", " M f3\n"]);
     // D23: one dialog for all records; operator returns to role.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -795,7 +795,7 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
     };
     // Operator force-deletes both.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -835,7 +835,7 @@ async fn multi_mount_non_interactive_marks_all_preserved() {
     write_records(dir.path(), &[r1, r2]).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -870,7 +870,7 @@ async fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
     // status clean, then for-each-ref returns empty (no branches).
     let mut runner = fake_with_outputs(&["", ""]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -921,7 +921,7 @@ async fn renamed_branch_pushed_clean_is_safe_to_delete() {
         + "\n";
     let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/x"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -961,7 +961,7 @@ async fn squash_merged_pruned_branch_is_safe_to_delete() {
     // symbolic-ref HEAD  (HEAD on feature/x → attached)
     let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1000,7 +1000,7 @@ async fn renamed_branch_no_upstream_preserves_unpushed() {
         + "\n";
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1034,7 +1034,7 @@ async fn renamed_branch_with_unpushed_commits_preserves() {
         + "\n";
     let mut runner = fake_with_outputs(&["", &branches, "deadbeef\ncafef00d\n"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1072,7 +1072,7 @@ async fn multiple_branches_all_safe_deletes_record() {
     // then symbolic-ref HEAD (HEAD on feature/b → attached).
     let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/b"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1118,7 +1118,7 @@ async fn multiple_branches_one_unsafe_preserves() {
     // PreservedUnpushed without another rev-list.
     let mut runner = fake_with_outputs(&["", &branches, ""]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1150,7 +1150,7 @@ async fn unpushed_branch_prompts_with_unpushed_reason() {
     // status clean → for-each-ref → ahead+no-upstream → preserve
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = RecordingPrompt::new(ExitDialogChoice::KeepAll); // operator picks "preserve"
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1177,7 +1177,7 @@ async fn dirty_worktree_prompts_with_dirty_reason() {
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = RecordingPrompt::new(ExitDialogChoice::KeepAll);
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1213,7 +1213,7 @@ async fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
     let branches = format!("{}\n", ferow("", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1242,7 +1242,7 @@ async fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
     let branches = format!("{}\n", ferow("feature/x", "", "origin/feature/x", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1277,7 +1277,7 @@ async fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1310,7 +1310,7 @@ async fn unpushed_branch_interactive_force_delete_runs_cleanup() {
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1342,7 +1342,7 @@ async fn unpushed_branch_interactive_return_to_agent_signals_caller() {
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1382,7 +1382,7 @@ async fn bare_gone_track_is_safe_to_delete() {
     // symbolic-ref HEAD  (HEAD on feature/x → attached)
     let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1424,7 +1424,7 @@ async fn detached_head_past_base_preserves_unpushed() {
     // Queue: status, for-each-ref, rev-parse HEAD (symbolic-ref fails).
     let mut runner = fake_failing_capture(&["", &branches, "deadbeef"], "symbolic-ref");
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1455,7 +1455,7 @@ async fn detached_head_at_base_is_safe_to_delete() {
     // Using the real git rev-parse output format (trailing newline) so trim() is exercised.
     let mut runner = fake_failing_capture(&["", &branches, "abc\n"], "symbolic-ref");
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1477,7 +1477,7 @@ async fn has_jackin_sessions_error_treated_as_sessions_present() {
     let dir = TempDir::new().unwrap();
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient {
+    let docker = jackin_test_support::FakeDockerClient {
         fail_with: vec![("docker exec".to_owned(), "exec failed".to_owned())],
         ..Default::default()
     };
@@ -1510,7 +1510,7 @@ async fn detached_head_rev_parse_failure_preserves_unpushed() {
         ..FakeRunner::default()
     };
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1542,7 +1542,7 @@ async fn keep_policy_preserves_dirty_record_without_prompt() {
     let mut runner = fake_with_outputs(&[" M file\n"]);
     // NoPrompt panics if called; keep-policy must never call the dialog.
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1572,7 +1572,7 @@ async fn discard_policy_skips_dialog_on_dirty_record() {
     let mut runner = fake_with_outputs(&[" M file\n"]);
     // NoPrompt panics if called; discard-policy must never call the dialog.
     let mut p = NoPrompt;
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1637,7 +1637,7 @@ async fn exit_action_keep_preserves_via_finalize() {
     std::fs::write(state_dir.join("exit-action.json"), "\"keep\"").unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut prompt = ExitActionPrompt { state_dir };
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
@@ -1668,7 +1668,7 @@ async fn exit_action_discard_cleans_via_finalize() {
     std::fs::write(state_dir.join("exit-action.json"), "\"discard\"").unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut prompt = ExitActionPrompt { state_dir };
-    let docker = jackin_runtime::runtime::test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),

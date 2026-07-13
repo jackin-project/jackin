@@ -30,7 +30,7 @@ const CLAUDE_DEFAULT_BIN: &str = "claude";
 
 /// Result of probing `<binary> --version` on the host.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaudeProbe {
+pub(crate) struct ClaudeProbe {
     /// Exact binary path / name that succeeded (`claude` by default).
     pub binary: String,
     /// Captured version string, e.g. `"2.1.4"`. Already trimmed.
@@ -47,12 +47,12 @@ pub struct ClaudeProbe {
 /// Errors carry an actionable install-hint suffix because operators
 /// hitting this path typically have not yet installed the upstream
 /// CLI on the machine running jackin.
-pub fn probe_claude_cli() -> anyhow::Result<ClaudeProbe> {
+pub(crate) fn probe_claude_cli() -> anyhow::Result<ClaudeProbe> {
     probe_with_binary(CLAUDE_DEFAULT_BIN)
 }
 
 /// Test-injectable variant. Production callers use [`probe_claude_cli`].
-pub fn probe_with_binary(binary: &str) -> anyhow::Result<ClaudeProbe> {
+pub(crate) fn probe_with_binary(binary: &str) -> anyhow::Result<ClaudeProbe> {
     let mut command = Command::new(binary);
     command.arg("--version");
     #[expect(
@@ -109,7 +109,7 @@ fn parse_version_line(stdout: &str) -> Option<String> {
 /// so the orchestrator's stdout scanner, the `secrecy::SecretString`
 /// debug stripper, and any future "looks like a token" log sanitiser
 /// stay in sync.
-pub const TOKEN_PREFIX: &str = "sk-ant-oat01-";
+pub(crate) const TOKEN_PREFIX: &str = "sk-ant-oat01-";
 
 /// RAII guard that puts the operator's terminal into raw mode for
 /// the lifetime of [`capture_setup_token_with_binary`] and restores
@@ -177,11 +177,13 @@ impl Drop for RawModeGuard {
 /// - Child exits clean but no token line was ever emitted — the
 ///   operator is told to re-run with `--debug` so the raw output is
 ///   inspectable.
-pub fn capture_setup_token() -> anyhow::Result<secrecy::SecretString> {
+pub(crate) fn capture_setup_token() -> anyhow::Result<secrecy::SecretString> {
     capture_setup_token_with_binary(CLAUDE_DEFAULT_BIN)
 }
 
-pub fn capture_setup_token_with_binary(binary: &str) -> anyhow::Result<secrecy::SecretString> {
+pub(crate) fn capture_setup_token_with_binary(
+    binary: &str,
+) -> anyhow::Result<secrecy::SecretString> {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use secrecy::SecretString;
     use std::io::{Read, Write};
@@ -392,7 +394,8 @@ fn forward_redacted_line(
     }
     let token_bytes_end = i;
     if token.is_empty() {
-        token = TOKEN_PREFIX.to_owned();
+        token.clear();
+        token.push_str(TOKEN_PREFIX);
     }
     if captured.is_none() {
         *captured = Some(token);

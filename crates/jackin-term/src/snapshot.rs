@@ -35,15 +35,25 @@ use crate::{
 )]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SnapCellAttrs {
+    /// SGR bold.
     pub bold: bool,
+    /// SGR italic.
     pub italic: bool,
+    /// Any underline style active.
     pub underline: bool,
+    /// SGR reverse video.
     pub inverse: bool,
+    /// SGR faint/dim.
     pub dim: bool,
+    /// SGR strikethrough.
     pub strikethrough: bool,
+    /// SGR slow blink.
     pub slow_blink: bool,
+    /// SGR rapid blink.
     pub rapid_blink: bool,
+    /// SGR conceal/hidden.
     pub conceal: bool,
+    /// SGR overline.
     pub overline: bool,
 }
 
@@ -339,6 +349,7 @@ fn span_width(span: DirtySpan, cols: u16) -> usize {
     usize::from(end.saturating_sub(span.start_col.min(end)))
 }
 
+/// Iterator over changed rows as `(row_index, cells)`.
 #[derive(Debug)]
 pub struct ChangedRows<'a, 'dirty> {
     screen: &'a RowStore,
@@ -371,6 +382,7 @@ impl<'a> Iterator for ChangedRows<'a, '_> {
     }
 }
 
+/// Iterator over changed column spans as `(row, start_col, cells)`.
 #[derive(Debug)]
 pub struct ChangedSpans<'a, 'dirty> {
     screen: &'a RowStore,

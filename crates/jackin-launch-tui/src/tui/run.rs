@@ -1,7 +1,7 @@
-#![allow(clippy::too_many_lines)]
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
+#![allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 //! Launch rich terminal renderer and modal loops.
 
 use std::io::Write;
@@ -77,7 +77,7 @@ impl RichDriver {
         renderer: RichRenderer,
         view: SharedView,
         run_id: String,
-        run_log_path: String,
+        run_log_path: Option<String>,
         host: &'static dyn LaunchHostTerminal,
         jackin_version: &'static str,
         cancel_token: CancellationToken,
@@ -102,7 +102,7 @@ impl RichDriver {
                     let outcome = handle_cockpit_input(
                         &view,
                         &run_id,
-                        &run_log_path,
+                        run_log_path.as_deref(),
                         host,
                         jackin_version,
                         &cancel_token,
@@ -148,7 +148,7 @@ impl RichDriver {
                         }
                         Err(_) => continue,
                     };
-                    drop(rr.render(&snapshot, &run_id, &run_log_path));
+                    drop(rr.render(&snapshot, &run_id, run_log_path.as_deref()));
                 }
             })
         };
@@ -237,7 +237,7 @@ fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) ->
     }
 }
 
-fn update_error_prompt(state: &ErrorPopupState, msg: ErrorPromptMessage) -> Option<()> {
+fn update_error_prompt(state: &mut ErrorPopupState, msg: ErrorPromptMessage) -> Option<()> {
     match msg {
         ErrorPromptMessage::Key(key) => match state.handle_key(key) {
             ModalOutcome::Cancel => Some(()),
@@ -370,7 +370,7 @@ impl RichRenderer {
         &mut self,
         view: &LaunchView,
         run_id: &str,
-        run_log_path: &str,
+        run_log_path: Option<&str>,
     ) -> anyhow::Result<()> {
         let no_motion = self.no_motion;
         // Keep the rain engine sized to the terminal. Advance it every other
@@ -615,13 +615,13 @@ impl RichRenderer {
                   through the modal dispatch. The modal nesting is the protocol."
     )]
     fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
-        let state = ErrorPopupState::new(title, message);
+        let mut state = ErrorPopupState::new(title, message);
         loop {
             self.terminal
                 .draw(|frame| draw_error_popup(frame, &state))
                 .context("rendering launch error popup")?;
             if update_error_prompt(
-                &state,
+                &mut state,
                 ErrorPromptMessage::Key(read_pressed_key(
                     &self.input,
                     "reading error popup input",
@@ -667,9 +667,8 @@ impl RichRenderer {
     ) -> anyhow::Result<crate::LaunchDialogResult> {
         use crate::tui::components::dialog::dialog_backdrop;
         use jackin_tui::HintSpan;
-        use jackin_tui::centered_rect;
-        use jackin_tui::components::render_hint_bar;
         use jackin_tui::components::{ConfirmState, render_confirm_dialog};
+        use jackin_tui::components::{ModalRectSpec, modal_rect, render_hint_bar};
 
         // Item 0 = "Start new session"; items 1..=N = candidates.
         let mut labels = vec!["Start new session".to_owned()];
@@ -710,9 +709,16 @@ impl RichRenderer {
                                     .saturating_add(4);
                                 let height =
                                     rows.clamp(6, box_area.height.saturating_sub(2).max(6));
-                                let width = (box_area.width.saturating_mul(4) / 5)
-                                    .max(40.min(box_area.width));
-                                centered_rect(width, height, box_area)
+                                modal_rect(
+                                    box_area,
+                                    ModalRectSpec::PercentClampWithMargin {
+                                        width_pct: 80,
+                                        min_width: 40.min(box_area.width),
+                                        width_margin: 2,
+                                        height_margin: 2,
+                                        height,
+                                    },
+                                )
                             };
                             use jackin_tui::components::render_select_list;
                             render_select_list(frame, picker_rect, &picker, title, &[]);
@@ -767,10 +773,16 @@ impl RichRenderer {
                             use jackin_tui::components::{
                                 confirm_hint_spans, confirm_required_height, confirm_width_pct,
                             };
-                            let width =
-                                box_area.width.saturating_mul(confirm_width_pct(&confirm)) / 100;
-                            let height = confirm_required_height(&confirm);
-                            let rect = centered_rect(width, height, box_area);
+                            let rect = modal_rect(
+                                box_area,
+                                ModalRectSpec::PercentClampWithMargin {
+                                    width_pct: confirm_width_pct(&confirm),
+                                    min_width: 0,
+                                    width_margin: 2,
+                                    height_margin: 2,
+                                    height: confirm_required_height(&confirm),
+                                },
+                            );
                             render_confirm_dialog(frame, rect, &confirm);
                             render_hint_bar(frame, hint_area, &confirm_hint_spans());
                         })
@@ -803,6 +815,7 @@ impl RichRenderer {
             DiffViewState, SelectListState, SinglePaneKind, render_diff_view, render_hint_bar,
             render_select_list,
         };
+        use jackin_tui::keymap::glyph;
         use ratatui::layout::{Constraint, Direction, Layout};
 
         if worktrees.is_empty() {
@@ -813,7 +826,7 @@ impl RichRenderer {
             HintSpan::Key("↑↓"),
             HintSpan::Text("files"),
             HintSpan::Sep,
-            HintSpan::Key("Tab"),
+            HintSpan::Key(glyph::TAB),
             HintSpan::Text("pane"),
             HintSpan::Sep,
             HintSpan::Key("Esc"),
@@ -944,7 +957,7 @@ impl RichRenderer {
                         }
                     };
                 }
-                KeyCode::Up => match focus {
+                KeyCode::Up | KeyCode::Char('k' | 'K') => match focus {
                     InspFocus::Repos => {
                         wt_sel = wt_sel.saturating_sub(1);
                         file_sel = 0;
@@ -958,12 +971,12 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            d.scroll_up();
+                            let _outcome = d.handle_key(key);
                             diff_scroll_y = d.scroll_y();
                         }
                     }
                 },
-                KeyCode::Down => match focus {
+                KeyCode::Down | KeyCode::Char('j' | 'J') => match focus {
                     InspFocus::Repos => {
                         if wt_sel + 1 < worktrees.len() {
                             wt_sel += 1;
@@ -982,20 +995,14 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            d.scroll_down();
+                            let _outcome = d.handle_key(key);
                             diff_scroll_y = d.scroll_y();
                         }
                     }
                 },
-                KeyCode::PageUp => {
+                KeyCode::PageUp | KeyCode::PageDown => {
                     if let Some(d) = diff_state.as_mut() {
-                        d.page_up(20);
-                        diff_scroll_y = d.scroll_y();
-                    }
-                }
-                KeyCode::PageDown => {
-                    if let Some(d) = diff_state.as_mut() {
-                        d.page_down(20);
+                        let _outcome = d.handle_key(key);
                         diff_scroll_y = d.scroll_y();
                     }
                 }

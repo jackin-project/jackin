@@ -754,9 +754,8 @@ fn dialog_button_rows_have_one_blank_row_above() {
 
 use crate::tui::{
     state::{
-        EditorState, EditorTab, GlobalMountConfirm, GlobalMountModal, ManagerStage, ManagerState,
-        Modal, MountScrollFocus, SettingsEnvModal, SettingsEnvScope, SettingsEnvTextTarget,
-        SettingsState,
+        EditorState, EditorTab, GlobalMountConfirm, ManagerStage, ManagerState, Modal,
+        MountScrollFocus, SettingsEnvScope, SettingsEnvTextTarget, SettingsModal, SettingsState,
     },
     view::{prepare_for_render, render},
 };
@@ -893,7 +892,7 @@ fn list_with_modal<'a>(
 fn settings_mounts_with_modal<'a>(
     config: &AppConfig,
     cwd: &std::path::Path,
-    modal: GlobalMountModal<'a>,
+    modal: SettingsModal<'a>,
 ) -> ManagerState<'a> {
     let mut state = ManagerState::from_config(config, cwd);
     let mut settings = SettingsState::from_config(config);
@@ -907,7 +906,7 @@ fn settings_mounts_with_modal<'a>(
 fn settings_env_with_modal<'a>(
     config: &AppConfig,
     cwd: &std::path::Path,
-    modal: SettingsEnvModal<'a>,
+    modal: SettingsModal<'a>,
 ) -> ManagerState<'a> {
     let mut state = ManagerState::from_config(config, cwd);
     let mut settings = SettingsState::from_config(config);
@@ -921,7 +920,7 @@ fn settings_env_with_modal<'a>(
 fn settings_auth_with_modal(
     config: &AppConfig,
     cwd: &std::path::Path,
-    modal: crate::tui::state::SettingsAuthModal<'static>,
+    modal: SettingsModal<'static>,
 ) -> ManagerState<'static> {
     let mut state = ManagerState::from_config(config, cwd);
     let mut settings = SettingsState::from_config(config);
@@ -1335,6 +1334,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.set_tab_bar_focused(false);
     editor.modal = Some(Modal::OpPicker {
+        secrets_target: None,
         state: Box::new(crate::tui::op_picker::OpPickerState::new()),
     });
     editor_op_picker.stage = ManagerStage::Editor(editor);
@@ -1387,7 +1387,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = crate::tui::state::SettingsTab::Mounts;
     settings.set_active_content_focused(true);
-    settings.mounts.modal = Some(GlobalMountModal::Confirm {
+    settings.mounts.modal = Some(SettingsModal::MountConfirm {
         action: GlobalMountConfirm::Remove,
         state: jackin_tui::components::ConfirmState::new("Remove mount?"),
     });
@@ -1399,7 +1399,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_mounts_with_modal(
             &config,
             &cwd,
-            GlobalMountModal::Text {
+            SettingsModal::MountText {
                 target: crate::tui::state::GlobalMountTextTarget::AddName,
                 state: Box::new(jackin_tui::components::TextInputState::new(
                     "Mount name",
@@ -1414,7 +1414,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_mounts_with_modal(
             &config,
             &cwd,
-            GlobalMountModal::FileBrowser {
+            SettingsModal::MountFileBrowser {
                 state: Box::new(
                     crate::tui::components::file_browser::FileBrowserState::from_listing(
                         crate::services::file_browser::listing_at(cwd.clone(), cwd.clone()),
@@ -1429,7 +1429,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_mounts_with_modal(
             &config,
             &cwd,
-            GlobalMountModal::MountDstChoice {
+            SettingsModal::MountDstChoice {
                 state: crate::tui::components::mount_dst_choice::MountDstChoiceState::new(
                     "/workspace",
                 ),
@@ -1442,7 +1442,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_mounts_with_modal(
             &config,
             &cwd,
-            GlobalMountModal::ScopePicker {
+            SettingsModal::MountScopePicker {
                 state: crate::tui::components::scope_picker::ScopePickerState::new(),
             },
         ),
@@ -1453,7 +1453,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_mounts_with_modal(
             &config,
             &cwd,
-            GlobalMountModal::RolePicker {
+            SettingsModal::MountRolePicker {
                 state: crate::tui::state::RolePickerState::new(vec![
                     jackin_core::RoleSelector::parse("chainargos/agent-smith")
                         .expect("valid role selector"),
@@ -1467,7 +1467,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_mounts_with_modal(
             &config,
             &cwd,
-            GlobalMountModal::PreviewSave {
+            SettingsModal::MountPreviewSave {
                 state: crate::tui::components::confirm_save::ConfirmSaveState::new(vec![
                     ratatui::text::Line::from("Add global mount /workspace"),
                 ]),
@@ -1479,10 +1479,11 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = crate::tui::state::SettingsTab::Environments;
     settings.set_active_content_focused(true);
-    settings.env.modal = Some(SettingsEnvModal::Text {
+    settings.env.modal = Some(SettingsModal::EnvText {
         target: SettingsEnvTextTarget::EnvKey {
             scope: SettingsEnvScope::Global,
         },
+        pending_value: None,
         state: Box::new(jackin_tui::components::TextInputState::new(
             "Environment key",
             "TOKEN",
@@ -1496,7 +1497,8 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_env_with_modal(
             &config,
             &cwd,
-            SettingsEnvModal::SourcePicker {
+            SettingsModal::EnvSourcePicker {
+                key: (SettingsEnvScope::Global, "TOKEN".to_owned()),
                 state: crate::tui::components::source_picker::SourcePickerState::new(
                     "TOKEN".into(),
                     true,
@@ -1510,7 +1512,11 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_env_with_modal(
             &config,
             &cwd,
-            SettingsEnvModal::OpPicker {
+            SettingsModal::EnvOpPicker {
+                target: crate::tui::state::SettingsEnvOpPickerTarget::Existing {
+                    scope: SettingsEnvScope::Global,
+                    key: "TOKEN".to_owned(),
+                },
                 state: Box::new(crate::tui::op_picker::OpPickerState::new()),
             },
         ),
@@ -1521,7 +1527,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_env_with_modal(
             &config,
             &cwd,
-            SettingsEnvModal::RolePicker {
+            SettingsModal::EnvRolePicker {
                 state: crate::tui::state::RolePickerState::new(vec![
                     jackin_core::RoleSelector::parse("chainargos/agent-smith")
                         .expect("valid role selector"),
@@ -1535,7 +1541,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_env_with_modal(
             &config,
             &cwd,
-            SettingsEnvModal::ScopePicker {
+            SettingsModal::EnvScopePicker {
                 state: crate::tui::components::scope_picker::ScopePickerState::new(),
             },
         ),
@@ -1546,7 +1552,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_env_with_modal(
             &config,
             &cwd,
-            SettingsEnvModal::Confirm {
+            SettingsModal::EnvConfirm {
                 action: crate::tui::state::SettingsEnvConfirm::Delete,
                 state: jackin_tui::components::ConfirmState::new("Delete env var?"),
             },
@@ -1557,7 +1563,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = crate::tui::state::SettingsTab::Auth;
     settings.set_active_content_focused(true);
-    settings.auth.modal = Some(crate::tui::state::SettingsAuthModal::TextInput {
+    settings.auth.modal = Some(SettingsModal::AuthTextInput {
         state: Box::new(jackin_tui::components::TextInputState::new(
             "Credential",
             "token",
@@ -1571,7 +1577,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_auth_with_modal(
             &config,
             &cwd,
-            crate::tui::state::SettingsAuthModal::SourcePicker {
+            SettingsModal::AuthSourcePicker {
                 state: crate::tui::components::source_picker::SourcePickerState::new(
                     "CLAUDE_CODE_OAUTH_TOKEN".into(),
                     true,
@@ -1585,7 +1591,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_auth_with_modal(
             &config,
             &cwd,
-            crate::tui::state::SettingsAuthModal::OpPicker {
+            SettingsModal::AuthOpPicker {
                 state: Box::new(crate::tui::op_picker::OpPickerState::new()),
             },
         ),
@@ -1597,7 +1603,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         settings_auth_with_modal(
             &config,
             &cwd,
-            crate::tui::state::SettingsAuthModal::AuthForm {
+            SettingsModal::AuthForm {
                 target: crate::tui::state::AuthFormTarget::Workspace { kind },
                 state: Box::new(crate::tui::state::AuthForm::new(kind)),
                 focus: crate::tui::state::AuthFormFocus::Mode,

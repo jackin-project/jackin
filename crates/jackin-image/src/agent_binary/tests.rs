@@ -60,7 +60,7 @@ async fn retry_with_zero_attempts_never_calls_closure() {
         async { Ok(()) }
     })
     .await;
-    assert!(r.is_err());
+    r.unwrap_err();
     assert_eq!(calls.get(), 0);
 }
 
@@ -73,6 +73,22 @@ async fn retry_backoff_grows_exponentially() {
     .await;
     // Attempt 1 is immediate; attempts 2 and 3 wait 100ms then 200ms.
     assert_eq!(start.elapsed(), Duration::from_millis(300));
+}
+
+#[tokio::test(start_paused = true)]
+async fn metadata_retry_uses_two_attempts_for_transient_failures() {
+    let calls = Cell::new(0u32);
+    let r: Result<()> = retry_metadata_with_backoff(2, Duration::from_millis(10), || {
+        let n = calls.get() + 1;
+        calls.set(n);
+        async move { anyhow::bail!("metadata attempt {n} failed") }
+    })
+    .await;
+
+    assert_eq!(calls.get(), 2);
+    let err = format!("{:#}", r.unwrap_err());
+    assert!(err.contains("giving up after 2 attempts"), "{err}");
+    assert!(err.contains("metadata attempt 2 failed"), "{err}");
 }
 
 fn release_fixture() -> AgentRelease {
@@ -161,6 +177,41 @@ async fn newest_cached_executable_release_async_finds_newest_binary() {
         .expect("cached fallback");
     assert_eq!(release.version, newer.version);
     assert_eq!(path, newer_binary);
+}
+
+#[tokio::test]
+async fn ensure_available_uses_stale_cached_executable_without_foreground_resolve() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    let release = release_fixture();
+
+    write_cached_release(&paths, &release).unwrap();
+    let latest_path = metadata_cache_path(&paths, Agent::Claude);
+    let stale = SystemTime::now() - Duration::from_hours(2);
+    filetime::set_file_mtime(&latest_path, filetime::FileTime::from_system_time(stale)).unwrap();
+    write_version_release(&paths, &release).unwrap();
+    let binary_path = cached_binary_path(&paths, &release);
+    std::fs::write(&binary_path, b"cached").unwrap();
+    chmod_executable(&binary_path).unwrap();
+
+    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
+    let _guard = diagnostics.activate();
+
+    let binary = ensure_available_impl(&paths, Agent::Claude, false)
+        .await
+        .expect("stale metadata should still use cached executable");
+
+    assert_eq!(binary.path, binary_path);
+    assert_eq!(binary.version.as_deref(), Some(release.version.as_str()));
+    let diagnostics_log = std::fs::read_to_string(diagnostics.path()).unwrap();
+    assert!(
+        diagnostics_log.contains("agent_binary_cache_hit"),
+        "{diagnostics_log}"
+    );
+    assert!(
+        !diagnostics_log.contains("agent_binary_resolve_started"),
+        "foreground path must not resolve before using stale cached executable: {diagnostics_log}"
+    );
 }
 
 #[tokio::test]

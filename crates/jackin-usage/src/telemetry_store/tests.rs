@@ -138,6 +138,36 @@ fn account_snapshot_rows_are_persisted_and_upserted() {
     assert_eq!(session.plan_label.as_deref(), Some("Pro 20x"));
 }
 
+#[test]
+fn repeated_writes_reuse_cached_connection() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("usage.db");
+
+    store_usage_snapshot(&db, &usage_view()).expect("store first snapshot");
+    assert_eq!(
+        connection_build_count(&db).expect("first build count"),
+        1,
+        "first write should build one connection"
+    );
+
+    let mut changed = usage_view();
+    changed.fetched_at_epoch += 60;
+    changed.buckets[0].remaining_percent = Some(21);
+    store_usage_snapshot(&db, &changed).expect("store second snapshot");
+
+    assert_eq!(
+        connection_build_count(&db).expect("second build count"),
+        1,
+        "second write should reuse the cached connection"
+    );
+    let rows = stored_account_snapshots(&db).expect("read snapshots");
+    let session = rows
+        .iter()
+        .find(|row| row.window_kind == "Session")
+        .expect("session row");
+    assert_eq!(session.remaining_percent, Some(21));
+}
+
 /// Opening a pre-v4 store (a table missing the 10 columns
 /// `ensure_account_snapshot_columns` adds) must ALTER them in and preserve
 /// existing rows with the declared defaults. Every other test starts from a
@@ -152,12 +182,7 @@ fn schema_migration_adds_columns_to_pre_v4_table() {
 
     // Seed a legacy table: the original 16 columns only, plus one row.
     block_on_store(async move {
-        let conn = turso::Builder::new_local(&path)
-            .build()
-            .await
-            .map_err(|e| e.to_string())?
-            .connect()
-            .map_err(|e| e.to_string())?;
+        let conn = connect_local(&path).await?;
         conn.execute_batch(
             "CREATE TABLE account_usage_snapshots (
                 id INTEGER PRIMARY KEY,

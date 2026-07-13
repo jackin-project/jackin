@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 
 //! Fixture seeders + `Dockerfile` + fake-claude scripts that build the
 //! three role repos the e2e harness runs against (`agent-smith`,
@@ -22,12 +33,15 @@ pub(super) fn seed_agent_smith_role_repo(path: &Path) {
     std::fs::write(path.join("Dockerfile"), role_dockerfile()).unwrap();
     std::fs::write(
         path.join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha6"
 dockerfile = "Dockerfile"
 agents = ["claude"]
 
 [identity]
 name = "Agent Smith"
+
+[docker]
+dind = "privileged"
 
 [claude]
 plugins = ["caveman@jackin-e2e", "rtk@jackin-e2e"]
@@ -347,14 +361,23 @@ fi
 if [ "${{1:-}}" = "plugin" ]; then
   exit 0
 fi
-echo "{begin}"
-echo "DOCKER_HOST=$DOCKER_HOST"
-echo "DOCKER_TLS_VERIFY=$DOCKER_TLS_VERIFY"
-echo "DOCKER_CERT_PATH=$DOCKER_CERT_PATH"
-echo "JACKIN_DIND_HOSTNAME=$JACKIN_DIND_HOSTNAME"
-echo "TESTCONTAINERS_HOST_OVERRIDE=$TESTCONTAINERS_HOST_OVERRIDE"
-echo "NO_PROXY=${{NO_PROXY:-}}"
-echo "no_proxy=${{no_proxy:-}}"
+if [ "${{1:-}}" = "mcp" ]; then
+  exit 0
+fi
+report_path="/workspace/jackin-e2e-report.txt"
+: > "$report_path"
+emit_report() {{
+  printf '%s\n' "$*"
+  printf '%s\n' "$*" >> "$report_path"
+}}
+emit_report "{begin}"
+emit_report "DOCKER_HOST=${{DOCKER_HOST:-}}"
+emit_report "DOCKER_TLS_VERIFY=${{DOCKER_TLS_VERIFY:-}}"
+emit_report "DOCKER_CERT_PATH=${{DOCKER_CERT_PATH:-}}"
+emit_report "JACKIN_DIND_HOSTNAME=${{JACKIN_DIND_HOSTNAME:-}}"
+emit_report "TESTCONTAINERS_HOST_OVERRIDE=${{TESTCONTAINERS_HOST_OVERRIDE:-}}"
+emit_report "NO_PROXY=${{NO_PROXY:-}}"
+emit_report "no_proxy=${{no_proxy:-}}"
 smoke_image="jackin-dind-e2e-smoke:local"
 if ! docker image inspect "$smoke_image" >/dev/null 2>&1; then
   smoke_root="$(mktemp -d)"
@@ -381,16 +404,18 @@ if ! docker image inspect "$smoke_image" >/dev/null 2>&1; then
 fi
 docker rm -f jackin-dind-e2e-docker-ps-smoke >/dev/null 2>&1 || true
 child_id="$(docker run -d --name jackin-dind-e2e-docker-ps-smoke "$smoke_image" /bin/sh -c 'sleep 30')"
-echo "DIND_DOCKER_RUN_CHILD=$child_id"
-docker inspect --format 'DIND_DOCKER_RUN_STATE={{{{.State.Status}}}}' "$child_id"
-docker ps --no-trunc --filter "id=$child_id"
+emit_report "DIND_DOCKER_RUN_CHILD=$child_id"
+state="$(docker inspect --format 'DIND_DOCKER_RUN_STATE={{{{.State.Status}}}}' "$child_id")"
+emit_report "$state"
+ps_output="$(docker ps --no-trunc --filter "id=$child_id")"
+emit_report "$ps_output"
 docker rm -f "$child_id" >/dev/null 2>&1 || true
-# Emit REPORT_END before the Maven smoke so the host's `output.stdout`
-# parse can succeed even when mvn's network reach to Maven Central
+# Emit REPORT_END before the Maven smoke so the host's report parse can
+# succeed even when mvn's network reach to Maven Central
 # (testcontainers pull, JDK plugin downloads) is slow or fails. The
 # TESTCONTAINERS_SMOKE=ok assertion later in the test catches a real
 # smoke regression independently.
-echo "{end}"
+emit_report "{end}"
 tmpdir="$(mktemp -d)"
 cat > "$tmpdir/pom.xml" <<'POM'
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -448,6 +473,7 @@ JAVA
   cd "$tmpdir"
   mvn -q -DskipTests compile exec:java -Dexec.mainClass=JackinTestcontainersSmoke
 )
+emit_report "TESTCONTAINERS_SMOKE=ok"
 rm -rf "$tmpdir"
 "#,
         begin = super::util::REPORT_BEGIN,

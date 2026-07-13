@@ -575,6 +575,7 @@ impl<
         };
         *focus = credential_focus;
         *modal = Some(Self::OpPicker {
+            secrets_target: None,
             state: Box::new(make_op_picker()),
         });
         true

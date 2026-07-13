@@ -1,0 +1,11 @@
+# Shrink-only flake quarantine ledger (codebase-health Phase 3).
+# An unquarantined flaky test fails the nextest CI profile gate.
+# Each entry must include name, owner, reason, and since (ISO date).
+# Prefer fixing the flake and deleting the row over adding entries.
+#
+# Example:
+# [[test]]
+# name = "crate::module::test_name"
+# owner = "unassigned"
+# reason = "intermittent race under load; tracked as #NNN"
+# since = "2026-07-11"

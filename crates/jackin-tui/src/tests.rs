@@ -2,6 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::components::{ConfirmState, confirm_hint_spans, render_confirm_dialog};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+#[test]
+fn component_contract_example_compiles() {
+    let mut state = ConfirmState::new("Proceed?");
+    match state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)) {
+        ModalOutcome::Commit(_) | ModalOutcome::Cancel | ModalOutcome::Continue => {}
+    }
+
+    let _render: fn(&mut ratatui::Frame<'_>, ratatui::layout::Rect, &ConfirmState) =
+        render_confirm_dialog;
+    let _hints = confirm_hint_spans();
+}
 
 #[test]
 fn text_field_insert_appends() {

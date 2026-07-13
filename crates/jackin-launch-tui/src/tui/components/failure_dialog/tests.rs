@@ -1,10 +1,12 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
+use super::{
+    failure_copy_target_at, failure_popup_hyperlink_overlay, failure_popup_value_rect_scrolled,
+};
+use crate::tui::components::failure_dialog::failure_popup_rows;
 use crate::tui::model::{LaunchIdentity, LaunchTargetKind};
 use crate::tui::update::initial_view;
 use crate::tui::view::render_launch_frame;
-use crate::{LaunchStage, tui::model::LaunchFailure};
+use crate::{FailureCopyTarget, LaunchStage, tui::model::LaunchFailure};
+use jackin_tui::components::bottom_chrome_areas;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
 fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
@@ -66,7 +68,7 @@ fn failure_popup_keeps_status_footer_visible() {
                 frame,
                 &view,
                 "jk-run-c46709",
-                "/tmp/jk-run-c46709.jsonl",
+                Some("/tmp/jk-run-c46709.jsonl"),
                 true,
                 None,
                 true,
@@ -125,7 +127,7 @@ fn failure_popup_hides_status_footer_when_debug_disabled() {
                 frame,
                 &view,
                 "jk-run-c46709",
-                "/tmp/jk-run-c46709.jsonl",
+                Some("/tmp/jk-run-c46709.jsonl"),
                 true,
                 None,
                 false,
@@ -165,7 +167,7 @@ fn failure_popup_renders_over_stale_build_log_overlay() {
                 frame,
                 &view,
                 "jk-run-c46709",
-                "/tmp/jk-run-c46709.jsonl",
+                Some("/tmp/jk-run-c46709.jsonl"),
                 true,
                 None,
                 false,
@@ -217,7 +219,7 @@ fn long_failure_body_is_reachable_by_scrolling() {
                 frame,
                 &view,
                 "jk-run-c46709",
-                "/tmp/jk-run-c46709.jsonl",
+                Some("/tmp/jk-run-c46709.jsonl"),
                 true,
                 None,
                 false,
@@ -243,7 +245,7 @@ fn long_failure_body_is_reachable_by_scrolling() {
                 frame,
                 &view,
                 "jk-run-c46709",
-                "/tmp/jk-run-c46709.jsonl",
+                Some("/tmp/jk-run-c46709.jsonl"),
                 true,
                 None,
                 false,
@@ -260,4 +262,125 @@ fn long_failure_body_is_reachable_by_scrolling() {
         !tail.contains("FIRST"),
         "head of long body must scroll off once at the tail: {tail:?}"
     );
+}
+
+#[test]
+fn scrolled_failure_copy_hit_and_overlay_follow_failure_scroll() {
+    // After the operator scrolls a long failure body, hit-testing and OSC8
+    // overlays must use the same scroll as render — not scroll 0.
+    use std::path::PathBuf;
+
+    let area = Rect::new(0, 0, 90, 18);
+    let long_next = format!("FIRST {}", "filler ".repeat(150)) + "LAST";
+    let failure = LaunchFailure {
+        title: "Build failed".to_owned(),
+        summary: "docker build failed".to_owned(),
+        detail: None,
+        next_step: Some(long_next),
+        stage: LaunchStage::DerivedImage,
+        diagnostics_path: Some(PathBuf::from("/jk/run/scrolled.jsonl")),
+        command_output_path: None,
+    };
+    let run_id = "jk-run-scroll";
+    let rows = failure_popup_rows(&failure, run_id);
+    let body_area = bottom_chrome_areas(area).body;
+
+    // At scroll 0 the diagnostics path is typically visible; capture its y.
+    let rect0 = super::failure_popup_rect_for_rows(body_area, &rows);
+    let vr0 =
+        failure_popup_value_rect_scrolled(rect0, &rows, FailureCopyTarget::DiagnosticsPath, None)
+            .expect("diagnostics path value rect at scroll 0");
+    assert_eq!(
+        failure_copy_target_at(area, &failure, run_id, true, vr0.x, vr0.y, None),
+        Some(FailureCopyTarget::DiagnosticsPath),
+        "scroll 0 hit must land on diagnostics path"
+    );
+
+    // Large scroll: the same screen y must no longer hit that absolute row
+    // unless we pass the matching scroll into hit-test.
+    let mut scrolled = jackin_tui::components::DialogBodyScroll::new();
+    scrolled.scroll_y = 8;
+    let vr_scrolled = failure_popup_value_rect_scrolled(
+        rect0,
+        &rows,
+        FailureCopyTarget::DiagnosticsPath,
+        Some(scrolled.clone()),
+    );
+    // When the path scrolls out of view, value rects are empty; when still
+    // partially visible they move up. Either way scroll-0 geometry must not
+    // be reused as if it were scrolled.
+    let hit_with_scroll = failure_copy_target_at(
+        area,
+        &failure,
+        run_id,
+        true,
+        vr0.x,
+        vr0.y,
+        Some(scrolled.clone()),
+    );
+    let hit_without_scroll =
+        failure_copy_target_at(area, &failure, run_id, true, vr0.x, vr0.y, None);
+    assert_eq!(
+        hit_without_scroll,
+        Some(FailureCopyTarget::DiagnosticsPath),
+        "control: scroll-0 hit still finds path at original y"
+    );
+    if let Some(vr) = vr_scrolled {
+        assert_eq!(
+            failure_copy_target_at(
+                area,
+                &failure,
+                run_id,
+                true,
+                vr.x,
+                vr.y,
+                Some(scrolled.clone())
+            ),
+            Some(FailureCopyTarget::DiagnosticsPath),
+            "scrolled value rect must hit diagnostics path"
+        );
+        // Original y with scroll applied must not falsely claim the same hit
+        // when the row has moved (scroll-aware geometry).
+        if vr.y != vr0.y {
+            assert_ne!(
+                hit_with_scroll,
+                Some(FailureCopyTarget::DiagnosticsPath),
+                "stale scroll-0 y must not hit path after scroll moves the row"
+            );
+        }
+    } else {
+        assert_ne!(
+            hit_with_scroll,
+            Some(FailureCopyTarget::DiagnosticsPath),
+            "scrolled-out path must not hit at the old screen y"
+        );
+    }
+
+    let overlay0 =
+        failure_popup_hyperlink_overlay(area, &failure, run_id, true, None, None, None, None, None);
+    let overlay_scrolled = failure_popup_hyperlink_overlay(
+        area,
+        &failure,
+        run_id,
+        true,
+        Some(scrolled),
+        None,
+        None,
+        None,
+        None,
+    );
+    assert!(
+        !overlay0.is_empty() || !overlay_scrolled.is_empty(),
+        "at least one scroll position should emit OSC8 for the diagnostics path"
+    );
+    // Scrolled and un-scrolled overlays must not be byte-identical when the
+    // body actually scrolls (row CSI positions differ).
+    if vr_scrolled.is_some() {
+        // When the path is still partially visible after scroll, CSI positions change.
+        // When fully scrolled out, scrolled overlay is shorter/empty.
+        assert_ne!(
+            overlay0, overlay_scrolled,
+            "OSC8 overlay must follow failure_scroll, not stay pinned at scroll 0"
+        );
+    }
 }

@@ -8,6 +8,7 @@
 use ratatui::text::Line;
 
 use crate::tui::screens::editor::model::FieldFocus;
+use crate::tui::screens::form_model::{FieldRow, FormSection};
 
 use super::WorkspaceEditorState;
 use super::render_editor_row;
@@ -35,8 +36,40 @@ pub(crate) fn editor_general_content_width(
     .unwrap_or(0)
 }
 
+/// Build the shared form section for the editor general tab.
 #[must_use]
-#[allow(clippy::type_complexity)]
+pub(crate) fn general_form_section(
+    cursor: usize,
+    show_cursor: bool,
+    name_value: &str,
+    workdir_display: &str,
+    keep_awake_enabled: bool,
+    git_pull_on_entry: bool,
+) -> FormSection {
+    let keep_awake_display = if keep_awake_enabled {
+        "enabled (macOS only)"
+    } else {
+        "disabled"
+    };
+    let git_pull_display = if git_pull_on_entry {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    FormSection::new(
+        vec![
+            FieldRow::new("Name", name_value),
+            FieldRow::new("Working dir", workdir_display),
+            FieldRow::new("Keep awake", keep_awake_display),
+            FieldRow::new("Git pull", git_pull_display),
+        ],
+        cursor,
+        show_cursor,
+        15,
+    )
+}
+
+#[must_use]
 pub(crate) fn general_state_geometry<
     Modal,
     SaveFlow,
@@ -82,26 +115,33 @@ pub(crate) fn general_lines(
     keep_awake_enabled: bool,
     git_pull_on_entry: bool,
 ) -> Vec<Line<'static>> {
-    let keep_awake_display = if keep_awake_enabled {
-        "enabled (macOS only)"
-    } else {
-        "disabled"
-    };
-    let git_pull_display = if git_pull_on_entry {
-        "enabled"
-    } else {
-        "disabled"
-    };
-    vec![
-        render_editor_row(0, cursor, "Name", name_value, show_cursor),
-        render_editor_row(1, cursor, "Working dir", workdir_display, show_cursor),
-        render_editor_row(2, cursor, "Keep awake", keep_awake_display, show_cursor),
-        render_editor_row(3, cursor, "Git pull", git_pull_display, show_cursor),
-    ]
+    let section = general_form_section(
+        cursor,
+        show_cursor,
+        name_value,
+        workdir_display,
+        keep_awake_enabled,
+        git_pull_on_entry,
+    );
+    // Keep render_editor_row path for byte-identical editor snapshots; FormSection
+    // carries the shared row model for geometry/settings reuse.
+    section
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            render_editor_row(
+                i,
+                section.cursor,
+                &row.label,
+                &row.value,
+                section.show_cursor,
+            )
+        })
+        .collect()
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn general_state_lines<
     Modal,
     SaveFlow,

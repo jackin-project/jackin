@@ -296,17 +296,21 @@ pub(crate) async fn handle_attach_client(
         tokio::select! {
             result = stream.read_exact(&mut tag) => {
                 if let Err(e) = result {
-                    crate::clog!("attach client: socket read failed: {e}");
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        crate::cdebug!("attach client: socket closed (client detached)");
+                    } else {
+                        crate::cerror!("attach client: socket read failed: {e}");
+                    }
                     break;
                 }
                 let frame = match read_client_frame(&mut stream, tag[0]).await {
                     Ok(Some(frame)) => frame,
                     Ok(None) => {
-                        crate::clog!("attach client: EOF mid-frame (tag={:#04x})", tag[0]);
+                        crate::cwarn!("attach client: EOF mid-frame (tag={:#04x})", tag[0]);
                         break;
                     }
                     Err(e) => {
-                        crate::clog!(
+                        crate::cerror!(
                             "attach client: frame decode failed (tag={:#04x}): {e}",
                             tag[0]
                         );
@@ -320,7 +324,14 @@ pub(crate) async fn handle_attach_client(
             }
             Some(bytes) = out_rx.recv() => {
                 if let Err(e) = stream.write_all(&bytes).await {
-                    crate::clog!("attach client: socket write failed: {e}");
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::BrokenPipe
+                    ) {
+                        crate::cwarn!("attach client: socket write failed: {e}");
+                    } else {
+                        crate::cerror!("attach client: socket write failed: {e}");
+                    }
                     break;
                 }
             }

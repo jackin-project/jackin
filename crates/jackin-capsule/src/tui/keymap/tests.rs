@@ -3,12 +3,39 @@
 
 use super::{
     CAPSULE_GLOBAL_KEYMAP, FILTER_LIST_KEYMAP, FilterListAction, GlobalCapsuleAction,
-    PREFIX_COMMAND_KEYMAP, READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, ReadOnlyDismissAction,
-    RenameAction,
+    PREFIX_COMMAND_KEYMAP, READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, RESIZE_PANE_KEYMAP,
+    ReadOnlyDismissAction, RenameAction,
 };
 use crate::tui::input::{ArrowDir, PrefixCommand};
 use jackin_tui::components::{KeyChord, LogicalKey};
 use jackin_tui::keymap::raw_bytes_to_chord;
+
+fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(
+    keymap: &jackin_tui::components::Keymap<A>,
+) {
+    for span in keymap.hint_spans() {
+        let jackin_tui::HintSpan::Key(key) = span else {
+            continue;
+        };
+        assert_ne!(key, concat!("T", "ab"));
+        assert!(!key.contains("\u{2191}/"));
+        assert!(!key.contains("\u{2190}/"));
+        assert!(!key.contains(concat!("PgUp", " PgDn")));
+        assert!(!key.contains(concat!("Alt", "+")));
+        assert!(!key.contains(concat!("Shift", "+")));
+        assert!(!key.contains(concat!("Ctrl", "+")));
+    }
+}
+
+#[test]
+fn shown_keymap_glyphs_use_canonical_spellings() {
+    assert_shown_glyphs_are_normalized(&CAPSULE_GLOBAL_KEYMAP);
+    assert_shown_glyphs_are_normalized(&PREFIX_COMMAND_KEYMAP);
+    assert_shown_glyphs_are_normalized(&FILTER_LIST_KEYMAP);
+    assert_shown_glyphs_are_normalized(&RENAME_KEYMAP);
+    assert_shown_glyphs_are_normalized(&READ_ONLY_DISMISS_KEYMAP);
+    assert_shown_glyphs_are_normalized(&RESIZE_PANE_KEYMAP);
+}
 
 #[test]
 fn prefix_keymap_covers_all_prefix_binding_keys() {

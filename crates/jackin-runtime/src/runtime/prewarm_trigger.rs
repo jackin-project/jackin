@@ -14,6 +14,8 @@ use jackin_config::AppConfig;
 use jackin_core::agent::Agent;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
+#[cfg(not(test))]
+use jackin_docker::docker_client::BollardDockerClient;
 
 /// One role image to keep warm: a role selector, its git source, and the agent
 /// runtimes whose derived images to refresh. An empty `agents` means the role's
@@ -163,6 +165,81 @@ pub fn spawn_background_image_prewarm(
                 }
             }
         });
+    }
+}
+
+/// Spawn a best-effort, non-blocking background task that keeps one privileged
+/// `DinD` sidecar ready for a later launch to adopt. Returns immediately; the
+/// helper skips when another adoption/prewarm owns the shared lock or a live
+/// kept sidecar is already recorded.
+pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
+    #[cfg(test)]
+    {
+        let _ = (paths, debug);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "background_sidecar_prewarm_skipped",
+                "sidecar",
+                "background sidecar prewarm disabled in unit tests",
+                None,
+            );
+        }
+    }
+
+    #[cfg(not(test))]
+    {
+        let paths = paths.clone();
+        tokio::spawn(async move {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.stage(
+                    "background_sidecar_prewarm_started",
+                    "sidecar",
+                    "checking for kept DinD sidecar prewarm",
+                    None,
+                );
+            }
+            let result = background_sidecar_prewarm_once(&paths, debug).await;
+            if let Some(run) = jackin_diagnostics::active_run() {
+                match result {
+                    Ok(detail) => run.stage(
+                        "background_sidecar_prewarm_done",
+                        "sidecar",
+                        "background sidecar prewarm complete",
+                        Some(&detail),
+                    ),
+                    Err(error) => run.stage(
+                        "background_sidecar_prewarm_failed",
+                        "sidecar",
+                        "background sidecar prewarm failed",
+                        Some(&format!("{error:#}")),
+                    ),
+                }
+            }
+        });
+    }
+}
+
+#[cfg(not(test))]
+async fn background_sidecar_prewarm_once(
+    paths: &JackinPaths,
+    debug: bool,
+) -> anyhow::Result<String> {
+    let Some(_lock) = super::launch::try_lock_prewarmed_dind(paths) else {
+        return Ok("skip:locked".to_owned());
+    };
+    let docker = BollardDockerClient::connect()?;
+    if super::launch::prewarmed_dind_state_is_live(paths, &docker).await {
+        return Ok("skip:state-live".to_owned());
+    }
+    let warmed = super::launch::prewarm_dind_sidecar_container(&docker, true).await?;
+    super::launch::write_prewarmed_dind_state(paths, &warmed)?;
+    if debug {
+        Ok(format!(
+            "prewarmed:{};ready_ms={}",
+            warmed.dind, warmed.ready_ms
+        ))
+    } else {
+        Ok(format!("prewarmed;ready_ms={}", warmed.ready_ms))
     }
 }
 

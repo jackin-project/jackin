@@ -4,10 +4,12 @@
 [workspace]
 members = [
     "crates/jackin",
+    "crates/jackin-agent-status",
     "crates/jackin-build-meta",
     "crates/jackin-capsule",
     "crates/jackin-config",
     "crates/jackin-console",
+    "crates/jackin-console-oppicker",
     "crates/jackin-core",
     "crates/jackin-dev",
     "crates/jackin-diagnostics",
@@ -27,15 +29,109 @@ members = [
     "crates/jackin-usage",
     "crates/jackin-isolation",
     "crates/jackin-instance",
+    "crates/jackin-test-support",
 ]
+exclude = ["crates/jackin-lints"]
 resolver = "3"
 
 [workspace.package]
 version = "0.6.0-dev"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.95"
 license = "Apache-2.0"
 repository = "https://github.com/jackin-project/jackin"
+
+[workspace.dependencies]
+anstyle-parse = "1.0"
+anyhow = "1.0"
+assert_cmd = "=2.2.2"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false }
+clap = "4.5"
+clap_mangen = "0.3"
+compact_str = "0.9"
+criterion = "=0.8.2"
+crossterm = "0.29"
+dhat = "=0.3.3"
+dialoguer = "0.12"
+directories = "6.0"
+dockerfile-parser-rs = "3.3.0"
+fast-down = "5.0"
+filetime = "=0.2.29"
+flate2 = "1.1"
+fs4 = "1.1.0"
+futures-util = "0.3"
+hex = "0.4"
+insta = "=1.48.0"
+jackin-build-meta = { version = "0.6.0-dev", path = "crates/jackin-build-meta" }
+jackin-agent-status = { version = "0.6.0-dev", path = "crates/jackin-agent-status" }
+jackin-config = { version = "0.6.0-dev", path = "crates/jackin-config" }
+jackin-console = { version = "0.6.0-dev", path = "crates/jackin-console" }
+jackin-console-oppicker = { version = "0.6.0-dev", path = "crates/jackin-console-oppicker" }
+jackin-core = { version = "0.6.0-dev", path = "crates/jackin-core" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "crates/jackin-diagnostics" }
+jackin-docker = { version = "0.6.0-dev", path = "crates/jackin-docker" }
+jackin-env = { version = "0.6.0-dev", path = "crates/jackin-env" }
+jackin-host = { version = "0.6.0-dev", path = "crates/jackin-host" }
+jackin-image = { version = "0.6.0-dev", path = "crates/jackin-image" }
+jackin-instance = { version = "0.6.0-dev", path = "crates/jackin-instance" }
+jackin-isolation = { version = "0.6.0-dev", path = "crates/jackin-isolation" }
+jackin-launch-tui = { version = "0.6.0-dev", path = "crates/jackin-launch-tui" }
+jackin-manifest = { version = "0.6.0-dev", path = "crates/jackin-manifest" }
+jackin-protocol = { version = "0.6.0-dev", path = "crates/jackin-protocol" }
+jackin-runtime = { version = "0.6.0-dev", path = "crates/jackin-runtime" }
+jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
+jackin-test-support = { version = "0.6.0-dev", path = "crates/jackin-test-support" }
+jackin-tui = { version = "0.6.0-dev", path = "crates/jackin-tui" }
+jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
+nix = "0.31"
+opentelemetry_sdk = "0.32"
+owo-colors = "4"
+portable-pty = "0.9"
+predicates = "=3.1.4"
+proc-macro2 = { version = "1", features = ["span-locations"] }
+procfs = "0.18"
+rand = "0.10"
+ratatui = "0.30"
+# Must stay lockstep-compatible with ratatui 0.30; pinned when workspace was
+# virtualized (#532/#713). Candidate: relax to "0.1" — needs lockfile-refresh PR.
+ratatui-core = "=0.1.2"
+regex = "1"
+reqwest = { version = "0.13", default-features = false }
+rustls = { version = "0.23", default-features = false }
+secrecy = "0.10"
+semver = "1"
+serde = "1.0"
+# Exact pin from workspace virtualization (#713); no recovered bug citation.
+# Candidate for caret "1" in a dedicated lockfile-refresh PR.
+serde_json = "=1.0.150"
+serde_yaml_ng = "0.10.0"
+sha2 = "0.11"
+similar = "3"
+smallvec = "1.15"
+syn = { version = "2", features = ["full", "visit"] }
+tabled = "0.21.0"
+tempfile = "=3.27.0"
+thiserror = "2.0"
+# Renovate exact pin (#394 → workspace #713). Candidate: relax to ~1.52 —
+# needs a lockfile-refresh PR; do not float minors without a full test run.
+tokio = { version = "=1.52.3", default-features = false }
+tokio-util = "0.7"
+# Exact pin from workspace virtualization (#713); no recovered bug citation.
+# Candidate for caret "1" in a dedicated lockfile-refresh PR.
+toml = "=1.1.2"
+toml_edit = "0.25"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tui-scrollbar = "0.2.4"
+tui-widget-list = "0.15"
+# Pre-release API churn; revisit at first stable 0.7 (or next pre.N after
+# re-running the usage-store suite against the boundary module only).
+turso = { version = "=0.7.0-pre.18", default-features = false }
+unicode-width = "0.2"
+url = "2"
+vte = "0.15"
+x509-cert = { version = "0.3", default-features = false }
 
 [workspace.lints.rust]
 rust_2024_compatibility = { level = "deny", priority = -1 }
@@ -64,14 +160,28 @@ macro_use_extern_crate = "deny"
 meta_variable_misuse = "deny"
 single_use_lifetimes = "deny"
 let_underscore_drop = "deny"
-missing_debug_implementations = "warn"
+missing_debug_implementations = "deny"
 async_fn_in_trait = "allow"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
+redundant_explicit_links = "warn"
+unescaped_backticks = "warn"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
+# Bare-allow floor is 0 (ratchet bare-allow-per-crate); deny allows without reason.
+allow_attributes_without_reason = "deny"
 dbg_macro = "deny"
+let_underscore_future = "deny"
+let_underscore_must_use = "deny"
+unused_result_ok = "deny"
+assertions_on_result_states = "deny"
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
 mod_module_files = "deny"
 todo = "deny"
 unimplemented = "deny"
@@ -88,9 +198,11 @@ panic = "deny"
 manual_assert = "deny"
 manual_let_else = "warn"
 match_bool = "warn"
+# allow: 154 hits measured 2026-07-12; dominant by-value state/view handoffs (plan 047).
 needless_pass_by_value = "allow"
 trivially_copy_pass_by_ref = "warn"
 large_enum_variant = "warn"
+# allow: 137 hits measured 2026-07-12; residual large futures in attach/runtime/capsule.
 large_futures = "allow"
 result_large_err = "warn"
 clone_on_ref_ptr = "warn"
@@ -105,20 +217,25 @@ cognitive_complexity = "warn"
 excessive_nesting = "warn"
 implicit_hasher = "allow"
 similar_names = "allow"
+# allow: 34 hits measured 2026-07-12 (usage/capsule/runtime assigning_clones).
 assigning_clones = "allow"
+# allow: 88 hits measured 2026-07-12 (capsule/console/lookbook match_same_arms).
 match_same_arms = "allow"
+# allow: 35 hits measured 2026-07-12 (console-heavy drop_non_drop).
 drop_non_drop = "allow"
 format_push_string = "allow"
 no_effect_underscore_binding = "allow"
 items_after_statements = "allow"
 unnecessary_wraps = "allow"
-unused_self = "allow"
+# promoted 2026-07-12 after residual fix (0 hits).
+unused_self = "warn"
 option_option = "allow"
 verbose_bit_mask = "allow"
 unreadable_literal = "allow"
 unnecessary_debug_formatting = "allow"
-unused_async = "allow"
-float_cmp = "allow"
+# promoted 2026-07-12 after residual fix (0 hits).
+unused_async = "warn"
+float_cmp = "deny"
 struct_field_names = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
@@ -127,8 +244,16 @@ module_name_repetitions = "allow"
 future_not_send = "allow"
 cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
-cast_sign_loss = "allow"
+cast_sign_loss = "deny"
 cast_precision_loss = "allow"
+float_cmp_const = "deny"
+lossy_float_literal = "deny"
+invalid_upcast_comparisons = "deny"
+expl_impl_clone_on_copy = "deny"
+iter_not_returning_iterator = "deny"
+infallible_try_from = "deny"
+rc_mutex = "deny"
+debug_assert_with_mut_call = "deny"
 cargo_common_metadata = "allow"
 multiple_crate_versions = "allow"
 
@@ -148,3 +273,8 @@ strip = "symbols"
 inherits = "release"
 strip = false
 debug = "line-tables-only"
+
+[workspace.metadata.dylint]
+libraries = [
+    { path = "crates/jackin-lints" },
+]

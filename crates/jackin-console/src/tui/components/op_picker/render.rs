@@ -45,7 +45,12 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
         state.selected_vault_name(),
         state.selected_item_name(),
     );
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(&title));
+    let inner = jackin_tui::components::render_dialog_shell(
+        frame,
+        area,
+        Some(&title),
+        jackin_tui::components::DialogBorder::Default,
+    );
 
     let banner_height: u16 = match state.load_state() {
         OpLoadState::Error(OpPickerError::Recoverable { .. }) => 2,
@@ -111,7 +116,12 @@ fn render_loading(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRender
         state.selected_vault_name(),
         state.selected_item_name(),
     );
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(&title));
+    let inner = jackin_tui::components::render_dialog_shell(
+        frame,
+        area,
+        Some(&title),
+        jackin_tui::components::DialogBorder::Default,
+    );
 
     let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
     let descriptor = loading_descriptor(
@@ -137,7 +147,12 @@ fn render_loading(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRender
 }
 
 pub fn render_fatal(frame: &mut Frame<'_>, area: Rect, fatal: &OpPickerFatalState) {
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some("1Password"));
+    let inner = jackin_tui::components::render_dialog_shell(
+        frame,
+        area,
+        Some("1Password"),
+        jackin_tui::components::DialogBorder::Default,
+    );
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

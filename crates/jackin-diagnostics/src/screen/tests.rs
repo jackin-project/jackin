@@ -1,5 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
+#![cfg(feature = "otlp")]
 
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
 

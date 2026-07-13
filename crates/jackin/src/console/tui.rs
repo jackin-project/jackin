@@ -1,7 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! Transitional root-console TUI facades.
+//! Root-console TUI adapter shell.
+//!
+//! The `jackin` binary owns terminal/runtime/config IO and binds those side
+//! effects to the product state, input, and view code in `jackin-console`.
 
 pub(crate) mod input {
     //! Key dispatch for the workspace manager. Modal-first precedence:
@@ -41,7 +41,7 @@ pub(crate) mod input {
         }
 
         #[cfg(test)]
-        pub(super) mod tests;
+        mod tests;
     }
 
     mod dispatch {

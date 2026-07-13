@@ -15,6 +15,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 /// "this is clickable" cue is identical (terminals without OSC 22 ignore
 /// the sequence harmlessly).
 pub const POINTER_HAND: &str = "\x1b]22;pointer\x1b\\";
+/// OSC 22 sequence that restores the terminal's default pointer shape.
 pub const POINTER_DEFAULT: &str = "\x1b]22;default\x1b\\";
 
 /// OSC 52 clipboard-write sequence. Targets the system clipboard (`c`)

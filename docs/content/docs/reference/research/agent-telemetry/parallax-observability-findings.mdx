@@ -1,0 +1,1114 @@
+---
+title: "Parallax Observability Findings"
+---
+
+**Status**: Findings from live Parallax data, not mock data. Collected on July 3, 2026 from `127.0.0.1:4000`, Parallax CLI, Parallax SQL, and the current jackin❯ codebase.
+
+## Scope
+
+This page records what is wrong with the current logs/traces/issues shape as seen by an OpenTelemetry-style backend. It is intentionally diagnostic first. Implementation should start with logs, because logs are the highest-volume and most visibly unreadable signal.
+
+Important correction: the goal is not to reduce observability. The goal is to increase trustworthy coverage while reducing unusable payload. jackin❯ needs more complete tracing/logging/metrics around real workflows, slow paths, external calls, process execution, and errors. The current problem is that too much exported signal is unstructured firehose while many important operations are missing typed outcomes, correlation, and duration.
+
+Decision rule for follow-up work: fix what is correct to fix. Do not preserve known-wrong behavior because it is "low value", "marginal", "an edge case", costly, large, or similar to what another system does. The only valid reason to stop short is a proven tool, model, or project capability limit.
+
+Bug rule for follow-up work: every telemetry bug is evidence that the architecture allowed that bug class. Before fixing an individual symptom, identify the enabling structure and prefer the structural fix that prevents the class from recurring. Use symptom patches only when the root fix is proven infeasible or belongs in a separate explicitly named change.
+
+Inputs used:
+
+- Parallax UI pages supplied by the operator: Issues list, Issue detail, Trace detail.
+- Additional operator screenshots/pastes from July 3, 2026:
+  - Runs list with 52 visible runs.
+  - Run detail for `18bea0c913570db0`.
+  - Logs excerpt with `[jackin-capsule debug]` PTY byte dumps.
+  - BuildKit trace detail for `2c2c18b26eee1bb9b8c4692119a5b957`.
+- `parallax logs --since 30d --limit 80`
+- `parallax traces --since 30d --limit 80`
+- `parallax run list`
+- `parallax issue list`
+- `parallax doctor`
+- `parallax sql "SHOW TABLES"`
+- `parallax sql "DESC opentelemetry_logs"`
+- `parallax sql "DESC opentelemetry_traces"`
+- Aggregate SQL over `opentelemetry_logs` and `opentelemetry_traces`.
+- Code inspection of diagnostics/logging/tracing paths.
+- OpenTelemetry primary documentation:
+  - [Tracing API](https://opentelemetry.io/docs/specs/otel/trace/api/)
+  - [Specification overview](https://opentelemetry.io/docs/specs/otel/overview/)
+  - [Traces concepts](https://opentelemetry.io/docs/concepts/signals/traces/)
+  - [Creating links between traces](https://opentelemetry.io/docs/languages/dotnet/traces/links-creation/)
+  - [Logs data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/)
+  - [Exception logs semantic conventions](https://opentelemetry.io/docs/specs/semconv/exceptions/exceptions-logs/)
+- Rust tracing documentation:
+  - [`tracing` crate](https://docs.rs/tracing/latest/tracing/)
+  - [`tracing_subscriber::EnvFilter`](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html)
+  - [Tokio tracing guide](https://tokio.rs/tokio/topics/tracing)
+
+## Executive Findings
+
+1. Logs are console-formatted before export. Prefixes like `[jackin debug docker]` and `[jackin-capsule debug]` are embedded in `body`, not exposed as structured fields. That makes Parallax/Kibana-style filtering depend on text search instead of dimensions such as `jackin.log.category`, `jackin.component`, `jackin.operation`, `container.name`, or `stage`.
+
+2. Debug firehose is exported as first-class logs. The Parallax store had `968,593` `DEBUG` logs across `34` runs, versus `8,977` `INFO`, `4` `WARN`, and `1` `ERROR`. This overwhelms useful runtime events.
+
+   `parallax doctor` showed the same cost at rest: `logs.ndjson` spool was `1.65 GiB`, while traces spool was `273.1 MiB` and metrics spool was `118.6 MiB`.
+
+3. Some records include sensitive or excessive payloads. Docker inspect output exported full container JSON, including environment arrays with token-shaped values and very large mount/config payloads. Telemetry must redact and summarize before export.
+
+4. Error visibility is broken. SQL found `1,686` log bodies mentioning `error`, `failed`, or `panic`, but only `1` OTel `ERROR` log and only `2` `STATUS_CODE_ERROR` spans. Both error spans came from `buildx`, not jackin❯. Most jackin❯ failures are plain `INFO`/`DEBUG` bodies or JSONL diagnostics events, so Parallax cannot reliably group them as issues.
+
+   Updated query including `eof` found `1,757` error-like log bodies: `1,594` `DEBUG`, `162` `INFO`, and `1` `ERROR`. Example from run detail: `attach client: socket read failed: early eof` is `INFO`, not `ERROR`.
+
+5. Issue grouping fingerprints runtime noise. The Issues page showed 14 open issues, mostly the same capsule attach failure split by container name, user id, run id, branch/path, and command text. Each had one event. This defeats issue grouping.
+
+6. Issue detail bodies are too large and unstructured. A single attach failure page inlined a 40-line capsule debug tail with timestamps, terminal byte dumps, frame metrics, paths, and repeated prefixes into one paragraph. The actual failure is buried.
+
+7. Trace shape is inconsistent. There are many traces with one span or almost no correlation, and other traces with hundreds or thousands of tiny internal spans. Example: `usage:refresh_accounts` had `588`, `1005`, and similar span counts; top aggregate showed `109,579` `emit_insn` spans across `1,358` traces. The latest run detail showed an `18`-trace launch where `usage:refresh_accounts` had `440` spans, while `capsule:tab`, `capsule:session`, and `prewarm_auth_for_agents` were single-span traces.
+
+8. Launch-stage spans are not semantically distinguishable in the UI. The Trace detail page showed 12 waterfall rows all named `launch_stage`; the meaningful `stage=derived image` value appears only in the attributes panel. Operators cannot scan the waterfall.
+
+9. Logs and traces are not consistently correlated. The sample Trace detail page showed `Logs: 0` for a launch trace even when run-level logs existed. Logs often carry run id but not the correct active span/trace context.
+
+10. Run id exists and is useful, but it is not enough. `parallax.run.id` is present on log rows and run pages work, but cross-run grouping, per-run summary, trace linkage, and error grouping need stable semantic fields.
+
+11. High-frequency UI and terminal internals dominate run logs. SQL found `242,689` PTY/render debug rows (`session feed_pty bytes`, `send-bytes`, `frame-geom`, `pane scroll frame`) and `21,611` cockpit mouse rows. The run page for `18bea0c913570db0` showed repeated mouse move rows as newest logs, so useful lifecycle events are pushed below interaction noise.
+
+12. Some run and trace evidence bundles are too raw for operator use. The run bundle includes Docker inspect JSON, full generated Dockerfile text, raw image layer arrays, command URLs, host paths, and debug lines. That data can be useful as an artifact, but it should not be the default log body or issue evidence.
+
+13. Coverage is incomplete in the places most needed for jackin❯ development. Slow external calls, subprocesses, Docker lifecycle steps, agent binary resolution/downloads, credential/provider resolution, capsule attach/session lifecycle, and cleanup need typed spans/logs/metrics. Some of these are visible today as plain text (`held the foreground launch path`, `Building Docker image`, raw URLs), but not as a reliable operation graph.
+
+14. Parallax should support cross-trace navigation as a first-class feature. OpenTelemetry has parent/child spans within one trace and standard `Span Link`s that can reference spans in the same or another trace. It does not define a "child trace id" hierarchy as a separate native concept. Parallax can add `parallax.parent_trace_id`, `parallax.trace.role`, or similar backend navigation attributes, but should also ingest and render standard OTel span links.
+
+15. Observability needs layered verbosity, not one global firehose. Today `--debug` / `JACKIN_DEBUG=1` is a binary switch that enables too many categories at `DEBUG`. jackin❯ should replace that with explicit levels (`info`, `debug`, `trace`) and category filters so normal development gets rich workflow visibility, while byte/frame/keypress internals only appear when explicitly requested.
+
+16. OTLP mode must not reference local diagnostics files. `RunDiagnostics` already treats JSONL files as a fallback sink and does not persist them by default when OTLP export is active. But some UI/capsule surfaces still imply a file location. In OTLP mode the canonical reference is the run id and backend query, not `~/.jackin/data/diagnostics/runs/<run>.jsonl`.
+
+## OpenTelemetry Subtrace Finding
+
+The operator hypothesis is mostly correct: OpenTelemetry does not model "subtrace parent-child" as a special trace-to-trace hierarchy. The standard model is:
+
+- A trace is a tree/DAG of spans sharing one `trace_id`.
+- Each span has zero or one parent span and zero or more child spans inside that trace.
+- A root span starts a new trace and gets a new `trace_id`.
+- A span can include links to other spans, including spans in another trace.
+
+Implication:
+
+- If jackin❯ wants one giant launch view, use one trace with parent/child spans.
+- If jackin❯ wants readable subtraces, create separate traces and connect them with OTel span links.
+- Parallax should render those span links as "parent workflow", "linked subtrace", and "back to parent" navigation.
+- For backend-native UX, Parallax may additionally store:
+  - `parallax.parent_trace_id`
+  - `parallax.parent_span_id`
+  - `parallax.link.kind=child_workflow|external_subtrace|continuation`
+  - `parallax.workflow.id`
+  - `parallax.workflow.parent_id`
+
+Recommendation: do both. Emit standard OTel links for portability, and let Parallax derive or store Parallax-specific relation fields for better UI and CLI navigation.
+
+## Instrumentation Coverage Findings
+
+The current system has some good primitives:
+
+- `RunDiagnostics::stage` tracks launch stage start/done/fail/skipped events and duration summaries.
+- `active_timing_started` / `active_timing_done` can record nested timings under a stage.
+- `ShellRunner` centralizes most host subprocess execution.
+- <RepoFile path="crates/jackin-docker/src/net.rs" /> centralizes some HTTP text fetch and parallel download paths.
+- Capsule OTLP initialization stamps `session.id` and can link capsule session start to host `traceparent`.
+
+The problem is uneven application and weak exported semantics.
+
+### Required Coverage Map
+
+Every long or failure-prone operation should have:
+
+- one span with stable name,
+- concise lifecycle logs,
+- typed outcome (`success`, `failure`, `timeout`, `cancelled`, `skipped`, `cache_hit`, `cache_miss`),
+- duration metric,
+- low-cardinality attributes,
+- error attributes and span status on failure,
+- redacted artifact links for large payloads.
+
+Priority workflows:
+
+| workflow | needed spans | needed logs | needed metrics |
+|---|---|---|---|
+| CLI/run lifecycle | `run.start`, `run.finish`, `run.cancel` | command summary, exit status | run duration, exit count |
+| role resolution | `role.resolve`, `role.repo_refresh` | source, trust result | duration, cache hit/miss |
+| credential resolution | `credentials.resolve`, `credentials.operator_env`, `credentials.provider_lookup` | key names only, provider, outcome | duration by provider, missing count |
+| agent binary setup | `agent_binary.resolve`, `agent_binary.download`, `agent_binary.verify` | agent, version, source, cache | bytes, duration, cache hit/miss, failures |
+| HTTP metadata/API calls | `http.client.request` or `external.api.call` | method, host, route class, status | latency, status family, retry count |
+| downloads | `download.prefetch`, `download.transfer`, `download.verify` | host, artifact kind, version | bytes, throughput, duration, retry count |
+| Docker lifecycle | `docker.container.inspect`, `docker.container.create`, `docker.container.start`, `docker.network.create`, `docker.volume.create` | object/action/state | duration, count, failure count |
+| image build | `image.build.plan`, `image.build_context.publish`, `image.buildx.solve` | build reason, image, cache decision | duration, context bytes, steps, cache hits |
+| attach | `capsule.attach`, `capsule.handshake`, `attach.proxy` | container, tty mode, outcome | duration, failures by type |
+| capsule session | `capsule.session.start`, `agent.session.start`, `agent.session.exit` | agent, command, exit | session duration, exit code count |
+| terminal/render hot path | no default per-event spans | sampled/debug artifact only | bytes, frames, render duration, invalidations |
+| cleanup | `cleanup.container`, `cleanup.network`, `cleanup.volume`, `cleanup.artifacts` | preserved/removed, reason | duration, failures |
+
+### Current Gaps From Code Inspection
+
+- `emit_debug_line` formats `[jackin debug {category}]` before backend export, so structured categories are lost unless a backend parses body text.
+- `RunDiagnostics::stage` creates repeated `launch_stage` spans, which records timing but loses scannable operation names.
+- `active_timing_started/done` records nested timings as JSONL events and summary maps, but they are not real child spans, so Parallax cannot show them in the waterfall.
+- `ShellRunner` captures command execution centrally, but exported telemetry is command text and first-line stdout/stderr, not stable `process.*`/`command.*` attributes with duration, exit code, and error type.
+- HTTP fetch/download helpers expose slow external work, but current live Parallax data shows URLs as plain `INFO` bodies rather than typed client spans/metrics.
+- Capsule debug logs emit rich terminal internals, but the important state machine transitions are not separated from byte/frame firehose.
+
+Structural direction:
+
+- Add a typed operation API around existing diagnostics:
+  - `operation_span(name, attrs)`
+  - `operation_log(event_name, body, attrs)`
+  - `operation_error(error_type, err, attrs)`
+  - `operation_metric(name, value, attrs)`
+- Use it first in shared choke points:
+  - `ShellRunner`
+  - HTTP client/download helpers
+  - Docker client lifecycle helpers
+  - launch stage/timing API
+  - capsule attach/session state machine
+- Keep `cdebug!` for local deep-debug, but do not use it as the main observability contract.
+
+## Layered Verbosity Model
+
+Rust `tracing` distinguishes spans from events: spans represent work with duration and causality; events represent points in time. OpenTelemetry logs define severity ranges: `TRACE` is fine-grained debug normally disabled, `DEBUG` is debugging information, `INFO` is that something happened, `WARN` is important but not an error, `ERROR` means something went wrong, and `FATAL` is crash/shutdown level. jackin❯ should map to that model directly.
+
+### CLI And Environment Contract
+
+Current state:
+
+- `--debug` / `JACKIN_DEBUG=1` is boolean.
+- Host OTLP filter chooses `debug` when debug is true, otherwise `info`.
+- Capsule uses `JACKIN_DEBUG` to pick `debug` versus `info`.
+- Many deep internals are also controlled by this same debug boolean.
+
+Desired state:
+
+```text
+jackin --telemetry-level info
+jackin --telemetry-level debug
+jackin --telemetry-level trace
+jackin --telemetry-category docker,launch,credentials
+jackin --telemetry-category terminal,render,input
+```
+
+Environment equivalents:
+
+```text
+JACKIN_TELEMETRY_LEVEL=info|debug|trace
+JACKIN_TELEMETRY_CATEGORIES=docker,launch,credentials
+JACKIN_TELEMETRY_INTERNAL=0|1
+```
+
+Rules:
+
+- Default is `info`.
+- Do not keep compatibility aliases for changed telemetry configuration.
+- Remove `--debug` / `JACKIN_DEBUG` as telemetry controls when the new model lands; use only `--telemetry-level` / `JACKIN_TELEMETRY_LEVEL`.
+- If a separate non-telemetry debug UI is still needed, give it a different explicit name so it cannot be confused with telemetry export level.
+- `trace` is the explicit deep-firehose mode.
+- Categories narrow or expand noisy domains without changing unrelated domains.
+- Each backend layer can have its own filter:
+  - console: compact operator-facing info/warn/error,
+  - local diagnostics artifact: debug/trace when requested,
+  - OTLP: structured logs/spans/metrics at selected level,
+  - Parallax bundle: summarized evidence plus artifact links.
+
+### Level Taxonomy For jackin❯
+
+| level | use for | examples | default export |
+|---|---|---|---|
+| `ERROR` | failed operation that affects the run or user workflow | attach failed, image build failed, credentials unavailable, command exit nonzero | always |
+| `WARN` | degraded/recovered/expected handled issue that may explain behavior | retry exhausted then fallback, cleanup partial failure, exporter unavailable, missing optional tool | always |
+| `INFO` | operator-meaningful lifecycle and decisions | run started/finished, launch plan selected, image build started/done, container started, agent session exited | default |
+| `DEBUG` | developer diagnostics with bounded volume | cache decision details, command summary, Docker state before/after, retry attempt summary, selected config source | `--debug` |
+| `TRACE` | per-event firehose and byte/frame internals | PTY byte dumps, render frame geometry, mouse move coordinates, per-keypress dispatch, raw protocol frames | `--telemetry-level trace` and/or category opt-in |
+
+### What Moves From Debug To Trace
+
+These should not be `DEBUG` in OTLP by default because they are high frequency and rarely useful in Parallax search:
+
+- `session feed_pty bytes`
+- `send-bytes`
+- `render: ratatui-frame`
+- `pane scroll frame`
+- `frame-geom`
+- `cockpit-dialog-mouse kind=Moved`
+- per-keypress parser transitions,
+- raw protocol frames,
+- repeated terminal invalidation rows.
+
+Default handling:
+
+- summarize with metrics,
+- sample at `DEBUG` only when useful,
+- emit full rows only at `TRACE` or with category opt-in:
+  - `JACKIN_TELEMETRY_CATEGORIES=terminal,render,input`
+
+### What Stays Debug
+
+`DEBUG` should answer "why did jackin❯ choose this path?" without requiring raw bytes:
+
+- cache hit/miss reasons,
+- selected launch plan and rejected alternatives,
+- Docker object state summaries,
+- command argv summaries with redaction,
+- retry attempt summary,
+- config source resolution,
+- feature flag decisions,
+- provider/version selection.
+
+### What Must Be Info
+
+`INFO` should be enough for the default Parallax run page to explain normal startup:
+
+- `run.started`
+- `run.finished`
+- `launch.plan.selected`
+- `stage.started` / `stage.finished` for major stages,
+- `credentials.resolved`
+- `agent_binary.resolved`
+- `image.build.started` / `image.build.finished`
+- `container.started`
+- `capsule.attach.started` / `capsule.attach.finished`
+- `agent.session.started` / `agent.session.finished`
+
+These events should be low volume and structured. They should carry `event.name`, `event.outcome`, `jackin.stage`, `jackin.operation`, `duration_ms`, and run/trace/span context.
+
+### What Must Be Warn Or Error
+
+Do not bury failures in `INFO` body text.
+
+- `ERROR`: operation failed and the current command/run failed or a user-visible capability failed.
+- `WARN`: operation failed but was handled, retried, skipped by design, or fell back successfully.
+- `DEBUG`: exception/noise that does not indicate a problem, such as expected client-side cancellation.
+
+OpenTelemetry exception guidance says severity reflects expected impact, not merely the presence of an exception. For jackin❯ this means `early eof` during expected terminal shutdown should be typed as expected close, while `early eof` during attach handshake should be `ERROR` or `WARN` depending on whether attach recovered.
+
+### Span/Event/Log Split
+
+Use spans for duration and hierarchy:
+
+- external command,
+- HTTP call,
+- Docker call,
+- image build,
+- attach handshake,
+- credential lookup,
+- agent binary download,
+- cleanup operation.
+
+Use span events for notable points inside an active span:
+
+- retry attempt,
+- cache hit/miss,
+- selected fallback,
+- progress milestone,
+- linked artifact created.
+
+Use logs for human-readable facts that operators search:
+
+- final failure summary,
+- normal lifecycle milestone,
+- unexpected recovered condition,
+- exporter unavailable notice.
+
+Use metrics for high-frequency counters/gauges:
+
+- terminal bytes,
+- render frame counts,
+- mouse event counts,
+- process CPU/memory,
+- command duration histogram,
+- HTTP latency/status counts.
+
+### Attribute And Tag Rules
+
+Every exported log/span should include stable facets:
+
+- `event.name`
+- `event.outcome`
+- `jackin.component=host|capsule|console`
+- `jackin.operation`
+- `jackin.stage`
+- `jackin.category`
+- `parallax.run.id`
+- `session.id` when inside capsule/session
+- `error.type` when failed
+- `artifact.id` / `artifact.path_redacted` for large local evidence
+
+Avoid high-cardinality fields as grouping tags:
+
+- full command strings,
+- full URLs with query,
+- full temp paths,
+- container ids as fingerprints,
+- raw stdout/stderr,
+- raw Docker inspect JSON,
+- raw terminal bytes.
+
+### Rust Implementation Guidance
+
+- Use `tracing` spans for work units and events for point facts, matching the crate model.
+- Use `EnvFilter` per layer so console, local file, OTLP logs, and OTLP spans can have different filters.
+- Keep target/module filters for dependency noise, but do not disable jackin❯ operation spans needed for development.
+- Prefer explicit fields over formatted strings:
+
+```rust
+tracing::info!(
+    target: "jackin::launch",
+    event.name = "launch.plan.selected",
+    jackin.operation = "launch.plan",
+    jackin.stage = "plan",
+    event.outcome = "success",
+    plan = %plan_name,
+    "launch plan selected"
+);
+```
+
+Bad default OTLP body:
+
+```text
+[jackin debug docker] inspect container jk-abc -> running
+```
+
+Good structured log:
+
+```text
+body="container inspected"
+severity=DEBUG
+event.name=docker.container.inspect
+jackin.category=docker
+docker.object=container
+container.name=jk-abc
+container.state=running
+```
+
+### Parallax UX Requirements
+
+- Logs page should show severity filter with OTel severity ranges, not only raw `severity_text`.
+- Logs page should show columns for `event.name`, `jackin.operation`, `jackin.stage`, `event.outcome`, `error.type`.
+- Run page should default to `INFO+` lifecycle timeline and hide `DEBUG/TRACE` behind toggles.
+- Trace page should let operator toggle span events/logs by severity.
+- Bundle should include:
+  - `INFO+` timeline,
+  - warnings/errors,
+  - top slow spans,
+  - linked subtraces,
+  - artifact links,
+  - optional `DEBUG/TRACE` sections only when requested.
+
+## OTLP Sink Contract
+
+When OpenTelemetry export is active, logs, traces, and metrics are sent over OTLP to Parallax or another backend. They are not stored in jackin❯ JSONL diagnostics files by default.
+
+Current code mostly intends this:
+
+- `RunDiagnostics::start` sets `persist = !otlp_active || diagnostics_file_forced()`.
+- `JACKIN_DIAGNOSTICS_FILE=1` is the explicit opt-in to write files and OTLP at the same time.
+- `write_command_output` skips sidecar creation when the run file writer is disabled.
+- `RunDiagnostics::path()` is a "would-be path" unless `persists()` is true.
+
+Required product contract:
+
+- If OTLP export is active and `JACKIN_DIAGNOSTICS_FILE` is unset, do not display local diagnostics paths.
+- Do not print "see `<path>.jsonl`" or "Reveal diagnostics" for a file that does not exist.
+- Do not pass `JACKIN_RUN_DIAGNOSTICS_PATH` into the capsule unless a file is actually persisted.
+- Surfaces should display:
+  - `Telemetry run id: <run_id>`
+  - `View in Parallax: parallax run <run_id>`
+  - `Logs: parallax logs --run <run_id>`
+  - `Traces: parallax traces --run <run_id>`
+  - `Bundle: parallax run bundle <run_id>`
+- If the backend is not Parallax, show backend-neutral text:
+  - `Use parallax.run.id=<run_id> in your OpenTelemetry backend`.
+
+Concrete current issue:
+
+- <RepoFile path="crates/jackin-capsule/src/container_context.rs" /> synthesizes `~/.jackin/data/diagnostics/runs/{run_id}.jsonl` when `JACKIN_RUN_DIAGNOSTICS_PATH` is absent.
+- In OTLP mode this is misleading because the host intentionally did not create the file.
+- The fallback should be changed to "backend only" reference when no diagnostics path is provided:
+  - display run id,
+  - no `file://` href,
+  - no "Reveal diagnostics" row.
+
+Desired UI rows in OTLP mode:
+
+| label | value |
+|---|---|
+| Run ID | `<run_id>` |
+| Telemetry | `Parallax / OpenTelemetry` |
+| Query | `parallax run <run_id>` |
+
+Desired UI rows only when file persistence is active:
+
+| label | value |
+|---|---|
+| Diagnostics file | `<actual path from JACKIN_RUN_DIAGNOSTICS_PATH>` |
+| Reveal diagnostics | file link |
+
+Acceptance checks:
+
+- Start with OTLP enabled and no `JACKIN_DIAGNOSTICS_FILE`.
+- Confirm no `diagnostics/runs/<run>.jsonl` file is created.
+- Confirm capsule/container info shows run id but no file path and no reveal-file action.
+- Confirm any error/help text points to `parallax run <run_id>` or `parallax logs --run <run_id>`.
+- Start with `JACKIN_DIAGNOSTICS_FILE=1`.
+- Confirm file path is shown only in that mode and the file exists.
+
+## UI Findings
+
+### Issues List
+
+Observed page: `Issues`.
+
+Problems:
+
+- Titles are raw technical payloads, not normalized symptoms. Examples included full `docker exec ... /jackin/runtime/jackin-capsule` command lines and BuildKit shell commands.
+- The same attach failure appeared as many separate issues because dynamic values are part of the title/fingerprint:
+  - `jk-qfrehkbv-holla-thearchitect`
+  - `jk-p45np22c-holla-thearchitect`
+  - `jk-xb9cw69q-jackin-thearchitect`
+  - `--user 501:0`, `--user 501:20`, or no `--user`
+- Tags shown in rows were low-value (`detail:<none>`, `jackin_jsonl:true`) instead of operational facets (`operation=attach`, `component=host`, `failure.kind=attach_error`, `agent=claude`, `runtime=docker`).
+- All repeated attach failures had `EVENTS=1`, so the list reads like many unique incidents instead of one recurring incident.
+- KPI cards duplicate visible counts (`14 loaded`, `14 open`, `14 events`) without explaining root causes or dominant failure classes.
+
+Desired shape:
+
+- Issue title: `Capsule attach failed`
+- Fingerprint fields: `service.name`, `jackin.component`, `error.type`, `jackin.operation`, normalized failure code.
+- Dynamic data as attributes only: `container.name`, `run.id`, `user.uid`, command argv, log artifact path.
+- Row facets: `operation=attach`, `runtime=docker`, `agent=claude`, `stage=attach`, `run_count=N`, `last_run=<id>`.
+
+### Issue Detail
+
+Observed page: `log_error: capsule attach failed ...`.
+
+Problems:
+
+- H1 is a full variable command string, so the page title itself is unreadable.
+- Latest event body contains:
+  - actual failure line,
+  - capsule log path,
+  - `last 40 capsule log lines`,
+  - repeated `[jackin-capsule debug]` prefixes,
+  - terminal byte dumps,
+  - render/frame telemetry,
+  - paths and dynamic branch/container names.
+- Tags include `detail=<none>` and `jackin_jsonl=true`, which are implementation markers, not triage data.
+- Occurrence row repeats the whole giant body; no separation of summary, cause, evidence, and artifact links.
+- The page links one trace, but there is no structured "what failed, where, why, what run, what stage, what command" section.
+
+Desired shape:
+
+- Summary: `Capsule attach failed while connecting host to capsule socket`.
+- Cause fields:
+  - `error.type=attach_error`
+  - `jackin.operation=capsule.attach`
+  - `jackin.stage=attach`
+  - `command.name=docker`
+  - `process.exit_code` or `signal` when known
+  - `container.name`
+  - `container.state`
+- Evidence:
+  - first failure line,
+  - last meaningful capsule log events after filtering debug firehose,
+  - link to full artifact/run bundle,
+  - redacted command argv.
+- Raw debug tail should be a downloadable/expandable artifact, not the issue body.
+
+### Trace Detail
+
+Observed page: `launch_stage` trace.
+
+Problems:
+
+- Waterfall rows all have the same visible name: `launch_stage`.
+- The meaningful stage name (`derived image`) is hidden under attributes.
+- The trace duration card says `123118.4ms`, but the selected row has `99849.528ms`; the UI does not explain which stage consumed the run.
+- `Logs: 0` on a launch trace conflicts with run-level logs for the same run. This means logs were not emitted inside the span context or were exported without the active trace/span linkage.
+- Many tiny rows with `0.02ms`/`0.06ms` are visually present but operationally meaningless.
+
+Desired shape:
+
+- Span name should be operation-specific, such as:
+  - `launch.plan`
+  - `launch.prepare_workspace`
+  - `launch.build_derived_image`
+  - `launch.create_container`
+  - `launch.attach_capsule`
+- Attributes should carry facets: `jackin.stage`, `jackin.role`, `container.name`, `image.name`, `cache.hit`.
+- Waterfall label should render `operation + stage`, not just the generic operation.
+- Logs emitted during a launch stage must inherit the active span context.
+
+### Runs List
+
+Observed page: `Runs`.
+
+Problems:
+
+- The page had `52` visible runs: `48` finished wrapper runs, `2` observed-only telemetry runs, and `10` failed exits.
+- Most rows had the same command text: `jackin --debug`. That makes the table useful for chronology but not for diagnosis.
+- Failed runs only show `exit 1`; the row does not show top issue, failing stage, last error, or dominant error type.
+- Observed-only rows show span/log counts such as `14387 span(s) · 0 log(s)`, which is strong evidence of uncorrelated traces without enough run context.
+- The status summary says failures exist, but the first-screen list does not explain what failed or whether failures share a cause.
+
+Desired shape:
+
+- Add columns/facets for `workflow`, `role`, `agent`, `workspace`, `top_error.type`, `top_issue`, and `failed_stage`.
+- Show `exit 1 · capsule attach failed` instead of only `exit 1`.
+- Group repeated `jackin --debug` rows by role/workflow where useful, while preserving exact run ids.
+- Treat observed-only runs with many spans and zero logs as telemetry-health warnings.
+
+### Run Detail
+
+Observed page: run `18bea0c913570db0`.
+
+Problems:
+
+- Header showed `finished`, `exit 0`, `18 trace(s)`, `0 error(s)`, and `200 log(s)`, but logs included `attach client: socket read failed: early eof`.
+- The newest logs were repeated mouse movement/debug rows, both prefixed and unprefixed:
+  - `[jackin debug cockpit-dialog-mouse] kind=Moved ...`
+  - `kind=Moved ...`
+- Trace list mixed jackin❯ workflow traces, BuildKit traces, provider probes, capsule session traces, and one-span helper traces without a hierarchy.
+- The evidence bundle inlined raw Docker inspect output and generated Dockerfile content. This makes the run bundle hard to skim and creates redaction risk.
+- `No grouped issues inside this run` is technically true for this sample, but the page still contains failure-like signals. The UI cannot distinguish expected EOF/noise from actionable errors because jackin❯ does not send typed outcomes.
+
+Desired shape:
+
+- Run summary should show lifecycle phases with status:
+  - `role.resolve`
+  - `credentials.resolve`
+  - `agent_binaries.prepare`
+  - `image.build`
+  - `container.create`
+  - `capsule.attach`
+  - `agent.session`
+- Expected terminal/session shutdown should be `event.outcome=success|expected_close`, not body text containing `failed`/`eof`.
+- Debug interaction rows should be sampled, counted, or moved to metrics/artifacts.
+- Raw large artifacts should be linked from the bundle, with summarized structured rows in the default view.
+
+### Build Trace Detail
+
+Observed page: trace `2c2c18b26eee1bb9b8c4692119a5b957`, root `build /var/folders/.../.tmpJxRImQ/context`.
+
+Problems:
+
+- The trace is a useful BuildKit subtrace, but it is presented as a peer trace to jackin❯ launch instead of a linked child of the launch/image-build workflow.
+- The root name includes a host temp path, which is dynamic and noisy.
+- `Logs: 0` despite the same run having image build logs such as `Building Docker image` and `derived image build source selected`.
+- Waterfall rows are BuildKit RPC names (`moby.buildkit.v1.Control/Status`, `LLBBridge/Solve`) with no jackin❯ semantic wrapper like `launch.build_derived_image`.
+- The trace is dominated by two long BuildKit spans (`Control/Solve`, `Control/Status`) but the page does not surface the jackin❯ reason for the build: cache miss, capsule version change, recipe hash change, rebuild flag, etc.
+
+Desired shape:
+
+- Parent launch trace span: `launch.build_derived_image`.
+- Linked BuildKit subtrace:
+  - `linked.trace_id=<buildx trace>`
+  - `jackin.parent_trace_id=<launch trace>`
+  - `jackin.operation=image.build`
+  - `build.reason=capsule_version_changed`
+  - `image.name`, `image.recipe.version`, `image.recipe.hash`
+- Root name should be stable: `buildx.build_image`, with temp context path as redacted attribute or local artifact reference.
+- Logs emitted by jackin❯ around the build should correlate to the parent span and, when possible, to the BuildKit linked trace.
+
+## Raw Data Findings
+
+### Log Volume
+
+Query:
+
+```sql
+SELECT severity_text, COUNT(*) AS logs, COUNT(DISTINCT trace_id) AS traces,
+       COUNT(DISTINCT `parallax.run.id`) AS runs
+FROM opentelemetry_logs
+GROUP BY severity_text
+ORDER BY logs DESC;
+```
+
+Result:
+
+| severity | logs | traces | runs |
+|---|---:|---:|---:|
+| DEBUG | 968,593 | 2,815 | 34 |
+| INFO | 8,977 | 137 | 34 |
+| WARN | 4 | 4 | 4 |
+| ERROR | 1 | 1 | 1 |
+
+Interpretation: `--debug` turns telemetry into a firehose. Backend UX becomes dominated by debug internals, not user-relevant lifecycle and failure events.
+
+### Local Storage Impact
+
+`parallax doctor` reported:
+
+| data | size |
+|---|---:|
+| data dir | 2.91 GiB |
+| spool logs.ndjson | 1.65 GiB |
+| spool traces.ndjson | 273.1 MiB |
+| spool metrics.ndjson | 118.6 MiB |
+| engine data | 431.5 MiB |
+
+Interpretation: logs are not only unreadable in the UI; they dominate local telemetry storage. Reducing default debug log volume is a correctness and operability requirement, not only presentation polish.
+
+### Debug Firehose Categories
+
+Queries:
+
+```sql
+SELECT COUNT(*) AS logs
+FROM opentelemetry_logs
+WHERE body LIKE '%[jackin debug cockpit-dialog-mouse]%';
+```
+
+Result: `21,611` logs.
+
+```sql
+SELECT COUNT(*) AS logs
+FROM opentelemetry_logs
+WHERE body LIKE '%session feed_pty bytes%'
+   OR body LIKE '%send-bytes:%'
+   OR body LIKE '%frame-geom:%'
+   OR body LIKE '%pane scroll frame:%';
+```
+
+Result: `242,689` logs.
+
+Interpretation: UI interaction, terminal byte, and frame-render internals should not be default OTel logs. They should become metrics, sampled debug artifacts, or deep-debug logs behind a separate explicit flag.
+
+### Error Detection Gap
+
+Query:
+
+```sql
+SELECT severity_text, COUNT(*) AS logs
+FROM opentelemetry_logs
+WHERE lower(body) LIKE '%error%'
+   OR lower(body) LIKE '%failed%'
+   OR lower(body) LIKE '%panic%'
+GROUP BY severity_text
+ORDER BY logs DESC;
+```
+
+Result:
+
+| severity | logs |
+|---|---:|
+| DEBUG | 1,594 |
+| INFO | 91 |
+| ERROR | 1 |
+
+Span status query:
+
+```sql
+SELECT span_status_code, COUNT(*) AS spans, COUNT(DISTINCT trace_id) AS traces
+FROM opentelemetry_traces
+GROUP BY span_status_code
+ORDER BY spans DESC;
+```
+
+Result:
+
+| status | spans | traces |
+|---|---:|---:|
+| STATUS_CODE_UNSET | 135,119 | 6,904 |
+| STATUS_CODE_ERROR | 2 | 1 |
+
+Only two error spans existed, both from BuildKit/buildx. This supports the operator's observation: jackin❯ is not sending or flagging many errors in a way Parallax can classify.
+
+Follow-up query including EOF:
+
+```sql
+SELECT severity_text, COUNT(*) AS logs
+FROM opentelemetry_logs
+WHERE lower(body) LIKE '%error%'
+   OR lower(body) LIKE '%failed%'
+   OR lower(body) LIKE '%panic%'
+   OR lower(body) LIKE '%eof%'
+GROUP BY severity_text
+ORDER BY logs DESC;
+```
+
+Result:
+
+| severity | logs |
+|---|---:|
+| DEBUG | 1,594 |
+| INFO | 162 |
+| ERROR | 1 |
+
+Interpretation: many bodies contain failure language but are not typed outcomes. Some may be expected shutdown noise, but that is exactly why jackin❯ must emit explicit `event.outcome`, `error.type`, and `expected=true|false` fields instead of relying on body text.
+
+### Prefixes Are In Body
+
+Query:
+
+```sql
+SELECT severity_text, scope_name, `parallax.run.id`, substring(body,1,120) AS body
+FROM opentelemetry_logs
+WHERE body LIKE '%[jackin debug%'
+ORDER BY timestamp DESC
+LIMIT 20;
+```
+
+Representative rows:
+
+| severity | scope | body |
+|---|---|---|
+| DEBUG | `jackin_diagnostics::jsonl` | `[jackin debug docker] ps --filter label=...` |
+| DEBUG | `jackin_diagnostics::jsonl` | `[jackin debug docker] network rm jk-...-net` |
+| DEBUG | `jackin_diagnostics::jsonl` | `[jackin debug isolation] finalize: container=... preserved ...` |
+| DEBUG | `jackin_diagnostics::jsonl` | `[jackin debug attach] host attach using attach-proxy ...` |
+
+Interpretation: category is present only as text. Backend cannot group without parsing `body`.
+
+### Span Storms
+
+Aggregate query:
+
+```sql
+SELECT service_name, span_name, COUNT(*) AS spans, COUNT(DISTINCT trace_id) AS traces
+FROM opentelemetry_traces
+GROUP BY service_name, span_name
+ORDER BY traces DESC, spans DESC
+LIMIT 30;
+```
+
+Representative rows:
+
+| service | span_name | spans | traces |
+|---|---|---:|---:|
+| jackin | `normal_step` | 3,413 | 3,054 |
+| jackin | `emit_insn` | 109,579 | 1,358 |
+| jackin | `translate` | 1,462 | 1,358 |
+| jackin | `begin_read_tx` | 1,192 | 1,135 |
+| jackin | `end_read_tx` | 1,623 | 1,130 |
+
+Trace inspection of `usage:refresh_accounts` showed hundreds of micro-spans like `emit_insn`, `read_page_no_cache`, `find_frame`, and `translate`. These are storage-engine internals, not jackin❯ workflow spans.
+
+Desired shape:
+
+- Keep `usage:refresh_accounts` as one trace or span.
+- Store internal DB timings as metrics or span events:
+  - `db.statement.count`
+  - `db.rows_read`
+  - `db.write.count`
+  - `usage.accounts.refreshed`
+  - `usage.provider`
+  - `duration_ms`
+- Do not export storage-engine internals unless a dedicated deep-debug mode is explicitly enabled.
+
+### Sensitive Payload Risk
+
+The live `parallax logs` sample contained Docker inspect JSON with environment arrays and token-shaped values. The run detail and evidence bundle also included host paths, generated Dockerfile content, image layer arrays, API-key variable names, auth paths, and provider URLs. Even if some values are local/test tokens, the telemetry path must treat them as secrets.
+
+Required rule:
+
+- Never export raw environment arrays, Docker inspect payloads, command output, provider auth paths, or config blobs as log bodies or attributes without redaction.
+- Redact by key (`*_TOKEN`, `*_KEY`, `*_SECRET`, `GH_TOKEN`, provider API keys, auth JSON paths where necessary) and by value pattern.
+- Replace large payloads with typed summaries:
+  - `container.id`
+  - `container.name`
+  - `container.state`
+  - `container.exit_code`
+  - `mount.count`
+  - `env.count`
+  - `image.id`
+  - `network.name`
+- Store raw artifacts only in local diagnostics files with explicit retention and access rules, not in OTel.
+
+## Code-Level Causes
+
+### Console Formatting Is Reused For Backend Logs
+
+<RepoFile path="crates/jackin-diagnostics/src/logging.rs" />:
+
+- `format_debug_line(category, message)` returns `[jackin debug {category}] {message}`.
+- `emit_debug_line(category, message)` passes that formatted line to `active_debug(category, &line)`.
+- The OTel log bridge exports the resulting body.
+
+This is the enabling condition for duplicated prefixes in Parallax.
+
+Structural fix:
+
+- Preserve console formatting only at the terminal/file rendering boundary.
+- Emit structured fields before formatting:
+  - `event.name`
+  - `log.category`
+  - `jackin.component`
+  - `jackin.operation`
+  - `jackin.stage`
+  - `diagnostic.tier=debug|compact`
+  - `message`
+- Backend log body should be concise human text without bracket prefixes.
+
+### JSONL Diagnostics Become OTel Log Records With Weak Semantics
+
+<RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> bridges marked JSONL events (`jackin_jsonl=true`) into run diagnostics. `emit_jsonl_event` / `emit_jsonl_error` attach a few fields, but most semantic meaning stays in `kind`, `stage`, `detail`, and free-text `message`.
+
+Structural fix:
+
+- Promote stable diagnostics fields into OTel attributes.
+- Reserve `body` for concise description.
+- Encode errors with OTel conventions:
+  - log severity `ERROR`
+  - `event.name=exception` or domain error event name
+  - `exception.type`
+  - `exception.message`
+  - `exception.stacktrace` when available
+  - `error.type`
+  - `error.fingerprint`
+  - active span status `ERROR`
+
+### Launch Stage Spans Reuse One Name
+
+<RepoFile path="crates/jackin-diagnostics/src/run.rs" /> creates spans with:
+
+```rust
+tracing::info_span!("launch_stage", stage = stage)
+```
+
+This makes the waterfall show many identical `launch_stage` rows.
+
+Structural fix:
+
+- Use stable operation names:
+  - `launch.stage`
+  - or specific names like `launch.build_derived_image`.
+- If one generic span name is kept, set `otel.name` to include normalized stage:
+  - `otel.name = "launch.stage"`
+  - `jackin.stage = "derived_image"`
+  - UI/backend can display `launch.stage derived_image`.
+
+### External/Dependency Instrumentation Leaks Into Product Traces
+
+The `emit_insn`/storage spans likely come from dependency tracing exposed under the broad tracing filter. They do not explain jackin❯ behavior at the operator level.
+
+Structural fix:
+
+- Tighten OTel export filters to jackin-owned targets for normal debug.
+- Add separate opt-in `JACKIN_OTEL_INTERNAL=1` for dependency/storage internals.
+- Prefer metrics/events for high-cardinality hot loops.
+
+## Proposed Signal Model
+
+### Runs
+
+Run is the top-level correlation unit:
+
+- `parallax.run.id`
+- `service.name=jackin`
+- `service.version`
+- `jackin.component=host|capsule`
+- `jackin.workspace`
+- `jackin.workspace.kind`
+- `jackin.invocation.command`
+- `jackin.exit_code`
+
+Every log, span, metric, and issue event must carry `parallax.run.id`.
+
+### Traces And Linked Subtraces
+
+Use one trace per operator-meaningful workflow:
+
+- `launch`
+- `capsule.session.start`
+- `capsule.attach`
+- `usage.refresh`
+- `image.build`
+- `auth.prewarm`
+- `agent.session`
+
+Use linked subtraces when one workflow contains a large independent subsystem:
+
+- Host launch trace links to BuildKit/buildx trace.
+- Host launch trace links to capsule session trace via propagated `traceparent`.
+- Capsule session trace links to child agent session traces.
+- Usage refresh trace links to provider probes when provider work is concurrent or high-volume.
+
+Do not force all sub-activity into one giant trace. Use span links and shared `parallax.run.id` / `session.id` / `jackin.workflow.id`.
+
+### Spans
+
+Spans should be user/workflow operations, not every loop iteration:
+
+- Good: `launch.build_derived_image`, `docker.container.inspect`, `capsule.attach`, `usage.refresh_accounts`.
+- Bad as default spans: `emit_insn`, `read_page_no_cache`, `bind_and_rewrite_expr`, terminal byte send/parse loops.
+
+Rules:
+
+- Use spans for things with duration and causal hierarchy.
+- Use span events for notable details inside a span.
+- Use metrics for counters/gauges/hot-loop counts.
+- Use logs for human diagnostic facts.
+
+### Logs
+
+Log body should be short and readable:
+
+```text
+capsule attach failed
+```
+
+Attributes should carry structure:
+
+```text
+severity=ERROR
+event.name=capsule.attach.failed
+jackin.component=host
+jackin.operation=capsule.attach
+jackin.stage=attach
+error.type=attach_error
+container.name=jk-qfrehkbv-holla-thearchitect
+command.name=docker
+command.args_redacted=["exec","-e=JACKIN_HOST_ALT_SCREEN=1","<container>","/jackin/runtime/jackin-capsule"]
+parallax.run.id=18bc74b282b0a850
+trace_id=...
+span_id=...
+```
+
+Console renderer may display:
+
+```text
+[jackin debug docker] inspect container jk-... -> running
+```
+
+But backend export should be:
+
+```text
+body="inspect container"
+log.category="docker"
+docker.object="container"
+docker.action="inspect"
+container.name="jk-..."
+container.state="running"
+diagnostic.tier="debug"
+```
+
+### Metrics
+
+Move high-frequency observations into metrics:
+
+- `jackin.terminal.bytes_sent`
+- `jackin.terminal.cursor_moves`
+- `jackin.render.duration_us`
+- `jackin.render.painted_cells`
+- `jackin.usage.accounts_refreshed`
+- `jackin.db.statement_count`
+- `jackin.db.read_pages`
+- `jackin.docker.inspect_count`
+- `jackin.errors.count` by `error.type`
+
+Metrics should be grouped by low-cardinality labels only.
+
+## Implementation Plan
+
+### Phase 1: Logs First
+
+1. Add a structured diagnostic event API beside current `clog!`/`cdebug!`.
+2. Keep existing console strings for terminal/file output.
+3. Export OTel logs with structured attributes and clean bodies.
+4. Add category attributes for debug logs instead of bracket prefixes.
+5. Redact sensitive values before any OTel export.
+6. Cap or artifact-route large payloads (`docker inspect`, capsule log tails, raw command output).
+7. Add tests asserting:
+   - console line still has old prefix where needed,
+   - OTel/log event body has no prefix,
+   - `log.category` exists,
+   - secrets are redacted,
+   - huge payloads are summarized.
+
+### Phase 1.5: Coverage Before Cleanup
+
+Before removing or downsampling noisy rows, add typed coverage to the operations that currently depend on those rows for diagnosis:
+
+1. Wrap `ShellRunner` with spans/logs for every subprocess:
+   - `process.command`
+   - `process.args_redacted`
+   - `process.cwd.kind`
+   - `process.exit_code`
+   - `process.duration_ms`
+   - `error.type` on failure.
+2. Wrap HTTP metadata and download helpers:
+   - host and route class, not full secret-bearing URL where unsafe,
+   - status code,
+   - bytes,
+   - retry count,
+   - timeout/cancel/error type.
+3. Wrap Docker lifecycle operations:
+   - object type/name,
+   - action,
+   - state before/after,
+   - exit code,
+   - duration.
+4. Convert nested `timing_started/done` events into real child spans or span events where the duration matters in the waterfall.
+5. Promote launch stage details into attributes and stable span names.
+6. Add coverage tests using a fake runner/export sink so a regression cannot silently remove spans/log attrs for critical operations.
+
+### Phase 2: Error Semantics
+
+1. Add domain error helpers:
+   - `record_error(error_type, message, attrs)`
+   - `record_exception(error, attrs)`
+2. Mark active span status `ERROR` when a workflow fails.
+3. Emit OTel `ERROR` logs for actual failures, not `INFO` diagnostic rows.
+4. Normalize issue fingerprints:
+   - include stable error type/operation/component,
+   - exclude container ids, run ids, temp paths, branch names, uid/gid, raw command strings.
+5. Replace `log_error: ...` titles with domain titles.
+
+### Phase 3: Trace Shape
+
+1. Rename launch spans or set `otel.name` so waterfall rows are meaningful.
+2. Make logs inherit the active trace/span context.
+3. Split huge workflows into linked subtraces:
+   - launch trace,
+   - build trace,
+   - attach trace,
+   - capsule session trace.
+4. Emit standard OTel span links for subtraces, and let Parallax store/render derived `parallax.parent_trace_id` navigation fields.
+5. Drop dependency-internal spans from default export only after equivalent workflow-level spans/metrics exist.
+6. Convert hot-loop and storage-engine details into metrics/span events.
+
+### Phase 4: Parallax UX Contract
+
+Even though this is mainly a jackin❯ telemetry problem, define the backend-facing contract:
+
+- Logs page can filter by `parallax.run.id`, `jackin.component`, `log.category`, `jackin.operation`, `error.type`, `stage`.
+- Issues page groups by stable fingerprint.
+- Trace page displays operation + stage.
+- Run page shows:
+  - top failures,
+  - linked traces,
+  - correlated logs,
+  - metrics around run,
+  - redacted evidence bundle.
+- Trace page shows linked subtraces and backlinks using OTel span links plus Parallax-derived relation fields.
+
+## Acceptance Checks
+
+Run a new `jackin --debug` under Parallax and verify:
+
+- `DEBUG` volume is at least an order of magnitude lower, unless an explicit internal-firehose flag is enabled.
+- No OTel log body contains `[jackin debug`.
+- No OTel log body contains raw API-token-shaped values.
+- `parallax issue list` groups repeated capsule attach failures into one issue.
+- A forced attach failure creates:
+  - one `ERROR` log,
+  - one error span or failed parent workflow span,
+  - stable `error.type`,
+  - stable issue fingerprint,
+  - link to run and trace.
+- Launch trace waterfall rows are visually distinct.
+- Run detail trace has correlated logs (`Logs > 0`) for stages that emitted logs.
+- `emit_insn` and storage-engine spans disappear from default trace lists.
+
+## Open Questions
+
+- Should raw local diagnostics files preserve full debug payloads when OTLP export is active, or only when `JACKIN_DIAGNOSTICS_FILE=1` is set?
+- What is the exact allowlist for OTel-exported attributes versus local-only artifacts?
+- Should Parallax issue fingerprinting be fixed in Parallax, jackin❯, or both? jackin❯ should still send stable fields so any backend can group correctly.
+- What threshold should promote debug events into span events versus metrics?
+- Which workflows need linked subtraces first: launch/build/attach likely first, usage refresh second.

@@ -4,8 +4,8 @@
 //! Settings + mount + secret + auth-form hint-span builders for the
 //! settings screen's per-row contextual footer.
 
-use jackin_tui::HintSpan;
 use jackin_tui::components::ScrollAxes;
+use jackin_tui::{HintSpan, keymap::glyph};
 
 use super::common::append_open_in_github;
 use crate::tui::keymap::{
@@ -123,7 +123,7 @@ pub fn mount_destination_footer_items() -> Vec<HintSpan<'static>> {
         HintSpan::Text("edit"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(multi-key-display-group): combined left/right display.
-        HintSpan::Key("←/→"),
+        HintSpan::Key(glyph::LEFT_RIGHT),
         HintSpan::Text("move"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(mount-destination-no-keymap): Enter confirms inline.
@@ -140,7 +140,7 @@ pub fn mount_destination_footer_items() -> Vec<HintSpan<'static>> {
 pub fn segmented_choice_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         // UNREGISTERABLE(multi-key-display-group)
-        HintSpan::Key("←/→"),
+        HintSpan::Key(glyph::LEFT_RIGHT),
         HintSpan::Text("move"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(segmented-choice-no-keymap): Enter handled inline; no SEGMENTED_CHOICE_KEYMAP.
@@ -196,7 +196,7 @@ pub fn filtered_picker_footer_items(
         items.extend([
             HintSpan::GroupSep,
             // UNREGISTERABLE(multi-key-display-group)
-            HintSpan::Key("←/→"),
+            HintSpan::Key(glyph::LEFT_RIGHT),
             HintSpan::Text("collapse/expand section"),
         ]);
     }
@@ -382,7 +382,7 @@ pub fn secret_role_header_footer_items() -> Vec<HintSpan<'static>> {
         HintSpan::Text("expand"),
         HintSpan::Sep,
         // UNREGISTERABLE(multi-key-display-group): combined collapse/expand left/right display.
-        HintSpan::Key("←/→"),
+        HintSpan::Key(glyph::LEFT_RIGHT),
         HintSpan::Text("collapse/expand"),
         HintSpan::Sep,
         HintSpan::Key(SETTINGS_ENV_TAB_KEYMAP.glyph_for(SettingsEnvTabAction::Add)),

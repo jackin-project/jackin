@@ -23,9 +23,11 @@ pub fn has_url_scheme(token: &str) -> bool {
     if !first.is_ascii_alphabetic() {
         return false;
     }
-    token[..colon]
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+    token.get(..colon).is_some_and(|scheme| {
+        scheme
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+    })
 }
 
 /// Redact query or fragment text before writing a URL to logs.
@@ -33,11 +35,15 @@ pub fn redact_url_for_log(url: &str) -> String {
     let query = url.find('?');
     let fragment = url.find('#');
     match (query, fragment) {
-        (Some(query), Some(fragment)) if query < fragment => {
-            format!("{}?<redacted>", &url[..query])
-        }
-        (Some(query), _) => format!("{}?<redacted>", &url[..query]),
-        (None, Some(fragment)) => format!("{}#<redacted>", &url[..fragment]),
+        (Some(query), Some(fragment)) if query < fragment => url
+            .get(..query)
+            .map_or_else(|| url.to_owned(), |prefix| format!("{prefix}?<redacted>")),
+        (Some(query), _) => url
+            .get(..query)
+            .map_or_else(|| url.to_owned(), |prefix| format!("{prefix}?<redacted>")),
+        (None, Some(fragment)) => url
+            .get(..fragment)
+            .map_or_else(|| url.to_owned(), |prefix| format!("{prefix}#<redacted>")),
         (None, None) => url.to_owned(),
     }
 }

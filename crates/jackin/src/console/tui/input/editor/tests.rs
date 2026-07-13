@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for `editor` input handlers.
-#![allow(clippy::too_many_lines)]
+#![allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 //! Editor-stage tests: tab cycling, modal dispatch, role allow/default
 //! bindings, and mount-row readonly toggle.
 use super::super::test_support::{key, mount};
@@ -23,9 +26,7 @@ use jackin_console::tui::auth::AuthKind;
 use jackin_core::JackinPaths;
 use jackin_env::OpCache;
 use jackin_manifest::repo::CachedRepo;
-use jackin_runtime::runtime::test_support::{
-    FakeRunner, first_temp_role_repo, seed_valid_role_repo,
-};
+use jackin_test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 

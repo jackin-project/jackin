@@ -154,12 +154,16 @@ pub fn tick_rain(state: &mut RainState) {
         }
 
         let head = column.head;
-        if head >= 0 && (head as usize) < *rows {
-            grid[head as usize][col] = Some(RainCell {
-                ch: random_char(seed),
-                age: 0,
-                fade: column.fade,
-            });
+        if head >= 0 {
+            #[expect(clippy::cast_sign_loss, reason = "head checked non-negative above")]
+            let head_u = head as usize;
+            if head_u < *rows {
+                grid[head_u][col] = Some(RainCell {
+                    ch: random_char(seed),
+                    age: 0,
+                    fade: column.fade,
+                });
+            }
         }
 
         if head > (*rows as i32) + 5 {
@@ -203,6 +207,10 @@ pub fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&RainState>) 
         } else {
             f32::from(rows_from_bottom) / f32::from(fade_rows)
         };
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "fade and fade_in are non-negative alphas in 0.0..=1.0"
+        )]
         let dim = |c: u8| (f32::from(c) * fade * fade_in) as u8;
         for x in 0..area.width {
             let grid_x = usize::from(area.x + x);

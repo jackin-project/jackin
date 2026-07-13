@@ -9,6 +9,7 @@
 
 use jackin_tui::HintSpan;
 use jackin_tui::components::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
+use jackin_tui::keymap::glyph;
 
 // ── Cockpit main ─────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ pub static BUILD_LOG_KEYMAP: Keymap<BuildLogAction> = Keymap::new(&[
         action: BuildLogAction::PageUp,
         hint: Some("page"),
         visibility: Visibility::Shown,
-        glyph: Some("PgUp/PgDn"),
+        glyph: Some(glyph::PGUP_PGDN),
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::PageDown)],

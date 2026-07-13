@@ -33,7 +33,7 @@ async fn http_client_sends_user_agent_header() {
         sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
             .await
             .unwrap();
-        sock.shutdown().await.ok();
+        let _shutdown = sock.shutdown().await;
         request
     });
 

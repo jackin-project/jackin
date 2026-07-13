@@ -8,6 +8,7 @@
 //! for the reserved-env-var list (`env_model.rs`) or Docker injection —
 //! callers pass the resolved set to the container launch path.
 
+use jackin_core::env_model::EnvCycleError;
 use jackin_core::manifest::EnvVarDecl;
 use std::collections::BTreeMap;
 
@@ -16,18 +17,37 @@ use std::collections::BTreeMap;
 // now read the type from `jackin_core`.
 pub use jackin_core::PromptResult;
 
+/// Typed failures for manifest env declaration resolution.
+#[derive(Debug, thiserror::Error)]
+pub enum ResolveEnvError {
+    /// A required interactive prompt was skipped.
+    #[error("env var {name}: required prompt cannot be skipped")]
+    PromptRequired {
+        /// Env var name that required a value.
+        name: String,
+    },
+    /// Dependency cycle among env declarations.
+    #[error(transparent)]
+    Cycle(#[from] EnvCycleError),
+}
+
+/// Concrete `(name, value)` pairs after env declaration resolution.
 #[derive(Debug, Clone)]
 pub struct ResolvedEnv {
+    /// Resolved variables in topological order.
     pub vars: Vec<(String, String)>,
 }
 
+/// UI seam for interactive env prompts during resolution.
 pub trait EnvPrompter {
+    /// Free-text prompt; `skippable` allows cancel without a value.
     fn prompt_text(
         &self,
         title: &str,
         default: Option<&str>,
         skippable: bool,
     ) -> anyhow::Result<PromptResult>;
+    /// Single-select prompt from `options`.
     fn prompt_select(
         &self,
         title: &str,
@@ -79,6 +99,7 @@ fn interpolate(template: &str, resolved: &[(String, String)]) -> String {
     result
 }
 
+/// Resolve manifest env declarations via prompts and defaults (no overrides).
 pub fn resolve_env(
     declarations: &BTreeMap<String, EnvVarDecl>,
     prompter: &impl EnvPrompter,
@@ -86,12 +107,16 @@ pub fn resolve_env(
     resolve_env_with_overrides(declarations, prompter, &BTreeMap::new())
 }
 
+/// Resolve env declarations, applying `overrides` before prompting.
 pub fn resolve_env_with_overrides(
     declarations: &BTreeMap<String, EnvVarDecl>,
     prompter: &impl EnvPrompter,
     overrides: &BTreeMap<String, String>,
 ) -> anyhow::Result<ResolvedEnv> {
-    let order = jackin_core::env_model::topological_env_order(declarations)?;
+    // Port trait (`EnvPrompter`) errors stay anyhow; typed variants are
+    // attached as sources for the cycle / required-prompt paths.
+    let order = jackin_core::env_model::topological_env_order(declarations)
+        .map_err(ResolveEnvError::from)?;
     let mut vars = Vec::new();
     let mut skipped: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -148,7 +173,9 @@ pub fn resolve_env_with_overrides(
                 if decl.skippable {
                     skipped.insert(name.clone());
                 } else {
-                    anyhow::bail!("env var {name}: required prompt cannot be skipped");
+                    return Err(anyhow::Error::new(ResolveEnvError::PromptRequired {
+                        name: name.clone(),
+                    }));
                 }
             }
         }

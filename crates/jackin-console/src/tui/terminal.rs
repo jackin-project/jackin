@@ -53,6 +53,10 @@ pub fn flush_terminal_input_queue() {
         .write(true)
         .open("/dev/tty")
     {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "best-effort terminal restore on teardown"
+        )]
         let _ = nix::sys::termios::tcflush(&tty, nix::sys::termios::FlushArg::TCIFLUSH);
     }
 }

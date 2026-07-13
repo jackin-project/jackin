@@ -27,6 +27,17 @@ impl LaunchPlan {
 }
 
 pub(crate) fn emit_launch_plan(plan: LaunchPlan, reason: &str, container: Option<&str>) {
+    if let Some(run) = jackin_diagnostics::active_run() {
+        emit_launch_plan_for_run(&run, plan, reason, container);
+    }
+}
+
+pub(crate) fn emit_launch_plan_for_run(
+    run: &jackin_diagnostics::RunDiagnostics,
+    plan: LaunchPlan,
+    reason: &str,
+    container: Option<&str>,
+) {
     let plan = plan.as_str();
     let detail = serde_json::json!({
         "plan": plan,
@@ -34,14 +45,12 @@ pub(crate) fn emit_launch_plan(plan: LaunchPlan, reason: &str, container: Option
         "container": container,
     })
     .to_string();
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.stage(
-            "launch_plan",
-            "restore",
-            &format!("selected launch plan {plan}"),
-            Some(&detail),
-        );
-    }
+    run.stage(
+        "launch_plan",
+        "restore",
+        &format!("selected launch plan {plan}"),
+        Some(&detail),
+    );
 }
 
 pub(crate) fn emit_prewarm_launch_plan(reason: &str) {
@@ -75,7 +84,8 @@ pub(crate) fn emit_image_materialization_plan(
     }
 }
 
-pub(crate) fn emit_rejected_launch_plan(
+pub(crate) fn emit_rejected_launch_plan_for_run(
+    run: &jackin_diagnostics::RunDiagnostics,
     plan: LaunchPlan,
     reason: &str,
     container: Option<&str>,
@@ -89,12 +99,10 @@ pub(crate) fn emit_rejected_launch_plan(
         "state": state,
     })
     .to_string();
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.stage(
-            "launch_plan_rejected",
-            "restore",
-            &format!("rejected launch plan {plan}"),
-            Some(&detail),
-        );
-    }
+    run.stage(
+        "launch_plan_rejected",
+        "restore",
+        &format!("rejected launch plan {plan}"),
+        Some(&detail),
+    );
 }

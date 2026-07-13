@@ -24,7 +24,6 @@ pub(crate) fn editor_mount_add_row_width() -> usize {
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn mount_state_geometry<
     Modal,
     SaveFlow,
@@ -64,7 +63,10 @@ pub(crate) fn mount_state_geometry<
 }
 
 #[must_use]
-#[allow(unreachable_pub)]
+#[allow(
+    unreachable_pub,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn mount_lines(
     rows: &[MountDisplayRow],
     cursor: usize,
@@ -135,7 +137,6 @@ pub(crate) fn mount_lines(
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn mount_state_lines<
     Modal,
     SaveFlow,

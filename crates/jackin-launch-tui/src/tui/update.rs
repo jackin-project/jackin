@@ -49,6 +49,7 @@ pub fn initial_view() -> LaunchView {
         container_info_copied: None,
         container_info_hover: None,
         container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        last_dialog_mouse_cell: None,
         quit_confirm: None,
     }
 }
@@ -196,7 +197,8 @@ pub fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStat
     let previous_active = active_stage_index(view);
     if let Some(row) = view.stages.iter_mut().find(|row| row.stage == stage) {
         row.status = status;
-        row.detail = detail.to_owned();
+        row.detail.clear();
+        row.detail.push_str(detail);
     }
     let next_active = active_stage_index(view);
     if previous_active != next_active {

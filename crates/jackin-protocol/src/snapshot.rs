@@ -9,6 +9,8 @@ use crate::control::TabSnapshot;
 /// Current tab/pane state fetched from a running container's daemon.
 #[derive(Debug, Clone)]
 pub struct InstanceSnapshot {
+    /// `tabs` field.
     pub tabs: Vec<TabSnapshot>,
+    /// `active_tab` field.
     pub active_tab: u32,
 }

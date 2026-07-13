@@ -100,7 +100,7 @@ fn offset_after_delta(
         current.saturating_sub(delta.unsigned_abs())
     } else {
         current
-            .saturating_add(delta as usize)
+            .saturating_add(delta.unsigned_abs())
             .min(max_offset(content_len, viewport_len))
     }
 }
@@ -288,7 +288,7 @@ pub const fn apply_delta_unclamped_u16(offset: &mut u16, delta: i16) {
     *offset = if delta.is_negative() {
         offset.saturating_sub(delta.unsigned_abs())
     } else {
-        offset.saturating_add(delta as u16)
+        offset.saturating_add(delta.unsigned_abs())
     };
 }
 

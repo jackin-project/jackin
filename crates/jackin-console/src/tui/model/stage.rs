@@ -9,7 +9,10 @@ use crate::tui::debug::{
 };
 
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
     List,
     Editor(Editor),
@@ -55,8 +58,8 @@ pub enum ConsoleInputDispatchPlan {
     EditorModal,
     SettingsErrorPopup,
     SettingsMountsModal,
-    SettingsEnvModal,
-    SettingsAuthModal,
+    SettingsEnvDialog,
+    SettingsAuthDialog,
     CreatePreludeModal,
     Stage(ConsoleManagerStageRoute),
 }
@@ -226,10 +229,10 @@ pub const fn console_input_dispatch_plan(
         return ConsoleInputDispatchPlan::SettingsMountsModal;
     }
     if facts.settings_env_modal_open {
-        return ConsoleInputDispatchPlan::SettingsEnvModal;
+        return ConsoleInputDispatchPlan::SettingsEnvDialog;
     }
     if facts.settings_auth_modal_open {
-        return ConsoleInputDispatchPlan::SettingsAuthModal;
+        return ConsoleInputDispatchPlan::SettingsAuthDialog;
     }
     if facts.create_prelude_modal_open {
         return ConsoleInputDispatchPlan::CreatePreludeModal;
@@ -500,7 +503,7 @@ where
 {
     fn tick_active_animation(&mut self) -> bool {
         match self {
-            Self::OpPicker { state } => state.tick_active_animation(),
+            Self::OpPicker { state, .. } => state.tick_active_animation(),
             Self::TextInput { .. }
             | Self::FileBrowser { .. }
             | Self::MountDstChoice { .. }

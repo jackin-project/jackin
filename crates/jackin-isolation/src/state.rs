@@ -13,6 +13,7 @@
 //! sites in this crate and downstream consumers.
 
 use anyhow::Context;
+use jackin_core::WorkspaceName;
 use jackin_diagnostics::debug_log;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -120,13 +121,14 @@ pub fn read_records(container_state_dir: &Path) -> anyhow::Result<Vec<IsolationR
         .with_context(|| format!("read isolation file at {}", path.display()))?;
     let file: IsolationFile = serde_json::from_slice(&bytes)
         .with_context(|| format!("parse isolation file at {}", path.display()))?;
-    anyhow::ensure!(
-        file.version == CURRENT_VERSION,
-        "unsupported isolation.json version {} at {}; expected {}",
-        file.version,
-        path.display(),
-        CURRENT_VERSION
-    );
+    if file.version != CURRENT_VERSION {
+        return Err(crate::IsolationError::UnsupportedStateVersion {
+            got: file.version,
+            path,
+            expected: CURRENT_VERSION,
+        }
+        .into());
+    }
     Ok(file.records)
 }
 
@@ -220,11 +222,12 @@ pub fn remove_record(container_state_dir: &Path, mount_dst: &str) -> anyhow::Res
 /// Per-container parse failures bubble up.
 pub fn list_records_for_workspace(
     data_dir: &Path,
-    workspace: &str,
+    workspace: &WorkspaceName,
 ) -> anyhow::Result<Vec<IsolationRecord>> {
     if !data_dir.exists() {
         return Ok(Vec::new());
     }
+    let key = workspace.as_str();
     let mut all = Vec::new();
     for entry in std::fs::read_dir(data_dir)
         .with_context(|| format!("read data dir {}", data_dir.display()))?
@@ -243,7 +246,7 @@ pub fn list_records_for_workspace(
         }
         let records = read_records(&entry.path())?;
         for rec in records {
-            if rec.workspace == workspace {
+            if rec.workspace == key {
                 all.push(rec);
             }
         }

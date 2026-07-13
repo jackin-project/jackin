@@ -24,6 +24,7 @@
 //! keymap (`h/l` / arrows / `s` / `Esc` handled directly instead of
 //! round-tripping through the explorer's event handler).
 
+use jackin_tui::components::{ModalRectMode, modal_rect_for_mode as rect_for_mode};
 pub(super) use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub(super) mod git_prompt;
@@ -40,10 +41,7 @@ pub use state::FileBrowserState;
 
 #[must_use]
 pub fn page_rows_for_modal(term_size: ratatui::layout::Rect, state: &FileBrowserState) -> u16 {
-    let modal_area = crate::tui::components::modal_rects::modal_rect_for_mode(
-        term_size,
-        crate::tui::components::modal_rects::ModalRectMode::FileBrowser,
-    );
+    let modal_area = rect_for_mode(term_size, ModalRectMode::FileBrowser);
     let listing_area = listing_rect(modal_area, state.rejected_reason.is_some());
     u16::try_from(jackin_tui::components::viewport_height(listing_area)).unwrap_or(u16::MAX)
 }

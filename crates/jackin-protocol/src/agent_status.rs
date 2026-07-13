@@ -20,9 +20,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentRawState {
+    /// `Unknown` variant.
     Unknown,
+    /// `Working` variant.
     Working,
+    /// `Blocked` variant.
     Blocked,
+    /// `Idle` variant.
     Idle,
 }
 
@@ -33,9 +37,13 @@ pub enum AgentRawState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatusConfidence {
+    /// `Unknown` variant.
     Unknown,
+    /// `Weak` variant.
     Weak,
+    /// `Strong` variant.
     Strong,
+    /// `Authoritative` variant.
     Authoritative,
 }
 
@@ -52,7 +60,10 @@ pub enum AgentStatusSource {
     /// `/proc` foreground-process physics.
     ForegroundProcess,
     /// A runtime hook/plugin or cooperative reporter, identified by source id.
-    Reported { source_id: String },
+    Reported {
+        /// Identifier of the cooperative reporter / hook source.
+        source_id: String,
+    },
 }
 
 /// A point-in-time status report for one session, sent on the control socket
@@ -69,18 +80,31 @@ pub enum AgentStatusSource {
               wire-payload idiom this struct parallels."
 )]
 pub struct AgentStatusReport {
+    /// `raw_state` field.
     pub raw_state: AgentRawState,
+    /// `source` field.
     pub source: AgentStatusSource,
+    /// `confidence` field.
     pub confidence: AgentStatusConfidence,
+    /// `detected_agent` field.
     pub detected_agent: Option<String>,
+    /// `foreground_pgid` field.
     pub foreground_pgid: Option<u32>,
+    /// `visible_blocker` field.
     pub visible_blocker: bool,
+    /// `visible_idle` field.
     pub visible_idle: bool,
+    /// `visible_working` field.
     pub visible_working: bool,
+    /// `process_exited` field.
     pub process_exited: bool,
+    /// `foreground_returned_to_shell` field.
     pub foreground_returned_to_shell: bool,
+    /// `stale_report` field.
     pub stale_report: bool,
+    /// `subagents_active` field.
     pub subagents_active: u32,
+    /// `revision` field.
     pub revision: u64,
 }
 

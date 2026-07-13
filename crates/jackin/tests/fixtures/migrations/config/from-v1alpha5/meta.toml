@@ -2,6 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from_version = "v1alpha5"
-target_version = "v1alpha8"
-target_version_shipped = "2026-06-04"
+target_version = "v1alpha9"
+target_version_shipped = "2026-07-06"
 summary = "Restamps config as v1alpha8. Adds optional sync_source_dir to AgentAuthConfig (Defect 46 Phase B.1); additive with serde default, no transformation needed."

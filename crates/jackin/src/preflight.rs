@@ -11,6 +11,9 @@ use jackin_docker::docker_client::DockerApi;
 use owo_colors::OwoColorize;
 use std::path::Path;
 
+#[cfg(test)]
+mod tests;
+
 /// Status of a single doctor check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CheckStatus {
@@ -128,7 +131,7 @@ impl CheckName {
 pub(crate) async fn run_check(check: CheckName, paths: &jackin_core::JackinPaths) -> CheckResult {
     match check {
         CheckName::DockerDaemon => check_docker_daemon().await,
-        CheckName::DockerVersion => check_docker_version().await,
+        CheckName::DockerVersion => report_docker_version().await,
         CheckName::DiskSpace => check_disk_space(paths),
         CheckName::ConfigDir => check_config_dir(&paths.config_dir),
         CheckName::JackinDir => check_jackin_dir(&paths.data_dir),
@@ -205,10 +208,9 @@ pub(crate) async fn preflight(
 async fn check_docker_daemon() -> CheckResult {
     match jackin_docker::docker_client::BollardDockerClient::connect() {
         Ok(docker) => {
-            // Attempt a lightweight operation (list_containers with empty filter)
-            // to verify the daemon is actually reachable.
-            match docker.list_containers(&[], false).await {
-                Ok(_) => CheckResult::ok("docker_daemon", "Docker daemon reachable"),
+            // Verify the daemon is actually reachable without scanning containers.
+            match docker.ping().await {
+                Ok(()) => CheckResult::ok("docker_daemon", "Docker daemon reachable"),
                 Err(e) => CheckResult::fail(
                     "docker_daemon",
                     format!("Docker daemon connected but not responding: {e:#}"),
@@ -224,7 +226,7 @@ async fn check_docker_daemon() -> CheckResult {
     }
 }
 
-async fn check_docker_version() -> CheckResult {
+async fn report_docker_version() -> CheckResult {
     // Use `docker version --format '{{.Server.Version}}'` via subprocess since
     // we don't expose a version endpoint on the DockerApi trait.
     let output = tokio::process::Command::new("docker")
@@ -233,30 +235,46 @@ async fn check_docker_version() -> CheckResult {
         .await;
     match output {
         Ok(out) if out.status.success() => {
-            let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-            CheckResult::ok("docker_version", format!("Docker server {version}"))
+            let version = String::from_utf8_lossy(&out.stdout);
+            docker_version_report_result(&version)
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            let msg = if stderr.trim().is_empty() {
-                format!(
-                    "Could not read Docker server version (exit {})",
-                    out.status.code().unwrap_or(-1)
-                )
-            } else {
-                format!("Could not read Docker server version: {}", stderr.trim())
-            };
-            CheckResult::warn(
-                "docker_version",
-                msg,
-                "Upgrade Docker to the latest stable release",
-            )
+            docker_version_command_failure_result(out.status.code(), &stderr)
         }
         Err(e) => CheckResult::skip(
             "docker_version",
             format!("docker CLI not found or could not spawn: {e}"),
         ),
     }
+}
+
+fn docker_version_report_result(raw_version: &str) -> CheckResult {
+    let version = raw_version.trim();
+    if version.is_empty() {
+        return CheckResult::warn(
+            "docker_version",
+            "Docker server returned an empty version string",
+            "Start Docker and ensure the Docker CLI can reach the daemon",
+        );
+    }
+    CheckResult::ok("docker_version", format!("Docker server {version}"))
+}
+
+fn docker_version_command_failure_result(exit_code: Option<i32>, stderr: &str) -> CheckResult {
+    let msg = if stderr.trim().is_empty() {
+        format!(
+            "Could not read Docker server version (exit {})",
+            exit_code.unwrap_or(-1)
+        )
+    } else {
+        format!("Could not read Docker server version: {}", stderr.trim())
+    };
+    CheckResult::warn(
+        "docker_version",
+        msg,
+        "Start Docker and ensure the Docker CLI can reach the daemon",
+    )
 }
 
 fn check_disk_space(paths: &jackin_core::JackinPaths) -> CheckResult {
@@ -506,5 +524,5 @@ fn check_stale_isolation(paths: &jackin_core::JackinPaths) -> CheckResult {
 
 /// Return available bytes for the filesystem containing `path`.
 fn available_bytes(path: &Path) -> Option<u64> {
-    fs2::available_space(path).ok()
+    fs4::available_space(path).ok()
 }

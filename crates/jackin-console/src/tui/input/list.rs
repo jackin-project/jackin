@@ -49,7 +49,8 @@ type ConcreteInstanceAction = ConsoleInstanceAction<jackin_core::Agent>;
 #[allow(
     clippy::too_many_lines,
     clippy::items_after_statements,
-    clippy::unnecessary_wraps
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub fn handle_list_key(
     state: &mut ManagerState<'_>,
@@ -580,7 +581,8 @@ pub fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOu
                 return InputOutcome::Continue;
             }
             let outcome = if let Some(rect) = container_info_rect {
-                info.handle_key_in_rect(key, rect)
+                info.set_viewport(rect);
+                info.handle_key(key)
             } else {
                 info.handle_key(key)
             };

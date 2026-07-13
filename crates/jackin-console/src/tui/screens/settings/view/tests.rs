@@ -3,6 +3,7 @@
 
 //! Tests for `view`.
 use super::*;
+use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 use crate::tui::state::SettingsTab;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -483,27 +484,29 @@ fn trust_lines_include_header_empty_row_and_truncate_long_role() {
 #[test]
 fn auth_lines_render_kind_mode_source_and_spacer() {
     let rows = vec![
-        SettingsAuthLineRow::Kind {
+        AuthLineRow::AuthKind {
             label: "Claude".to_owned(),
         },
-        SettingsAuthLineRow::Mode {
+        AuthLineRow::WorkspaceMode {
             mode_label: "api-key".to_owned(),
+            inherited: false,
         },
-        SettingsAuthLineRow::Source {
+        AuthLineRow::WorkspaceSource {
             display: AuthSourceDisplay::MaskedPlain { chars: 20 },
         },
-        SettingsAuthLineRow::SourceFolder {
+        AuthLineRow::WorkspaceSourceFolder {
             display: AuthSourceFolderDisplay {
                 kind: AuthSourceFolderKind::Default,
                 path: "~/.claude".to_owned(),
             },
         },
-        SettingsAuthLineRow::Spacer,
+        AuthLineRow::Spacer,
     ];
 
     let lines = auth_lines(&rows, 2, true);
 
-    assert_eq!(lines[0].spans[0].content.as_ref(), "  Claude");
+    assert_eq!(lines[0].spans[0].content.as_ref(), "  ");
+    assert_eq!(lines[0].spans[1].content.as_ref(), "Claude");
     assert_eq!(lines[1].spans[1].content.as_ref(), "Mode          ");
     assert_eq!(lines[2].spans[0].content.as_ref(), "\u{25b8} ");
     assert_eq!(
@@ -523,19 +526,19 @@ fn auth_lines_render_kind_mode_source_and_spacer() {
 #[test]
 fn auth_source_folder_rows_render_display_kinds_without_env_suffix() {
     let rows = vec![
-        SettingsAuthLineRow::SourceFolder {
+        AuthLineRow::WorkspaceSourceFolder {
             display: AuthSourceFolderDisplay {
                 kind: AuthSourceFolderKind::Default,
                 path: "~/.claude".to_owned(),
             },
         },
-        SettingsAuthLineRow::SourceFolder {
+        AuthLineRow::WorkspaceSourceFolder {
             display: AuthSourceFolderDisplay {
                 kind: AuthSourceFolderKind::Inherited,
                 path: "/global/claude".to_owned(),
             },
         },
-        SettingsAuthLineRow::SourceFolder {
+        AuthLineRow::WorkspaceSourceFolder {
             display: AuthSourceFolderDisplay {
                 kind: AuthSourceFolderKind::Explicit,
                 path: "/settings/claude".to_owned(),
@@ -598,7 +601,7 @@ fn env_lines_render_key_header_and_sentinels() {
     );
     assert_eq!(
         lines[3].spans[0].content.as_ref(),
-        "  + Add architect environment variable"
+        "       + Add architect environment variable"
     );
 }
 
@@ -616,11 +619,57 @@ fn global_mount_lines_render_header_rows_and_sentinel() {
 
     assert_eq!(
         lines[0].spans[0].content.as_ref(),
-        "  Destination      Mode  Type"
+        "  Destination      Mode"
     );
     assert_eq!(lines[1].spans[0].content.as_ref(), "  /workspace       ");
     assert_eq!(lines[2].spans[0].content.as_ref(), "  host: ~/project");
     assert_eq!(lines[4].spans[0].content.as_ref(), "\u{25b8} + Add mount");
+}
+
+#[test]
+fn shared_auth_rows_render_settings_and_editor_rows_identically() {
+    let rows = vec![
+        AuthLineRow::AuthKind {
+            label: "Claude".to_owned(),
+        },
+        AuthLineRow::WorkspaceMode {
+            mode_label: "api-key".to_owned(),
+            inherited: false,
+        },
+        AuthLineRow::WorkspaceSource {
+            display: AuthSourceDisplay::NotRequired,
+        },
+        AuthLineRow::WorkspaceSourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Explicit,
+                path: "~/.claude".to_owned(),
+            },
+        },
+    ];
+
+    let settings_lines = auth_lines(&rows, 1, true);
+    let editor_lines = crate::tui::screens::editor::view::auth_lines(&rows, 1, true);
+
+    let settings_text: Vec<String> = settings_lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect()
+        })
+        .collect();
+    let editor_text: Vec<String> = editor_lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect()
+        })
+        .collect();
+
+    assert_eq!(settings_text, editor_text);
 }
 
 #[test]

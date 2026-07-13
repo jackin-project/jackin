@@ -54,13 +54,14 @@ impl FileBrowserState {
         if self.pending_git_prompt.is_some() {
             super::git_prompt::git_prompt_footer_items(self.pending_git_url.is_some())
         } else {
+            use jackin_tui::keymap::glyph;
             vec![
                 // UNREGISTERABLE(multi-key-display-group): ↑↓/j/k combines arrow keys and vim aliases.
                 HintSpan::Key("\u{2191}\u{2193}/j/k"),
                 HintSpan::Text("navigate"),
                 HintSpan::GroupSep,
                 // UNREGISTERABLE(multi-key-display-group): PgUp/PgDn combined display.
-                HintSpan::Key("PgUp/PgDn"),
+                HintSpan::Key(glyph::PGUP_PGDN),
                 HintSpan::Text("page"),
                 HintSpan::GroupSep,
                 // UNREGISTERABLE(multi-key-display-group): ↵/l combines Enter and vim right.

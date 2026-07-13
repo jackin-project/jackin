@@ -146,6 +146,7 @@ mod input_dispatch;
 mod mouse_input;
 mod multiplexer_utils;
 mod pane_layout;
+mod ports;
 mod resource_metrics;
 mod session_lifecycle;
 
@@ -204,7 +205,6 @@ pub struct Multiplexer {
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
-    zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
     /// The only writer to the attach socket: composed frames are
@@ -263,6 +263,10 @@ pub struct Multiplexer {
     /// per-frame reconciliation emits only transitions against this. `None`
     /// (fresh attach) asserts everything explicitly.
     last_asserted_client_state: Option<compositor::AssertedClientState>,
+    /// Per-pane cache for SGR and hyperlink overlay regions. The full
+    /// Ratatui frame is still rebuilt every compose; this only avoids
+    /// rescanning unchanged pane cells for backend-side overlay metadata.
+    pane_region_cache: HashMap<u64, compositor::PaneRegionCache>,
     /// Last pointer shape emitted through OSC 22. Stored so passive
     /// mouse motion does not spam the outer terminal with duplicate
     /// pointer-shape updates.
@@ -286,9 +290,6 @@ pub struct Multiplexer {
     /// tab list on every redraw. Reset to `None` when a child pane
     /// updates its own title so the next full frame re-asserts.
     last_outer_terminal_title: Option<String>,
-    /// Spawn-failure notice rendered as a top-row banner widget until the
-    /// next operator keystroke clears it.
-    spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
     /// Link target under an Alt/Ctrl hover in a mouse-disabled pane. Rendered
     /// as a compositor-owned notice so no hover bytes are written into the PTY.
@@ -528,7 +529,6 @@ impl Multiplexer {
             env_passthrough,
             event_tx,
             event_rx,
-            zoomed: None,
             input_parser,
             detach_requested: false,
             client: crate::client_writer::ClientWriter::default(),
@@ -549,12 +549,12 @@ impl Multiplexer {
             wipe_pending: None,
             last_invalidate_reason: None,
             last_asserted_client_state: None,
+            pane_region_cache: HashMap::new(),
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
             attached_capabilities: AttachCapabilities::default(),
             last_outer_terminal_title: None,
-            spawn_failure: None,
             hover_target: None,
             link_hover_url: None,
             tab_bar_focused: false,
@@ -689,10 +689,6 @@ fn clipboard_image_error_reason(err: &anyhow::Error) -> &'static str {
     classify_clipboard_image_error(&format!("{err:#}"))
 }
 
-fn clipboard_image_host_error_reason(message: &str) -> &'static str {
-    classify_clipboard_image_error(message)
-}
-
 fn classify_clipboard_image_error(message: &str) -> &'static str {
     let lower = message.to_ascii_lowercase();
     if lower.contains("empty") {
@@ -765,6 +761,12 @@ fn build_exit_inspect_rows(repos: &[crate::exit_assess::DirtyRepo]) -> Arc<[Insp
 /// (re-entry guard). With policy `ask` and dirty isolated work the modal is
 /// shown (no teardown); otherwise the container drains and exits, preserving the
 /// original non-clean-exit reason.
+/// Pure classifier for INV-D19: when a dialog is already open, last-session
+/// exit handling must defer so the operator can finish the modal.
+pub(crate) const fn should_defer_last_session_exit(dialog_open: bool) -> bool {
+    dialog_open
+}
+
 async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>) -> bool {
     // Called from two sites: the session-exit event handler (once, on last-session
     // exit) and the client-frame handler (on every frame while no sessions remain).
@@ -773,7 +775,8 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     // the dirty-exit flow is already active. Re-entering would push a fresh modal
     // and re-run the git assessment on every keypress, resetting selection to 0 —
     // so the operator could never move past the first row. Defer until resolved.
-    if mux.dialog_open() {
+    use ports::{PORTS, PersistencePort};
+    if PORTS.defer_last_session_exit(mux.dialog_open()) {
         return false;
     }
     match crate::exit_assess::decide_exit(&mux.launch_config).await {
@@ -813,6 +816,122 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     }
 }
 
+async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePackRegistry>) {
+    mux.log_resource_metrics().await;
+    mux.maybe_spawn_pull_request_context_lookup(Instant::now());
+    // Reap idle clipboard-image transfers and surface a notice. Must NOT
+    // short-circuit the tick: agent-state advancement below is the 1 Hz floor —
+    // every session re-evaluates each tick — and a clipboard reap is an
+    // orthogonal concern that must not freeze it. The `invalidate` guarantees
+    // the notice repaints even if no agent state changed this tick (otherwise
+    // the no-change return below would leave the frame clean and the notice
+    // never painted).
+    let stale_image_transfers = mux
+        .clipboard_image_transfers
+        .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
+    if stale_image_transfers > 0 {
+        crate::clog!(
+            "clipboard-image: cleaned up {stale_image_transfers} idle transfer{}",
+            if stale_image_transfers == 1 { "" } else { "s" }
+        );
+        mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        mux.set_clipboard_image_notice(format!(
+            "Image paste interrupted: cleaned up {stale_image_transfers} idle transfer{}",
+            if stale_image_transfers == 1 { "" } else { "s" }
+        ));
+        mux.invalidate(status_change_redraw_reason());
+    }
+    // Evidence arbitration is the ONLY path that authors agent state. Each
+    // session assembles an EvidenceSnapshot (authority, process, OSC, screen)
+    // in `advance_status`, arbitrates to a raw state + confidence, and
+    // publishes through SessionStatus (which derives the public `effective`
+    // state, incl. done-from-seen).
+    let now = Instant::now();
+    // Token-spend monitor: keep it synced to the live agent sessions and poll
+    // any due providers. `poll_due_sessions` self-throttles to the 30s/60s
+    // cadence, so calling it each state tick is cheap.
+    let token_sessions: Vec<(u64, Agent)> = mux
+        .sessions
+        .iter()
+        .filter_map(|(id, s)| Some((*id, Agent::from_slug(s.agent.as_deref()?)?)))
+        .collect();
+    mux.token_monitor.reconcile_sessions(&token_sessions);
+    // Returned changed-id list is unused for now (no live event stream yet);
+    // the poll updates the cached per-session totals that
+    // `ClientMsg::TokenUsage` reads.
+    drop(mux.token_monitor.poll_due_sessions().await);
+    // Snapshot visible agent state, refresh, snapshot again. The ticker's only
+    // time-based effect is Working→Idle transitions; tab labels derive from
+    // state and the status bar has no per-second counter, so when state is
+    // unchanged the chrome is identical. A full redraw (clear + repaint) every
+    // tick reads as a constant flicker, so skip it unless state actually
+    // changed.
+    let states_before: Vec<_> = mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
+    for (&session_id, session) in &mut mux.sessions {
+        // Session::advance_status is the sole state-authoring path; the daemon
+        // only reacts to the resulting transition.
+        let tick = session.advance_status(rule_registry, now);
+        if let Some(transition) = tick.transition {
+            // Flap-rate telemetry: every public transition is logged with the
+            // deciding evidence so a regression (an agent update breaking a
+            // pack) shows up as a burst.
+            crate::clog!(
+                "agent-status: session {session_id} {} -> {} (winner={:?})",
+                transition.previous.label(),
+                transition.effective.label(),
+                transition.winner
+            );
+        }
+        if tick.stuck {
+            crate::clog!(
+                "status.stuck: session {session_id} demoted to unknown — \
+                 working claimed with no output/CPU/children past the watchdog window"
+            );
+        }
+    }
+    // Seen/ack: the focused pane is being reviewed, so it must never linger on
+    // `done`. Acknowledge it each tick (idempotent — only done→idle changes
+    // anything), which records the seen revision.
+    if let Some(focused) = mux.active_focused_id()
+        && let Some(session) = mux.sessions.get_mut(&focused)
+        && let Some(effective) = session.status.acknowledge()
+    {
+        session.state = effective;
+    }
+    let states_after: Vec<_> = mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
+    if mux.expire_dialog_copy_feedback(Instant::now()) {
+        mux.invalidate(dialog_change_redraw_reason());
+        return;
+    }
+    if mux.expire_selection_copy_feedback(Instant::now()) {
+        mux.invalidate(selection_change_redraw_reason());
+        return;
+    }
+    if mux.expire_clipboard_image_notice(Instant::now()) {
+        mux.invalidate(status_change_redraw_reason());
+        return;
+    }
+    if mux.refresh_open_usage_dialog_from_cache() {
+        mux.invalidate(dialog_change_redraw_reason());
+        return;
+    }
+    // A modal owns the whole screen behind an opaque backdrop; repainting the
+    // status/branch chrome here would draw it back over the fill, so skip the
+    // chrome frame while a dialog is open.
+    if mux.dialog_open() {
+        return;
+    }
+    if states_before == states_after {
+        return;
+    }
+    mux.refresh_tab_labels();
+    mux.invalidate(status_change_redraw_reason());
+}
+
+fn screen_detection_disabled_message(error: &anyhow::Error) -> String {
+    format!("Agent status screen detection is off: {error:#}")
+}
+
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 #[allow(
     clippy::too_many_lines,
@@ -841,14 +960,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         .unwrap_or(DEFAULT_COLS);
     let (rows, cols) = normalize_size(rows, cols);
 
-    // Initialise the file logger before anything else can emit a
-    // diagnostic. Failures fall back to stderr-only, so this is safe
-    // to call unconditionally.
-    crate::logging::init();
     // OTLP export for this session — no-op unless the host injected an
     // endpoint. Installs the tracing subscriber the clog!/cdebug! bridge and
     // the session-anchor span feed into; the guard flushes on daemon exit.
     let _otlp_flush = crate::telemetry::init();
+    // Initialise the capsule log after OTLP so the logger can use a single
+    // durable sink: OTLP when active, `multiplexer.log` otherwise.
+    crate::logging::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
     crate::clog!(
@@ -874,6 +992,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         Ok(registry) => Some(registry),
         Err(e) => {
             crate::clog!("agent-status: rule packs failed to load, screen detection off: {e:#}");
+            mux.open_spawn_failure_dialog(screen_detection_disabled_message(&e));
             None
         }
     };
@@ -1067,18 +1186,22 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // sees the reason in their terminal — silently
                 // landing on an empty multiplexer would otherwise be
                 // indistinguishable from "no spawn requested".
-                let mut spawn_failure: Option<String> = None;
+                let mut pending_spawn_failure = None;
                 if let Some(request) = spawn {
                     let label = spawn_request_label(&request);
                     if let Err(err) = mux.spawn_request(request, &env) {
                         crate::clog!("attach: spawn {label} failed: {err:#}");
-                        spawn_failure = Some(spawn_request_failure_message(&label, &err));
+                        pending_spawn_failure = Some(spawn_request_failure_message(&label, &err));
                     }
                 }
-                // Take over from any existing attach client. The shared
-                // helper sends Shutdown, gives the writer side a brief
-                // drain window, then aborts the old reader task.
-                detach_attached_task(&mut mux, "takeover").await;
+                // Take over from any existing attach client (INV-D1). The
+                // port decides displace; the helper sends Shutdown, drains
+                // briefly, then aborts the old reader task.
+                let has_active_client = mux.attached_task.is_some();
+                use ports::{AttachPort, PORTS};
+                if PORTS.should_displace_on_hello(has_active_client) {
+                    detach_attached_task(&mut mux, "takeover").await;
+                }
                 // Drain any stale frames the old client task pushed
                 // into cmd_tx before its abort actually took effect —
                 // without this drain, the next `cmd_rx.recv()` after
@@ -1126,7 +1249,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // A fresh client has no asserted cursor/mode state; the
                 // first frame's reconciliation asserts everything explicitly.
                 mux.last_asserted_client_state = None;
-                mux.spawn_failure = spawn_failure;
+                if let Some(message) = pending_spawn_failure {
+                    mux.open_spawn_failure_dialog(message);
+                }
                 mux.invalidate(first_attach_redraw_reason());
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
                 initial.extend(mux.compose_pending_frame());
@@ -1159,21 +1284,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             Some(frame) = cmd_rx.recv() => {
                 // Coalesce consecutive Resize frames: process only the latest size
                 // so a SIGWINCH storm produces one reflow instead of N full repaints.
-                let frame = if let ClientFrame::Resize { .. } = &frame {
-                    let mut latest = frame;
-                    let mut coalesced: u32 = 0;
-                    while let Ok(ClientFrame::Resize { rows, cols }) = cmd_rx.try_recv() {
-                        latest = ClientFrame::Resize { rows, cols };
-                        coalesced = coalesced.saturating_add(1);
+                let (frames, coalesced) = coalesce_client_frames(frame, || cmd_rx.try_recv().ok());
+                if coalesced > 0 {
+                    crate::cdebug!(
+                        "resize: coalesced {coalesced} pending resize(s), using latest"
+                    );
+                }
+                for frame in frames {
+                    handle_client_frame(&mut mux, frame);
+                    if mux.detach_requested {
+                        break;
                     }
-                    if coalesced > 0 {
-                        crate::cdebug!("resize: coalesced {coalesced} pending resize(s), using latest");
-                    }
-                    latest
-                } else {
-                    frame
-                };
-                handle_client_frame(&mut mux, frame).await;
+                }
                 if mux.detach_requested {
                     mux.detach_requested = false;
                     detach_client(&mut mux).await;
@@ -1184,6 +1306,15 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     cleanup_clipboard_run_dir();
                     return Ok(());
                 }
+            }
+
+            // Periodic state refresh: this arm intentionally sits above PTY
+            // output in the biased select. A busy agent can keep event_rx
+            // continuously ready; polling the ticker first preserves the 1 Hz
+            // status floor while the output arm remains one-event-per-pass
+            // bounded.
+            _ = state_ticker.tick() => {
+                handle_state_tick(&mut mux, rule_registry.as_ref()).await;
             }
 
             // PTY output or exit event from a session.
@@ -1356,129 +1487,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
             }
 
-            // Periodic state refresh: re-render the status bar so the tab
-            // strip's state glyph follows the four-state model. The full
-            // pane bodies stay where they are.
-            //
-            // The buffer is wrapped in `DECSC` (`\x1b7`) / `DECRC`
-            // (`\x1b8`) so the terminal saves the active pane's
-            // cursor position before painting the status bar and
-            // restores it afterwards. Without this guard the cursor
-            // visibly jumps to the tab strip every tick and parks
-            // there as a phantom block until the next pane redraw.
-            _ = state_ticker.tick() => {
-                mux.log_resource_metrics().await;
-                mux.maybe_spawn_pull_request_context_lookup(Instant::now());
-                // Reap idle clipboard-image transfers and surface a notice. Must
-                // NOT short-circuit the tick: agent-state advancement below is the
-                // 1 Hz floor — every session re-evaluates each tick — and a
-                // clipboard reap is an orthogonal concern that must not freeze it.
-                // The `invalidate` guarantees the notice repaints even if no agent
-                // state changed this tick (otherwise the no-change `continue` below
-                // would leave the frame clean and the notice never painted).
-                let stale_image_transfers = mux
-                    .clipboard_image_transfers
-                    .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
-                if stale_image_transfers > 0 {
-                    crate::clog!(
-                        "clipboard-image: cleaned up {stale_image_transfers} idle transfer{}",
-                        if stale_image_transfers == 1 { "" } else { "s" }
-                    );
-                    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
-                    mux.set_clipboard_image_notice(format!(
-                        "Image paste interrupted: cleaned up {stale_image_transfers} idle transfer{}",
-                        if stale_image_transfers == 1 { "" } else { "s" }
-                    ));
-                    mux.invalidate(status_change_redraw_reason());
-                }
-                // Evidence arbitration is the ONLY path that authors agent state.
-                // Each session assembles an EvidenceSnapshot (authority, process,
-                // OSC, screen) in `advance_status`, arbitrates to a raw state +
-                // confidence, and publishes through SessionStatus (which derives
-                // the public `effective` state, incl. done-from-seen).
-                let now = Instant::now();
-                // Token-spend monitor: keep it synced to the live agent sessions
-                // and poll any due providers. `poll_due_sessions` self-throttles
-                // to the 30s/60s cadence, so calling it each state tick is cheap.
-                let token_sessions: Vec<(u64, Agent)> = mux
-                    .sessions
-                    .iter()
-                    .filter_map(|(id, s)| Some((*id, Agent::from_slug(s.agent.as_deref()?)?)))
-                    .collect();
-                mux.token_monitor.reconcile_sessions(&token_sessions);
-                // Returned changed-id list is unused for now (no live event
-                // stream yet); the poll updates the cached per-session totals
-                // that `ClientMsg::TokenUsage` reads.
-                drop(mux.token_monitor.poll_due_sessions().await);
-                // Snapshot visible agent state, refresh, snapshot again. The
-                // ticker's only time-based effect is Working→Idle transitions;
-                // tab labels derive from state and the status bar has no
-                // per-second counter, so when state is unchanged the chrome is
-                // identical. A full redraw (clear + repaint) every tick reads as
-                // a constant flicker, so skip it unless state actually changed.
-                let states_before: Vec<_> =
-                    mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
-                for (&session_id, session) in &mut mux.sessions {
-                    // Session::advance_status is the sole state-authoring path;
-                    // the daemon only reacts to the resulting transition.
-                    let tick = session.advance_status(rule_registry.as_ref(), now);
-                    if let Some(transition) = tick.transition {
-                        // Flap-rate telemetry: every public transition is logged
-                        // with the deciding evidence so a regression (an agent
-                        // update breaking a pack) shows up as a burst.
-                        crate::clog!(
-                            "agent-status: session {session_id} {} -> {} (winner={:?})",
-                            transition.previous.label(),
-                            transition.effective.label(),
-                            transition.winner
-                        );
-                    }
-                    if tick.stuck {
-                        crate::clog!(
-                            "status.stuck: session {session_id} demoted to unknown — \
-                             working claimed with no output/CPU/children past the watchdog window"
-                        );
-                    }
-                }
-                // Seen/ack: the focused pane is being reviewed, so it must never
-                // linger on `done`. Acknowledge it each tick (idempotent — only
-                // done→idle changes anything), which records the seen revision.
-                if let Some(focused) = mux.active_focused_id()
-                    && let Some(session) = mux.sessions.get_mut(&focused)
-                    && let Some(effective) = session.status.acknowledge()
-                {
-                    session.state = effective;
-                }
-                let states_after: Vec<_> =
-                    mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
-                if mux.expire_dialog_copy_feedback(Instant::now()) {
-                    mux.invalidate(dialog_change_redraw_reason());
-                    continue;
-                }
-                if mux.expire_selection_copy_feedback(Instant::now()) {
-                    mux.invalidate(selection_change_redraw_reason());
-                    continue;
-                }
-                if mux.expire_clipboard_image_notice(Instant::now()) {
-                    mux.invalidate(status_change_redraw_reason());
-                    continue;
-                }
-                if mux.refresh_open_usage_dialog_from_cache() {
-                    mux.invalidate(dialog_change_redraw_reason());
-                    continue;
-                }
-                // A modal owns the whole screen behind an opaque backdrop;
-                // repainting the status/branch chrome here would draw it back
-                // over the fill, so skip the chrome frame while a dialog is open.
-                if mux.dialog_open() {
-                    continue;
-                }
-                if states_before == states_after {
-                    continue;
-                }
-                mux.refresh_tab_labels();
-                mux.invalidate(status_change_redraw_reason());
-            }
         }
     }
 }

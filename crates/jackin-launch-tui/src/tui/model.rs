@@ -73,6 +73,10 @@ pub struct LaunchView {
     /// each frame, so the offset persists here and is threaded into the rebuilt
     /// `ContainerInfoState` — long paths scroll instead of clipping.
     pub container_info_scroll: jackin_tui::components::DialogBodyScroll,
+    /// Last dialog mouse cell logged for `Moved` debug telemetry. This keeps
+    /// debug runs from recording repeated terminal mouse-move events that
+    /// report the same cell while preserving click/drag/scroll evidence.
+    pub last_dialog_mouse_cell: Option<(u16, u16)>,
     /// Operator pressed Ctrl+Q: the "Exit jackin❯?" confirmation overlays the
     /// cockpit and owns input until answered. `None` = not confirming. Ctrl+C
     /// bypasses this entirely (immediate hard cancel).
@@ -97,7 +101,7 @@ pub use jackin_core::PromptResult;
 #[derive(Debug)]
 pub struct LaunchRenderContext<'a> {
     pub run_id: &'a str,
-    pub run_log_path: &'a str,
+    pub run_log_path: Option<&'a str>,
     pub no_motion: bool,
     pub rain: Option<&'a crate::tui::components::rain::RainState>,
     pub debug_mode: bool,

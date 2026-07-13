@@ -14,23 +14,48 @@
 use directories::BaseDirs;
 use std::path::{Path, PathBuf};
 
+/// Failure resolving or creating jackin❯ host path layout.
+#[derive(Debug, thiserror::Error)]
+pub enum PathsError {
+    /// OS home directory could not be resolved.
+    #[error("Cannot resolve home directory")]
+    HomeDirUnresolved,
+    /// Failed to create a required directory.
+    #[error("failed to create {path}")]
+    CreateDir {
+        /// Directory that could not be created.
+        path: PathBuf,
+        /// Underlying IO error.
+        #[source]
+        source: std::io::Error,
+    },
+}
+
 /// All host-side directories that jackin❯ reads or writes.
 #[derive(Debug, Clone)]
 pub struct JackinPaths {
+    /// Operator home directory (`$HOME`).
     pub home_dir: PathBuf,
+    /// jackin data home (`~/.jackin` or `JACKIN_HOME_DIR`).
     pub jackin_home: PathBuf,
+    /// Config directory (`~/.config/jackin` or `JACKIN_CONFIG_DIR`).
     pub config_dir: PathBuf,
+    /// Path to `config.toml`.
     pub config_file: PathBuf,
+    /// Directory of per-workspace config files.
     pub workspaces_dir: PathBuf,
+    /// Directory of cloned/registered roles.
     pub roles_dir: PathBuf,
+    /// Durable runtime data directory.
     pub data_dir: PathBuf,
+    /// Cache directory (agent binaries, etc.).
     pub cache_dir: PathBuf,
 }
 
 impl JackinPaths {
-    pub fn detect() -> anyhow::Result<Self> {
-        let base =
-            BaseDirs::new().ok_or_else(|| anyhow::anyhow!("Cannot resolve home directory"))?;
+    /// Detect host paths from the OS home directory and env overrides.
+    pub fn detect() -> Result<Self, PathsError> {
+        let base = BaseDirs::new().ok_or(PathsError::HomeDirUnresolved)?;
         Ok(Self::resolve_with_env(
             base.home_dir(),
             std::env::var_os("JACKIN_HOME_DIR").as_deref(),
@@ -64,6 +89,7 @@ impl JackinPaths {
         }
     }
 
+    /// Build a layout rooted under `root` for unit tests.
     pub fn for_tests(root: &Path) -> Self {
         let home_dir = root.join("home");
         let config_dir = root.join("config");
@@ -83,12 +109,19 @@ impl JackinPaths {
     /// Create all base directories that jackin❯ owns on the host.
     ///
     /// # Errors
-    /// Returns an error if any directory cannot be created.
-    pub fn ensure_base_dirs(&self) -> anyhow::Result<()> {
-        std::fs::create_dir_all(&self.config_dir)?;
-        std::fs::create_dir_all(&self.roles_dir)?;
-        std::fs::create_dir_all(&self.data_dir)?;
-        std::fs::create_dir_all(&self.cache_dir)?;
+    /// Returns [`PathsError::CreateDir`] naming the directory that failed.
+    pub fn ensure_base_dirs(&self) -> Result<(), PathsError> {
+        for path in [
+            &self.config_dir,
+            &self.roles_dir,
+            &self.data_dir,
+            &self.cache_dir,
+        ] {
+            std::fs::create_dir_all(path).map_err(|source| PathsError::CreateDir {
+                path: path.clone(),
+                source,
+            })?;
+        }
         Ok(())
     }
 }

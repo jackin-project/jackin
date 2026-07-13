@@ -1,0 +1,102 @@
+---
+title: "Capsule daemon — Behavioral Spec"
+---
+
+Behavioral invariant contract for the in-container capsule daemon — primarily <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> and its `daemon/` subsystems. This is the oracle for the Phase 2 daemon decomposition: any split into client registry / session supervisor / active-client policy / status / clipboard / git-PR watch / usage / control routing must preserve every INV below.
+
+## Scope
+
+Starts where the capsule process starts (`run_daemon` after launch has handed off the container). Does **not** cover host-side launch (see [runtime/launch.rs](/reference/developer-reference/specs/runtime-launch/)) or the attach wire framing schema (jackin-protocol). Ends at cleanup classification and host-visible status publication.
+
+## Subsystems
+
+Roadmap-named ownership boundaries used to group invariants:
+
+1. Client registry / active-client policy
+2. Session supervisor
+3. Input routing (keyboard / mouse)
+4. Status model / publication
+5. Clipboard transfers
+6. Git / PR watch
+7. Usage totals
+8. Control-protocol routing + cleanup
+
+## Behavioral invariants
+
+### Client registry / active-client policy
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-D1 | A second attach client displaces the previous client — only one interactive attach stream is live | Module docs + `Multiplexer::client.attach` replace path; `Hello` frame displaces previous client (`daemon.rs` header) | `jackin_capsule::daemon::tests::reattach_updates_capabilities_without_resetting_model_palette` |
+| INV-D2 | Reattach updates client capabilities without wiping the model color palette | `session_terminal_carries_the_attached_client_palette` / reattach capability merge | `jackin_capsule::daemon::tests::reattach_updates_capabilities_without_resetting_model_palette` `jackin_capsule::daemon::tests::session_terminal_carries_the_attached_client_palette` |
+| INV-D3 | First-attach wipe policy erases the screen only on first attach and resize, not on every reattach | `wipe_policy_erases_only_on_first_attach_and_resize` | `jackin_capsule::daemon::tests::wipe_policy_erases_only_on_first_attach_and_resize` |
+| INV-D4 | Drain-and-exit delivers a shutdown frame to the attach client before closing the socket | `drain_and_exit_delivers_shutdown_before_closing_attach_socket` | `jackin_capsule::daemon::tests::drain_and_exit_delivers_shutdown_before_closing_attach_socket` |
+
+### Session supervisor
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-D5 | Spawn rejects agents outside the allowlist before opening a PTY | `spawn_request_rejects_agent_outside_allowlist_before_pty_spawn` | `jackin_capsule::daemon::tests::spawn_request_rejects_agent_outside_allowlist_before_pty_spawn` |
+| INV-D6 | Spawn-failure dialog stays open until the operator dismisses it | `spawn_failure_popup_stays_open_until_dismissed` / `open_spawn_failure_dialog` | `jackin_capsule::daemon::tests::spawn_failure_popup_stays_open_until_dismissed` |
+| INV-D7 | Zoom state is independent per tab; killing a zoomed pane clears only that tab's zoom | zoom helpers in multiplexer session lifecycle | `jackin_capsule::daemon::tests::zoom_state_is_independent_per_tab` `jackin_capsule::daemon::tests::killing_zoomed_pane_clears_only_owning_tab_zoom` |
+| INV-D8 | Removing an exited session retires its codename and updates tab labels without dropping other tabs | `remove_exited_session` / `mark_agent_session_exited` | `jackin_capsule::daemon::tests::remove_exited_session_retires_codename_inv_d8` |
+
+### Input routing
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-D9 | Modified clicks in mouse-enabled panes forward to the PTY; URL hover does not forward | `mouse_input` dispatch paths | `jackin_capsule::daemon::tests::modified_click_in_mouse_enabled_pane_forwards_to_pty` `jackin_capsule::daemon::tests::modified_url_hover_renders_visible_target_without_forwarding_to_pty` |
+| INV-D10 | Status-tick select arm stays above PTY output so status refresh cannot starve on busy PTY streams | select-loop arm order in `run_daemon` | `jackin_capsule::daemon::tests::status_tick_select_arm_stays_above_pty_output` `jackin_capsule::daemon::tests::ready_status_tick_wins_over_ready_pty_output` |
+| INV-D11 | PTY OSC 8 hyperlinks emit from frame metadata; unsafe/untrusted hyperlinks do not | compositor hyperlink emission | `jackin_capsule::daemon::tests::pty_osc8_hyperlink_emits_from_frame_metadata` `jackin_capsule::daemon::tests::unsafe_pty_osc8_hyperlink_is_not_emitted_from_frame_metadata` |
+
+### Status model / publication
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-D12 | Control reply for runtime events applies to the named session and ACKs; unknown session still ACKs | `control` subsystem | `jackin_capsule::daemon::tests::control_reply_report_runtime_event_applies_to_session_and_acks` `jackin_capsule::daemon::tests::control_reply_runtime_event_and_capture_for_unknown_session_still_ack` |
+| INV-D13 | Outer terminal title uses workspace + PR title, falls back to branch, and sanitizes control bytes | title composition helpers | `jackin_capsule::daemon::tests::outer_terminal_title_uses_workspace_and_pr_title` `jackin_capsule::daemon::tests::outer_terminal_title_falls_back_to_branch_without_pr` `jackin_capsule::daemon::tests::outer_terminal_title_sanitizes_control_bytes` |
+
+### Clipboard transfers
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-D14 | Clipboard image errors use stable compact reason codes (not free-form strings) | clipboard error mapping | `jackin_capsule::daemon::tests::clipboard_image_error_reason_uses_stable_compact_codes` |
+| INV-D15 | Clipboard transfer idle expiry is driven by an injected `Clock` (not wall-clock `Instant::now`) | capsule clipboard expiry path + `jackin_core::clock` | `jackin_capsule::clipboard::tests::abort_idle_older_than_drops_transfer_past_timeout` `jackin_capsule::clipboard::tests::abort_idle_only_drops_idle_of_two_transfers` `jackin_capsule::clipboard::tests::abort_idle_boundary_idle_exactly_timeout_is_aborted` |
+
+### Git / PR watch
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-D16 | Pending PR lookup can be armed and surfaces in outer title once resolved | PR watch helpers / `arm_pending_pr_lookup` test fixture | `jackin_capsule::daemon::tests::outer_terminal_title_uses_workspace_and_pr_title` |
+
+### Usage totals
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-D17 | Opening the usage dialog queues a focused-provider refresh without replacing an already-open dialog body on refresh | usage dialog actions | `jackin_capsule::daemon::tests::apply_action_open_usage_queues_focused_provider_refresh` `jackin_capsule::daemon::tests::apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog` |
+| INV-D18 | Control usage account list prefers the in-memory cache when warm | control usage list path | `jackin_capsule::daemon::tests::control_usage_account_list_uses_in_memory_cache` |
+
+### Control-protocol routing + cleanup
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-D19 | Last-session exit handler classifies whether the daemon should exit | `handle_last_session_exit` / `should_defer_last_session_exit` + `ports::PersistencePort` | `jackin_capsule::daemon::tests::last_session_exit_defers_when_dialog_already_open_inv_d19` `jackin_capsule::daemon::ports::tests::persistence_port_defers_when_dialog_open` |
+| INV-D20 | File export paths are categorized as jackin-run / jackin-owned / container-absolute / relative via `container_paths` | `requested_export_path_category` in `daemon/file_export.rs` | `jackin_capsule::daemon::file_export::tests::export_path_category_matrix_inv_d20` |
+
+## Test seams
+
+- **Echo-back PTY harness** — `VirtualClient` / recorded PTY fixtures (`recorded_pty_fixtures_keep_screen_equal_to_model`); see TESTING.md render-conformance notes.
+- **Attach client channel** — `mux.client.attach(tx)` + `attach_drained_client` for single-client frame observation.
+- **Control-socket entry** — control request/reply helpers in `daemon/control.rs` exercised by control_* tests.
+- **Clock** — `jackin_core::clock::{Clock, ManualClock}` for clipboard expiry (plan 024).
+
+## Missing coverage (worklist, risk-ordered)
+
+1. **INV-D1 full displace policy** — reattach palette test exists; a second-client “stream B becomes active, stream A is closed” characterization is still thin (feeds plan 033).
+2. **PTY failure recovery** — writer-lock failure / closed channel / PTY EOF paths in session writer loops are largely unexercised (TEST-pty-recovery; plan 033).
+
+INV-D8 / INV-D15 / INV-D19 / INV-D20 closed with Multiplexer / ManualClock characterization tests.
+
+## Undetermined behaviors
+
+None recorded above the STOP threshold. Concurrent select-loop fairness beyond INV-D10 is intentionally left as characterization work, not a claimed invariant.

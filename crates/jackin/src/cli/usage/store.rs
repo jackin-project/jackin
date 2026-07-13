@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use jackin_core::account_key::account_key_hash;
 use jackin_protocol::control::AccountUsageSnapshotView;
-use turso::{Connection, Row, params};
+use jackin_usage::store_backend::{Connection, Row, connect_local, params};
 
 use jackin_core::JackinPaths;
 
@@ -55,11 +55,9 @@ async fn open_existing_store(path: &Path) -> Result<Connection> {
     let path = path
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("host usage cache path is not UTF-8"))?;
-    let db = turso::Builder::new_local(path)
-        .build()
+    connect_local(path)
         .await
-        .context("open host usage cache")?;
-    db.connect().context("connect host usage cache")
+        .map_err(|err| anyhow::anyhow!("host usage cache: {err}"))
 }
 
 async fn initialize_schema(conn: &Connection) -> Result<()> {

@@ -24,12 +24,19 @@ pub struct VirtualTerminalProfile {
     pub grapheme_cluster_width_mode: bool,
     /// Whether East Asian Ambiguous code points are treated as two columns.
     pub ambiguous_width_is_wide: bool,
+    /// DECRQM reply for private mode 2027 (grapheme-cluster width).
     pub decrqm_mode_2027_status: u16,
+    /// Default OSC 10 foreground RGB reported to the agent.
     pub default_reported_fg: (u8, u8, u8),
+    /// Default OSC 11 background RGB reported to the agent.
     pub default_reported_bg: (u8, u8, u8),
+    /// `$TERM` value advertised to the agent PTY environment.
     pub agent_term: &'static str,
+    /// `$COLORTERM` value advertised to the agent PTY environment.
     pub agent_colorterm: &'static str,
+    /// How OSC 8 hyperlinks are modeled.
     pub osc8_policy: Osc8Policy,
+    /// SGR features the virtual terminal claims to support.
     pub supported_sgr: SupportedSgr,
 }
 
@@ -60,6 +67,7 @@ pub enum Osc8Policy {
     ModelMetadata,
 }
 
+/// Bitmask of SGR attributes the virtual terminal supports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SupportedSgr {
     pub(crate) flags: u16,
@@ -80,42 +88,55 @@ const COLOR_256: u16 = 1 << 11;
 const TRUECOLOR: u16 = 1 << 12;
 
 impl SupportedSgr {
+    /// Bold SGR supported.
     pub fn bold(&self) -> bool {
         self.flags & BOLD != 0
     }
+    /// Dim/faint SGR supported.
     pub fn dim(&self) -> bool {
         self.flags & DIM != 0
     }
+    /// Italic SGR supported.
     pub fn italic(&self) -> bool {
         self.flags & ITALIC != 0
     }
+    /// Underline SGR supported.
     pub fn underline(&self) -> bool {
         self.flags & UNDERLINE != 0
     }
+    /// Styled underline (curly/dotted/dashed) supported.
     pub fn underline_style(&self) -> bool {
         self.flags & UNDERLINE_STYLE != 0
     }
+    /// Underline color SGR supported.
     pub fn underline_color(&self) -> bool {
         self.flags & UNDERLINE_COLOR != 0
     }
+    /// Reverse video SGR supported.
     pub fn inverse(&self) -> bool {
         self.flags & INVERSE != 0
     }
+    /// Strikethrough SGR supported.
     pub fn strikethrough(&self) -> bool {
         self.flags & STRIKETHROUGH != 0
     }
+    /// Blink SGR supported.
     pub fn blink(&self) -> bool {
         self.flags & BLINK != 0
     }
+    /// Conceal SGR supported.
     pub fn conceal(&self) -> bool {
         self.flags & CONCEAL != 0
     }
+    /// Overline SGR supported.
     pub fn overline(&self) -> bool {
         self.flags & OVERLINE != 0
     }
+    /// 256-color palette SGR supported.
     pub fn color_256(&self) -> bool {
         self.flags & COLOR_256 != 0
     }
+    /// Truecolor (24-bit) SGR supported.
     pub fn truecolor(&self) -> bool {
         self.flags & TRUECOLOR != 0
     }
@@ -134,6 +155,7 @@ impl VirtualTerminalProfile {
         display_width(cluster)
     }
 
+    /// DECRQM status for a private mode (`0` if untracked).
     #[must_use]
     pub fn decrqm_status(self, mode: u16) -> u16 {
         if mode == 2027 {
@@ -143,6 +165,7 @@ impl VirtualTerminalProfile {
         }
     }
 
+    /// Default OSC 10/11 color for `code` (10 = fg, 11 = bg).
     #[must_use]
     pub fn default_reported_color(self, code: u8) -> Option<(u8, u8, u8)> {
         match code {
@@ -152,6 +175,7 @@ impl VirtualTerminalProfile {
         }
     }
 
+    /// True when every attribute bit in `attrs` is claimed by this profile.
     #[must_use]
     pub fn attrs_supported(self, attrs: &Attrs) -> bool {
         let sgr = self.supported_sgr;

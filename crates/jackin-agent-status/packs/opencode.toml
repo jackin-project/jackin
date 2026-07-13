@@ -1,0 +1,55 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version = 1
+agent = "opencode"
+validated_versions = ">=1.17.3, <1.18.0"
+
+[[rule]]
+id = "permission-ui"
+state = "blocked"
+priority = 900
+region = "bottom_nonempty:12"
+strength = "strong"
+requires_all = ["permission required", "enter", "select"]
+
+[[rule]]
+id = "processing"
+state = "working"
+priority = 700
+region = "bottom:24"
+strength = "strong"
+requires_all = ["processing...", "ctrl+c to cancel"]
+
+[[rule]]
+id = "interrupt-footer"
+state = "working"
+priority = 690
+region = "bottom_nonempty:8"
+strength = "strong"
+requires_all = ["esc interrupt", "opencode"]
+
+[[rule]]
+id = "ready-text"
+state = "idle"
+priority = 500
+region = "bottom:24"
+strength = "strong"
+requires_all = ["opencode ready"]
+
+[[rule]]
+id = "startup-prompt"
+state = "idle"
+priority = 495
+region = "bottom:24"
+strength = "strong"
+requires_all = ["ask anything...", "build ·", "tab agents", "ctrl+p commands"]
+
+[[rule]]
+id = "completed-footer"
+state = "idle"
+priority = 490
+region = "bottom:16"
+strength = "strong"
+requires_all = ["opencode", "ctrl+p commands"]
+forbids_any = ["esc interrupt"]

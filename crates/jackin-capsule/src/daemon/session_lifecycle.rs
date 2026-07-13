@@ -6,11 +6,18 @@
 use crate::tui::view::{spawn_failure_agent_label, spawn_failure_message};
 
 use super::{
-    AgentRecord, Multiplexer, PickerIntent, Result, Session, SessionLaunch, SpawnRequest, Tab, Utc,
-    build_agent_command, build_shell_command,
+    AgentRecord, Dialog, FullRedrawReason, Multiplexer, PickerIntent, Result, Session,
+    SessionLaunch, SpawnRequest, Tab, Utc, build_agent_command, build_shell_command,
 };
 
 impl Multiplexer {
+    pub(super) fn open_spawn_failure_dialog(&mut self, message: String) {
+        self.dialog_push(Dialog::SpawnFailure(
+            jackin_tui::components::ErrorPopupState::new("Spawn failed", message),
+        ));
+        self.invalidate(FullRedrawReason::DialogChange);
+    }
+
     pub(super) fn active_tab_pane_count(&self) -> usize {
         self.tabs
             .get(self.active_tab)
@@ -94,7 +101,6 @@ impl Multiplexer {
         if self.active_tab >= self.tabs.len() {
             self.active_tab = self.tabs.len().saturating_sub(1);
         }
-        self.zoomed = None;
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
@@ -111,7 +117,6 @@ impl Multiplexer {
         }
         self.tabs.clear();
         self.active_tab = 0;
-        self.zoomed = None;
         self.dialog_copy_feedback_deadline = None;
         self.hover_target = None;
     }
@@ -161,7 +166,12 @@ impl Multiplexer {
                 let was_active = tab_idx == self.active_tab;
                 let closed_codename = self.tabs[tab_idx].codename.clone();
                 self.tabs.remove(tab_idx);
-                self.retire_codename(&closed_codename);
+                // INV-D8: retire codename so tab labels drop the exited name.
+                let remaining_live = self.sessions.len().saturating_sub(1);
+                use super::ports::{PORTS, StatusPort};
+                if PORTS.should_retire_codename_on_exit(remaining_live) {
+                    self.retire_codename(&closed_codename);
+                }
                 if was_active {
                     // Move to the tab on the left when it exists;
                     // otherwise stay at index 0 (the leftmost tab
@@ -193,7 +203,11 @@ impl Multiplexer {
         }
         self.sessions.remove(&session_id);
         self.mark_agent_session_exited(session_id);
-        self.zoomed = self.zoomed.filter(|&id| id != session_id);
+        if let Some(tab_idx) = owning_tab
+            && let Some(tab) = self.tabs.get_mut(tab_idx)
+        {
+            tab.zoomed = tab.zoomed.filter(|&id| id != session_id);
+        }
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
@@ -334,11 +348,7 @@ impl Multiplexer {
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
-            // Surface to the attach client too — otherwise the dialog
-            // closes successfully and the operator sees no new pane and
-            // no explanation.
-            self.spawn_failure = Some(spawn_failure_message(agent_label, &err));
-            self.invalidate(super::FullRedrawReason::StatusChange);
+            self.open_spawn_failure_dialog(spawn_failure_message(agent_label, &err));
         }
     }
 
@@ -360,8 +370,7 @@ impl Multiplexer {
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
-            self.spawn_failure = Some(spawn_failure_message(agent_label, &err));
-            self.invalidate(super::FullRedrawReason::StatusChange);
+            self.open_spawn_failure_dialog(spawn_failure_message(agent_label, &err));
         }
     }
 
@@ -465,21 +474,18 @@ impl Multiplexer {
     }
 
     pub(super) fn toggle_zoom(&mut self) {
-        // Zoom is a single global field but scoped per-tab via
-        // `active_zoomed_id`. Toggling has to consult the *active*
-        // tab's zoom state — checking the raw `self.zoomed.is_some()`
-        // would let a toggle on Tab B unzoom whatever Tab A had
-        // pinned, surprising the operator on their next switch back
-        // to Tab A. Use `active_zoomed_id` so unzoom only fires when
-        // the active tab actually owns the zoom; otherwise zoom the
-        // active tab's focused pane.
-        let focused = self.tabs.get(self.active_tab).map(|t| t.focused_id);
-        let was_zoomed = self.active_zoomed_id().is_some();
-        self.zoomed = if was_zoomed { None } else { focused };
+        let Some(tab) = self.tabs.get_mut(self.active_tab) else {
+            return;
+        };
+        let focused = tab.focused_id;
+        let was_zoomed = tab
+            .zoomed
+            .is_some_and(|zoom_id| tab.tree.all_ids().contains(&zoom_id));
+        tab.zoomed = if was_zoomed { None } else { Some(focused) };
         self.resize_panes();
         crate::clog!(
             "action: toggle_zoom from={was_zoomed} to={} focused={focused:?}",
-            self.zoomed.is_some()
+            self.active_zoomed_id().is_some()
         );
     }
 }

@@ -17,7 +17,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use jackin_tui::components::render_dialog_shell;
+use jackin_tui::components::{DialogBorder, render_dialog_shell};
 use jackin_tui::theme::PHOSPHOR_DIM;
 use jackin_tui::{ModalOutcome, shorten_home};
 
@@ -90,7 +90,12 @@ impl MountDstChoiceState {
 }
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
-    let inner = render_dialog_shell(frame, area, Some("Mount destination"));
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Mount destination"),
+        DialogBorder::Default,
+    );
 
     // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
     let chunks = Layout::default()
@@ -137,9 +142,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         MountDstFocus::Edit => 1,
         MountDstFocus::Cancel => 2,
     };
-    jackin_tui::components::ButtonStrip::new(&items)
-        .focused(focused)
-        .render(frame, chunks[4]);
+    frame.render_widget(
+        jackin_tui::components::ButtonStrip::new(&items).focused(focused),
+        chunks[4],
+    );
 }
 
 #[cfg(test)]

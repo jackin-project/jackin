@@ -533,6 +533,7 @@ fn print_image_prewarm_rows(
     Ok(())
 }
 
+#[derive(Debug)]
 struct PrewarmImageTarget {
     selector: RoleSelector,
     role_git: String,

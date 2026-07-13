@@ -57,7 +57,9 @@ impl LaunchProgress {
             rich,
             Arc::clone(&view),
             diagnostics.run_id().to_owned(),
-            diagnostics.path().display().to_string(),
+            diagnostics
+                .persists()
+                .then(|| diagnostics.path().display().to_string()),
             host,
             jackin_version,
             cancel_token.clone(),
@@ -150,7 +152,10 @@ impl LaunchProgress {
         let summary = failure.summary.clone();
         let next_step = failure.next_step.clone();
         let detail = failure.detail.clone();
-        failure.diagnostics_path = Some(self.diagnostics.path().to_path_buf());
+        failure.diagnostics_path = self
+            .diagnostics
+            .persists()
+            .then(|| self.diagnostics.path().to_path_buf());
         if failure.command_output_path.is_none() {
             let docker_output = self.diagnostics.command_output_path("docker-build");
             if docker_output.exists() {
@@ -164,6 +169,7 @@ impl LaunchProgress {
             &summary,
             detail.as_deref().or(next_step.as_deref()),
         );
+        self.diagnostics.error("launch_failed", &summary, None);
         // On a rich surface the render task draws the failure popup and owns the
         // terminal's input; poll for the operator's Enter/Esc dismiss. Yielding
         // with an async sleep (rather than a blocking stdin read) is essential on
@@ -172,8 +178,7 @@ impl LaunchProgress {
         if matches!(self.renderer, Renderer::Rich(_)) {
             loop {
                 tokio::time::sleep(Duration::from_millis(50)).await;
-                let acked = self.view.lock().map_or(true, |v| v.failure_ack);
-                if acked {
+                if failure_acknowledged(&self.view) {
                     break;
                 }
             }
@@ -302,6 +307,19 @@ impl Drop for LaunchProgress {
         if let Renderer::Rich(driver) = &self.renderer {
             driver.request_stop();
             self.host.set_rich_surface_active(false);
+        }
+    }
+}
+
+fn failure_acknowledged(view: &SharedView) -> bool {
+    match view.lock() {
+        Ok(view) => view.failure_ack,
+        Err(poisoned) => {
+            jackin_diagnostics::debug_log!(
+                "launch",
+                "recovering poisoned launch failure view lock while waiting for acknowledgement"
+            );
+            poisoned.into_inner().failure_ack
         }
     }
 }

@@ -1,24 +1,30 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
+//! jackin-config: operator config load, migrate, validate, and persist.
+//!
+//! **Architecture Invariant:** T1.
+//! Entry point: [`AppConfig`] — loaded operator configuration.
 
-//! jackin-config: configuration schema and workspace resolution.
-//!
-//! Merges the `config/` and `workspace/` modules into one crate to dissolve
-//! the config↔workspace mutual cycle that prevented crate extraction. Depends
-//! on `jackin-core` for the shared vocabulary types (`Agent`, `AuthForwardMode`,
-//! `MountIsolation`) and provides everything above: `AppConfig`, `WorkspaceConfig`,
-//! migrations, the config editor, and workspace resolution.
-//!
-//! **Architecture Invariant:** L0 domain (schema) crate. Allowed dependencies:
-//! `jackin-core` only. Domain-shape and persistence helpers stay here;
-//! presentation, infrastructure adapters, and observability live above.
-//! Diagnostic output is routed through `jackin_core::DebugLogSink` (see
-//! `debug_log!`), not a direct `jackin-diagnostics` dep, so the
-//! config→diagnostics inversion never returns.
+#![deny(
+    clippy::string_slice,
+    clippy::indexing_slicing,
+    clippy::get_unwrap,
+    clippy::unwrap_in_result,
+    clippy::panic_in_result_fn,
+    clippy::unchecked_time_subtraction
+)]
+#![deny(missing_docs)]
+// get_unwrap has no clippy.toml allow-in-tests valve; keep production denied.
+#![cfg_attr(
+    test,
+    allow(
+        clippy::get_unwrap,
+        reason = "no clippy.toml allow-in-tests valve; keep production denied"
+    )
+)]
 
 pub mod app_config;
 pub mod auth;
 pub mod editor;
+mod error;
 pub mod migrations;
 pub mod mounts;
 pub mod paths;
@@ -29,6 +35,8 @@ pub mod schema;
 pub mod sensitive;
 pub mod validation;
 pub mod versions;
+
+pub use error::ConfigError;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
@@ -64,9 +72,10 @@ pub use resolve::{
 };
 pub use schema::{
     DirtyExitPolicy, DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig,
-    MountConfig, MountEntry, ResolvedWorkspace, RoleSource, RuntimeConfig, WorkspaceConfig,
-    WorkspaceDockerConfig, WorkspaceEdit, WorkspaceRoleOverride, WorkspaceRuntimeConfig,
-    validate_mount_paths, validate_mount_specs, validate_mounts,
+    MountConfig, MountEntry, ResolvedWorkspace, RoleSource, RuntimeConfig, TelemetryConfig,
+    TelemetryLevelConfig, WorkspaceConfig, WorkspaceDockerConfig, WorkspaceEdit,
+    WorkspaceRoleOverride, WorkspaceRuntimeConfig, validate_mount_paths, validate_mount_specs,
+    validate_mounts,
 };
 pub use sensitive::{SensitiveMount, find_sensitive_mounts};
 pub use validation::{validate_isolation_layout, validate_workspace_config};

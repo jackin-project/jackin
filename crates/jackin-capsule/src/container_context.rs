@@ -54,9 +54,8 @@ pub fn resolve_container_diagnostics() -> ContainerDiagnostics {
     let diagnostics_path = std::env::var(JACKIN_RUN_DIAGNOSTICS_PATH_ENV)
         .ok()
         .filter(|value| !value.trim().is_empty());
-    let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_owned());
     let (run_log_display, run_log_href) =
-        resolve_run_log_location(&run_id, diagnostics_path.as_deref(), &home);
+        resolve_run_log_location(&run_id, diagnostics_path.as_deref());
     ContainerDiagnostics {
         host_version,
         run_id,
@@ -68,7 +67,6 @@ pub fn resolve_container_diagnostics() -> ContainerDiagnostics {
 fn resolve_run_log_location(
     run_id: &str,
     diagnostics_path: Option<&str>,
-    home: &str,
 ) -> (String, Option<String>) {
     if run_id.is_empty() {
         return ("(not set)".to_owned(), None);
@@ -76,11 +74,7 @@ fn resolve_run_log_location(
     if let Some(path) = diagnostics_path {
         return (path.to_owned(), file_href_for_path(path));
     }
-    let full_path = format!("{home}/.jackin/data/diagnostics/runs/{run_id}.jsonl");
-    (
-        format!("~/.jackin/data/diagnostics/runs/{run_id}.jsonl"),
-        file_href_for_path(&full_path),
-    )
+    ("(backend only - no local file)".to_owned(), None)
 }
 
 fn file_href_for_path(path: &str) -> Option<String> {
@@ -88,6 +82,9 @@ fn file_href_for_path(path: &str) -> Option<String> {
         .ok()
         .map(|url| url.to_string())
 }
+
+#[cfg(test)]
+mod tests;
 
 fn resolve_container_name() -> String {
     if let Some(value) = std::env::var(JACKIN_CONTAINER_NAME_ENV)

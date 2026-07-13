@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 
 //! Sentinel-report assertion helpers + `REPORT_BEGIN` / `REPORT_END`
 //! markers + `docker` `cleanup_role` + the generic `run` shell helper used
@@ -79,7 +90,8 @@ pub(super) fn assert_sentinel_build_output_routed_to_log(home: &Path, stdout: &s
         )
     });
     assert!(
-        build_log_contents.contains("command: docker build")
+        build_log_contents.contains("command: docker ")
+            && build_log_contents.contains("buildx build")
             && build_log_contents.contains(raw_build_marker)
             && build_log_contents.contains("DerivedDockerfile"),
         "Docker build output should be captured in the build log artifact {}\n{}",

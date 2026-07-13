@@ -24,7 +24,9 @@ const SENSITIVE_SUFFIXES: &[(&str, &str)] = &[
 /// A mount source that matched a sensitive path pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SensitiveMount {
+    /// Host mount source that matched a sensitive suffix.
     pub src: String,
+    /// Human-readable reason (e.g. "SSH keys and configuration").
     pub reason: String,
 }
 

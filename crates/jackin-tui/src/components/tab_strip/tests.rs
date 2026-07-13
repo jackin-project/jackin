@@ -27,9 +27,7 @@ fn tab_strip_exposes_two_rows() {
 
     terminal
         .draw(|frame| {
-            TabStrip::new(&labels)
-                .focused(true)
-                .render(frame, frame.area());
+            frame.render_widget(TabStrip::new(&labels).focused(true), frame.area());
         })
         .unwrap();
 

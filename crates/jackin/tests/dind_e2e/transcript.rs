@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 
 //! PTY transcript helpers: spawn per-stream pipe collectors that drain into
 //! `Arc<Mutex<Vec<u8>>>` buffers, plus substring / deadline-based waiters
@@ -58,14 +69,6 @@ pub(super) fn transcript_contains(buffer: &Arc<Mutex<Vec<u8>>>, needle: &str) ->
             .expect("pty output buffer mutex must not be poisoned"),
     )
     .contains(needle)
-}
-
-pub(super) fn transcript_contains_all(buffer: &Arc<Mutex<Vec<u8>>>, needles: &[&str]) -> bool {
-    let guard = buffer
-        .lock()
-        .expect("pty output buffer mutex must not be poisoned");
-    let contents = String::from_utf8_lossy(&guard);
-    needles.iter().all(|needle| contents.contains(needle))
 }
 
 pub(super) fn buffer_bytes(buffer: &Arc<Mutex<Vec<u8>>>) -> Vec<u8> {

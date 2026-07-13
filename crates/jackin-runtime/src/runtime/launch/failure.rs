@@ -67,12 +67,18 @@ pub(crate) fn launch_failure_cli_error(
         return anyhow::anyhow!("{error:#}");
     };
     let mut report = String::from("Docker build command failed");
-    let mut table = tabled::Table::builder([
+    let diagnostics_path = run.path().display().to_string();
+    let docker_output_path = docker_output.display().to_string();
+    let mut rows: Vec<[&str; 2]> = vec![
         ["run id", run.run_id()],
-        ["run diagnostics", &run.path().display().to_string()],
-        ["docker output", &docker_output.display().to_string()],
-    ])
-    .build();
+        ["run diagnostics", diagnostics_path.as_str()],
+    ];
+    let backend_query = jackin_diagnostics::backend_query_hint(run.run_id());
+    if let Some(ref query) = backend_query {
+        rows.push(["backend query", query.as_str()]);
+    }
+    rows.push(["docker output", docker_output_path.as_str()]);
+    let mut table = tabled::Table::builder(rows).build();
     table
         .with(tabled::settings::Style::modern())
         .with(tabled::settings::Remove::row(

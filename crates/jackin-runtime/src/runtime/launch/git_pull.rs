@@ -41,6 +41,8 @@ pub(crate) fn pull_git_sources_with_git(
     print_starts: bool,
 ) -> Vec<GitPullResult> {
     let mut pulls = Vec::new();
+    let detail = format!("sources={}", sources.len());
+    jackin_diagnostics::active_timing_started("repo", "git_pull", Some(&detail));
 
     for src in sources {
         if debug {
@@ -82,10 +84,12 @@ pub(crate) fn pull_git_sources_with_git(
         ));
     }
 
-    pulls
+    let results = pulls
         .into_iter()
         .map(|(src, handle)| handle.join().unwrap_or(GitPullResult::JoinError { src }))
-        .collect()
+        .collect();
+    jackin_diagnostics::active_timing_done("repo", "git_pull", Some(&detail));
+    results
 }
 
 pub(crate) fn print_git_pull_results(results: &[GitPullResult]) {
@@ -95,15 +99,12 @@ pub(crate) fn print_git_pull_results(results: &[GitPullResult]) {
                 print_git_pull_stdout(stdout);
             }
             GitPullResult::Failure { src, stderr } => {
-                tracing::warn!(src, stderr = stderr.trim(), "git pull failed");
                 eprintln!("  Warning: git pull failed in {}: {}", src, stderr.trim());
             }
             GitPullResult::SpawnError { src, error } => {
-                tracing::warn!(src, %error, "git pull spawn error");
                 eprintln!("  Warning: could not run git pull in {src}: {error}");
             }
             GitPullResult::JoinError { src } => {
-                tracing::warn!(src, "git pull thread panicked");
                 eprintln!("  Warning: git pull thread panicked in {src}");
             }
         }
@@ -124,6 +125,9 @@ pub(crate) fn record_git_pull_results(results: &[GitPullResult]) -> (usize, usiz
         match result {
             GitPullResult::Success { src, stdout } => {
                 ok += 1;
+                if let Some(run) = jackin_diagnostics::active_run() {
+                    run.compact("git_pull", &format!("git pull succeeded in {src}"));
+                }
                 jackin_diagnostics::active_debug(
                     "git_pull",
                     &format!("git pull in {src} succeeded: {}", stdout.trim()),

@@ -12,12 +12,12 @@ The field stage has an extra navigation layer: fields belonging to named 1Passwo
 
 ## Behavioral invariants
 
-| INV | Description | Verify by |
-|---|---|---|
-| INV-1 | Field selection commits `OpField::reference` verbatim when present; only fixtures missing `reference` use the synthesized `op://<vault>/<item>/<label>` fallback | Selection path returns `field.reference.clone()` first, then falls back to `format!("op://{}/{}/{}"...)` |
-| INV-2 | No secret values in the picker path — `RawOpField` has no `value` field; serde drops it silently | `grep value op_picker.rs`; exhaustive destructure test at `operator_env.rs` |
-| INV-3 | Loading is async (background worker + channel); key handlers stay synchronous and only advance UI state / `poll_load()` | Background loaders use `std::thread::spawn`; key handlers do not call the CLI directly |
-| INV-4 | `field_list_state.selected` indexes the *display* row list (returned by `build_field_display_rows()`), not `filtered_fields()` directly — section-header rows are navigable; Enter on a header toggles collapse rather than committing a field | Display rows built from `FieldDisplayRow` enum; collapse/expand via `collapsed_sections: HashSet<String>`; `reset_selection_for_filter` and Up/Down both use `build_field_display_rows().len()` |
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-1 | Field selection commits `OpField::reference` verbatim when present; only fixtures missing `reference` use the synthesized `op://<vault>/<item>/<label>` fallback | Selection path returns `field.reference.clone()` first, then falls back to `format!("op://{}/{}/{}"...)` | `jackin_console::tui::op_picker::tests::picker_commit_uses_op_provided_reference_not_synthesized` `jackin_console::tui::op_picker::tests::enter_on_field_commits_op_path` |
+| INV-2 | No secret values in the picker path — `RawOpField` has no `value` field; serde drops it silently | `grep value op_picker.rs`; exhaustive destructure test at `operator_env.rs` | `jackin_console::tui::op_picker::tests::op_cache_picker_does_not_store_field_values` |
+| INV-3 | Loading is async (background worker + channel); key handlers stay synchronous and only advance UI state / `poll_load()` | Background loaders use `std::thread::spawn`; key handlers do not call the CLI directly | `jackin_console::tui::op_picker::tests::vault_list_uses_injected_runner_in_async_worker` `jackin_console::tui::op_picker::tests::item_list_uses_injected_runner_in_async_worker` |
+| INV-4 | `field_list_state.selected` indexes the *display* row list (returned by `build_field_display_rows()`), not `filtered_fields()` directly — section-header rows are navigable; Enter on a header toggles collapse rather than committing a field | Display rows built from `FieldDisplayRow` enum; collapse/expand via `collapsed_sections: HashSet<String>`; `reset_selection_for_filter` and Up/Down both use `build_field_display_rows().len()` | `jackin_console::tui::op_picker::tests::left_collapse_via_header_keeps_selection_in_range` |
 
 ## State machine
 

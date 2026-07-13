@@ -174,6 +174,62 @@ fn renders_runtime_finalization_in_one_layer() {
 }
 
 #[test]
+fn runtime_payload_layers_follow_heavy_agent_and_default_home_layers() {
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude],
+        Some(".jackin-runtime/jackin-capsule"),
+        &BTreeMap::new(),
+        None,
+    );
+
+    let agent_section = dockerfile
+        .find("# ── Agent CLIs")
+        .expect("agent install section");
+    let default_home_guard = dockerfile
+        .find("jackin default-home contains a non-group-readable path")
+        .expect("default-home guard");
+    let entrypoint_copy = dockerfile
+        .find(
+            "COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh",
+        )
+        .expect("entrypoint copy");
+    let status_copy = dockerfile
+        .find("COPY --link --chmod=0755 .jackin-runtime/agent-status /jackin/runtime/agent-status")
+        .expect("agent-status copy");
+    let title_shim_copy = dockerfile
+        .find("COPY --link --chown=agent:0 --chmod=0644 .jackin-runtime/zsh-title-shim /jackin/runtime/zsh-title-shim")
+        .expect("title-shim copy");
+    let capsule_copy = dockerfile
+        .find("COPY --link --chmod=0755 .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule")
+        .expect("capsule copy");
+    let finalization = dockerfile
+        .find("RUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'")
+        .expect("runtime finalization");
+
+    assert!(
+        agent_section < default_home_guard,
+        "agent/default-home ordering changed unexpectedly: {dockerfile}"
+    );
+    for (name, index) in [
+        ("entrypoint", entrypoint_copy),
+        ("agent-status", status_copy),
+        ("title shim", title_shim_copy),
+        ("capsule", capsule_copy),
+    ] {
+        assert!(
+            default_home_guard < index && index < finalization,
+            "{name} runtime payload copy should be after default-home guard and before finalization: {dockerfile}"
+        );
+    }
+    assert!(
+        title_shim_copy < finalization,
+        "finalization must run after the zsh title shim exists: {dockerfile}"
+    );
+}
+
+#[test]
 fn renders_derived_dockerfile_keeps_construct_agent_identity() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
