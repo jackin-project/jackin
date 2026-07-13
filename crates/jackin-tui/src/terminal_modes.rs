@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared host-terminal mode escape helpers.
 
 pub fn enable_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {

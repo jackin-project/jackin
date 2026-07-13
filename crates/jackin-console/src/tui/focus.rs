@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Focus management helpers: track which TUI component owns input focus and
 //! compute cursor movement within a scrollable list.
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Rendering helper types and functions for the capsule multiplexer.
 
 use crate::pull_request::PullRequestInfo;

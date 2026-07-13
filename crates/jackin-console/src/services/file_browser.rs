@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Non-TUI file-browser services.
 //!
 //! Directory scanning, sandbox policy, git-origin inspection, and host browser

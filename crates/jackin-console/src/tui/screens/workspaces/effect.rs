@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspaces-screen TUI effect vocabulary.
 //!
 //! Runtime instance refresh, launch, and config persistence are executed by

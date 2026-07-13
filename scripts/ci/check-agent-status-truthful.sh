@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 # Bind the agent-runtime-status roadmap page's claimed status to reality.
 #
 # Root cause this guards (see the roadmap page's "Root cause" section): the page

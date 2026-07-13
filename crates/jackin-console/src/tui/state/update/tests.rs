@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::tui::auth::AuthKind;
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{

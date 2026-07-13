@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Settings screen update logic: handle keyboard events and produce effects
 //! for the General, Mounts, Environments, Auth, and Trust tab group.
 //!

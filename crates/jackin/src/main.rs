@@ -4,6 +4,10 @@
 //! Entry point: [`main`] — host CLI binary entry.
 
 #![expect(
+
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
     clippy::print_stdout,
     clippy::print_stderr,
     reason = "binary entrypoint renders clap help and top-level errors"

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! JSONL reader for Claude Code token usage.
 //!
 //! Reads `/home/agent/.config/claude/projects/**/*.jsonl` (v1.0.30+) or

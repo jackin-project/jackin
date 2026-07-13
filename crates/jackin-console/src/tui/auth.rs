@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Console auth-tab UI vocabulary.
 
 /// Which auth section the operator is currently editing.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Path helpers: tilde expansion, path normalization (without filesystem access).
 //!
 //! Not responsible for mount parsing or workspace config — purely string/path

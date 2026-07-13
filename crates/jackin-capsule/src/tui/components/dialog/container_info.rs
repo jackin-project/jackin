@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `ContainerInfo` dialog constructors and state helpers extracted from the
 //! main coordinator impl. `ContainerInfoDiagnostics` is re-exported at the
 //! parent level.

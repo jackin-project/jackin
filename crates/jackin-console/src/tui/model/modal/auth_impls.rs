@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Auth-related trait impls on `ConsoleModal`. Each impl carries the full
 //! 22-type-parameter list and the same where-clause bundle — moved here
 //! during the Ledger 2B decomposition so the modal enum stays a thin

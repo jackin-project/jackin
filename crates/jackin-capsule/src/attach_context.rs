@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Attach-session context: state for a single host connection to the daemon,
 //! including PTY ownership, focus, and environment passthrough.
 //!

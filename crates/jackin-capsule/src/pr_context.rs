@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! GitHub pull-request context lookup for the capsule status bar.
 
 use std::path::Path;

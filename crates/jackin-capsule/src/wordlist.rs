@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 /// Curated wordlist for assigning unique, human-memorable codenames to tabs.
 ///
 /// Three semantic families — animals, landforms, weather/celestial — chosen
