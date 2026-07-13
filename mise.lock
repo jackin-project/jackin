@@ -161,7 +161,7 @@ version = "0.22.2"
 backend = "cargo:cargo-audit"
 
 [[tools."cargo:cargo-deny"]]
-version = "0.19.8"
+version = "0.20.0"
 backend = "cargo:cargo-deny"
 
 [[tools."cargo:cargo-fuzz"]]
