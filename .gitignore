@@ -27,3 +27,6 @@ docs/superpowers/plans/
 .claude/
 
 PR-576-review.md
+
+# Generated crate docs pages (see docs/scripts/gen-crate-pages.ts)
+docs/content/docs/reference/crates/*.mdx

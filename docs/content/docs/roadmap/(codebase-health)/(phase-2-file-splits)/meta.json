@@ -1,9 +1,0 @@
-{
-  "title": "Phase 2 \u2014 File splits",
-  "defaultOpen": false,
-  "pages": [
-    "split-input-editor",
-    "split-runtime-launch",
-    "unify-settings-editor-surfaces"
-  ]
-}

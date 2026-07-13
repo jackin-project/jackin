@@ -2,7 +2,7 @@
 title: "Test infrastructure: shared test-support crate, behavioral specs, and parser fuzzing"
 ---
 
-Design rationale and phased proposal for three related testing gaps that block the codebase readability program: duplicated test helpers across mega-test-files, missing behavioral specs for major components, and no property/fuzz testing for parser surfaces. The actionable remainder of this work is tracked at [Test infrastructure & behavioral specs](/roadmap/test-infra-behavioral-specs/); this page owns the "why" and the design alternatives.
+Design rationale and phased proposal for three related testing gaps that block the codebase readability program: duplicated test helpers across mega-test-files, missing behavioral specs for major components, and no property/fuzz testing for parser surfaces. The actionable remainder of this work is now tracked under [Codebase health: Rust strictness, structure, and AI reviewability](/roadmap/codebase-health-enforcement/); this page owns the "why" and the design alternatives.
 
 ## Problem
 
@@ -68,7 +68,7 @@ Two testing layers, neither of which exists today for the parser crates:
 
 ## Related work
 
-- [Test infrastructure & behavioral specs](/roadmap/test-infra-behavioral-specs/) — the actionable roadmap item this page supports
+- [Codebase health: Rust strictness, structure, and AI reviewability](/roadmap/codebase-health-enforcement/) — the actionable roadmap item this page supports
 - [Visual snapshot testing (CLI & TUI)](/reference/research/testing/visual-snapshots/visual-snapshot-testing/) — the SVG golden-artifact format that would build on the shared test-support crate
 - [Rust CI tooling & dependency hygiene](/reference/research/ci/rust-tooling/rust-ci-tooling/) — `cargo insta` for snapshot tests, `cargo-llvm-cov` for coverage
-- [Behavioral spec: runtime/launch.rs](/roadmap/behavioral-spec-runtime-launch/) — the existing spec this proposal extends to other components
+- [runtime/launch Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) — the existing spec this proposal extends to other components

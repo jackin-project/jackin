@@ -1,0 +1,72 @@
+---
+title: "Operator console state machine — Behavioral Spec"
+---
+
+Behavioral invariant contract for the host operator console state machine — primarily <RepoFile path="crates/jackin-console/src/tui/state/manager.rs">crates/jackin-console/src/tui/state/manager.rs</RepoFile> and the screen `update` modules. Phase 2 console/view-model work and settings/editor unification must preserve every INV below.
+
+## Scope
+
+Covers the console's stage/modal stack, service-poll → state handoff, launch prompts, list/editor/settings surfaces, and how background services report back into `ManagerState`. Does **not** cover capsule-side attach (see [Capsule daemon](/reference/developer-reference/specs/capsule-daemon/)) or the pure op-picker planning machine (see [op_picker](/reference/developer-reference/specs/op-picker/)).
+
+## Why the MISSING ratio is high
+
+`manager.rs` has **no sibling `tests.rs`**. Citations below lean on `tui/model/tests.rs`, settings/op-picker tests, and screen update tests. That asymmetry is signal: characterization of the manager itself is the prioritized gap.
+
+## Behavioral invariants
+
+### Stage stack / navigation
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-C1 | `ManagerState` is the single stage owner: `ConsoleManagerStageState` / `ManagerStage` drive which surface is active | trait impls on `ManagerState` in `manager.rs` | MISSING |
+| INV-C2 | Opening a launch-agent prompt updates both app state and manager stage together | launch prompt plan helpers | `jackin_console::tui::model::tests::open_launch_agent_prompt_plan_updates_app_and_manager` |
+| INV-C3 | Opening a launch-role prompt updates app + manager; clearing pending launch clears launch input only where intended | launch role plan helpers | `jackin_console::tui::model::tests::open_launch_role_prompt_plan_updates_app_and_manager` `jackin_console::tui::model::tests::clear_pending_launch_plan_clears_launch_state` `jackin_console::tui::model::tests::clear_pending_launch_role_plan_clears_only_role` |
+| INV-C4 | Taking a pending launch plan removes it from manager state (one-shot consume) | `take_pending_launch_plan` / pair take | `jackin_console::tui::model::tests::take_pending_launch_plan_takes_input` `jackin_console::tui::model::tests::take_pending_launch_and_role_plan_takes_pair` |
+| INV-C5 | Opening a launch provider picker updates app + manager | provider picker plan | `jackin_console::tui::model::tests::open_launch_provider_picker_plan_updates_app_and_manager` |
+
+### Modal / blocker policy
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-C6 | Base surface is blocked while a modal is open (`console_app_base_surface_unblocked_respects_modal_blockers`) | modal blocker checks | `jackin_console::tui::model::tests::console_app_base_surface_unblocked_respects_modal_blockers` |
+| INV-C7 | List modals (container info, error popup, github picker) open through `ListModalState` on the manager | `ListModalState` impl | MISSING |
+| INV-C8 | Inline picker dismissal is owned by `InlinePickerDismissalState` so partial dismissals do not leave half-open pickers | `InlinePickerDismissalState` impl | MISSING |
+
+### Service → state handoff
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-C9 | Pending role-load / drift-check / isolation-cleanup / op-commit results are polled into manager state rather than written from background tasks directly | `poll_pending_*` methods on manager-facing traits | MISSING |
+| INV-C10 | Instance refresh is throttled (`InstanceRefreshThrottleState`) so list polls do not stampede Docker | throttle state in manager | MISSING |
+| INV-C11 | Mount-info cache refresh targets are explicit (`MountInfoRefreshTarget`) so screens do not re-fetch whole trees on every frame | mount cache fields on `ManagerState` | MISSING |
+
+### Workspace list / preview
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-C12 | Workspace tree disclosure, list selection, hover, and scroll state are trait-split on `ManagerState` so list screens share one selection model | trait impl block at `manager.rs` | MISSING |
+| INV-C13 | Preview focus and pane cursor state live on the manager, not in ad-hoc screen locals | `PreviewFocusState` / `PreviewPaneCursorState` | MISSING |
+
+### Settings / editor
+
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-C14 | Settings and editor expose stage-debug and footer-height facts through the same manager-facing traits | `settings_stage_debug` / `editor_stage_debug` | MISSING |
+| INV-C15 | Auth config editing goes through dialog-only flows (no free-form inline mutation of live config without a save plan) | auth editor update paths | MISSING |
+
+## Test seams
+
+- **Model plan functions** — pure “plan” helpers exercised in `tui/model/tests.rs` that update app + manager without a live terminal.
+- **Screen update modules** — settings/op-picker/workspace update tests for local reducers.
+- **Service poll traits** — inject completed `poll_pending_*` results in future characterization tests (no harness yet on `manager.rs`).
+
+## Missing coverage (worklist, risk-ordered)
+
+1. **Direct `manager.rs` characterization** — INV-C1, C7–C13 have no sibling tests; add a `state/manager/tests.rs` (or extract pure reducers first).
+2. **Service handoff** — INV-C9/C10: fake service completion should drive deterministic stage transitions.
+3. **Settings/editor unification** — INV-C14/C15 feed plan 030 view-model work; pin trait contracts before struct extraction.
+4. **Modal stack depth** — no test that two modal open/close cycles restore the prior stage.
+
+## Asymmetry note
+
+Compared with the capsule daemon (thousands of lines of `daemon/tests.rs`), the console manager is under-specified in tests. Prefer adding MISSING-closing tests here before large view-model refactors.

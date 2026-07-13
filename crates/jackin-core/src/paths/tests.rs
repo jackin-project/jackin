@@ -57,3 +57,20 @@ fn no_overrides_falls_back_to_home_relative_defaults() {
     assert_eq!(paths.data_dir, home.path().join(".jackin/data"));
     assert_eq!(paths.config_dir, home.path().join(".config/jackin"));
 }
+
+#[test]
+fn paths_error_home_dir_message_parity() {
+    let err = PathsError::HomeDirUnresolved;
+    assert_eq!(err.to_string(), "Cannot resolve home directory");
+}
+
+#[test]
+fn ensure_base_dirs_creates_layout() {
+    let root = fake_home();
+    let paths = JackinPaths::for_tests(root.path());
+    paths.ensure_base_dirs().unwrap();
+    assert!(paths.config_dir.is_dir());
+    assert!(paths.roles_dir.is_dir());
+    assert!(paths.data_dir.is_dir());
+    assert!(paths.cache_dir.is_dir());
+}

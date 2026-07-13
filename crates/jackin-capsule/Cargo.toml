@@ -66,6 +66,10 @@ jackin-build-meta = { workspace = true }
 name = "pane_body"
 harness = false
 
+[[bench]]
+name = "scrollback_snapshot"
+harness = false
+
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
 tempfile = { workspace = true }

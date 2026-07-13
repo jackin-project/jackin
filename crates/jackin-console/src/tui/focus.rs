@@ -17,7 +17,7 @@ pub fn moved_selection(selected: usize, row_count: usize, delta: isize) -> usize
     if delta.is_negative() {
         selected.saturating_sub(delta.unsigned_abs())
     } else {
-        selected.saturating_add(delta as usize).min(last)
+        selected.saturating_add(delta.unsigned_abs()).min(last)
     }
 }
 

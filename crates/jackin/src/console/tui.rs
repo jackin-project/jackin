@@ -41,7 +41,7 @@ pub(crate) mod input {
         }
 
         #[cfg(test)]
-        pub(super) mod tests;
+        mod tests;
     }
 
     mod dispatch {

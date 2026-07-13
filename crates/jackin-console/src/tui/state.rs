@@ -224,7 +224,10 @@ pub type CreatePreludeState<'a> = crate::tui::model::ConsoleCreatePreludeState<M
 // ── ManagerState ────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
-#[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)] // independent UI focus flags, not a config-style bag
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
     pub workspaces: Vec<WorkspaceSummary>,
@@ -247,7 +250,10 @@ pub struct ManagerState<'a> {
     /// the already-running daemon captured, so provider choice for a running
     /// container is made in the multiplexer (daemon-owned), not here. The
     /// field stays so a future daemon-queried list can populate it.
-    #[allow(clippy::type_complexity)]
+    #[allow(
+        clippy::type_complexity,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     pub inline_new_session_picker:
         Option<(String, AgentChoiceState, Vec<jackin_protocol::Provider>)>,
     /// Provider picker shown after the agent is committed in

@@ -1,5 +1,6 @@
 //! Tests for `workspace`.
 use super::*;
+use jackin_core::WorkspaceName;
 
 fn ws_with_allowed(allowed: Vec<String>) -> WorkspaceConfig {
     WorkspaceConfig {
@@ -170,43 +171,43 @@ mystery_field = 7
 #[test]
 fn validate_workdir_equal_to_mount_dst() {
     let ws = workspace_with_workdir_and_dst("/workspace/project", "/workspace/project");
-    validate_workspace_config("test", &ws).unwrap();
+    validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap();
 }
 
 #[test]
 fn validate_workdir_inside_mount_dst() {
     let ws = workspace_with_workdir_and_dst("/workspace/project/src", "/workspace/project");
-    validate_workspace_config("test", &ws).unwrap();
+    validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap();
 }
 
 #[test]
 fn validate_workdir_deeply_nested_inside_mount_dst() {
     let ws = workspace_with_workdir_and_dst("/workspace/project/src/main", "/workspace/project");
-    validate_workspace_config("test", &ws).unwrap();
+    validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap();
 }
 
 #[test]
 fn validate_workdir_parent_of_mount_dst() {
     let ws = workspace_with_workdir_and_dst("/workspace", "/workspace/project");
-    validate_workspace_config("test", &ws).unwrap();
+    validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap();
 }
 
 #[test]
 fn validate_workdir_grandparent_of_mount_dst() {
     let ws = workspace_with_workdir_and_dst("/workspace", "/workspace/project/src");
-    validate_workspace_config("test", &ws).unwrap();
+    validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap();
 }
 
 #[test]
 fn validate_workdir_parent_with_trailing_slash_on_dst() {
     let ws = workspace_with_workdir_and_dst("/workspace", "/workspace/project/");
-    validate_workspace_config("test", &ws).unwrap();
+    validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap();
 }
 
 #[test]
 fn validate_rejects_workdir_sibling_of_mount_dst() {
     let ws = workspace_with_workdir_and_dst("/workspace/other", "/workspace/project");
-    let err = validate_workspace_config("test", &ws).unwrap_err();
+    let err = validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap_err();
     assert!(err.to_string().contains(
         "must be equal to, inside, or a parent of one of the workspace mount destinations"
     ));
@@ -216,7 +217,7 @@ fn validate_rejects_workdir_sibling_of_mount_dst() {
 fn validate_rejects_workdir_with_prefix_overlap_but_not_parent() {
     // /workspace/project-v2 is NOT inside /workspace/project
     let ws = workspace_with_workdir_and_dst("/workspace/project-v2", "/workspace/project");
-    let err = validate_workspace_config("test", &ws).unwrap_err();
+    let err = validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap_err();
     assert!(err.to_string().contains(
         "must be equal to, inside, or a parent of one of the workspace mount destinations"
     ));
@@ -226,7 +227,7 @@ fn validate_rejects_workdir_with_prefix_overlap_but_not_parent() {
 fn validate_rejects_mount_dst_with_prefix_overlap_but_not_child() {
     // /workspace/project is NOT a parent of /workspace/project-v2
     let ws = workspace_with_workdir_and_dst("/workspace/project", "/workspace/project-v2");
-    let err = validate_workspace_config("test", &ws).unwrap_err();
+    let err = validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap_err();
     assert!(err.to_string().contains(
         "must be equal to, inside, or a parent of one of the workspace mount destinations"
     ));
@@ -235,7 +236,7 @@ fn validate_rejects_mount_dst_with_prefix_overlap_but_not_child() {
 #[test]
 fn validate_rejects_completely_unrelated_workdir() {
     let ws = workspace_with_workdir_and_dst("/home/user", "/workspace/project");
-    let err = validate_workspace_config("test", &ws).unwrap_err();
+    let err = validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap_err();
     assert!(err.to_string().contains(
         "must be equal to, inside, or a parent of one of the workspace mount destinations"
     ));
@@ -262,7 +263,7 @@ fn validate_workdir_parent_of_any_mount_dst() {
         ],
         ..Default::default()
     };
-    validate_workspace_config("test", &ws).unwrap();
+    validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap();
 }
 
 use jackin_core::MountIsolation;
@@ -501,7 +502,8 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
         dirty_exit_policy: None,
         docker: None,
     };
-    let err = validate_workspace_config("ws", &workspace).unwrap_err();
+    let err =
+        validate_workspace_config(&WorkspaceName::parse("ws").unwrap(), &workspace).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("nested inside"),

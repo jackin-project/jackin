@@ -52,6 +52,7 @@ tempfile = { workspace = true }
 nix = { workspace = true, features = ["user"] }
 
 [dev-dependencies]
+jackin-test-support = { workspace = true }
 jackin-tui = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 tokio = { workspace = true, features = ["test-util"] }
@@ -61,10 +62,13 @@ jackin-build-meta = { workspace = true }
 
 [features]
 daemon-spike = []
-test-support = []
 
 [[bench]]
 name = "launch_attach"
+harness = false
+
+[[bench]]
+name = "launch_pipeline"
 harness = false
 
 [lints]

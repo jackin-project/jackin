@@ -2,6 +2,8 @@
   "title": "Documentation tooling",
   "defaultOpen": false,
   "pages": [
-    "docs-markdown-linting"
+    "docs-markdown-linting",
+    "agent-workflow-cc-sdd",
+    "rustdoc-json-fumadocs"
   ]
 }

@@ -101,3 +101,24 @@ fn warning_run_summary_counts_warning_cache_and_skipped_timing_events() {
         }]
     );
 }
+
+#[test]
+fn mixed_corpus_characterization_pins_complete_summary() {
+    // include_str keeps the corpus in the crate even if the tests/fixtures path is
+    // transiently wiped in shared worktrees; the committed file remains the source.
+    const CORPUS: &str = include_str!("../../tests/fixtures/summary/mixed.jsonl");
+    let summary = summarize_reader(Cursor::new(CORPUS)).expect("fixture should summarize");
+    let got = format!("{summary:#?}");
+    const GOLDEN: &str = include_str!("../../tests/fixtures/summary/mixed.summary.debug");
+    if std::env::var_os("JACKIN_UPDATE_SUMMARY_GOLDEN").is_some() {
+        let golden_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/summary/mixed.summary.debug");
+        std::fs::write(&golden_path, format!("{got}\n")).expect("write golden");
+        return;
+    }
+    assert_eq!(
+        got,
+        GOLDEN.trim_end(),
+        "mixed corpus summary drifted — re-run with JACKIN_UPDATE_SUMMARY_GOLDEN=1 only if intentional"
+    );
+}

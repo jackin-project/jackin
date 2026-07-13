@@ -1,34 +1,7 @@
-//! Agent runtime status authority.
+//! jackin-agent-status: agent-status packs, hooks, and rule evaluation.
 //!
-//! This module owns all state-machine logic for determining what an agent is
-//! doing at any given moment. It replaces the old timer-based
-//! `BLOCKED_AFTER` heuristic with a layered model that is conservative by
-//! default and precise when the runtime exposes semantic events.
-//!
-//! # Architecture
-//!
-//! ```text
-//! Signal sources (multiple, concurrent):
-//!   • Screen rule packs  (`rules`)       — structural terminal matching
-//!   • OSC 133 markers    (`scan_osc133`)  — shell integration sequences
-//!   • Hook/API reports   (`gating`)      — in-container reporter events
-//!   • /proc process      (`process`)     — foreground process identity
-//!
-//!   evidence snapshot ───► arbitrate ───► debounce ───► SessionStatus
-//! ```
-//!
-//! # Adding a new agent runtime
-//!
-//! 1. Add or extend `crates/jackin-agent-status/packs/<slug>.toml`.
-//! 2. Add fixtures under `src/screen/fixtures/<slug>/`.
-//! 3. Add semantic event mapping in `gating.rs` only when the runtime ships
-//!    hooks or a plugin surface.
-//!
-//! Rule packs are loaded from explicit sources: embedded fallbacks first, local
-//! runtime/override directories next, and only then a signed bundle when a
-//! trusted publishing channel is wired. Signed bundles must verify identity and
-//! signature before any TOML is parsed; rejected or malformed bundles keep the
-//! embedded floor live.
+//! **Architecture Invariant:** T2.
+//! Entry point: [`evaluate_rules`] — status pack rule evaluation.
 
 pub mod arbitrate;
 pub mod evidence;

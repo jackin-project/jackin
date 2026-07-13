@@ -10,6 +10,7 @@ use crate::agent::runtime::{
 const FALLBACK_INSTALL_COMMAND: &str =
     bounded_fallback_curl!("https://code.kimi.com/kimi-code/install.sh", " | bash");
 
+/// [`crate::agent::runtime::AgentRuntime`] adapter for Kimi Code.
 #[derive(Debug)]
 pub struct KimiRuntime;
 

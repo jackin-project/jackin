@@ -273,7 +273,7 @@ fn parse_changed_files_accepts_files_api_output() {
 
 #[test]
 fn parse_changed_files_rejects_empty() {
-    assert!(parse_changed_files("\n  \n").is_err());
+    parse_changed_files("\n  \n").unwrap_err();
 }
 
 #[test]
@@ -316,8 +316,8 @@ fn is_diff_too_large_rejects_unrelated_errors() {
 fn json_string_rejects_missing_and_empty() {
     let json = serde_json::json!({ "headRefOid": "" });
 
-    assert!(json_string(&json, "headRefOid").is_err());
-    assert!(json_string(&json, "absent").is_err());
+    json_string(&json, "headRefOid").unwrap_err();
+    json_string(&json, "absent").unwrap_err();
     assert_eq!(
         json_string(&serde_json::json!({ "k": "v" }), "k").unwrap(),
         "v"
