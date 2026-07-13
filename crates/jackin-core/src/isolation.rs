@@ -22,10 +22,12 @@ pub enum MountIsolation {
 }
 
 impl MountIsolation {
+    /// `true` when this is the default read-write bind-mount strategy.
     pub const fn is_shared(&self) -> bool {
         matches!(self, Self::Shared)
     }
 
+    /// Canonical lowercase config/wire spelling (`"shared"`, `"worktree"`, `"clone"`).
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Shared => "shared",

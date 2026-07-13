@@ -14,7 +14,9 @@ use anyhow::{Context, Result, bail};
 use serde_json::json;
 use tempfile::Builder as TempfileBuilder;
 
-const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
+use jackin_core::container_paths;
+
+const CONTAINER_INIT_MARKER: &str = container_paths::CONTAINER_INIT_MARKER;
 
 // Container home for the `agent` user. Every default agent config/credential
 // location hangs off this. The per-agent resolvers below honor an agent's
@@ -97,13 +99,13 @@ fn amp_secrets_path() -> PathBuf {
 fn opencode_auth_path() -> PathBuf {
     xdg_data_home().join("opencode/auth.json")
 }
-const CAPSULE_RUNTIME_BIN: &str = "/jackin/runtime/jackin-capsule";
-const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
-const GIT_HOOK_PATH: &str = "/jackin/state/git-hooks/prepare-commit-msg";
-const GIT_HOOK_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v3.done";
+const CAPSULE_RUNTIME_BIN: &str = container_paths::CAPSULE_BIN;
+const GIT_HOOKS_DIR: &str = container_paths::GIT_HOOKS_DIR;
+const GIT_HOOK_PATH: &str = container_paths::GIT_HOOK_PREPARE_COMMIT_MSG;
+const GIT_HOOK_MARKER: &str = container_paths::GIT_HOOK_PREPARE_COMMIT_MSG_MARKER;
 /// Cached DCO identity written at daemon startup so the hook never calls
 /// `git config` at commit time (avoids transient-empty-config silent skips).
-const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
+const GIT_DCO_IDENTITY_CACHE: &str = container_paths::GIT_DCO_IDENTITY_CACHE;
 #[cfg(debug_assertions)]
 const GIT_DCO_IDENTITY_CACHE_ENV: &str = "JACKIN_GIT_DCO_IDENTITY_CACHE";
 
@@ -353,7 +355,7 @@ fn setup_claude() -> Result<()> {
         first_seed,
         &ForwardedCredential {
             label: "claude",
-            forwarded: Path::new("/jackin/claude/credentials.json"),
+            forwarded: Path::new(container_paths::CLAUDE_CREDENTIALS),
             target: &credentials_path,
             api_key_envs: &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
         },
@@ -402,7 +404,7 @@ fn setup_claude() -> Result<()> {
 /// later launches, re-seed only while the container copy is still the empty
 /// `{}` skeleton — so a populated file the CLI has since written is preserved.
 fn seed_claude_account_json(first_seed: bool) -> Result<()> {
-    let forwarded_account = Path::new("/jackin/claude/account.json");
+    let forwarded_account = Path::new(container_paths::CLAUDE_ACCOUNT);
     if !forwarded_account.is_file() {
         return Ok(());
     }
@@ -577,7 +579,7 @@ fn setup_codex() -> Result<()> {
         jackin_core::Agent::Codex,
         &ForwardedCredential {
             label: "codex",
-            forwarded: Path::new("/jackin/codex/auth.json"),
+            forwarded: Path::new(container_paths::CODEX_AUTH),
             target: &codex_auth_path(),
             api_key_envs: &["OPENAI_API_KEY"],
         },
@@ -840,7 +842,7 @@ fn setup_amp() -> Result<()> {
         jackin_core::Agent::Amp,
         &ForwardedCredential {
             label: "amp",
-            forwarded: Path::new("/jackin/amp/secrets.json"),
+            forwarded: Path::new(container_paths::AMP_SECRETS),
             target: &amp_secrets_path(),
             api_key_envs: &["AMP_API_KEY"],
         },
@@ -855,7 +857,7 @@ fn setup_amp() -> Result<()> {
 /// "no auth" case).
 fn setup_kimi() -> Result<()> {
     let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Kimi)?.is_first_seed();
-    let forwarded = Path::new("/jackin/kimi-code");
+    let forwarded = Path::new(container_paths::KIMI_CODE_DIR);
     let target = Path::new("/home/agent/.kimi-code");
     let forwarded_present = forwarded.is_dir() && dir_nonempty(forwarded)?;
     if first_seed {
@@ -892,7 +894,7 @@ fn setup_opencode() -> Result<()> {
         jackin_core::Agent::Opencode,
         &ForwardedCredential {
             label: "opencode",
-            forwarded: Path::new("/jackin/opencode/auth.json"),
+            forwarded: Path::new(container_paths::OPENCODE_AUTH),
             target: &opencode_auth_path(),
             api_key_envs: &["OPENCODE_API_KEY"],
         },
@@ -904,7 +906,7 @@ fn setup_grok() -> Result<()> {
         jackin_core::Agent::Grok,
         &ForwardedCredential {
             label: "grok",
-            forwarded: Path::new("/jackin/grok/auth.json"),
+            forwarded: Path::new(container_paths::GROK_AUTH),
             target: Path::new(GROK_AUTH_PATH),
             api_key_envs: &["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
         },
@@ -1148,11 +1150,15 @@ fn seed_agent_home(
 /// outcome; the caller copies auth only on [`SeedOutcome::FirstSeed`].
 fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
     let paths = agent.runtime().state_paths();
-    let data_default = format!("/jackin/default-home/{}", paths.credential_dir);
+    let data_default = format!(
+        "{}/{}",
+        container_paths::DEFAULT_HOME_DIR,
+        paths.credential_dir
+    );
     let data_dst = format!("/home/agent/{}", paths.credential_dir);
     match paths.config_dir {
         Some(config_dir) => {
-            let config_default = format!("/jackin/default-home/{config_dir}");
+            let config_default = format!("{}/{config_dir}", container_paths::DEFAULT_HOME_DIR);
             let config_dst = format!("/home/agent/{config_dir}");
             seed_agent_home(
                 &data_default,

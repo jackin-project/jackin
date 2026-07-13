@@ -59,7 +59,13 @@ pub(super) fn used_percent_uncapped(value: f64) -> Option<u16> {
         return None;
     }
     let used = if value <= 1.0 { value * 100.0 } else { value };
-    Some(used.round().clamp(0.0, f64::from(u16::MAX)) as u16)
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "value filtered non-negative above; clamp bounds the f64→u16 cast"
+    )]
+    {
+        Some(used.round().clamp(0.0, f64::from(u16::MAX)) as u16)
+    }
 }
 
 pub(super) fn parse_iso_epoch(value: &str) -> Option<i64> {
@@ -234,7 +240,10 @@ pub(super) fn run_cli_with_timeout(
     Ok(output.stdout)
 }
 
-#[allow(clippy::disallowed_methods)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(super) fn run_cli_with_timeout_full(
     command: &str,
     args: &[&str],

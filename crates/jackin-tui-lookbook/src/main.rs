@@ -1,10 +1,7 @@
-//! Terminal browser and SVG generator for the jackin-tui component lookbook.
+//! jackin-tui-lookbook: interactive lookbook for shared TUI components.
 //!
-//! Usage:
-//!   `tui-lookbook`                            — write SVGs to target/tui-lookbook/
-//!   `tui-lookbook <out-dir>`                  — write SVGs to <out-dir>
-//!   `tui-lookbook --check <dir>`              — verify SVGs are current
-//!   `tui-lookbook --terminal`                 — launch interactive browser
+//! **Architecture Invariant:** T2.
+//! Entry point: [`main`] — lookbook binary entry.
 
 mod interactors;
 mod stories;

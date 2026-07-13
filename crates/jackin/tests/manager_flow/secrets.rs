@@ -1,5 +1,20 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 use super::*;
 use jackin::console::tui::state::{SecretsPickerTarget, TextInputTarget};
+use jackin_core::WorkspaceName;
 
 // ── Secrets tab integration tests ─────────────────────────────────
 
@@ -95,6 +110,7 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
     // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    mark_pending_save_drift_checked_for_test(&mut state);
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
     wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 
@@ -157,6 +173,7 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
     // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    mark_pending_save_drift_checked_for_test(&mut state);
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
     wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 
@@ -258,7 +275,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(&paths)?;
-    ce.create_workspace("big-monorepo", ws)?;
+    ce.create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), ws)?;
     let mut config = ce.save()?;
 
     let cwd = temp.path();
@@ -1001,7 +1018,10 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
 /// is the bare `op://Vault/Item/Field` form (account scope is not
 /// encoded in the path).
 #[test]
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn op_picker_multi_account_flow() -> Result<()> {
     use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
     use jackin_env::{OpAccount, OpField, OpItem, OpVault};

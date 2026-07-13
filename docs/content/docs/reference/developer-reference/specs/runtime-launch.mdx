@@ -25,15 +25,15 @@ load_role (public API)
 
 ## Behavioral invariants
 
-| INV | Description | Verify by |
-|---|---|---|
-| INV-1 | Trust confirmation runs before the image build — an untrusted agent may be cloned and resolved but not built until confirmed | `confirm_trust_for_test` closure runs before `build_agent_image` in `load_role_with` |
-| INV-2 | Token-mode verification fails fast before auth state preparation and runtime startup — a missing credential env var aborts before DinD/network launch | `verify_credential_env_present` runs before `RoleState::prepare` / `launch_role_runtime` |
-| INV-3 | Container slot claim runs before the launch summary is printed — the name the operator sees is the final locked name that flows to the running container | `claim_container_name` runs before the launch-summary step progress and env diagnostic (`print_launch_diagnostic`); the claimed name threads through `launch_role_runtime` |
-| INV-4 | Foreground-attach finalization runs before teardown classification — isolated worktrees are finalized before deciding whether to preserve or clean the container | `finalize_foreground_session` happens before the `inspect_container_state(...)` cleanup match |
-| INV-5 | Cleanup classification preserves restartable sessions and tears down clean exits | `Running` / crash paths disarm cleanup; clean-exit path runs cleanup |
-| INV-6 | `render_exit` runs on both success and error exits from `load_role_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` |
-| INV-7 | Operator `op://` env refs resolve concurrently with a bounded launch budget — 1Password app/daemon wakeups must not serialize the foreground path, and a wedged `op` must still fail instead of blocking forever | `resolve_operator_env` uses the launch-env `OpCli` budget and `resolve_operator_env_with_matching` spawns one resolver worker per included key |
+| INV | Description | Verify by | Tests |
+|---|---|---|---|
+| INV-1 | Trust confirmation runs before the image build — an untrusted agent may be cloned and resolved but not built until confirmed | `confirm_trust_for_test` closure runs before `build_agent_image` in `load_role_with` | `jackin_runtime::runtime::launch::tests::load_namespaced_agent_registers_source_and_trusts_on_accept` `jackin_runtime::runtime::launch::tests::load_namespaced_agent_aborts_when_trust_declined` |
+| INV-2 | Token-mode verification fails fast before auth state preparation and runtime startup — a missing credential env var aborts before DinD/network launch | `verify_credential_env_present` runs before `RoleState::prepare` / `launch_role_runtime` | `jackin_runtime::runtime::launch::tests::verify_credential_api_key_missing_returns_structured_error` `jackin_runtime::runtime::launch::tests::load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind` |
+| INV-3 | Container slot claim runs before the launch summary is printed — the name the operator sees is the final locked name that flows to the running container | `claim_container_name` runs before the launch-summary step progress and env diagnostic (`print_launch_diagnostic`); the claimed name threads through `launch_role_runtime` | `jackin_runtime::runtime::launch::tests::claim_container_name_not_found_claims_unique_ad_hoc_name` |
+| INV-4 | Foreground-attach finalization runs before teardown classification — isolated worktrees are finalized before deciding whether to preserve or clean the container | `finalize_foreground_session` happens before the `inspect_container_state(...)` cleanup match | `jackin_runtime::runtime::launch::tests::load_agent_rolls_back_runtime_on_attached_run_failure` |
+| INV-5 | Cleanup classification preserves restartable sessions and tears down clean exits | `Running` / crash paths disarm cleanup; clean-exit path runs cleanup | `jackin_runtime::runtime::launch::tests::load_agent_cleans_up_sidecar_when_derived_build_fails` `jackin_runtime::runtime::launch::tests::load_agent_cleans_up_when_parallel_sidecar_start_fails` |
+| INV-6 | `render_exit` runs on both success and error exits from `load_role_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` | `jackin_runtime::runtime::launch::tests::render_exit_clears_universe_marker_only_when_no_instances_remain` `jackin_runtime::runtime::launch::tests::render_exit_preserves_universe_marker_when_instances_remain` |
+| INV-7 | Operator `op://` env refs resolve concurrently with a bounded launch budget — 1Password app/daemon wakeups must not serialize the foreground path, and a wedged `op` must still fail instead of blocking forever | `resolve_operator_env` uses the launch-env `OpCli` budget and `resolve_operator_env_with_matching` spawns one resolver worker per included key | `jackin_runtime::runtime::launch::tests::load_agent_skips_non_required_operator_credential_refs` `jackin_runtime::runtime::launch::tests::load_agent_injects_host_ref_operator_env` |
 
 ## Test seams
 

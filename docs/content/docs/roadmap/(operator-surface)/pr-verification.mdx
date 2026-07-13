@@ -1,0 +1,40 @@
+---
+title: "Workspace-Native PR Verification"
+---
+
+**Status**: Partially implemented — `jackin-dev pr sync/clean/env/path/status/explain` ships and is the standard PR verify-locally checkout tool; console-native review mode, repo-committed verification recipes, companion role pinning, docs preview automation, and generic scripted command execution remain open. This is an operator/contributor workflow item, not part of the code-health bucket.
+
+## Shipped facts
+
+`crates/jackin-dev` ships a `jackin-dev` binary (currently version `0.1.12`) with six subcommands under `jackin-dev pr`: `sync`, `clean`, `env`, `path`, `status`, `explain` (see <RepoFile path="crates/jackin-dev/src/main.rs" />). `sync <PR_NUMBER>` clones or refreshes the repo into a per-PR bundle (`~/Projects/jackin-project/test/pr-<PR_NUMBER>/{jackin,env.sh,state/{config,home}}`), fetches the PR head (falling back to `pull/<PR>/head` when the head branch itself was deleted), checks out a disposable local branch guarded against clobbering local changes unless `--force` is passed, builds the `jackin` binary, and writes an `env.sh` that exports `PATH`, `JACKIN_CONFIG_DIR`, and `JACKIN_HOME_DIR` pointing at the bundle. `--config copy` (default) copies the operator's real configuration into the bundle as read-only-in-spirit input with empty state; `--config blank` starts both empty. `sync` also auto-detects, from the PR's changed-file list (via `gh pr diff --name-only`, not the 100-file-capped `gh pr view --json files`), whether the diff touches `jackin-capsule` or its dependency closure or touches construct image inputs, and builds/exports a local capsule binary and/or a local, commit-pinned construct image accordingly; `jackin-dev pr explain <PR_NUMBER>` previews that same decision without cloning or building. `clean` removes the bundle, `env`/`path` print shell commands and the bundle root, and `status` reports local/remote head SHAs, freshness, branch, and whether `env.sh`/`config`/`home` exist.
+
+Packaging is live: a dedicated <RepoFile path=".github/workflows/jackin-dev.yml">.github/workflows/jackin-dev.yml</RepoFile> workflow builds `jackin-dev` for four targets, gates PRs that touch its inputs on a version bump, and on `main` publishes a GitHub release plus opens and auto-merges a formula-update PR against `jackin-project/homebrew-tap`. This is a separate pipeline from the product's release/preview workflows, scoped by path filters to `crates/jackin-dev/**` and its few other inputs.
+
+`jackin-dev pr sync` is the adopted standard: <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> documents it as the Checkout block's first step, ahead of any smoke command, specifically because launches resolve whichever binary comes first on `PATH` and miss the PR's container-side changes without the capsule export running first.
+
+## Remaining work
+
+1. **Console-native review mode.** An instance-anchored review surface (sidebar mode switch, command list, command output view, shell handoff) does not exist in `crates/jackin-console`; jackin-capsule already tracks and resolves an instance's branch to its pull request in-container (<RepoFile path="crates/jackin-capsule/src/pull_request.rs" />, <RepoFile path="crates/jackin-capsule/src/pr_context.rs" />), but nothing surfaces that in the host-side console.
+2. **Repo-committed verification recipe.** No `jackin.tasks.toml` parsing, build-set resolution, named-command running, or diff-driven relevance exists anywhere in the workspace.
+3. **Companion role pinning for verification.** Pinning a specific role/branch to a verification run is unimplemented; `sync` has no role-related flags today.
+4. **Documentation preview automation.** Starting a recipe's server command, waiting for readiness, deriving and opening the PR's changed pages, and clean teardown are all unimplemented.
+5. **Isolation profiles as a review-mode setting.** `--config copy|blank` already exists as a one-shot `sync` flag; an interactive per-run review-mode setting for it does not.
+6. **Scripted/non-interactive recipe execution, PR browsing without an instance, branches/role-repo PRs as standalone targets, merge preview, coordinated multi-repo verification, and in-container agent review** all remain deferred, per the phased plan below.
+
+Design detail for all of the above — console mockups, the recipe TOML shape, isolation and companion-role design, per-PR bundle metadata plans, host-side guarantees, risks/edge cases, and the prior-art survey — lives in the linked research page rather than here.
+
+## Future phases
+
+- **Phase 1** — PR details (number, title, base/head, state, checks) in the console instance detail block.
+- **Phase 2** — Review mode + run-all baseline: sidebar mode switch, command list, host-side checkout, whole build set with pass/fail summary.
+- **Phase 3** — In-surface verbs + diff-driven relevance: build / run-named / refresh / shell-into-checkout.
+- **Phase 4** — Documentation preview: server lifecycle, changed-page derivation, teardown.
+- **Phase 5** — Isolation profiles as a review-mode setting.
+- **Phase 6** — Companion role pinning threaded into inner jackin❯ launches.
+
+## Related work
+
+- Research: [Console-native PR verification: design and prior art](/reference/research/ci/pr-verification/console-native-pr-verification-design/) — full design rationale, console mockups, recipe schema, isolation/companion-role design, and prior-art survey for everything past Phase 0.
+- [Console agent session control](/roadmap/console-agent-session-control/) — review is anchored to an instance and shares the console's instance-selection layout; it reads the instance's pull-request context but runs its commands host-side, not inside the instance.
+- [Custom operator tools](/roadmap/custom-operator-tools/) and [task source abstraction](/roadmap/task-source-abstraction/) — related task surfaces, but the verification recipe stays a distinct repo-committed thing; a shared resolver is worth revisiting only once task source abstraction defines a concrete shape.
+- [Operator handler system](/roadmap/operator-handler-system/) — the cross-platform "open this URL" capability the documentation preview needs; resolve it there once rather than in more than one place.

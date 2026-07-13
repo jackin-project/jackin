@@ -32,7 +32,7 @@ That means a symptom-layer patch inside the Capsule input parser cannot be corre
 
 ### Host CLIs
 
-The public Codex CLI documentation says Codex supports image inputs in two ways: paste images into the interactive composer, or pass image file paths with `--image` / `-i`. It does not document the internal paste implementation, but the architecture implication is clear: a local Codex process has access to the host clipboard and local image files before it constructs the model request. See [Codex CLI features — Image inputs](https://developers.openai.com/codex/cli/features#image-inputs).
+The public Codex CLI documentation says Codex supports image inputs in two ways: paste images into the interactive composer, or pass image file paths with `--image` / `-i`. It does not document the internal paste implementation, but the architecture implication is clear: a local Codex process has access to the host clipboard and local image files before it constructs the model request. See [Codex CLI features](https://learn.chatgpt.com/docs/codex/cli).
 
 Claude Code exposes similar behavior in practice: when run directly on the host, it detects an image in the clipboard and inserts an image placeholder into its prompt composer. That does not prove a public protocol jackin❯ can rely on; it proves the host-local process has a capability the in-container process lacks.
 

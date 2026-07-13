@@ -27,7 +27,6 @@
 use crate::runtime_setup::run_command;
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeSet;
-use std::fmt::Write as _;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
 use std::process::{Command, Stdio};
@@ -212,7 +211,7 @@ fn resolve(domain: &str) -> Vec<IpAddr> {
 fn ipset_restore_stream(members: &BTreeSet<String>) -> String {
     let mut stream = format!("create {IPSET} hash:net maxelem 65536\nflush {IPSET}\n");
     for member in members {
-        let _ = writeln!(stream, "add {IPSET} {member}");
+        stream.push_str(&format!("add {IPSET} {member}\n"));
     }
     stream
 }

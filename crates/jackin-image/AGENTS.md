@@ -1,0 +1,2 @@
+- Derived vs construct boundary: this crate generates *derived* images on top of the operator-built `construct` base (`docker/construct/`); do not blur the two.
+- Binary acquisition is cached and version-checked: agent/capsule binary fetches go through the acquisition + version-check helpers, never an inlined one-off download.

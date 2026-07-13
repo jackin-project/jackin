@@ -1,0 +1,86 @@
+---
+title: "Sensitive-boundary code health"
+---
+
+**Status**: Open — split out from [Codebase health: Rust strictness, structure, and AI reviewability](/roadmap/codebase-health-enforcement/) so routine code-health work can be analyzed without loading credential, secret, supply-chain, and control-surface details.
+
+## Why this is separate
+
+Anthropic's Fable 5 launch notes and redeployment notes describe broad safeguards that fall back on cybersecurity-related requests, intentionally including ambiguous benign work. This page therefore owns jackin❯ code-health work whose subject matter is sensitive-boundary: credential flow, redaction, host/control boundaries, workflow and dependency hardening, and supply-chain provenance. Routine linting, module extraction, tests, docs freshness, performance budgets, and telemetry shape stay in the code-health item.
+
+## Scope boundary
+
+Keep this page as the source of truth for sensitive-boundary enforcement items that would otherwise make routine code-health planning trigger model safeguards. Do not duplicate the full code-health program here; link back to the routine page for Rust strictness, restructuring, deterministic tests, perf budgets, docs drift, and agent-feedback loops.
+
+## Work moved from routine code health
+
+### Toolchain, workflow, and supply-chain canaries
+
+1. **Workflow security lint.** Add [zizmor](https://github.com/zizmorcore/zizmor) beside the existing `actionlint` gate: template injection, credential persistence, mutable `uses:` references, and excessive `permissions:` across `.github/workflows/`. The workflows are code an agent edits; lint them like code.
+2. **Secret scanning.** Run [gitleaks](https://github.com/gitleaks/gitleaks) over the tree and each PR's commits. jackin❯ forwards real credentials (`op`, `gh`, agent auth) through env and config surfaces, and agent-authored fixtures are the likeliest leak vector; a committed token is a revocation incident even when review catches it.
+3. **Dependency review beyond advisories.** `cargo deny`/`cargo audit` catch known-bad dependencies; they say nothing about unreviewed code. <RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> records a deliberate cargo-vet/cargo-crev no-adopt while jackin❯ is solo-maintainer; this item is that decision's named revisit trigger. Trial [cargo-vet](https://mozilla.github.io/cargo-vet/) as an advisory lane in exemptions-heavy mode, importing shared audits so the marginal cost of an explicit audit record per new/updated dependency stays near zero. Promote to a gate only if audit-import coverage proves the burden negligible, and update the AGENTS entry when the trial starts.
+4. **Auditable binaries.** Build releases with [cargo-auditable](https://github.com/rust-secure-code/cargo-auditable) so the exact dependency graph is embedded in the shipped binary and `cargo audit bin` works on artifacts in the wild — the binary-side complement of the syft SBOM the release pipeline already produces.
+5. **License and advisory rationale.** Require every non-Apache/MIT license exception and every advisory ignore to carry a rationale or grouped policy note so the current strict supply-chain posture stays reviewable.
+6. **Transitive-unsafe dependency census.** Run a pinned one-time or advisory `cargo geiger` census and document its scope, false positives, and revisit trigger. Then explicitly adopt a scheduled metric or record an evidence-backed no-adopt decision; first-party `unsafe_code = "forbid"` does not cover dependency implementations.
+
+### Sensitive shared contracts
+
+1. **Process execution boundary.** Consolidate command-output wrappers for `op`, `gh`, xtask, capsule probes, and runtime shell commands into one capture/timeout/retry/status/redaction model. Every call site that can handle protected values must use the shared boundary.
+2. **Agent auth/path contract.** Define one declarative per-agent path and credential contract consumed by host provisioning and in-container setup, rather than duplicating agent config-dir rules across `jackin-instance` and `jackin-capsule`.
+3. **GitHub URL normalization.** Move duplicated URL normalization and credential stripping into a lower-level shared utility with table tests.
+4. **Security-specific dylint rules.** Add first-party lints for direct process execution outside the boundary, telemetry/export calls that bypass the typed API, and schema/config fields that add a credential-bearing path without the matching schema and migration artifacts.
+
+### Executable security policy tests
+
+1. **No silent host writes.** Property/table tests over the mount planner and Docker-args builder: for arbitrary valid configs, generated mounts and writable paths never include host dotfiles, `.git` control dirs, or host remotes unless the corresponding opt-in is set — and when it is set, the opt-in must be visible in the launch-summary model. The forbidden-path table lives in one source of truth shared between the test and the implementation.
+2. **Telemetry and error redaction.** Golden/property tests feed canary credentials through launch/auth paths and assert credential-shaped strings never appear in `clog!`/`cdebug!` output, error chains, diagnostics JSONL, or OTLP export.
+3. **Control-socket authorization.** Tests pin who may connect/attach/displace and what an unauthenticated peer can observe, so a protocol refactor cannot silently widen the control surface.
+4. **Credential env-only posture.** Under hardened Docker profiles, prefer env-only or otherwise reduced credential exposure and emit a posture decision per agent auth type. Coordinate with [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-contract/) and [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
+5. **Shared sensitive-test fixtures.** Once two or more launch, auth, or telemetry suites need them, provide one downward-only shared canary-secret corpus and sink-agnostic negative-assertion API in `jackin-test-support`. Acceptance: console, capsule file, diagnostics JSONL, and OTLP conformance reuse the same corpus/assertions; a digit-only snapshot normalizer or an unused helper is not completion evidence.
+
+### Telemetry safety gates
+
+1. **Redaction before every sink.** One shared redaction layer ahead of console, file, and OTLP: key-pattern and value-pattern scrubbing, typed summaries instead of raw Docker inspect JSON / env arrays / generated Dockerfiles, artifact links for large payloads. The telemetry-redaction policy tests above are the gate.
+2. **Conformance assertions for sensitive export.** The telemetry conformance lane from routine Phase 8 must include negative assertions for protected values, bounded span-name cardinality, logs correlated to spans, and default-mode export volume within budget.
+3. **Issue fingerprint hygiene.** Error grouping must exclude container ids, run ids, paths, uids, and command text so one recurring failure is one issue with N events and no sensitive dynamic identifiers in the grouping key.
+
+## First-wave implementation plans
+
+The detailed executor plans that include sensitive examples live under <RepoFile path="security-review/README.md">security-review/README.md</RepoFile>. Keep those out of routine `plans/` work so a code-health executor can work without loading them.
+
+| Plan | Why it lives here |
+|---|---|
+| <RepoFile path="security-review/001-bump-crossbeam-epoch-advisory.md">Plan 001</RepoFile> | Clears a RustSec advisory and validates the dependency-policy lane |
+| <RepoFile path="security-review/002-redactor-compound-key-leak.md">Plan 002</RepoFile> | Fixes a diagnostics redaction gap for compound credential names |
+| <RepoFile path="security-review/005-credentials-out-of-docker-argv.md">Plan 005</RepoFile> | Moves forwarded credentials out of process argv |
+| <RepoFile path="security-review/006-git-clone-url-allowlist.md">Plan 006</RepoFile> | Hardens role-repo clone inputs and transport policy |
+
+## Relationship to existing security roadmap items
+
+| Item | Relationship |
+|---|---|
+| [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-contract/) | Runtime profile enforcement and credential env-only posture |
+| [Security Threat Model & Signed Releases](/roadmap/security-threat-model-and-signed-releases/) | Release signing, provenance, SBOM, and in-process artifact verification |
+| [Open review findings](/roadmap/open-review-findings/) | Catalog of accepted review findings; move rows here when they become planned security code-health work |
+| [Auth reliability and convenience program](/roadmap/auth-reliability-program/) | Auth lifecycle, health, source folders, and live sync |
+| [Credential source pattern](/roadmap/credential-source-pattern/) | Generalized credential representation across env, command, OS store, and file backends |
+| [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) | Operator-mediated host actions and mid-session credential requests |
+
+## Research and prior art
+
+- [Claude Fable 5 and Claude Mythos 5](https://www.anthropic.com/news/claude-fable-5-mythos-5) — documents Fable 5's broad classifiers, fallback behavior, and covered areas.
+- [Redeploying Fable 5](https://www.anthropic.com/news/redeploying-fable-5) — documents the larger cybersecurity safety margin, benign false positives during routine coding/debugging, and why ambiguous defensive work can be routed away from Fable.
+- [zizmor](https://github.com/zizmorcore/zizmor) — static security analysis for GitHub Actions workflows, complementing the `actionlint` gate CI already runs.
+- [gitleaks](https://github.com/gitleaks/gitleaks) — secret scanning for credential surfaces.
+- [cargo-vet](https://mozilla.github.io/cargo-vet/) — dependency audit records with shared-audit imports.
+- [cargo-auditable](https://github.com/rust-secure-code/cargo-auditable) — embeds the dependency list in release binaries so `cargo audit bin` works on shipped artifacts.
+
+## Verification commands for roadmap edits
+
+When this page or roadmap sidebar structure changes, run:
+
+```sh
+cargo xtask roadmap audit
+cargo xtask docs repo-links
+cargo xtask research check
+```

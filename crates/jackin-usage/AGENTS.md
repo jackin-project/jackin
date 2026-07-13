@@ -1,0 +1,2 @@
+- Shared logging tier is rooted here (`clog!`/`cdebug!`, re-exported via `jackin-diagnostics`) so both binaries share one tier — do not introduce a parallel logging path.
+- Borrow, don't clone, usage views: account materialization serializes from borrowed views/iterators, not full clones.

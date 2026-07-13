@@ -1,0 +1,408 @@
+# ratchet.toml — unified shrink-only budgets (codebase-health-enforcement Phase 7).
+# Each entry: a metric (computed by a named provider in jackin-xtask), a bound,
+# and shrink-only semantics: measured > bound fails (growth); measured < bound
+# fails telling you to tighten the bound; measured == bound is steady state.
+# `kind = "presence"` entries are allowlists: listed keys must still be violations,
+# unlisted violations fail. Regenerate any family: cargo xtask lint ratchet --print <family>.
+# deny.toml exceptions and .codebook.toml are deliberately NOT folded here:
+# cargo-deny/codebook own their semantics.
+#
+# Single source of truth: legacy file-size-budget.toml / test-layout-allowlist.toml /
+# suppression-budget.toml are gone; `lint files|tests|suppressions` are shims over
+# the families below.
+
+[[family]]
+id = "file-size-production"
+kind = "numeric"
+provider = "file_lines_production"
+cap = 1850
+mode = "enforce"
+[[family.entry]]
+key = "crates/jackin-runtime/src/runtime/image.rs"
+bound = 1938
+
+[[family]]
+id = "file-size-test"
+kind = "numeric"
+provider = "file_lines_test"
+cap = 10000
+mode = "enforce"
+
+[[family]]
+id = "test-layout"
+kind = "presence"
+provider = "test_layout_violations"
+mode = "enforce"
+
+[[family]]
+id = "bare-allow-per-crate"
+kind = "numeric"
+provider = "bare_allow_per_crate"
+# cap = 0 → every nonzero bare-allow crate must be listed (no unlisted debt).
+# 2026-07-12: production crates at measured 0. jackin-xtask keeps 1 fixture
+# string in unit tests that intentionally contains bare `#[allow(...)]` for
+# the bare-allow parser itself (`health::tests::parses_bare_allow`).
+cap = 0
+mode = "enforce"
+[[family.entry]]
+key = "jackin-xtask"
+bound = 1
+
+# Per-lint expect counts: key = "{lint}@{crate}" (see ratchet::expect_key).
+[[family]]
+id = "expect-per-lint-crate"
+kind = "numeric"
+provider = "expect_per_lint_crate"
+cap = 0
+mode = "enforce"
+[[family.entry]]
+key = "and@jackin-dev"
+bound = 1
+[[family.entry]]
+key = "and@jackin-xtask"
+bound = 2
+[[family.entry]]
+key = "before@jackin-usage"
+bound = 1
+[[family.entry]]
+key = "cargo@jackin-dev"
+bound = 1
+[[family.entry]]
+key = "cargo@jackin-xtask"
+bound = 2
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-capsule"
+bound = 6
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-launch-tui"
+bound = 6
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-tui"
+bound = 5
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage"
+bound = 12
+[[family.entry]]
+key = "clippy::cognitive_complexity@jackin-xtask"
+bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin"
+bound = 9
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-build-meta"
+bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-capsule"
+bound = 9
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-config"
+bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-console"
+bound = 3
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-dev"
+bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-diagnostics"
+bound = 6
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-docker"
+bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-env"
+bound = 3
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-host"
+bound = 5
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-image"
+bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-instance"
+bound = 5
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-pr-trailers"
+bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-runtime"
+bound = 12
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-term"
+bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-tui"
+bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-usage"
+bound = 3
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-xtask"
+bound = 3
+[[family.entry]]
+key = "clippy::duration_suboptimal_units@jackin-env"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-xtask"
+bound = 1
+[[family.entry]]
+key = "clippy::exit@jackin"
+bound = 2
+[[family.entry]]
+key = "clippy::expect_used@jackin"
+bound = 2
+[[family.entry]]
+key = "clippy::expect_used@jackin-capsule"
+bound = 1
+[[family.entry]]
+key = "clippy::expect_used@jackin-config"
+bound = 2
+[[family.entry]]
+key = "clippy::expect_used@jackin-console-oppicker"
+bound = 3
+[[family.entry]]
+key = "clippy::expect_used@jackin-diagnostics"
+bound = 1
+[[family.entry]]
+key = "clippy::expect_used@jackin-image"
+bound = 1
+[[family.entry]]
+key = "clippy::expect_used@jackin-runtime"
+bound = 1
+[[family.entry]]
+key = "clippy::expect_used@jackin-test-support"
+bound = 2
+[[family.entry]]
+key = "clippy::large_enum_variant@jackin-term"
+bound = 1
+[[family.entry]]
+key = "clippy::large_futures@jackin-docker"
+bound = 1
+[[family.entry]]
+key = "clippy::large_futures@jackin-protocol"
+bound = 2
+[[family.entry]]
+key = "clippy::let_underscore_must_use@jackin-console"
+bound = 1
+[[family.entry]]
+key = "clippy::let_underscore_must_use@jackin-core"
+bound = 1
+[[family.entry]]
+key = "clippy::panic@jackin-capsule"
+bound = 1
+[[family.entry]]
+key = "clippy::panic@jackin-config"
+bound = 1
+[[family.entry]]
+key = "clippy::panic@jackin-term"
+bound = 4
+[[family.entry]]
+key = "clippy::print_stderr@jackin"
+bound = 4
+[[family.entry]]
+key = "clippy::print_stderr@jackin-dev"
+bound = 1
+[[family.entry]]
+key = "clippy::print_stderr@jackin-instance"
+bound = 1
+[[family.entry]]
+key = "clippy::print_stderr@jackin-isolation"
+bound = 2
+[[family.entry]]
+key = "clippy::print_stderr@jackin-pr-trailers"
+bound = 1
+[[family.entry]]
+key = "clippy::print_stderr@jackin-runtime"
+bound = 5
+[[family.entry]]
+key = "clippy::print_stderr@jackin-xtask"
+bound = 2
+[[family.entry]]
+key = "clippy::print_stdout@jackin"
+bound = 3
+[[family.entry]]
+key = "clippy::print_stdout@jackin-build-meta"
+bound = 1
+[[family.entry]]
+key = "clippy::print_stdout@jackin-dev"
+bound = 1
+[[family.entry]]
+key = "clippy::print_stdout@jackin-pr-trailers"
+bound = 1
+[[family.entry]]
+key = "clippy::print_stdout@jackin-runtime"
+bound = 1
+[[family.entry]]
+key = "clippy::print_stdout@jackin-term"
+bound = 1
+[[family.entry]]
+key = "clippy::print_stdout@jackin-xtask"
+bound = 26
+[[family.entry]]
+key = "clippy::reversed_empty_ranges@jackin-capsule"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-env"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-xtask"
+bound = 1
+[[family.entry]]
+key = "clippy::type_complexity@jackin-console"
+bound = 1
+[[family.entry]]
+key = "clippy::type_complexity@jackin-test-support"
+bound = 1
+[[family.entry]]
+key = "clippy::unwrap_used@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::unwrap_used@jackin-capsule"
+bound = 1
+[[family.entry]]
+key = "clippy::unwrap_used@jackin-runtime"
+bound = 1
+[[family.entry]]
+key = "clippy::unwrap_used@jackin-test-support"
+bound = 1
+[[family.entry]]
+key = "dead_code@jackin"
+bound = 1
+[[family.entry]]
+key = "dead_code@jackin-core"
+bound = 4
+[[family.entry]]
+key = "dead_code@jackin-diagnostics"
+bound = 1
+[[family.entry]]
+key = "dead_code@jackin-env"
+bound = 2
+[[family.entry]]
+key = "dead_code@jackin-runtime"
+bound = 2
+[[family.entry]]
+key = "dead_code@jackin-tui-lookbook"
+bound = 1
+[[family.entry]]
+key = "dead_code@jackin-xtask"
+bound = 3
+[[family.entry]]
+key = "gh@jackin-xtask"
+bound = 2
+[[family.entry]]
+key = "git@jackin-dev"
+bound = 1
+[[family.entry]]
+key = "kept@jackin-xtask"
+bound = 1
+[[family.entry]]
+key = "measured_n@jackin-xtask"
+bound = 1
+[[family.entry]]
+key = "missing_debug_implementations@jackin-capsule"
+bound = 2
+[[family.entry]]
+key = "missing_debug_implementations@jackin-config"
+bound = 1
+[[family.entry]]
+key = "missing_debug_implementations@jackin-console"
+bound = 1
+[[family.entry]]
+key = "missing_debug_implementations@jackin-instance"
+bound = 1
+[[family.entry]]
+key = "missing_debug_implementations@jackin-launch-tui"
+bound = 3
+[[family.entry]]
+key = "missing_debug_implementations@jackin-runtime"
+bound = 1
+[[family.entry]]
+key = "missing_debug_implementations@jackin-test-support"
+bound = 1
+[[family.entry]]
+key = "not@jackin"
+bound = 2
+[[family.entry]]
+key = "not@jackin-build-meta"
+bound = 1
+[[family.entry]]
+key = "not@jackin-capsule"
+bound = 2
+[[family.entry]]
+key = "not@jackin-console"
+bound = 1
+[[family.entry]]
+key = "not@jackin-diagnostics"
+bound = 1
+[[family.entry]]
+key = "not@jackin-host"
+bound = 4
+[[family.entry]]
+key = "not@jackin-runtime"
+bound = 3
+[[family.entry]]
+key = "not@jackin-usage"
+bound = 1
+[[family.entry]]
+key = "not@jackin-xtask"
+bound = 1
+[[family.entry]]
+key = "private_bounds@jackin-core"
+bound = 1
+[[family.entry]]
+key = "private_bounds@jackin-protocol"
+bound = 1
+[[family.entry]]
+key = "redirectable@jackin-xtask"
+bound = 1
+[[family.entry]]
+key = "single_use_lifetimes@jackin-console"
+bound = 11
+[[family.entry]]
+key = "synchronous@jackin-capsule"
+bound = 1
+
+[[family]]
+id = "agent-doc-bytes"
+kind = "numeric"
+provider = "agent_doc_bytes"
+mode = "report"
+# Report-only Phase 6 context-economy seed; never fails.
+
+# Telemetry-conformance export-volume budgets: constants live in the canonical
+# crates/jackin-diagnostics/src/tests.rs suite; shrink-only via this family.
+[[family]]
+id = "export-volume"
+kind = "numeric"
+provider = "export_volume_constants"
+mode = "enforce"
+# Cap 0 → every measured key must be listed (no unlisted firehose constants).
+cap = 0
+[[family.entry]]
+key = "max_debug_logs"
+bound = 64
+[[family.entry]]
+key = "max_spans"
+bound = 48
+
+# dhat allocation ceilings (source: jackin-capsule perf_budgets).
+# iai-callgrind: PINNED — project CI images do not ship valgrind; re-evaluate
+# when a valgrind-capable runner is available.
+[[family]]
+id = "perf"
+kind = "numeric"
+provider = "perf_dhat_budgets"
+mode = "enforce"
+cap = 0
+[[family.entry]]
+key = "focused_full_snapshot_max_blocks"
+bound = 3
+[[family.entry]]
+key = "focused_full_snapshot_max_bytes"
+bound = 1024
+[[family.entry]]
+key = "focused_borrowed_view_max_blocks"
+bound = 3
+[[family.entry]]
+key = "focused_borrowed_view_max_bytes"
+bound = 1024

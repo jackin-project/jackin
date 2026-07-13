@@ -22,6 +22,7 @@ jackin-diagnostics = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 secrecy = { workspace = true }
 portable-pty = { workspace = true }
 sha2 = { workspace = true }

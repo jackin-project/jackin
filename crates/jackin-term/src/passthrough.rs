@@ -33,7 +33,12 @@ pub enum PassthroughEvent {
     /// `id` is the link id (empty = anonymous), `uri` is the target URI.
     /// An empty `uri` ends the hyperlink (equivalent to OSC 8;;ST).
     /// The capsule applies a URI-scheme safety filter before forwarding.
-    Hyperlink { id: String, uri: String },
+    Hyperlink {
+        /// OSC 8 link id (empty = anonymous).
+        id: String,
+        /// Target URI; empty ends the hyperlink.
+        uri: String,
+    },
     /// Allowlisted unhandled CSI — forwarded raw for passthrough. Only the
     /// documented allowlist reaches the client this way (kitty keyboard
     /// push/pop, xterm modifyOtherKeys); everything else becomes
@@ -103,11 +108,8 @@ impl PassthroughEvent {
             }
             // Raw pass-through — emit as-is.
             Self::UnhandledCsi(bytes) => Some(bytes.clone()),
-            Self::DroppedCsi(_) => None,
-            // Query replies go to the agent PTY, not the outer terminal.
-            Self::Reply(_) => None,
-            // Capsule-internal instruction; no outer-terminal output.
-            Self::ScrollbackClear => None,
+            // No outer-terminal output: dropped CSI, PTY-only replies, capsule-internal.
+            Self::DroppedCsi(_) | Self::Reply(_) | Self::ScrollbackClear => None,
         }
     }
 }
@@ -128,6 +130,7 @@ impl PassthroughBuffer {
         self.events.push(event);
     }
 
+    /// True when no events are buffered.
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
     }

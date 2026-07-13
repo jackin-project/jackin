@@ -34,6 +34,7 @@ pub struct OpCli {
 }
 
 impl OpCli {
+    /// Default runner: `op` binary, 30s timeout, default-account context.
     pub fn new() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_owned(),
@@ -82,6 +83,7 @@ impl OpCli {
         }
     }
 
+    /// Runner pinned to a custom `op` binary path (default timeout).
     pub const fn with_binary(binary: String) -> Self {
         Self {
             binary,
@@ -246,11 +248,15 @@ where
 }
 
 fn op_spawn_error(binary: &str, error: &std::io::Error) -> anyhow::Error {
-    anyhow::anyhow!(
+    // Typed source for cross-crate classification; context keeps the
+    // operator-visible wording identical to the pre-typed path.
+    let detail = error.to_string();
+    let message = format!(
         "failed to spawn 1Password CLI {binary:?}: {error} \
          (is `op` installed and on your PATH? see \
          https://developer.1password.com/docs/cli/)"
-    )
+    );
+    anyhow::Error::new(jackin_core::OpProbeError::NotInstalled { detail }).context(message)
 }
 
 fn validate_op_source(source: &str) -> anyhow::Result<()> {
@@ -445,7 +451,11 @@ fn run_op_with_timeout(
     let status = match rx.recv_timeout(timeout) {
         Ok(Ok(status)) => status,
         Ok(Err(e)) => {
-            anyhow::bail!("1Password CLI wait failed for `{cmd_label}`: {e}");
+            let message = format!("1Password CLI wait failed for `{cmd_label}`: {e}");
+            return Err(anyhow::Error::new(jackin_core::OpProbeError::Other {
+                message: message.clone(),
+            })
+            .context(message));
         }
         Err(_) => {
             let killed = child
@@ -456,9 +466,10 @@ fn run_op_with_timeout(
                 drop(c.kill());
                 drop(c.wait());
             }
-            anyhow::bail!(
-                "1Password CLI timed out after {}s running `{cmd_label}`",
-                timeout.as_secs()
+            let seconds = timeout.as_secs();
+            let message = format!("1Password CLI timed out after {seconds}s running `{cmd_label}`");
+            return Err(
+                anyhow::Error::new(jackin_core::OpProbeError::Timeout { seconds }).context(message),
             );
         }
     };
@@ -473,32 +484,36 @@ fn run_op_with_timeout(
     let stderr = String::from_utf8_lossy(&stderr_bytes);
     let stderr_trimmed = truncate_stderr(&stderr);
     let stderr_msg = stderr_trimmed.trim();
-    anyhow::bail!(
+    let message = format!(
         "1Password CLI exited with status {} running `{cmd_label}`: {stderr_msg}",
         format_exit_status(status),
-    )
+    );
+    // Single place that inspects op's stderr wording for the not-signed-in
+    // class; consumers classify via downcast, not substring re-parse.
+    if message.contains("not currently signed") || message.contains("no accounts") {
+        return Err(anyhow::Error::new(jackin_core::OpProbeError::NotSignedIn {
+            detail: message.clone(),
+        })
+        .context(format!(
+            "1Password CLI is not signed in (running `{cmd_label}` returned: {message}). \
+                 Run `op signin` in your shell, then retry."
+        )));
+    }
+    Err(anyhow::Error::new(jackin_core::OpProbeError::Other {
+        message: message.clone(),
+    })
+    .context(message))
 }
 
-/// Wraps [`run_op_with_timeout`] and additionally rewrites the
-/// "not signed in" / "no accounts" stderr signature into a dedicated
-/// error message the picker pattern-matches on.
+/// Wraps [`run_op_with_timeout`]. Not-signed-in classification is applied
+/// at the origin inside that helper; this remains the shared JSON probe
+/// entry so call sites stay identical.
 fn run_op_json(
     binary: &str,
     args: &[&str],
     timeout: std::time::Duration,
 ) -> anyhow::Result<Vec<u8>> {
-    let cmd_label = format!("op {}", args.join(" "));
-    run_op_with_timeout(binary, args, timeout).map_err(|e| {
-        let msg = e.to_string();
-        if msg.contains("not currently signed") || msg.contains("no accounts") {
-            anyhow::anyhow!(
-                "1Password CLI is not signed in (running `{cmd_label}` returned: {msg}). \
-                 Run `op signin` in your shell, then retry."
-            )
-        } else {
-            e
-        }
-    })
+    run_op_with_timeout(binary, args, timeout)
 }
 
 /// Append `--account <id>` to an `op` argument vector when an account is

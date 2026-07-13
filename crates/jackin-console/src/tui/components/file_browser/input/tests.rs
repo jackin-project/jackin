@@ -66,7 +66,7 @@ fn commit_with_services(
     state: &mut FileBrowserState,
     target: PathBuf,
 ) -> FileBrowserOutcome<PathBuf> {
-    let outcome = state.commit_or_reject(target);
+    let outcome = FileBrowserState::commit_or_reject(target);
     apply_with_services(state, outcome)
 }
 

@@ -6,13 +6,17 @@
 //! (or `crate::...` paths). Helpers promoted to pub(super) in coordinator
 //! are reached via `super::`.
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::{
     emit_auth_provision_launch_plan, purge_or_mark_clean_exited, tag_errors, tagged_grant_errors,
 };
 
 use jackin_config::AppConfig;
 use jackin_core::CommandRunner;
+use jackin_core::WorkspaceName;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
@@ -215,68 +219,30 @@ where
         network.clone(),
         socket_dir,
     );
-    let workspace_docker_for_grants = config
-        .workspaces
-        .get(&workspace.label)
-        .and_then(|wc| wc.docker.as_ref());
-    let resolved_profile = crate::runtime::docker_profile::resolve_profile(
-        opts.docker_profile,
-        workspace_docker_for_grants.and_then(|wd| wd.profile),
-        config.docker.profile,
-    );
-    let mut grant_errors = Vec::new();
-    if let Some(grants) = config.docker.grants.as_ref() {
-        grant_errors.extend(tagged_grant_errors("config", grants));
-    }
-    if let Some(grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
-        grant_errors.extend(tagged_grant_errors("workspace", grants));
-    }
-    if let Err(error) = super::bail_on_grant_errors(grant_errors) {
-        cleanup.run(docker).await;
-        return Err(error);
-    }
-    let mut effective_grants = crate::runtime::docker_profile::resolve_effective_grants(
-        resolved_profile.0,
-        config.docker.grants.as_ref(),
-        workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
-    );
-    if let Some(min) = validated_repo
-        .manifest
-        .docker
-        .as_ref()
-        .and_then(|d| d.min_profile)
-        && !crate::runtime::docker_profile::profile_meets_floor(resolved_profile.0, min)
-    {
-        cleanup.run(docker).await;
-        return Err(anyhow::anyhow!(
-            "role `{}` requires Docker profile `{min}` or more capable; resolved `{}` from {}",
-            selector.key(),
-            resolved_profile.0,
-            resolved_profile.1,
-        ));
-    }
-    if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
-        let role_grants = crate::runtime::docker_profile::DockerGrants {
-            dind: docker_cfg.dind,
-            allowed_hosts: docker_cfg.allowed_hosts.clone(),
-            capabilities_add: docker_cfg.capabilities_add.clone(),
-            ..Default::default()
+    // Phase: grants validated (typestate). Failure → cleanup only (suite A).
+    let grants_validated =
+        match super::launch_phases::validate_launch_grants(super::launch_phases::GrantPhaseInput {
+            config,
+            workspace_label: workspace.label.as_str(),
+            workspace_docker: None,
+            opts_docker_profile: opts.docker_profile,
+            selector,
+            role_manifest: &validated_repo.manifest,
+        }) {
+            Ok(validated) => validated,
+            Err(error) => {
+                super::launch_phases::cleanup_after_grant_failure(&cleanup, docker).await;
+                return Err(error);
+            }
         };
-        if let Err(error) = super::bail_on_grant_errors(tagged_grant_errors("role", &role_grants)) {
-            cleanup.run(docker).await;
-            return Err(error);
-        }
-        effective_grants =
-            crate::runtime::docker_profile::fold_role_grants(effective_grants, &role_grants);
-    }
-    if let Err(error) = super::bail_on_grant_errors(tag_errors(
-        "merged",
-        crate::runtime::docker_profile::validate_effective_grants(&effective_grants),
-    )) {
-        cleanup.run(docker).await;
-        return Err(error);
-    }
-    let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
+    let effective_grants = grants_validated.effective_grants;
+    let resolved_profile = (
+        grants_validated.resolved_profile,
+        grants_validated.profile_source,
+    );
+    let dind_started = grants_validated.dind_started;
+    // Phase: image decision classified (typestate; pure, no Docker I/O).
+    let image_phase = super::launch_phases::classify_image_phase(&image_decision);
     // Start the sidecar future before image materialization so network/DinD
     // setup can make progress while runtime binaries and Docker build run.
     if let Some(progress) = steps.progress_mut() {
@@ -324,9 +290,12 @@ where
 
     // Step 2: Prepare runtime assets and build the derived image when the
     // earlier image decision proved the local recipe is missing/stale.
-    let (image, selected_image_reused) = match image_decision {
-        decision @ (crate::runtime::image::ImageDecision::Reuse { .. }
-        | crate::runtime::image::ImageDecision::RefreshInBackground { .. }) => {
+    let (image, selected_image_reused) = match (image_phase.class, image_decision) {
+        (
+            super::launch_phases::ImagePhaseClass::ReuseOrBackgroundRefresh,
+            decision @ (crate::runtime::image::ImageDecision::Reuse { .. }
+            | crate::runtime::image::ImageDecision::RefreshInBackground { .. }),
+        ) => {
             let (image, materialization_reason) = match decision {
                 crate::runtime::image::ImageDecision::Reuse { image } => {
                     (image, "recipe_hash_match")
@@ -353,10 +322,14 @@ where
                     "reused local image",
                 );
             }
+            debug_assert!(image_phase.selected_image_reused);
             (image, true)
         }
-        build_decision @ (crate::runtime::image::ImageDecision::BuildFromPublished { .. }
-        | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. }) => {
+        (
+            super::launch_phases::ImagePhaseClass::BuildRequired,
+            build_decision @ (crate::runtime::image::ImageDecision::BuildFromPublished { .. }
+            | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. }),
+        ) => {
             let (reason, role_git_sha, build_source, build_base_image_override) =
                 match build_decision {
                     crate::runtime::image::ImageDecision::BuildFromPublished {
@@ -495,7 +468,15 @@ where
                     return Err(error);
                 }
             };
+            debug_assert!(!image_phase.selected_image_reused);
             (image, false)
+        }
+        _ => {
+            // Class and decision variants must stay in lock-step.
+            cleanup.run(docker).await;
+            return Err(anyhow::anyhow!(
+                "internal: image phase class does not match ImageDecision variant"
+            ));
         }
     };
     let host_workdir_fingerprint = super::super::manifest_host_workdir_fingerprint(workspace);
@@ -567,12 +548,23 @@ where
     // `jackin_config::resolve_mode` and
     // `operator_env::build_attributed_layers` respectively.
     let workspace_name_str = workspace_name.as_deref().unwrap_or("");
+    let workspace_opt = if workspace_name_str.is_empty() {
+        None
+    } else {
+        Some(WorkspaceName::parse(workspace_name_str).map_err(anyhow::Error::from)?)
+    };
+    // Ad-hoc / path launches have no saved workspace key; still need a
+    // display token for AuthCredentialMissing messaging.
+    let workspace_for_verify = match workspace_opt.as_ref() {
+        Some(ws) => ws.clone(),
+        None => WorkspaceName::parse("adhoc").map_err(anyhow::Error::from)?,
+    };
     let mode_resolution =
-        super::super::build_mode_resolution(config, agent, workspace_name_str, &role_key);
+        super::super::build_mode_resolution(config, agent, workspace_opt.as_ref(), &role_key);
     let env_layers = agent
         .required_env_var(auth_mode)
         .map_or_else(Vec::new, |env_var| {
-            super::super::build_env_layer_states(config, workspace_name_str, &role_key, env_var)
+            super::super::build_env_layer_states(config, workspace_opt.as_ref(), &role_key, env_var)
         });
     if let Err(error) = verify_credential_env_present(
         agent,
@@ -580,7 +572,7 @@ where
         &operator_env,
         &mode_resolution,
         &env_layers,
-        workspace_name_str,
+        &workspace_for_verify,
         &role_key,
     ) {
         cleanup.run(docker).await;
@@ -590,9 +582,9 @@ where
     // Resolve the GitHub-auth axis. Layered like the per-agent
     // resolver but with no agent dimension — `.config/gh/` is
     // shared by every agent in the container.
-    let github_mode = jackin_config::resolve_github_mode(config, workspace_name_str, &role_key);
+    let github_mode = jackin_config::resolve_github_mode(config, workspace_opt.as_ref(), &role_key);
     let github_env_decls =
-        jackin_config::build_github_env_layers(config, workspace_name_str, &role_key);
+        jackin_config::build_github_env_layers(config, workspace_opt.as_ref(), &role_key);
     let github_required_env_decls =
         github_env_declarations_for_mode(&github_env_decls, github_mode);
     // Resolve `[…github.env]` only under modes that consume it.
@@ -646,7 +638,7 @@ where
     if let Err(error) = verify_github_token_present(
         github_mode,
         github_ctx.token.as_deref(),
-        workspace_name_str,
+        &workspace_for_verify,
         role_key.as_str(),
     ) {
         cleanup.run(docker).await;
@@ -667,7 +659,7 @@ where
     let container_name_owned = container_name.clone();
     let manifest_owned = validated_repo.manifest.clone();
     let config_owned = config.clone();
-    let workspace_name_owned = workspace_name_str.to_owned();
+    let workspace_opt_owned = workspace_opt.clone();
     let role_key_owned = role_key.clone();
     let github_ctx_owned = github_ctx.clone();
     let role_state_future = async move {
@@ -676,7 +668,7 @@ where
                 jackin_config::resolve_mode(
                     &config_owned,
                     a,
-                    &workspace_name_owned,
+                    workspace_opt_owned.as_ref(),
                     &role_key_owned,
                 )
             };
@@ -686,7 +678,7 @@ where
                 jackin_config::resolve_sync_source_dir(
                     &config_owned,
                     a,
-                    &workspace_name_owned,
+                    workspace_opt_owned.as_ref(),
                     &role_key_owned,
                 )
             };
@@ -768,14 +760,14 @@ where
     }
 
     if agent != jackin_core::agent::Agent::Codex {
-        let _expiry_days = workspace_name
-            .as_deref()
+        let _expiry_days = workspace_opt
+            .as_ref()
             .filter(|_| auth_mode == jackin_config::AuthForwardMode::OAuthToken)
             .and_then(|ws| match jackin_env::expiry_days_for_launch(paths, ws) {
                 Ok(days) => days,
                 Err(e) => {
                     let message = format!(
-                        "[jackin] note: token expiry cache for workspace {ws:?} \
+                        "[jackin] note: token expiry cache for workspace {ws} \
                                  is unreadable ({e}); re-run \
                                  `jackin workspace claude-token setup {ws}` to refresh."
                     );
@@ -829,7 +821,11 @@ where
     // command is assembled (so the docker `-v` flags reflect the
     // per-mount bind sources).
     let interactive = true;
-    let workspace_label = workspace.label.as_str();
+    // Path/display label (may be a workdir path for ad-hoc workspaces) — not
+    // the config-stem WorkspaceName used for saved-workspace identity.
+    let workspace_label = workspace
+        .as_workspace_label()
+        .map_err(anyhow::Error::from)?;
     jackin_diagnostics::debug_log!(
         "isolation",
         "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
@@ -845,7 +841,7 @@ where
         );
     }
     let materialize_preflight = crate::isolation::materialize::PreflightContext {
-        workspace_name: workspace_label.to_owned(),
+        workspace_label: workspace_label.clone(),
         force: opts.force,
         interactive,
     };
@@ -854,7 +850,7 @@ where
         &container_state,
         &role_key,
         &container_name,
-        workspace_label,
+        &workspace_label,
         &materialize_preflight,
         runner,
     );
@@ -915,21 +911,16 @@ where
                 "materialize_workspace",
                 Some("error"),
             );
-            if let Err(status_err) = super::super::write_instance_status(
+            super::launch_phases::mark_failed_setup_then_cleanup(
                 paths,
                 &container_state,
+                &container_name,
                 &mut instance_manifest,
-                InstanceStatus::FailedSetup,
-            ) {
-                let message = format!(
-                    "jackin: warning: failed to mark FailedSetup for {container_name} \
-                         after workspace materialization error: {status_err:#}; on-disk status may be stale"
-                );
-                if let Some(run) = jackin_diagnostics::active_run() {
-                    run.compact("status", &message);
-                }
-            }
-            cleanup.run(docker).await;
+                &cleanup,
+                docker,
+                "workspace materialization error",
+            )
+            .await;
             return Err(error);
         }
     };
@@ -941,7 +932,7 @@ where
     }
 
     let dirty_exit_policy =
-        config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label));
+        config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
     // The in-capsule dirty-exit modal assesses every isolated worktree/clone
     // mount; `shared` mounts are host-owned and never checked.
     let isolated_worktrees = materialized
@@ -1068,7 +1059,10 @@ where
             role_key: &role_key,
         },
     };
-    #[allow(clippy::needless_borrow)]
+    #[allow(
+        clippy::needless_borrow,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     let launch_result = super::super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
     if launch_result.is_err() {
         // FailedSetup write error must not abort cleanup; surface to stderr
@@ -1097,90 +1091,113 @@ where
     // launch config stay behind for operator inspection and get
     // swept by the next explicit `jackin eject` / Purge.
     cleanup.keep_socket_dir();
-    super::super::write_instance_status(
-        paths,
-        &container_state,
-        &mut instance_manifest,
-        InstanceStatus::Running,
-    )?;
 
-    // Finalize per-mount isolation worktrees BEFORE the container teardown
-    // decision below: clean exits without dirty/unpushed state get their
-    // worktrees swept; dirty state is preserved through the rich cleanup
-    // dialog. A `ReturnToAgent` choice restarts + re-attaches the container
-    // exactly once so the operator can address the dirty state inside the
-    // role, then the safe cleanup is retried.
-    let interactive_finalize = true;
-    // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
-    // recorded in exit-action.json; the host only executes it — no host dialog.
-    let mut prompt = crate::isolation::finalize::ExitActionPrompt {
-        state_dir: paths.data_dir.join(&container_name).join("state"),
+    // Post-success finalization: status writes, attach-outcome inspect, and
+    // foreground finalize. On any error reclaim DinD/network/certs while
+    // cleanup is still armed — bare `?` here used to return before the
+    // teardown match and orphan those resources.
+    let decision = {
+        let finalize_result: anyhow::Result<crate::isolation::finalize::FinalizeDecision> = async {
+            super::super::write_instance_status(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                InstanceStatus::Running,
+            )?;
+
+            // Finalize per-mount isolation worktrees BEFORE the container teardown
+            // decision below: clean exits without dirty/unpushed state get their
+            // worktrees swept; dirty state is preserved through the rich cleanup
+            // dialog. A `ReturnToAgent` choice restarts + re-attaches the container
+            // exactly once so the operator can address the dirty state inside the
+            // role, then the safe cleanup is retried.
+            let interactive_finalize = true;
+            // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
+            // recorded in exit-action.json; the host only executes it — no host dialog.
+            let mut prompt = crate::isolation::finalize::ExitActionPrompt {
+                state_dir: paths.data_dir.join(&container_name).join("state"),
+            };
+            let dirty_exit_policy = config.resolve_dirty_exit_policy(
+                workspace_name
+                    .as_deref()
+                    .and_then(|n| config.workspaces.get(n)),
+            );
+            let outcome = super::super::inspect_attach_outcome(docker, &container_name).await?;
+            super::super::write_instance_attach_outcome(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                outcome,
+            )?;
+            let mut decision = crate::isolation::finalize::finalize_foreground_session(
+                &container_name,
+                &paths.data_dir.join(&container_name),
+                outcome,
+                interactive_finalize,
+                dirty_exit_policy,
+                &mut prompt,
+                docker,
+                runner,
+            )
+            .await?;
+            super::super::write_preserved_status_if_applicable(
+                decision,
+                paths,
+                &container_state,
+                &mut instance_manifest,
+            )?;
+            if matches!(
+                decision,
+                crate::isolation::finalize::FinalizeDecision::ReturnToAgent
+            ) {
+                // Restart detached, then attach through the jackin-capsule client
+                // socket. Attaching `docker start -ai` to PID 1 would only show
+                // daemon logs, not the multiplexer UI the operator needs to fix
+                // the preserved worktree. We do not loop further: if the operator
+                // still leaves dirty state, the second pass will fall back to
+                // Preserved and exit normally.
+                start_or_reconnect_capsule_client(paths, &container_name, docker, runner).await?;
+                let outcome2 =
+                    super::super::inspect_attach_outcome(docker, &container_name).await?;
+                super::super::write_instance_attach_outcome(
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                    outcome2,
+                )?;
+                decision = crate::isolation::finalize::finalize_foreground_session(
+                    &container_name,
+                    &paths.data_dir.join(&container_name),
+                    outcome2,
+                    interactive_finalize,
+                    dirty_exit_policy,
+                    &mut prompt,
+                    docker,
+                    runner,
+                )
+                .await?;
+                super::super::write_preserved_status_if_applicable(
+                    decision,
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                )?;
+            }
+            Ok(decision)
+        }
+        .await;
+
+        match finalize_result {
+            Ok(decision) => decision,
+            Err(err) => {
+                // A post-success finalization step failed. cleanup is still armed
+                // (the region never runs/disarms it); reclaim DinD/network/certs
+                // rather than orphaning them, consistent with the teardown arms.
+                cleanup.run(docker).await;
+                return Err(err);
+            }
+        }
     };
-    let dirty_exit_policy = config.resolve_dirty_exit_policy(
-        workspace_name
-            .as_deref()
-            .and_then(|n| config.workspaces.get(n)),
-    );
-    let outcome = super::super::inspect_attach_outcome(docker, &container_name).await?;
-    super::super::write_instance_attach_outcome(
-        paths,
-        &container_state,
-        &mut instance_manifest,
-        outcome,
-    )?;
-    let mut decision = crate::isolation::finalize::finalize_foreground_session(
-        &container_name,
-        &paths.data_dir.join(&container_name),
-        outcome,
-        interactive_finalize,
-        dirty_exit_policy,
-        &mut prompt,
-        docker,
-        runner,
-    )
-    .await?;
-    super::super::write_preserved_status_if_applicable(
-        decision,
-        paths,
-        &container_state,
-        &mut instance_manifest,
-    )?;
-    if matches!(
-        decision,
-        crate::isolation::finalize::FinalizeDecision::ReturnToAgent
-    ) {
-        // Restart detached, then attach through the jackin-capsule client
-        // socket. Attaching `docker start -ai` to PID 1 would only show
-        // daemon logs, not the multiplexer UI the operator needs to fix
-        // the preserved worktree. We do not loop further: if the operator
-        // still leaves dirty state, the second pass will fall back to
-        // Preserved and exit normally.
-        start_or_reconnect_capsule_client(paths, &container_name, docker, runner).await?;
-        let outcome2 = super::super::inspect_attach_outcome(docker, &container_name).await?;
-        super::super::write_instance_attach_outcome(
-            paths,
-            &container_state,
-            &mut instance_manifest,
-            outcome2,
-        )?;
-        decision = crate::isolation::finalize::finalize_foreground_session(
-            &container_name,
-            &paths.data_dir.join(&container_name),
-            outcome2,
-            interactive_finalize,
-            dirty_exit_policy,
-            &mut prompt,
-            docker,
-            runner,
-        )
-        .await?;
-        super::super::write_preserved_status_if_applicable(
-            decision,
-            paths,
-            &container_state,
-            &mut instance_manifest,
-        )?;
-    }
 
     // Classify how the interactive session ended and tear down DinD/network
     // unless the container is still running with active sessions (detach):
@@ -1201,7 +1218,10 @@ where
         decision,
         crate::isolation::finalize::FinalizeDecision::Preserved
     );
-    #[allow(clippy::match_same_arms)]
+    #[allow(
+        clippy::match_same_arms,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     match docker.inspect_container_state(&container_name).await {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
             if is_preserved {

@@ -9,7 +9,7 @@ use jackin_core::EnvValue;
 /// Attached to error messages and launch diagnostics so the operator can
 /// locate the offending entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EnvLayer {
+pub(crate) enum EnvLayer {
     Global,
     Role(String),
     Workspace(String),
@@ -30,7 +30,8 @@ impl std::fmt::Display for EnvLayer {
 }
 
 /// Later-wins merge: global → role → workspace → workspace-role.
-pub fn merge_layers(
+#[allow(dead_code, reason = "demoted with env_layer module (plan 039)")]
+pub(crate) fn merge_layers(
     global: &BTreeMap<String, EnvValue>,
     role: &BTreeMap<String, EnvValue>,
     workspace: &BTreeMap<String, EnvValue>,

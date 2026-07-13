@@ -1,10 +1,13 @@
 // Per-agent PTY session: spawn, resize, write input, read output, and track
 // session state for the daemon.
 
-#[path = "session/osc_policy.rs"]
 mod osc_policy;
 
-#[allow(unused_imports, unreachable_pub)]
+#[allow(
+    unused_imports,
+    unreachable_pub,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
 
 //
@@ -33,6 +36,7 @@ pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
 /// switches (`\x1b[>{n}u`), synchronised output markers (`\x1b[?2026h/l`),
 /// and every other terminal extension the operator's outer terminal
 /// understands would vanish at the multiplexer boundary.
+use jackin_core::container_paths;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -736,6 +740,20 @@ impl Session {
         crate::tui::pane_snapshot::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
+    /// Content-coordinate snapshot of `content_rows` only (half-open).
+    /// Element `i` is absolute content row `content_rows.start + i` (after clamp).
+    pub(crate) fn render_content_snapshot_range(
+        &self,
+        viewport_cols: u16,
+        content_rows: std::ops::Range<usize>,
+    ) -> Vec<RowSnapshot> {
+        crate::tui::pane_snapshot::pane_content_range_from_damagegrid(
+            &self.shadow_grid,
+            viewport_cols,
+            content_rows,
+        )
+    }
+
     pub(crate) fn diagnostic_tail(&self, max_rows: usize) -> Option<String> {
         if max_rows == 0 {
             return None;
@@ -809,13 +827,21 @@ impl Session {
         source_id: &str,
         runtime: &str,
         event: &str,
+        payload: Option<&str>,
         now: std::time::Instant,
     ) {
         use crate::agent_status::evidence::AuthorityEvidence;
-        use crate::agent_status::gating::{GateEffect, RuntimeEvent, map_event};
+        use crate::agent_status::gating::{GateEffect, RuntimeEvent, enrich_event_name, map_event};
 
+        let enriched = enrich_event_name(runtime, event, payload);
         let gate = self.gate_states.entry(source_id.to_owned()).or_default();
-        let effect = map_event(&RuntimeEvent { runtime, event }, gate);
+        let effect = map_event(
+            &RuntimeEvent {
+                runtime,
+                event: enriched.as_str(),
+            },
+            gate,
+        );
         let refresh_matching = |authority: &mut Option<AuthorityEvidence>| {
             if let Some(a) = authority
                 && a.source_id == source_id
@@ -1102,6 +1128,7 @@ impl Session {
         if !bytes.is_empty() {
             self.received_output = true;
         }
+        jackin_diagnostics::incr_terminal_bytes_received(bytes.len() as u64);
         crate::ctrace_payload!(
             "session feed_pty bytes: agent={:?} label={} len={} bytes={:02x?}",
             self.agent,
@@ -1461,7 +1488,10 @@ fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>)
 
 #[cfg(test)]
 impl Session {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     pub(crate) fn new_for_test(
         label: String,
         agent: Option<String>,
@@ -1591,7 +1621,7 @@ pub fn build_agent_command(
     cwd: &Path,
     codename: &str,
 ) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new("/jackin/runtime/entrypoint.sh");
+    let mut cmd = CommandBuilder::new(container_paths::ENTRYPOINT);
     for arg in agent_model_args(agent, model) {
         cmd.arg(arg);
     }

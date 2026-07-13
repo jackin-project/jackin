@@ -231,14 +231,13 @@ impl InstanceManifest {
 
     /// Errors when the on-disk slug is unknown — corrupt manifest or a
     /// new agent added to the codebase but not migrated here.
-    pub fn agent(&self) -> anyhow::Result<Agent> {
-        self.agent_runtime.parse().map_err(|_| {
-            anyhow::anyhow!(
-                "instance `{}` has unknown agent runtime {:?}",
-                self.container_base,
-                self.agent_runtime
-            )
-        })
+    pub fn agent(&self) -> Result<Agent, crate::InstanceError> {
+        self.agent_runtime
+            .parse()
+            .map_err(|_| crate::InstanceError::UnknownAgentRuntime {
+                container_base: self.container_base.clone(),
+                agent_runtime: self.agent_runtime.clone(),
+            })
     }
 
     /// Promote the manifest to `RestoreAvailable` and persist the change
@@ -563,8 +562,12 @@ impl InstanceIndex {
 
     /// Errors if the file is missing or unreadable.
     pub fn read(data_dir: &Path) -> anyhow::Result<Self> {
-        Self::read_optional(data_dir)?
-            .ok_or_else(|| anyhow::anyhow!("instance index missing at {}", data_dir.display()))
+        Self::read_optional(data_dir)?.ok_or_else(|| {
+            crate::InstanceError::IndexMissing {
+                path: data_dir.to_path_buf(),
+            }
+            .into()
+        })
     }
 
     fn rebuild(data_dir: &Path) -> anyhow::Result<Self> {

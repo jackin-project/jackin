@@ -26,6 +26,7 @@ pub struct DirtyTracker {
 }
 
 impl DirtyTracker {
+    /// Create a tracker. `row_count` is accepted for API stability; capacity is fixed.
     pub fn new(_row_count: u16) -> Self {
         Self {
             rows: DirtyRows::default(),
@@ -33,6 +34,7 @@ impl DirtyTracker {
         }
     }
 
+    /// Resize handling: clear tracked rows and mark the whole screen dirty.
     pub fn resize(&mut self, row_count: u16) {
         let _ = row_count;
         self.clear_rows();
@@ -99,12 +101,16 @@ impl Default for DirtyTracker {
 /// One dirty span on a row. `end_col == u16::MAX` means "through grid width".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DirtySpan {
+    /// Zero-based dirty row index.
     pub row: u16,
+    /// Inclusive start column of the dirty range.
     pub start_col: u16,
+    /// Exclusive end column, or `u16::MAX` for the full row width.
     pub end_col: u16,
 }
 
 impl DirtySpan {
+    /// A span covering the entire row (columns resolved at emit time).
     #[must_use]
     pub const fn full_row(row: u16) -> Self {
         Self {
@@ -114,6 +120,7 @@ impl DirtySpan {
         }
     }
 
+    /// True when this span means the whole row is dirty.
     #[must_use]
     pub const fn is_full_row(self) -> bool {
         self.start_col == 0 && self.end_col == u16::MAX
@@ -125,6 +132,7 @@ impl DirtySpan {
     }
 }
 
+/// Fixed-capacity sorted list of dirty row spans (one merged span per row).
 #[derive(Debug, Clone)]
 pub struct DirtyRows {
     rows: [DirtySpan; MAX_TRACKED_DIRTY_ROWS],
@@ -159,24 +167,29 @@ impl DirtyRows {
         self.len = 0;
     }
 
+    /// True when no rows are tracked.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
+    /// Number of tracked dirty rows.
     pub fn len(&self) -> usize {
         self.len
     }
 
+    /// True if `row` has a dirty span.
     pub fn contains(&self, row: u16) -> bool {
         self.rows[..self.len]
             .binary_search_by_key(&row, |span| span.row)
             .is_ok()
     }
 
+    /// Borrow the sorted span slice.
     pub fn as_slice(&self) -> &[DirtySpan] {
         &self.rows[..self.len]
     }
 
+    /// Iterate dirty spans in row order.
     pub fn iter(&self) -> impl Iterator<Item = DirtySpan> + '_ {
         self.as_slice().iter().copied()
     }
@@ -205,6 +218,7 @@ pub enum DirtySpans {
 }
 
 impl DirtySpans {
+    /// True when no rows need redraw (`All` is never empty).
     pub fn is_empty(&self) -> bool {
         match self {
             Self::All => false,
