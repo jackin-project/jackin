@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Per-panel wheel scrolling: wheel events on the focused active panel
 //! and the helper that re-derives the focused scroll-focus plan.
 

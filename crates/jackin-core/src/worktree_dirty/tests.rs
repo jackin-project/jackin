@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{
     WorktreeState, assess_worktree, changed_files, parse_porcelain, unpushed_commit_count,
 };

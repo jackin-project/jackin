@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace configuration types and resolution.
 //!
 //! Schema types (`WorkspaceConfig`, `MountConfig`, etc.) are defined in

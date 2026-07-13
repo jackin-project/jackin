@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Custom Ratatui backend that serializes frame diffs to the attach socket.
 //!
 //! Ratatui owns the buffer double-buffering and diff computation.

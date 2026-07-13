@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! The only writer to the attach socket.
 //!
 //! Every byte that reaches the attached client flows through this type:

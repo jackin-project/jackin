@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Process-wide [`StandaloneDialogSink`] installed at CLI startup.
 //!
 //! `jackin_core::error_popup` / `jackin_core::exit_dialog_with_inspect`

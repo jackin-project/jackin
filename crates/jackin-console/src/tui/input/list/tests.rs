@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `list`.
 //! List-stage tests: row-0 (current dir) gating, Enter routing,
 //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule TUI event loop: drives the ratatui render loop, processes input
 //! bytes from the attach protocol, and dispatches effects to the daemon.
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace resolution: build `ResolvedWorkspace` from a saved or current-directory workspace.
 //!
 //! Handles both `LoadWorkspaceInput::Saved` and `LoadWorkspaceInput::CurrentDir`

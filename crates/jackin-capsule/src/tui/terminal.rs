@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Terminal setup and teardown for the capsule TUI: raw mode, alternate
 //! screen, size normalization, and escape-sequence cleanup on detach.
 //!

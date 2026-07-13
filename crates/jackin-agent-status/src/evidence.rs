@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use std::time::Instant;
 
 pub use jackin_protocol::agent_status::AgentRawState as RawAgentState;

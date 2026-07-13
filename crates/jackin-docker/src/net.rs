@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared HTTP helpers for binary acquisition.
 //!
 //! `agent_binary` and `capsule_binary` both fetch small release metadata over

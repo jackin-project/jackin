@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Auth-forward mode resolution: walk global → workspace → workspace×role layers.
 //!
 //! Not responsible for auth token acquisition, credential forwarding

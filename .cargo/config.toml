@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 # Cargo configuration is intentionally minimal. mold is NOT forced here
 # because the previous unconditional `-C link-arg=-fuse-ld=mold` on the
 # x86_64-unknown-linux-gnu target broke (a) macOS hosts cross-building to

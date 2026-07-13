@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `FocusOwner` — per-screen single focus owner model.
 //!
 //! Every screen that uses tab bars + content blocks instantiates one

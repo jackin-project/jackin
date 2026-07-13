@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Render the styled help footer shown at the bottom of `--help` output.
 //!
 //! Tries `man` first, falls back to `less`/`more`, then raw stdout.

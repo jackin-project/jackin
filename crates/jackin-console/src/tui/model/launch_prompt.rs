@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Launch-prompt trait definitions and `ConsoleApp` implementations.
 
 use super::{ConsoleApp, ConsoleAppStage};

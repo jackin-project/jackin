@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Plain stdout/stderr writers for capsule CLI and entrypoint output.
 
 use std::fmt::Arguments;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Lightweight detection of mount source type: plain folder vs git repo.
 //! Used only for display — no functional effect on the workspace config.
 

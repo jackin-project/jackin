@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Pull-request context snapshots shared by daemon, title, and TUI rendering.
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 /// Binary attach channel: roundtrip contract for every frame variant.
 ///
 /// The hot path forwards raw PTY bytes with five bytes of framing
