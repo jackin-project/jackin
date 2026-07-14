@@ -28,3 +28,22 @@ Boundary decision record for Ownership item 4 (plan 020). Each named concept rec
 ## Public-surface note (plan 019)
 
 Executable `public-surface` ratchet (`public_surface_pub_mods`) measures root `pub mod` counts per crate. Growth is shrink-only; API snapshots were intentionally not chosen as the gate.
+
+Env-pilot guard (`cargo xtask lint arch` → `check_curated_pub_mods`) allowlists root `pub mod`s for curated crates (`jackin-env` → `test_support` only). Full `jackin-config` / `jackin-core` root narrowing is STOP-deferred (import blast radius); the ratchet bounds the surface until module-cluster slices land.
+
+### Trait-sealing spot audit (`jackin-core` / `jackin-config`)
+
+| Trait | Crate | Disposition |
+|---|---|---|
+| `AgentRuntime` | core | **Sealed** (`private::Sealed`) — extension only via in-crate adapters |
+| `DockerApi` | core | **Intentionally implementable** — fakes + production Docker client |
+| `CommandRunner` | core | **Intentionally implementable** — process runner fakes |
+| `Clock` | core | **Intentionally implementable** — `SystemClock` / `ManualClock` |
+| `DebugLogSink` | core | **Intentionally implementable** — test/production sinks |
+| `OperatorNoticeSink` | core | **Intentionally implementable** |
+| `StandaloneDialogSink` | core | **Intentionally implementable** |
+| `BuildLogSink` | core | **Intentionally implementable** |
+| `LaunchDiagnostics` / `LaunchHostTerminal` / `LaunchOutputSink` | core | **Intentionally implementable** — launch harness ports |
+| *(none public)* | config | No public traits at root; error types are enums |
+
+Non-extension points that remain open are port/fake seams; sealing them would break the intentional test-double surface. No additional seals required this track.

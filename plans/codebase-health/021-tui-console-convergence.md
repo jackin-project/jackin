@@ -116,3 +116,13 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 - TUI reference docs for shared-loop contract deferred with the adapter work.
 
 **Index deviation**: DONE for mechanical editor/scroll cleanup + host `drive_frame`; capsule/launch/adapter/op-picker slices STOP-deferred.
+
+### Op-picker triage (deferred extraction)
+
+| Area | Location | Disposition |
+|---|---|---|
+| Core picker state/filter/load | `jackin-console-oppicker` | **Stays** — already pure planning crate |
+| Console UI glue (auth/settings/editor modal open) | `jackin-console` input/* | **Stays** — widget/event wiring |
+| Breadcrumb/brand labels | console op_picker components | **Stays** — render only |
+| Further pure planning extraction | ~console auth/env picker plans | **Deferred** — no measured duplication pressure; revisit if a third consumer appears |
+
