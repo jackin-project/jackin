@@ -1030,13 +1030,20 @@ fn sha256_prefix(value: &str) -> String {
 }
 
 fn upstream_expiry_stamp() -> String {
-    let now = chrono::Utc::now();
+    upstream_expiry_stamp_at(chrono::Utc::now())
+}
+
+fn upstream_expiry_stamp_at(now: chrono::DateTime<chrono::Utc>) -> String {
     let expiry = now + chrono::Duration::days(TOKEN_LIFETIME_DAYS);
     expiry.format("%Y-%m-%d").to_string()
 }
 
 fn now_utc_rfc3339() -> String {
-    chrono::Utc::now().to_rfc3339()
+    now_utc_rfc3339_at(chrono::Utc::now())
+}
+
+fn now_utc_rfc3339_at(now: chrono::DateTime<chrono::Utc>) -> String {
+    now.to_rfc3339()
 }
 
 /// Local cache file path holding the workspace's token expiry stamp
@@ -1139,8 +1146,12 @@ pub fn expiry_days_for_launch(
 /// Days remaining until `expiry` (YYYY-MM-DD), or `None` when the
 /// stamp cannot be parsed. Negative values mean expired.
 pub(crate) fn days_until_expiry(expiry: &str) -> Option<i64> {
+    days_until_expiry_at(expiry, chrono::Utc::now().date_naive())
+}
+
+/// Days remaining until `expiry` relative to an injected `today` (plan 025).
+pub(crate) fn days_until_expiry_at(expiry: &str, today: chrono::NaiveDate) -> Option<i64> {
     let parsed = chrono::NaiveDate::parse_from_str(expiry, "%Y-%m-%d").ok()?;
-    let today = chrono::Utc::now().date_naive();
     Some((parsed - today).num_days())
 }
 

@@ -136,6 +136,7 @@ use crate::tui::update::{
 use crate::tui::view::spawn_request_failure_message;
 use crate::usage::UsageCache;
 use jackin_core::agent::Agent;
+use jackin_core::{Clock, SystemClock};
 use jackin_protocol::control::{ClientMsg, ServerMsg};
 
 mod compositor;
@@ -276,6 +277,9 @@ pub struct Multiplexer {
     pub(crate) render: RenderState,
     pub(crate) launch_env: LaunchEnv,
     pub(crate) resource_metrics: resource_metrics::ResourceMetricsSampler,
+    /// Wall/monotonic clock for lifecycle timestamps (plan 025). Tests inject
+    /// [`jackin_core::ManualClock`] via [`Multiplexer::with_clock`].
+    pub(crate) clock: Arc<dyn Clock>,
 }
 
 /// In-memory record of one tab ever opened in this container lifetime.
@@ -368,6 +372,17 @@ const MAX_SESSIONS: usize = 64;
 
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> io::Result<Self> {
+        Self::with_clock(rows, cols, launch_config, Arc::new(SystemClock))
+    }
+
+    /// Construct a multiplexer with an injected clock (tests / deterministic
+    /// lifecycle timestamps).
+    pub fn with_clock(
+        rows: u16,
+        cols: u16,
+        launch_config: CapsuleConfig,
+        clock: Arc<dyn Clock>,
+    ) -> io::Result<Self> {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = available_content_rows(rows);
@@ -496,7 +511,13 @@ impl Multiplexer {
                 provider_keys,
             },
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
+            clock,
         })
+    }
+
+    /// Wall-clock `DateTime<Utc>` from the injected clock.
+    pub(crate) fn wall_now_utc(&self) -> DateTime<Utc> {
+        DateTime::<Utc>::from(self.clock.now_system())
     }
 
     /// Send a composed frame to the attached client through the single

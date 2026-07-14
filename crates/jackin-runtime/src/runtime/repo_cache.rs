@@ -379,18 +379,27 @@ impl RepoResolveOptions {
     }
 }
 
-fn fetch_head_age(repo_dir: &std::path::Path) -> Option<Duration> {
+/// Age of `.git/FETCH_HEAD` relative to an injected wall clock (plan 025).
+fn fetch_head_age_at(repo_dir: &std::path::Path, now: SystemTime) -> Option<Duration> {
     let modified = std::fs::metadata(repo_dir.join(".git").join("FETCH_HEAD"))
         .and_then(|metadata| metadata.modified())
         .ok()?;
-    SystemTime::now().duration_since(modified).ok()
+    now.duration_since(modified).ok()
 }
 
 fn fetch_fresh_within_ttl(repo_dir: &std::path::Path, ttl: Duration) -> Option<Duration> {
+    fetch_fresh_within_ttl_at(repo_dir, ttl, SystemTime::now())
+}
+
+fn fetch_fresh_within_ttl_at(
+    repo_dir: &std::path::Path,
+    ttl: Duration,
+    now: SystemTime,
+) -> Option<Duration> {
     if ttl.is_zero() {
         return None;
     }
-    let age = fetch_head_age(repo_dir)?;
+    let age = fetch_head_age_at(repo_dir, now)?;
     (age < ttl).then_some(age)
 }
 

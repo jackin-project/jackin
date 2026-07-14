@@ -7,7 +7,7 @@ use crate::tui::view::{spawn_failure_agent_label, spawn_failure_message};
 
 use super::{
     AgentRecord, Dialog, FullRedrawReason, Multiplexer, PickerIntent, Result, Session,
-    SessionLaunch, SpawnRequest, Tab, Utc, build_agent_command, build_shell_command,
+    SessionLaunch, SpawnRequest, Tab, build_agent_command, build_shell_command,
 };
 
 impl Multiplexer {
@@ -330,6 +330,7 @@ impl Multiplexer {
         self.session_supervisor
             .codename_retired
             .insert(codename.to_owned());
+        let now = self.wall_now_utc();
         if let Some(record) = self
             .session_supervisor
             .agent_history
@@ -337,11 +338,12 @@ impl Multiplexer {
             .rev()
             .find(|r| r.codename == codename)
         {
-            record.exited_at = Some(Utc::now());
+            record.exited_at = Some(now);
         }
     }
 
     pub(super) fn mark_agent_session_exited(&mut self, session_id: u64) {
+        let now = self.wall_now_utc();
         if let Some(record) = self
             .session_supervisor
             .agent_history
@@ -349,7 +351,7 @@ impl Multiplexer {
             .rev()
             .find(|record| record.session_id == session_id)
         {
-            record.exited_at.get_or_insert_with(Utc::now);
+            record.exited_at.get_or_insert(now);
         }
     }
 
@@ -487,12 +489,13 @@ impl Multiplexer {
                 Some("codex") => Some("openai".to_owned()),
                 _ => None,
             });
+        let started_at = self.wall_now_utc();
         self.session_supervisor.agent_history.push(AgentRecord {
             session_id,
             codename,
             agent,
             provider,
-            started_at: Utc::now(),
+            started_at,
             exited_at: None,
         });
     }

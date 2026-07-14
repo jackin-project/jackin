@@ -152,6 +152,54 @@ fn screen_detection_disabled_message_is_operator_visible() {
     );
 }
 
+
+#[test]
+fn record_agent_history_uses_injected_clock() {
+    use jackin_core::ManualClock;
+    use std::sync::Arc;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let base = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let clock = Arc::new(ManualClock::with_system_base(base));
+    let mut mux = Multiplexer::with_clock(
+        40,
+        80,
+        CapsuleConfig {
+            role: "test-role".to_owned(),
+            workdir: "/workspace".to_owned(),
+            agents: Vec::new(),
+            models: BTreeMap::new(),
+            provider_models: BTreeMap::new(),
+            initial_provider: None,
+            claude_marketplaces: Vec::new(),
+            claude_plugins: Vec::new(),
+            exec_bindings: Vec::new(),
+            dirty_exit_policy: None,
+            isolated_worktrees: Vec::new(),
+        },
+        clock.clone(),
+    )
+    .expect("mux");
+
+    mux.record_agent_history(1, "alpha".into(), Some("claude".into()), None);
+    let started = mux.session_supervisor.agent_history[0].started_at;
+    assert_eq!(
+        started,
+        DateTime::<Utc>::from(base),
+        "started_at must reflect injected wall clock"
+    );
+
+    clock.advance(Duration::from_secs(30));
+    mux.mark_agent_session_exited(1);
+    let exited = mux.session_supervisor.agent_history[0]
+        .exited_at
+        .expect("exited");
+    assert_eq!(
+        exited,
+        DateTime::<Utc>::from(base + Duration::from_secs(30))
+    );
+}
+
 fn test_mux(rows: u16, cols: u16) -> Multiplexer {
     Multiplexer::new(
         rows,

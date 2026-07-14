@@ -855,10 +855,19 @@ fn read_release_file(path: &Path) -> Option<AgentRelease> {
 }
 
 fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
+    read_cached_release_at(paths, agent, SystemTime::now())
+}
+
+/// TTL check against an injected wall-clock instant (plan 025).
+fn read_cached_release_at(
+    paths: &JackinPaths,
+    agent: Agent,
+    now: SystemTime,
+) -> Option<AgentRelease> {
     let path = metadata_cache_path(paths, agent);
     let metadata = std::fs::metadata(&path).ok()?;
     let modified = metadata.modified().ok()?;
-    if SystemTime::now().duration_since(modified).ok()? >= CACHE_TTL {
+    if now.duration_since(modified).ok()? >= CACHE_TTL {
         return None;
     }
     read_release_file(&path)

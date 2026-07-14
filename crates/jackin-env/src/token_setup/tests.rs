@@ -1199,3 +1199,26 @@ fn orphan_cleanup_display_each_variant() {
     assert!(s.contains("vault locked"));
     assert!(s.contains("op item delete X --vault Y"));
 }
+
+
+#[test]
+fn days_until_expiry_at_is_deterministic() {
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 1, 10).unwrap();
+    assert_eq!(days_until_expiry_at("2026-01-15", today), Some(5));
+    assert_eq!(days_until_expiry_at("2026-01-10", today), Some(0));
+    assert_eq!(days_until_expiry_at("2026-01-01", today), Some(-9));
+    assert_eq!(days_until_expiry_at("not-a-date", today), None);
+}
+
+#[test]
+fn upstream_expiry_stamp_at_uses_injected_now() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-01-10T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let stamp = upstream_expiry_stamp_at(now);
+    // TOKEN_LIFETIME_DAYS days from 2026-01-10
+    let expected = (now + chrono::Duration::days(TOKEN_LIFETIME_DAYS))
+        .format("%Y-%m-%d")
+        .to_string();
+    assert_eq!(stamp, expected);
+}
