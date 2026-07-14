@@ -128,10 +128,14 @@ impl Drop for ActiveRunGuard {
     }
 }
 
+/// Schema version 2: canonical keys only (no `kind`/`stage`/`detail`/`run_id`/
+/// `error_type` top-level). Readers use [`jsonl_adapter`].
 #[derive(Debug, Serialize)]
 struct JsonEvent<'a> {
+    schema: u32,
     ts_ms: u128,
-    run_id: &'a str,
+    #[serde(rename = "parallax.run.id")]
+    parallax_run_id: &'a str,
     /// `OTel` 32-hex trace id when an OTLP span is active; otherwise the run id
     /// (file-only / offline fallback so the field stays non-empty for schema
     /// stability — not correlated to an OTLP backend in that mode).
@@ -140,7 +144,6 @@ struct JsonEvent<'a> {
     /// `OTel` 16-hex span id when an OTLP span is active; otherwise the
     /// tracing-registry u64 string when a span is entered.
     span_id: Option<&'a str>,
-    kind: &'a str,
     #[serde(rename = "event.name")]
     event_name: &'a str,
     #[serde(rename = "event.outcome")]
@@ -152,11 +155,15 @@ struct JsonEvent<'a> {
     #[serde(rename = "jackin.category")]
     jackin_category: &'a str,
     message: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "jackin.stage", skip_serializing_if = "Option::is_none")]
     stage: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "jackin.detail", skip_serializing_if = "Option::is_none")]
     detail: Option<&'a str>,
+    #[serde(rename = "error.type", skip_serializing_if = "Option::is_none")]
+    error_type: Option<&'a str>,
 }
+
+pub mod jsonl_adapter;
 
 #[derive(Clone, Debug, Default)]
 struct DiagnosticsMetrics {
@@ -840,11 +847,11 @@ impl RunDiagnostics {
         let (owned_trace, owned_span) =
             crate::observability::correlation_ids(&self.run_id, fallback_span_id);
         let event = JsonEvent {
+            schema: jsonl_adapter::SCHEMA_V2,
             ts_ms: now_ms(),
-            run_id: &self.run_id,
+            parallax_run_id: &self.run_id,
             trace_id: owned_trace.as_str(),
             span_id: owned_span.as_deref(),
-            kind,
             event_name: &taxonomy.event_name,
             event_outcome: taxonomy.outcome,
             jackin_component: taxonomy.component,
@@ -853,6 +860,7 @@ impl RunDiagnostics {
             message,
             stage,
             detail,
+            error_type: None,
         };
         let Ok(line) = serde_json::to_string(&event) else {
             return;

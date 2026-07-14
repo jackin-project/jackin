@@ -8,10 +8,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use std::borrow::Cow;
-
 use anyhow::Context;
-use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,18 +168,15 @@ pub fn summarize_reader(mut reader: impl BufRead) -> anyhow::Result<DiagnosticsS
         if line.trim().is_empty() {
             continue;
         }
-        let event: EventLine<'_> = serde_json::from_str(line)
+        let event = crate::run::jsonl_adapter::canonicalize_line(line)
             .with_context(|| format!("parsing diagnostics JSONL line {line_index}"))?;
         summary.event_count += 1;
 
-        let kind = event.kind.unwrap_or("unknown");
+        let kind = event.kind.as_str();
         *summary.event_counts.entry(kind.to_owned()).or_default() += 1;
 
         if summary.run_id.is_none() {
-            summary.run_id = event
-                .run_id
-                .filter(|run_id| !run_id.is_empty())
-                .map(ToOwned::to_owned);
+            summary.run_id = event.run_id.filter(|run_id| !run_id.is_empty());
         }
 
         if let Some(ts) = event.ts_ms {
@@ -191,19 +185,15 @@ pub fn summarize_reader(mut reader: impl BufRead) -> anyhow::Result<DiagnosticsS
             summary.last_ts_ms = Some(summary.last_ts_ms.map_or(ts, |last| last.max(ts)));
             if summary.hardline_ts_ms.is_none()
                 && matches!(kind, "stage_started" | "stage_done")
-                && event.stage.is_some_and(|stage| stage == "hardline")
+                && event.stage.as_deref() == Some("hardline")
             {
                 summary.hardline_ts_ms = Some(ts);
             }
         }
 
-        let stage = event.stage.map(ToOwned::to_owned);
-        let message = event.message.as_deref().unwrap_or_default().to_owned();
-        let detail_raw = event
-            .detail
-            .as_ref()
-            .and_then(DetailField::as_str)
-            .map(ToOwned::to_owned);
+        let stage = event.stage.clone();
+        let message = event.message.clone().unwrap_or_default();
+        let detail_raw = event.detail.clone();
 
         match kind {
             "stage_done" => {
@@ -373,48 +363,6 @@ pub fn summarize_reader(mut reader: impl BufRead) -> anyhow::Result<DiagnosticsS
     }
 
     Ok(summary)
-}
-
-/// Borrowed JSONL event line — only the fields the summary path reads.
-/// Unknown/extra fields ignored (no `deny_unknown_fields`) for forward/backward
-/// compatibility with run files. `message`/`detail` use `Cow` for escapes.
-#[derive(Debug, Deserialize)]
-struct EventLine<'a> {
-    #[serde(default)]
-    kind: Option<&'a str>,
-    #[serde(default)]
-    run_id: Option<&'a str>,
-    #[serde(default)]
-    ts_ms: Option<u64>,
-    #[serde(default)]
-    stage: Option<&'a str>,
-    #[serde(default, borrow)]
-    message: Option<Cow<'a, str>>,
-    /// Non-string detail → [`DetailField::Other`] → treated absent (old `as_str`).
-    #[serde(default, borrow)]
-    detail: Option<DetailField<'a>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum DetailField<'a> {
-    Str(#[serde(borrow)] Cow<'a, str>),
-    Other(
-        #[allow(
-            dead_code,
-            reason = "documented residual allow; prefer expect when site is lint-true"
-        )]
-        Value,
-    ),
-}
-
-impl DetailField<'_> {
-    fn as_str(&self) -> Option<&str> {
-        match self {
-            Self::Str(s) => Some(s.as_ref()),
-            Self::Other(_) => None,
-        }
-    }
 }
 
 fn parse_detail_json(detail: Option<&str>) -> Option<Value> {

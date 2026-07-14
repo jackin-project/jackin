@@ -76,10 +76,10 @@ Adapter unit tests (v1 fixture lines → canonical), writer negative test, OTLP 
 
 ## Done criteria
 
-- [ ] v2 JSONL contains no prohibited keys (test-proven) and carries `schema: 2`
-- [ ] v1 fixtures still summarize/extract correctly through the adapter
-- [ ] OTLP negative sweep green
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] v2 JSONL contains no prohibited keys (test-proven) and carries `schema: 2`
+- [x] v1 fixtures still summarize/extract correctly through the adapter
+- [x] OTLP negative sweep green
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -92,3 +92,7 @@ Adapter unit tests (v1 fixture lines → canonical), writer negative test, OTLP 
 - The adapter is the ONLY place legacy spellings may appear; reviewers reject new writers of `kind`/`error_type`.
 - Plan 009 matrix asserts prohibited-key absence continuously.
 - When pre-1.0 fixture corpora are eventually regenerated to v2, the v1 arm can be considered for deletion (pre-release rules allow breaking, but the roadmap explicitly wants the versioned adapter step).
+
+## Execution notes
+
+- Writer schema=2 with jackin.detail; OTLP emit no longer stamps `kind`.

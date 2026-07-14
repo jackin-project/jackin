@@ -32,7 +32,13 @@ fn init_test_tracing() {
 
 fn event_detail_json(line: &str) -> serde_json::Value {
     let event: serde_json::Value = serde_json::from_str(line).unwrap();
-    serde_json::from_str(event["detail"].as_str().unwrap()).unwrap()
+    // v2 writer uses `jackin.detail`; accept v1 `detail` for fixture lines.
+    let detail = event
+        .get("jackin.detail")
+        .or_else(|| event.get("detail"))
+        .and_then(|v| v.as_str())
+        .expect("detail field");
+    serde_json::from_str(detail).unwrap()
 }
 
 // ── run.rs tests ─────────────────────────────────────────────────────────────
@@ -123,14 +129,14 @@ fn writes_jsonl_events() {
     run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
-    assert!(contents.contains("\"run_id\""));
+    assert!(contents.contains("\"parallax.run.id\""));
     assert!(contents.contains("\"hello\""));
     if debug_written {
         assert!(contents.contains("\"debug\""));
     }
     let event: serde_json::Value = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"breadcrumb\""))
+        .find(|line| line.contains("\"event.name\":\"breadcrumb\""))
         .map(serde_json::from_str)
         .transpose()
         .unwrap()
@@ -207,7 +213,10 @@ fn error_events_flush_immediately() {
     run.error("attach_error", "capsule attach failed");
 
     let contents = fs::read_to_string(run.path()).unwrap();
-    assert!(contents.contains("\"kind\":\"attach_error\""), "{contents}");
+    assert!(
+        contents.contains("\"event.name\":\"attach_error\""),
+        "{contents}"
+    );
     assert!(contents.contains("capsule attach failed"), "{contents}");
 }
 
@@ -246,7 +255,10 @@ fn run_summary_includes_metrics_surface() {
     let contents = fs::read_to_string(run.path()).unwrap();
     let summary = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .find(|line| {
+            line.contains("\"event.name\":\"run.summary\"")
+                || line.contains("\"event.name\":\"run_summary\"")
+        })
         .unwrap();
     assert!(
         summary.contains("stage_duration_histograms_ms"),
@@ -271,10 +283,13 @@ fn timing_events_include_nested_duration_summary() {
     let contents = fs::read_to_string(run.path()).unwrap();
     let timing_done = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"timing_done\""))
+        .find(|line| {
+            line.contains("\"event.name\":\"timing.done\"")
+                || line.contains("\"event.name\":\"timing_done\"")
+        })
         .unwrap();
     assert!(
-        timing_done.contains("\"stage\":\"credentials\""),
+        timing_done.contains("\"jackin.stage\":\"credentials\""),
         "{timing_done}"
     );
     assert!(timing_done.contains("operator_env"), "{timing_done}");
@@ -282,7 +297,10 @@ fn timing_events_include_nested_duration_summary() {
 
     let summary = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .find(|line| {
+            line.contains("\"event.name\":\"run.summary\"")
+                || line.contains("\"event.name\":\"run_summary\"")
+        })
         .unwrap();
     assert!(
         summary.contains("timing_duration_histograms_ms"),
@@ -305,7 +323,7 @@ fn run_summary_reports_and_clears_unclosed_timing_keys() {
     let contents = fs::read_to_string(run.path()).unwrap();
     let diagnostics = contents
         .lines()
-        .filter(|line| line.contains("\"kind\":\"diagnostics\""))
+        .filter(|line| line.contains("\"event.name\":\"diagnostics\""))
         .collect::<Vec<_>>();
     assert_eq!(diagnostics.len(), 1, "{contents}");
     assert!(
@@ -330,7 +348,10 @@ fn duration_histograms_cap_samples_and_count_drops() {
     let contents = fs::read_to_string(run.path()).unwrap();
     let summary = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .find(|line| {
+            line.contains("\"event.name\":\"run.summary\"")
+                || line.contains("\"event.name\":\"run_summary\"")
+        })
         .unwrap();
     let detail = event_detail_json(summary);
     let samples = detail["timing_duration_histograms_ms"]["credentials/operator_env"]
@@ -356,9 +377,12 @@ fn docker_build_step_event_records_structured_detail() {
     let contents = fs::read_to_string(run.path()).unwrap();
     let event = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"docker_build_step\""))
+        .find(|line| line.contains("\"event.name\":\"docker_build_step\""))
         .unwrap();
-    assert!(event.contains("\"stage\":\"derived image\""), "{event}");
+    assert!(
+        event.contains("\"jackin.stage\":\"derived image\""),
+        "{event}"
+    );
     assert!(event.contains("\\\"step\\\":\\\"12\\\""), "{event}");
     assert!(event.contains("\\\"label\\\":\\\"DONE\\\""), "{event}");
     assert!(event.contains("\\\"duration_ms\\\":76500"), "{event}");
@@ -380,7 +404,7 @@ fn stage_events_reuse_one_stage_span_id() {
     let contents = fs::read_to_string(run.path()).unwrap();
     let span_ids = contents
         .lines()
-        .filter(|line| line.contains("\"stage\":\"derived image\""))
+        .filter(|line| line.contains("\"jackin.stage\":\"derived image\""))
         .map(serde_json::from_str::<serde_json::Value>)
         .collect::<Result<Vec<_>, _>>()
         .unwrap()
@@ -710,7 +734,7 @@ fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
     run.flush_writer();
 
     let jsonl = fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("\"kind\":\"warning\""), "{jsonl}");
+    assert!(jsonl.contains("\"event.name\":\"warning\""), "{jsonl}");
     assert!(jsonl.contains("hidden by cockpit"), "{jsonl}");
     set_rich_surface_active(false);
     set_host_screen_owned(false);
@@ -735,7 +759,7 @@ fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     run.flush_writer();
 
     let jsonl = fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
+    assert!(jsonl.contains("\"event.name\":\"operator_env\""), "{jsonl}");
     assert!(
         jsonl.contains("hidden while host owns raw screen"),
         "{jsonl}"
@@ -1031,7 +1055,7 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
                 == Some("conformance_error")
     }));
     assert!(logs.iter().any(|log| {
-        conformance_log_attr(&log.record, "kind").as_deref() == Some("session_detach")
+        conformance_log_attr(&log.record, "event.name").as_deref() == Some("capsule.session.detach")
     }));
 }
 

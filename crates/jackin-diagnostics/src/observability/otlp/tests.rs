@@ -224,8 +224,9 @@ fn exported_log_carries_body_and_attributes() {
     let log = &logs[0];
     assert_eq!(log.record.severity_number(), Some(Severity::Info));
     assert_eq!(log_body(&log.record).as_deref(), Some("hello world"));
+    assert_eq!(log_attr(&log.record, "kind"), None);
     assert_eq!(
-        log_attr(&log.record, "kind").as_deref(),
+        log_attr(&log.record, "event.name").as_deref(),
         Some("compact_kind")
     );
     assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("d"));
@@ -429,7 +430,7 @@ fn timing_event_inherits_stage_span_context() {
         .expect("stage span exported");
     let timing = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("timing_done"))
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("timing.done"))
         .expect("timing_done log exported");
     let context = timing
         .record
@@ -527,7 +528,9 @@ fn subprocess_done_carries_duration_and_exit() {
 
     let log = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("subprocess_done"))
+        .find(|log| {
+            log_attr(&log.record, "event.name").as_deref() == Some("process.subprocess.done")
+        })
         .expect("subprocess_done log exported");
     assert_eq!(
         log_attr(&log.record, "jackin.stage").as_deref(),
@@ -598,7 +601,7 @@ fn stage_failed_exports_as_error() {
 
     let failed = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("stage_failed"))
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("launch.stage.failed"))
         .expect("stage_failed log exported");
     assert_eq!(failed.record.severity_number(), Some(Severity::Error));
 }
@@ -614,7 +617,7 @@ fn fatal_error_carries_error_type() {
 
     let error = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("E014"))
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("E014"))
         .expect("typed error log exported");
     assert_eq!(error.record.severity_number(), Some(Severity::Error));
     assert_eq!(
@@ -639,9 +642,13 @@ fn direct_diagnostics_events_reach_otlp() {
     });
 
     let by_kind = |kind: &str| {
+        let event_name = crate::registry::lookup(kind).map_or(kind, |d| d.name);
         logs.iter()
-            .find(|log| log_attr(&log.record, "kind").as_deref() == Some(kind))
-            .unwrap_or_else(|| panic!("{kind} log exported"))
+            .find(|log| {
+                let name = log_attr(&log.record, "event.name");
+                name.as_deref() == Some(event_name) || name.as_deref() == Some(kind)
+            })
+            .unwrap_or_else(|| panic!("{kind} / {event_name} log exported"))
     };
 
     assert_eq!(
@@ -685,7 +692,7 @@ fn crash_evidence_is_redacted_and_capped() {
 
     let crash_log = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("container_crash_log"))
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("container_crash_log"))
         .expect("container_crash_log exported");
     let detail = log_attr(&crash_log.record, "detail").expect("capped evidence detail");
 
