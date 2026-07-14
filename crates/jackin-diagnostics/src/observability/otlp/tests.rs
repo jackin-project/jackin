@@ -454,7 +454,18 @@ fn dependency_targets_are_filtered_out() {
 fn jackin_targets_still_export() {
     let logs = exported_logs!(false, "run1", || {
         crate::observability::emit_jsonl_event("run1", "compact_kind", "hello", None, None);
-        tracing::info!(target: "jackin_capsule", "capsule line");
+        // Prefix-free capsule body with schema fields (plan 004 bridge shape).
+        tracing::event!(
+            target: "jackin_capsule",
+            tracing::Level::INFO,
+            "event.name" = "capsule.log",
+            "jackin.category" = "capsule",
+            "jackin.component" = "capsule",
+            "event.outcome" = "success",
+            "session.id" = "sess-test",
+            "parallax.run.id" = "run1",
+            "capsule line"
+        );
     });
 
     assert_eq!(logs.len(), 2);
@@ -464,6 +475,34 @@ fn jackin_targets_still_export() {
         .collect::<Vec<_>>();
     assert!(bodies.iter().any(|body| body == "hello"));
     assert!(bodies.iter().any(|body| body == "capsule line"));
+    for log in &logs {
+        if let Some(body) = log_body(&log.record) {
+            assert!(
+                !body.starts_with('['),
+                "exported body must be prefix-free: {body}"
+            );
+        }
+    }
+    let capsule = logs
+        .iter()
+        .find(|log| log_body(&log.record).as_deref() == Some("capsule line"))
+        .expect("capsule log");
+    assert_eq!(
+        log_attr(&capsule.record, "event.name").as_deref(),
+        Some("capsule.log")
+    );
+    assert_eq!(
+        log_attr(&capsule.record, "jackin.component").as_deref(),
+        Some("capsule")
+    );
+    assert_eq!(
+        log_attr(&capsule.record, "jackin.category").as_deref(),
+        Some("capsule")
+    );
+    assert_eq!(
+        log_attr(&capsule.record, "session.id").as_deref(),
+        Some("sess-test")
+    );
 }
 
 #[test]

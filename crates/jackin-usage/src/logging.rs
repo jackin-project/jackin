@@ -180,6 +180,7 @@ pub fn init() {
             write_line(&format!("[jackin-capsule] BACKTRACE:\n{bt}"));
             // The hook runs while unwinding; keep the bridged record one-line
             // and leave the backtrace in the local multiplexer log.
+            // Prefix-free body for OTLP; local file still has the tagged line above.
             crate::telemetry::bridge_log(
                 crate::telemetry::BridgeLevel::Error,
                 &format!("PANIC: {info}"),
@@ -217,12 +218,15 @@ pub fn write_line(message: &str) {
 /// Convenience macro: format + tag + emit. Always emits regardless
 /// of debug mode — reserved for compact production telemetry
 /// (lifecycle events, action breadcrumbs, error paths).
+///
+/// The raw body is built once; `[jackin-capsule]` is applied only on the
+/// file/stderr render path. OTLP receives the prefix-free body with schema attrs.
 #[macro_export]
 macro_rules! clog {
     ($($arg:tt)*) => {{
-        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
-        $crate::logging::write_line(&line);
-        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Info, &line);
+        let body = format!("{}", format_args!($($arg)*));
+        $crate::logging::write_line(&format!("[jackin-capsule] {body}"));
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Info, &body);
     }};
 }
 
@@ -236,9 +240,9 @@ macro_rules! clog {
 macro_rules! cdebug {
     ($($arg:tt)*) => {{
         if $crate::logging::debug_enabled() {
-            let line = format!("[jackin-capsule debug] {}", format_args!($($arg)*));
-            $crate::logging::write_line(&line);
-            $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Debug, &line);
+            let body = format!("{}", format_args!($($arg)*));
+            $crate::logging::write_line(&format!("[jackin-capsule debug] {body}"));
+            $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Debug, &body);
         }
     }};
 }
@@ -250,11 +254,11 @@ macro_rules! cdebug {
 macro_rules! ctrace_payload {
     ($($arg:tt)*) => {{
         if $crate::logging::trace_enabled() {
-            let line = format!("[jackin-capsule trace] {}", format_args!($($arg)*));
+            let body = format!("{}", format_args!($($arg)*));
             if $crate::telemetry::otlp_active() {
-                $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Trace, &line);
+                $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Trace, &body);
             } else {
-                $crate::logging::write_line(&line);
+                $crate::logging::write_line(&format!("[jackin-capsule trace] {body}"));
             }
         }
     }};
@@ -270,18 +274,18 @@ macro_rules! cdebug_local {
 #[macro_export]
 macro_rules! cwarn {
     ($($arg:tt)*) => {{
-        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
-        $crate::logging::write_line(&line);
-        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Warn, &line);
+        let body = format!("{}", format_args!($($arg)*));
+        $crate::logging::write_line(&format!("[jackin-capsule] {body}"));
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Warn, &body);
     }};
 }
 
 #[macro_export]
 macro_rules! cerror {
     ($($arg:tt)*) => {{
-        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
-        $crate::logging::write_line(&line);
-        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Error, &line);
+        let body = format!("{}", format_args!($($arg)*));
+        $crate::logging::write_line(&format!("[jackin-capsule] {body}"));
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Error, &body);
     }};
 }
 

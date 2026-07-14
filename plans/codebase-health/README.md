@@ -11,7 +11,7 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 001 | Typed event registry + canonical attribute schema | P1 | L | — | DONE |
 | 002 | Move run/session/component identity off the OTLP Resource | P1 | M | 001 | DONE |
 | 003 | Top-level `EventName` through the log bridge | P1 | M | 001 | DONE |
-| 004 | Prefix-free, schema-complete capsule OTLP export | P1 | L | 001 | TODO |
+| 004 | Prefix-free, schema-complete capsule OTLP export | P1 | L | 001 | DONE |
 | 005 | Versioned JSONL adapter + prohibited-key negative tests | P1 | M | 001 | TODO |
 | 006 | `JACKIN_DEBUG` cutover: one reader + dated removal boundary | P1 | S | — | TODO |
 | 007 | Trace & dimension coverage: stage registry, screen.name, missing metrics | P1 | M | 001 | TODO |

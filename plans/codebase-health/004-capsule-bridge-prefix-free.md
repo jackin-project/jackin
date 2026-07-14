@@ -93,11 +93,11 @@ Rewrite `observability/otlp/tests.rs:431-444`: a bridged capsule log must export
 
 ## Done criteria
 
-- [ ] `grep -rn 'format!("\[jackin-capsule' crates/jackin-usage/src/logging.rs` shows prefixes only in render paths, and the value passed to `bridge_log` is prefix-free (read the macro to confirm)
-- [ ] Exporter test proves capsule records: prefix-free body, `event.name`, `jackin.component=capsule`, `jackin.category`, `session.id`
-- [ ] Prefix sniff removed from `component_for`
-- [ ] Capsule file/stderr rendering byte-identical (tests prove)
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] `grep -rn 'format!("\[jackin-capsule' crates/jackin-usage/src/logging.rs` shows prefixes only in render paths, and the value passed to `bridge_log` is prefix-free (read the macro to confirm)
+- [x] Exporter test proves capsule records: prefix-free body, `event.name`, `jackin.component=capsule`, `jackin.category`, `session.id`
+- [x] Prefix sniff removed from `component_for`
+- [x] Capsule file/stderr rendering byte-identical (tests prove)
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -111,3 +111,7 @@ Rewrite `observability/otlp/tests.rs:431-444`: a bridged capsule log must export
 - Plan 008 migrates failure-prone call sites onto `operation_error`; the generic breadcrumb events added here are the floor, not the target shape.
 - Plan 009 asserts prefix-freedom continuously from the real host-to-capsule path.
 - Reviewers: any new capsule macro variant must route through `bridge_log`'s structured signature.
+
+## Execution notes
+
+- component_for prefix sniff already gone after plan 001 registry routing.
