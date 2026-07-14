@@ -790,7 +790,15 @@ pub(crate) fn fetch_codex_rpc_usage(
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )
-        .inspect_err(|error| crate::cdebug!("codex account/read RPC failed: {error}"))
+        .inspect_err(|error| {
+            crate::cdebug!("codex account/read RPC failed: {error}");
+            jackin_diagnostics::operation_error(
+                "usage.refresh",
+                "usage_rpc_failed",
+                "codex account/read RPC failed",
+                &[],
+            );
+        })
         .ok();
         let limits = serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value)
             .map_err(|err| format!("Codex app-server rate limit decode failed: {err}"))?;

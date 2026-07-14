@@ -163,7 +163,8 @@ async fn wait_for_capsule_daemon_polls_socket_status_command() {
     drop(guard);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"timing_done\"")
+        (diagnostics.contains("\"event.name\":\"timing.done\"")
+            || diagnostics.contains("\"kind\":\"timing_done\""))
             && diagnostics.contains("wait_capsule_socket")
             && diagnostics.contains("ready"),
         "expected wait_capsule_socket timing in diagnostics: {diagnostics}"

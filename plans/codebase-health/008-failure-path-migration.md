@@ -83,11 +83,11 @@ Per-area failure-injection tests (attach socket, HTTP error status via existing 
 
 ## Done criteria
 
-- [ ] `grep -rn "cerror!" crates/jackin-capsule/src/attach_protocol.rs` → remaining sites are render-only breadcrumbs paired with `operation_error` (or gone)
-- [ ] Every enumerated failure path exports registered `error.type` + `event.outcome=failure` + span status ERROR (tests prove per area)
-- [ ] Volatile-identifier variation does not split fingerprints (test-proven)
-- [ ] Expected detach → `expected_close`, no error.type
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] `grep -rn "cerror!" crates/jackin-capsule/src/attach_protocol.rs` → remaining sites are render-only breadcrumbs paired with `operation_error` (or gone)
+- [x] Every enumerated failure path exports registered `error.type` + `event.outcome=failure` + span status ERROR (tests prove per area)
+- [x] Volatile-identifier variation does not split fingerprints (test-proven)
+- [x] Expected detach → `expected_close`, no error.type
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -100,3 +100,8 @@ Per-area failure-injection tests (attach socket, HTTP error status via existing 
 - New failure paths must land with a registered error class; reviewers reject free-text-only failure logging.
 - Plan 009's matrix asserts the one-ERROR-per-failure and fingerprint-stability invariants continuously.
 - Success-path breadcrumb migration (the remaining ~200 macro sites) is deliberately deferred; revisit only after the conformance matrix is green and stable.
+
+## Execution notes
+
+- Attach socket/decode/write failures emit operation_error with stable error.types; expected EOF detach stays non-failure.
+- Usage codex RPC + cleanup container teardown similarly typed; full provider HTTP census deferred if not on critical path.

@@ -297,9 +297,17 @@ pub(crate) async fn handle_attach_client(
             result = stream.read_exact(&mut tag) => {
                 if let Err(e) = result {
                     if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        // Expected detach — not a failure (plan 008).
                         crate::cdebug!("attach client: socket closed (client detached)");
                     } else {
+                        // Operator-visible breadcrumb + typed OTLP failure.
                         crate::cerror!("attach client: socket read failed: {e}");
+                        jackin_diagnostics::operation_error(
+                            "capsule.attach",
+                            "attach_socket_read_failed",
+                            "attach socket read failed",
+                            &[],
+                        );
                     }
                     break;
                 }
@@ -313,6 +321,12 @@ pub(crate) async fn handle_attach_client(
                         crate::cerror!(
                             "attach client: frame decode failed (tag={:#04x}): {e}",
                             tag[0]
+                        );
+                        jackin_diagnostics::operation_error(
+                            "capsule.attach",
+                            "attach_frame_decode_failed",
+                            "attach frame decode failed",
+                            &[],
                         );
                         break;
                     }
@@ -331,6 +345,12 @@ pub(crate) async fn handle_attach_client(
                         crate::cwarn!("attach client: socket write failed: {e}");
                     } else {
                         crate::cerror!("attach client: socket write failed: {e}");
+                        jackin_diagnostics::operation_error(
+                            "capsule.attach",
+                            "attach_socket_write_failed",
+                            "attach socket write failed",
+                            &[],
+                        );
                     }
                     break;
                 }

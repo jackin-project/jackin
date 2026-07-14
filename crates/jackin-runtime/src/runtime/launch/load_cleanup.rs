@@ -99,6 +99,12 @@ impl LoadCleanup {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact("cleanup", &format!("cleanup failed (container): {e}"));
             }
+            jackin_diagnostics::operation_error(
+                "launch.cleanup",
+                "cleanup_teardown_failed",
+                "cleanup failed (container)",
+                &[],
+            );
             launch_output().step_fail(&format!("cleanup failed (container): {e}"));
         }
         if let Err(e) = docker.remove_container(&self.dind).await {
