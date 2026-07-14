@@ -543,7 +543,7 @@ pub fn toggle_allowed_role_at(
 #[must_use]
 pub fn add_role_to_workspace_editor<'a>(
     allowed_roles: &mut Vec<String>,
-    mut role_names: impl Iterator<Item = &'a String>,
+    mut role_names: impl Iterator<Item = &'a String> + 'a,
     key: &str,
 ) -> Option<usize> {
     if !allowed_roles.is_empty() && !allowed_roles.iter().any(|role| role == key) {

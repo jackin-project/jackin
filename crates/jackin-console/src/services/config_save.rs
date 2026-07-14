@@ -252,7 +252,7 @@ pub fn plan_editor_save_preview(
 
 fn validate_settings_env_keys<'a>(
     scope: &str,
-    keys: impl Iterator<Item = &'a String>,
+    keys: impl Iterator<Item = &'a String> + 'a,
 ) -> anyhow::Result<()> {
     for key in keys {
         if key.trim().is_empty() {

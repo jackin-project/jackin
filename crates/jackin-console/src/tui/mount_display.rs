@@ -52,7 +52,7 @@ pub fn mount_display_paths(
 }
 
 pub fn format_mount_rows<'a>(
-    mounts: impl IntoIterator<Item = MountDisplayInput<'a>>,
+    mounts: impl IntoIterator<Item = MountDisplayInput<'a>> + 'a,
     shorten: impl Fn(&str) -> String + Copy,
 ) -> Vec<MountDisplayRow> {
     mounts

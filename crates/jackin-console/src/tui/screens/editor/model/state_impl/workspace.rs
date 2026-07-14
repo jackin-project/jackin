@@ -175,7 +175,7 @@ impl<
     #[must_use]
     pub fn eligible_role_override_selectors<'a>(
         &self,
-        registered_roles: impl Iterator<Item = &'a String>,
+        registered_roles: impl Iterator<Item = &'a String> + 'a,
     ) -> Vec<jackin_core::RoleSelector> {
         crate::workspace::eligible_role_keys_for_override(registered_roles, &self.pending)
             .into_iter()
@@ -186,7 +186,7 @@ impl<
     #[must_use]
     pub fn auth_role_override_selectors<'a>(
         &self,
-        registered_roles: impl Iterator<Item = &'a String>,
+        registered_roles: impl Iterator<Item = &'a String> + 'a,
     ) -> Option<Vec<jackin_core::RoleSelector>> {
         let kind = self.auth_selected_kind?;
         let already_overridden: BTreeSet<String> = self
