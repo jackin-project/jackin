@@ -1148,7 +1148,7 @@ fn seed_agent_home(
 
 /// Seed `agent`'s durable home from `/jackin/default-home`, deriving the data and
 /// paired-config roots from the agent enum
-/// ([`AgentStatePaths`](jackin_core::agent::runtime::AgentStatePaths)) so the
+/// ([`AgentStatePaths`](jackin_core::AgentStatePaths)) so the
 /// per-agent folder layout has one source of truth. Returns the first-seed
 /// outcome; the caller copies auth only on [`SeedOutcome::FirstSeed`].
 fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {

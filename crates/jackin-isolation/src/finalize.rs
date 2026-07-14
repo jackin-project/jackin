@@ -32,9 +32,9 @@ use crate::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use jackin_config::DirtyExitPolicy;
 use jackin_core::CommandRunner;
 use jackin_core::JACKIN_STATUS_CMD;
+use jackin_core::PromptContextLine;
 use jackin_core::error_popup;
 use jackin_core::exit_dialog_with_inspect;
-use jackin_core::launch_progress::PromptContextLine;
 use jackin_diagnostics::debug_log;
 use std::path::Path;
 
@@ -208,7 +208,7 @@ fn rich_exit_dialog(
     records: &[(IsolationRecord, PreservedReason)],
 ) -> ExitDialogChoice {
     // D24: pre-fetch changed-file lists for each preserved worktree.
-    let worktrees_per_record: Vec<Vec<jackin_core::launch_progress::WorktreeInspect>> = records
+    let worktrees_per_record: Vec<Vec<jackin_core::WorktreeInspect>> = records
         .iter()
         .map(|(rec, _)| vec![crate::git_inspect::worktree_inspect(&rec.worktree_path)])
         .collect();
@@ -420,9 +420,8 @@ async fn finalize_clean_exit(
                     eprintln!(
                         "[jackin] warning: discard-policy force-delete of `{wt}` failed ({reason_str}): {e}\n         re-run `jackin purge {short}` to retry",
                         wt = rec.worktree_path,
-                        short =
-                            jackin_core::constants::instance_id_from_container_base(container_name)
-                                .unwrap_or(container_name),
+                        short = jackin_core::instance_id_from_container_base(container_name)
+                            .unwrap_or(container_name),
                     );
                     any_failed = true;
                 }
@@ -456,7 +455,7 @@ async fn finalize_clean_exit(
             eprintln!(
                 "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: {reason_str}\n         run `jackin hardline {short}` to return, inspect the path above directly, or `jackin purge {short}` to discard",
                 wt = rec.worktree_path,
-                short = jackin_core::constants::instance_id_from_container_base(container_name)
+                short = jackin_core::instance_id_from_container_base(container_name)
                     .unwrap_or(container_name),
             );
         }
@@ -477,9 +476,8 @@ async fn finalize_clean_exit(
                     eprintln!(
                         "[jackin] warning: force-delete of isolated worktree `{wt}` failed: {e}\n         record retained — re-run `jackin purge {short}` to retry",
                         wt = rec.worktree_path,
-                        short =
-                            jackin_core::constants::instance_id_from_container_base(container_name)
-                                .unwrap_or(container_name),
+                        short = jackin_core::instance_id_from_container_base(container_name)
+                            .unwrap_or(container_name),
                     );
                     any_failed = true;
                 }
@@ -560,19 +558,15 @@ async fn assess_cleanup(
     // `jackin_core::worktree_dirty` so host cleanup and the capsule exit modal
     // can never disagree on what "dirty" means. The closure routes the shared
     // assessment's fail-closed diagnostics back into the host debug channel.
-    let state = jackin_core::worktree_dirty::assess_worktree(
-        &record.worktree_path,
-        &record.base_commit,
-        runner,
-        |msg| debug_log!("isolation", "finalize {}", msg),
-    )
-    .await?;
+    let state =
+        jackin_core::assess_worktree(&record.worktree_path, &record.base_commit, runner, |msg| {
+            debug_log!("isolation", "finalize {}", msg);
+        })
+        .await?;
     Ok(match state {
-        jackin_core::worktree_dirty::WorktreeState::Clean => CleanupAssessment::SafeToDelete,
-        jackin_core::worktree_dirty::WorktreeState::Dirty => CleanupAssessment::PreservedDirty,
-        jackin_core::worktree_dirty::WorktreeState::Unpushed => {
-            CleanupAssessment::PreservedUnpushed
-        }
+        jackin_core::WorktreeState::Clean => CleanupAssessment::SafeToDelete,
+        jackin_core::WorktreeState::Dirty => CleanupAssessment::PreservedDirty,
+        jackin_core::WorktreeState::Unpushed => CleanupAssessment::PreservedUnpushed,
     })
 }
 

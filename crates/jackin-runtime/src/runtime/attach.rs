@@ -190,7 +190,7 @@ fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> 
 
 #[cfg(test)]
 use crate::instance::InstanceIndex;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 pub use jackin_docker::docker_client::ContainerState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -350,13 +350,10 @@ fn insert_run_as_user<'a>(args: &mut Vec<&'a str>, run_as_user: Option<&'a str>)
 fn git_policy_env_pairs(coauthor_trailer: bool, dco: bool) -> Vec<(&'static str, &'static str)> {
     let mut pairs = Vec::with_capacity(2);
     if coauthor_trailer {
-        pairs.push((
-            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME,
-            "1",
-        ));
+        pairs.push((jackin_core::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, "1"));
     }
     if dco {
-        pairs.push((jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME, "1"));
+        pairs.push((jackin_core::JACKIN_GIT_DCO_ENV_NAME, "1"));
     }
     pairs
 }
@@ -646,7 +643,7 @@ pub async fn spawn_agent_session(
     paths: &JackinPaths,
     container_name: &str,
     manifest: Option<&InstanceManifest>,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     provider_label: Option<&str>,
     env_overrides: &[(String, String)],
     git_coauthor_trailer: bool,

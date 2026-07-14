@@ -7967,7 +7967,7 @@ fn exit_dirty_down_arrow_reaches_last_row() {
 fn build_exit_inspect_rows_groups_repos_with_header_and_file_rows() {
     use crate::exit_assess::DirtyRepo;
     use crate::tui::components::dialog::InspectRow;
-    use jackin_core::worktree_dirty::ChangedFile;
+    use jackin_core::ChangedFile;
 
     let repos = vec![
         DirtyRepo {

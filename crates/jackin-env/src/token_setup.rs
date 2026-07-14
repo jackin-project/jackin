@@ -640,15 +640,14 @@ pub(crate) fn run_revoke_with_runner(
     let deleted_item = if delete_op_item {
         match prior.as_ref() {
             Some(EnvValue::OpRef(r)) => {
-                let parts =
-                    jackin_core::op_reference::parse_op_reference(&r.op).ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "--delete-op-item requested but slot {:?} did not parse into a \
+                let parts = jackin_core::parse_op_reference(&r.op).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "--delete-op-item requested but slot {:?} did not parse into a \
                          vault/item op-ref; clear the workspace via plain `revoke` and \
                          delete the item by hand from 1Password.",
-                            r.op
-                        )
-                    })?;
+                        r.op
+                    )
+                })?;
                 op_writer.item_delete(&parts.item, &parts.vault, None)?;
                 true
             }
@@ -723,9 +722,7 @@ pub struct RevokeReport {
 pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> Option<String> {
     cli_vault.or_else(|| {
         prior.and_then(|v| match v {
-            EnvValue::OpRef(r) => {
-                jackin_core::op_reference::parse_op_reference(&r.op).map(|p| p.vault)
-            }
+            EnvValue::OpRef(r) => jackin_core::parse_op_reference(&r.op).map(|p| p.vault),
             EnvValue::Plain(_) | EnvValue::Extended(_) => None,
         })
     })
@@ -965,7 +962,7 @@ enum OrphanCleanup {
 
 impl OrphanCleanup {
     fn run(op_writer: &dyn OpWriteRunner, op_ref: &OpRef, account: Option<&str>) -> Self {
-        let Some(parts) = jackin_core::op_reference::parse_op_reference(&op_ref.op) else {
+        let Some(parts) = jackin_core::parse_op_reference(&op_ref.op) else {
             return Self::UnparseableRef {
                 op: op_ref.op.clone(),
             };

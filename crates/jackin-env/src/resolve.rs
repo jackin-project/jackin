@@ -9,8 +9,8 @@ use crate::op_runner::{OpRunner, resolve_env_value};
 use crate::op_struct::OpStructRunner;
 use crate::parse_helpers::parse_host_ref;
 use jackin_config::AppConfig;
-use jackin_core::op_reference::parse_op_reference;
-use jackin_core::op_types::OpItem;
+use jackin_core::OpItem;
+use jackin_core::parse_op_reference;
 use jackin_core::{EnvValue, OpRef, WorkspaceName};
 
 /// Typed failures for operator-env validation and `op://` URI resolution.
@@ -111,7 +111,7 @@ pub fn validate_reserved_names(config: &AppConfig) -> Result<(), OperatorEnvErro
     let mut offenses: Vec<String> = Vec::new();
     let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, EnvValue>| {
         for key in env.keys() {
-            if jackin_core::env_model::is_reserved(key) {
+            if jackin_core::is_reserved(key) {
                 offenses.push(format!(
                     "  - {key:?} is reserved by the jackin runtime; declared in {layer}"
                 ));

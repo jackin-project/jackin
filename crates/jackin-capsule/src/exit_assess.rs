@@ -4,7 +4,7 @@
 //! In-container dirty assessment for the last-session-exit modal.
 //!
 //! Runs git synchronously via `std::process` (the capsule's tokio build carries
-//! no `process` feature) behind the shared [`jackin_core::runner::CommandRunner`]
+//! no `process` feature) behind the shared [`jackin_core::CommandRunner`]
 //! seam, so the modal's trigger uses the same detection vocabulary as host
 //! cleanup. Only the no-live-session exit path calls this, where briefly
 //! blocking the single-threaded runtime is acceptable.
@@ -18,8 +18,8 @@
 #[cfg(test)]
 mod tests;
 
-use jackin_core::runner::{CommandRunner, RunOptions};
-use jackin_core::worktree_dirty::{ChangedFile, changed_files, unpushed_commit_count};
+use jackin_core::{ChangedFile, changed_files, unpushed_commit_count};
+use jackin_core::{CommandRunner, RunOptions};
 use jackin_protocol::{CapsuleConfig, EXIT_ACTION_PATH, ExitAction};
 use std::path::Path;
 use std::process::Stdio;

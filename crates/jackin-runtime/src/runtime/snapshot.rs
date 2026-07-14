@@ -36,7 +36,7 @@ use jackin_protocol::control::{
 };
 use serde::Deserialize;
 
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 
 // `InstanceSnapshot` lives in `jackin-protocol` so the console can use it
 // without depending on `jackin-runtime`.

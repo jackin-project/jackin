@@ -748,7 +748,7 @@ fn derived_image_snapshots_only_selected_agent_home_defaults() {
 fn claude_plugins_render_one_readable_run_layer() {
     let claude = ClaudeConfig {
         model: None,
-        marketplaces: vec![jackin_core::manifest::ClaudeMarketplaceConfig {
+        marketplaces: vec![jackin_core::ClaudeMarketplaceConfig {
             source: "myorg/marketplace".to_owned(),
             sparse: vec!["pkg/a".to_owned()],
         }],

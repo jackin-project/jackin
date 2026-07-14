@@ -135,7 +135,7 @@ use crate::tui::update::{
 };
 use crate::tui::view::spawn_request_failure_message;
 use crate::usage::UsageCache;
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 use jackin_core::{Clock, SystemClock};
 use jackin_protocol::control::{ClientMsg, ServerMsg};
 

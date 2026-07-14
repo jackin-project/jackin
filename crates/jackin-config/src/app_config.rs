@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use jackin_core::EnvValue;
 use serde::{Deserialize, Serialize};
 
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 
 use jackin_core::AuthForwardMode;
 

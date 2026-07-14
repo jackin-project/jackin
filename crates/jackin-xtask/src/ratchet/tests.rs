@@ -84,10 +84,22 @@ fn presence_stale_and_new() {
 #[test]
 fn curated_pub_mods_rejects_extra_root_mod() {
     let dir = tempfile::tempdir().expect("tempdir");
-    // Valid curated sibling so the only failure is the intentional leak.
-    let config_lib = dir.path().join("crates/jackin-config/src/lib.rs");
-    fs::create_dir_all(config_lib.parent().expect("parent")).expect("mkdir");
-    fs::write(&config_lib, "mod private;\npub mod test_support;\n").expect("write config");
+    // Valid curated siblings so the only failure is the intentional leak.
+    for (crate_name, body) in [
+        ("jackin-config", "mod private;\npub mod test_support;\n"),
+        (
+            "jackin-core",
+            "mod private;\npub mod container_paths;\npub mod debug_log;\n",
+        ),
+    ] {
+        let lib = dir
+            .path()
+            .join("crates")
+            .join(crate_name)
+            .join("src/lib.rs");
+        fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
+        fs::write(&lib, body).expect("write lib");
+    }
     let lib = dir.path().join("crates/jackin-env/src/lib.rs");
     fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
     fs::write(
@@ -106,14 +118,22 @@ fn curated_pub_mods_rejects_extra_root_mod() {
 #[test]
 fn curated_pub_mods_accepts_env_pilot_shape() {
     let dir = tempfile::tempdir().expect("tempdir");
-    for crate_name in ["jackin-env", "jackin-config"] {
+    let shapes = [
+        ("jackin-env", "mod env_layer;\npub mod test_support;\n"),
+        ("jackin-config", "mod private;\npub mod test_support;\n"),
+        (
+            "jackin-core",
+            "mod private;\npub mod container_paths;\npub mod debug_log;\n",
+        ),
+    ];
+    for (crate_name, body) in shapes {
         let lib = dir
             .path()
             .join("crates")
             .join(crate_name)
             .join("src/lib.rs");
         fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
-        fs::write(&lib, "mod env_layer;\npub mod test_support;\n").expect("write lib");
+        fs::write(&lib, body).expect("write lib");
     }
     check_curated_pub_mods(dir.path()).expect("curated pilot shapes ok");
 }

@@ -215,7 +215,7 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> anyhow::Result<()> {
     let mut offenses: Vec<String> = Vec::new();
     let mut check = |layer: &str, env: &BTreeMap<String, jackin_core::EnvValue>| {
         for key in env.keys() {
-            if jackin_core::env_model::is_reserved(key) {
+            if jackin_core::is_reserved(key) {
                 offenses.push(format!(
                     "  - {key:?} is reserved by the jackin runtime; declared in {layer}"
                 ));

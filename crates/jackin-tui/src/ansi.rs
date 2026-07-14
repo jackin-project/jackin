@@ -11,7 +11,7 @@ pub const RESET: &str = "\x1b[0m";
 pub const BOLD: &str = "\x1b[1m";
 
 // Re-exported from jackin-core (relocated pure ANSI tokens; Parallel Change shim).
-pub use jackin_core::ansi_tokens::{POINTER_DEFAULT, POINTER_HAND};
+pub use jackin_core::{POINTER_DEFAULT, POINTER_HAND};
 pub const INVERSE: &str = "\x1b[7m";
 
 /// Help/banner form of the brand pill, shared with the host and
@@ -190,7 +190,7 @@ pub fn rgb_bg_dyn(rgb: Rgb) -> String {
 
 // Re-exported from jackin-core (relocated pure ANSI helper; Parallel Change shim).
 // (The base64 uses and body now live in ansi_tokens.rs.)
-pub use jackin_core::ansi_tokens::encode_osc52_clipboard_write;
+pub use jackin_core::encode_osc52_clipboard_write;
 
 /// Open an OSC 8 hyperlink for subsequent terminal text. Call
 /// [`emit_osc8_close`] after writing the linked text.

@@ -12,7 +12,7 @@ use ratatui::backend::TestBackend;
 
 fn test_diagnostics() -> Arc<RunDiagnostics> {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = jackin_core::paths::JackinPaths::for_tests(tmp.path());
+    let paths = jackin_core::JackinPaths::for_tests(tmp.path());
     RunDiagnostics::start(&paths, false, "load").unwrap()
 }
 
@@ -46,7 +46,7 @@ async fn stage_failed_does_not_block_on_test_renderer() {
 #[tokio::test]
 async fn stage_failed_writes_full_detail_to_diagnostics() {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = jackin_core::paths::JackinPaths::for_tests(tmp.path());
+    let paths = jackin_core::JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, false, "load").unwrap();
     let diagnostics: Arc<RunDiagnostics> = Arc::clone(&run);
     let mut progress = LaunchProgress::for_test(diagnostics);

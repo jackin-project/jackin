@@ -7,7 +7,7 @@
 //! behavior such as grant validation, effective grants, and launch flags.
 
 use jackin_core::container_paths;
-pub use jackin_core::docker_security::{
+pub use jackin_core::{
     DindGrant, DockerGrants, DockerSecurityProfile, NetworkGrant, ParseProfileError,
 };
 

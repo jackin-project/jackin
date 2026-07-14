@@ -6,7 +6,7 @@
 use jackin_tui::components::StatusFooterHover;
 use ratatui::text::Line;
 
-pub use jackin_core::launch_progress::{
+pub use jackin_core::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchStage, LaunchTargetKind,
     PromptContextLine, StageLabelTransition, StageStatus, StageView,
 };

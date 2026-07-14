@@ -12,8 +12,8 @@
 use crate::instance::runtime_slug;
 use anyhow::Context;
 use fs4::FileExt;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_manifest::repo::{CachedRepo, validate_role_repo};
 #[cfg(test)]

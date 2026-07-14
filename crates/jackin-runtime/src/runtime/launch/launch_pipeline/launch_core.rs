@@ -10,8 +10,8 @@ mod orchestrate;
 
 use jackin_config::AppConfig;
 use jackin_core::CommandRunner;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 
 pub(super) struct LaunchCore<'a, D, R>
@@ -32,8 +32,8 @@ where
     pub steps: &'a mut super::super::StepCounter,
     pub role_key: String,
     pub agent_display_name: String,
-    pub agent: jackin_core::agent::Agent,
-    pub supported_agents: Vec<jackin_core::agent::Agent>,
+    pub agent: jackin_core::Agent,
+    pub supported_agents: Vec<jackin_core::Agent>,
     pub cached_repo: jackin_manifest::repo::CachedRepo,
     pub validated_repo: jackin_manifest::repo::ValidatedRoleRepo,
     pub source: jackin_config::RoleSource,

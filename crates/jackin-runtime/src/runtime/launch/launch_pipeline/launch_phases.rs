@@ -16,8 +16,8 @@ use crate::runtime::docker_profile::{
     validate_effective_grants,
 };
 use jackin_config::{AppConfig, WorkspaceDockerConfig};
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 use jackin_manifest::RoleManifest;
 

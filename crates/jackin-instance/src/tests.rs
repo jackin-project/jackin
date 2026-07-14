@@ -3,7 +3,7 @@
 
 //! Tests for `instance`.
 use super::*;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_manifest::load_role_manifest;
 use tempfile::tempdir;
 
@@ -46,7 +46,7 @@ fn prepares_persisted_claude_state() {
         &ignoring_resolvers(),
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     )
     .unwrap();
 
@@ -112,7 +112,7 @@ model = "gpt-5"
         &ignoring_resolvers(),
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
     )
     .unwrap();
 
@@ -183,13 +183,13 @@ plugins = []
 
     // Claude → Sync (host missing → HostMissing, forward_auth = true)
     // Codex → ApiKey (would wipe Claude state if applied cross-agent)
-    let auth_modes = |agent: jackin_core::agent::Agent| match agent {
-        jackin_core::agent::Agent::Claude => AuthForwardMode::Sync,
-        jackin_core::agent::Agent::Codex => AuthForwardMode::ApiKey,
-        jackin_core::agent::Agent::Amp
-        | jackin_core::agent::Agent::Kimi
-        | jackin_core::agent::Agent::Opencode
-        | jackin_core::agent::Agent::Grok => AuthForwardMode::Ignore,
+    let auth_modes = |agent: jackin_core::Agent| match agent {
+        jackin_core::Agent::Claude => AuthForwardMode::Sync,
+        jackin_core::Agent::Codex => AuthForwardMode::ApiKey,
+        jackin_core::Agent::Amp
+        | jackin_core::Agent::Kimi
+        | jackin_core::Agent::Opencode
+        | jackin_core::Agent::Grok => AuthForwardMode::Ignore,
     };
 
     let (state, selected_outcome) = RoleState::prepare(
@@ -202,7 +202,7 @@ plugins = []
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
     )
     .unwrap();
 
@@ -268,7 +268,7 @@ plugins = []
         &ignoring_resolvers(),
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     )
     .unwrap();
 
@@ -305,7 +305,7 @@ fn github_ignore_prepare_skips_absent_state() {
             token: None,
         },
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     )
     .unwrap();
 
@@ -343,7 +343,7 @@ fn github_ignore_prepare_still_wipes_existing_state() {
             token: None,
         },
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     )
     .unwrap();
 
@@ -367,8 +367,8 @@ fn agent_ignore_prepare_skips_absent_state_without_host_or_home_work() {
         &ignoring_resolvers(),
         &GithubAuthContext::default(),
         &host_home,
-        jackin_core::agent::Agent::Claude,
-        &[jackin_core::agent::Agent::Claude],
+        jackin_core::Agent::Claude,
+        &[jackin_core::Agent::Claude],
     )
     .unwrap();
 
@@ -410,8 +410,8 @@ fn agent_ignore_prepare_still_wipes_existing_state() {
         &ignoring_resolvers(),
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
-        &[jackin_core::agent::Agent::Claude],
+        jackin_core::Agent::Claude,
+        &[jackin_core::Agent::Claude],
     )
     .unwrap();
 
@@ -446,14 +446,14 @@ plugins = []
     let codex_mode_resolved = std::cell::Cell::new(false);
     let resolvers = PrepareResolvers {
         auth_modes: &|agent| match agent {
-            jackin_core::agent::Agent::Codex => {
+            jackin_core::Agent::Codex => {
                 codex_mode_resolved.set(true);
                 AuthForwardMode::Ignore
             }
             other => panic!("unexpected selected/sibling auth mode resolution for {other}"),
         },
         sync_source_dirs: &|agent| match agent {
-            jackin_core::agent::Agent::Codex => None,
+            jackin_core::Agent::Codex => None,
             other => panic!("unexpected selected/sibling sync-source resolution for {other}"),
         },
     };
@@ -464,7 +464,7 @@ plugins = []
         &manifest,
         &resolvers,
         temp.path(),
-        &[jackin_core::agent::Agent::Codex],
+        &[jackin_core::Agent::Codex],
     )
     .unwrap();
 
@@ -522,7 +522,7 @@ plugins = []
         &ignoring_resolvers(),
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Grok,
+        jackin_core::Agent::Grok,
     )
     .unwrap();
 
@@ -534,12 +534,12 @@ plugins = []
     assert!(state.auth.opencode.is_some());
     assert!(state.auth.grok.is_some());
     for agent in [
-        jackin_core::agent::Agent::Claude,
-        jackin_core::agent::Agent::Codex,
-        jackin_core::agent::Agent::Amp,
-        jackin_core::agent::Agent::Kimi,
-        jackin_core::agent::Agent::Opencode,
-        jackin_core::agent::Agent::Grok,
+        jackin_core::Agent::Claude,
+        jackin_core::Agent::Codex,
+        jackin_core::Agent::Amp,
+        jackin_core::Agent::Kimi,
+        jackin_core::Agent::Opencode,
+        jackin_core::Agent::Grok,
     ] {
         assert_eq!(
             state.auth_outcomes.get(&agent),

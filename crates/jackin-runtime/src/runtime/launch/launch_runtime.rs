@@ -12,8 +12,8 @@
 
 use anyhow::Context;
 use jackin_config::AppConfig;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 
@@ -46,7 +46,7 @@ pub(crate) struct LaunchContext<'a> {
     pub(crate) debug: bool,
     pub(crate) git_coauthor_trailer: bool,
     pub(crate) git_dco: bool,
-    pub(crate) agent: jackin_core::agent::Agent,
+    pub(crate) agent: jackin_core::Agent,
     pub(crate) capsule_config: &'a jackin_protocol::CapsuleConfig,
     pub(crate) resolved_env: &'a jackin_env::ResolvedEnv,
     pub(crate) profile: crate::runtime::docker_profile::DockerSecurityProfile,
@@ -108,7 +108,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     paths: &JackinPaths,
     container_name: &str,
     prewarm: &SiblingAuthPrewarm<'_>,
-    selected_agent: jackin_core::agent::Agent,
+    selected_agent: jackin_core::Agent,
 ) -> Option<tokio::task::JoinHandle<()>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
     let sibling_agents = prewarm
@@ -167,11 +167,11 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     }
 
     Some(tokio::task::spawn_blocking(move || {
-        let resolve_mode = |a: jackin_core::agent::Agent| {
+        let resolve_mode = |a: jackin_core::Agent| {
             let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
             jackin_config::resolve_mode(&config, a, ws.as_ref(), &role_key)
         };
-        let resolve_sync_src = |a: jackin_core::agent::Agent| {
+        let resolve_sync_src = |a: jackin_core::Agent| {
             let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
             jackin_config::resolve_sync_source_dir(&config, a, ws.as_ref(), &role_key)
         };
@@ -338,13 +338,10 @@ pub(crate) async fn launch_role_runtime(
     let display_label = format!("jackin.display.name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
     let docker_cert_path = "DOCKER_CERT_PATH=/jackin/run/dind-certs/client";
-    let dind_hostname = format!(
-        "{}={dind}",
-        jackin_core::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME
-    );
+    let dind_hostname = format!("{}={dind}", jackin_core::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let role_container_name_env = format!(
         "{}={container_name}",
-        jackin_core::env_model::JACKIN_CONTAINER_NAME_ENV_NAME
+        jackin_core::JACKIN_CONTAINER_NAME_ENV_NAME
     );
     let instance_id = if let Some(id) =
         crate::instance::naming::instance_id_from_container_base(container_name)
@@ -359,13 +356,10 @@ pub(crate) async fn launch_role_runtime(
         );
         container_name
     };
-    let instance_id_env = format!(
-        "{}={instance_id}",
-        jackin_core::env_model::JACKIN_INSTANCE_ID_ENV_NAME
-    );
+    let instance_id_env = format!("{}={instance_id}", jackin_core::JACKIN_INSTANCE_ID_ENV_NAME);
     let testcontainers_host_override = format!(
         "{}={dind}",
-        jackin_core::env_model::TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME
+        jackin_core::TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME
     );
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
@@ -550,17 +544,12 @@ pub(crate) async fn launch_role_runtime(
     let host_version_env = format!("JACKIN_HOST_VERSION={}", env!("JACKIN_VERSION"));
     run_args.extend_from_slice(&["-e", host_version_env.as_str()]);
 
-    let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {
-        format!(
-            "{}=1",
-            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
-        )
-    });
+    let git_coauthor_trailer_env = git_coauthor_trailer
+        .then(|| format!("{}=1", jackin_core::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME));
     if let Some(ref env) = git_coauthor_trailer_env {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
-    let git_dco_env =
-        git_dco.then(|| format!("{}=1", jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME));
+    let git_dco_env = git_dco.then(|| format!("{}=1", jackin_core::JACKIN_GIT_DCO_ENV_NAME));
     if let Some(ref env) = git_dco_env {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
@@ -573,8 +562,8 @@ pub(crate) async fn launch_role_runtime(
     let mut env_strings: Vec<String> = Vec::new();
     env_strings.push(format!(
         "{}={}",
-        jackin_core::env_model::JACKIN_ENV_NAME,
-        jackin_core::env_model::JACKIN_ENV_VALUE
+        jackin_core::JACKIN_ENV_NAME,
+        jackin_core::JACKIN_ENV_VALUE
     ));
     // DinD reachable only via Docker network; route past HTTP_PROXY by adding
     // hostname to NO_PROXY in both casings — Go reads upper, curl/Python
@@ -591,7 +580,7 @@ pub(crate) async fn launch_role_runtime(
         .iter()
         .find_map(|(k, v)| (k == NO_PROXY_LOWER).then_some(v.as_str()));
     for (key, value) in &resolved_env.vars {
-        if jackin_core::env_model::is_reserved(key) {
+        if jackin_core::is_reserved(key) {
             continue;
         }
         if key == NO_PROXY_UPPER || key == NO_PROXY_LOWER {
@@ -608,7 +597,7 @@ pub(crate) async fn launch_role_runtime(
     // it under GROK_DEPLOYMENT_KEY so the in-container `grok` sees the
     // credential under the name it prefers. Explicit GROK_DEPLOYMENT_KEY
     // in the layers takes precedence.
-    if *agent == jackin_core::agent::Agent::Grok
+    if *agent == jackin_core::Agent::Grok
         && let Some((_, value)) = resolved_env.vars.iter().find(|(k, _)| k == "XAI_API_KEY")
         && !resolved_env
             .vars
@@ -639,24 +628,17 @@ pub(crate) async fn launch_role_runtime(
     // GH_ENTERPRISE_TOKEN are passed through as-is when declared by
     // the operator so GHE workspaces work end to end.
     let gh_token = state.gh_provision_outcome.token();
-    push_env_if_present(
-        &mut env_strings,
-        jackin_core::env_model::GH_TOKEN_ENV_NAME,
-        gh_token,
-    );
+    push_env_if_present(&mut env_strings, jackin_core::GH_TOKEN_ENV_NAME, gh_token);
 
     env_strings.push(format!(
         "{}={}",
-        jackin_core::env_model::JACKIN_NETWORK_MODE_ENV_NAME,
+        jackin_core::JACKIN_NETWORK_MODE_ENV_NAME,
         crate::runtime::docker_profile::network_grant_label(grants.network)
     ));
     // WP-SUDO: the container provisions sudo at runtime from this signal (the
     // base image bakes no sudoers). Reserved so role manifests can't set it.
     if grants.sudo {
-        env_strings.push(format!(
-            "{}=1",
-            jackin_core::env_model::JACKIN_SUDO_ENV_NAME
-        ));
+        env_strings.push(format!("{}=1", jackin_core::JACKIN_SUDO_ENV_NAME));
     }
     // Read-only-root profiles need writable-home env redirects (e.g. git's
     // global config) — see `readonly_home_env`, the companion to `tmpfs_paths`.
@@ -673,7 +655,7 @@ pub(crate) async fn launch_role_runtime(
         let github_hosts = if gh_token.is_some() {
             crate::runtime::docker_profile::github_allowlist_hosts(
                 github_env
-                    .get(jackin_core::env_model::GH_HOST_ENV_NAME)
+                    .get(jackin_core::GH_HOST_ENV_NAME)
                     .map(String::as_str),
             )
         } else {
@@ -688,12 +670,12 @@ pub(crate) async fn launch_role_runtime(
         );
         env_strings.push(format!(
             "{}={}",
-            jackin_core::env_model::JACKIN_ALLOWED_HOSTS_ENV_NAME,
+            jackin_core::JACKIN_ALLOWED_HOSTS_ENV_NAME,
             allowlist.join(",")
         ));
         env_strings.push(format!(
             "{}={}",
-            jackin_core::env_model::JACKIN_NETWORK_ENFORCEMENT_ENV_NAME,
+            jackin_core::JACKIN_NETWORK_ENFORCEMENT_ENV_NAME,
             crate::runtime::docker_profile::network_enforcement_label(grants)
         ));
     }
@@ -728,21 +710,21 @@ pub(crate) async fn launch_role_runtime(
     }
     push_env_if_present(
         &mut env_strings,
-        jackin_core::env_model::GITHUB_TOKEN_ENV_NAME,
+        jackin_core::GITHUB_TOKEN_ENV_NAME,
         gh_token,
     );
     push_env_if_present(
         &mut env_strings,
-        jackin_core::env_model::GH_HOST_ENV_NAME,
+        jackin_core::GH_HOST_ENV_NAME,
         github_env
-            .get(jackin_core::env_model::GH_HOST_ENV_NAME)
+            .get(jackin_core::GH_HOST_ENV_NAME)
             .map(String::as_str),
     );
     push_env_if_present(
         &mut env_strings,
-        jackin_core::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME,
+        jackin_core::GH_ENTERPRISE_TOKEN_ENV_NAME,
         github_env
-            .get(jackin_core::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME)
+            .get(jackin_core::GH_ENTERPRISE_TOKEN_ENV_NAME)
             .map(String::as_str),
     );
 

@@ -587,7 +587,7 @@ key = "crates/jackin-console/README.md"
 bound = 2217
 [[family.entry]]
 key = "crates/jackin-core/README.md"
-bound = 5038
+bound = 5467
 [[family.entry]]
 key = "crates/jackin-dev/README.md"
 bound = 1199
@@ -720,7 +720,7 @@ key = "jackin-console-oppicker"
 bound = 3
 [[family.entry]]
 key = "jackin-core"
-bound = 38
+bound = 2
 [[family.entry]]
 key = "jackin-diagnostics"
 bound = 13

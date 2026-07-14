@@ -6,9 +6,9 @@
 use fs4::FileExt;
 
 use super::super::attach::{ContainerState, docker_unavailable_msg};
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_core::WorkspaceName;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 
 /// Cap retries so a filesystem without working flock (NFS without
@@ -287,9 +287,9 @@ pub(crate) fn github_env_declarations_for_mode(
     }
 
     [
-        jackin_core::env_model::GH_TOKEN_ENV_NAME,
-        jackin_core::env_model::GH_HOST_ENV_NAME,
-        jackin_core::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME,
+        jackin_core::GH_TOKEN_ENV_NAME,
+        jackin_core::GH_HOST_ENV_NAME,
+        jackin_core::GH_ENTERPRISE_TOKEN_ENV_NAME,
     ]
     .into_iter()
     .filter_map(|key| {
@@ -347,7 +347,7 @@ fn github_env_value_kind(value: &jackin_core::EnvValue) -> &'static str {
 /// `build_env_layer_states`) owns trace derivation; this helper only
 /// looks up the env var and constructs the error.
 pub(crate) fn verify_credential_env_present(
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     mode: jackin_config::AuthForwardMode,
     merged_env: &std::collections::BTreeMap<String, String>,
     mode_resolution: &[(String, Option<jackin_config::AuthForwardMode>)],

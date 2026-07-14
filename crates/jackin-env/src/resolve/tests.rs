@@ -348,7 +348,7 @@ fn aggregated_resolution_error_is_typed_source() {
 /// Property: any reserved runtime name in global env is rejected.
 #[test]
 fn prop_reserved_names_always_rejected() {
-    use jackin_core::env_model::RESERVED_RUNTIME_ENV_VARS;
+    use jackin_core::RESERVED_RUNTIME_ENV_VARS;
     use proptest::prelude::*;
 
     let reserved: Vec<&'static str> = RESERVED_RUNTIME_ENV_VARS.iter().map(|(n, _)| *n).collect();
@@ -373,7 +373,7 @@ fn prop_reserved_names_always_rejected() {
 /// Property: non-reserved names are accepted by the reserved-name gate.
 #[test]
 fn prop_non_reserved_names_accepted() {
-    use jackin_core::env_model::is_reserved;
+    use jackin_core::is_reserved;
     use proptest::prelude::*;
 
     proptest!(|(name in "[A-Z][A-Z0-9_]{0,24}")| {

@@ -13,7 +13,7 @@ use crate::runtime::naming::{
 use anyhow::Context as _;
 use fs4::FileExt;
 use jackin_core::ContainerSpec;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use serde::{Deserialize, Serialize};
 

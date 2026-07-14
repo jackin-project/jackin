@@ -11,9 +11,9 @@
 //! the operator-invoked counterpart — this is the automatic background trigger.
 
 use jackin_config::AppConfig;
-use jackin_core::agent::Agent;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::Agent;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 #[cfg(not(test))]
 use jackin_docker::docker_client::BollardDockerClient;
 

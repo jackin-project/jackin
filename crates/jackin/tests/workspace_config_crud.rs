@@ -8,7 +8,7 @@ use jackin_core::WorkspaceName;
 fn wn(name: &str) -> WorkspaceName {
     WorkspaceName::parse(name).unwrap()
 }
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 

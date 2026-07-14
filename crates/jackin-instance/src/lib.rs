@@ -5,7 +5,7 @@
 
 use anyhow::Context;
 use jackin_config::{AuthForwardMode, GithubAuthMode};
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_manifest::RoleManifest;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -191,7 +191,7 @@ pub enum GithubProvisionKind {
 #[derive(Debug, Clone)]
 pub struct AgentRuntimeState {
     /// The selected agent for this session.
-    pub agent: jackin_core::agent::Agent,
+    pub agent: jackin_core::Agent,
     /// Optional model override from the role manifest (`None` = agent default).
     pub model: Option<String>,
 }
@@ -268,7 +268,7 @@ enum ProvisionedAuthSlot {
 }
 
 struct AgentAuthProvision {
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     slot: ProvisionedAuthSlot,
     outcome: AuthProvisionOutcome,
 }
@@ -285,7 +285,7 @@ pub struct RoleState {
     pub gh_provision_outcome: GithubProvisionOutcome,
     pub agent_runtime: AgentRuntimeState,
     pub auth: ProvisionedAuth,
-    pub auth_outcomes: BTreeMap<jackin_core::agent::Agent, AuthProvisionOutcome>,
+    pub auth_outcomes: BTreeMap<jackin_core::Agent, AuthProvisionOutcome>,
 }
 
 impl RoleState {
@@ -301,7 +301,7 @@ impl RoleState {
     /// is not Claude or when no override is configured.
     #[must_use]
     pub fn claude_model(&self) -> Option<&str> {
-        if self.agent_runtime.agent == jackin_core::agent::Agent::Claude {
+        if self.agent_runtime.agent == jackin_core::Agent::Claude {
             self.agent_runtime.model.as_deref()
         } else {
             None
@@ -330,7 +330,7 @@ impl RoleState {
     /// Manifest model override for Codex, or `None` if not Codex or no override.
     #[must_use]
     pub fn codex_model(&self) -> Option<&str> {
-        if self.agent_runtime.agent == jackin_core::agent::Agent::Codex {
+        if self.agent_runtime.agent == jackin_core::Agent::Codex {
             self.agent_runtime.model.as_deref()
         } else {
             None
@@ -340,7 +340,7 @@ impl RoleState {
     /// Manifest model override for Kimi, or `None` if not Kimi or no override.
     #[must_use]
     pub fn kimi_model(&self) -> Option<&str> {
-        if self.agent_runtime.agent == jackin_core::agent::Agent::Kimi {
+        if self.agent_runtime.agent == jackin_core::Agent::Kimi {
             self.agent_runtime.model.as_deref()
         } else {
             None
@@ -350,7 +350,7 @@ impl RoleState {
     /// Manifest model override for `OpenCode`, or `None` if not `OpenCode` or no override.
     #[must_use]
     pub fn opencode_model(&self) -> Option<&str> {
-        if self.agent_runtime.agent == jackin_core::agent::Agent::Opencode {
+        if self.agent_runtime.agent == jackin_core::Agent::Opencode {
             self.agent_runtime.model.as_deref()
         } else {
             None
@@ -360,7 +360,7 @@ impl RoleState {
     /// Manifest model override for Grok, or `None` if not Grok or no override.
     #[must_use]
     pub fn grok_model(&self) -> Option<&str> {
-        if self.agent_runtime.agent == jackin_core::agent::Agent::Grok {
+        if self.agent_runtime.agent == jackin_core::Agent::Grok {
             self.agent_runtime.model.as_deref()
         } else {
             None
@@ -400,8 +400,8 @@ impl std::fmt::Debug for GithubAuthContext {
     reason = "PrepareResolvers carries borrowed closures; callers log resolved values instead."
 )]
 pub struct PrepareResolvers<'a> {
-    pub auth_modes: &'a dyn Fn(jackin_core::agent::Agent) -> AuthForwardMode,
-    pub sync_source_dirs: &'a dyn Fn(jackin_core::agent::Agent) -> Option<PathBuf>,
+    pub auth_modes: &'a dyn Fn(jackin_core::Agent) -> AuthForwardMode,
+    pub sync_source_dirs: &'a dyn Fn(jackin_core::Agent) -> Option<PathBuf>,
 }
 
 impl RoleState {
@@ -425,7 +425,7 @@ impl RoleState {
         resolvers: &PrepareResolvers<'_>,
         github: &GithubAuthContext,
         host_home: &Path,
-        agent: jackin_core::agent::Agent,
+        agent: jackin_core::Agent,
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         Self::prepare_for_agents(
             paths,
@@ -460,8 +460,8 @@ impl RoleState {
         resolvers: &PrepareResolvers<'_>,
         github: &GithubAuthContext,
         host_home: &Path,
-        agent: jackin_core::agent::Agent,
-        provision_agents: &[jackin_core::agent::Agent],
+        agent: jackin_core::Agent,
+        provision_agents: &[jackin_core::Agent],
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
         let gh_config_dir = root.join(".config/gh");
@@ -495,7 +495,7 @@ impl RoleState {
         let home_path = home_dir.clone();
 
         let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
-            let handles: Vec<(jackin_core::agent::Agent, _)> = supported_auth
+            let handles: Vec<(jackin_core::Agent, _)> = supported_auth
                 .iter()
                 .map(|(supported, mode, sync_src)| {
                     let root = root_path.clone();
@@ -631,7 +631,7 @@ impl RoleState {
         manifest: &RoleManifest,
         resolvers: &PrepareResolvers<'_>,
         host_home: &Path,
-        agents: &[jackin_core::agent::Agent],
+        agents: &[jackin_core::Agent],
     ) -> anyhow::Result<usize> {
         let root = paths.data_dir.join(container_name);
         let home_dir = root.join("home");
@@ -699,7 +699,7 @@ impl RoleState {
         root: &Path,
         home_dir: &Path,
         host_home: &Path,
-        supported: jackin_core::agent::Agent,
+        supported: jackin_core::Agent,
         mode: AuthForwardMode,
         sync_src: Option<&Path>,
     ) -> anyhow::Result<AgentAuthProvision> {
@@ -724,32 +724,32 @@ impl RoleState {
         }
         let provision_result: anyhow::Result<(ProvisionedAuthSlot, AuthProvisionOutcome)> =
             match supported {
-                jackin_core::agent::Agent::Claude => {
+                jackin_core::Agent::Claude => {
                     let (slot, outcome) =
                         Self::provision_claude_slot(root, home_dir, mode, host_home, sync_src)?;
                     Ok((ProvisionedAuthSlot::Claude(slot), outcome))
                 }
-                jackin_core::agent::Agent::Codex => {
+                jackin_core::Agent::Codex => {
                     let (slot, outcome) =
                         Self::provision_codex_slot(root, home_dir, mode, host_home, sync_src)?;
                     Ok((ProvisionedAuthSlot::Codex(slot), outcome))
                 }
-                jackin_core::agent::Agent::Amp => {
+                jackin_core::Agent::Amp => {
                     let (slot, outcome) =
                         Self::provision_amp_slot(root, home_dir, mode, host_home, sync_src)?;
                     Ok((ProvisionedAuthSlot::Amp(slot), outcome))
                 }
-                jackin_core::agent::Agent::Kimi => {
+                jackin_core::Agent::Kimi => {
                     let (slot, outcome) =
                         Self::provision_kimi_slot(root, home_dir, mode, host_home, sync_src)?;
                     Ok((ProvisionedAuthSlot::Kimi(slot), outcome))
                 }
-                jackin_core::agent::Agent::Opencode => {
+                jackin_core::Agent::Opencode => {
                     let (slot, outcome) =
                         Self::provision_opencode_slot(root, home_dir, mode, host_home, sync_src)?;
                     Ok((ProvisionedAuthSlot::Opencode(slot), outcome))
                 }
-                jackin_core::agent::Agent::Grok => {
+                jackin_core::Agent::Grok => {
                     let (slot, outcome) =
                         Self::provision_grok_slot(root, home_dir, mode, host_home, sync_src)?;
                     Ok((ProvisionedAuthSlot::Grok(slot), outcome))
@@ -908,9 +908,9 @@ impl RoleState {
     }
 }
 
-fn skipped_ignore_auth_slot(root: &Path, agent: jackin_core::agent::Agent) -> ProvisionedAuthSlot {
+fn skipped_ignore_auth_slot(root: &Path, agent: jackin_core::Agent) -> ProvisionedAuthSlot {
     match agent {
-        jackin_core::agent::Agent::Claude => {
+        jackin_core::Agent::Claude => {
             let claude_dir = root.join("claude");
             ProvisionedAuthSlot::Claude(ClaudeAuth {
                 account_json: claude_dir.join("account.json"),
@@ -918,33 +918,31 @@ fn skipped_ignore_auth_slot(root: &Path, agent: jackin_core::agent::Agent) -> Pr
                 forward_auth: false,
             })
         }
-        jackin_core::agent::Agent::Codex => ProvisionedAuthSlot::Codex(CodexAuth::default()),
-        jackin_core::agent::Agent::Amp => ProvisionedAuthSlot::Amp(AmpAuth::default()),
-        jackin_core::agent::Agent::Kimi => ProvisionedAuthSlot::Kimi(KimiAuth::default()),
-        jackin_core::agent::Agent::Opencode => {
-            ProvisionedAuthSlot::Opencode(OpencodeAuth::default())
-        }
-        jackin_core::agent::Agent::Grok => ProvisionedAuthSlot::Grok(GrokAuth::default()),
+        jackin_core::Agent::Codex => ProvisionedAuthSlot::Codex(CodexAuth::default()),
+        jackin_core::Agent::Amp => ProvisionedAuthSlot::Amp(AmpAuth::default()),
+        jackin_core::Agent::Kimi => ProvisionedAuthSlot::Kimi(KimiAuth::default()),
+        jackin_core::Agent::Opencode => ProvisionedAuthSlot::Opencode(OpencodeAuth::default()),
+        jackin_core::Agent::Grok => ProvisionedAuthSlot::Grok(GrokAuth::default()),
     }
 }
 
 fn agent_ignore_can_skip_state_prepare(
     root: &Path,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
 ) -> anyhow::Result<bool> {
     let stale_paths: Vec<PathBuf> = match agent {
-        jackin_core::agent::Agent::Claude => {
+        jackin_core::Agent::Claude => {
             let claude_dir = root.join("claude");
             vec![
                 claude_dir.join("account.json"),
                 claude_dir.join("credentials.json"),
             ]
         }
-        jackin_core::agent::Agent::Codex => vec![root.join("codex/auth.json")],
-        jackin_core::agent::Agent::Amp => vec![root.join("amp/secrets.json")],
-        jackin_core::agent::Agent::Kimi => vec![root.join("kimi-code")],
-        jackin_core::agent::Agent::Opencode => vec![root.join("opencode/auth.json")],
-        jackin_core::agent::Agent::Grok => vec![root.join("grok/auth.json")],
+        jackin_core::Agent::Codex => vec![root.join("codex/auth.json")],
+        jackin_core::Agent::Amp => vec![root.join("amp/secrets.json")],
+        jackin_core::Agent::Kimi => vec![root.join("kimi-code")],
+        jackin_core::Agent::Opencode => vec![root.join("opencode/auth.json")],
+        jackin_core::Agent::Grok => vec![root.join("grok/auth.json")],
     };
 
     for path in stale_paths {

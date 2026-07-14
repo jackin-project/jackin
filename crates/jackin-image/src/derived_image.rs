@@ -13,7 +13,7 @@
 
 use crate::ImageError;
 use jackin_core::Agent;
-use jackin_core::manifest::{ClaudeConfig, HooksConfig};
+use jackin_core::{ClaudeConfig, HooksConfig};
 use jackin_manifest::ValidatedRoleRepo;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

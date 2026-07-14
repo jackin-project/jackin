@@ -266,7 +266,7 @@ impl<
     /// Claude OAuth-token mode owns its token through the token-setup flow, so
     /// the editor must not silently remove that managed slot.
     pub fn delete_env_var(&mut self, scope: &SecretsScopeTag, key: &str) -> anyhow::Result<()> {
-        let protected = key == jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
+        let protected = key == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
             && matches!(scope, SecretsScopeTag::Workspace)
             && self.pending.claude.as_ref().map(|c| c.auth_forward)
                 == Some(jackin_config::AuthForwardMode::OAuthToken);

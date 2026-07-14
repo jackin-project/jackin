@@ -26,8 +26,8 @@ use crate::instance::{
     AppleContainerResources, BackendResources, DockerResources, InstanceManifest,
     NewInstanceManifest,
 };
+use jackin_core::JackinPaths;
 use jackin_core::container_paths;
-use jackin_core::paths::JackinPaths;
 
 const ATTACH_MAX_WAIT_MS: u64 = 60_000;
 const ATTACH_POLL_MS: u64 = 500;
@@ -205,7 +205,7 @@ pub struct AppleContainerLaunch<'a> {
     pub workdir: &'a str,
     pub role_key: &'a str,
     pub role_display_name: &'a str,
-    pub agent: jackin_core::agent::Agent,
+    pub agent: jackin_core::Agent,
     pub role_source_git: &'a str,
     pub role_source_ref: Option<&'a str>,
     pub image_tag: &'a str,

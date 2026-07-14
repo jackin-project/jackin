@@ -7,7 +7,7 @@
 // pub items in a private test-helper module are intentionally unreachable
 // from outside this crate; they exist for code organisation, not export.
 
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_docker::docker_client::{
     ContainerRow, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };

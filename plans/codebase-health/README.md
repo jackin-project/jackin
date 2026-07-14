@@ -53,7 +53,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 
 | Plan | One-line deviation |
 |------|--------------------|
-| 019 | jackin-config narrowed (private mods + re-exports); jackin-core STOP'd (~38 pub mods / ~566 submodule sites); ratchet + curated guard. |
+| 019 | jackin-config + jackin-core private impl modules; curated root re-exports; justified remainders `container_paths`/`debug_log`/`test_support`. |
 | 021 | Three `drive_frame` callers (console/launch/capsule); editor wildcards + shared modal scroll; dialog sub-loops documented out-of-scope. |
 | 027 | suite-time enforce-when-junit (skip without); agent-doc enforce; problem matcher; health trend/tightening. |
 | 029 | Bare-brand classifier + plans scan live; mass-fix held (204 hits > STOP ~50); enforce via `JACKIN_BRAND_BARE_ENFORCE`. |

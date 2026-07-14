@@ -10,7 +10,9 @@ use jackin_config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, GithubAuthConfig, GithubAuthMode,
     WorkspaceConfig, WorkspaceRoleOverride, resolve_github_mode, resolve_mode,
 };
-use jackin_core::{Agent, env_model};
+use jackin_core::{
+    Agent, KIMI_CODE_API_KEY_ENV_NAME, MINIMAX_API_KEY_ENV_NAME, ZAI_API_KEY_ENV_NAME,
+};
 
 use crate::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use crate::tui::components::auth_panel::{AuthCredential, AuthForm};
@@ -61,15 +63,13 @@ pub fn role_override_present(kind: AuthKind, ro: &WorkspaceRoleOverride) -> bool
         AuthKind::Codex => ro.codex.is_some(),
         AuthKind::Amp => ro.amp.is_some(),
         // Kimi covers both the typed agent block and env-key-based provider routing.
-        AuthKind::Kimi => {
-            ro.kimi.is_some() || ro.env.contains_key(env_model::KIMI_CODE_API_KEY_ENV_NAME)
-        }
+        AuthKind::Kimi => ro.kimi.is_some() || ro.env.contains_key(KIMI_CODE_API_KEY_ENV_NAME),
         AuthKind::Opencode => ro.opencode.is_some(),
         AuthKind::Grok => ro.grok.is_some(),
         AuthKind::Github => ro.github.is_some(),
-        AuthKind::Zai => ro.env.contains_key(env_model::ZAI_API_KEY_ENV_NAME),
+        AuthKind::Zai => ro.env.contains_key(ZAI_API_KEY_ENV_NAME),
         // Minimax is env-only; no typed block in WorkspaceRoleOverride.
-        AuthKind::Minimax => ro.env.contains_key(env_model::MINIMAX_API_KEY_ENV_NAME),
+        AuthKind::Minimax => ro.env.contains_key(MINIMAX_API_KEY_ENV_NAME),
     }
 }
 
@@ -890,12 +890,8 @@ pub fn workspace_auth_mode_and_credential(
                 });
             (mode, credential)
         }
-        AuthKind::Zai => {
-            env_only_mode_and_credential(&workspace.env, env_model::ZAI_API_KEY_ENV_NAME)
-        }
-        AuthKind::Minimax => {
-            env_only_mode_and_credential(&workspace.env, env_model::MINIMAX_API_KEY_ENV_NAME)
-        }
+        AuthKind::Zai => env_only_mode_and_credential(&workspace.env, ZAI_API_KEY_ENV_NAME),
+        AuthKind::Minimax => env_only_mode_and_credential(&workspace.env, MINIMAX_API_KEY_ENV_NAME),
     }
 }
 
@@ -1042,10 +1038,10 @@ pub fn role_auth_mode_and_credential(
             (mode, credential)
         }
         AuthKind::Zai => role.map_or((None, None), |role| {
-            env_only_mode_and_credential(&role.env, env_model::ZAI_API_KEY_ENV_NAME)
+            env_only_mode_and_credential(&role.env, ZAI_API_KEY_ENV_NAME)
         }),
         AuthKind::Minimax => role.map_or((None, None), |role| {
-            env_only_mode_and_credential(&role.env, env_model::MINIMAX_API_KEY_ENV_NAME)
+            env_only_mode_and_credential(&role.env, MINIMAX_API_KEY_ENV_NAME)
         }),
     }
 }

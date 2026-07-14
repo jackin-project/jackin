@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{InstanceError, SyncSourceValidationError};
 use jackin_config::{AuthForwardMode, GithubAuthMode};
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 use std::path::Path;
 
 /// Validate that `source_dir` carries the credential structure `agent`

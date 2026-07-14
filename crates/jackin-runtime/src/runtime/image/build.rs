@@ -7,9 +7,9 @@
 
 use std::sync::Arc;
 
-use jackin_core::agent::Agent;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::Agent;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 use jackin_image::derived_image::{
@@ -47,7 +47,7 @@ pub(crate) fn should_mint_fresh_cache_bust(
 pub(crate) fn cache_bust_value_for_build(
     paths: &JackinPaths,
     image: &str,
-    manifest: &jackin_core::manifest::RoleManifest,
+    manifest: &jackin_core::RoleManifest,
     mint_fresh_cache_bust: bool,
 ) -> anyhow::Result<String> {
     if !supported_set_uses_cache_bust(manifest) {

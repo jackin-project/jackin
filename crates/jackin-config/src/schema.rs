@@ -14,8 +14,8 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::docker_security::{DockerGrants, DockerSecurityProfile};
 use jackin_core::{Agent, EnvValue, MountIsolation};
+use jackin_core::{DockerGrants, DockerSecurityProfile};
 use serde::{Deserialize, Serialize};
 
 use jackin_core::AuthForwardMode;

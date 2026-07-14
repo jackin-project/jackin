@@ -79,7 +79,7 @@ Provider/guard unit tests (fixtures); downstream compile+test as the narrowing o
 - [x] `public-surface` ratchet family live with reviewed seeded bounds; snapshot-alternative decision recorded
 - [x] Env guard active; jackin-env + each narrowed crate registered
 - [x] `jackin-config` root: private impl modules + curated re-exports (only `pub mod test_support`; remaining public items justified via root `pub use`)
-- [ ] `jackin-core` root: private impl modules + curated re-exports — **OPEN (STOP)**: ~38 `pub mod`s / ~566 submodule import sites (blast-radius STOP). See Execution notes + index deviation.
+- [x] `jackin-core` root: private impl modules + curated re-exports (only justified `pub mod container_paths` + `pub mod debug_log`; see crate README)
 - [x] Trait-sealing table recorded; non-extension points sealed
 - [x] `cargo xtask ci --fast` exits 0; status row updated
 
@@ -104,9 +104,9 @@ Landed 2026-07-14 on `chore/codebase-health-plans` (PR track #786).
 - **jackin-config** fully narrowed: production modules private; curated root `pub use`; only `pub mod test_support`; public-surface bound 14→1.
 - Trait-sealing table on the domain-newtypes census page.
 
-**STOP (import blast radius) — jackin-core only**
-- Core: ~38 root `pub mod`s, ~566 `jackin_core::module::` import sites (>100-site STOP).
-- Per STOP language: delivered **config-only** + measured core blast radius; core stays ratchet-bounded until module-cluster follow-ups.
-- Done criterion for dual config+core root narrowing left **OPEN** (incomplete criteria open per STOP contract) while config half is complete.
+**Completion-pass (jackin-core narrowing)**
+- Core modules privatized; public API is root `pub use` (+ glob) re-exports.
+- Downstream `jackin_core::module::Item` paths rewritten to root imports.
+- Remaining justified `pub mod`s: `container_paths` (namespace), `debug_log` (macro path); documented in crate README; curated-guard allowlist updated; public-surface bound 38→2.
 
-**Index deviation**: DONE under STOP (config narrowed; core criterion open + blast radius measured + ratchet-bounded).
+**Index deviation**: none remaining for 019 Done criteria.

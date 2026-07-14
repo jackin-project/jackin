@@ -239,7 +239,7 @@ pub(crate) fn delete_prior_op_item_with_runner(
         );
         return Ok(());
     }
-    let Some(parts) = jackin_core::op_reference::parse_op_reference(&prior_ref.op) else {
+    let Some(parts) = jackin_core::parse_op_reference(&prior_ref.op) else {
         eprintln!(
             "[jackin] rotate: prior slot {path:?} ({op}) is not in UUID form; \
              delete by hand if desired",
@@ -540,7 +540,7 @@ fn prompt_existing_item_section_and_field(
 ) -> Result<(Option<String>, jackin_core::FieldTarget)> {
     use crate::workspace::token_setup;
     use jackin_core::FieldTarget;
-    use jackin_core::op_reference::parse_op_reference;
+    use jackin_core::parse_op_reference;
     use jackin_env::OpStructRunner;
 
     let fields = op.item_get(item_id, vault_id, account_id)?;

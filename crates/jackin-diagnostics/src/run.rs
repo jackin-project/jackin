@@ -1447,7 +1447,7 @@ impl PendingRow {
     }
 }
 
-impl jackin_core::launch_progress::LaunchDiagnostics for RunDiagnostics {
+impl jackin_core::LaunchDiagnostics for RunDiagnostics {
     fn run_id(&self) -> &str {
         &self.run_id
     }

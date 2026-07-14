@@ -10,14 +10,14 @@
 
 use anyhow::Context;
 use fs4::FileExt;
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
 // Pure index/session data types now live in `jackin-core` so that
 // `jackin-console` can use them without depending on `jackin-runtime`.
-pub use jackin_core::instance::{
+pub use jackin_core::{
     InstanceIndexEntry, InstanceQuery, InstanceStatus, SessionRecord, SessionStatus,
 };
 
@@ -249,7 +249,7 @@ impl InstanceManifest {
     /// loss, console "found restorable" path).
     pub fn mark_restore_available(
         &mut self,
-        paths: &jackin_core::paths::JackinPaths,
+        paths: &jackin_core::JackinPaths,
     ) -> anyhow::Result<()> {
         self.mark_status(InstanceStatus::RestoreAvailable);
         let state_dir = paths.data_dir.join(&self.container_base);

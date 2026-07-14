@@ -6,8 +6,8 @@
 use crate::instance::{InstanceManifest, InstanceStatus, RoleState};
 use jackin_config::AppConfig;
 use jackin_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 
@@ -37,7 +37,7 @@ struct InlineOperatorEnv<'a> {
     workspace_key: Option<String>,
     op_runner: &'a dyn jackin_env::OpRunner,
     host_env: Option<&'a std::collections::BTreeMap<String, String>>,
-    credential_agents: Vec<jackin_core::agent::Agent>,
+    credential_agents: Vec<jackin_core::Agent>,
 }
 
 pub(super) async fn finish_deferred_git_pull(
@@ -85,7 +85,7 @@ fn defer_operator_env<'a>(
     selector: &RoleSelector,
     workspace_name: Option<&str>,
     opts: &'a super::LoadOptions,
-    credential_agents: Vec<jackin_core::agent::Agent>,
+    credential_agents: Vec<jackin_core::Agent>,
 ) -> DeferredOperatorEnv<'a> {
     let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
     let workspace_typed = workspace_name.and_then(|n| WorkspaceName::parse(n).ok());
@@ -255,7 +255,7 @@ pub async fn resolve_supported_agents_for_console(
     config: &AppConfig,
     selector: &RoleSelector,
     runner: &mut impl CommandRunner,
-) -> anyhow::Result<Vec<jackin_core::agent::Agent>> {
+) -> anyhow::Result<Vec<jackin_core::Agent>> {
     // Lookup-only: the actual launch path uses
     // `AppConfig::resolve_role_source` which synthesizes + inserts a
     // RoleSource for unregistered namespaced selectors. That mutation
@@ -1303,7 +1303,7 @@ pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
 /// agents this role cannot launch are skipped. Used for both operator-env and
 /// manifest-env refs so the two call sites cannot drift.
 pub(crate) fn credential_key_needed_for_role(
-    supported_agents: &[jackin_core::agent::Agent],
+    supported_agents: &[jackin_core::Agent],
     key: &str,
 ) -> bool {
     if !known_agent_credential_env(key) {
@@ -1319,7 +1319,7 @@ pub(crate) fn credential_key_needed_for_role(
 }
 
 fn known_agent_credential_env(key: &str) -> bool {
-    jackin_core::agent::Agent::ALL
+    jackin_core::Agent::ALL
         .iter()
         .copied()
         .flat_map(|agent| {

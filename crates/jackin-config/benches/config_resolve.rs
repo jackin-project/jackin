@@ -10,7 +10,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput};
 use jackin_config::AppConfig;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use tempfile::TempDir;
 
 const SAMPLE: &str = r#"

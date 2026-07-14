@@ -79,8 +79,8 @@ pub type WorkspaceSaveEffect = crate::tui::effect::WorkspaceSaveEffect<
 /// the root binary's `ManagerMessage` binding can reference the same
 /// concrete shape without spelling it out everywhere.
 pub type ManagerInstanceRefreshSnapshot = crate::tui::subscriptions::InstanceRefreshSnapshot<
-    jackin_core::instance::InstanceIndexEntry,
-    jackin_core::instance::SessionRecord,
+    jackin_core::InstanceIndexEntry,
+    jackin_core::SessionRecord,
     jackin_protocol::InstanceSnapshot,
 >;
 pub type ManagerConfigSaveResult =
@@ -230,7 +230,7 @@ pub type CreatePreludeState<'a> = crate::tui::model::ConsoleCreatePreludeState<M
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
     pub workspaces: Vec<WorkspaceSummary>,
-    pub instances: Vec<jackin_core::instance::InstanceIndexEntry>,
+    pub instances: Vec<jackin_core::InstanceIndexEntry>,
     pub current_dir: String,
     pub selected: usize,
     /// Modal slot at the list level (e.g. `Modal::GithubPicker`); the
@@ -319,7 +319,7 @@ pub struct ManagerState<'a> {
     pub current_dir_expanded: bool,
     /// Cached sessions per active instance keyed by `container_base`.
     /// Populated from manifests during `refresh_instances`.
-    pub instance_sessions: HashMap<String, Vec<jackin_core::instance::SessionRecord>>,
+    pub instance_sessions: HashMap<String, Vec<jackin_core::SessionRecord>>,
     /// Containers whose manifests could not be read during the last
     /// `refresh_instances` pass. Cleared on every successful index load.
     pub(in crate::tui) instance_session_errors: HashSet<String>,
@@ -357,15 +357,14 @@ impl crate::tui::model::ConsoleManagerModalBlockPresence for ManagerState<'_> {
 
 /// Filter instances matching a query that are `Active` or `Running`.
 pub fn active_instances_matching<'a>(
-    instances: &'a [jackin_core::instance::InstanceIndexEntry],
-    query: jackin_core::instance::InstanceQuery<'a>,
-) -> impl Iterator<Item = &'a jackin_core::instance::InstanceIndexEntry> {
+    instances: &'a [jackin_core::InstanceIndexEntry],
+    query: jackin_core::InstanceQuery<'a>,
+) -> impl Iterator<Item = &'a jackin_core::InstanceIndexEntry> {
     instances.iter().filter(move |e| {
         e.matches(query)
             && matches!(
                 e.status,
-                jackin_core::instance::InstanceStatus::Active
-                    | jackin_core::instance::InstanceStatus::Running
+                jackin_core::InstanceStatus::Active | jackin_core::InstanceStatus::Running
             )
     })
 }
@@ -375,15 +374,14 @@ pub fn active_instances_matching<'a>(
 /// (replaced by a newer instance). Live and failed/stopped instances
 /// alike appear so the operator can restore, restart, or delete them (D15).
 pub fn visible_instances_matching<'a>(
-    instances: &'a [jackin_core::instance::InstanceIndexEntry],
-    query: jackin_core::instance::InstanceQuery<'a>,
-) -> impl Iterator<Item = &'a jackin_core::instance::InstanceIndexEntry> {
+    instances: &'a [jackin_core::InstanceIndexEntry],
+    query: jackin_core::InstanceQuery<'a>,
+) -> impl Iterator<Item = &'a jackin_core::InstanceIndexEntry> {
     instances.iter().filter(move |e| {
         e.matches(query)
             && !matches!(
                 e.status,
-                jackin_core::instance::InstanceStatus::Purged
-                    | jackin_core::instance::InstanceStatus::Superseded
+                jackin_core::InstanceStatus::Purged | jackin_core::InstanceStatus::Superseded
             )
     })
 }

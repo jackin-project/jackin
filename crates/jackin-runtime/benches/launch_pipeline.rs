@@ -6,8 +6,8 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use jackin_config::AppConfig;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_runtime::runtime::docker_profile::{
     DockerGrants, dind_enabled, resolve_effective_grants, resolve_profile, validate_grants,
 };
@@ -113,11 +113,8 @@ fn pipeline_e2e_orchestration(c: &mut Criterion) {
                 let temp = tempdir().expect("tempdir");
                 let paths = JackinPaths::for_tests(temp.path());
                 // Install binary stubs so image/agent resolution never hits network.
-                jackin_image::agent_binary::install_test_stub(
-                    &paths,
-                    jackin_core::agent::Agent::Codex,
-                )
-                .expect("stub");
+                jackin_image::agent_binary::install_test_stub(&paths, jackin_core::Agent::Codex)
+                    .expect("stub");
                 jackin_image::capsule_binary::install_test_stub(&paths).expect("capsule stub");
                 paths.ensure_base_dirs().unwrap();
 
@@ -179,7 +176,7 @@ agents = ["codex"]
                     &docker,
                     &mut runner,
                     &LoadOptions {
-                        agent: Some(jackin_core::agent::Agent::Codex),
+                        agent: Some(jackin_core::Agent::Codex),
                         ..Default::default()
                     },
                 )

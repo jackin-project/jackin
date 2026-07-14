@@ -96,7 +96,7 @@ pub fn footer_instance(view: &LaunchView) -> String {
     view.identity
         .as_ref()
         .and_then(|identity| identity.container.as_deref())
-        .and_then(jackin_core::constants::instance_id_from_container_base)
+        .and_then(jackin_core::instance_id_from_container_base)
         .map(str::to_owned)
         .unwrap_or_default()
 }

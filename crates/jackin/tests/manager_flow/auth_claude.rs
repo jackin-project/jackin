@@ -8,8 +8,7 @@
 use anyhow::Result;
 use jackin::console::tui::state::AuthRow;
 use jackin_console::tui::auth::AuthKind;
-use jackin_core::JackinPaths;
-use jackin_core::env_model;
+use jackin_core::{ANTHROPIC_API_KEY_ENV_NAME, JackinPaths};
 use tempfile::tempdir;
 
 use super::*;
@@ -117,9 +116,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         "form commit must set workspace × claude mode in pending"
     );
     assert!(
-        pending
-            .env
-            .contains_key(env_model::ANTHROPIC_API_KEY_ENV_NAME),
+        pending.env.contains_key(ANTHROPIC_API_KEY_ENV_NAME),
         "form commit must set credential env var in pending"
     );
 
@@ -155,7 +152,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     );
     let env_value = ws_on_disk
         .env
-        .get(env_model::ANTHROPIC_API_KEY_ENV_NAME)
+        .get(ANTHROPIC_API_KEY_ENV_NAME)
         .expect("reload must see ANTHROPIC_API_KEY in workspace env");
     match env_value {
         jackin_core::EnvValue::Plain(s) => assert_eq!(s, "sk-ant-test"),
@@ -178,10 +175,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         "raw TOML must carry auth_forward = \"api_key\"; got:\n{toml}"
     );
     assert!(
-        toml.contains(&format!(
-            r#"{} = "sk-ant-test""#,
-            env_model::ANTHROPIC_API_KEY_ENV_NAME
-        )),
+        toml.contains(&format!(r#"{ANTHROPIC_API_KEY_ENV_NAME} = "sk-ant-test""#)),
         "raw TOML must carry the credential env var; got:\n{toml}"
     );
     Ok(())
@@ -238,7 +232,7 @@ fn auth_credential_source_enter_opens_source_picker() -> Result<()> {
             editor(&state).modal
         );
     };
-    assert_eq!(picker.key, env_model::ANTHROPIC_API_KEY_ENV_NAME);
+    assert_eq!(picker.key, ANTHROPIC_API_KEY_ENV_NAME);
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(

@@ -49,7 +49,7 @@ fn sudo_action(granted: bool, present: bool) -> SudoAction {
 }
 
 pub fn provision() -> Result<()> {
-    let granted = std::env::var(jackin_core::env_model::JACKIN_SUDO_ENV_NAME).as_deref() == Ok("1");
+    let granted = std::env::var(jackin_core::JACKIN_SUDO_ENV_NAME).as_deref() == Ok("1");
     let present = Path::new(SUDOERS_PATH).exists();
     match sudo_action(granted, present) {
         SudoAction::Write => write_sudoers()?,

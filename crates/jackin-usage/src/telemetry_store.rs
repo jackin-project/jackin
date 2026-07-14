@@ -14,7 +14,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use crate::store_backend::{Connection, Row, connect_local, params};
-use jackin_core::account_key::account_key_hash;
+use jackin_core::account_key_hash;
 use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
 #[cfg(test)]
 use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};

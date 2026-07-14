@@ -14,8 +14,8 @@ use serde::Serialize;
 use sha2::{Digest as _, Sha256};
 use std::collections::BTreeMap;
 
-use jackin_core::agent::Agent;
-use jackin_core::paths::JackinPaths;
+use jackin_core::Agent;
+use jackin_core::JackinPaths;
 use jackin_manifest::repo::CachedRepo;
 
 use crate::capsule_binary;
@@ -165,7 +165,7 @@ fn render_runtime_dockerfile(
     ))
 }
 
-fn canonical_supported_agent_slugs(manifest: &jackin_core::manifest::RoleManifest) -> Vec<String> {
+fn canonical_supported_agent_slugs(manifest: &jackin_core::RoleManifest) -> Vec<String> {
     let mut agents = manifest
         .supported_agents()
         .into_iter()
@@ -180,7 +180,7 @@ fn canonical_supported_agent_slugs(manifest: &jackin_core::manifest::RoleManifes
 /// so the recipe folds in the stored cache-bust token to force a rebuild when
 /// that token advances. Other supported sets install purely from prefetched
 /// binaries and need no cache bust.
-pub fn supported_set_uses_cache_bust(manifest: &jackin_core::manifest::RoleManifest) -> bool {
+pub fn supported_set_uses_cache_bust(manifest: &jackin_core::RoleManifest) -> bool {
     manifest
         .supported_agents()
         .iter()

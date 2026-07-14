@@ -41,10 +41,10 @@ use std::{
     path::PathBuf,
 };
 
+use jackin_core::Agent;
 use jackin_core::CommandRunner;
-use jackin_core::agent::Agent;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 #[cfg(not(test))]
 use jackin_docker::{ShellRunner, docker_client::BollardDockerClient};

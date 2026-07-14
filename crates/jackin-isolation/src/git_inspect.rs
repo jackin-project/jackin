@@ -16,7 +16,7 @@ use std::process::Stdio;
 // One source of truth for the porcelain shape: reuse jackin-core's `ChangedFile`
 // + `parse_porcelain` rather than duplicating the type and parser here. Imported
 // privately — callers needing the type take it from `jackin_core` directly.
-use jackin_core::worktree_dirty::{ChangedFile, parse_porcelain};
+use jackin_core::{ChangedFile, parse_porcelain};
 
 /// Run `git -C <worktree> status --porcelain` and parse the output into a list
 /// of changed files.
@@ -70,17 +70,17 @@ pub fn working_content_sync(worktree_path: &str, rel_path: &str) -> Option<Strin
 /// its HEAD and working-tree content. The single source of truth for the
 /// inspect shape, shared by the exit dialog (`finalize`) and the launch dialog
 /// (`restore`) so the two surfaces never drift.
-pub fn worktree_inspect(worktree_path: &str) -> jackin_core::launch_progress::WorktreeInspect {
+pub fn worktree_inspect(worktree_path: &str) -> jackin_core::WorktreeInspect {
     let files = changed_files_sync(worktree_path)
         .iter()
-        .map(|f| jackin_core::launch_progress::FileDiff {
+        .map(|f| jackin_core::FileDiff {
             status: f.status,
             path: f.path.clone(),
             before: head_content_sync(worktree_path, &f.path),
             after: working_content_sync(worktree_path, &f.path),
         })
         .collect();
-    jackin_core::launch_progress::WorktreeInspect {
+    jackin_core::WorktreeInspect {
         label: worktree_path.to_owned(),
         files,
     }

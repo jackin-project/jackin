@@ -18,8 +18,8 @@ use super::prune_output;
 use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
 use fs4::FileExt;
 use jackin_core::CommandRunner;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_docker::docker_client::{ContainerState, DockerApi, RemoveImageOutcome};
 use owo_colors::OwoColorize;
 

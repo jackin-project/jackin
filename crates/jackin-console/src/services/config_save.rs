@@ -14,7 +14,7 @@ use jackin_config::{
     AppConfig, AuthForwardMode, EnvScope, EnvValue, GithubAuthMode, MountConfig, Removal,
     WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride, plan_create, plan_edit,
 };
-use jackin_core::{Agent, WorkspaceName, env_model};
+use jackin_core::{Agent, WorkspaceName, is_reserved};
 use jackin_tui::shorten_home;
 
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
@@ -258,7 +258,7 @@ fn validate_settings_env_keys<'a>(
         if key.trim().is_empty() {
             anyhow::bail!("env var key cannot be empty");
         }
-        if env_model::is_reserved(key) {
+        if is_reserved(key) {
             anyhow::bail!(
                 "env name {key:?} in {scope} is reserved by the jackin runtime and cannot be set"
             );

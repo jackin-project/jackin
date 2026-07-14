@@ -136,8 +136,8 @@ pub fn handle_list_key(
                         .filter(|entry| {
                             matches!(
                                 entry.status,
-                                jackin_core::instance::InstanceStatus::Active
-                                    | jackin_core::instance::InstanceStatus::Running
+                                jackin_core::InstanceStatus::Active
+                                    | jackin_core::InstanceStatus::Running
                             )
                         })
                         .map(|entry| entry.container_base.clone())
@@ -412,7 +412,7 @@ fn selected_direct_instance<'a>(
     state: &'a ManagerState<'_>,
     workspace_idx: Option<usize>,
     instance_idx: usize,
-) -> Option<&'a jackin_core::instance::InstanceIndexEntry> {
+) -> Option<&'a jackin_core::InstanceIndexEntry> {
     match workspace_idx {
         Some(ws_idx) => state
             .workspace_visible_instances(ws_idx)
@@ -463,7 +463,7 @@ fn selected_instance_scope<'a>(
 }
 
 fn instance_lookup_entry(
-    entry: &jackin_core::instance::InstanceIndexEntry,
+    entry: &jackin_core::InstanceIndexEntry,
 ) -> WorkspaceInstanceLookupEntry<'_> {
     WorkspaceInstanceLookupEntry {
         container: entry.container_base.as_str(),
@@ -474,10 +474,8 @@ fn instance_lookup_entry(
     }
 }
 
-const fn instance_status_fact(
-    status: jackin_core::instance::InstanceStatus,
-) -> WorkspaceInstanceStatus {
-    use jackin_core::instance::InstanceStatus as S;
+const fn instance_status_fact(status: jackin_core::InstanceStatus) -> WorkspaceInstanceStatus {
+    use jackin_core::InstanceStatus as S;
     match status {
         S::Active => WorkspaceInstanceStatus::Active,
         S::Running => WorkspaceInstanceStatus::Running,

@@ -10,7 +10,7 @@
 use crate::instance::InstanceManifest;
 use crate::runtime::attach::ContainerState;
 
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
 
 use super::restore::{
@@ -43,7 +43,7 @@ pub(crate) enum EarlyCurrentRestoreScan {
     /// Current-role candidates were scanned for a concrete agent (selected or
     /// the sole unselected agent). `None` means no attach/start/recreate hit.
     Scanned {
-        agent: jackin_core::agent::Agent,
+        agent: jackin_core::Agent,
         /// Stashed outcome for that agent. When present, later resolve reuses
         /// the typed hit without a second Docker inspect; when `None`, later
         /// resolve skips current-role inspect entirely for this agent.
@@ -61,7 +61,7 @@ pub(crate) enum EarlyCurrentRestoreScan {
 #[cfg(test)]
 pub(crate) fn early_scan_skips_current_inspect(
     early: &EarlyCurrentRestoreScan,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
 ) -> bool {
     matches!(early_scan_reused_current(early, agent), Some(None))
 }
@@ -71,7 +71,7 @@ pub(crate) fn early_scan_skips_current_inspect(
 /// `None` means the caller must re-run the Docker inspect path.
 pub(crate) fn early_scan_reused_current(
     early: &EarlyCurrentRestoreScan,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
 ) -> Option<Option<RestoreResolution>> {
     match early {
         EarlyCurrentRestoreScan::NotRun => None,
@@ -97,7 +97,7 @@ pub(crate) async fn resolve_restore_candidate(
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     docker: &impl DockerApi,
     progress: Option<&mut crate::runtime::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
@@ -127,7 +127,7 @@ pub(crate) async fn resolve_restore_candidate_reusing_early(
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     docker: &impl DockerApi,
     progress: Option<&mut crate::runtime::progress::LaunchProgress>,
     early: &EarlyCurrentRestoreScan,
@@ -228,7 +228,7 @@ pub(crate) async fn resolve_current_restore_candidate_timed(
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<RestoreResolution>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
@@ -290,7 +290,7 @@ pub(crate) async fn resolve_unselected_current_restore_candidate_timed(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UnselectedCurrentRestoreResolution {
     pub resolution: RestoreResolution,
-    pub agent: jackin_core::agent::Agent,
+    pub agent: jackin_core::Agent,
 }
 
 pub(crate) async fn resolve_unselected_current_restore_candidate_with_agent_timed(
@@ -571,7 +571,7 @@ pub(crate) async fn resolve_current_restore_candidate(
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<RestoreResolution>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);

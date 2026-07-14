@@ -18,8 +18,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use super::host_colors::query_host_terminal_colors;
 use anyhow::{Context, Result, bail};
 use directories::UserDirs;
+use jackin_core::JackinPaths;
 use jackin_core::container_paths;
-use jackin_core::paths::JackinPaths;
 use jackin_protocol::attach::{
     ClientFrame, ClientTerminal, ClipboardImage, ClipboardImageChunk, ClipboardImageEnd,
     ClipboardImageStart, FileExportChunk, FileExportEnd, FileExportStart,

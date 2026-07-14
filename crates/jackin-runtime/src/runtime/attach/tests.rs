@@ -363,7 +363,7 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk-agent-smith",
@@ -392,7 +392,7 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
         &paths,
         container_name,
         Some(&manifest),
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
         None,
         &[],
         false,
@@ -430,7 +430,7 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk-agent-smith",
@@ -459,7 +459,7 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
         &paths,
         container_name,
         Some(&manifest),
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
         None,
         &[],
         true,
@@ -507,7 +507,7 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk-agent-smith",
@@ -536,7 +536,7 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
         &paths,
         container_name,
         Some(&manifest),
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
         None,
         &[],
         false,
@@ -581,7 +581,7 @@ async fn hardline_new_session_requires_running_container() {
         &paths,
         "jk-agent-smith",
         None,
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
         None,
         &[],
         false,
@@ -738,7 +738,7 @@ async fn hardline_marks_missing_manifest_restore_available() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk-agent-smith",
@@ -783,7 +783,7 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Codex,
+        agent_runtime: jackin_core::Agent::Codex,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: Some("feature/role"),
         image_tag: "jk-agent-smith",
@@ -945,7 +945,7 @@ async fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailabl
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk-agent-smith",
@@ -1185,7 +1185,7 @@ async fn wait_for_dind_succeeds_when_daemon_ready_immediately() {
 
 #[test]
 fn git_policy_env_pairs_encodes_only_enabled_toggles() {
-    use jackin_core::env_model::{JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, JACKIN_GIT_DCO_ENV_NAME};
+    use jackin_core::{JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, JACKIN_GIT_DCO_ENV_NAME};
 
     assert!(git_policy_env_pairs(false, false).is_empty());
     assert_eq!(

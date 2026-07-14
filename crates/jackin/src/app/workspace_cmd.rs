@@ -568,7 +568,7 @@ pub(super) async fn handle(
                 if key.is_empty() {
                     anyhow::bail!("env var key cannot be empty");
                 }
-                if jackin_core::env_model::is_reserved(&key) {
+                if jackin_core::is_reserved(&key) {
                     anyhow::bail!(
                         "env name {key:?} is reserved by the jackin runtime and cannot be set"
                     );

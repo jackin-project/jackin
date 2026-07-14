@@ -593,7 +593,7 @@ where
     let github_ctx = crate::instance::GithubAuthContext {
         mode: github_mode,
         token: github_resolved_env
-            .get(jackin_core::env_model::GH_TOKEN_ENV_NAME)
+            .get(jackin_core::GH_TOKEN_ENV_NAME)
             .cloned(),
     };
 
@@ -629,7 +629,7 @@ where
     let github_ctx_owned = github_ctx.clone();
     let role_state_future = async move {
         tokio::task::spawn_blocking(move || {
-            let resolve_mode = |a: jackin_core::agent::Agent| {
+            let resolve_mode = |a: jackin_core::Agent| {
                 jackin_config::resolve_mode(
                     &config_owned,
                     a,
@@ -639,7 +639,7 @@ where
             };
             // Each agent may have an operator-configured sync-source-dir override
             // that replaces host_home for auth sync.
-            let resolve_sync_src = |a: jackin_core::agent::Agent| {
+            let resolve_sync_src = |a: jackin_core::Agent| {
                 jackin_config::resolve_sync_source_dir(
                     &config_owned,
                     a,
@@ -741,7 +741,7 @@ where
     }
     let _trust: TrustSeeded = TrustSeeded;
 
-    if agent != jackin_core::agent::Agent::Codex {
+    if agent != jackin_core::Agent::Codex {
         let _expiry_days = workspace_opt
             .as_ref()
             .filter(|_| auth_mode == jackin_config::AuthForwardMode::OAuthToken)
@@ -771,7 +771,7 @@ where
     // would render bare "GH_TOKEN" when the operator follows the
     // docs.
     {
-        let gh_token_key = jackin_core::env_model::GH_TOKEN_ENV_NAME;
+        let gh_token_key = jackin_core::GH_TOKEN_ENV_NAME;
         if let Some(run) = jackin_diagnostics::active_run() {
             if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
                 run.compact("github_auth", "GitHub auth ignored by auth_forward=ignore");

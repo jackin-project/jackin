@@ -85,8 +85,7 @@ fn is_ip_or_cidr(host: &str) -> bool {
 
 /// Entry point for the `firewall-apply` subcommand.
 pub fn apply() -> Result<()> {
-    let raw =
-        std::env::var(jackin_core::env_model::JACKIN_ALLOWED_HOSTS_ENV_NAME).unwrap_or_default();
+    let raw = std::env::var(jackin_core::JACKIN_ALLOWED_HOSTS_ENV_NAME).unwrap_or_default();
     let entries = parse_allowed_hosts(&raw);
 
     // Preflight the required binaries before touching the policy, so a missing

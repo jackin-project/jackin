@@ -832,13 +832,13 @@ pub(super) fn host_url_opening_allowed() -> bool {
     // the parsed verdict so the hot path skips the syscall + allocation.
     static ALLOWED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ALLOWED.get_or_init(|| {
-        let value = std::env::var(jackin_core::env_model::JACKIN_OPEN_LINKS_ENV_NAME).ok();
+        let value = std::env::var(jackin_core::JACKIN_OPEN_LINKS_ENV_NAME).ok();
         host_url_opening_allowed_for(value.as_deref())
     })
 }
 
 pub(super) fn host_url_opening_allowed_for(value: Option<&str>) -> bool {
-    jackin_core::env_model::open_links_allowed(value)
+    jackin_core::open_links_allowed(value)
 }
 
 /// Two presses form a double-click when they land on the same content cell
