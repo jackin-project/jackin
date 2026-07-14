@@ -9,8 +9,8 @@
 //! operator came from. The result is "separate but connected traces": a
 //! backend renders one trace per screen and lets the operator jump along the
 //! links, while every screen of one invocation shares the `parallax.run.id`
-//! resource attribute (the cross-trace grouping glue). See the run-telemetry
-//! trace-model reference for the full picture.
+//! span attribute (the cross-trace grouping glue; never on the OTLP Resource).
+//! See the run-telemetry trace-model reference for the full picture.
 //!
 //! Spans live as long as the returned [`ScreenGuard`]. Because the host TUI is
 //! a single-threaded runtime that yields across `.await`, the screen span is
@@ -127,6 +127,10 @@ pub fn enter_screen(screen: Screen) -> ScreenGuard {
         // child of whatever span happened to be on the stack.
         drop(span.set_parent(Context::new()));
         span.set_attribute(otel_keys::SCREEN_NAME, screen.as_str());
+        span.set_attribute(otel_keys::COMPONENT, "host");
+        if let Some(run) = crate::active_run() {
+            span.set_attribute(otel_keys::RUN_ID, run.run_id().to_owned());
+        }
 
         let previous = CURRENT.with(|cell| cell.borrow().clone());
         // Link to the live previous screen, or — when there is none because the

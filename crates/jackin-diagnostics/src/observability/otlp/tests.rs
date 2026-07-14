@@ -146,23 +146,31 @@ fn per_signal_endpoints_do_not_require_metrics() {
 }
 
 #[test]
-fn resource_carries_service_name_run_id_and_component() {
-    let resource = build_resource("0a1b2c");
+fn resource_carries_service_identity_only() {
+    let resource = build_resource();
     assert_eq!(attr(&resource, keys::SERVICE_NAME), Some("jackin".into()));
-    assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
-    // The single dotted run-id key is parallax.run.id (no jackin.run.id).
+    assert_eq!(
+        attr(&resource, keys::SERVICE_VERSION),
+        Some(env!("CARGO_PKG_VERSION").into())
+    );
+    // Run/session/component identity must never live on the Resource.
     assert_eq!(keys::RUN_ID, "parallax.run.id");
-    assert_eq!(attr(&resource, keys::RUN_ID), Some("0a1b2c".into()));
+    assert_eq!(attr(&resource, keys::RUN_ID), None);
+    assert_eq!(attr(&resource, keys::SESSION_ID), None);
+    assert_eq!(attr(&resource, keys::COMPONENT), None);
 }
 
 #[test]
-fn adopted_wrapper_run_id_is_stamped_on_resource() {
-    let resource = build_resource("18b946258b86fe20");
+fn two_resources_share_stable_build_identity() {
+    let a = build_resource();
+    let b = build_resource();
+    assert_eq!(attr(&a, keys::SERVICE_NAME), attr(&b, keys::SERVICE_NAME));
     assert_eq!(
-        attr(&resource, keys::RUN_ID),
-        Some("18b946258b86fe20".into())
+        attr(&a, keys::SERVICE_VERSION),
+        attr(&b, keys::SERVICE_VERSION)
     );
-    assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
+    assert_eq!(attr(&a, keys::RUN_ID), None);
+    assert_eq!(attr(&b, keys::RUN_ID), None);
 }
 
 #[test]
@@ -221,7 +229,15 @@ fn exported_log_carries_body_and_attributes() {
         Some("compact_kind")
     );
     assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("d"));
-    assert_eq!(log_attr(&log.record, "run_id").as_deref(), Some("run1"));
+    assert_eq!(
+        log_attr(&log.record, "parallax.run.id").as_deref(),
+        Some("run1")
+    );
+    assert_eq!(log_attr(&log.record, "run_id"), None);
+    assert_eq!(
+        log_attr(&log.record, "jackin.component").as_deref(),
+        Some("host")
+    );
     assert_eq!(
         log_attr(&log.record, "event.name").as_deref(),
         Some("compact_kind")
@@ -507,15 +523,29 @@ fn export_filter_directive_internal_flag_restores_global_level() {
 }
 
 #[test]
-fn wire_log_resource_carries_run_id_service_and_component() {
+fn wire_log_resource_excludes_run_and_component() {
     let logs = exported_logs!(false, "wire-run", || {
         crate::observability::emit_jsonl_event("wire-run", "compact_kind", "hello", None, None);
     });
     assert_eq!(logs.len(), 1);
     let resource = &logs[0].resource;
     assert_eq!(attr(resource, keys::SERVICE_NAME), Some("jackin".into()));
-    assert_eq!(attr(resource, keys::COMPONENT), Some("host".into()));
-    assert_eq!(attr(resource, keys::RUN_ID), Some("wire-run".into()));
+    assert_eq!(
+        attr(resource, keys::SERVICE_VERSION),
+        Some(env!("CARGO_PKG_VERSION").into())
+    );
+    assert_eq!(attr(resource, keys::COMPONENT), None);
+    assert_eq!(attr(resource, keys::RUN_ID), None);
+    assert_eq!(attr(resource, keys::SESSION_ID), None);
+    // Identity lives on the record attributes.
+    assert_eq!(
+        log_attr(&logs[0].record, keys::RUN_ID).as_deref(),
+        Some("wire-run")
+    );
+    assert_eq!(
+        log_attr(&logs[0].record, keys::COMPONENT).as_deref(),
+        Some("host")
+    );
 }
 
 #[test]

@@ -45,6 +45,10 @@ pub fn operation_span(name: &'static str, attrs: &[(&'static str, String)]) -> S
     #[cfg(feature = "otlp")]
     {
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+        span.set_attribute(otel_keys::COMPONENT, "host".to_owned());
+        if let Some(run) = crate::active_run() {
+            span.set_attribute(otel_keys::RUN_ID, run.run_id().to_owned());
+        }
         for (key, value) in attrs {
             span.set_attribute(*key, value.clone());
         }

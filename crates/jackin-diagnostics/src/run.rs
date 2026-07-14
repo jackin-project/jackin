@@ -1171,16 +1171,23 @@ fn launch_stage_span(stage: &str) -> tracing::Span {
         otel.status_code = tracing::field::Empty,
         otel.status_description = tracing::field::Empty,
     );
-    // Derived-image build is a peer subsystem of launch: link it to the active
-    // launch span so the BuildKit trace is not a peer without a parent (plan 044).
     #[cfg(feature = "otlp")]
-    if stage == "derived image" {
-        use opentelemetry::trace::TraceContextExt as _;
+    {
+        use crate::observability::otel_keys;
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-        let parent_ctx = tracing::Span::current().context();
-        let span_ctx = parent_ctx.span().span_context().clone();
-        if span_ctx.is_valid() {
-            span.add_link(span_ctx);
+        span.set_attribute(otel_keys::COMPONENT, "host".to_owned());
+        if let Some(run) = active_run() {
+            span.set_attribute(otel_keys::RUN_ID, run.run_id().to_owned());
+        }
+        // Derived-image build is a peer subsystem of launch: link it to the active
+        // launch span so the BuildKit trace is not a peer without a parent (plan 044).
+        if stage == "derived image" {
+            use opentelemetry::trace::TraceContextExt as _;
+            let parent_ctx = tracing::Span::current().context();
+            let span_ctx = parent_ctx.span().span_context().clone();
+            if span_ctx.is_valid() {
+                span.add_link(span_ctx);
+            }
         }
     }
     span

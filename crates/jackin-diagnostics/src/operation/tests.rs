@@ -185,6 +185,42 @@ fn operation_span_exports_otel_name_and_attrs() {
         span_attr(span, otel_keys::PROCESS_ARGS_REDACTED).as_deref(),
         Some("hello")
     );
+    assert_eq!(
+        span_attr(span, otel_keys::COMPONENT).as_deref(),
+        Some("host"),
+        "component is a span attr, never Resource"
+    );
+}
+
+#[test]
+fn operation_span_stamps_run_id_from_active_run() {
+    use jackin_core::JackinPaths;
+
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let export = export_after(false, "op-run-id", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _guard = run.activate();
+        let span = operation_span(otel_events::PROCESS_EXECUTE, &[]);
+        drop(span.enter());
+    });
+    let spans = export.spans.get_finished_spans().unwrap();
+    let span = spans
+        .iter()
+        .find(|s| s.name.as_ref() == otel_events::PROCESS_EXECUTE)
+        .expect("span");
+    assert!(
+        span_attr(span, otel_keys::RUN_ID).is_some(),
+        "parallax.run.id must be stamped from active run: {span:?}"
+    );
+    assert_eq!(
+        span_attr(span, otel_keys::COMPONENT).as_deref(),
+        Some("host")
+    );
 }
 
 #[test]

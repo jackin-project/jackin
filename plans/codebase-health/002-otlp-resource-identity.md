@@ -84,11 +84,16 @@ Flipped Resource tests + the two-runs-share-Resource test + span-attr presence t
 
 ## Done criteria
 
-- [ ] `grep -n "COMPONENT\|RUN_ID\|SESSION_ID" crates/jackin-diagnostics/src/observability.rs` shows none of the three inside `build_resource`/`capsule_resource`
-- [ ] Exporter-backed test asserts Resource exclusion (all three keys)
-- [ ] `parallax.run.id` + `jackin.component` present on exported records and operation/screen spans in tests
-- [ ] `cargo nextest run -p jackin-diagnostics --all-features` exits 0; `cargo xtask ci --fast` exits 0
-- [ ] Status row updated
+- [x] `grep -n "COMPONENT\|RUN_ID\|SESSION_ID" crates/jackin-diagnostics/src/observability.rs` shows none of the three inside `build_resource`/`capsule_resource`
+- [x] Exporter-backed test asserts Resource exclusion (all three keys)
+- [x] `parallax.run.id` + `jackin.component` present on exported records and operation/screen spans in tests
+- [x] `cargo nextest run -p jackin-diagnostics --all-features` exits 0; `cargo xtask ci --fast` exits 0
+- [x] Status row updated
+
+## Execution notes
+
+- Emit path uses `tracing::event!(Level::…)` (not `info!`/`debug!`/`error!`) so three-segment field `"parallax.run.id"` is accepted by the tracing field parser.
+- Capsule `session.id` on records remains plan 004; host session-start span already stamps session/component/run on the span.
 
 ## STOP conditions
 
