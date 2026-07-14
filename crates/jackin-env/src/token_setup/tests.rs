@@ -1200,7 +1200,6 @@ fn orphan_cleanup_display_each_variant() {
     assert!(s.contains("op item delete X --vault Y"));
 }
 
-
 #[test]
 fn days_until_expiry_at_is_deterministic() {
     let today = chrono::NaiveDate::from_ymd_opt(2026, 1, 10).unwrap();

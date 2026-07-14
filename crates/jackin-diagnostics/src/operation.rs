@@ -94,7 +94,10 @@ impl OperationGuard {
 
     #[cfg_attr(
         not(feature = "otlp"),
-        expect(clippy::unused_self, reason = "body is otlp-gated; self used when otlp is on")
+        expect(
+            clippy::unused_self,
+            reason = "body is otlp-gated; self used when otlp is on"
+        )
     )]
     fn record_completion(&self, outcome: Outcome, error_type: Option<&'static str>) {
         #[cfg(feature = "otlp")]

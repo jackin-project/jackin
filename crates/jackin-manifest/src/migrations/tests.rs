@@ -103,7 +103,9 @@ fn manifest_migrations_chain_reaches_current() {
 fn prop_manifest_migration_idempotent() {
     use proptest::prelude::*;
 
-    let versions = ["v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6"];
+    let versions = [
+        "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6",
+    ];
     proptest!(|(idx in 0usize..versions.len())| {
         let version = versions[idx];
         let temp = tempdir().unwrap();

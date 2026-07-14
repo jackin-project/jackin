@@ -99,8 +99,8 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
         );
     }
 
-    let reconciled = std::env::var_os("JACKIN_SPECS_RECONCILE").is_some()
-        || std::env::var_os("CI").is_some();
+    let reconciled =
+        std::env::var_os("JACKIN_SPECS_RECONCILE").is_some() || std::env::var_os("CI").is_some();
     emit(&format!(
         "spec gate OK — {inv_rows} INV rows, {cited_ok} cited tests verified (syn{})",
         if reconciled {
@@ -267,9 +267,7 @@ fn find_test_fn(text: &str, fn_name: &str) -> TestFnStatus {
 
 fn inspect_item(item: &Item, fn_name: &str) -> Option<bool> {
     match item {
-        Item::Fn(func) if func.sig.ident == fn_name => {
-            Some(has_test_attribute(&func.attrs))
-        }
+        Item::Fn(func) if func.sig.ident == fn_name => Some(has_test_attribute(&func.attrs)),
         Item::Mod(module) => {
             if let Some((_, items)) = &module.content {
                 let mut found_helper = false;
@@ -329,8 +327,8 @@ fn reconcile_with_nextest(
     crates: &BTreeSet<String>,
     citations: &[(String, String, String)],
 ) -> Result<(), String> {
-    let reconcile = std::env::var_os("JACKIN_SPECS_RECONCILE").is_some()
-        || std::env::var_os("CI").is_some();
+    let reconcile =
+        std::env::var_os("JACKIN_SPECS_RECONCILE").is_some() || std::env::var_os("CI").is_some();
     if !reconcile {
         return Ok(());
     }
@@ -359,7 +357,9 @@ fn reconcile_with_nextest(
         // nextest binary IDs look like `jackin_console::tui::state::manager::tests::fn`
         // or `jackin_console::path::tests::fn` — match on trailing `::fn_name`.
         let suffix = format!("::{fn_name}");
-        let hit = names.iter().any(|id| id.ends_with(&suffix) || id == fn_name);
+        let hit = names
+            .iter()
+            .any(|id| id.ends_with(&suffix) || id == fn_name);
         if !hit {
             missing.push(format!(
                 "{rel}: {inv} citation `{citation}` — test not listed by `cargo nextest list` for package `{crate_name}`"
@@ -381,16 +381,9 @@ fn load_nextest_tests(
     for crate_name in crates {
         let pkg = crate_name.replace('_', "-");
         let mut cmd = Command::new("cargo");
-        cmd.current_dir(root).args([
-            "nextest",
-            "list",
-            "-p",
-            &pkg,
-            "--message-format",
-            "json",
-        ]);
-        let output = cmd
-            .output()
+        cmd.current_dir(root)
+            .args(["nextest", "list", "-p", &pkg, "--message-format", "json"]);
+        let output = crate::cmd::output_raw(&mut cmd)
             .map_err(|e| format!("spawn cargo nextest list -p {pkg}: {e}"))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -433,19 +426,11 @@ fn collect_test_ids(value: &serde_json::Value, out: &mut BTreeSet<String>) {
             if let Some(id) = map.get("id").and_then(|v| v.as_str()) {
                 out.insert(id.to_owned());
             }
-            // nextest list --message-format json uses a top-level "rust-suites" map
-            // whose leaves carry test case names.
+            // nextest list JSON carries case names under `testcases` / `tests`
+            // maps or arrays; also recurse all values so suite nesting is covered.
             for (k, v) in map {
-                if k == "testcases" || k == "tests" {
-                    if let Some(arr) = v.as_array() {
-                        for item in arr {
-                            collect_test_ids(item, out);
-                        }
-                    } else if let Some(obj) = v.as_object() {
-                        for (name, _) in obj {
-                            out.insert(name.clone());
-                        }
-                    }
+                if matches!(k.as_str(), "testcases" | "tests") {
+                    collect_testcase_entries(v, out);
                 }
                 collect_test_ids(v, out);
             }
@@ -455,10 +440,23 @@ fn collect_test_ids(value: &serde_json::Value, out: &mut BTreeSet<String>) {
                 collect_test_ids(item, out);
             }
         }
-        serde_json::Value::String(s) => {
-            // Some formats emit bare names.
-            if s.contains("::") {
-                out.insert(s.clone());
+        serde_json::Value::String(s) if s.contains("::") => {
+            out.insert(s.clone());
+        }
+        _ => {}
+    }
+}
+
+fn collect_testcase_entries(value: &serde_json::Value, out: &mut BTreeSet<String>) {
+    match value {
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_test_ids(item, out);
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            for name in obj.keys() {
+                out.insert(name.clone());
             }
         }
         _ => {}

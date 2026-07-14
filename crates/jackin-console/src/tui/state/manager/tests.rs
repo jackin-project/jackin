@@ -53,7 +53,10 @@ fn list_modals_open_through_list_modal_state() {
         &mut state,
         ListModalPlan::ContainerInfo(ContainerInfoState::new("c", vec![])),
     );
-    assert!(matches!(state.list_modal, Some(Modal::ContainerInfo { .. })));
+    assert!(matches!(
+        state.list_modal,
+        Some(Modal::ContainerInfo { .. })
+    ));
 
     state.dismiss_list_modal();
     assert!(state.list_modal.is_none());

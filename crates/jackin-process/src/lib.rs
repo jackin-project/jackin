@@ -1,9 +1,10 @@
+//! jackin-process: shared subprocess transport (capture, timeout, retry, status).
+//!
+//! **Architecture Invariant:** T0.
+//! Entry point: [`RetryPolicy`] — capture/timeout helpers without redaction or telemetry.
+
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-
-//! Shared subprocess transport: capture, timeout, retry, exit status.
-//!
-//! No redaction, env policy, or telemetry — callers instrument and classify.
 
 use std::ffi::OsStr;
 use std::path::PathBuf;

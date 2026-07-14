@@ -166,7 +166,7 @@ Default seed is fixed (`0xc4a0_55eed`); `workflow_dispatch` input `chaos_seed` o
 The `dhat-heap` allocation suites in `jackin-term` and `jackin-capsule` run on
 the scheduled Hygiene workflow (`dhat-allocation` job, advisory /
 `continue-on-error`). **Ratchet decision:** keep `perf_dhat_budgets` fed from
-the static ceilings in `crates/jackin-capsule/src/perf_budgets.rs` (in-test
+the static ceilings in [`crates/jackin-capsule/src/perf_budgets.rs`](crates/jackin-capsule/src/perf_budgets.rs) (in-test
 guardrails + textual ratchet). Measured dhat output is artifacted for trend
 inspection but does **not** yet drive the ratchet — re-evaluate after ≥3
 stable scheduled runs on the same runner class. Never budget from a single run.

@@ -406,7 +406,6 @@ fn sha256_digest_strips_prefix_only_for_sha256() {
     assert!(asset(None).sha256_digest().is_none());
 }
 
-
 #[test]
 fn read_cached_release_at_past_ttl_without_wall_clock() {
     use std::time::Duration;

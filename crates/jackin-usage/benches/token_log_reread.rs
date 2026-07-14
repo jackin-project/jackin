@@ -8,7 +8,7 @@ use std::hint::black_box;
 use std::path::PathBuf;
 
 use criterion::{Criterion, Throughput};
-use jackin_usage::token_monitor::{recompute_spend, SpendAcc};
+use jackin_usage::token_monitor::{SpendAcc, recompute_spend};
 use tempfile::TempDir;
 
 fn write_logs(dir: &std::path::Path, files: usize, lines: usize) -> Vec<PathBuf> {
@@ -41,11 +41,12 @@ fn bench_reread(c: &mut Criterion) {
         group.throughput(Throughput::Elements(elems));
         group.bench_function(format!("recompute_{files}x{lines}"), |b| {
             b.iter(|| {
-                let acc = recompute_spend(black_box(&paths), "bench", |text, acc: &mut SpendAcc| {
-                    // Cheap fold: count non-empty lines as activity units.
-                    acc.input += text.lines().filter(|l| !l.is_empty()).count() as u64;
-                    acc.seen = true;
-                });
+                let acc =
+                    recompute_spend(black_box(&paths), "bench", |text, acc: &mut SpendAcc| {
+                        // Cheap fold: count non-empty lines as activity units.
+                        acc.input += text.lines().filter(|l| !l.is_empty()).count() as u64;
+                        acc.seen = true;
+                    });
                 black_box(acc);
             });
         });

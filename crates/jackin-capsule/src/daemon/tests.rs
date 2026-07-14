@@ -152,7 +152,6 @@ fn screen_detection_disabled_message_is_operator_visible() {
     );
 }
 
-
 #[test]
 fn record_agent_history_uses_injected_clock() {
     use jackin_core::ManualClock;

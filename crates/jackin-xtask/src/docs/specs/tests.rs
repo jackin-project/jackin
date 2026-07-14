@@ -58,8 +58,8 @@ fn verify_helper_fn_without_test_attr_fails() {
     let tests = root.join("crates/jackin-runtime/src/runtime/launch/tests.rs");
     fs::create_dir_all(tests.parent().unwrap()).unwrap();
     fs::write(&tests, "fn helper_only() {}\n").unwrap();
-    let err = verify_citation(root, "jackin_runtime::runtime::launch::tests::helper_only")
-        .unwrap_err();
+    let err =
+        verify_citation(root, "jackin_runtime::runtime::launch::tests::helper_only").unwrap_err();
     assert!(
         err.contains("lacks a test attribute"),
         "helper must be rejected: {err}"
@@ -78,8 +78,8 @@ fn verify_commented_out_test_is_not_coverage() {
         "// #[test]\n// fn ghost_test() {}\n#[test]\nfn other() {}\n",
     )
     .unwrap();
-    let err = verify_citation(root, "jackin_runtime::runtime::launch::tests::ghost_test")
-        .unwrap_err();
+    let err =
+        verify_citation(root, "jackin_runtime::runtime::launch::tests::ghost_test").unwrap_err();
     assert!(err.contains("not found"), "{err}");
 }
 
@@ -101,11 +101,11 @@ fn missing_cell_fails_check_specs() {
     fs::create_dir_all(&specs).unwrap();
     fs::write(
         specs.join("sample.mdx"),
-        r#"
+        r"
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
 | INV-1 | Still open | unit | MISSING |
-"#,
+",
     )
     .unwrap();
     let err = check_specs(root).unwrap_err().to_string();

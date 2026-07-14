@@ -351,10 +351,7 @@ fn prop_reserved_names_always_rejected() {
     use jackin_core::env_model::RESERVED_RUNTIME_ENV_VARS;
     use proptest::prelude::*;
 
-    let reserved: Vec<&'static str> = RESERVED_RUNTIME_ENV_VARS
-        .iter()
-        .map(|(n, _)| *n)
-        .collect();
+    let reserved: Vec<&'static str> = RESERVED_RUNTIME_ENV_VARS.iter().map(|(n, _)| *n).collect();
 
     proptest!(|(idx in 0usize..reserved.len())| {
         let key = reserved[idx];

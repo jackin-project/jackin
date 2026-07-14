@@ -1,6 +1,6 @@
 //! jackin-xtask: workspace automation (cargo xtask) for CI, lints, and docs gates.
 //!
-//! **Architecture Invariant:** T0.
+//! **Architecture Invariant:** T1.
 //! Entry point: [`main`] — cargo xtask command dispatcher.
 
 mod agent_files;

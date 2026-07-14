@@ -538,15 +538,8 @@ fn prop_config_migration_idempotent() {
     use proptest::prelude::*;
 
     let versions = [
-        "v1alpha1",
-        "v1alpha2",
-        "v1alpha3",
-        "v1alpha4",
-        "v1alpha5",
-        "v1alpha6",
-        "v1alpha7",
-        "v1alpha8",
-        "v1alpha9",
+        "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7",
+        "v1alpha8", "v1alpha9",
     ];
     proptest!(|(idx in 0usize..versions.len())| {
         let version = versions[idx];
@@ -582,13 +575,7 @@ fn prop_workspace_migration_idempotent() {
     use proptest::prelude::*;
 
     let versions = [
-        "v1alpha1",
-        "v1alpha2",
-        "v1alpha3",
-        "v1alpha4",
-        "v1alpha5",
-        "v1alpha6",
-        "v1alpha7",
+        "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7",
         "v1alpha8",
     ];
     proptest!(|(idx in 0usize..versions.len())| {

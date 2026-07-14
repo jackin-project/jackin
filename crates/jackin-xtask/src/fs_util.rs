@@ -14,7 +14,7 @@ pub(crate) fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
         .with_context(|| format!("reading {}", dir.display()))?
         .collect::<std::io::Result<Vec<_>>>()
         .with_context(|| format!("collecting entries under {}", dir.display()))?;
-    entries.sort_by_key(|e| e.file_name());
+    entries.sort_by_key(fs::DirEntry::file_name);
     Ok(entries)
 }
 

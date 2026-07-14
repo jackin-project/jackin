@@ -779,7 +779,6 @@ async fn register_agent_repo_rejects_stale_non_git_directory() {
     );
 }
 
-
 #[test]
 fn fetch_head_age_at_is_deterministic() {
     use std::time::Duration;

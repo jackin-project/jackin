@@ -569,9 +569,29 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     Ok(out)
 }
 
-
 /// Suite wall-time from nextest junit (plan 027). When no artifact is present
 /// (local default), returns an empty map so the family stays green as report-only.
+
+fn junit_seconds_to_ms(raw: &str) -> u64 {
+    let (whole, frac) = raw.split_once('.').unwrap_or((raw, ""));
+    let Ok(secs) = whole.parse::<u64>() else {
+        return 0;
+    };
+    let mut ms_part = 0u64;
+    let mut digits = frac.chars().filter(char::is_ascii_digit).take(3);
+    // tenths, hundredths, thousandths
+    if let Some(a) = digits.next() {
+        ms_part += u64::from(a.to_digit(10).unwrap_or(0)) * 100;
+    }
+    if let Some(b) = digits.next() {
+        ms_part += u64::from(b.to_digit(10).unwrap_or(0)) * 10;
+    }
+    if let Some(c) = digits.next() {
+        ms_part += u64::from(c.to_digit(10).unwrap_or(0));
+    }
+    secs.saturating_mul(1000).saturating_add(ms_part)
+}
+
 fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
     let candidates = [
@@ -586,11 +606,11 @@ fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>> {
     // Sum time= attributes (seconds, possibly fractional) → whole milliseconds.
     let mut total_ms: u64 = 0;
     for part in text.split("time=\"").skip(1) {
-        let Some(end) = part.find('"') else { continue };
+        let Some(end) = part.find('"') else {
+            continue;
+        };
         let raw = &part[..end];
-        if let Ok(secs) = raw.parse::<f64>() {
-            total_ms = total_ms.saturating_add((secs * 1000.0).round() as u64);
-        }
+        total_ms = total_ms.saturating_add(junit_seconds_to_ms(raw));
     }
     out.insert("junit_total_ms".to_owned(), total_ms as usize);
     Ok(out)
