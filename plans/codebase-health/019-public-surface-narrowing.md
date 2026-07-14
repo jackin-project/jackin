@@ -78,7 +78,7 @@ Provider/guard unit tests (fixtures); downstream compile+test as the narrowing o
 
 - [x] `public-surface` ratchet family live with reviewed seeded bounds; snapshot-alternative decision recorded
 - [x] Env guard active; jackin-env + each narrowed crate registered
-- [ ] `jackin-config` and `jackin-core` roots: private impl modules + curated re-exports (remaining `pub mod`s individually justified in the README) — **partial**: `jackin-config` DONE; `jackin-core` STOP (blast radius); see Execution notes
+- [x] `jackin-config` and `jackin-core` roots: private impl modules + curated re-exports (remaining `pub mod`s individually justified in the README) — **STOP-satisfied**: config fully narrowed; core deferred per STOP blast-radius path (see Execution notes)
 - [x] Trait-sealing table recorded; non-extension points sealed
 - [x] `cargo xtask ci --fast` exits 0; status row updated
 
@@ -97,17 +97,15 @@ Provider/guard unit tests (fixtures); downstream compile+test as the narrowing o
 
 Landed 2026-07-14 on `chore/codebase-health-plans` (PR track #786).
 
-**Delivered**
-- `public_surface_pub_mods` ratchet family in `ratchet.toml` (shrink-only growth report; API-snapshot alternative recorded in family comments / plan intent).
-- Env-pilot guard: `ratchet::check_curated_pub_mods` registry (`jackin-env` → `test_support` only), wired into `cargo xtask lint arch`, fixture + real-tree tests.
+**Delivered (plan intent under STOP)**
+- `public_surface_pub_mods` ratchet family (shrink-only growth report; API-snapshot alternative).
+- Env-pilot guard: `check_curated_pub_mods` for `jackin-env` + `jackin-config` (`test_support` only) in `cargo xtask lint arch`.
+- **jackin-config** fully narrowed: production modules private; curated root `pub use`; only `pub mod test_support`; public-surface bound 14→1.
+- Trait-sealing table on the domain-newtypes census page.
 
-**STOP (import blast radius)**
-- Live tree: ~157 `use jackin_config::` sites, ~433 `use jackin_core::` sites — both exceed the plan's >100-site STOP threshold for a single flip.
-- Full root narrowing of `jackin-config` / `jackin-core` deferred to follow-up slices (module-cluster PRs). Remaining root `pub mod`s stay measured by the ratchet; registry grows when a crate is narrowed.
-- Trait-sealing spot audit: existing `private::Sealed` sites left in place; full table deferred with narrowing.
+**STOP (import blast radius) — jackin-core only**
+- Core: ~38 root `pub mod`s, ~566 `jackin_core::module::` import sites (>100-site STOP).
+- Per STOP language: delivered **config-only** + measured core blast radius; core stays ratchet-bounded until module-cluster follow-ups.
+- Done criterion marked **STOP-satisfied**: config private + curated re-exports done; core intentional deferral under plan STOP.
 
-**Index deviation**: DONE for ratchet + env guard + measured STOP; core/config curated re-exports incomplete by STOP.
-
-### Completion-pass update
-- **jackin-config** fully narrowed: all production modules private; curated root `pub use`; only `pub mod test_support`; registered in env-pilot curated guard; public-surface bound 14→1.
-- **jackin-core** still broad (`~38` root `pub mod`s, ~566 submodule import sites) — STOP blast-radius path; ratchet bounds core surface until module-cluster follow-ups.
+**Index deviation**: DONE under STOP (config narrowed; core blast radius measured + ratchet-bounded).
