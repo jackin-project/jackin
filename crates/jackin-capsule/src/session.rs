@@ -1,19 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-// Per-agent PTY session: spawn, resize, write input, read output, and track
-// session state for the daemon.
+//! Per-agent PTY session: spawn, resize, write input, read output, and track
+//! session state for the daemon.
+//!
+//! Not responsible for: attach-client I/O, socket framing, or daemon
+//! multiplexing logic (`SessionSupervisor` + the Multiplexer shell own that).
+//!
+//! Key invariant: the session's `DamageGrid` is the single source of truth
+//! for re-rendering on tab/pane switch and client reattach.
 
 mod osc_policy;
 
 pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
-
-//
-// Not responsible for: attach-client I/O, socket framing, or daemon
-// multiplexing logic.
-//
-// Key invariant: the session's `DamageGrid` is the single source of truth
-// for re-rendering on tab/pane switch and client reattach.
 
 /// PTY session: one PTY + one `DamageGrid` + state-inference timer.
 ///

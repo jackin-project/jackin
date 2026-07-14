@@ -171,8 +171,8 @@ pub(crate) fn send_attached_shutdown(
     context: &str,
     reason: Option<&str>,
 ) -> bool {
-    mux.client.flush_out_of_band();
-    let Some(tx) = mux.client.take() else {
+    mux.client_registry.client.flush_out_of_band();
+    let Some(tx) = mux.client_registry.client.take() else {
         return false;
     };
     if tx
@@ -212,7 +212,7 @@ async fn detach_attached_task_with_reason(
     if had_sender {
         tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_FLUSH_GRACE_MS)).await;
     }
-    if let Some(handle) = mux.attached_task.take() {
+    if let Some(handle) = mux.client_registry.attached_task.take() {
         handle.abort();
     }
 }
@@ -223,7 +223,7 @@ async fn gracefully_detach_attached_task_with_reason(
     reason: Option<&str>,
 ) {
     let had_sender = send_attached_shutdown(mux, context, reason);
-    let Some(mut handle) = mux.attached_task.take() else {
+    let Some(mut handle) = mux.client_registry.attached_task.take() else {
         return;
     };
     if !had_sender {

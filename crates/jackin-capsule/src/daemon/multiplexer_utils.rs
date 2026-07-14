@@ -10,7 +10,7 @@ use super::{
 
 impl Multiplexer {
     pub(super) fn env_for_spawn(&self, overrides: &[(String, String)]) -> Vec<(String, String)> {
-        let mut env = self.env_passthrough.clone();
+        let mut env = self.launch_env.env_passthrough.clone();
         for (key, value) in overrides {
             if !SESSION_ENV_PASSTHROUGH.iter().any(|allowed| allowed == key) {
                 crate::clog!("spawn env: rejected non-allowlisted key {key:?}");
@@ -39,9 +39,9 @@ impl Multiplexer {
         crate::session::SessionTerminal {
             rows,
             cols,
-            row_arena: self.terminal_row_arena.clone(),
-            default_fg: self.attached_terminal.default_fg,
-            default_bg: self.attached_terminal.default_bg,
+            row_arena: self.render.terminal_row_arena.clone(),
+            default_fg: self.client_registry.attached_terminal.default_fg,
+            default_bg: self.client_registry.attached_terminal.default_bg,
         }
     }
 
@@ -52,15 +52,15 @@ impl Multiplexer {
     /// palette reports `None`, which keeps each grid's previous colors —
     /// the last known answer beats resetting to the baked-in default.
     pub(super) fn apply_client_colors_to_sessions(&mut self) {
-        let fg = self.attached_terminal.default_fg;
-        let bg = self.attached_terminal.default_bg;
-        for session in self.sessions.values_mut() {
+        let fg = self.client_registry.attached_terminal.default_fg;
+        let bg = self.client_registry.attached_terminal.default_bg;
+        for session in self.session_supervisor.sessions.values_mut() {
             session.shadow_grid.set_reported_colors(fg, bg);
         }
     }
 
     pub(super) fn model_for_agent(&self, agent: &str) -> Option<&str> {
-        self.launch_config.model_for_agent(agent)
+        self.launch_env.launch_config.model_for_agent(agent)
     }
 
     /// Model the agent launches with. `OpenCode` has no model of its own, so a
@@ -78,6 +78,7 @@ impl Multiplexer {
             .and_then(jackin_protocol::Provider::from_label)
         {
             if let Some(model) = self
+                .launch_env
                 .launch_config
                 .provider_model(agent, provider.manifest_id())
             {
@@ -103,7 +104,7 @@ impl Multiplexer {
         agent: Option<&str>,
     ) -> Vec<jackin_protocol::Provider> {
         jackin_protocol::Provider::available_for(agent.unwrap_or_default(), |p| {
-            self.provider_keys.contains_key(&p)
+            self.launch_env.provider_keys.contains_key(&p)
         })
     }
 
@@ -112,7 +113,10 @@ impl Multiplexer {
     /// the token never travels the wire. `None` means the key was unset, in
     /// which case the session falls back to the agent's default auth.
     pub(super) fn token_for_provider(&self, provider: jackin_protocol::Provider) -> Option<&str> {
-        self.provider_keys.get(&provider).map(String::as_str)
+        self.launch_env
+            .provider_keys
+            .get(&provider)
+            .map(String::as_str)
     }
 
     /// Resolve a known provider to the spawn env: its `env_overrides` plus, for
@@ -150,6 +154,7 @@ impl Multiplexer {
         // model for that provider without editing the agent default.
         if agent_slug == "claude"
             && let Some(model) = self
+                .launch_env
                 .launch_config
                 .provider_model(agent_slug, provider.manifest_id())
         {
@@ -169,10 +174,10 @@ impl Multiplexer {
     /// both caps; `add_tab=false` enforces only `MAX_SESSIONS` because
     /// the caller is reusing an existing tab.
     pub(super) fn ensure_capacity_for_new_session(&self, add_tab: bool) -> Result<()> {
-        if add_tab && self.tabs.len() >= MAX_TABS {
+        if add_tab && self.session_supervisor.tabs.len() >= MAX_TABS {
             anyhow::bail!(crate::tui::view::tab_limit_failure_message(MAX_TABS));
         }
-        if self.sessions.len() >= MAX_SESSIONS {
+        if self.session_supervisor.sessions.len() >= MAX_SESSIONS {
             anyhow::bail!(crate::tui::view::pane_limit_failure_message(MAX_SESSIONS));
         }
         Ok(())
@@ -183,7 +188,7 @@ impl Multiplexer {
     /// case; `all !alive` covers the natural-exit case (every agent /
     /// shell process closed its PTY).
     pub(super) fn no_live_sessions(&self) -> bool {
-        self.sessions.is_empty()
+        self.session_supervisor.sessions.is_empty()
     }
 
     /// Record a state change that can affect the visible frame. Handlers
@@ -192,23 +197,23 @@ impl Multiplexer {
     /// wipe policy — the only two reasons whose next frame starts with a
     /// screen erase.
     pub(super) fn invalidate(&mut self, reason: FullRedrawReason) {
-        self.frame_generation = self.frame_generation.wrapping_add(1);
-        self.last_invalidate_reason = Some(reason);
+        self.render.frame_generation = self.render.frame_generation.wrapping_add(1);
+        self.render.last_invalidate_reason = Some(reason);
         if matches!(
             reason,
             FullRedrawReason::FirstAttach | FullRedrawReason::Resize
         ) {
-            self.wipe_pending = Some(reason);
+            self.render.wipe_pending = Some(reason);
         }
         crate::cdebug!(
             "invalidate: reason={} generation={}",
             reason.as_str(),
-            self.frame_generation,
+            self.render.frame_generation,
         );
     }
 
     pub(super) fn has_pending_render(&self) -> bool {
-        self.frame_generation != self.rendered_generation
+        self.render.frame_generation != self.render.rendered_generation
     }
 
     pub(super) fn focused_usage_snapshot(&mut self) -> jackin_protocol::control::FocusedUsageView {
@@ -218,7 +223,7 @@ impl Multiplexer {
     /// Agent codename and provider label of the currently focused session.
     fn focused_agent_provider(&self) -> (Option<String>, Option<String>) {
         self.active_focused_id()
-            .and_then(|id| self.sessions.get(&id))
+            .and_then(|id| self.session_supervisor.sessions.get(&id))
             .map_or((None, None), |session| {
                 (
                     session.agent.clone(),
@@ -229,7 +234,8 @@ impl Multiplexer {
 
     pub(super) fn focused_usage_status_label(&self) -> Option<String> {
         let (agent, provider) = self.focused_agent_provider();
-        self.usage_cache
+        self.usage
+            .usage_cache
             .focused_status_bar_label(agent.as_deref(), provider.as_deref())
     }
 
@@ -241,14 +247,16 @@ impl Multiplexer {
         let provider = provider_label
             .map(str::to_owned)
             .or_else(|| provider.as_ref().map(ToOwned::to_owned));
-        self.usage_cache
+        self.usage
+            .usage_cache
             .focused_snapshot(agent.as_deref(), provider.as_deref())
     }
 
     pub(super) fn request_usage_refresh_for_provider(&mut self, provider_label: Option<&str>) {
-        self.pending_usage_refresh = self.usage_refresh_target_for_provider(provider_label);
-        if let Some(target) = &self.pending_usage_refresh {
-            self.usage_cache
+        self.usage.pending_usage_refresh = self.usage_refresh_target_for_provider(provider_label);
+        if let Some(target) = &self.usage.pending_usage_refresh {
+            self.usage
+                .usage_cache
                 .request_account_refresh(target, Instant::now());
         }
         self.decorate_open_usage_dialog_refreshing();
@@ -266,25 +274,26 @@ impl Multiplexer {
     }
 
     pub(super) fn spawn_active_usage_account_refresh(&mut self, now: Instant) -> bool {
-        if self.usage_refresh_task.is_some() {
+        if self.usage.usage_refresh_task.is_some() {
             return false;
         }
         let active_targets = self
+            .session_supervisor
             .sessions
             .values()
             .filter_map(session_refresh_target)
             .collect::<Vec<_>>();
         let focused = self
             .active_focused_id()
-            .and_then(|id| self.sessions.get(&id))
+            .and_then(|id| self.session_supervisor.sessions.get(&id))
             .and_then(session_refresh_target);
-        let focused = self.pending_usage_refresh.take().or(focused);
+        let focused = self.usage.pending_usage_refresh.take().or(focused);
         if active_targets.is_empty() && focused.is_none() {
             return false;
         }
-        let provider_keys = self.provider_keys.clone();
-        let mut cache = self.usage_cache.clone();
-        self.usage_refresh_task = Some(tokio::task::spawn_blocking(move || {
+        let provider_keys = self.launch_env.provider_keys.clone();
+        let mut cache = self.usage.usage_cache.clone();
+        self.usage.usage_refresh_task = Some(tokio::task::spawn_blocking(move || {
             cache.refresh_active_account_snapshots(&active_targets, focused, &provider_keys, now);
             cache
         }));
@@ -292,20 +301,20 @@ impl Multiplexer {
     }
 
     pub(super) async fn finish_usage_account_refresh_if_ready(&mut self, now: Instant) -> bool {
-        let Some(task) = self.usage_refresh_task.as_ref() else {
+        let Some(task) = self.usage.usage_refresh_task.as_ref() else {
             return false;
         };
         if !task.is_finished() {
             return false;
         }
-        let Some(task) = self.usage_refresh_task.take() else {
+        let Some(task) = self.usage.usage_refresh_task.take() else {
             return false;
         };
         match task.await {
             Ok(cache) => {
-                self.usage_cache = cache;
-                if let Some(target) = &self.pending_usage_refresh {
-                    self.usage_cache.request_account_refresh(target, now);
+                self.usage.usage_cache = cache;
+                if let Some(target) = &self.usage.pending_usage_refresh {
+                    self.usage.usage_cache.request_account_refresh(target, now);
                 }
                 true
             }
@@ -326,7 +335,7 @@ impl Multiplexer {
         // flag (which lingered Some and stuck the marker onto Fresh data). The
         // decorate fn additionally no-ops on a Fresh snapshot, so a loaded view
         // is never annotated as refreshing (Bug 1).
-        if self.usage_refresh_task.is_some() {
+        if self.usage.usage_refresh_task.is_some() {
             decorate_usage_view_refreshing(&mut view);
         }
         if let Some(Dialog::Usage {
@@ -348,7 +357,7 @@ impl Multiplexer {
     fn decorate_open_usage_dialog_refreshing(&mut self) {
         // Same truth source as `refresh_open_usage_dialog_from_cache`: only an
         // in-flight task drives the marker, never the scheduling flag (Bug 1).
-        if self.usage_refresh_task.is_none() {
+        if self.usage.usage_refresh_task.is_none() {
             return;
         }
         if let Some(Dialog::Usage { view, .. }) = self.dialog_top_mut() {
@@ -373,7 +382,8 @@ impl Multiplexer {
 
     pub(super) fn session_infos(&self) -> Vec<SessionInfo> {
         let focused = self.active_focused_id();
-        self.sessions
+        self.session_supervisor
+            .sessions
             .iter()
             .map(|(&id, s)| SessionInfo {
                 id,
@@ -394,15 +404,16 @@ impl Multiplexer {
     pub(super) fn tab_snapshots(&self) -> Vec<crate::protocol::control::TabSnapshot> {
         use crate::protocol::control::{PaneSnapshot, TabSnapshot};
         use crate::tui::layout::Rect;
-        let placeholder_rect = Rect::new(0, 0, self.term_rows, self.term_cols);
-        self.tabs
+        let placeholder_rect = Rect::new(0, 0, self.render.term_rows, self.render.term_cols);
+        self.session_supervisor
+            .tabs
             .iter()
             .map(|tab| {
                 let panes = tab
                     .tree
                     .leaves(placeholder_rect)
                     .into_iter()
-                    .map(|(id, _)| match self.sessions.get(&id) {
+                    .map(|(id, _)| match self.session_supervisor.sessions.get(&id) {
                         Some(session) => PaneSnapshot {
                             session_id: id,
                             label: session.label.clone(),
@@ -433,7 +444,8 @@ impl Multiplexer {
     pub(super) fn agent_registry_snapshot(
         &self,
     ) -> Vec<jackin_protocol::control::AgentRegistryEntry> {
-        self.agent_history
+        self.session_supervisor
+            .agent_history
             .iter()
             .map(|r| jackin_protocol::control::AgentRegistryEntry {
                 codename: r.codename.clone(),

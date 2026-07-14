@@ -159,227 +159,123 @@ struct SessionLaunch {
     cmd: CommandBuilder,
 }
 
+// ── Owned subsystems (plan 017) ────────────────────────────────────────────
+
+/// Session map, tabs, and codename assignment.
+pub(super) struct SessionSupervisor {
+    pub(crate) sessions: HashMap<u64, Session>,
+    pub(crate) tabs: Vec<Tab>,
+    pub(crate) active_tab: usize,
+    pub(crate) codename_live: HashSet<String>,
+    pub(crate) codename_retired: HashSet<String>,
+    pub(crate) agent_history: Vec<AgentRecord>,
+    pub(crate) wordlist_offset: usize,
+}
+
+/// Single active attach client + terminal identity.
+pub(super) struct ClientRegistry {
+    pub(crate) client: crate::client_writer::ClientWriter,
+    pub(crate) attached_task: Option<tokio::task::JoinHandle<()>>,
+    pub(crate) detach_requested: bool,
+    pub(crate) attached_terminal: ClientTerminal,
+    pub(crate) attached_capabilities: AttachCapabilities,
+    pub(crate) pointer_shape: PointerShape,
+    pub(crate) pointer_shapes_supported: bool,
+    pub(crate) last_outer_terminal_title: Option<String>,
+}
+
+/// Status bar chrome.
+pub(super) struct StatusState {
+    pub(crate) status_bar: StatusBar,
+}
+
+/// Text selection + clipboard image paste state.
+pub(super) struct ClipboardState {
+    pub(crate) selection: Option<SelectionState>,
+    pub(crate) pending_selection: Option<SelectionState>,
+    pub(crate) last_pane_press: Option<mouse_input::PanePress>,
+    pub(crate) selection_copied: bool,
+    pub(crate) selection_copy_feedback_deadline: Option<Instant>,
+    pub(crate) clipboard_image_notice: Option<String>,
+    pub(crate) clipboard_image_notice_deadline: Option<Instant>,
+    pub(crate) clipboard_image_transfers: ClipboardImageTransfers,
+    pub(crate) clipboard_image_insert_mode: ClipboardImageInsertMode,
+    pub(crate) dialog_copy_feedback_deadline: Option<Instant>,
+}
+
+/// Git branch + PR watch cache.
+pub(super) struct PrWatch {
+    pub(crate) pull_request_context_branch: Option<BranchName>,
+    pub(crate) pull_request_context_head: Option<Oid>,
+    pub(crate) pull_request_context: Option<Arc<PullRequestInfo>>,
+    pub(crate) git_branch_lookup: LookupState,
+    pub(crate) pull_request_lookup: LookupState,
+    pub(crate) pull_request_context_cache: HashMap<BranchName, PullRequestContextCacheEntry>,
+}
+
+/// Usage/quota cache and token monitor.
+pub(super) struct UsageState {
+    pub(crate) usage_cache: UsageCache,
+    pub(crate) token_monitor: TokenMonitor,
+    pub(crate) pending_usage_refresh: Option<crate::usage::UsageRefreshTarget>,
+    pub(crate) usage_refresh_task: Option<tokio::task::JoinHandle<UsageCache>>,
+}
+
+/// Dialog stack, control replies, session event channel.
+pub(super) struct ControlRouting {
+    pub(crate) dialog_stack: Vec<Dialog>,
+    pub(crate) pending_exec_reply: Option<tokio::sync::oneshot::Sender<ServerMsg>>,
+    pub(crate) exit_request: Option<jackin_protocol::ExitAction>,
+    pub(crate) input_parser: InputParser,
+    pub(crate) event_tx: mpsc::UnboundedSender<SessionEvent>,
+    pub(crate) event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+}
+
+/// Terminal geometry, frame generation, compositor caches.
+pub(super) struct RenderState {
+    pub(crate) term_rows: u16,
+    pub(crate) term_cols: u16,
+    pub(crate) content_rows: u16,
+    pub(crate) frame_generation: u64,
+    pub(crate) rendered_generation: u64,
+    pub(crate) wipe_pending: Option<FullRedrawReason>,
+    pub(crate) last_invalidate_reason: Option<FullRedrawReason>,
+    pub(crate) last_asserted_client_state: Option<compositor::AssertedClientState>,
+    pub(crate) pane_region_cache: HashMap<u64, compositor::PaneRegionCache>,
+    pub(crate) hover_target: Option<HoverTarget>,
+    pub(crate) link_hover_url: Option<String>,
+    pub(crate) tab_bar_focused: bool,
+    pub(crate) drag: Option<DragState>,
+    pub(crate) last_tab_click: Option<(usize, Instant)>,
+    pub(crate) ratatui_terminal: ratatui::Terminal<crate::tui::socket_backend::SocketBackend>,
+    pub(crate) terminal_row_arena: jackin_term::RowArena,
+}
+
+/// Static launch configuration at daemon construction.
+pub(super) struct LaunchEnv {
+    pub(crate) available_agents: Vec<String>,
+    pub(crate) launch_config: CapsuleConfig,
+    pub(crate) env_passthrough: Vec<(String, String)>,
+    pub(crate) workdir: PathBuf,
+    pub(crate) workdir_context: WorkdirContext,
+    pub(crate) provider_keys: BTreeMap<jackin_protocol::Provider, String>,
+}
+
 #[expect(
     missing_debug_implementations,
     reason = "Multiplexer owns PTY sessions and render/input state; targeted debug logs expose the useful fields."
 )]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Four orthogonal multiplexer state flags (detach_requested, \
-              selection_copied, pointer_shapes_supported, tab_bar_focused) \
-              — each tracks an independent runtime state consumed individually \
-              by the event loop + compositor branches. Named-field reads match \
-              the direct mutation idiom the impl blocks use."
-)]
 pub struct Multiplexer {
-    sessions: HashMap<u64, Session>,
-    tabs: Vec<Tab>,
-    active_tab: usize,
-    term_rows: u16,
-    term_cols: u16,
-    status_bar: StatusBar,
-    /// LIFO stack of open dialogs. The top of stack is the live one
-    /// the renderer paints and the input dispatcher routes keys to;
-    /// older dialogs sit underneath waiting for an Esc-pop to surface
-    /// them again. Sub-dialogs (Menu → New tab → `AgentPicker`,
-    /// Menu → Split pane → `SplitDirectionPicker` → `AgentPicker`,
-    /// Menu → Close → `CloseTargetPicker` / `ConfirmClose`, …) push onto
-    /// this stack so Esc walks the operator back one step at a time
-    /// instead of nuking the whole flow. The empty stack means "no
-    /// dialog open" — every consumer treats `dialog_top()` as the
-    /// canonical "is a dialog visible" check.
-    dialog_stack: Vec<Dialog>,
-    content_rows: u16,
-    available_agents: Vec<String>,
-    launch_config: CapsuleConfig,
-    /// Control-channel reply slot for an in-flight `jackin-exec` credential
-    /// picker. Set when an `ExecCommand` opens the `Dialog::ExecPicker`; the
-    /// confirm/cancel handlers take it to send `ExecResult` / `ExecDenied`. A
-    /// new `ExecCommand` arriving while one is pending denies the prior reply
-    /// with `ExecDenied { reason: "superseded …" }` (in `begin_exec_picker`) so
-    /// that client gets a structured answer rather than a dropped connection.
-    pending_exec_reply: Option<tokio::sync::oneshot::Sender<ServerMsg>>,
-    /// Set by the dirty-exit modal's keep/discard rows; the event loop writes
-    /// the host exit-action file and drains on the next iteration.
-    exit_request: Option<jackin_protocol::ExitAction>,
-    env_passthrough: Vec<(String, String)>,
-    event_tx: mpsc::UnboundedSender<SessionEvent>,
-    event_rx: mpsc::UnboundedReceiver<SessionEvent>,
-    input_parser: InputParser,
-    detach_requested: bool,
-    /// The only writer to the attach socket: composed frames are
-    /// `?2026`-bracketed, out-of-band bytes flush at frame boundaries.
-    pub(crate) client: crate::client_writer::ClientWriter,
-    /// `JoinHandle` of the spawned `handle_attach_client` task for the
-    /// currently-attached client. Tracked so a takeover (second `Hello`)
-    /// can abort the old task's reader loop — without the abort, the
-    /// old client's stale Input / Resize / Detach frames keep flowing
-    /// into the shared `cmd_tx` until its socket finally closes.
-    pub(crate) attached_task: Option<tokio::task::JoinHandle<()>>,
-    /// Records the previous tab-cell click so a second click on the
-    /// same tab within `TAB_DOUBLE_CLICK_WINDOW` is treated as a
-    /// double-click (open the rename modal).
-    last_tab_click: Option<(usize, Instant)>,
-    /// Active mouse-drag resize, if any. Populated when the operator
-    /// presses the left button on a shared pane border; updated on
-    /// every motion event; cleared on release.
-    drag: Option<DragState>,
-    /// Active mouse text selection on a pane whose program ignored
-    /// the mouse. Updated on every motion event; copied to the
-    /// outer clipboard via OSC 52 on release.
-    selection: Option<SelectionState>,
-    /// Candidate text selection captured on primary press. Promoted to
-    /// `selection` only after real drag motion leaves the anchor cell.
-    pending_selection: Option<SelectionState>,
-    /// Previous primary press on a pane cell, kept one click long so the
-    /// next press can be classified as a double-click (word select).
-    last_pane_press: Option<mouse_input::PanePress>,
-    /// True after a dragged selection was copied and its highlight remains
-    /// visible. Cleared by the next click or typed input.
-    selection_copied: bool,
-    selection_copy_feedback_deadline: Option<Instant>,
-    /// Transient operator-facing result of a host clipboard image paste:
-    /// staged path, dialog-owned-input warning, or rejected payload reason.
-    clipboard_image_notice: Option<String>,
-    clipboard_image_notice_deadline: Option<Instant>,
-    clipboard_image_transfers: ClipboardImageTransfers,
-    clipboard_image_insert_mode: ClipboardImageInsertMode,
-    /// Monotonic state-change counter: every mutation that can affect the
-    /// visible frame bumps it via `invalidate`. The render loop composes
-    /// when it moved past `rendered_generation` — there are no repaint
-    /// tiers and no per-cause request flags (derived rendering, §3.2 of
-    /// the capsule rendering plan).
-    frame_generation: u64,
-    /// Generation the last composed frame reflected.
-    rendered_generation: u64,
-    /// Wipe policy: a real `\x1b[2J` precedes the next frame only for
-    /// `FirstAttach` and `Resize` — the geometry events whose previous
-    /// layout must not survive. Every other invalidation repaints in place.
-    wipe_pending: Option<FullRedrawReason>,
-    /// Telemetry: the most recent invalidation reason, labelled on the next
-    /// composed frame's debug trace.
-    last_invalidate_reason: Option<FullRedrawReason>,
-    /// Cursor + mode state the encoder asserted with the last frame; the
-    /// per-frame reconciliation emits only transitions against this. `None`
-    /// (fresh attach) asserts everything explicitly.
-    last_asserted_client_state: Option<compositor::AssertedClientState>,
-    /// Per-pane cache for SGR and hyperlink overlay regions. The full
-    /// Ratatui frame is still rebuilt every compose; this only avoids
-    /// rescanning unchanged pane cells for backend-side overlay metadata.
-    pane_region_cache: HashMap<u64, compositor::PaneRegionCache>,
-    /// Last pointer shape emitted through OSC 22. Stored so passive
-    /// mouse motion does not spam the outer terminal with duplicate
-    /// pointer-shape updates.
-    pointer_shape: PointerShape,
-    /// True only for outer terminals eligible for OSC 22 pointer-shape
-    /// hints. Unsupported terminals keep normal cursor behavior.
-    pointer_shapes_supported: bool,
-    /// Terminal identity reported by the active attach client. Refreshed
-    /// on every attach/takeover so daemon-owned output enhancements can
-    /// follow the terminal the operator is using now rather than the
-    /// terminal that launched the container.
-    attached_terminal: ClientTerminal,
-    /// Host-adaptive terminal capabilities derived from the active attach
-    /// client. This backend-side record may change on reattach and must not
-    /// alter agent-visible terminal model semantics.
-    attached_capabilities: AttachCapabilities,
-    /// Hash of the last multiplexer-owned OSC 2 title sent to the
-    /// outer terminal. Gates re-emission on inequality: without the
-    /// diff, every full frame would reassert the workspace/PR title
-    /// and override per-pane agent-set titles in the outer terminal's
-    /// tab list on every redraw. Reset to `None` when a child pane
-    /// updates its own title so the next full frame re-asserts.
-    last_outer_terminal_title: Option<String>,
-    hover_target: Option<HoverTarget>,
-    /// Link target under an Alt/Ctrl hover in a mouse-disabled pane. Rendered
-    /// as a compositor-owned notice so no hover bytes are written into the PTY.
-    link_hover_url: Option<String>,
-    /// P5: focus is on the agent-tab bar (green underline + Left/Right switch
-    /// tabs; Down/Esc/click returns focus to the agent content). `false` means
-    /// the agent terminal holds focus, the default.
-    tab_bar_focused: bool,
-    /// Deadline for hiding the transient "Copied!" badge in whichever
-    /// dialog most recently performed a jackin-owned OSC 52 copy.
-    dialog_copy_feedback_deadline: Option<Instant>,
-    /// Branch rendered in the status bar; paired with
-    /// `pull_request_context_head` as the cache key in
-    /// `PullRequestContextCacheEntry::is_fresh`.
-    pull_request_context_branch: Option<BranchName>,
-    /// Resolved HEAD OID for `pull_request_context_branch` (or the
-    /// detached-HEAD SHA when no symref). Same-branch HEAD movement
-    /// (commit, rebase, force-push follow-up) flips this and busts any
-    /// cached PR answer keyed on the prior head.
-    pull_request_context_head: Option<Oid>,
-    pull_request_context: Option<Arc<PullRequestInfo>>,
-    /// State of the fast local git context lookup (`git_current_context`):
-    /// monotonic request id, in-flight gate, last-run instant for the
-    /// cooldown check. The result lands on `pull_request_context_branch`
-    /// and `pull_request_context_head`.
-    git_branch_lookup: LookupState,
-    /// State of the 60 s `gh` PR-info lookup. Uses `request_id` +
-    /// `in_flight`; `last_run` is unused (per-branch freshness lives
-    /// in `pull_request_context_cache` instead because the operator
-    /// can flip between branches with cached results in flight).
-    pull_request_lookup: LookupState,
-    pull_request_context_cache: HashMap<BranchName, PullRequestContextCacheEntry>,
-    /// Workspace workdir read from `/jackin/run/agent.toml` at daemon startup.
-    /// Every spawned PTY (agent or shell) receives this as its `cwd`
-    /// so the operator's panes open in the workspace they configured
-    /// instead of `$HOME` (`portable_pty`'s `CommandBuilder` default).
-    workdir: PathBuf,
-    /// API keys captured from the operator env at construction, keyed by the
-    /// provider that consumes them. A provider is present only when its
-    /// [`key_env_var`](jackin_protocol::Provider::key_env_var) was set and
-    /// non-empty. Populated once over [`jackin_protocol::Provider::ALL`], so a
-    /// new provider needs no new field, env read, or match arm here.
-    provider_keys: BTreeMap<jackin_protocol::Provider, String>,
-    /// Cached at construction for the hot polling path. The only
-    /// mutation after that is `gh_available` flipping false → true when
-    /// a background PR lookup succeeds, so a startup PATH /
-    /// tool-availability race does not freeze PR discovery for the
-    /// daemon lifetime.
-    workdir_context: WorkdirContext,
-    /// Ratatui terminal backed by [`SocketBackend`].
-    ///
-    /// Chrome widgets (status bar, pane boxes, dialogs) render through this
-    /// terminal for full-frame draws so they can use shared `jackin-tui`
-    /// components. The raw ANSI compositor remains as the fallback and partial
-    /// update path while the remaining render migration proceeds.
-    ratatui_terminal: ratatui::Terminal<crate::tui::socket_backend::SocketBackend>,
-    /// Shared terminal row arena for every pane in this daemon. All
-    /// `DamageGrid`s draw primary, alternate, and scrollback rows from this
-    /// store so closing a session returns row buffers for later panes.
-    terminal_row_arena: jackin_term::RowArena,
-    /// Codenames currently assigned to open tabs.
-    /// A codename in `codename_live` is NOT in `codename_retired`.
-    codename_live: HashSet<String>,
-    /// All codenames ever assigned in this container lifetime. Never shrinks.
-    /// A codename that moves from `live` to here on tab close is never
-    /// reassigned — prevents agents from confusing a new tab for a closed one.
-    codename_retired: HashSet<String>,
-    /// Append-only history of every tab ever opened. Never pruned.
-    agent_history: Vec<AgentRecord>,
-    /// Debug-only process RSS/CPU sampler, emitted on the state ticker so live
-    /// multi-pane smokes can attach resource data to the run id.
-    resource_metrics: resource_metrics::ResourceMetricsSampler,
-    /// Daemon-owned focused usage/quota cache. Capsule UI renders this cache;
-    /// it does not poll providers from render code.
-    usage_cache: UsageCache,
-    /// Daemon-owned per-session token-spend monitor. Reconciled against the
-    /// live agent sessions and polled on the state tick; provider reads are
-    /// owned here, never in render or client code.
-    token_monitor: TokenMonitor,
-    /// Provider tab requested by the usage overlay. The normal usage refresh
-    /// ticker consumes this as a focused-first target so opening/switching tabs
-    /// stays non-blocking but the selected provider refreshes next.
-    pending_usage_refresh: Option<crate::usage::UsageRefreshTarget>,
-    /// Background account refresh worker. Provider probes can run HTTP
-    /// requests and CLI subprocesses, so the daemon select loop only starts
-    /// and joins this task; it never performs the probe work inline.
-    usage_refresh_task: Option<tokio::task::JoinHandle<UsageCache>>,
-    /// Offset into the wordlist for the next codename pick, seeded once at
-    /// daemon construction from the current time subsecond nanos.
-    wordlist_offset: usize,
+    pub(crate) session_supervisor: SessionSupervisor,
+    pub(crate) client_registry: ClientRegistry,
+    pub(crate) status: StatusState,
+    pub(crate) clipboard: ClipboardState,
+    pub(crate) pr_watch: PrWatch,
+    pub(crate) usage: UsageState,
+    pub(crate) control: ControlRouting,
+    pub(crate) render: RenderState,
+    pub(crate) launch_env: LaunchEnv,
+    pub(crate) resource_metrics: resource_metrics::ResourceMetricsSampler,
 }
 
 /// In-memory record of one tab ever opened in this container lifetime.
@@ -404,7 +300,7 @@ pub struct AgentRecord {
 /// re-opens the race where a stale response carrying an old
 /// `request_id` overwrites a fresh branch's cache slot.
 #[derive(Default)]
-struct LookupState {
+pub(crate) struct LookupState {
     request_id: u64,
     in_flight: bool,
     last_run: Option<Instant>,
@@ -437,7 +333,7 @@ impl LookupState {
 }
 
 #[derive(Clone)]
-struct PullRequestContextCacheEntry {
+pub(crate) struct PullRequestContextCacheEntry {
     checked_at: Instant,
     head: Option<Oid>,
     pull_request: Option<Arc<PullRequestInfo>>,
@@ -514,108 +410,124 @@ impl Multiplexer {
             ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(cols, rows))?;
 
         Ok(Self {
-            sessions: HashMap::new(),
-            tabs: Vec::new(),
-            active_tab: 0,
-            term_rows: rows,
-            term_cols: cols,
-            status_bar,
-            dialog_stack: Vec::new(),
-            content_rows,
-            available_agents: agents,
-            launch_config,
-            pending_exec_reply: None,
-            exit_request: None,
-            env_passthrough,
-            event_tx,
-            event_rx,
-            input_parser,
-            detach_requested: false,
-            client: crate::client_writer::ClientWriter::default(),
-            attached_task: None,
-            last_tab_click: None,
-            drag: None,
-            selection: None,
-            pending_selection: None,
-            last_pane_press: None,
-            selection_copied: false,
-            selection_copy_feedback_deadline: None,
-            clipboard_image_notice: None,
-            clipboard_image_notice_deadline: None,
-            clipboard_image_transfers: ClipboardImageTransfers::default(),
-            clipboard_image_insert_mode: ClipboardImageInsertMode::PastePath,
-            frame_generation: 0,
-            rendered_generation: 0,
-            wipe_pending: None,
-            last_invalidate_reason: None,
-            last_asserted_client_state: None,
-            pane_region_cache: HashMap::new(),
-            pointer_shape: PointerShape::Default,
-            pointer_shapes_supported: false,
-            attached_terminal: ClientTerminal::default(),
-            attached_capabilities: AttachCapabilities::default(),
-            last_outer_terminal_title: None,
-            hover_target: None,
-            link_hover_url: None,
-            tab_bar_focused: false,
-            dialog_copy_feedback_deadline: None,
-            pull_request_context_branch: None,
-            pull_request_context_head: None,
-            pull_request_context: None,
-            git_branch_lookup: LookupState::default(),
-            pull_request_lookup: LookupState::default(),
-            pull_request_context_cache: HashMap::new(),
-            workdir,
-            workdir_context,
-            provider_keys,
-            ratatui_terminal,
-            terminal_row_arena: jackin_term::RowArena::default(),
-            codename_live: HashSet::new(),
-            codename_retired: HashSet::new(),
-            agent_history: Vec::new(),
-            resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
-            usage_cache: UsageCache::default(),
-            token_monitor: TokenMonitor::new(),
-            pending_usage_refresh: None,
-            usage_refresh_task: None,
-            wordlist_offset: {
-                use std::time::{SystemTime, UNIX_EPOCH};
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map_or(42, |d| d.subsec_nanos() as usize)
+            session_supervisor: SessionSupervisor {
+                sessions: HashMap::new(),
+                tabs: Vec::new(),
+                active_tab: 0,
+                codename_live: HashSet::new(),
+                codename_retired: HashSet::new(),
+                agent_history: Vec::new(),
+                wordlist_offset: {
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_or(42, |d| d.subsec_nanos() as usize)
+                },
             },
+            client_registry: ClientRegistry {
+                client: crate::client_writer::ClientWriter::default(),
+                attached_task: None,
+                detach_requested: false,
+                attached_terminal: ClientTerminal::default(),
+                attached_capabilities: AttachCapabilities::default(),
+                pointer_shape: PointerShape::Default,
+                pointer_shapes_supported: false,
+                last_outer_terminal_title: None,
+            },
+            status: StatusState { status_bar },
+            clipboard: ClipboardState {
+                selection: None,
+                pending_selection: None,
+                last_pane_press: None,
+                selection_copied: false,
+                selection_copy_feedback_deadline: None,
+                clipboard_image_notice: None,
+                clipboard_image_notice_deadline: None,
+                clipboard_image_transfers: ClipboardImageTransfers::default(),
+                clipboard_image_insert_mode: ClipboardImageInsertMode::PastePath,
+                dialog_copy_feedback_deadline: None,
+            },
+            pr_watch: PrWatch {
+                pull_request_context_branch: None,
+                pull_request_context_head: None,
+                pull_request_context: None,
+                git_branch_lookup: LookupState::default(),
+                pull_request_lookup: LookupState::default(),
+                pull_request_context_cache: HashMap::new(),
+            },
+            usage: UsageState {
+                usage_cache: UsageCache::default(),
+                token_monitor: TokenMonitor::new(),
+                pending_usage_refresh: None,
+                usage_refresh_task: None,
+            },
+            control: ControlRouting {
+                dialog_stack: Vec::new(),
+                pending_exec_reply: None,
+                exit_request: None,
+                input_parser,
+                event_tx,
+                event_rx,
+            },
+            render: RenderState {
+                term_rows: rows,
+                term_cols: cols,
+                content_rows,
+                frame_generation: 0,
+                rendered_generation: 0,
+                wipe_pending: None,
+                last_invalidate_reason: None,
+                last_asserted_client_state: None,
+                pane_region_cache: HashMap::new(),
+                hover_target: None,
+                link_hover_url: None,
+                tab_bar_focused: false,
+                drag: None,
+                last_tab_click: None,
+                ratatui_terminal,
+                terminal_row_arena: jackin_term::RowArena::default(),
+            },
+            launch_env: LaunchEnv {
+                available_agents: agents,
+                launch_config,
+                env_passthrough,
+                workdir,
+                workdir_context,
+                provider_keys,
+            },
+            resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
         })
     }
 
     /// Send a composed frame to the attached client through the single
     /// writer. Queued out-of-band bytes flush ahead of the bracketed frame.
     fn send_frame(&mut self, bytes: Vec<u8>) {
-        self.client.write_frame(bytes);
+        self.client_registry.client.write_frame(bytes);
     }
 
     /// Queue bytes that are not cell content (OSC passthrough, clipboard,
     /// pointer shapes, mode prefaces); they flush at the next frame boundary.
     pub(crate) fn send_out_of_band(&mut self, bytes: Vec<u8>) {
-        self.client.enqueue_out_of_band(bytes);
+        self.client_registry.client.enqueue_out_of_band(bytes);
     }
 
     /// Send a typed attach protocol frame that is not terminal output.
     fn send_protocol_frame(&mut self, frame: ServerFrame) {
-        self.client.send_protocol_frame(frame);
+        self.client_registry.client.send_protocol_frame(frame);
     }
 
     fn request_clipboard_image_from_text_path(&mut self) {
-        self.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        self.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
         self.send_protocol_frame(ServerFrame::HostStageImageFromClipboardPath);
     }
 
     fn request_clipboard_image_paste(&mut self) {
-        self.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        self.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
         self.send_protocol_frame(ServerFrame::HostPasteImageFromClipboard);
     }
 
     fn request_clipboard_image_stage_only(&mut self) {
-        self.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+        self.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
         self.send_protocol_frame(ServerFrame::HostStageImageFromClipboard);
     }
 
@@ -630,7 +542,7 @@ impl Multiplexer {
     ) where
         F: FnOnce(&jackin_protocol::attach::ClipboardImage) -> Result<PathBuf>,
     {
-        let insert_mode = std::mem::take(&mut self.clipboard_image_insert_mode);
+        let insert_mode = std::mem::take(&mut self.clipboard.clipboard_image_insert_mode);
         match stage(&image) {
             Ok(path) => {
                 let path = path.to_string_lossy();
@@ -673,7 +585,7 @@ impl Multiplexer {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum ClipboardImageInsertMode {
+pub(crate) enum ClipboardImageInsertMode {
     #[default]
     PastePath,
     StageOnly,
@@ -779,7 +691,7 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     if PORTS.defer_last_session_exit(mux.dialog_open()) {
         return false;
     }
-    match crate::exit_assess::decide_exit(&mux.launch_config).await {
+    match crate::exit_assess::decide_exit(&mux.launch_env.launch_config).await {
         crate::exit_assess::ExitDecision::Drain => {
             if let Some(ref r) = reason {
                 crate::clog!("session: final session exited: {r}");
@@ -827,6 +739,7 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
     // the no-change return below would leave the frame clean and the notice
     // never painted).
     let stale_image_transfers = mux
+        .clipboard
         .clipboard_image_transfers
         .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
     if stale_image_transfers > 0 {
@@ -834,7 +747,7 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
             "clipboard-image: cleaned up {stale_image_transfers} idle transfer{}",
             if stale_image_transfers == 1 { "" } else { "s" }
         );
-        mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
         mux.set_clipboard_image_notice(format!(
             "Image paste interrupted: cleaned up {stale_image_transfers} idle transfer{}",
             if stale_image_transfers == 1 { "" } else { "s" }
@@ -851,23 +764,29 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
     // any due providers. `poll_due_sessions` self-throttles to the 30s/60s
     // cadence, so calling it each state tick is cheap.
     let token_sessions: Vec<(u64, Agent)> = mux
+        .session_supervisor
         .sessions
         .iter()
         .filter_map(|(id, s)| Some((*id, Agent::from_slug(s.agent.as_deref()?)?)))
         .collect();
-    mux.token_monitor.reconcile_sessions(&token_sessions);
+    mux.usage.token_monitor.reconcile_sessions(&token_sessions);
     // Returned changed-id list is unused for now (no live event stream yet);
     // the poll updates the cached per-session totals that
     // `ClientMsg::TokenUsage` reads.
-    drop(mux.token_monitor.poll_due_sessions().await);
+    drop(mux.usage.token_monitor.poll_due_sessions().await);
     // Snapshot visible agent state, refresh, snapshot again. The ticker's only
     // time-based effect is Working→Idle transitions; tab labels derive from
     // state and the status bar has no per-second counter, so when state is
     // unchanged the chrome is identical. A full redraw (clear + repaint) every
     // tick reads as a constant flicker, so skip it unless state actually
     // changed.
-    let states_before: Vec<_> = mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
-    for (&session_id, session) in &mut mux.sessions {
+    let states_before: Vec<_> = mux
+        .session_supervisor
+        .sessions
+        .iter()
+        .map(|(id, s)| (*id, s.state))
+        .collect();
+    for (&session_id, session) in &mut mux.session_supervisor.sessions {
         // Session::advance_status is the sole state-authoring path; the daemon
         // only reacts to the resulting transition.
         let tick = session.advance_status(rule_registry, now);
@@ -893,12 +812,17 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
     // `done`. Acknowledge it each tick (idempotent — only done→idle changes
     // anything), which records the seen revision.
     if let Some(focused) = mux.active_focused_id()
-        && let Some(session) = mux.sessions.get_mut(&focused)
+        && let Some(session) = mux.session_supervisor.sessions.get_mut(&focused)
         && let Some(effective) = session.status.acknowledge()
     {
         session.state = effective;
     }
-    let states_after: Vec<_> = mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
+    let states_after: Vec<_> = mux
+        .session_supervisor
+        .sessions
+        .iter()
+        .map(|(id, s)| (*id, s.state))
+        .collect();
     if mux.expire_dialog_copy_feedback(Instant::now()) {
         mux.invalidate(dialog_change_redraw_reason());
         return;
@@ -971,7 +895,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let initial_spawn =
         initial_spawn_request(&initial_agent, launch_config.initial_provider.as_ref());
     let mut mux = Multiplexer::new(rows, cols, launch_config)?;
-    start_git_context_watcher(mux.workdir.clone(), mux.event_tx.clone());
+    start_git_context_watcher(mux.launch_env.workdir.clone(), mux.control.event_tx.clone());
     // Defer the first pane until the first attach Hello has supplied
     // real outer-terminal dimensions. Later panes already spawn after
     // attach-time resize; routing the first pane through the same
@@ -1046,7 +970,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     loop {
         // The dirty-exit modal's keep/discard rows set `exit_request`; record
         // the operator's choice for the host, then drain and exit.
-        if let Some(action) = mux.exit_request.take() {
+        if let Some(action) = mux.control.exit_request.take() {
             if let Err(error) = crate::exit_assess::write_exit_action(action) {
                 // The operator explicitly chose keep/discard. Draining without
                 // writing the file would lose their choice and silently apply
@@ -1055,13 +979,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 crate::output::stderr_line(format_args!(
                     "[daemon] exit: failed to write exit-action file, retrying: {error}"
                 ));
-                mux.exit_request = Some(action);
+                mux.control.exit_request = Some(action);
             } else {
                 drain_and_exit(&mut mux).await;
                 return Ok(());
             }
         }
-        if mux.input_parser.esc_pending() {
+        if mux.control.input_parser.esc_pending() {
             if esc_deadline.is_none() {
                 esc_deadline = Some(tokio::time::Instant::now() + escape_time);
             }
@@ -1069,7 +993,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             esc_deadline = None;
         }
         let render_deadline: Option<tokio::time::Instant> =
-            if mux.has_pending_render() || mux.client.has_out_of_band() {
+            if mux.has_pending_render() || mux.client_registry.client.has_out_of_band() {
                 Some(
                     last_frame_at.map_or_else(tokio::time::Instant::now, |last| {
                         (last + RENDER_TICK_INTERVAL).max(tokio::time::Instant::now())
@@ -1137,7 +1061,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 crate::cdebug!("resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
                 let capabilities = terminal.attach_capabilities();
-                mux.pointer_shapes_supported = capabilities.pointer_shapes;
+                mux.client_registry.pointer_shapes_supported = capabilities.pointer_shapes;
                 // Attach-handshake outcome (clog tier): the triage line for
                 // "agent themed wrong" reports — None means the client could
                 // not read its terminal's palette and grids keep what they
@@ -1152,11 +1076,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     terminal.default_bg,
                     capabilities,
                 );
-                mux.attached_terminal = terminal;
-                mux.attached_capabilities = capabilities;
+                mux.client_registry.attached_terminal = terminal;
+                mux.client_registry.attached_capabilities = capabilities;
                 mux.apply_client_colors_to_sessions();
-                mux.pointer_shape = PointerShape::Default;
-                if mux.sessions.is_empty()
+                mux.client_registry.pointer_shape = PointerShape::Default;
+                if mux.session_supervisor.sessions.is_empty()
                     && let Some(request) = pending_initial_spawn.take()
                     && let Err(err) = mux.spawn_request(request.clone(), &[])
                 {
@@ -1191,11 +1115,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // Take over from any existing attach client (INV-D1). The
                 // port decides displace; the helper sends Shutdown, drains
                 // briefly, then aborts the old reader task.
-                let has_active_client = mux.attached_task.is_some();
+                let has_active_client = mux.client_registry.attached_task.is_some();
                 use ports::{AttachPort, PORTS};
                 if PORTS.should_displace_on_hello(has_active_client) {
                     detach_attached_task(&mut mux, "takeover").await;
+                    PORTS.record_detach();
                 }
+                PORTS.record_attach();
                 // Drain any stale frames the old client task pushed
                 // into cmd_tx before its abort actually took effect —
                 // without this drain, the next `cmd_rx.recv()` after
@@ -1214,7 +1140,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     crate::clog!("takeover: drained {drained} stale frame(s) from prior client");
                 }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-                mux.client.attach(new_out_tx.clone());
+                mux.client_registry.client.attach(new_out_tx.clone());
                 // Build the initial-attach burst as a typed list so a
                 // typo at one call site cannot disagree with the clog
                 // label. A send failure here means the receiver was
@@ -1226,7 +1152,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 initial_frames.push((
                     InitialFrameKind::Welcome,
                     encode_server(ServerFrame::Welcome {
-                        session_count: mux.sessions.len() as u32,
+                        session_count: mux.session_supervisor.sessions.len() as u32,
                     }),
                 ));
                 // Re-assert the attach-client-owned mouse/focus modes,
@@ -1242,7 +1168,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 ));
                 // A fresh client has no asserted cursor/mode state; the
                 // first frame's reconciliation asserts everything explicitly.
-                mux.last_asserted_client_state = None;
+                mux.render.last_asserted_client_state = None;
                 if let Some(message) = pending_spawn_failure {
                     mux.open_spawn_failure_dialog(message);
                 }
@@ -1261,10 +1187,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         "attach: receiver closed before initial frame ({}); operator's terminal will not paint",
                         kind.label()
                     );
-                    mux.client.mark_dead_logged();
+                    mux.client_registry.client.mark_dead_logged();
                 }
                 let cmd_tx_for_task = cmd_tx.clone();
-                mux.attached_task = Some(tokio::spawn(async move {
+                mux.client_registry.attached_task = Some(tokio::spawn(async move {
                     handle_attach_client(stream, new_out_rx, cmd_tx_for_task).await;
                     // Hold the concurrency permit alive for the
                     // lifetime of the attach task. Dropping at the
@@ -1286,12 +1212,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
                 for frame in frames {
                     handle_client_frame(&mut mux, frame);
-                    if mux.detach_requested {
+                    if mux.client_registry.detach_requested {
                         break;
                     }
                 }
-                if mux.detach_requested {
-                    mux.detach_requested = false;
+                if mux.client_registry.detach_requested {
+                    mux.client_registry.detach_requested = false;
                     detach_client(&mut mux).await;
                 }
                 if mux.no_live_sessions()
@@ -1312,7 +1238,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             }
 
             // PTY output or exit event from a session.
-            Some(event) = mux.event_rx.recv() => {
+            Some(event) = mux.control.event_rx.recv() => {
                 match event {
                     SessionEvent::Output { session_id, data } => {
                         let focused_id = mux.active_focused_id();
@@ -1322,7 +1248,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // `mux.send_output` (which takes `&mut Multiplexer`).
                         let mut to_emit: Vec<Vec<u8>> = Vec::new();
                         let mut reassert_outer_terminal_title = false;
-                        if let Some(session) = mux.sessions.get_mut(&session_id) {
+                        if let Some(session) = mux.session_supervisor.sessions.get_mut(&session_id) {
                             session.feed_pty(&data);
                             // Always drain the OSC + unhandled-CSI
                             // passthrough buffer so a backgrounded
@@ -1344,7 +1270,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             mux.send_out_of_band(bytes);
                         }
                         if reassert_outer_terminal_title {
-                            mux.last_outer_terminal_title = None;
+                            mux.client_registry.last_outer_terminal_title = None;
                         }
                         // Bump the generation; the render loop coalesces
                         // bursts of PTY output into one frame per pass.
@@ -1366,7 +1292,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // clean-shutdown branch and swallow it.
                         if let Some(base) = reason.take() {
                             let tail = mux
-                                .sessions
+                                .session_supervisor.sessions
                                 .get(&session_id)
                                 .and_then(|session| session.diagnostic_tail(12));
                             reason = Some(match tail {
@@ -1440,7 +1366,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
             }, if esc_deadline.is_some() => {
                 esc_deadline = None;
-                let events = mux.input_parser.flush_pending_esc();
+                let events = mux.control.input_parser.flush_pending_esc();
                 for event in events {
                     mux.handle_input(event);
                 }

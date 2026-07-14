@@ -13,24 +13,24 @@ impl Multiplexer {
     /// Use this instead of inspecting `dialog_stack` directly so the
     /// "is a dialog open" check stays in one place.
     pub(super) fn dialog_top(&self) -> Option<&Dialog> {
-        self.dialog_stack.last()
+        self.control.dialog_stack.last()
     }
 
     pub(super) fn dialog_top_mut(&mut self) -> Option<&mut Dialog> {
-        self.dialog_stack.last_mut()
+        self.control.dialog_stack.last_mut()
     }
 
     /// `true` when at least one dialog is on the stack.
     pub(super) fn dialog_open(&self) -> bool {
-        !self.dialog_stack.is_empty()
+        !self.control.dialog_stack.is_empty()
     }
 
     pub(super) fn mux_mode(&self) -> MuxMode {
         mux_mode_for_state(MuxModeState {
             dialog_open: self.dialog_open(),
-            dragging: self.drag.is_some(),
-            selecting: self.selection.is_some(),
-            awaiting_prefix: self.input_parser.is_awaiting_prefix(),
+            dragging: self.render.drag.is_some(),
+            selecting: self.clipboard.selection.is_some(),
+            awaiting_prefix: self.control.input_parser.is_awaiting_prefix(),
         })
     }
 
@@ -43,22 +43,22 @@ impl Multiplexer {
     /// again — the standard sub-dialog opening path (Menu → New tab
     /// pushes `AgentPicker` on top of Menu, not a replacement).
     pub(super) fn dialog_push(&mut self, d: Dialog) {
-        self.dialog_copy_feedback_deadline = None;
-        self.dialog_stack.push(d);
+        self.clipboard.dialog_copy_feedback_deadline = None;
+        self.control.dialog_stack.push(d);
     }
 
     pub(super) fn open_container_info_dialog(&mut self) {
         let focused_agent = self
             .active_focused_id()
-            .and_then(|id| self.sessions.get(&id))
+            .and_then(|id| self.session_supervisor.sessions.get(&id))
             .and_then(|s| s.agent.clone());
-        let container_name = self.status_bar.container_name().to_owned();
+        let container_name = self.status.status_bar.container_name().to_owned();
         let diagnostics = crate::container_context::resolve_container_diagnostics();
         self.dialog_push(Dialog::new_container_info(
             container_name,
-            self.status_bar.role().to_owned(),
+            self.status.status_bar.role().to_owned(),
             focused_agent,
-            self.workdir.to_string_lossy().into_owned(),
+            self.launch_env.workdir.to_string_lossy().into_owned(),
             crate::tui::components::dialog::ContainerInfoDiagnostics {
                 host_version: diagnostics.host_version,
                 run_id: diagnostics.run_id,
@@ -78,13 +78,13 @@ impl Multiplexer {
 
     pub(super) fn github_context_view(&self) -> GithubContextView<'_> {
         github_context_view_from_state(
-            self.pull_request_context_branch.as_deref(),
-            self.pull_request_context.as_deref(),
+            self.pr_watch.pull_request_context_branch.as_deref(),
+            self.pr_watch.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
         )
     }
 
-    /// Single `&mut self.dialog_stack` borrow alongside a
+    /// Single `&mut self.control.dialog_stack` borrow alongside a
     /// `GithubContextView` snapshot. NLL can split the borrow only when
     /// the immutable field reads and the mutable `dialog_stack` access
     /// live in the same function — open-coding both at every dispatch
@@ -99,33 +99,34 @@ impl Multiplexer {
         // (immutable) and `dialog_stack` (mutable) — disjoint fields
         // that NLL accepts only through direct field access.
         let view = github_context_view_from_state(
-            self.pull_request_context_branch.as_deref(),
-            self.pull_request_context.as_deref(),
+            self.pr_watch.pull_request_context_branch.as_deref(),
+            self.pr_watch.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
         );
-        let dialog = self.dialog_stack.last_mut()?;
+        let dialog = self.control.dialog_stack.last_mut()?;
         Some(f(dialog, Some(&view)))
     }
 
     pub(super) fn clamp_dialog_top_scroll(&mut self) {
         let view = github_context_view_from_state(
-            self.pull_request_context_branch.as_deref(),
-            self.pull_request_context.as_deref(),
+            self.pr_watch.pull_request_context_branch.as_deref(),
+            self.pr_watch.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
         );
-        if let Some(dialog) = self.dialog_stack.last_mut() {
-            dialog.clamp_body_scroll(self.term_rows, self.term_cols, Some(&view));
+        if let Some(dialog) = self.control.dialog_stack.last_mut() {
+            dialog.clamp_body_scroll(self.render.term_rows, self.render.term_cols, Some(&view));
         }
     }
 
     pub(super) fn dialog_pop_one(&mut self) -> Option<Dialog> {
-        let popped = self.dialog_stack.pop();
+        let popped = self.control.dialog_stack.pop();
         if !self
+            .control
             .dialog_stack
             .last()
             .is_some_and(Dialog::has_copy_feedback)
         {
-            self.dialog_copy_feedback_deadline = None;
+            self.clipboard.dialog_copy_feedback_deadline = None;
         }
         popped
     }
@@ -135,53 +136,53 @@ impl Multiplexer {
     /// destructive confirmations after they fire, etc.) so the
     /// operator returns straight to the focused pane.
     pub(super) fn dialog_clear(&mut self) {
-        self.dialog_stack.clear();
-        self.dialog_copy_feedback_deadline = None;
+        self.control.dialog_stack.clear();
+        self.clipboard.dialog_copy_feedback_deadline = None;
     }
 
     pub(super) fn expire_dialog_copy_feedback(&mut self, now: Instant) -> bool {
-        let Some(deadline) = self.dialog_copy_feedback_deadline else {
+        let Some(deadline) = self.clipboard.dialog_copy_feedback_deadline else {
             return false;
         };
         if now < deadline {
             return false;
         }
-        self.dialog_copy_feedback_deadline = None;
+        self.clipboard.dialog_copy_feedback_deadline = None;
         self.dialog_top_mut()
             .is_some_and(Dialog::clear_copy_feedback)
     }
 
     pub(super) fn expire_selection_copy_feedback(&mut self, now: Instant) -> bool {
-        let Some(deadline) = self.selection_copy_feedback_deadline else {
+        let Some(deadline) = self.clipboard.selection_copy_feedback_deadline else {
             return false;
         };
         if now < deadline {
             return false;
         }
-        self.selection_copy_feedback_deadline = None;
-        if !self.selection_copied {
+        self.clipboard.selection_copy_feedback_deadline = None;
+        if !self.clipboard.selection_copied {
             return false;
         }
-        self.selection_copied = false;
+        self.clipboard.selection_copied = false;
         true
     }
 
     pub(super) fn set_clipboard_image_notice(&mut self, message: String) {
-        self.clipboard_image_notice = Some(message);
-        self.clipboard_image_notice_deadline =
+        self.clipboard.clipboard_image_notice = Some(message);
+        self.clipboard.clipboard_image_notice_deadline =
             Some(Instant::now() + crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION);
         self.invalidate(super::status_change_redraw_reason());
     }
 
     pub(super) fn clear_clipboard_image_notice(&mut self) -> bool {
-        let had_notice = self.clipboard_image_notice.take().is_some()
-            || self.clipboard_image_notice_deadline.is_some();
-        self.clipboard_image_notice_deadline = None;
+        let had_notice = self.clipboard.clipboard_image_notice.take().is_some()
+            || self.clipboard.clipboard_image_notice_deadline.is_some();
+        self.clipboard.clipboard_image_notice_deadline = None;
         had_notice
     }
 
     pub(super) fn expire_clipboard_image_notice(&mut self, now: Instant) -> bool {
-        let Some(deadline) = self.clipboard_image_notice_deadline else {
+        let Some(deadline) = self.clipboard.clipboard_image_notice_deadline else {
             return false;
         };
         if now < deadline {
@@ -193,11 +194,11 @@ impl Multiplexer {
     /// Drop saved gesture state when the pane geometry it referenced
     /// is about to change. Cheaper than per-motion re-validation.
     pub(super) fn cancel_drag(&mut self) {
-        self.drag = None;
-        self.selection = None;
-        self.pending_selection = None;
-        self.selection_copied = false;
-        self.selection_copy_feedback_deadline = None;
+        self.render.drag = None;
+        self.clipboard.selection = None;
+        self.clipboard.pending_selection = None;
+        self.clipboard.selection_copied = false;
+        self.clipboard.selection_copy_feedback_deadline = None;
         self.clear_clipboard_image_notice();
     }
 }

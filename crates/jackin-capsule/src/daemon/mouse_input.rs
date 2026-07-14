@@ -32,7 +32,7 @@ const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_milli
 /// A primary press on a pane cell, in content coordinates, stamped for
 /// double-click classification.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct PanePress {
+pub(crate) struct PanePress {
     pub(super) session_id: u64,
     pub(super) content_row: usize,
     pub(super) col: u16,
@@ -46,15 +46,17 @@ enum HostOpenTarget {
 
 impl Multiplexer {
     pub(super) fn set_pointer_shape(&mut self, shape: PointerShape) {
-        if !self.pointer_shapes_supported || self.pointer_shape == shape {
+        if !self.client_registry.pointer_shapes_supported
+            || self.client_registry.pointer_shape == shape
+        {
             return;
         }
-        self.pointer_shape = shape;
+        self.client_registry.pointer_shape = shape;
         self.send_out_of_band(osc22_pointer_shape(shape));
     }
 
     pub(super) fn update_pointer_shape_for_mouse(&mut self, row: u16, col: u16, button: u8) {
-        if !self.pointer_shapes_supported {
+        if !self.client_registry.pointer_shapes_supported {
             return;
         }
         let shape = self.pointer_shape_at(row, col, button);
@@ -67,18 +69,21 @@ impl Multiplexer {
         // The shared Debug info dialog brightens the hovered copyable row, so a
         // move between two copyable rows must redraw even though hover_target
         // stays DialogCopyTarget. Track the per-row hover separately.
-        let (term_rows, term_cols) = (self.term_rows, self.term_cols);
+        let (term_rows, term_cols) = (self.render.term_rows, self.render.term_cols);
         let row_hover_changed = self.dialog_top_mut().is_some_and(|dialog| {
             let row = row + 1;
             let col = col + 1;
             dialog.set_container_info_hover(row, col, term_rows, term_cols)
                 || dialog.set_usage_tab_hover(row, col, term_rows, term_cols)
         });
-        if self.hover_target == next && self.link_hover_url == next_link && !row_hover_changed {
+        if self.render.hover_target == next
+            && self.render.link_hover_url == next_link
+            && !row_hover_changed
+        {
             return;
         }
-        self.hover_target = next;
-        self.link_hover_url = next_link;
+        self.render.hover_target = next;
+        self.render.link_hover_url = next_link;
         match hover_frame_plan(self.dialog_open()) {
             HoverFramePlan::DialogOverlay(reason) => self.invalidate(reason),
             HoverFramePlan::ChromeHover => self.invalidate(status_change_redraw_reason()),
@@ -97,8 +102,8 @@ impl Multiplexer {
             dialog.clickable_at(
                 row_1based,
                 col_1based,
-                self.term_rows,
-                self.term_cols,
+                self.render.term_rows,
+                self.render.term_cols,
                 Some(&github),
             )
         });
@@ -134,26 +139,33 @@ impl Multiplexer {
     }
 
     fn register_chrome_hover_targets(&self, tracker: &mut HoverTracker<HoverTarget>) {
-        for (idx, (start, end)) in self.status_bar.tab_regions.iter().copied().enumerate() {
+        for (idx, (start, end)) in self
+            .status
+            .status_bar
+            .tab_regions
+            .iter()
+            .copied()
+            .enumerate()
+        {
             register_row0_range_1based(tracker, start, end, HoverTarget::Tab(idx));
         }
-        if let Some((start, end)) = self.status_bar.hint_region {
+        if let Some((start, end)) = self.status.status_bar.hint_region {
             register_row0_range_1based(tracker, start, end, HoverTarget::Menu);
         }
 
         let Some(layout) = branch_context_bar_layout(
-            self.term_rows,
-            self.term_cols,
+            self.render.term_rows,
+            self.render.term_cols,
             self.context_bar_branch(),
             self.focused_usage_status_label().as_deref(),
-            self.pull_request_context.as_deref(),
+            self.pr_watch.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
             debug_run_id_label().as_deref(),
-            self.status_bar.instance_id_label(),
+            self.status.status_bar.instance_id_label(),
         ) else {
             return;
         };
-        let row0 = self.term_rows.saturating_sub(1);
+        let row0 = self.render.term_rows.saturating_sub(1);
         register_col_range_1based(
             tracker,
             row0,
@@ -177,16 +189,16 @@ impl Multiplexer {
 
     pub(super) fn hover_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
         hover_target_for_state(HoverState {
-            dragging: self.drag.is_some(),
-            selecting: self.selection.is_some(),
+            dragging: self.render.drag.is_some(),
+            selecting: self.clipboard.selection.is_some(),
             chrome_target: self.chrome_hit_target_at(row, col),
         })
     }
 
     pub(super) fn pointer_shape_at(&self, row: u16, col: u16, button: u8) -> PointerShape {
         pointer_shape_for_state(PointerShapeState {
-            dragging: self.drag.is_some(),
-            selecting: self.selection.is_some(),
+            dragging: self.render.drag.is_some(),
+            selecting: self.clipboard.selection.is_some(),
             chrome_target: self.chrome_hit_target_at(row, col),
             dialog_open: self.dialog_top().is_some(),
             drag_start_orient: self.detect_drag_start(row, col).map(|drag| drag.orient),
@@ -232,7 +244,7 @@ impl Multiplexer {
             drop_trace("no-focused-pane");
             return false;
         };
-        let Some(session) = self.sessions.get(&focused) else {
+        let Some(session) = self.session_supervisor.sessions.get(&focused) else {
             drop_trace("session-gone");
             return false;
         };
@@ -295,7 +307,7 @@ impl Multiplexer {
         {
             return false;
         }
-        let Some(session) = self.sessions.get_mut(&focused) else {
+        let Some(session) = self.session_supervisor.sessions.get_mut(&focused) else {
             return false;
         };
         if session.shadow_grid.alternate_screen() {
@@ -336,11 +348,14 @@ impl Multiplexer {
         if row < STATUS_BAR_ROWS {
             return None;
         }
-        let content_rect = content_rect(self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.render.content_rows, self.render.term_cols);
         let (id, outer) = if let Some(zoom_id) = self.active_zoomed_id() {
             (zoom_id, content_rect)
         } else {
-            let tab = self.tabs.get(self.active_tab)?;
+            let tab = self
+                .session_supervisor
+                .tabs
+                .get(self.session_supervisor.active_tab)?;
             tab.tree.leaves(content_rect).into_iter().find(|(_, r)| {
                 row >= r.row && row < r.row + r.rows && col >= r.col && col < r.col + r.cols
             })?
@@ -353,7 +368,7 @@ impl Multiplexer {
         {
             return None;
         }
-        let session = self.sessions.get(&id)?;
+        let session = self.session_supervisor.sessions.get(&id)?;
         if session.mouse_enabled() {
             // Pane's program wants the mouse — defer to PTY forward.
             return None;
@@ -377,6 +392,7 @@ impl Multiplexer {
     /// transcript selections can continue past the visible viewport.
     pub(super) fn selection_motion(&mut self, row: u16, col: u16) {
         let Some((session_id, inner)) = self
+            .clipboard
             .selection
             .as_ref()
             .map(|sel| (sel.session_id, sel.inner))
@@ -391,7 +407,7 @@ impl Multiplexer {
             None
         };
         let (scrollback_filled, scrollback_offset) =
-            if let Some(session) = self.sessions.get_mut(&session_id) {
+            if let Some(session) = self.session_supervisor.sessions.get_mut(&session_id) {
                 if let Some(delta) = scroll_delta {
                     session.scroll_by(delta);
                 }
@@ -399,7 +415,7 @@ impl Multiplexer {
             } else {
                 return;
             };
-        let Some(sel) = self.selection.as_mut() else {
+        let Some(sel) = self.clipboard.selection.as_mut() else {
             return;
         };
         move_selection_end(sel, row, col, scrollback_filled, scrollback_offset);
@@ -416,7 +432,7 @@ impl Multiplexer {
         );
         // The selection changed shape, so the clipboard no longer matches
         // it; release must copy again (extends a word-click selection too).
-        self.selection_copied = false;
+        self.clipboard.selection_copied = false;
         self.invalidate(selection_change_redraw_reason());
     }
 
@@ -426,11 +442,16 @@ impl Multiplexer {
     pub(super) fn pending_selection_motion(&mut self, row: u16, col: u16) {
         // The press turned into a drag — it must not pair as the first half
         // of a double-click with the click that later clears its copy.
-        self.last_pane_press = None;
-        self.selection = self.pending_selection.take();
+        self.clipboard.last_pane_press = None;
+        self.clipboard.selection = self.clipboard.pending_selection.take();
         self.selection_motion(row, col);
-        if !self.selection.as_ref().is_some_and(selection_was_dragged) {
-            self.selection = None;
+        if !self
+            .clipboard
+            .selection
+            .as_ref()
+            .is_some_and(selection_was_dragged)
+        {
+            self.clipboard.selection = None;
         }
     }
 
@@ -439,12 +460,12 @@ impl Multiplexer {
     /// terminal turns into a real clipboard write). Dragged selections remain
     /// highlighted after copy until the next click or typed input clears them.
     pub(super) fn finalize_selection(&mut self) {
-        let Some(sel) = self.selection else {
+        let Some(sel) = self.clipboard.selection else {
             return;
         };
         // A word-click selection was already copied at press time; the
         // release that follows must not write the clipboard again.
-        if self.selection_copied {
+        if self.clipboard.selection_copied {
             return;
         }
         // Suppress single-cell selections: a click-to-focus with no
@@ -454,9 +475,9 @@ impl Multiplexer {
         if selection_was_dragged(&sel) {
             self.copy_selection_to_clipboard(&sel);
         } else {
-            self.selection = None;
-            self.selection_copied = false;
-            self.selection_copy_feedback_deadline = None;
+            self.clipboard.selection = None;
+            self.clipboard.selection_copied = false;
+            self.clipboard.selection_copy_feedback_deadline = None;
         }
         self.invalidate(selection_change_redraw_reason());
     }
@@ -466,6 +487,7 @@ impl Multiplexer {
     /// snapshot of its own.
     fn copy_selection_to_clipboard(&mut self, sel: &SelectionState) {
         let rows = self
+            .session_supervisor
             .sessions
             .get(&sel.session_id)
             .map(|session| session.render_content_snapshot(sel.inner.cols))
@@ -480,7 +502,7 @@ impl Multiplexer {
     /// once).
     fn copy_selection_rows(&mut self, sel: &SelectionState, rows: &[RowSnapshot]) {
         let text = selection_text(rows, sel);
-        let copied = !text.is_empty() && self.client.is_attached();
+        let copied = !text.is_empty() && self.client_registry.client.is_attached();
         if copied {
             let bytes = encode_osc52_clipboard_write(&text);
             self.send_out_of_band(bytes);
@@ -493,11 +515,11 @@ impl Multiplexer {
                 sel.session_id,
                 rows.len(),
                 text.len(),
-                self.client.is_attached(),
+                self.client_registry.client.is_attached(),
             );
         }
-        self.selection_copied = copied;
-        self.selection_copy_feedback_deadline =
+        self.clipboard.selection_copied = copied;
+        self.clipboard.selection_copy_feedback_deadline =
             copied.then_some(Instant::now() + crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION);
     }
 
@@ -514,14 +536,15 @@ impl Multiplexer {
             at: Instant::now(),
         };
         let is_double = self
+            .clipboard
             .last_pane_press
             .is_some_and(|previous| is_double_click(&previous, &press));
         if !is_double {
-            self.last_pane_press = Some(press);
+            self.clipboard.last_pane_press = Some(press);
             return false;
         }
         // A third quick press starts a fresh cycle instead of re-selecting.
-        self.last_pane_press = None;
+        self.clipboard.last_pane_press = None;
         self.select_word_at(candidate)
     }
 
@@ -529,7 +552,7 @@ impl Multiplexer {
     /// word's display-column bounds come from `word_bounds_in_row` over the
     /// session's content snapshot.
     fn select_word_at(&mut self, candidate: &SelectionState) -> bool {
-        let Some(session) = self.sessions.get(&candidate.session_id) else {
+        let Some(session) = self.session_supervisor.sessions.get(&candidate.session_id) else {
             crate::cdebug!("word select skipped: session={} gone", candidate.session_id);
             return false;
         };
@@ -554,8 +577,8 @@ impl Multiplexer {
             sel.session_id,
             sel.anchor_row
         );
-        self.selection = Some(sel);
-        self.pending_selection = None;
+        self.clipboard.selection = Some(sel);
+        self.clipboard.pending_selection = None;
         self.copy_selection_rows(&sel, &rows);
         self.invalidate(selection_change_redraw_reason());
         true
@@ -594,7 +617,7 @@ impl Multiplexer {
             crate::cdebug!("visible url open skipped: focused pane has no visible rect");
             return false;
         };
-        let Some(session) = self.sessions.get(&session_id) else {
+        let Some(session) = self.session_supervisor.sessions.get(&session_id) else {
             crate::cdebug!("visible url open skipped: focused session={session_id} gone");
             return false;
         };
@@ -651,7 +674,7 @@ impl Multiplexer {
             }
             return None;
         };
-        let Some(session) = self.sessions.get(&candidate.session_id) else {
+        let Some(session) = self.session_supervisor.sessions.get(&candidate.session_id) else {
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
                     "visible url open skipped ({log_suffix}): session={} gone",
@@ -693,7 +716,7 @@ impl Multiplexer {
         anchor_col: u16,
         log_suffix: Option<&str>,
     ) -> Option<HostOpenTarget> {
-        let Some(session) = self.sessions.get(&session_id) else {
+        let Some(session) = self.session_supervisor.sessions.get(&session_id) else {
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
                     "visible url open skipped ({log_suffix}): session={session_id} gone"
@@ -871,11 +894,14 @@ impl Multiplexer {
         if row < STATUS_BAR_ROWS || self.active_zoomed_id().is_some() {
             return None;
         }
-        let content_rect = content_rect(self.content_rows, self.term_cols);
-        let tab = self.tabs.get(self.active_tab)?;
+        let content_rect = content_rect(self.render.content_rows, self.render.term_cols);
+        let tab = self
+            .session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)?;
         let (path, orient, rect) = tab.tree.border_at(content_rect, row, col)?;
         Some(DragState {
-            tab_idx: self.active_tab,
+            tab_idx: self.session_supervisor.active_tab,
             path,
             orient,
             rect,
@@ -883,11 +909,11 @@ impl Multiplexer {
     }
 
     pub(super) fn drag_motion(&mut self, row: u16, col: u16) {
-        let Some(drag) = self.drag.clone() else {
+        let Some(drag) = self.render.drag.clone() else {
             return;
         };
         let new_ratio = drag_resize_ratio(drag.orient, drag.rect, row, col);
-        let Some(tab) = self.tabs.get_mut(drag.tab_idx) else {
+        let Some(tab) = self.session_supervisor.tabs.get_mut(drag.tab_idx) else {
             return;
         };
         if !tab.tree.set_ratio_at(&drag.path, new_ratio) {
