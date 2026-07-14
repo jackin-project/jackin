@@ -24,12 +24,14 @@ pub fn agent_is_effectively_allowed(ws: &impl WorkspaceRoleAccess, role: &str) -
 /// Roles already carrying an override stay eligible: operators may add more
 /// keys to an existing override.
 #[must_use]
-pub fn eligible_role_keys_for_override<'a>(
-    registered_roles: impl Iterator<Item = &'a String>,
+pub fn eligible_role_keys_for_override(
+    registered_roles: impl Iterator<Item = impl AsRef<str>>,
     workspace: &impl WorkspaceRoleAccess,
 ) -> Vec<String> {
     if workspace.allowed_roles().is_empty() {
-        registered_roles.cloned().collect()
+        registered_roles
+            .map(|role| role.as_ref().to_owned())
+            .collect()
     } else {
         workspace.allowed_roles().to_vec()
     }
@@ -40,8 +42,8 @@ pub fn eligible_role_keys_for_override<'a>(
 /// Empty `allowed_roles` means every configured role. Stale entries are
 /// ignored, because this returns only roles present in `registered_roles`.
 #[must_use]
-pub fn eligible_roles_for_workspace<'a>(
-    registered_roles: impl Iterator<Item = &'a String>,
+pub fn eligible_roles_for_workspace(
+    registered_roles: impl Iterator<Item = impl AsRef<str>>,
     workspace: &impl WorkspaceRoleAccess,
 ) -> Vec<RoleSelector> {
     configured_roles(registered_roles)
@@ -52,11 +54,11 @@ pub fn eligible_roles_for_workspace<'a>(
 
 /// Return configured roles that parse as valid role selectors.
 #[must_use]
-pub fn configured_roles<'a>(
-    registered_roles: impl Iterator<Item = &'a String>,
+pub fn configured_roles(
+    registered_roles: impl Iterator<Item = impl AsRef<str>>,
 ) -> Vec<RoleSelector> {
     registered_roles
-        .filter_map(|key| RoleSelector::parse(key).ok())
+        .filter_map(|key| RoleSelector::parse(key.as_ref()).ok())
         .collect()
 }
 
