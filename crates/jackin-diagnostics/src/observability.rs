@@ -826,10 +826,61 @@ mod otlp {
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
+            .with_log_processor(PromoteEventNameProcessor)
             .with_log_processor(BatchLogProcessor::builder(log_exporter, Tokio).build())
             .with_resource(resource)
             .build();
         Ok((tracer_provider, logger_provider, app_handle))
+    }
+
+    /// Promotes the `event.name` attribute to the top-level OTLP `EventName`
+    /// field. The tracing appender fills `EventName` from `metadata.name()`
+    /// (often `event path:line`); we overwrite it with the registry-validated
+    /// dotted name so backends can key on the standard field.
+    #[derive(Debug)]
+    struct PromoteEventNameProcessor;
+
+    impl opentelemetry_sdk::logs::LogProcessor for PromoteEventNameProcessor {
+        fn emit(
+            &self,
+            record: &mut opentelemetry_sdk::logs::SdkLogRecord,
+            _instrumentation: &opentelemetry::InstrumentationScope,
+        ) {
+            use opentelemetry::logs::{AnyValue, LogRecord as _};
+
+            let attr_name = record.attributes_iter().find_map(|(key, value)| {
+                if key.as_str() != "event.name" {
+                    return None;
+                }
+                match value {
+                    AnyValue::String(s) => Some(s.to_string()),
+                    other => Some(format!("{other:?}")),
+                }
+            });
+            let Some(attr_name) = attr_name else {
+                return;
+            };
+            // Prefer the registry's static name so set_event_name gets 'static.
+            if let Some(def) = crate::registry::lookup(&attr_name) {
+                record.set_event_name(def.name);
+                return;
+            }
+            // Free-form pre-migration kinds: intern so EventName still equals
+            // the attribute mirror for equality tests.
+            let leaked: &'static str = Box::leak(attr_name.into_boxed_str());
+            record.set_event_name(leaked);
+        }
+
+        fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+            Ok(())
+        }
+
+        fn shutdown_with_timeout(
+            &self,
+            _timeout: std::time::Duration,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            Ok(())
+        }
     }
 
     pub(super) fn init(debug: bool, run_id: &str, endpoints: &OtlpEndpoints) -> anyhow::Result<()> {
@@ -1036,6 +1087,7 @@ mod otlp {
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
+            .with_log_processor(PromoteEventNameProcessor)
             .with_simple_exporter(logs.clone())
             .with_resource(resource)
             .build();

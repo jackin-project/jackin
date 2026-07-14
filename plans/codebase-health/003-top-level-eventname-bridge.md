@@ -69,10 +69,10 @@ Probe test (step 1), promotion test (step 2), equality/registry sweep (step 3) â
 
 ## Done criteria
 
-- [ ] Captured records expose non-empty top-level `EventName` equal to the `event.name` attribute
-- [ ] EventName values validate against the plan-001 registry
-- [ ] `cargo nextest run -p jackin-diagnostics --all-features` exits 0; `cargo xtask ci --fast` exits 0
-- [ ] Status row updated
+- [x] Captured records expose non-empty top-level `EventName` equal to the `event.name` attribute
+- [x] EventName values validate against the plan-001 registry
+- [x] `cargo nextest run -p jackin-diagnostics --all-features` exits 0; `cargo xtask ci --fast` exits 0
+- [x] Status row updated
 
 ## STOP conditions
 
@@ -84,3 +84,7 @@ Probe test (step 1), promotion test (step 2), equality/registry sweep (step 3) â
 
 - When the upstream appender learns to write EventName natively, delete the promotion processor and keep the equality test.
 - Plan 009 folds the equality sweep into the CI conformance matrix.
+
+## Execution notes
+
+- Promote via `LogProcessor` (not appender fork); free-form names interned with `Box::leak` for attribute equality.

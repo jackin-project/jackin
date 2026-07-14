@@ -728,3 +728,84 @@ fn jsonl_trace_id_matches_in_memory_exporter() {
         "trace_id must be hex: {jsonl_trace}"
     );
 }
+
+#[test]
+fn bridge_populates_top_level_event_name_from_attribute() {
+    let logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "session_detach",
+            "operator detached",
+            None,
+            None,
+        );
+    });
+    let log = logs
+        .iter()
+        .find(|log| {
+            log_attr(&log.record, "event.name").as_deref() == Some("capsule.session.detach")
+        })
+        .expect("session detach log");
+    assert_eq!(
+        log.record.event_name(),
+        Some("capsule.session.detach"),
+        "top-level EventName must equal the registered dotted name"
+    );
+    assert_eq!(
+        log_attr(&log.record, "event.name").as_deref(),
+        log.record.event_name(),
+        "attribute mirror must equal top-level EventName"
+    );
+}
+
+#[test]
+fn top_level_event_name_matches_attribute_and_registry() {
+    let logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "stage_started",
+            "building",
+            Some("image"),
+            None,
+        );
+        crate::observability::emit_jsonl_event("run1", "stage_done", "built", Some("image"), None);
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "session_detach",
+            "operator detached",
+            None,
+            None,
+        );
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "process.execute",
+            "host process execute",
+            None,
+            None,
+        );
+    });
+    let mut checked = 0usize;
+    for log in &logs {
+        let Some(attr) = log_attr(&log.record, "event.name") else {
+            continue;
+        };
+        let top = log
+            .record
+            .event_name()
+            .expect("top-level EventName must be populated when event.name attr is present");
+        assert!(!top.is_empty(), "EventName must be non-empty");
+        assert_eq!(
+            top,
+            attr.as_str(),
+            "EventName must equal event.name attribute"
+        );
+        if let Some(def) = crate::registry::lookup(top) {
+            assert_eq!(def.name, top);
+            checked += 1;
+        }
+    }
+    assert!(
+        checked >= 3,
+        "expected at least three registry-validated EventName values, got {checked}"
+    );
+}
