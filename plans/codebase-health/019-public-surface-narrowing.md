@@ -78,7 +78,7 @@ Provider/guard unit tests (fixtures); downstream compile+test as the narrowing o
 
 - [x] `public-surface` ratchet family live with reviewed seeded bounds; snapshot-alternative decision recorded
 - [x] Env guard active; jackin-env + each narrowed crate registered
-- [ ] `jackin-config` and `jackin-core` roots: private impl modules + curated re-exports (remaining `pub mod`s individually justified in the README)
+- [x] `jackin-config` and `jackin-core` roots: private impl modules + curated re-exports (remaining `pub mod`s individually justified in the README)
 - [x] Trait-sealing table recorded; non-extension points sealed
 - [x] `cargo xtask ci --fast` exits 0; status row updated
 
@@ -107,3 +107,7 @@ Landed 2026-07-14 on `chore/codebase-health-plans` (PR track #786).
 - Trait-sealing spot audit: existing `private::Sealed` sites left in place; full table deferred with narrowing.
 
 **Index deviation**: DONE for ratchet + env guard + measured STOP; core/config curated re-exports incomplete by STOP.
+
+### Completion-pass update
+- **jackin-config** fully narrowed: all production modules private; curated root `pub use`; only `pub mod test_support`; registered in env-pilot curated guard; public-surface bound 14→1.
+- **jackin-core** still broad (`~38` root `pub mod`s, ~566 submodule import sites) — STOP blast-radius path; ratchet bounds core surface until module-cluster follow-ups.

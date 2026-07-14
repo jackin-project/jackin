@@ -21,20 +21,21 @@
     )
 )]
 
-pub mod app_config;
-pub mod auth;
-pub mod editor;
+// Plan 019: private implementation modules + curated root re-exports (env pilot).
+mod app_config;
+mod auth;
+mod editor;
 mod error;
-pub mod migrations;
-pub mod mounts;
-pub mod paths;
-pub mod persist;
-pub mod planner;
-pub mod resolve;
-pub mod schema;
-pub mod sensitive;
-pub mod validation;
-pub mod versions;
+mod migrations;
+mod mounts;
+mod paths;
+mod persist;
+mod planner;
+mod resolve;
+mod schema;
+mod sensitive;
+mod validation;
+mod versions;
 
 pub use error::ConfigError;
 
@@ -42,9 +43,11 @@ pub use error::ConfigError;
 pub mod test_support;
 
 pub use app_config::AppConfig;
+pub use app_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
 pub use app_config::mounts::{GlobalMountRow, WorkspaceGlobalMountRows};
 pub use app_config::persist::{
-    config_needs_split_migration, load_split_config, validate_reserved_env_names,
+    config_needs_split_migration, load_split_config, load_workspace_files,
+    validate_reserved_env_names,
 };
 pub use app_config::roles::{
     BUILTIN_ROLES, build_github_env_layers, resolve_github_mode, resolve_mode,
@@ -54,12 +57,13 @@ pub use auth::{AgentAuthConfig, GithubAuthConfig, GithubAuthMode};
 pub use editor::{ConfigEditor, EnvScope};
 pub use jackin_core::{AuthForwardMode, EnvValue, FieldTarget, MountIsolation, OpRef};
 pub use migrations::{
-    Channel, Migration, MigrationStep, SchemaVersion, apply_migrations, doc_version,
+    CONFIG_MIGRATIONS, Channel, KubernetesVersion, Migration, MigrationStep, SchemaVersion,
+    WORKSPACE_MIGRATIONS, apply_migrations, assert_registry_chain, doc_version,
     migrate_config_file_if_needed, migrate_file_if_needed, migrate_workspace_file_if_needed,
     migrate_workspace_op_account_to_refs, noop_migration, parse_registry_version, parse_version,
     set_doc_version,
 };
-pub use mounts::{parse_mount_spec, parse_mount_spec_resolved};
+pub use mounts::{covers, parse_mount_spec, parse_mount_spec_resolved};
 pub use paths::{expand_tilde, resolve_path};
 pub use persist::{atomic_write, validate_workspace_file_stem};
 pub use planner::{

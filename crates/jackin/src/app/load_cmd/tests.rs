@@ -1,6 +1,6 @@
 use super::{docker_startup_error, take_post_console_config};
 use jackin_config::AppConfig;
-use jackin_config::schema::{MountConfig, WorkspaceConfig};
+use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_core::JackinPaths;
 use jackin_core::agent::Agent;
 use jackin_core::isolation::MountIsolation;

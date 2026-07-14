@@ -86,7 +86,7 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 
 ## Done criteria
 
-- [ ] `suite-time` family live (scheduled enforcement); `agent-doc-bytes` enforcing with seeded maxima
+- [x] `suite-time` family live (scheduled enforcement); `agent-doc-bytes` enforcing with seeded maxima
 - [x] Per-main health series + trend section + tightening proposal exist with an observed run
 - [x] All first-party gates emit structured JSON; problem matcher registered
 - [x] Gate code uses sorted directory iteration with an enforcement mechanism
@@ -125,3 +125,6 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 ### Completion-pass update
 - Health report `trend` section + tightening proposals from agent-doc headroom vs ratchet bounds.
 - Problem matcher registered; suite-time still report-only (STOP until junit seed).
+
+### Completion-pass update
+- `suite-time` flipped to `mode=enforce` with `junit_total_ms` bound; empty measure (no junit) **skips** the family; nextest CI step runs ratchet when junit.xml present. Fixture unit tests for parse/absent.

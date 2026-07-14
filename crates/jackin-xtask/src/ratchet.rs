@@ -242,6 +242,16 @@ fn check_families(
         match family.kind.as_str() {
             "numeric" => {
                 let measured = invoke_provider(root, &family.provider)?;
+                // Plan 027 suite-time: enforce only when a junit artifact exists
+                // (scheduled CI lane). Local/PR without junit skips the family
+                // rather than failing StaleMissing on budgeted keys.
+                if family.id == "suite-time" && measured.is_empty() {
+                    report_lines.push(
+                        "suite-time (scheduled enforce; skipped — no junit.xml under target/nextest/)"
+                            .into(),
+                    );
+                    continue;
+                }
                 let cap = family.cap.unwrap_or(0);
                 let budgeted: BTreeMap<&str, usize> = family
                     .entry
@@ -258,6 +268,11 @@ fn check_families(
                         None => None,
                     };
                     let v = check_numeric_entry(measured_opt, *bound, cap);
+                    // suite-time is a wall-time ceiling with intentional headroom:
+                    // only Growth fails (prevent suite regressions). Shrink is
+                    // advisory via report_lines so flaky local/CI variance does
+                    // not thrash the bound.
+                    let suite_time = family.id == "suite-time";
                     let msg = match v {
                         NumericVerdict::Ok => None,
                         NumericVerdict::StaleMissing => Some(format!(
@@ -268,6 +283,12 @@ fn check_families(
                             "{id}/{key}: measured {measured} ≤ cap {cap} — no longer needs grandfathering; delete the budget row; regenerate: {RERUN} --print {id}",
                             id = family.id
                         )),
+                        NumericVerdict::Shrink { measured, budgeted } if suite_time => {
+                            report_lines.push(format!(
+                                "suite-time/{key}: measured {measured}ms under ceiling {budgeted}ms (headroom OK)"
+                            ));
+                            None
+                        }
                         NumericVerdict::Shrink { measured, budgeted } => Some(format!(
                             "{id}/{key}: measured {measured} < budgeted {budgeted} — shrink the budget row to {measured}; regenerate: {RERUN} --print {id}",
                             id = family.id
@@ -426,6 +447,8 @@ fn measure_public_surface_pub_mods(root: &Path) -> Result<BTreeMap<String, usize
 const CURATED_PUB_MODS: &[(&str, &[&str])] = &[
     // jackin-env pilot: private impl modules + `pub mod test_support` only.
     ("jackin-env", &["test_support"]),
+    // Plan 019: jackin-config narrowed (private mods + root re-exports).
+    ("jackin-config", &["test_support"]),
 ];
 
 /// Fail if a curated crate's root `lib.rs` declares a non-allowlisted `pub mod`.
@@ -644,8 +667,8 @@ fn junit_seconds_to_ms(raw: &str) -> u64 {
 }
 
 /// Suite wall-time from nextest junit (plan 027). When no artifact is present
-/// (local default), returns an empty map so the family stays green as report-only.
-fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>> {
+/// (local default), returns an empty map so enforce skips the family.
+pub(crate) fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
     let candidates = [
         root.join("target/nextest/ci/junit.xml"),

@@ -202,10 +202,10 @@ impl Default for AppConfig {
     }
 }
 
-pub mod mounts;
-pub mod persist;
-pub mod roles;
-pub mod workspaces;
+pub(crate) mod mounts;
+pub(crate) mod persist;
+pub(crate) mod roles;
+pub(crate) mod workspaces;
 
 #[cfg(test)]
 mod tests;

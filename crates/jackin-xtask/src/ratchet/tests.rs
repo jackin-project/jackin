@@ -84,6 +84,10 @@ fn presence_stale_and_new() {
 #[test]
 fn curated_pub_mods_rejects_extra_root_mod() {
     let dir = tempfile::tempdir().expect("tempdir");
+    // Valid curated sibling so the only failure is the intentional leak.
+    let config_lib = dir.path().join("crates/jackin-config/src/lib.rs");
+    fs::create_dir_all(config_lib.parent().expect("parent")).expect("mkdir");
+    fs::write(&config_lib, "mod private;\npub mod test_support;\n").expect("write config");
     let lib = dir.path().join("crates/jackin-env/src/lib.rs");
     fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
     fs::write(
@@ -102,10 +106,16 @@ fn curated_pub_mods_rejects_extra_root_mod() {
 #[test]
 fn curated_pub_mods_accepts_env_pilot_shape() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let lib = dir.path().join("crates/jackin-env/src/lib.rs");
-    fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
-    fs::write(&lib, "mod env_layer;\npub mod test_support;\n").expect("write lib");
-    check_curated_pub_mods(dir.path()).expect("env pilot shape ok");
+    for crate_name in ["jackin-env", "jackin-config"] {
+        let lib = dir
+            .path()
+            .join("crates")
+            .join(crate_name)
+            .join("src/lib.rs");
+        fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
+        fs::write(&lib, "mod env_layer;\npub mod test_support;\n").expect("write lib");
+    }
+    check_curated_pub_mods(dir.path()).expect("curated pilot shapes ok");
 }
 
 #[test]
@@ -116,4 +126,28 @@ fn real_tree_curated_pub_mods_green() {
         .canonicalize()
         .expect("repo root");
     check_curated_pub_mods(&root).expect("real tree curated surfaces green");
+}
+
+#[test]
+fn suite_time_parses_fixture_junit_ms() {
+    use super::measure_suite_time;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let junit_dir = dir.path().join("target/nextest/ci");
+    fs::create_dir_all(&junit_dir).expect("mkdir");
+    // Two time attributes: 1.5s + 2s → 3500ms sum (attributes on suite + case).
+    fs::write(
+        junit_dir.join("junit.xml"),
+        r#"<?xml version="1.0"?><testsuites time="1.5"><testsuite time="2.0"></testsuite></testsuites>"#,
+    )
+    .expect("write junit");
+    let measured = measure_suite_time(dir.path()).expect("measure");
+    assert_eq!(measured.get("junit_total_ms").copied(), Some(3500));
+}
+
+#[test]
+fn suite_time_absent_junit_is_empty() {
+    use super::measure_suite_time;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let measured = measure_suite_time(dir.path()).expect("measure");
+    assert!(measured.is_empty());
 }

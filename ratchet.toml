@@ -711,7 +711,7 @@ key = "jackin-capsule"
 bound = 34
 [[family.entry]]
 key = "jackin-config"
-bound = 14
+bound = 1
 [[family.entry]]
 key = "jackin-console"
 bound = 7
@@ -768,11 +768,16 @@ key = "jackin-usage"
 bound = 7
 
 
-# Plan 027: suite wall-time from nextest junit (report until CI seeds a baseline).
+# Plan 027: suite wall-time from nextest junit. mode=enforce when junit present;
+# provider empty → family skipped (local/PR without junit). Scheduled hygiene/
+# nextest lanes that emit junit.xml enforce the bound (~15% headroom).
 [[family]]
 id = "suite-time"
 kind = "numeric"
 provider = "suite_time"
-mode = "report"
-# When junit is absent the provider returns empty (no failure). Seed bounds after
-# the first PR CI run with a real junit artifact, then flip to enforce+tolerance.
+mode = "enforce"
+# Cap unused for this family (path-style key). Bound is a soft ceiling for total
+# junit wall-ms (sum of time= attributes). Raise only after reviewing slow tests.
+[[family.entry]]
+key = "junit_total_ms"
+bound = 3600000

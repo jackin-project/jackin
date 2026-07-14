@@ -95,7 +95,7 @@ fn manifest_migrations_chain_reaches_current() {
     // CURRENT_MANIFEST_VERSION. The shared helper catches typos,
     // missing middle steps, backward steps, cycles, and duplicate
     // `from` forks on every CI run.
-    jackin_config::migrations::assert_registry_chain(MANIFEST_MIGRATIONS, CURRENT_MANIFEST_VERSION);
+    jackin_config::assert_registry_chain(MANIFEST_MIGRATIONS, CURRENT_MANIFEST_VERSION);
 }
 
 /// Property: migrate(migrate(x)) == migrate(x) for versioned minimal manifests.
