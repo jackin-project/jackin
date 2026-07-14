@@ -151,7 +151,7 @@ impl Multiplexer {
     )]
     fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
-        use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen, render_capsule_ratatui_frame};
+        use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen};
 
         let term_rows = self.render.term_rows;
         let term_cols = self.render.term_cols;
@@ -462,43 +462,52 @@ impl Multiplexer {
             .backend_mut()
             .set_sgr_regions(sgr_regions);
 
-        let result = self.render.ratatui_terminal.draw(|frame| {
-            render_capsule_ratatui_frame(
-                frame,
-                CapsuleRatatuiFrame {
-                    tabs,
-                    status_plan: &status_plan,
-                    term_cols,
-                    term_rows,
-                    panes: &panes,
-                    pane_titles: &pane_titles,
-                    focus_owner,
-                    zoomed,
-                    dialog_open,
-                    dialog_snapshot: dialog_snapshot.as_ref(),
-                    pane_screens: &pane_screens,
-                    prefix_mode,
-                    hovered_tab,
-                    menu_hovered,
-                    selection,
-                    selection_copied,
-                    scrollbars: &pane_scrollbars,
-                    branch: branch.as_deref(),
-                    usage_status_label: Some(usage_status_label.as_str()),
-                    pull_request: pull_request.as_deref(),
-                    pull_request_loading,
-                    instance_id_label: self.status.status_bar.instance_id_label(),
-                    hover_target,
-                    scrollback_active,
-                    main_scroll_axes,
-                    debug_run_id: debug_run_id_owned.as_deref(),
-                    dialog_hint_spans: dialog_hint_spans.as_deref(),
-                    palette_key,
-                    clipboard_image_notice: clipboard_image_notice.as_deref(),
-                    link_hover_notice: link_hover_notice.as_deref(),
-                },
-            );
-        });
+        let frame_model = CapsuleRatatuiFrame {
+            tabs,
+            status_plan: &status_plan,
+            term_cols,
+            term_rows,
+            panes: &panes,
+            pane_titles: &pane_titles,
+            focus_owner,
+            zoomed,
+            dialog_open,
+            dialog_snapshot: dialog_snapshot.as_ref(),
+            pane_screens: &pane_screens,
+            prefix_mode,
+            hovered_tab,
+            menu_hovered,
+            selection,
+            selection_copied,
+            scrollbars: &pane_scrollbars,
+            branch: branch.as_deref(),
+            usage_status_label: Some(usage_status_label.as_str()),
+            pull_request: pull_request.as_deref(),
+            pull_request_loading,
+            instance_id_label: self.status.status_bar.instance_id_label(),
+            hover_target,
+            scrollback_active,
+            main_scroll_axes,
+            debug_run_id: debug_run_id_owned.as_deref(),
+            dialog_hint_spans: dialog_hint_spans.as_deref(),
+            palette_key,
+            clipboard_image_notice: clipboard_image_notice.as_deref(),
+            link_hover_notice: link_hover_notice.as_deref(),
+        };
+        let area = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: term_cols,
+            height: term_rows,
+        };
+        // Shared drive_frame (plan 021) — CapsuleView is the View adapter.
+        let result = jackin_tui::runtime::drive_frame(
+            &mut self.render.ratatui_terminal,
+            &crate::tui::runtime::CapsuleView,
+            &frame_model,
+            area,
+            |_| {},
+        );
 
         // Keep tab/menu click regions in sync with the columns the widget
         // just painted, from the same plan the widget rendered, so hit-testing

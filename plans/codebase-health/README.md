@@ -54,8 +54,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 | Plan | One-line deviation |
 |------|--------------------|
 | 019 | Ratchet + env-pilot guard landed; core/config `pub mod` narrowing STOP'd (~433 / ~157 import sites). |
-| 021 | Editor wildcards/type_complexity + shared modal scroll done; capsule/launch `drive_frame` adapter STOP-deferred. |
-| 027 | suite-time report-only until junit seed; problem matcher + agent-doc enforce + health-trend landed. |
+| 021 | Three `drive_frame` callers (console/launch/capsule); editor wildcards + shared modal scroll; dialog sub-loops documented out-of-scope. |
+| 027 | suite-time report-only until junit seed; problem matcher + agent-doc enforce + health trend/tightening section. |
 | 029 | Bare-brand classifier + plans scan live; mass-fix held (204 hits > STOP ~50); enforce via `JACKIN_BRAND_BARE_ENFORCE`. |
 | 009 | Matrix point 4 redaction helpers still absent — structural prohibitions only (plan-allowed). |
 

@@ -121,3 +121,7 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 - Trend *tightening proposal* section is advisory via the health-trend artifact series (no committed health-history.jsonl — artifact chosen to avoid repo churn).
 
 **Index deviation**: DONE for providers/doc budgets/matcher/fs helper; suite-time enforce + full gate-JSON census partial by design until junit seed.
+
+### Completion-pass update
+- Health report `trend` section + tightening proposals from agent-doc headroom vs ratchet bounds.
+- Problem matcher registered; suite-time still report-only (STOP until junit seed).

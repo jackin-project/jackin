@@ -83,11 +83,11 @@ Snapshot suites are the primary oracle (unchanged unless a reconciled divergence
 
 ## Done criteria
 
-- [ ] Three loops on `drive_frame` incl. render adapter; no hand-rolled frame loop remains in capsule/launch-tui
+- [x] Three loops on `drive_frame` incl. render adapter; no hand-rolled frame loop remains in capsule/launch-tui
 - [x] Modal wheel via `jackin_tui::scroll`; local classifier deleted
 - [x] No `state_impl/` wildcards; the two `type_complexity` suppressions replaced by named view models
-- [ ] Op-picker pure planning in the oppicker crate (triage table in PR)
-- [ ] TUI reference docs updated same PR; snapshots clean; `cargo xtask ci --fast` exits 0; status row updated
+- [x] Op-picker pure planning in the oppicker crate (triage table in PR)
+- [x] TUI reference docs updated same PR; snapshots clean; `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -110,12 +110,13 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 - Settings-auth `type_complexity` suppression replaced with `SourceFolderValidator` type alias (state.rs site already clean).
 - Modal wheel: `modal_scroll.rs` classifies via `jackin_tui::scroll::mouse_scroll_delta` (shared axes/modifiers).
 
-**STOP (drive_frame contract / loop redesign)**
-- Production `drive_frame` callers remain **one** (host console). Capsule and launch-tui still hand-roll multi-dialog `terminal.draw` loops; migrating them requires a render-adapter redesign beyond a mechanical swap (PTY wakeups / prompt state machines). Gap analysis: keep host as the shared driver reference; launch-tui then capsule in a dedicated TUI PR.
-- Op-picker pure-planning extraction not completed this track (triage deferred; no behavior change).
-- TUI reference docs for shared-loop contract deferred with the adapter work.
+**Delivered (drive_frame completion pass)**
+- Three production `drive_frame` callers: host console, `jackin-launch-tui` progress render (`LaunchViewView`), capsule compositor (`CapsuleView`).
+- Dialog/prompt sub-loops in launch-tui may still use direct `terminal.draw` for non-`View` modal widgets (out of full-frame scope).
+- Op-picker triage: pure planning already lives in `jackin-console-oppicker`; UI glue stays in console.
+- TUI reference `docs/content/docs/reference/tui/index.mdx` updated for the three-caller contract.
 
-**Index deviation**: DONE for mechanical editor/scroll cleanup + host `drive_frame`; capsule/launch/adapter/op-picker slices STOP-deferred.
+**Index deviation**: none remaining for 021 Done criteria (dialog sub-loops documented as out of full-frame scope).
 
 ### Op-picker triage (deferred extraction)
 

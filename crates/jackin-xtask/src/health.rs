@@ -109,6 +109,23 @@ struct AdvisoryNote {
 }
 
 #[derive(Debug, Serialize)]
+struct TighteningProposal {
+    family: String,
+    measured: usize,
+    bound: usize,
+    headroom_pct: u32,
+    note: String,
+}
+
+#[derive(Debug, Serialize)]
+struct TrendSection {
+    /// SHA or placeholder when history artifact is absent.
+    baseline_label: String,
+    proposals: Vec<TighteningProposal>,
+    note: String,
+}
+
+#[derive(Debug, Serialize)]
 struct Report {
     largest_production_files: Vec<FileLines>,
     largest_test_files: Vec<FileLines>,
@@ -119,6 +136,8 @@ struct Report {
     duplicate_helpers: Vec<DuplicateHelper>,
     advisory: AdvisoryNote,
     verification_map: BTreeMap<String, String>,
+    /// Plan 027: headroom vs ratchet / baseline for shrink proposals.
+    trend: TrendSection,
 }
 
 pub(crate) fn run(args: HealthArgs) -> Result<()> {
@@ -159,6 +178,8 @@ fn collect(root: &Path, min_crates: usize) -> Result<Report> {
         bare_allow_attrs as f64 / allow_attrs as f64
     };
 
+    let trend = build_trend_section(root, &suppressions, &agent_docs)?;
+
     Ok(Report {
         largest_production_files,
         largest_test_files,
@@ -176,6 +197,7 @@ fn collect(root: &Path, min_crates: usize) -> Result<Report> {
             ),
         },
         verification_map,
+        trend,
     })
 }
 
@@ -658,6 +680,106 @@ fn build_verification_map(root: &Path) -> Result<BTreeMap<String, String>> {
     Ok(map)
 }
 
+/// Plan 027 trend section: compare live agent-doc sizes to ratchet bounds
+/// (and optional `health-history.jsonl` first-line label) and list ≥20% headroom
+/// shrink proposals. History series is produced by the scheduled health-trend job.
+fn build_trend_section(
+    root: &Path,
+    suppressions: &SuppressionSummary,
+    agent_docs: &[DocBytes],
+) -> Result<TrendSection> {
+    let history = root.join("health-history.jsonl");
+    let baseline_label = if history.is_file() {
+        let text = fs::read_to_string(&history).unwrap_or_default();
+        let lines = text.lines().filter(|l| !l.trim().is_empty()).count();
+        format!("health-history.jsonl ({lines} snapshot(s))")
+    } else {
+        String::from("no local health-history.jsonl (CI uploads health-snapshot artifacts)")
+    };
+
+    // Parse agent-doc-bytes bounds from ratchet.toml (best-effort; skip if missing).
+    let mut bounds: BTreeMap<String, usize> = BTreeMap::new();
+    let ratchet_path = root.join("ratchet.toml");
+    if ratchet_path.is_file() {
+        let text = fs::read_to_string(&ratchet_path)?;
+        let mut in_agent_docs = false;
+        let mut pending_key: Option<String> = None;
+        for line in text.lines() {
+            let t = line.trim();
+            if t.starts_with("id = ") {
+                in_agent_docs = t.contains("\"agent-doc-bytes\"");
+                pending_key = None;
+                continue;
+            }
+            if !in_agent_docs {
+                continue;
+            }
+            if t.starts_with("id = ") && !t.contains("agent-doc-bytes") {
+                break;
+            }
+            if let Some(rest) = t.strip_prefix("key = \"") {
+                let key = rest.trim_end_matches('"').to_owned();
+                pending_key = Some(key);
+            } else if let Some(rest) = t.strip_prefix("bound = ")
+                && let Some(key) = pending_key.take()
+                && let Ok(bound) = rest.trim().parse::<usize>()
+            {
+                bounds.insert(key, bound);
+            }
+        }
+    }
+
+    let mut proposals = Vec::new();
+    for doc in agent_docs {
+        let Some(&bound) = bounds.get(&doc.path) else {
+            continue;
+        };
+        if bound == 0 {
+            continue;
+        }
+        let headroom = bound.saturating_sub(doc.bytes);
+        let headroom_pct = ((headroom as u64 * 100) / bound as u64) as u32;
+        if headroom_pct >= 20 {
+            proposals.push(TighteningProposal {
+                family: format!("agent-doc-bytes/{}", doc.path),
+                measured: doc.bytes,
+                bound,
+                headroom_pct,
+                note: format!(
+                    "measured {headroom_pct}% under bound — candidate for `cargo xtask lint ratchet --print agent-doc-bytes` shrink"
+                ),
+            });
+        }
+    }
+
+    // Suppression headroom: if bare allows are zero, note expect-only state.
+    if suppressions.bare_allow_attrs == 0 {
+        proposals.push(TighteningProposal {
+            family: "suppressions/bare-allow".into(),
+            measured: 0,
+            bound: 0,
+            headroom_pct: 100,
+            note: String::from(
+                "zero bare allows — bare-allow-per-crate family already at floor; keep expect-only discipline",
+            ),
+        });
+    }
+
+    proposals.sort_by(|a, b| {
+        b.headroom_pct
+            .cmp(&a.headroom_pct)
+            .then_with(|| a.family.cmp(&b.family))
+    });
+
+    Ok(TrendSection {
+        baseline_label,
+        proposals,
+        note: String::from(
+            "Proposals are advisory; a human ratchets bounds via regenerate — never auto-shrink. Scheduled health-trend job appends JSON snapshots for multi-run series.",
+        ),
+    })
+}
+
 fn print_human(report: &Report) {
     emit("# Code-health dashboard (Phase 0)");
     emit("");
@@ -741,6 +863,21 @@ fn print_human(report: &Report) {
         report.advisory.allow_attrs
     ));
     emit(&format!("  note: {}", report.advisory.note));
+    emit("");
+    emit("## Trend & tightening proposals (plan 027)");
+    emit(&format!("  baseline: {}", report.trend.baseline_label));
+    emit(&format!("  note: {}", report.trend.note));
+    if report.trend.proposals.is_empty() {
+        emit("  (no families with ≥20% headroom under current snapshot bounds)");
+    } else {
+        for p in &report.trend.proposals {
+            emit(&format!(
+                "  {} measured={} bound={} headroom={}%",
+                p.family, p.measured, p.bound, p.headroom_pct
+            ));
+            emit(&format!("    → {}", p.note));
+        }
+    }
     emit("");
     emit("## Verification map (Phase 6 narrowest-command)");
     emit(&format!(

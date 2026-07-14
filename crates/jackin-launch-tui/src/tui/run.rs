@@ -23,10 +23,11 @@ use crate::tui::components::prompts::{
 };
 use crate::tui::input::{LaunchInput, restore_renderer_terminal_for_process_exit};
 use crate::tui::message::LaunchMessage;
+use crate::tui::model::{LaunchRenderContext, LaunchViewView};
 use crate::tui::subscriptions::{CockpitOutcome, SharedView, handle_cockpit_input};
 use crate::tui::terminal::current_terminal_area;
 use crate::tui::update::update_launch_view;
-use crate::tui::view::{launch_hyperlink_overlays, render_launch_frame};
+use crate::tui::view::launch_hyperlink_overlays;
 use crate::{LaunchHostTerminal, LaunchView, PromptContextLine, PromptResult};
 
 pub fn rich_launch_dialog_required_message(what: &str) -> String {
@@ -394,19 +395,23 @@ impl RichRenderer {
         }
         let rain = self.rain.as_ref();
         let size = self.terminal.size().ok();
-        self.terminal
-            .draw(|frame| {
-                render_launch_frame(
-                    frame,
-                    view,
-                    run_id,
-                    run_log_path,
-                    no_motion,
-                    rain,
-                    self.host.is_debug_mode(),
-                    self.jackin_version,
-                );
-            })
+        let area = size.map_or_else(
+            || Rect::new(0, 0, 80, 24),
+            |s| Rect::new(0, 0, s.width, s.height),
+        );
+        let adapter = LaunchViewView {
+            context: LaunchRenderContext {
+                run_id,
+                run_log_path,
+                no_motion,
+                rain,
+                debug_mode: self.host.is_debug_mode(),
+                jackin_version: self.jackin_version,
+            },
+        };
+        // Progress frame via shared drive_frame (plan 021); OSC 8 post-pass
+        // remains caller-owned per drive_frame contract.
+        jackin_tui::runtime::drive_frame(&mut self.terminal, &adapter, view, area, |_| {})
             .map(|_| ())
             .context("rendering launch progress TUI")?;
         if let Some(size) = size {
