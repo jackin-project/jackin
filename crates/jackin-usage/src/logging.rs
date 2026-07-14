@@ -85,22 +85,14 @@ fn rotate_if_oversized(path: &PathBuf) -> std::io::Result<()> {
 /// point. Failures (path not writable, dir missing) are swallowed —
 /// the logger keeps emitting to stderr.
 pub fn init() {
-    // Honour the legacy env var the host CLI sets for `--debug` plus the newer
-    // telemetry-level contract. Truthy `JACKIN_DEBUG` values: `1`, `true`,
-    // `yes`, `on` (case-insensitive). `JACKIN_TELEMETRY_LEVEL=debug|trace`
-    // also enables the verbose local capsule log surface.
-    let telemetry_level = std::env::var("JACKIN_TELEMETRY_LEVEL")
-        .ok()
-        .map(|value| value.trim().to_ascii_lowercase());
-    let debug = std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
-        matches!(
-            v.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        )
-    }) || telemetry_level
-        .as_deref()
-        .is_some_and(|level| matches!(level, "debug" | "trace"));
-    let trace = telemetry_level.as_deref() == Some("trace");
+    // One shared resolver: `jackin_diagnostics::telemetry_level` owns the
+    // JACKIN_DEBUG alias and JACKIN_TELEMETRY_LEVEL precedence (plan 006).
+    let level = jackin_diagnostics::telemetry_level(false);
+    let debug = matches!(
+        level,
+        jackin_diagnostics::TelemetryLevel::Debug | jackin_diagnostics::TelemetryLevel::Trace
+    );
+    let trace = matches!(level, jackin_diagnostics::TelemetryLevel::Trace);
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
     TRACE_ENABLED.store(trace, Ordering::Relaxed);
 

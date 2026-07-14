@@ -78,10 +78,10 @@ Boundary test (step 2); resolver-equivalence tests: same truthy values (`1|true|
 
 ## Done criteria
 
-- [ ] One non-injection `JACKIN_DEBUG` reader in the workspace (grep-proven)
-- [ ] Boundary test exists, passes now, and demonstrably fails post-boundary with removal instructions
-- [ ] `DEPRECATED.md` active table tracks the entry with the removal trigger
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] One non-injection `JACKIN_DEBUG` reader in the workspace (grep-proven)
+- [x] Boundary test exists, passes now, and demonstrably fails post-boundary with removal instructions
+- [x] `DEPRECATED.md` active table tracks the entry with the removal trigger
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -93,3 +93,7 @@ Boundary test (step 2); resolver-equivalence tests: same truthy values (`1|true|
 
 - When the boundary trips, removal is: delete dual-inject lines + their presence tests + boundary test + DEPRECATED.md row; `JACKIN_TELEMETRY_LEVEL` remains the sole control.
 - Plan 009's conformance capture should run with `JACKIN_TELEMETRY_LEVEL` only, proving the alias is not needed on the export path.
+
+## Execution notes
+
+- Boundary uses package version floor `0.6.0-dev` (not wall-clock).

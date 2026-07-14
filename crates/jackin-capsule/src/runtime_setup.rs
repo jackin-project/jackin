@@ -1437,7 +1437,12 @@ fn runtime_setup_output(command: &mut Command) -> io::Result<Output> {
 fn run_optional_command(program: &str, args: &[&str]) -> bool {
     let mut command = Command::new(program);
     command.args(args);
-    if !env_is_one("JACKIN_DEBUG") {
+    // Shared telemetry resolver (plan 006) — not a private JACKIN_DEBUG parse.
+    let verbose = matches!(
+        jackin_diagnostics::telemetry_level(false),
+        jackin_diagnostics::TelemetryLevel::Debug | jackin_diagnostics::TelemetryLevel::Trace
+    );
+    if !verbose {
         command.stdout(Stdio::null()).stderr(Stdio::null());
     }
     // "Optional" means "do not abort runtime_setup", not "swallow the

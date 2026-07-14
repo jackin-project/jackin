@@ -997,15 +997,13 @@ mod otlp {
         installed
     }
 
-    /// `JACKIN_DEBUG` truthiness, the same switch the host `--debug` flag sets
-    /// and passes into the container.
+    /// Capsule OTLP filter debug gate — uses the shared telemetry resolver
+    /// (plan 006), not a private `JACKIN_DEBUG` parse.
     fn capsule_debug() -> bool {
-        std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
-            matches!(
-                v.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
+        matches!(
+            crate::telemetry_level(false),
+            crate::TelemetryLevel::Debug | crate::TelemetryLevel::Trace
+        )
     }
 
     /// Tracing targets exported over OTLP. Global default is `off`: a
