@@ -2834,6 +2834,7 @@ name = "jackin-config"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
+ "criterion",
  "directories",
  "jackin-core",
  "proptest",
@@ -3079,6 +3080,7 @@ name = "jackin-manifest"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
+ "criterion",
  "dockerfile-parser-rs",
  "jackin-config",
  "jackin-core",

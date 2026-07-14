@@ -161,6 +161,16 @@ Hygiene job `dind-chaos` runs three seeded fault scenarios against real Docker
 Replay: `JACKIN_CHAOS_SEED=<n> cargo nextest run -p jackin --features e2e --profile docker-e2e -E 'test(chaos_kill_container_mid_session)'`.
 Default seed is fixed (`0xc4a0_55eed`); `workflow_dispatch` input `chaos_seed` overrides.
 
+## Allocation lane (dhat) — static budget policy (plan 026)
+
+The `dhat-heap` allocation suites in `jackin-term` and `jackin-capsule` run on
+the scheduled Hygiene workflow (`dhat-allocation` job, advisory /
+`continue-on-error`). **Ratchet decision:** keep `perf_dhat_budgets` fed from
+the static ceilings in `crates/jackin-capsule/src/perf_budgets.rs` (in-test
+guardrails + textual ratchet). Measured dhat output is artifacted for trend
+inspection but does **not** yet drive the ratchet — re-evaluate after ≥3
+stable scheduled runs on the same runner class. Never budget from a single run.
+
 ## Advisory measurement lanes (hygiene schedule)
 
 Trigger manually: `gh workflow run Hygiene` (or wait for the daily cron).
@@ -178,3 +188,17 @@ Trigger manually: `gh workflow run Hygiene` (or wait for the daily cron).
 | Per-crate build times | `build-time-measure` | `build-times.json` (5 crates × clean/incremental) | advisory — no PR gate |
 | dylint render purity | `dylint-advisory` | `dylint-findings` | advisory — `continue-on-error`; nightly pin in `crates/jackin-lints` |
 
+
+
+## First-frame / input-to-frame harness (plan 026)
+
+Cold-start Hygiene still measures `jackin --help` / `jackin console --help` only.
+A PTY first-frame timing harness is deferred until a stable frame sentinel exists
+on the host console headless path (alt-screen entry + first complete paint). When
+added, it will live under `cargo xtask` and emit an advisory JSON artifact on the
+scheduled Hygiene lane before any budget is ratcheted. **Do not budget from a
+single run.**
+
+Build-time measurements (`build-times.json` from Hygiene `build-time-measure`)
+remain advisory artifacts; a `build-time` ratchet family is not enforced until
+tolerance bands are proven across ≥3 scheduled runs on the same runner class.

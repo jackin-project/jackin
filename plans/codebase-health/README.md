@@ -33,7 +33,7 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | DONE |
 | 024 | Spec gate: syntax-aware citations, close `MISSING` entries, snapshot review policy | P2 | L | — | DONE |
 | 025 | Deterministic time: wall-clock seam + first boundary conversions | P2 | M | — | DONE |
-| 026 | Measured performance completion: missing benches, allocation lane, first-frame harness | P3 | L | — | TODO |
+| 026 | Measured performance completion: missing benches, allocation lane, first-frame harness | P3 | L | — | DONE |
 | 027 | Ratchet & health completion: suite-time/public-surface providers, trends, JSON diagnostics | P3 | M | 010 | TODO |
 | 028 | Docs integrity gates: codebase-map audit, README-freshness wiring, config-key drift | P2 | M | — | TODO |
 | 029 | Brand gate completion: bare-brand prose, `plans/` tree, exemption classes | P2 | M | — | TODO |

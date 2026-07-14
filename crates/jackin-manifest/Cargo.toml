@@ -27,8 +27,13 @@ dockerfile-parser-rs = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true, features = ["html_reports"] }
 proptest = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "manifest_validate"
+harness = false

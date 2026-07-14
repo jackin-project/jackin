@@ -27,6 +27,7 @@ toml = { workspace = true }
 directories = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true, features = ["html_reports"] }
 proptest = { workspace = true }
 tempfile = { workspace = true }
 
@@ -35,3 +36,7 @@ test-support = []
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "config_resolve"
+harness = false
