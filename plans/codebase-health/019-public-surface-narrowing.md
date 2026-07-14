@@ -78,7 +78,8 @@ Provider/guard unit tests (fixtures); downstream compile+test as the narrowing o
 
 - [x] `public-surface` ratchet family live with reviewed seeded bounds; snapshot-alternative decision recorded
 - [x] Env guard active; jackin-env + each narrowed crate registered
-- [ ] `jackin-config` and `jackin-core` roots: private impl modules + curated re-exports (remaining `pub mod`s individually justified in the README) — **OPEN (STOP partial)**: `jackin-config` fully narrowed; `jackin-core` still ~38 `pub mod`s (blast-radius STOP). See Execution notes + index deviation.
+- [x] `jackin-config` root: private impl modules + curated re-exports (only `pub mod test_support`; remaining public items justified via root `pub use`)
+- [ ] `jackin-core` root: private impl modules + curated re-exports — **OPEN (STOP)**: ~38 `pub mod`s / ~566 submodule import sites (blast-radius STOP). See Execution notes + index deviation.
 - [x] Trait-sealing table recorded; non-extension points sealed
 - [x] `cargo xtask ci --fast` exits 0; status row updated
 
