@@ -29,7 +29,7 @@ fn big() {}
 
 #[test]
 fn parses_bare_allow() {
-    let src = "#[expect(dead_code)]\nfn x() {}\n";
+    let src = "#[allow(dead_code)]\nfn x() {}\n";
     let attrs = parse_suppression_attrs(src);
     assert_eq!(attrs.len(), 1);
     assert!(attrs[0].0);
