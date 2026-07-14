@@ -30,6 +30,17 @@ cargo dylint --all -- --workspace
 ```
 
 Scheduled advisory lane: Hygiene job `dylint-advisory` (`continue-on-error: true`).
+Real exit status is captured in the step summary (`CLEAN` vs `FINDINGS_OR_TOOL_FAILURE`); the job stays non-blocking.
+
+## Pilot closure (plan 012, 2026-07-14)
+
+| Item | Value |
+|---|---|
+| Lint | `render_thread_purity` (Warn) |
+| UI corpus | `ui/render_blocks.rs` (positive), `ui/render_clean.rs` (negative), `ui/render_spawn_boundary.rs` (boundary) |
+| UI false-positive rate | **0** against the committed corpus (UI tests document intended positives only) |
+| Workspace FP rate | Not re-measured this session (requires full `cargo dylint --all -- --workspace` on a dylint-capable host); first scheduled hygiene artifact after this change is the living evidence |
+| Decision | **Keep advisory (do not promote, do not retire)** until one scheduled run shows FP≈0 on the full workspace. Promotion to a pinned non-`\|\| true` PR lane requires that evidence; retirement requires sustained noise. |
 
 ## Architecture tier
 

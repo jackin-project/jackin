@@ -531,11 +531,39 @@ jobs:
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Install nightly + miri
         run: rustup toolchain install nightly --profile minimal --component miri
-      - name: miri pure crates
+      # Independent per-crate invocations — no || fallback that masks config/manifest failures.
+      - name: miri jackin-core
+        id: miri-core
+        continue-on-error: true
+        run: cargo +nightly miri test -p jackin-core --no-default-features --locked
+      - name: miri jackin-config
+        id: miri-config
+        continue-on-error: true
+        run: cargo +nightly miri test -p jackin-config --no-default-features --locked
+      - name: miri jackin-manifest
+        id: miri-manifest
+        continue-on-error: true
+        run: cargo +nightly miri test -p jackin-manifest --no-default-features --locked
+      - name: miri jackin-term
+        id: miri-term
+        continue-on-error: true
+        run: cargo +nightly miri test -p jackin-term --no-default-features --locked
+      - name: miri summary
+        if: always()
         run: |
-          cargo +nightly miri test -p jackin-core -p jackin-config -p jackin-manifest --no-default-features --locked || \
-            cargo +nightly miri test -p jackin-core --no-default-features --locked
-          cargo +nightly miri test -p jackin-term --no-default-features --locked
+          echo "### Miri pure crates" >> "$GITHUB_STEP_SUMMARY"
+          for pair in "jackin-core:${{ steps.miri-core.outcome }}" \
+                      "jackin-config:${{ steps.miri-config.outcome }}" \
+                      "jackin-manifest:${{ steps.miri-manifest.outcome }}" \
+                      "jackin-term:${{ steps.miri-term.outcome }}"; do
+            crate="${pair%%:*}"
+            outcome="${pair##*:}"
+            if [ "$outcome" = "success" ]; then
+              echo "miri ${crate}: PASS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "miri ${crate}: FAIL(${outcome})" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
 
   # Plan 035: cargo-mutants on smallest pure crates (advisory; never fails job).
   mutants:
@@ -620,22 +648,69 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      # Adopt hakari only if timing artifacts prove a win (roadmap decision rule).
-      - name: hakari dry-run + workspace timings
+      # Exit-checked hakari with before/after wall-clock (advisory job; summary distinguishes tool failure).
+      - name: baseline workspace build (before)
+        id: hakari-before
         run: |
           echo "### hakari investigation" >> "$GITHUB_STEP_SUMMARY"
           cargo hakari --version >> "$GITHUB_STEP_SUMMARY" || true
-          cargo hakari init --dry-run 2>&1 | tee hakari-dry-run.txt || true
-          cat hakari-dry-run.txt >> "$GITHUB_STEP_SUMMARY" || true
+          START=$(date +%s)
           cargo build --workspace --timings --locked
+          END=$(date +%s)
+          echo "before_secs=$((END - START))" >> "$GITHUB_OUTPUT"
+          echo "before wall-clock: $((END - START))s" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p /tmp/hakari-timings-before
+          cp -a target/cargo-timings/. /tmp/hakari-timings-before/ 2>/dev/null || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: cargo-timings-hygiene-baseline
+          name: cargo-timings-hakari-before
           path: |
+            /tmp/hakari-timings-before/*
             target/cargo-timings/*.html
-            hakari-dry-run.txt
           retention-days: 7
           if-no-files-found: warn
+      - name: hakari init + generate
+        id: hakari-tool
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cargo hakari init 2>&1 | tee hakari-run.txt
+          cargo hakari generate 2>&1 | tee -a hakari-run.txt
+          echo "hakari_exit=0" >> "$GITHUB_OUTPUT"
+      - name: workspace build after hakari (after)
+        id: hakari-after
+        if: always()
+        run: |
+          START=$(date +%s)
+          cargo build --workspace --timings --locked || true
+          END=$(date +%s)
+          echo "after_secs=$((END - START))" >> "$GITHUB_OUTPUT"
+          echo "after wall-clock: $((END - START))s" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: cargo-timings-hakari-after
+          path: |
+            target/cargo-timings/*.html
+            hakari-run.txt
+          retention-days: 7
+          if-no-files-found: warn
+      - name: hakari summary
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### hakari result"
+            if [ "${{ steps.hakari-tool.outcome }}" = "success" ]; then
+              echo "hakari tool: CLEAN (exit 0)"
+            else
+              echo "hakari tool: TOOL FAILURE (outcome=${{ steps.hakari-tool.outcome }})"
+            fi
+            echo "before wall-clock (s): ${{ steps.hakari-before.outputs.before_secs }}"
+            echo "after wall-clock (s): ${{ steps.hakari-after.outputs.after_secs }}"
+            echo "Comparison uses shell wall-clock of the two \`cargo build --workspace --timings\` steps (stable cargo; no -Z JSON timings)."
+            echo "Adopt/no-adopt decision: recorded in rust-ci-tooling.mdx as **no-adopt pending first measured delta** until a scheduled run supplies numbers."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Plan 048: hyperfine cold-start measurement (advisory).
   dylint-advisory:
@@ -672,14 +747,25 @@ jobs:
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: cargo dylint (advisory)
+        id: dylint-run
         run: |
           echo "### dylint render_thread_purity" >> "$GITHUB_STEP_SUMMARY"
           if [ ! -d crates/jackin-lints ]; then
             echo "crates/jackin-lints missing — skip" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          cargo dylint --all -- --workspace 2>&1 | tee dylint-findings.txt || true
+          set +e
+          cargo dylint --all -- --workspace 2>&1 | tee dylint-findings.txt
+          status=${PIPESTATUS[0]}
+          set -e
           tail -n 80 dylint-findings.txt >> "$GITHUB_STEP_SUMMARY" || true
+          if [ "$status" -eq 0 ]; then
+            echo "dylint: CLEAN (exit 0)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "dylint: FINDINGS_OR_TOOL_FAILURE (exit ${status})" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # Advisory lane: surface real exit in summary; do not fail the job.
+          exit 0
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dylint-findings
