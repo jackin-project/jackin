@@ -48,31 +48,14 @@ provider = "bare_allow_per_crate"
 cap = 0
 mode = "enforce"
 [[family.entry]]
-key = "jackin-xtask"
+key = "jackin-image"
 bound = 1
-
-# Per-lint expect counts: key = "{lint}@{crate}" (see ratchet::expect_key).
 [[family]]
 id = "expect-per-lint-crate"
 kind = "numeric"
 provider = "expect_per_lint_crate"
 cap = 0
 mode = "enforce"
-[[family.entry]]
-key = "and@jackin-dev"
-bound = 1
-[[family.entry]]
-key = "and@jackin-xtask"
-bound = 2
-[[family.entry]]
-key = "before@jackin-usage"
-bound = 1
-[[family.entry]]
-key = "cargo@jackin-dev"
-bound = 1
-[[family.entry]]
-key = "cargo@jackin-xtask"
-bound = 2
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
 bound = 6
@@ -85,9 +68,6 @@ bound = 5
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
 bound = 12
-[[family.entry]]
-key = "clippy::cognitive_complexity@jackin-xtask"
-bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
 bound = 9
@@ -201,7 +181,7 @@ key = "clippy::panic@jackin-term"
 bound = 4
 [[family.entry]]
 key = "clippy::print_stderr@jackin"
-bound = 3
+bound = 4
 [[family.entry]]
 key = "clippy::print_stderr@jackin-dev"
 bound = 1
@@ -222,7 +202,7 @@ key = "clippy::print_stderr@jackin-xtask"
 bound = 2
 [[family.entry]]
 key = "clippy::print_stdout@jackin"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "clippy::print_stdout@jackin-build-meta"
 bound = 1
@@ -246,9 +226,6 @@ key = "clippy::reversed_empty_ranges@jackin-capsule"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-env"
-bound = 1
-[[family.entry]]
-key = "clippy::too_many_lines@jackin-xtask"
 bound = 1
 [[family.entry]]
 key = "clippy::type_complexity@jackin-console"
@@ -281,26 +258,20 @@ bound = 1
 key = "dead_code@jackin-env"
 bound = 2
 [[family.entry]]
+key = "dead_code@jackin-image"
+bound = 1
+[[family.entry]]
 key = "dead_code@jackin-runtime"
 bound = 2
 [[family.entry]]
 key = "dead_code@jackin-tui-lookbook"
 bound = 1
 [[family.entry]]
+key = "dead_code@jackin-usage"
+bound = 1
+[[family.entry]]
 key = "dead_code@jackin-xtask"
 bound = 3
-[[family.entry]]
-key = "gh@jackin-xtask"
-bound = 2
-[[family.entry]]
-key = "git@jackin-dev"
-bound = 1
-[[family.entry]]
-key = "kept@jackin-xtask"
-bound = 1
-[[family.entry]]
-key = "measured_n@jackin-xtask"
-bound = 1
 [[family.entry]]
 key = "missing_debug_implementations@jackin-capsule"
 bound = 2
@@ -323,48 +294,14 @@ bound = 1
 key = "missing_debug_implementations@jackin-test-support"
 bound = 1
 [[family.entry]]
-key = "not@jackin"
-bound = 2
-[[family.entry]]
-key = "not@jackin-build-meta"
-bound = 1
-[[family.entry]]
-key = "not@jackin-capsule"
-bound = 2
-[[family.entry]]
-key = "not@jackin-console"
-bound = 1
-[[family.entry]]
-key = "not@jackin-diagnostics"
-bound = 1
-[[family.entry]]
-key = "not@jackin-host"
-bound = 4
-[[family.entry]]
-key = "not@jackin-runtime"
-bound = 3
-[[family.entry]]
-key = "not@jackin-usage"
-bound = 1
-[[family.entry]]
-key = "not@jackin-xtask"
-bound = 1
-[[family.entry]]
 key = "private_bounds@jackin-core"
 bound = 1
 [[family.entry]]
 key = "private_bounds@jackin-protocol"
 bound = 1
 [[family.entry]]
-key = "redirectable@jackin-xtask"
-bound = 1
-[[family.entry]]
 key = "single_use_lifetimes@jackin-console"
 bound = 11
-[[family.entry]]
-key = "synchronous@jackin-capsule"
-bound = 1
-
 [[family]]
 id = "agent-doc-bytes"
 kind = "numeric"

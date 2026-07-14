@@ -94,12 +94,12 @@ Steps 2 and 4 enumerate the suite; model on the existing two tests' structure in
 
 ## Done criteria
 
-- [ ] Parser is syn-based; byte-scanner fns deleted
-- [ ] Negative table covers comment/string/raw-string/char/multiline/cfg_attr/comma-in-reason
-- [ ] `ratchet.toml` contains no non-lint keys in suppression families (every `expect-per-lint-crate` key matches a real lint path)
-- [ ] Grandfather row for the fixture string removed
-- [ ] `code-health-baseline.toml` regenerated clean
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] Parser is syn-based; byte-scanner fns deleted
+- [x] Negative table covers comment/string/raw-string/char/multiline/cfg_attr/comma-in-reason
+- [x] `ratchet.toml` contains no non-lint keys in suppression families (every `expect-per-lint-crate` key matches a real lint path)
+- [x] Grandfather row for the fixture string removed
+- [x] `code-health-baseline.toml` regenerated clean
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -111,3 +111,7 @@ Steps 2 and 4 enumerate the suite; model on the existing two tests' structure in
 
 - Reviewers: any future suppression-measurement change must keep the negative table green.
 - Plan 011 (census) and plan 027 (providers) consume these now-trustworthy numbers.
+
+## Execution notes
+
+- syn-based Visit parser; baselines/ratchet regenerated; fake lint keys purged.

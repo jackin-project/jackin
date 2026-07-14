@@ -20,7 +20,7 @@ proc-macro2 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 sha2 = { workspace = true }
-syn = { workspace = true }
+syn = { workspace = true, features = ["full", "visit", "parsing", "extra-traits"] }
 toml = { workspace = true }
 
 [dev-dependencies]

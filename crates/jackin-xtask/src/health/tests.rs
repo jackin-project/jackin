@@ -105,3 +105,53 @@ fn verification_map_covers_every_workspace_member() {
         report.verification_map.keys().collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn ignores_attribute_shaped_text_in_comments_and_strings() {
+    let src = r###"
+// #[allow(dead_code)]
+/* #[allow(unused)] */
+fn f() {
+    let _s = "#[allow(dead_code)]";
+    let _r = r#"#[allow(dead_code)]"#;
+    let _c = 'x';
+}
+"###;
+    let attrs = parse_suppression_attrs(src);
+    assert!(attrs.is_empty(), "expected no suppressions, got {attrs:?}");
+}
+
+#[test]
+fn comma_inside_reason_does_not_invent_lints() {
+    let src = r#"
+#[expect(clippy::disallowed_methods, reason = "shells out to git, gh, cargo, and mise")]
+fn run() {}
+"#;
+    let attrs = parse_suppression_attrs(src);
+    assert_eq!(attrs.len(), 1);
+    let (_allow, lints, has_reason) = &attrs[0];
+    assert!(*has_reason);
+    assert_eq!(lints.as_slice(), &["clippy::disallowed_methods".to_owned()]);
+    assert!(!lints.iter().any(|l| l == "and" || l == "cargo" || l == "gh"));
+}
+
+#[test]
+fn cfg_attr_allow_is_collected() {
+    let src = "#[cfg_attr(test, allow(dead_code))]\nfn x() {}\n";
+    let attrs = parse_suppression_attrs(src);
+    assert_eq!(attrs.len(), 1);
+    assert!(attrs[0].0);
+    assert!(attrs[0].1.iter().any(|l| l == "dead_code"));
+}
+
+#[test]
+fn bare_allow_vs_expect_with_reason_policy() {
+    let bare = parse_suppression_attrs("#[allow(dead_code)]\nfn x() {}\n");
+    assert_eq!(bare.len(), 1);
+    assert!(bare[0].0 && !bare[0].2, "bare allow must report has_reason=false");
+    let with = parse_suppression_attrs(
+        "#[expect(dead_code, reason = \"documented residual allow; prefer expect when site is lint-true\")]\nfn y() {}\n",
+    );
+    assert_eq!(with.len(), 1);
+    assert!(!with[0].0 && with[0].2, "expect with reason is not bare allow");
+}

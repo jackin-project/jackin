@@ -272,113 +272,101 @@ fn untested_large(root: &Path, counts: &BTreeMap<PathBuf, usize>) -> Vec<FileLin
     out
 }
 
-/// Parse `#[allow(..., reason = "documented residual allow; prefer expect when site is lint-true")]` / `#[expect(...)]` (and inner `#!` forms) from source.
-///
-/// Returns `(is_allow, lint_names, has_reason)` per attribute.
+/// Parse `#[allow(...)]` / `#[expect(...)]` (and inner `#!` forms) with a
+/// syntax-aware `syn` walk. Returns `(is_allow, lint_names, has_reason)` per
+/// attribute. Comma-containing reason strings never leak as fake lint names.
 pub(crate) fn parse_suppression_attrs(source: &str) -> Vec<(bool, Vec<String>, bool)> {
-    let mut out = Vec::new();
-    let bytes = source.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] != b'#' {
-            i += 1;
-            continue;
+    let file = match syn::parse_file(source) {
+        Ok(file) => file,
+        Err(err) => {
+            // Hard error for real files is handled by the caller path that
+            // names the path; in-test fixtures may be fragments — wrap as a
+            // module so item-level attributes still parse.
+            let wrapped = format!("mod __jackin_suppression_fragment {{\n{source}\n}}");
+            match syn::parse_file(&wrapped) {
+                Ok(file) => file,
+                Err(_) => panic!("suppression parser: syn failed: {err}"),
+            }
         }
-        let rest = &source[i..];
-        let after_hash = if rest.starts_with("#[") {
-            2
-        } else if rest.starts_with("#![") {
-            3
-        } else {
-            i += 1;
-            continue;
-        };
-        let after = &source[i + after_hash..];
-        let is_allow = after.starts_with("allow");
-        let is_expect = after.starts_with("expect");
-        if !is_allow && !is_expect {
-            i += 1;
-            continue;
-        }
-        let keyword_len = if is_allow { 5 } else { 6 };
-        let after_kw = &after[keyword_len..];
-        let Some(paren_start) = after_kw.find('(') else {
-            i += 1;
-            continue;
-        };
-        if after_kw[..paren_start].chars().any(|c| !c.is_whitespace()) {
-            i += 1;
-            continue;
-        }
-        let body_start = i + after_hash + keyword_len + paren_start + 1;
-        let Some(body_end) = find_matching_paren(&source[body_start..]) else {
-            i += 1;
-            continue;
-        };
-        let body = &source[body_start..body_start + body_end];
-        let has_reason = body.contains("reason");
-        let lints = parse_lint_list(body);
-        if !lints.is_empty() {
-            out.push((is_allow, lints, has_reason));
-        }
-        i = body_start + body_end + 1;
-    }
-    out
+    };
+    let mut visitor = SuppressionVisitor { out: Vec::new() };
+    syn::visit::Visit::visit_file(&mut visitor, &file);
+    visitor.out
 }
 
-fn find_matching_paren(s: &str) -> Option<usize> {
-    let mut depth = 1usize;
-    let mut in_str = false;
-    let mut escape = false;
-    for (idx, ch) in s.char_indices() {
-        if in_str {
-            if escape {
-                escape = false;
-            } else if ch == '\\' {
-                escape = true;
-            } else if ch == '"' {
-                in_str = false;
-            }
-            continue;
-        }
-        match ch {
-            '"' => in_str = true,
-            '(' => depth += 1,
-            ')' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(idx);
+struct SuppressionVisitor {
+    out: Vec<(bool, Vec<String>, bool)>,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for SuppressionVisitor {
+    fn visit_attribute(&mut self, attr: &'ast syn::Attribute) {
+        collect_suppression_attr(attr, &mut self.out);
+        syn::visit::visit_attribute(self, attr);
+    }
+}
+
+fn collect_suppression_attr(attr: &syn::Attribute, out: &mut Vec<(bool, Vec<String>, bool)>) {
+    let path = attr.path();
+    // Unwrap one level of cfg_attr(…, allow/expect(...)).
+    if path.is_ident("cfg_attr") {
+        if let syn::Meta::List(list) = &attr.meta {
+            if let Ok(nested) = list.parse_args_with(
+                syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+            ) {
+                for meta in nested.iter().skip(1) {
+                    collect_meta_suppression(meta, out);
                 }
+            }
+        }
+        return;
+    }
+    collect_meta_suppression(&attr.meta, out);
+}
+
+fn collect_meta_suppression(meta: &syn::Meta, out: &mut Vec<(bool, Vec<String>, bool)>) {
+    let syn::Meta::List(list) = meta else {
+        return;
+    };
+    let is_allow = list.path.is_ident("allow");
+    let is_expect = list.path.is_ident("expect");
+    if !is_allow && !is_expect {
+        return;
+    }
+    let Ok(nested) =
+        list.parse_args_with(syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated)
+    else {
+        return;
+    };
+    let mut lints = Vec::new();
+    let mut has_reason = false;
+    for item in nested {
+        match item {
+            syn::Meta::Path(path) => {
+                let name = path_to_lint_name(&path);
+                if !name.is_empty() {
+                    lints.push(name);
+                }
+            }
+            syn::Meta::NameValue(nv) if nv.path.is_ident("reason") => {
+                has_reason = true;
+            }
+            syn::Meta::List(_inner) => {
+                // Nested lists are not lint names.
             }
             _ => {}
         }
     }
-    None
+    if !lints.is_empty() {
+        out.push((is_allow, lints, has_reason));
+    }
 }
 
-fn parse_lint_list(body: &str) -> Vec<String> {
-    let mut lints = Vec::new();
-    for part in body.split(',') {
-        let part = part.trim();
-        if part.is_empty() || part.starts_with("reason") {
-            continue;
-        }
-        let token = part
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .trim_matches(|c: char| c == '(' || c == ')');
-        if token.is_empty() || token.contains('=') {
-            continue;
-        }
-        if token
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':')
-        {
-            lints.push(String::from(token));
-        }
-    }
-    lints
+fn path_to_lint_name(path: &syn::Path) -> String {
+    path.segments
+        .iter()
+        .map(|seg| seg.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::")
 }
 
 pub(crate) fn crate_name_from_path(root: &Path, path: &Path) -> String {
