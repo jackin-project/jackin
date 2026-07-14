@@ -973,7 +973,7 @@ prompt = "Branch:"
     assert!(result.unwrap_err().to_string().contains("duplicate"));
 }
 
-/// Property: parse+validate never panics; Ok/Err is total for any RoleManifest.
+/// Property: parse+validate never panics; Ok/Err is total for any [`RoleManifest`].
 #[test]
 fn prop_validate_never_panics_on_parsed_manifest() {
     use proptest::prelude::*;

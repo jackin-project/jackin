@@ -176,7 +176,7 @@ fn record_agent_history_uses_injected_clock() {
             dirty_exit_policy: None,
             isolated_worktrees: Vec::new(),
         },
-        clock.clone(),
+        Arc::clone(&clock),
     )
     .expect("mux");
 
