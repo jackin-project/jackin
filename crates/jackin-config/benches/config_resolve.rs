@@ -32,7 +32,7 @@ fn bench_config(c: &mut Criterion) {
 
     group.bench_function("toml_parse_app_config", |b| {
         b.iter(|| {
-            let cfg: AppConfig = toml::from_str(black_box(SAMPLE)).expect("parse");
+            let cfg: AppConfig = toml::from_str(black_box(SAMPLE)).unwrap();
             black_box(cfg);
         });
     });
@@ -40,14 +40,14 @@ fn bench_config(c: &mut Criterion) {
     group.bench_function("load_split_config_from_disk", |b| {
         b.iter_batched(
             || {
-                let tmp = TempDir::new().expect("tempdir");
+                let tmp = TempDir::new().unwrap();
                 let paths = JackinPaths::for_tests(tmp.path());
-                std::fs::create_dir_all(&paths.config_dir).expect("config dir");
-                std::fs::write(paths.config_dir.join("config.toml"), SAMPLE).expect("write");
+                std::fs::create_dir_all(&paths.config_dir).unwrap();
+                std::fs::write(paths.config_dir.join("config.toml"), SAMPLE).unwrap();
                 (tmp, paths)
             },
             |(_tmp, paths)| {
-                let cfg = jackin_config::load_split_config(&paths, None).expect("load");
+                let cfg = jackin_config::load_split_config(&paths, None).unwrap();
                 black_box(cfg);
             },
             criterion::BatchSize::SmallInput,

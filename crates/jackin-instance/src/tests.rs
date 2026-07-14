@@ -276,7 +276,11 @@ plugins = []
     assert!(jsonl.contains("role_state_prepare:github_auth"), "{jsonl}");
     assert!(jsonl.contains("role_state_prepare:claude_auth"), "{jsonl}");
     assert!(jsonl.contains("role_state_prepare:codex_auth"), "{jsonl}");
-    assert!(jsonl.contains("\"stage\":\"credentials\""), "{jsonl}");
+    assert!(
+        jsonl.contains("\"jackin.stage\":\"credentials\"")
+            || jsonl.contains("\"stage\":\"credentials\""),
+        "{jsonl}"
+    );
     assert!(
         !jsonl.contains("oauth_token:"),
         "timing details must not include credential values: {jsonl}"

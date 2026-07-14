@@ -27,9 +27,9 @@ fn bench_manifest(c: &mut Criterion) {
 
     group.bench_function("parse_and_validate", |b| {
         b.iter(|| {
-            let m: RoleManifest = toml::from_str(black_box(SAMPLE)).expect("parse");
-            drop(validate_role_manifest(&m).expect("validate"));
-            drop(validate_agent_consistency(&m).expect("consistency"));
+            let m: RoleManifest = toml::from_str(black_box(SAMPLE)).unwrap();
+            drop(validate_role_manifest(&m).unwrap());
+            drop(validate_agent_consistency(&m).unwrap());
             black_box(m);
         });
     });

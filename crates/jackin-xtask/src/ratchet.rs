@@ -569,7 +569,7 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     Ok(out)
 }
 
-/// Parse a JUnit `time="…"` attribute (seconds) into whole milliseconds.
+/// Parse a junit `time` attribute (seconds as decimal text) into whole milliseconds.
 fn junit_seconds_to_ms(raw: &str) -> u64 {
     let (whole, frac) = raw.split_once('.').unwrap_or((raw, ""));
     let Ok(secs) = whole.parse::<u64>() else {
