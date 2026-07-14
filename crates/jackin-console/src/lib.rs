@@ -3,10 +3,6 @@
 //! **Architecture Invariant:** T4.
 //! Entry point: [`ConsoleApp`] — operator console application shell.
 
-#![expect(
-    single_use_lifetimes,
-    reason = "MSRV 1.95 rejects anonymous lifetimes in RPIT for these role iterators"
-)]
 pub mod github_mounts;
 pub mod mount_diff;
 pub mod mount_info;

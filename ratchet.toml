@@ -369,9 +369,6 @@ bound = 6
 key = "clippy::too_many_arguments@jackin-console"
 bound = 5
 [[family.entry]]
-key = "single_use_lifetimes@jackin-console"
-bound = 1
-[[family.entry]]
 key = "clippy::too_many_arguments@jackin-env"
 bound = 2
 [[family.entry]]
