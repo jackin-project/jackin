@@ -754,6 +754,7 @@ plugins = []
     assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
     assert!(
         (jsonl.contains("\"event.name\":\"timing_done\"")
+            || jsonl.contains("\"event.name\":\"timing.done\"")
             || jsonl.contains("\"kind\":\"timing_done\"")),
         "{jsonl}"
     );
@@ -7364,7 +7365,9 @@ async fn missing_matching_instance_records_launch_plan_rejections() {
         "restore lookup must not select CreateFromValidImage/BuildAndCreate before image decision: {jsonl}"
     );
     assert!(
-        (jsonl.contains("\"event.name\":\"timing_done\"")
+        (jsonl.contains("\"event.name\":\"timing.done\"")
+            || jsonl.contains("\"event.name\":\"timing_done\"")
+            || jsonl.contains("\"event.name\":\"timing.done\"")
             || jsonl.contains("\"kind\":\"timing_done\""))
             && jsonl.contains("current_restore_candidate")
             && jsonl.contains("inspect_current_container")
