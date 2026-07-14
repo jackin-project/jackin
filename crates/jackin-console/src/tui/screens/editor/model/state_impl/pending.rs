@@ -1,8 +1,4 @@
-#[cfg_attr(
-    not(test),
-    expect(clippy::wildcard_imports, reason = "state_impl shares parent surface")
-)]
-use super::super::*;
+use super::super::EditorState;
 
 impl<
     MountInfoCache,

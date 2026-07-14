@@ -97,10 +97,10 @@ pub fn settings_auth_can_generate_token(auth: &crate::tui::state::SettingsAuthSt
     )
 }
 
-#[expect(
-    clippy::type_complexity,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
+/// Source-folder validation callback used by the settings auth modal.
+type SourceFolderValidator =
+    dyn Fn(Option<crate::tui::auth::AuthKind>, &std::path::Path) -> Result<(), String>;
+
 #[expect(
     clippy::too_many_arguments,
     reason = "Settings-auth-modal key handler carries every per-binding input the \
@@ -115,10 +115,7 @@ pub fn handle_settings_auth_modal(
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
     term_size: ratatui::layout::Rect,
-    validate_source_folder: &dyn Fn(
-        Option<crate::tui::auth::AuthKind>,
-        &std::path::Path,
-    ) -> Result<(), String>,
+    validate_source_folder: &SourceFolderValidator,
 ) -> SettingsAuthOutcome {
     let Some(mut modal) = auth.take_modal() else {
         return SettingsAuthOutcome::Continue;

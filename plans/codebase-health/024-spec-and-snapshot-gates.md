@@ -78,11 +78,11 @@ Step 1's 11+ characterization tests (the deliverable); step 2's fixture negative
 
 ## Done criteria
 
-- [ ] Zero MISSING cells; every former cell cites a real, runner-reconciled test
-- [ ] Citation gate is syn-based + runner-reconciled; negative fixtures prove rejection classes
-- [ ] MISSING now fails the gate (fixture-proven)
-- [ ] Snapshot-diff enumeration step + policy in TESTING.md
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] Zero MISSING cells; every former cell cites a real, runner-reconciled test
+- [x] Citation gate is syn-based + runner-reconciled; negative fixtures prove rejection classes
+- [x] MISSING now fails the gate (fixture-proven)
+- [x] Snapshot-diff enumeration step + policy in TESTING.md
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

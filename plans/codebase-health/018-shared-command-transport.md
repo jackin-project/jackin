@@ -71,10 +71,10 @@ Transport unit tests (exit codes, capture, timeout firing, timeout-none, retry p
 
 ## Done criteria
 
-- [ ] One transport crate; three consumers migrated; surviving direct `Command::new` sites enumerated with reasons
-- [ ] No redaction/env-policy/logging in the transport crate (review + grep `redact\|secret` → none)
-- [ ] Per-site semantics preserved (regression tests)
-- [ ] Arch/agents/docs gates green; `cargo xtask ci --fast` exits 0; status row updated
+- [x] One transport crate; three consumers migrated; surviving direct `Command::new` sites enumerated with reasons
+- [x] No redaction/env-policy/logging in the transport crate (review + grep `redact\|secret` → none)
+- [x] Per-site semantics preserved (regression tests)
+- [x] Arch/agents/docs gates green; `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

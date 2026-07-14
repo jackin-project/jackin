@@ -85,11 +85,11 @@ CI-config plan: verification is actionlint + observed-run evidence + docs gates.
 
 ## Done criteria
 
-- [ ] Four independent Miri invocations, no `||` fallback, per-crate summary lines
-- [ ] Hakari lane: real exit status visible, before/after timing artifacts, tool-failure vs clean distinguishable
-- [ ] Hakari adopt/no-adopt decision recorded (or explicitly staged as first-run follow-up)
-- [ ] Dylint pilot: FP rate + promote/retire decision recorded; CI matches the decision
-- [ ] `actionlint` + docs gates green; status row updated
+- [x] Four independent Miri invocations, no `||` fallback, per-crate summary lines
+- [x] Hakari lane: real exit status visible, before/after timing artifacts, tool-failure vs clean distinguishable
+- [x] Hakari adopt/no-adopt decision recorded (or explicitly staged as first-run follow-up)
+- [x] Dylint pilot: FP rate + promote/retire decision recorded; CI matches the decision
+- [x] `actionlint` + docs gates green; status row updated
 
 ## STOP conditions
 

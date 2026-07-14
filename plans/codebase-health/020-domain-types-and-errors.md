@@ -77,11 +77,11 @@ Newtype unit tests (constructor validation, serde round-trip preserving schema â
 
 ## Done criteria
 
-- [ ] Census doc: all six names, per-boundary type-or-primitive decision recorded
-- [ ] `SessionId`/`ContainerId` exist, validated, serde-transparent, threaded at census-designated boundaries
-- [ ] `jackin-config` public API returns typed errors; one caller converted from string-matching; rollout verdict recorded
-- [ ] Adjunct decisions (Result-first, Send, non_exhaustive) recorded
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] Census doc: all six names, per-boundary type-or-primitive decision recorded
+- [x] `SessionId`/`ContainerId` exist, validated, serde-transparent, threaded at census-designated boundaries
+- [x] `jackin-config` public API returns typed errors; one caller converted from string-matching; rollout verdict recorded
+- [x] Adjunct decisions (Result-first, Send, non_exhaustive) recorded
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

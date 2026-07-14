@@ -426,9 +426,6 @@ bound = 2
 key = "clippy::trivially_copy_pass_by_ref@jackin-config"
 bound = 1
 [[family.entry]]
-key = "clippy::type_complexity@jackin-console"
-bound = 1
-[[family.entry]]
 key = "clippy::type_complexity@jackin-test-support"
 bound = 1
 [[family.entry]]
@@ -458,9 +455,6 @@ bound = 1
 [[family.entry]]
 key = "clippy::useless_let_if_seq@jackin"
 bound = 1
-[[family.entry]]
-key = "clippy::wildcard_imports@jackin-console"
-bound = 3
 [[family.entry]]
 key = "clippy::wildcard_imports@jackin-term"
 bound = 2

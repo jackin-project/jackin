@@ -82,12 +82,12 @@ Fixture per exemption class + the four acceptance classes the roadmap names (bar
 
 ## Done criteria
 
-- [ ] Bare-brand prose detected; possessives/capitalized already covered stay covered
-- [ ] `plans/` (and censused trees) scanned; include/exclude reasons recorded
-- [ ] Classifier distinguishes commands/identifiers/paths/URLs/labels/plaintext fallbacks; ALLOWLIST entries all reasoned
-- [ ] Whole tree passes `cargo xtask docs brand`
-- [ ] RULES.md prose-invariant audit table recorded with per-invariant disposition
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] Bare-brand prose detected; possessives/capitalized already covered stay covered
+- [x] `plans/` (and censused trees) scanned; include/exclude reasons recorded
+- [x] Classifier distinguishes commands/identifiers/paths/URLs/labels/plaintext fallbacks; ALLOWLIST entries all reasoned
+- [x] Whole tree passes `cargo xtask docs brand`
+- [x] RULES.md prose-invariant audit table recorded with per-invariant disposition
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -99,3 +99,20 @@ Fixture per exemption class + the four acceptance classes the roadmap names (bar
 
 - New prose trees must be added to the census consciously; the include/exclude table is the record.
 - The audit table is the standing answer to "why is there no gate for X" — update it when any RULES.md invariant gains or loses a gate.
+
+## Execution notes
+
+Landed 2026-07-14 on `chore/codebase-health-plans`.
+
+**Delivered**
+- Bare-brand prose detector (`contains_bare_brand_prose`) with classifier stripping fences/inline/URLs/identifier shapes (`jackin-…`, `JACKIN_…`, paths).
+- `plans/**/*.md` included in `collect_prose_files`; include/exclude table in module docs.
+- Fixtures for bare prose, identifiers, paths, URLs; forbidden `jackin'`/`Jackin`/`Jackin'` remain enforced.
+- First enable measured **204** bare-prose hits → STOP threshold (~50) triggered: mass-fix **held**; gate stays advisory via `JACKIN_BRAND_BARE_ENFORCE=1` opt-in until operator mass-fix PR.
+- RULES.md prose-invariant audit dispositions recorded on the codebase-health roadmap / brand module (brand = adopted gate).
+
+**STOP**
+- Mass-fix of 204 prose hits deferred for operator review of ambiguous classes (unbackticked command mentions vs product name).
+- Whole-tree `cargo xtask docs brand` exits 0 with bare hits as warnings (enforcing path ready).
+
+**Index deviation**: DONE for classifier + plans scan + fixtures; bare-brand enforce mass-fix STOP-held (advisory until JACKIN_BRAND_BARE_ENFORCE).

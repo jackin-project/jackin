@@ -71,11 +71,11 @@ Characterization-first (step 1); the moved tests plus launch-suite runs prove be
 
 ## Done criteria
 
-- [ ] `wc -l crates/jackin-runtime/src/runtime/image.rs` ≤ 1850 (and each child reasonably sized)
-- [ ] Ratchet exception entry deleted; `cargo xtask lint files` green without it
-- [ ] Every extraction commit maps to a named decision (PR description carries the map)
-- [ ] No behavior change: full runtime suite green, no test assertions weakened
-- [ ] README structure table current; status row updated
+- [x] `wc -l crates/jackin-runtime/src/runtime/image.rs` ≤ 1850 (and each child reasonably sized)
+- [x] Ratchet exception entry deleted; `cargo xtask lint files` green without it
+- [x] Every extraction commit maps to a named decision (PR description carries the map)
+- [x] No behavior change: full runtime suite green, no test assertions weakened
+- [x] README structure table current; status row updated
 
 ## STOP conditions
 

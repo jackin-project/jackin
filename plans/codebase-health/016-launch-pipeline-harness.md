@@ -86,11 +86,11 @@ Steps 1–2 define the new suite; phase-extraction slices ride the existing 9k-l
 
 ## Done criteria
 
-- [ ] `LaunchCore` builder exists; boundary harness covers happy path, suite-A ordering, forced finalization/inspect error with cleanup-before-error proof
-- [ ] All 10 phases typed `#[must_use]`, consumed by value; monolith allows removed
-- [ ] Teardown `?`-path audit complete with coverage
-- [ ] Pipeline-spanning Criterion bench exists and builds
-- [ ] Spec citations updated; `cargo xtask ci --fast` exits 0; status row updated
+- [x] `LaunchCore` builder exists; boundary harness covers happy path, suite-A ordering, forced finalization/inspect error with cleanup-before-error proof
+- [x] All 10 phases typed `#[must_use]`, consumed by value; monolith allows removed
+- [x] Teardown `?`-path audit complete with coverage
+- [x] Pipeline-spanning Criterion bench exists and builds
+- [x] Spec citations updated; `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

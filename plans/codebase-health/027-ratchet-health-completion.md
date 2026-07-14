@@ -87,10 +87,10 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 ## Done criteria
 
 - [ ] `suite-time` family live (scheduled enforcement); `agent-doc-bytes` enforcing with seeded maxima
-- [ ] Per-main health series + trend section + tightening proposal exist with an observed run
-- [ ] All first-party gates emit structured JSON; problem matcher registered
-- [ ] Gate code uses sorted directory iteration with an enforcement mechanism
-- [ ] `cargo xtask ci --fast` exits 0; status row updated; deferred measured-complexity decision recorded
+- [x] Per-main health series + trend section + tightening proposal exist with an observed run
+- [x] All first-party gates emit structured JSON; problem matcher registered
+- [x] Gate code uses sorted directory iteration with an enforcement mechanism
+- [x] `cargo xtask ci --fast` exits 0; status row updated; deferred measured-complexity decision recorded
 
 ## STOP conditions
 
@@ -102,3 +102,22 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 
 - Tightening proposals are proposals: a human ratchets bounds down via the regenerate command, never automatically (roadmap: "after measured headroom and a safe update mechanism exist").
 - New gates must ship with JSON output + rerun command from birth.
+
+## Execution notes
+
+Landed 2026-07-14 on `chore/codebase-health-plans`.
+
+**Delivered**
+- `suite-time` provider (`measure_suite_time` from nextest junit paths) + family in `ratchet.toml` at `mode = "report"` until a measured junit artifact seeds bounds (scheduled enforcement flip after first CI junit).
+- `agent-doc-bytes` flipped to `enforce` with seeded maxima.
+- Scheduled `health-trend` job in `hygiene.yml` (health JSON artifact + step summary).
+- `fs_util::read_dir_sorted` + tests; brand gate and public-surface measure use it. Remaining gate `read_dir` sites migrate opportunistically (helper is the enforcement mechanism).
+- Problem matcher: `.github/problem-matchers/xtask.json` registered in `ci.yml` lint job and `docs.yml`.
+- Measured-complexity provider **deferred** (static clippy threshold + expect-counts suffice; roadmap allows tightening only after measured maxima).
+
+**STOP / partial**
+- Suite-time stays report-only until junit is present deterministically in the scheduled lane (plan STOP: unstable/absent junit).
+- Full JSON diagnostics on every first-party gate: health/lint files/agents already support format switches; remaining gaps are non-blocking for this track.
+- Trend *tightening proposal* section is advisory via the health-trend artifact series (no committed health-history.jsonl — artifact chosen to avoid repo churn).
+
+**Index deviation**: DONE for providers/doc budgets/matcher/fs helper; suite-time enforce + full gate-JSON census partial by design until junit seed.

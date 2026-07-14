@@ -48,6 +48,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 - 017's daemon decomposition satisfies the precondition for splitting `crates/jackin-capsule/src/daemon/tests.rs` (mega-test rule: extract the production responsibility first).
 - 016 unblocks the launch-pipeline Criterion scenario and the eventual `launch/tests.rs` split for the same reason.
 
+
+## Execution deviations (STOP resolutions on this branch)
+
+| Plan | One-line deviation |
+|------|--------------------|
+| 019 | Ratchet + env-pilot guard landed; core/config `pub mod` narrowing STOP'd (~433 / ~157 import sites). |
+| 021 | Editor wildcards/type_complexity + shared modal scroll done; capsule/launch `drive_frame` adapter STOP-deferred. |
+| 027 | suite-time report-only until junit seed; problem matcher + agent-doc enforce + health-trend landed. |
+| 029 | Bare-brand classifier + plans scan live; mass-fix held (204 hits > STOP ~50); enforce via `JACKIN_BRAND_BARE_ENFORCE`. |
+| 009 | Matrix point 4 redaction helpers still absent — structural prohibitions only (plan-allowed). |
+
 ## Findings considered and rejected (do not re-audit)
 
 - **Schema-policy five-artifact gate (roadmap Characterization #7)**: already DONE — `cargo xtask schema-check` is blocking in CI, idempotence asserted by `crates/jackin/tests/migration_fixtures.rs`, corpus committed. No plan.

@@ -396,8 +396,7 @@ fn measure_public_surface_pub_mods(root: &Path) -> Result<BTreeMap<String, usize
     if !crates_dir.is_dir() {
         return Ok(out);
     }
-    for entry in fs::read_dir(&crates_dir)? {
-        let entry = entry?;
+    for entry in crate::fs_util::read_dir_sorted(&crates_dir)? {
         if !entry.file_type()?.is_dir() {
             continue;
         }
@@ -418,6 +417,60 @@ fn measure_public_surface_pub_mods(root: &Path) -> Result<BTreeMap<String, usize
         out.insert(name, count);
     }
     Ok(out)
+}
+
+/// Env-pilot style surface guard (plan 019): curated crates may only expose
+/// the allowlisted root `pub mod` names. Expanding the list is intentional API.
+///
+/// Registry grows when a plan slice narrows another foundational crate.
+const CURATED_PUB_MODS: &[(&str, &[&str])] = &[
+    // jackin-env pilot: private impl modules + `pub mod test_support` only.
+    ("jackin-env", &["test_support"]),
+];
+
+/// Fail if a curated crate's root `lib.rs` declares a non-allowlisted `pub mod`.
+pub(crate) fn check_curated_pub_mods(root: &Path) -> Result<()> {
+    let mut problems = Vec::new();
+    for &(crate_name, allowed) in CURATED_PUB_MODS {
+        let lib = root.join("crates").join(crate_name).join("src/lib.rs");
+        if !lib.is_file() {
+            problems.push(format!(
+                "crates/{crate_name}/src/lib.rs: curated crate missing lib.rs"
+            ));
+            continue;
+        }
+        let text =
+            fs::read_to_string(&lib).with_context(|| format!("reading {}", lib.display()))?;
+        let allowed_set: BTreeSet<&str> = allowed.iter().copied().collect();
+        for (idx, line) in text.lines().enumerate() {
+            let t = line.trim_start();
+            let Some(rest) = t.strip_prefix("pub mod ") else {
+                continue;
+            };
+            let name = rest
+                .split(|c: char| c == ';' || c == '{' || c.is_whitespace())
+                .next()
+                .unwrap_or("");
+            if name.is_empty() {
+                continue;
+            }
+            if !allowed_set.contains(name) {
+                problems.push(format!(
+                    "crates/{crate_name}/src/lib.rs:{}: unexpected `pub mod {name}` — \
+                     curated surface allows only {allowed:?} (plan 019 env pilot guard)",
+                    idx + 1
+                ));
+            }
+        }
+    }
+    if problems.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "{} curated pub-mod surface violation(s):\n  {}\nRerun: cargo xtask lint arch",
+        problems.len(),
+        problems.join("\n  ")
+    )
 }
 
 /// Composite key for expect family rows: `{lint}@{crate}`.

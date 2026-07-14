@@ -82,11 +82,11 @@ Benches run in `--test` mode in CI-fast (Criterion smoke); allocation lane + har
 
 ## Done criteria
 
-- [ ] Config + manifest benches exist and run
-- [ ] Allocation tests actually execute in a CI lane; ratchet-vs-static decision recorded (and implemented accordingly)
-- [ ] Token-log, upsert, scrollback-preserve benches exist with recorded baselines
-- [ ] First-frame/input-to-frame harness emits artifacts on schedule; build-time ratchet family live (scheduled enforcement)
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] Config + manifest benches exist and run
+- [x] Allocation tests actually execute in a CI lane; ratchet-vs-static decision recorded (and implemented accordingly)
+- [x] Token-log, upsert, scrollback-preserve benches exist with recorded baselines
+- [x] First-frame/input-to-frame harness emits artifacts on schedule; build-time ratchet family live (scheduled enforcement)
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

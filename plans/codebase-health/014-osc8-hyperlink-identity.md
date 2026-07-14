@@ -88,11 +88,11 @@ The three characterization tests in step 1 (written failing-first), plus the unt
 
 ## Done criteria
 
-- [ ] Three new regression tests pass; wrote-failing-first confirmed in the PR description
-- [ ] Existing OSC 8 cap/reset/metadata tests pass
-- [ ] `hyperlink_targets` entries never overwritten (no `insert` on an existing token with a different URI — assert in test 3 or via debug_assert)
-- [ ] `DEFECT_LEDGER.md` row added
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] Three new regression tests pass; wrote-failing-first confirmed in the PR description
+- [x] Existing OSC 8 cap/reset/metadata tests pass
+- [x] `hyperlink_targets` entries never overwritten (no `insert` on an existing token with a different URI — assert in test 3 or via debug_assert)
+- [x] `DEFECT_LEDGER.md` row added
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

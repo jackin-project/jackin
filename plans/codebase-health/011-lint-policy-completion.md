@@ -83,11 +83,11 @@ No new unit tests; the gates are the verification. The census doc is checked by 
 
 ## Done criteria
 
-- [ ] `allow_attributes = "deny"` set; workspace builds clean
-- [ ] Census doc: every workspace `allow` has count/date/rationale/revisit trigger; carve-outs enumerated
-- [ ] Slice/index per-crate decisions + at least the evaluated crates recorded; map_err_ignore + lossy-cast + category-pilot verdicts recorded
-- [ ] `clippy.toml` types/macros inventory or recorded not-banned evaluations
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] `allow_attributes = "deny"` set; workspace builds clean
+- [x] Census doc: every workspace `allow` has count/date/rationale/revisit trigger; carve-outs enumerated
+- [x] Slice/index per-crate decisions + at least the evaluated crates recorded; map_err_ignore + lossy-cast + category-pilot verdicts recorded
+- [x] `clippy.toml` types/macros inventory or recorded not-banned evaluations
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

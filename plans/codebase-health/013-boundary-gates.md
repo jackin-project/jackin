@@ -69,10 +69,10 @@ Fixture-driven tests in `container_paths_gate/tests.rs`: forbidden root in produ
 
 ## Done criteria
 
-- [ ] Turso rule: non-owner dependency or import fails with file:line (fixture-proven); real tree passes
-- [ ] Forbidden-root audit: token-aware, file:line + fix message, shrink-only exceptions, real tree green with reviewed allowlist
-- [ ] `/run/x`-style fixture now fails (old ignore-assertion consciously inverted)
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] Turso rule: non-owner dependency or import fails with file:line (fixture-proven); real tree passes
+- [x] Forbidden-root audit: token-aware, file:line + fix message, shrink-only exceptions, real tree green with reviewed allowlist
+- [x] `/run/x`-style fixture now fails (old ignore-assertion consciously inverted)
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

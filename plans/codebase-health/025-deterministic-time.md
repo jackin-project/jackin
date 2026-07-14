@@ -73,11 +73,11 @@ One focused ManualClock regression test per converted boundary (the roadmap's pe
 
 ## Done criteria
 
-- [ ] Seam expresses wall-clock time; ManualClock drives both faces
-- [ ] Four boundaries converted, each with its deterministic regression test
-- [ ] No direct wall-clock reads remain in the four converted paths (grep-proven)
-- [ ] Census of remaining sites recorded in the PR
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] Seam expresses wall-clock time; ManualClock drives both faces
+- [x] Four boundaries converted, each with its deterministic regression test
+- [x] No direct wall-clock reads remain in the four converted paths (grep-proven)
+- [x] Census of remaining sites recorded in the PR
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

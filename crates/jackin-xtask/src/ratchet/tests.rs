@@ -1,9 +1,12 @@
 //! Unit tests for pure ratchet semantics.
 
 use super::{
-    NumericVerdict, PresenceVerdict, check_numeric_entry, check_numeric_unlisted, check_presence,
+    NumericVerdict, PresenceVerdict, check_curated_pub_mods, check_numeric_entry,
+    check_numeric_unlisted, check_presence,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::Path;
 
 #[test]
 fn numeric_growth_fails() {
@@ -76,4 +79,41 @@ fn presence_stale_and_new() {
     assert!(v.iter().any(|(k, ver)| {
         k == "a.rs" && matches!(ver, PresenceVerdict::New { reason } if reason == "bad")
     }));
+}
+
+#[test]
+fn curated_pub_mods_rejects_extra_root_mod() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let lib = dir.path().join("crates/jackin-env/src/lib.rs");
+    fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
+    fs::write(
+        &lib,
+        "mod env_layer;\npub mod test_support;\npub mod leaked;\n",
+    )
+    .expect("write lib");
+    let err = check_curated_pub_mods(dir.path()).expect_err("extra pub mod must fail");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("leaked") && msg.contains("jackin-env"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn curated_pub_mods_accepts_env_pilot_shape() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let lib = dir.path().join("crates/jackin-env/src/lib.rs");
+    fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
+    fs::write(&lib, "mod env_layer;\npub mod test_support;\n").expect("write lib");
+    check_curated_pub_mods(dir.path()).expect("env pilot shape ok");
+}
+
+#[test]
+fn real_tree_curated_pub_mods_green() {
+    // Workspace root is two levels up from this crate when run via cargo test.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root");
+    check_curated_pub_mods(&root).expect("real tree curated surfaces green");
 }

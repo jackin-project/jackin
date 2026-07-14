@@ -103,6 +103,8 @@ jobs:
           bun install --frozen-lockfile
           bun run scripts/gen-crate-pages.ts
 
+      - name: Register xtask problem matcher
+        run: echo "::add-matcher::.github/problem-matchers/xtask.json"
       - name: Check source repository links
         run: cargo xtask docs repo-links
       - name: Check brand prose

@@ -76,11 +76,11 @@ Provider/guard unit tests (fixtures); downstream compile+test as the narrowing o
 
 ## Done criteria
 
-- [ ] `public-surface` ratchet family live with reviewed seeded bounds; snapshot-alternative decision recorded
-- [ ] Env guard active; jackin-env + each narrowed crate registered
+- [x] `public-surface` ratchet family live with reviewed seeded bounds; snapshot-alternative decision recorded
+- [x] Env guard active; jackin-env + each narrowed crate registered
 - [ ] `jackin-config` and `jackin-core` roots: private impl modules + curated re-exports (remaining `pub mod`s individually justified in the README)
 - [ ] Trait-sealing table recorded; non-extension points sealed
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -92,3 +92,18 @@ Provider/guard unit tests (fixtures); downstream compile+test as the narrowing o
 
 - New root exports now move the ratchet — growth needs the regenerate command + review (that's the point).
 - The remaining four foundational crates (`manifest`, `term`, `protocol`, `docker`) follow the same recipe; each is a small standalone PR.
+
+## Execution notes
+
+Landed 2026-07-14 on `chore/codebase-health-plans` (PR track #786).
+
+**Delivered**
+- `public_surface_pub_mods` ratchet family in `ratchet.toml` (shrink-only growth report; API-snapshot alternative recorded in family comments / plan intent).
+- Env-pilot guard: `ratchet::check_curated_pub_mods` registry (`jackin-env` → `test_support` only), wired into `cargo xtask lint arch`, fixture + real-tree tests.
+
+**STOP (import blast radius)**
+- Live tree: ~157 `use jackin_config::` sites, ~433 `use jackin_core::` sites — both exceed the plan's >100-site STOP threshold for a single flip.
+- Full root narrowing of `jackin-config` / `jackin-core` deferred to follow-up slices (module-cluster PRs). Remaining root `pub mod`s stay measured by the ratchet; registry grows when a crate is narrowed.
+- Trait-sealing spot audit: existing `private::Sealed` sites left in place; full table deferred with narrowing.
+
+**Index deviation**: DONE for ratchet + env guard + measured STOP; core/config curated re-exports incomplete by STOP.

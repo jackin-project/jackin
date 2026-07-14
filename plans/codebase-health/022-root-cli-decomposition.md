@@ -90,11 +90,11 @@ Steps 1–2 add the two characterization suites (these are the roadmap's named a
 
 ## Done criteria
 
-- [ ] TTY fallback implemented + characterized; console docs page consistent
-- [ ] `launch` warning implemented + characterized; DEPRECATED.md row added
-- [ ] All five `too_many_lines` expectations removed, each after green narrow coverage
-- [ ] `session.rs` (+ sweep misses) carry `//!` contracts
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] TTY fallback implemented + characterized; console docs page consistent
+- [x] `launch` warning implemented + characterized; DEPRECATED.md row added
+- [x] All five `too_many_lines` expectations removed, each after green narrow coverage
+- [x] `session.rs` (+ sweep misses) carry `//!` contracts
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
