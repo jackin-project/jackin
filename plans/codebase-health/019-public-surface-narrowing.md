@@ -78,7 +78,7 @@ Provider/guard unit tests (fixtures); downstream compile+test as the narrowing o
 
 - [x] `public-surface` ratchet family live with reviewed seeded bounds; snapshot-alternative decision recorded
 - [x] Env guard active; jackin-env + each narrowed crate registered
-- [x] `jackin-config` and `jackin-core` roots: private impl modules + curated re-exports (remaining `pub mod`s individually justified in the README) — **STOP-satisfied**: config fully narrowed; core deferred per STOP blast-radius path (see Execution notes)
+- [ ] `jackin-config` and `jackin-core` roots: private impl modules + curated re-exports (remaining `pub mod`s individually justified in the README) — **OPEN (STOP partial)**: `jackin-config` fully narrowed; `jackin-core` still ~38 `pub mod`s (blast-radius STOP). See Execution notes + index deviation.
 - [x] Trait-sealing table recorded; non-extension points sealed
 - [x] `cargo xtask ci --fast` exits 0; status row updated
 
@@ -106,6 +106,6 @@ Landed 2026-07-14 on `chore/codebase-health-plans` (PR track #786).
 **STOP (import blast radius) — jackin-core only**
 - Core: ~38 root `pub mod`s, ~566 `jackin_core::module::` import sites (>100-site STOP).
 - Per STOP language: delivered **config-only** + measured core blast radius; core stays ratchet-bounded until module-cluster follow-ups.
-- Done criterion marked **STOP-satisfied**: config private + curated re-exports done; core intentional deferral under plan STOP.
+- Done criterion for dual config+core root narrowing left **OPEN** (incomplete criteria open per STOP contract) while config half is complete.
 
-**Index deviation**: DONE under STOP (config narrowed; core blast radius measured + ratchet-bounded).
+**Index deviation**: DONE under STOP (config narrowed; core criterion open + blast radius measured + ratchet-bounded).

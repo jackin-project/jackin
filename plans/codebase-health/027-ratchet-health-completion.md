@@ -108,23 +108,12 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 Landed 2026-07-14 on `chore/codebase-health-plans`.
 
 **Delivered**
-- `suite-time` provider (`measure_suite_time` from nextest junit paths) + family in `ratchet.toml` at `mode = "report"` until a measured junit artifact seeds bounds (scheduled enforcement flip after first CI junit).
+- `suite-time` provider + family at `mode=enforce` with `junit_total_ms` ceiling; empty measure (no junit) **skips** the family; growth-only hard fail (headroom Shrink is advisory). Nextest CI runs ratchet when `junit.xml` present.
 - `agent-doc-bytes` flipped to `enforce` with seeded maxima.
 - Scheduled `health-trend` job in `hygiene.yml` (health JSON artifact + step summary).
-- `fs_util::read_dir_sorted` + tests; brand gate and public-surface measure use it. Remaining gate `read_dir` sites migrate opportunistically (helper is the enforcement mechanism).
+- Health report `trend` section + tightening proposals (agent-doc headroom vs ratchet bounds).
+- `fs_util::read_dir_sorted` + tests; brand gate and public-surface measure use it.
 - Problem matcher: `.github/problem-matchers/xtask.json` registered in `ci.yml` lint job and `docs.yml`.
-- Measured-complexity provider **deferred** (static clippy threshold + expect-counts suffice; roadmap allows tightening only after measured maxima).
+- Measured-complexity provider **deferred** (static clippy threshold + expect-counts suffice).
 
-**STOP / partial**
-- Suite-time stays report-only until junit is present deterministically in the scheduled lane (plan STOP: unstable/absent junit).
-- Full JSON diagnostics on every first-party gate: health/lint files/agents already support format switches; remaining gaps are non-blocking for this track.
-- Trend *tightening proposal* section is advisory via the health-trend artifact series (no committed health-history.jsonl — artifact chosen to avoid repo churn).
-
-**Index deviation**: DONE for providers/doc budgets/matcher/fs helper; suite-time enforce + full gate-JSON census partial by design until junit seed.
-
-### Completion-pass update
-- Health report `trend` section + tightening proposals from agent-doc headroom vs ratchet bounds.
-- Problem matcher registered; suite-time still report-only (STOP until junit seed).
-
-### Completion-pass update
-- `suite-time` flipped to `mode=enforce` with `junit_total_ms` bound; empty measure (no junit) **skips** the family; nextest CI step runs ratchet when junit.xml present. Fixture unit tests for parse/absent.
+**Index deviation**: none remaining for 027 Done criteria (suite-time scheduled enforce when junit present).
