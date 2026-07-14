@@ -4,6 +4,8 @@
 //! cargo bench -p jackin-usage --bench token_log_reread -- --test
 //! ```
 
+#![expect(clippy::panic, reason = "criterion bench harness: fail-fast setup")]
+
 use std::hint::black_box;
 use std::path::PathBuf;
 

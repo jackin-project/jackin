@@ -4,6 +4,8 @@
 //! cargo bench -p jackin-config --bench config_resolve -- --test
 //! ```
 
+#![expect(clippy::panic, reason = "criterion bench harness: fail-fast setup")]
+
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput};

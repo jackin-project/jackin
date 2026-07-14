@@ -268,13 +268,16 @@ key = "clippy::panic@jackin-capsule"
 bound = 1
 [[family.entry]]
 key = "clippy::panic@jackin-config"
+bound = 2
+[[family.entry]]
+key = "clippy::panic@jackin-manifest"
 bound = 1
 [[family.entry]]
 key = "clippy::panic@jackin-term"
 bound = 4
 [[family.entry]]
 key = "clippy::panic@jackin-usage"
-bound = 1
+bound = 3
 [[family.entry]]
 key = "clippy::print_stderr@jackin"
 bound = 4
