@@ -41,10 +41,10 @@ use std::{
     path::PathBuf,
 };
 
+use jackin_core::CommandRunner;
 use jackin_core::agent::Agent;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
-use jackin_core::CommandRunner;
 use jackin_docker::docker_client::DockerApi;
 #[cfg(not(test))]
 use jackin_docker::{ShellRunner, docker_client::BollardDockerClient};
@@ -61,8 +61,8 @@ pub(crate) use jackin_image::image_recipe::{
 };
 
 use super::naming::{
-    LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION,
-    LABEL_IMAGE_ROLE_GIT_SHA, image_name, image_name_for_branch, role_base_image_name,
+    LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
+    image_name_for_branch, role_base_image_name,
 };
 use super::progress::{LaunchProgress, LaunchStage};
 #[cfg(not(test))]

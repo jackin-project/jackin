@@ -16,17 +16,14 @@ use jackin_image::derived_image::{
     create_derived_build_context_for_agents, create_role_base_build_context,
 };
 use jackin_image::image_decision::ImageInvalidationReason;
-use jackin_image::image_recipe::{
-    recipe_labels, supported_set_uses_cache_bust,
-};
+use jackin_image::image_recipe::{recipe_labels, supported_set_uses_cache_bust};
 use jackin_image::version_check;
 use jackin_launch_tui::build_log::DiagnosticsBuildLogSink;
 use jackin_manifest::repo::CachedRepo;
 
 use crate::runtime::naming::{
-    LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CONSTRUCT,
-    LABEL_IMAGE_ROLE_GIT_SHA, image_name, image_name_for_branch, role_base_image_name,
-    short_git_sha,
+    LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
+    image_name_for_branch, role_base_image_name, short_git_sha,
 };
 use crate::runtime::progress::{LaunchProgress, LaunchStage};
 
@@ -34,13 +31,16 @@ use super::{
     PreparedRuntimeBinaries, docker_build_env, dockerfile_body_requests_github_token_secret,
     dockerfile_body_requests_role_git_sha_arg, dockerfile_requests_github_token_secret,
     dockerfile_requests_role_git_sha_arg, emit_build_context_snapshot, emit_compact_image_warning,
-    emit_docker_build_step_diagnostics, emit_image_build_source, emit_non_containerd_image_store_note,
-    local_image_buildx_args, local_image_output_arg, local_role_base_labels_match,
-    record_built_agent_version, resolve_github_token, role_git_sha_for_recipe,
-    should_stream_build_output,
+    emit_docker_build_step_diagnostics, emit_image_build_source,
+    emit_non_containerd_image_store_note, local_image_buildx_args, local_image_output_arg,
+    local_role_base_labels_match, record_built_agent_version, resolve_github_token,
+    role_git_sha_for_recipe, should_stream_build_output,
 };
 
-pub(crate) fn should_mint_fresh_cache_bust(rebuild: bool, build_reason: ImageInvalidationReason) -> bool {
+pub(crate) fn should_mint_fresh_cache_bust(
+    rebuild: bool,
+    build_reason: ImageInvalidationReason,
+) -> bool {
     rebuild || build_reason == ImageInvalidationReason::AgentVersionChanged
 }
 
@@ -607,7 +607,10 @@ pub(crate) async fn build_agent_image(
 
 /// Returns the HEAD commit SHA of the git repo at `dir`, or `None` if the
 /// directory is not a git repo or the command fails.
-pub(crate) async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
+pub(crate) async fn git_head_sha(
+    dir: &std::path::Path,
+    runner: &mut impl CommandRunner,
+) -> Option<String> {
     let dir_str = dir.display().to_string();
     runner
         .capture("git", &["-C", &dir_str, "rev-parse", "HEAD"], None)
@@ -616,4 +619,3 @@ pub(crate) async fn git_head_sha(dir: &std::path::Path, runner: &mut impl Comman
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty())
 }
-

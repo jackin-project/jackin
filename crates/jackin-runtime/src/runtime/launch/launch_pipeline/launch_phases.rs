@@ -4,6 +4,10 @@
 //! Pure grant resolution is separated from I/O so suite A can prove
 //! grant-failure ordering and `FailedSetup` teardown without constructing a
 //! full ~20-crate `LaunchCore` graph.
+//!
+//! The ten pipeline phases (roadmap Ownership item 1) are typed `#[must_use]`
+//! outputs consumed by value by the next phase. Helper-only substitutes are
+//! not acceptance — see `run_launch_core` + the `launch_pipeline` harness.
 
 use crate::instance::{InstanceManifest, InstanceStatus};
 use crate::runtime::docker_profile::{
@@ -19,6 +23,8 @@ use jackin_manifest::RoleManifest;
 
 use super::super::LoadCleanup;
 use super::{bail_on_grant_errors, tag_errors, tagged_grant_errors};
+
+// ── Phase 1: validation ────────────────────────────────────────────────────
 
 /// Pure classification of an image decision for the launch typestate chain
 /// (`GrantsValidated` → [`ImagePhaseClassified`] → materialize → run).
@@ -162,6 +168,86 @@ pub fn validate_launch_grants(input: GrantPhaseInput<'_>) -> anyhow::Result<Gran
         dind_started,
     })
 }
+
+// ── Phase outputs (by-value handoff tokens) ────────────────────────────────
+
+/// Image materialization finished (reuse or build).
+#[derive(Debug, Clone)]
+#[must_use]
+pub(crate) struct ImageMaterialized {
+    /// Local image tag to run.
+    pub image: String,
+    /// True when the selected agent image was reused without a foreground build.
+    pub selected_image_reused: bool,
+}
+
+/// Instance manifest written with `Active` status (post-materialize identity).
+#[derive(Debug)]
+#[must_use]
+pub(crate) struct InstancePrepared {
+    /// On-disk instance identity for the launch.
+    pub instance_manifest: InstanceManifest,
+    /// Per-container state directory under `paths.data_dir`.
+    pub container_state: std::path::PathBuf,
+    /// Host workdir fingerprint captured into the manifest.
+    pub host_workdir_fingerprint: String,
+}
+
+/// Credentials, GitHub env, and `RoleState` prepared for the container.
+#[derive(Debug)]
+#[must_use]
+pub(crate) struct EnvironmentResolved {
+    /// Prepared per-agent home/auth state.
+    pub state: crate::instance::RoleState,
+    /// Resolved GitHub env map (may be empty under Ignore).
+    pub github_resolved_env: std::collections::BTreeMap<String, String>,
+    /// Saved-workspace name when present (empty string for ad-hoc).
+    pub workspace_name_str: String,
+    /// Optional saved workspace name for config lookups.
+    pub workspace_opt: Option<jackin_core::WorkspaceName>,
+    /// GitHub auth mode in effect.
+    pub github_mode: jackin_config::GithubAuthMode,
+    /// Declared `[github.env]` layers (for operator breadcrumb).
+    pub github_env_decls: std::collections::BTreeMap<String, jackin_config::EnvValue>,
+}
+
+/// Trust seeding and operator-facing auth breadcrumbs completed.
+#[derive(Debug, Clone, Copy)]
+#[must_use]
+pub(crate) struct TrustSeeded;
+
+/// Workspace mounts materialized and network/DinD sidecar ready.
+#[derive(Debug)]
+#[must_use]
+pub(crate) struct WorkspaceMaterialized {
+    /// Materialized mount table for docker `-v` flags.
+    pub materialized: crate::isolation::materialize::MaterializedWorkspace,
+    /// Capsule launch config (bindings filled by the caller).
+    pub launch_config: jackin_protocol::CapsuleConfig,
+}
+
+/// Docker (or apple-container) runtime launch completed successfully.
+#[derive(Debug, Clone, Copy)]
+#[must_use]
+pub(crate) struct RuntimeLaunched;
+
+/// Foreground attach finalization decision.
+#[derive(Debug, Clone, Copy)]
+#[must_use]
+pub(crate) struct SessionFinalized {
+    /// Isolation finalizer decision (clean / preserved / return-to-agent).
+    pub decision: crate::isolation::finalize::FinalizeDecision,
+}
+
+/// Teardown classification finished; container name is the pipeline result.
+#[derive(Debug, Clone)]
+#[must_use]
+pub(crate) struct CleanupClassified {
+    /// Final container name returned to the caller.
+    pub container_name: String,
+}
+
+// ── Failure helpers ────────────────────────────────────────────────────────
 
 /// Mid-pipeline failure: mark `FailedSetup` (best-effort) then run cleanup.
 ///

@@ -79,6 +79,17 @@ pub(super) struct GitIdentity {
     pub(super) user_email: String,
 }
 
+#[cfg(test)]
+impl GitIdentity {
+    /// Test fixture constructor for `LaunchCore` boundary harnesses.
+    pub(crate) fn for_tests(user_name: &str, user_email: &str) -> Self {
+        Self {
+            user_name: user_name.to_owned(),
+            user_email: user_email.to_owned(),
+        }
+    }
+}
+
 pub(super) async fn try_capture(
     runner: &mut impl CommandRunner,
     program: &str,

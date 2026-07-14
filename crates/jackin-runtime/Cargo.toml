@@ -57,6 +57,8 @@ nix = { workspace = true, features = ["user"] }
 [dev-dependencies]
 jackin-test-support = { workspace = true }
 jackin-tui = { workspace = true }
+jackin-image = { workspace = true }
+jackin-manifest = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 tokio = { workspace = true, features = ["test-util"] }
 
