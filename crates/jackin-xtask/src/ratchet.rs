@@ -569,9 +569,7 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     Ok(out)
 }
 
-/// Suite wall-time from nextest junit (plan 027). When no artifact is present
-/// (local default), returns an empty map so the family stays green as report-only.
-
+/// Parse a JUnit `time="…"` attribute (seconds) into whole milliseconds.
 fn junit_seconds_to_ms(raw: &str) -> u64 {
     let (whole, frac) = raw.split_once('.').unwrap_or((raw, ""));
     let Ok(secs) = whole.parse::<u64>() else {
@@ -592,6 +590,8 @@ fn junit_seconds_to_ms(raw: &str) -> u64 {
     secs.saturating_mul(1000).saturating_add(ms_part)
 }
 
+/// Suite wall-time from nextest junit (plan 027). When no artifact is present
+/// (local default), returns an empty map so the family stays green as report-only.
 fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
     let candidates = [
