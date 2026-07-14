@@ -4,11 +4,6 @@
 //! cargo bench -p jackin-usage --bench token_log_reread -- --test
 //! ```
 
-#![expect(
-    clippy::expect_used,
-    reason = "criterion bench harness: fail-fast fixture setup"
-)]
-
 use std::hint::black_box;
 use std::path::PathBuf;
 
@@ -28,14 +23,14 @@ fn write_logs(dir: &std::path::Path, files: usize, lines: usize) -> Vec<PathBuf>
                 50 + j
             ));
         }
-        std::fs::write(&p, body).expect("write log");
+        std::fs::write(&p, body).unwrap_or_else(|e| panic!("{e}"));
         paths.push(p);
     }
     paths
 }
 
 fn bench_reread(c: &mut Criterion) {
-    let tmp = TempDir::new().expect("tempdir");
+    let tmp = TempDir::new().unwrap_or_else(|e| panic!("{e}"));
     let sizes = [(4usize, 200usize), (16, 500), (32, 1000)];
     let mut group = c.benchmark_group("token_log_reread");
     group.sample_size(20);

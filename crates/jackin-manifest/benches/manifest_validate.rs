@@ -4,11 +4,6 @@
 //! cargo bench -p jackin-manifest --bench manifest_validate -- --test
 //! ```
 
-#![expect(
-    clippy::unwrap_used,
-    reason = "criterion bench harness: fail-fast fixture setup"
-)]
-
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput};
@@ -32,9 +27,9 @@ fn bench_manifest(c: &mut Criterion) {
 
     group.bench_function("parse_and_validate", |b| {
         b.iter(|| {
-            let m: RoleManifest = toml::from_str(black_box(SAMPLE)).unwrap();
-            drop(validate_role_manifest(&m).unwrap());
-            drop(validate_agent_consistency(&m).unwrap());
+            let m: RoleManifest = toml::from_str(black_box(SAMPLE)).unwrap_or_else(|e| panic!("{e}"));
+            drop(validate_role_manifest(&m).unwrap_or_else(|e| panic!("{e}")));
+            drop(validate_agent_consistency(&m).unwrap_or_else(|e| panic!("{e}")));
             black_box(m);
         });
     });

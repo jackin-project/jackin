@@ -4,11 +4,6 @@
 //! cargo bench -p jackin-usage --bench snapshot_upsert -- --test
 //! ```
 
-#![expect(
-    clippy::expect_used,
-    reason = "criterion bench harness: fail-fast fixture setup"
-)]
-
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput};
@@ -23,7 +18,7 @@ fn views(n: usize) -> Vec<FocusedUsageView> {
 }
 
 fn bench_upsert(c: &mut Criterion) {
-    let tmp = TempDir::new().expect("tempdir");
+    let tmp = TempDir::new().unwrap_or_else(|e| panic!("{e}"));
     let db = tmp.path().join("telemetry.db");
     let n = 32usize;
     let batch = views(n);
@@ -34,7 +29,7 @@ fn bench_upsert(c: &mut Criterion) {
     group.bench_function("store_usage_snapshots_32", |b| {
         b.iter(|| {
             // Fresh path each iter would dominate; reuse DB and overwrite.
-            store_usage_snapshots(black_box(&db), black_box(&batch)).expect("upsert");
+            store_usage_snapshots(black_box(&db), black_box(&batch)).unwrap_or_else(|e| panic!("{e}"));
         });
     });
     group.finish();
