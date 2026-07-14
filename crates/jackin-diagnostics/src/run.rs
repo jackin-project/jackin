@@ -1166,7 +1166,7 @@ fn launch_stage_span(stage: &str) -> tracing::Span {
     let otel_name = format!("launch.{}", normalize_stage_name(stage));
     let span = tracing::info_span!(
         "launch_stage",
-        stage = stage,
+        "jackin.stage" = stage,
         otel.name = otel_name.as_str(),
         otel.status_code = tracing::field::Empty,
         otel.status_description = tracing::field::Empty,

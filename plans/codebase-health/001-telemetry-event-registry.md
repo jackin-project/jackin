@@ -180,13 +180,13 @@ In `operation.rs`:
 
 ## Done criteria
 
-- [ ] `grep -rn "kind.replace" crates/jackin-diagnostics/src` → no matches
-- [ ] `grep -rn "expected_shutdown" crates/jackin-diagnostics/src --include='*.rs' | grep -v adapter` → no matches outside a clearly named legacy adapter
-- [ ] `grep -rn 'let _ = attrs' crates/jackin-diagnostics/src/operation.rs` → no matches
-- [ ] Registry `validate` rejects `error_type`, `log.category`, unknown keys (tests prove it)
-- [ ] `cargo nextest run -p jackin-diagnostics --all-features` exits 0
-- [ ] `cargo xtask ci --fast` exits 0
-- [ ] `plans/codebase-health/README.md` status row updated
+- [x] `grep -rn "kind.replace" crates/jackin-diagnostics/src` → no matches
+- [x] `grep -rn "expected_shutdown" crates/jackin-diagnostics/src --include='*.rs' | grep -v adapter` → no matches outside a clearly named legacy adapter
+- [x] `grep -rn 'let _ = attrs' crates/jackin-diagnostics/src/operation.rs` → no matches
+- [x] Registry `validate` rejects `error_type`, `log.category`, unknown keys (tests prove it)
+- [x] `cargo nextest run -p jackin-diagnostics --all-features` exits 0
+- [x] `cargo xtask ci --fast` exits 0 (policy gate re-green after `spin` 0.9.8→0.9.9 unyank)
+- [x] `plans/codebase-health/README.md` status row updated
 
 ## STOP conditions
 

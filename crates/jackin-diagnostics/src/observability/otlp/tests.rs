@@ -220,12 +220,11 @@ fn exported_log_carries_body_and_attributes() {
         log_attr(&log.record, "kind").as_deref(),
         Some("compact_kind")
     );
-    assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("plan"));
     assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("d"));
     assert_eq!(log_attr(&log.record, "run_id").as_deref(), Some("run1"));
     assert_eq!(
         log_attr(&log.record, "event.name").as_deref(),
-        Some("compact.kind")
+        Some("compact_kind")
     );
     assert_eq!(
         log_attr(&log.record, "event.outcome").as_deref(),
@@ -237,12 +236,17 @@ fn exported_log_carries_body_and_attributes() {
     );
     assert_eq!(
         log_attr(&log.record, "jackin.operation").as_deref(),
-        Some("compact.kind")
+        Some("compact_kind")
     );
     assert_eq!(
         log_attr(&log.record, "jackin.category").as_deref(),
         Some("compact")
     );
+    assert_eq!(
+        log_attr(&log.record, "jackin.stage").as_deref(),
+        Some("plan")
+    );
+    assert_eq!(log_attr(&log.record, "stage"), None);
     assert_eq!(log_attr(&log.record, "diagnostics_message"), None);
     assert_eq!(log_attr(&log.record, "jackin_jsonl"), None);
 }
@@ -310,14 +314,17 @@ fn absent_stage_and_detail_are_not_exported_as_sentinels() {
 #[test]
 fn manual_launch_stage_span_name_stays_constant_without_otel_name() {
     let spans = exported_spans(false, "run1", || {
-        let span = tracing::info_span!("launch_stage", stage = "derived image");
+        let span = tracing::info_span!("launch_stage", "jackin.stage" = "derived image");
         drop(span.enter());
     });
 
     assert_eq!(spans.len(), 1);
     let span = &spans[0];
     assert_eq!(span.name.as_ref(), "launch_stage");
-    assert_eq!(span_attr(span, "stage").as_deref(), Some("derived image"));
+    assert_eq!(
+        span_attr(span, "jackin.stage").as_deref(),
+        Some("derived image")
+    );
 }
 
 #[test]
@@ -337,7 +344,7 @@ fn stage_span_duration_covers_stage() {
 
     let span = spans
         .iter()
-        .find(|span| span_attr(span, "stage").as_deref() == Some("derived image"))
+        .find(|span| span_attr(span, "jackin.stage").as_deref() == Some("derived image"))
         .expect("derived image stage span exported");
     let duration = span.end_time.duration_since(span.start_time).unwrap();
     assert!(
@@ -467,7 +474,11 @@ fn subprocess_done_carries_duration_and_exit() {
         .iter()
         .find(|log| log_attr(&log.record, "kind").as_deref() == Some("subprocess_done"))
         .expect("subprocess_done log exported");
-    assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("git"));
+    assert_eq!(
+        log_attr(&log.record, "jackin.stage").as_deref(),
+        Some("git")
+    );
+    assert_eq!(log_attr(&log.record, "stage"), None);
     let detail = log_attr(&log.record, "detail").expect("subprocess detail");
     assert!(detail.contains("\"program\":\"git\""), "{detail}");
     assert!(detail.contains("\"elapsed_ms\":42"), "{detail}");
@@ -538,9 +549,10 @@ fn fatal_error_carries_error_type() {
         .expect("typed error log exported");
     assert_eq!(error.record.severity_number(), Some(Severity::Error));
     assert_eq!(
-        log_attr(&error.record, "error_type").as_deref(),
+        log_attr(&error.record, "error.type").as_deref(),
         Some("E014")
     );
+    assert_eq!(log_attr(&error.record, "error_type"), None);
 }
 
 #[test]

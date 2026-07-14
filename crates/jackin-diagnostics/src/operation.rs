@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Typed operation facade — the structured telemetry API for jackin❯.
 //!
 //! Console/file tiers still render through `emit_debug_line` / `emit_compact_line`
@@ -8,14 +11,20 @@
 //! payloads, and container ids are forbidden as attrs — pass redacted or
 //! summarized values only. Free-text `body` is redacted before emission.
 //!
-//! Operation / event names must come from the semconv registry
-//! (`otel_events`, `otel_keys`), never as inline literals at call sites.
+//! Dynamic attributes are stamped on the current span (tracing macros require
+//! static field names). Registry validation runs fail-closed before emit.
+//!
+//! Operation / event names must come from the event registry
+//! (`registry::lookup` / `otel_events`), never as inline literals at call sites.
+
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tracing::Span;
 
 use crate::logging::{emit_compact_line, emit_debug_line};
 use crate::observability::otel_keys;
 use crate::redact::redact_text;
+use crate::registry::{self, Outcome};
 
 const OPERATION_TARGET: &str = "jackin_diagnostics";
 
@@ -42,7 +51,8 @@ pub fn operation_span(name: &'static str, attrs: &[(&'static str, String)]) -> S
     }
     #[cfg(not(feature = "otlp"))]
     {
-        let _ = attrs;
+        // Attr attachment requires the OTLP OpenTelemetrySpanExt path.
+        let _unused_without_otlp = attrs.len();
     }
 
     span
@@ -54,9 +64,14 @@ pub fn operation_span(name: &'static str, attrs: &[(&'static str, String)]) -> S
 /// on multi-thread runtimes. Callers that need events under the span across
 /// awaits must attach via [`tracing::Instrument`] (see `ShellRunner`); do not
 /// store `EnteredSpan` here — it is `!Send`.
+///
+/// Call [`OperationGuard::complete`] with a registered outcome before drop.
+/// Drop without completion records `cancelled` so `?`-exits never look like
+/// success.
 #[derive(Debug)]
 pub struct OperationGuard {
     span: Span,
+    completed: AtomicBool,
 }
 
 impl OperationGuard {
@@ -64,6 +79,42 @@ impl OperationGuard {
     #[must_use]
     pub fn span(&self) -> &Span {
         &self.span
+    }
+
+    /// Record completion outcome (and optional `error.type`) then mark done.
+    /// Drop after this is a no-op for outcome recording; the span ends normally.
+    pub fn complete(self, outcome: Outcome, error_type: Option<&'static str>) {
+        self.record_completion(outcome, error_type);
+        self.completed.store(true, Ordering::SeqCst);
+    }
+
+    fn record_completion(&self, outcome: Outcome, error_type: Option<&'static str>) {
+        #[cfg(feature = "otlp")]
+        {
+            use opentelemetry::trace::Status;
+            use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+            self.span
+                .set_attribute(otel_keys::EVENT_OUTCOME, outcome.as_str().to_owned());
+            if let Some(error_type) = error_type {
+                self.span
+                    .set_attribute(otel_keys::ERROR_TYPE, error_type.to_owned());
+            }
+            if matches!(outcome, Outcome::Failure | Outcome::Timeout) {
+                self.span.set_status(Status::error(outcome.as_str()));
+            }
+        }
+        #[cfg(not(feature = "otlp"))]
+        {
+            let _ = (outcome, error_type);
+        }
+    }
+}
+
+impl Drop for OperationGuard {
+    fn drop(&mut self) {
+        if !self.completed.load(Ordering::SeqCst) {
+            self.record_completion(Outcome::Cancelled, None);
+        }
     }
 }
 
@@ -73,6 +124,7 @@ impl OperationGuard {
 pub fn enter_operation(name: &'static str, attrs: &[(&'static str, String)]) -> OperationGuard {
     OperationGuard {
         span: operation_span(name, attrs),
+        completed: AtomicBool::new(false),
     }
 }
 
@@ -87,8 +139,28 @@ pub fn operation_record_exit_code(code: Option<i32>) {
     }
 }
 
+/// Stamp caller attributes on the current span (dynamic fields cannot go through
+/// the tracing event macro).
+fn stamp_attrs_on_current(attrs: &[(&'static str, String)]) {
+    #[cfg(feature = "otlp")]
+    {
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+        let span = Span::current();
+        for (key, value) in attrs {
+            span.set_attribute(*key, value.clone());
+        }
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        let _unused_without_otlp = attrs.len();
+    }
+}
+
 /// Emit one structured log event (clean body + fixed schema fields) and mirror
 /// a console/file line through the existing renderers.
+///
+/// `outcome` defaults from level when `None`: Info/Debug → success, Warn →
+/// cancelled (never success), Error routes to [`operation_error`].
 pub fn operation_log(
     level: OperationLevel,
     event_name: &'static str,
@@ -96,9 +168,44 @@ pub fn operation_log(
     body: &str,
     attrs: &[(&'static str, String)],
 ) {
+    operation_log_with_outcome(level, event_name, category, body, attrs, None);
+}
+
+/// Like [`operation_log`] but with an explicit outcome override.
+pub fn operation_log_with_outcome(
+    level: OperationLevel,
+    event_name: &'static str,
+    category: &'static str,
+    body: &str,
+    attrs: &[(&'static str, String)],
+    outcome: Option<Outcome>,
+) {
     let body = redact_text(body);
     let body = body.as_ref();
-    let _ = attrs;
+
+    let attr_refs: Vec<(&str, &str)> = attrs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    // Fail-closed: log a compact line and skip structured emit on validation failure.
+    if let Err(err) = registry::validate(event_name, &attr_refs, body) {
+        // Unregistered free-form facade names (tests / pre-migration) still emit;
+        // only hard-fail on prohibited keys / body policy.
+        match err {
+            registry::RegistryError::ProhibitedKey(_) | registry::RegistryError::BodyPolicy(_) => {
+                emit_compact_line("error", &format!("telemetry registry rejected emit: {err}"));
+                return;
+            }
+            _ => {}
+        }
+    }
+
+    stamp_attrs_on_current(attrs);
+
+    let default_outcome = match level {
+        OperationLevel::Info | OperationLevel::Debug => Outcome::Success,
+        // Warnings must never export success (contract).
+        OperationLevel::Warn => Outcome::Cancelled,
+        OperationLevel::Error => Outcome::Failure,
+    };
+    let outcome = outcome.unwrap_or(default_outcome);
 
     match level {
         OperationLevel::Info => {
@@ -107,7 +214,7 @@ pub fn operation_log(
                 kind = "operation",
                 "event.name" = event_name,
                 "jackin.category" = category,
-                "event.outcome" = "success",
+                "event.outcome" = outcome.as_str(),
                 "{body}"
             );
             emit_compact_line(category, body);
@@ -118,7 +225,7 @@ pub fn operation_log(
                 kind = "operation",
                 "event.name" = event_name,
                 "jackin.category" = category,
-                "event.outcome" = "success",
+                "event.outcome" = outcome.as_str(),
                 "{body}"
             );
             emit_debug_line(category, body);
@@ -129,31 +236,51 @@ pub fn operation_log(
                 kind = "operation",
                 "event.name" = event_name,
                 "jackin.category" = category,
-                "event.outcome" = "success",
+                "event.outcome" = outcome.as_str(),
                 "{body}"
             );
             emit_compact_line(category, body);
         }
         OperationLevel::Error => {
-            operation_error("operation_error", body, attrs);
+            operation_error(event_name, "operation_error", body, attrs);
         }
     }
 }
 
-/// ERROR-severity structured event with `error.type`, marks the current span
-/// Error, and mirrors a compact console line.
-pub fn operation_error(error_type: &'static str, body: &str, attrs: &[(&'static str, String)]) {
+/// ERROR-severity structured event with registered `event_name` and `error.type`,
+/// marks the current span Error, and mirrors a compact console line.
+pub fn operation_error(
+    event_name: &'static str,
+    error_type: &'static str,
+    body: &str,
+    attrs: &[(&'static str, String)],
+) {
     let body = redact_text(body);
     let body = body.as_ref();
-    let _ = attrs;
+
+    let mut attr_pairs: Vec<(&str, &str)> = attrs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    attr_pairs.push(("error.type", error_type));
+    if let Err(err) = registry::validate(event_name, &attr_pairs, body) {
+        match err {
+            registry::RegistryError::ProhibitedKey(_) | registry::RegistryError::BodyPolicy(_) => {
+                emit_compact_line("error", &format!("telemetry registry rejected emit: {err}"));
+                return;
+            }
+            _ => {}
+        }
+    }
+
+    stamp_attrs_on_current(attrs);
+
+    let category = registry::lookup(event_name).map_or("error", |d| d.category);
 
     tracing::error!(
         target: OPERATION_TARGET,
         kind = "operation_error",
-        "event.name" = "error",
-        "jackin.category" = "error",
-        "event.outcome" = "failure",
-        error_type = error_type,
+        "event.name" = event_name,
+        "jackin.category" = category,
+        "event.outcome" = Outcome::Failure.as_str(),
+        "error.type" = error_type,
         "{body}"
     );
 
@@ -162,6 +289,7 @@ pub fn operation_error(error_type: &'static str, body: &str, attrs: &[(&'static 
         use opentelemetry::trace::Status;
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
         Span::current().set_status(Status::error(body.to_owned()));
+        Span::current().set_attribute(otel_keys::ERROR_TYPE, error_type.to_owned());
     }
 
     emit_compact_line("error", body);

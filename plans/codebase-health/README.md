@@ -8,7 +8,7 @@ Each executor: read the plan fully before starting, run the drift check first, h
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Typed event registry + canonical attribute schema | P1 | L | — | TODO |
+| 001 | Typed event registry + canonical attribute schema | P1 | L | — | DONE |
 | 002 | Move run/session/component identity off the OTLP Resource | P1 | M | 001 | TODO |
 | 003 | Top-level `EventName` through the log bridge | P1 | M | 001 | TODO |
 | 004 | Prefix-free, schema-complete capsule OTLP export | P1 | L | 001 | TODO |

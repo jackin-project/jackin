@@ -11,6 +11,7 @@ pub mod observability;
 pub mod operation;
 pub mod operator_notice;
 pub mod redact;
+pub mod registry;
 pub mod run;
 pub mod screen;
 pub mod secret_scrub;
@@ -43,6 +44,10 @@ pub use observability::{
 pub use operation::{
     OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,
     operation_metric, operation_record_exit_code, operation_set_i64_attr, operation_span,
+};
+pub use registry::{
+    AttrDef, AttrType, Cardinality, EventDef, Outcome, Privacy, RegistryError, Severity, SinkSet,
+    lookup as lookup_event, otel_stages, validate as validate_event,
 };
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,

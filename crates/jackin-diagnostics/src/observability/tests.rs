@@ -53,7 +53,7 @@ fn semconv_registry_event_kinds_are_stable_wire_strings() {
 }
 
 #[test]
-fn session_detach_outcome_is_expected_shutdown_not_failure() {
+fn session_detach_outcome_is_expected_close_not_failure() {
     let taxonomy = event_taxonomy(
         otel_events::SESSION_DETACH,
         "operator detached",
@@ -62,12 +62,13 @@ fn session_detach_outcome_is_expected_shutdown_not_failure() {
         None,
         "INFO",
     );
-    assert_eq!(taxonomy.outcome, "expected_shutdown");
+    assert_eq!(taxonomy.outcome, "expected_close");
+    assert_eq!(taxonomy.event_name, "capsule.session.detach");
     assert_ne!(taxonomy.outcome, "failure");
 }
 
 #[test]
-fn clean_shutdown_outcome_is_expected_shutdown() {
+fn clean_shutdown_outcome_is_expected_close() {
     let taxonomy = event_taxonomy(
         otel_events::CLEAN_SHUTDOWN,
         "container exited cleanly",
@@ -76,7 +77,8 @@ fn clean_shutdown_outcome_is_expected_shutdown() {
         None,
         "INFO",
     );
-    assert_eq!(taxonomy.outcome, "expected_shutdown");
+    assert_eq!(taxonomy.outcome, "expected_close");
+    assert_eq!(taxonomy.event_name, "capsule.session.clean.shutdown");
 }
 
 #[test]

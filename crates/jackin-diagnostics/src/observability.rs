@@ -52,6 +52,8 @@ pub mod otel_keys {
     pub const CONTAINER_ID: &str = "jackin.container.id";
     pub const CONTAINER_NAME: &str = "jackin.container.name";
     pub const LAUNCH_STAGE: &str = "jackin.launch.stage";
+    /// Stage dimension on log records (`jackin.stage`, never bare `stage`).
+    pub const STAGE: &str = "jackin.stage";
     pub const ACTION: &str = "jackin.action";
     /// Capsule tab/pane label.
     pub const TAB_LABEL: &str = "jackin.tab.label";
@@ -1407,105 +1409,97 @@ pub(crate) fn event_taxonomy(
     error_type: Option<&str>,
     level: &str,
 ) -> EventTaxonomy {
-    let event_name = kind.replace('_', ".");
+    use crate::registry::{Outcome, lookup, normalize_stage_token};
+
+    let _ = message;
+    if let Some(def) = lookup(kind) {
+        let operation = match def.operation {
+            "stage" | "timing" => stage.map_or_else(
+                || def.operation.to_owned(),
+                |stage| format!("{}.{}", def.operation, normalize_stage_token(stage)),
+            ),
+            other => other.to_owned(),
+        };
+        let category = if def.kind == otel_events::DEBUG {
+            detail.map_or_else(|| def.category.to_owned(), normalize_stage_token)
+        } else if def.operation == "timing" {
+            stage.map_or_else(
+                || def.category.to_owned(),
+                |stage| format!("timing.{}", normalize_stage_token(stage)),
+            )
+        } else {
+            def.category.to_owned()
+        };
+        let outcome = outcome_from_def(def, error_type, level);
+        return EventTaxonomy {
+            event_name: def.name.to_owned(),
+            outcome: outcome.as_str(),
+            component: def.component,
+            operation,
+            category,
+        };
+    }
+
+    // Unregistered free-form kinds (error codes, ad-hoc tests) keep the kind
+    // token as the event name until plan 008 migrates call sites. Never apply
+    // blind underscore→dot derivation for registered paths.
+    let event_name = kind.to_owned();
+    let outcome = if error_type.is_some() || level.eq_ignore_ascii_case("ERROR") {
+        Outcome::Failure
+    } else {
+        Outcome::Success
+    };
+    let category = if kind.starts_with("docker_") || kind.starts_with("container_") {
+        "docker".to_owned()
+    } else {
+        kind.split(['_', '.'])
+            .next()
+            .map_or_else(|| "unknown".to_owned(), normalize_stage_token)
+    };
     EventTaxonomy {
-        operation: operation_for(kind, stage, &event_name),
-        category: category_for(kind, stage, detail),
-        outcome: outcome_for(kind, error_type, level),
-        component: component_for(kind, message),
+        operation: event_name.clone(),
+        category,
+        outcome: outcome.as_str(),
+        component: if kind.starts_with("capsule_") {
+            "capsule"
+        } else {
+            "host"
+        },
         event_name,
     }
 }
 
-fn operation_for(kind: &str, stage: Option<&str>, event_name: &str) -> String {
-    use otel_events::{
-        DEBUG, STAGE_DONE, STAGE_FAILED, STAGE_SKIPPED, STAGE_STARTED, TIMING_DONE, TIMING_STARTED,
-    };
-    match kind {
-        STAGE_STARTED | STAGE_DONE | STAGE_FAILED | STAGE_SKIPPED => stage.map_or_else(
-            || "stage".to_owned(),
-            |stage| format!("stage.{}", normalize_taxonomy_value(stage)),
-        ),
-        TIMING_STARTED | TIMING_DONE => stage.map_or_else(
-            || "timing".to_owned(),
-            |stage| format!("timing.{}", normalize_taxonomy_value(stage)),
-        ),
-        DEBUG => "debug".to_owned(),
-        _ => event_name.to_owned(),
-    }
-}
+fn outcome_from_def(
+    def: &crate::registry::EventDef,
+    error_type: Option<&str>,
+    level: &str,
+) -> crate::registry::Outcome {
+    use crate::registry::Outcome;
 
-fn category_for(kind: &str, stage: Option<&str>, detail: Option<&str>) -> String {
-    use otel_events::{DEBUG, OTLP_INTERNAL, RUN_SUMMARY, SLOW_FOREGROUND_WAIT, SUBPROCESS_DONE};
-    match kind {
-        DEBUG => detail.map_or_else(|| "debug".to_owned(), normalize_taxonomy_value),
-        kind if kind.starts_with("docker_") || kind.starts_with("container_") => {
-            "docker".to_owned()
-        }
-        kind if kind.starts_with("stage_") => "launch".to_owned(),
-        kind if kind.starts_with("timing_") => stage.map_or_else(
-            || "timing".to_owned(),
-            |stage| format!("timing.{}", normalize_taxonomy_value(stage)),
-        ),
-        SUBPROCESS_DONE => "process".to_owned(),
-        OTLP_INTERNAL => "telemetry".to_owned(),
-        RUN_SUMMARY => "summary".to_owned(),
-        SLOW_FOREGROUND_WAIT => "performance".to_owned(),
-        other => other.split_once('_').map_or_else(
-            || normalize_taxonomy_value(other),
-            |(prefix, _)| normalize_taxonomy_value(prefix),
-        ),
-    }
-}
-
-fn outcome_for(kind: &str, error_type: Option<&str>, level: &str) -> &'static str {
-    use otel_events::{CLEAN_SHUTDOWN, SESSION_DETACH};
-    // Typed expected lifecycle outcomes must win over substring sniffing so a
-    // kind like `session_detach` is never failure-shaped.
-    if matches!(kind, SESSION_DETACH | CLEAN_SHUTDOWN) {
-        return "expected_shutdown";
-    }
-    if error_type.is_some()
-        || level.eq_ignore_ascii_case("ERROR")
-        || kind.contains("failed")
-        || kind.contains("failure")
-        || kind.contains("crash")
+    if def.outcomes == [Outcome::ExpectedClose]
+        || def.outcomes.first() == Some(&Outcome::ExpectedClose)
+            && def.outcomes.iter().all(|o| *o == Outcome::ExpectedClose)
     {
-        "failure"
-    } else if kind.contains("skipped") {
-        "skipped"
-    } else if kind.contains("started") {
-        "started"
-    } else if kind.contains("cache_miss") {
-        "cache_miss"
-    } else {
-        "success"
+        return Outcome::ExpectedClose;
     }
-}
-
-fn component_for(kind: &str, message: &str) -> &'static str {
-    if message.starts_with("[jackin-capsule") || kind.starts_with("capsule_") {
-        "capsule"
-    } else {
-        "host"
+    if def.outcomes.len() == 1 {
+        return def.outcomes[0];
     }
-}
-
-fn normalize_taxonomy_value(value: &str) -> String {
-    value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else {
-                '.'
-            }
-        })
-        .collect::<String>()
-        .split('.')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join(".")
+    if (error_type.is_some()
+        || level.eq_ignore_ascii_case("ERROR")
+        || def.severity == crate::registry::Severity::Error)
+        && def.outcomes.contains(&Outcome::Failure)
+    {
+        return Outcome::Failure;
+    }
+    if def.kind.contains("skipped") && def.outcomes.contains(&Outcome::Cancelled) {
+        return Outcome::Cancelled;
+    }
+    if def.outcomes.contains(&Outcome::Success) {
+        Outcome::Success
+    } else {
+        def.outcomes[0]
+    }
 }
 
 /// Correlation ids for a JSONL record.
@@ -1620,6 +1614,9 @@ fn emit_jsonl_event_with_level(
     }
 }
 
+// TODO(plan-005): stop exporting `kind`/`run_id` as OTLP-indexed attributes once
+// the versioned JSONL adapter owns the legacy serialization path
+// (plans/codebase-health/005-jsonl-versioned-adapter.md).
 macro_rules! emit_jsonl_event_fields {
     ($emit:ident, $run_id:expr, $kind:expr, $message:expr, $stage:expr, $detail:expr, $error_type:expr, $taxonomy:expr) => {
         match ($stage, $detail, $error_type) {
@@ -1632,9 +1629,9 @@ macro_rules! emit_jsonl_event_fields {
                 jackin.component = $taxonomy.component,
                 jackin.operation = $taxonomy.operation.as_str(),
                 jackin.category = $taxonomy.category.as_str(),
-                stage = stage,
+                "jackin.stage" = stage,
                 detail = detail,
-                error_type = error_type,
+                "error.type" = error_type,
                 "{}", $message
             ),
             (Some(stage), Some(detail), None) => tracing::$emit!(
@@ -1646,7 +1643,7 @@ macro_rules! emit_jsonl_event_fields {
                 jackin.component = $taxonomy.component,
                 jackin.operation = $taxonomy.operation.as_str(),
                 jackin.category = $taxonomy.category.as_str(),
-                stage = stage,
+                "jackin.stage" = stage,
                 detail = detail,
                 "{}", $message
             ),
@@ -1659,8 +1656,8 @@ macro_rules! emit_jsonl_event_fields {
                 jackin.component = $taxonomy.component,
                 jackin.operation = $taxonomy.operation.as_str(),
                 jackin.category = $taxonomy.category.as_str(),
-                stage = stage,
-                error_type = error_type,
+                "jackin.stage" = stage,
+                "error.type" = error_type,
                 "{}", $message
             ),
             (Some(stage), None, None) => tracing::$emit!(
@@ -1672,7 +1669,7 @@ macro_rules! emit_jsonl_event_fields {
                 jackin.component = $taxonomy.component,
                 jackin.operation = $taxonomy.operation.as_str(),
                 jackin.category = $taxonomy.category.as_str(),
-                stage = stage,
+                "jackin.stage" = stage,
                 "{}", $message
             ),
             (None, Some(detail), Some(error_type)) => tracing::$emit!(
@@ -1685,7 +1682,7 @@ macro_rules! emit_jsonl_event_fields {
                 jackin.operation = $taxonomy.operation.as_str(),
                 jackin.category = $taxonomy.category.as_str(),
                 detail = detail,
-                error_type = error_type,
+                "error.type" = error_type,
                 "{}", $message
             ),
             (None, Some(detail), None) => tracing::$emit!(
@@ -1709,7 +1706,7 @@ macro_rules! emit_jsonl_event_fields {
                 jackin.component = $taxonomy.component,
                 jackin.operation = $taxonomy.operation.as_str(),
                 jackin.category = $taxonomy.category.as_str(),
-                error_type = error_type,
+                "error.type" = error_type,
                 "{}", $message
             ),
             (None, None, None) => tracing::$emit!(
