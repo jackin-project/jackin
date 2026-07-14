@@ -104,6 +104,8 @@ pub(crate) fn check(strict: bool) -> Result<()> {
 
 pub(crate) fn run(args: LintArchArgs) -> Result<()> {
     let root = repo_root()?;
+    // Turso sole-owner is an architecture boundary (roadmap item 8).
+    crate::container_paths_gate::check_turso_sole_owner(&root)?;
     let metadata = read_metadata(&root)?;
 
     let workspace_members: BTreeSet<String> = {
