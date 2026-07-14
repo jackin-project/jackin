@@ -788,17 +788,17 @@ fn fetch_head_age_at_is_deterministic() {
     let fetch_head = git.join("FETCH_HEAD");
     std::fs::write(&fetch_head, "deadbeef\n").unwrap();
     let modified = std::fs::metadata(&fetch_head).unwrap().modified().unwrap();
-    let now = modified + Duration::from_secs(120);
+    let now = modified + Duration::from_mins(2);
     let age = fetch_head_age_at(dir.path(), now).expect("age");
-    assert_eq!(age, Duration::from_secs(120));
+    assert_eq!(age, Duration::from_mins(2));
     assert_eq!(
-        fetch_fresh_within_ttl_at(dir.path(), Duration::from_secs(60), now),
+        fetch_fresh_within_ttl_at(dir.path(), Duration::from_mins(1), now),
         None,
         "stale beyond ttl"
     );
     assert_eq!(
-        fetch_fresh_within_ttl_at(dir.path(), Duration::from_secs(180), now),
-        Some(Duration::from_secs(120)),
+        fetch_fresh_within_ttl_at(dir.path(), Duration::from_mins(3), now),
+        Some(Duration::from_mins(2)),
         "fresh within ttl"
     );
 }

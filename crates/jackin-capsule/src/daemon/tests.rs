@@ -160,6 +160,7 @@ fn record_agent_history_uses_injected_clock() {
 
     let base = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let clock = Arc::new(ManualClock::with_system_base(base));
+    let clock_dyn: Arc<dyn jackin_core::Clock> = Arc::clone(&clock);
     let mut mux = Multiplexer::with_clock(
         40,
         80,
@@ -176,7 +177,7 @@ fn record_agent_history_uses_injected_clock() {
             dirty_exit_policy: None,
             isolated_worktrees: Vec::new(),
         },
-        Arc::clone(&clock),
+        clock_dyn,
     )
     .expect("mux");
 
