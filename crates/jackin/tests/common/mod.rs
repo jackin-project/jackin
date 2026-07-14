@@ -11,9 +11,18 @@ use jackin_core::paths::JackinPaths;
 use jackin_docker::docker_client::{
     ContainerRow, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };
-use jackin_docker::{CommandRunner, RunOptions};
-use std::collections::{HashMap, VecDeque};
-use std::path::Path;
+use std::collections::HashMap;
+
+/// Canonical `CommandRunner` fake (shared with host/runtime suites).
+pub use jackin_test_support::FakeRunner;
+
+// Keep the re-export live for integration crates that do not import FakeRunner
+// themselves (`per_mount_isolation_e2e` etc.) — otherwise `-D unused-imports`
+// fails those targets.
+fn fake_runner_usage_marker() -> FakeRunner {
+    FakeRunner::for_load_agent([String::new()])
+}
+const _: fn() -> FakeRunner = fake_runner_usage_marker;
 
 /// Install the test stub for `jackin-capsule` so integration tests skip the download.
 ///
@@ -37,6 +46,9 @@ const _: fn(&JackinPaths) = install_agent_binary_stubs;
 
 /// Minimal no-op `DockerApi` stub. All operations return empty/success so
 /// `load_role` proceeds as if no containers exist.
+///
+/// Kept local (not `FakeDockerClient`) — call sites only need empty success
+/// defaults and do not exercise queue/`inspect_state_by_name` features.
 #[derive(Debug)]
 pub struct NoOpDocker;
 
@@ -102,67 +114,5 @@ impl DockerApi for NoOpDocker {
     }
     async fn exec_capture(&self, _container: &str, _cmd: &[&str]) -> anyhow::Result<String> {
         Ok(String::new())
-    }
-}
-
-/// Queue-based `CommandRunner` for `load_role` integration tests.
-///
-/// Pre-fills 4 empty slots for the identity-lookup preamble (git config
-/// user.name/email, id -u/-g); GC calls now go through `DockerApi`, not `CommandRunner`.
-#[derive(Debug, Default)]
-pub struct FakeRunner {
-    pub recorded: Vec<String>,
-    pub capture_queue: VecDeque<String>,
-}
-
-impl FakeRunner {
-    pub fn for_load_agent(outputs: impl IntoIterator<Item = String>) -> Self {
-        let mut capture_queue = VecDeque::new();
-        for _ in 0..4 {
-            capture_queue.push_back(String::new());
-        }
-        capture_queue.extend(outputs);
-        Self {
-            recorded: Vec::new(),
-            capture_queue,
-        }
-    }
-}
-
-fn fake_runner_usage_marker() -> FakeRunner {
-    FakeRunner::for_load_agent(Vec::<String>::new())
-}
-
-const _: fn() -> FakeRunner = fake_runner_usage_marker;
-
-impl CommandRunner for FakeRunner {
-    async fn run(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        _cwd: Option<&Path>,
-        _opts: &RunOptions,
-    ) -> anyhow::Result<()> {
-        self.recorded.push(format!("{program} {}", args.join(" ")));
-        Ok(())
-    }
-
-    async fn capture(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        _cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        self.recorded.push(format!("{program} {}", args.join(" ")));
-        Ok(self.capture_queue.pop_front().unwrap_or_default())
-    }
-
-    async fn capture_secret(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        self.capture(program, args, cwd).await
     }
 }

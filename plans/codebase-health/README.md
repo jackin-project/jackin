@@ -30,7 +30,7 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 020 | Domain newtypes census + typed error taxonomy | P3 | L | — | DONE |
 | 021 | TUI/console convergence: `drive_frame`, scroll classifier, editor cleanup | P3 | L | — | DONE |
 | 022 | Root CLI handler split + TTY fallback + `launch` deprecation warning | P2 | M | — | DONE |
-| 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | TODO |
+| 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | DONE |
 | 024 | Spec gate: syntax-aware citations, close `MISSING` entries, snapshot review policy | P2 | L | — | TODO |
 | 025 | Deterministic time: wall-clock seam + first boundary conversions | P2 | M | — | TODO |
 | 026 | Measured performance completion: missing benches, allocation lane, first-frame harness | P3 | L | — | TODO |

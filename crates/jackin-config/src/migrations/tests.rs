@@ -531,3 +531,83 @@ fn version_field_is_migrated_to_first_line() {
     assert!(out.contains("workdir = \"/workspace/prod\""), "{out}");
     assert!(out.contains("# trailing comment"), "{out}");
 }
+
+/// Property: config migration is idempotent across known version labels.
+#[test]
+fn prop_config_migration_idempotent() {
+    use proptest::prelude::*;
+
+    let versions = [
+        "v1alpha1",
+        "v1alpha2",
+        "v1alpha3",
+        "v1alpha4",
+        "v1alpha5",
+        "v1alpha6",
+        "v1alpha7",
+        "v1alpha8",
+        "v1alpha9",
+    ];
+    proptest!(|(idx in 0usize..versions.len())| {
+        let version = versions[idx];
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            format!(
+                "version = \"{version}\"\n\n[roles.agent-smith]\ngit = \"https://example.test/role.git\"\n"
+            ),
+        )
+        .unwrap();
+
+        let first_run = migrate_config_file_if_needed(&path);
+        prop_assert!(first_run.is_ok(), "first migrate: {:?}", first_run.err());
+        let first = std::fs::read_to_string(&path).unwrap();
+        let second_run = migrate_config_file_if_needed(&path);
+        prop_assert!(second_run.is_ok(), "second migrate: {:?}", second_run.err());
+        prop_assert!(!second_run.unwrap(), "second migrate must be a no-op");
+        let second = std::fs::read_to_string(&path).unwrap();
+        prop_assert_eq!(&first, &second);
+        let parsed: toml::Value = toml::from_str(&second).unwrap();
+        prop_assert_eq!(
+            parsed["version"].as_str().unwrap(),
+            CURRENT_CONFIG_VERSION
+        );
+    });
+}
+
+/// Property: workspace migration is idempotent across known version labels.
+#[test]
+fn prop_workspace_migration_idempotent() {
+    use proptest::prelude::*;
+
+    let versions = [
+        "v1alpha1",
+        "v1alpha2",
+        "v1alpha3",
+        "v1alpha4",
+        "v1alpha5",
+        "v1alpha6",
+        "v1alpha7",
+        "v1alpha8",
+    ];
+    proptest!(|(idx in 0usize..versions.len())| {
+        let version = versions[idx];
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("ws.toml");
+        std::fs::write(
+            &path,
+            format!("version = \"{version}\"\nworkdir = \"/workspace/x\"\n"),
+        )
+        .unwrap();
+
+        let first_run = migrate_workspace_file_if_needed(&path);
+        prop_assert!(first_run.is_ok(), "first migrate: {:?}", first_run.err());
+        let first = std::fs::read_to_string(&path).unwrap();
+        let second_run = migrate_workspace_file_if_needed(&path);
+        prop_assert!(second_run.is_ok());
+        prop_assert!(!second_run.unwrap());
+        let second = std::fs::read_to_string(&path).unwrap();
+        prop_assert_eq!(&first, &second);
+    });
+}

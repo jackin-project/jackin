@@ -136,6 +136,7 @@ Junit artifacts are named `nextest-junit-<group>-<lane>` and seed the Phase 0 su
 | `manifest_migrate` | `crates/jackin-manifest/fuzz` | 30s | 120s |
 | `manifest_validate` | `crates/jackin-manifest/fuzz` | 30s | 120s |
 | `env_resolve` | `crates/jackin-env/fuzz` | 30s | 120s |
+| `decode_frames` | `crates/jackin-protocol/fuzz` | 45s | 120s |
 
 Local smoke (nightly + cargo-fuzz via mise):
 
@@ -144,7 +145,7 @@ cd crates/jackin-term && cargo fuzz run --sanitizer none damage_grid_process -- 
 cd crates/jackin-config && cargo fuzz run --sanitizer none config_migrate -- -max_total_time=30
 ```
 
-Committed seeds live under each fuzz crate's `corpus/<target>/` (fixture-derived TOML for migrate/validate targets). Promote minimized crashers into the corpus; run `cargo fuzz cmin <target>` before growing corpora.
+Committed seeds live under each fuzz crate's `corpus/<target>/` (fixture-derived TOML for migrate/validate targets; tag+payload frames for `decode_frames`). **Promotion rule:** when a fuzzer finds a crash or hang, (1) minimize with `cargo fuzz cmin <target>` / `tmin`, (2) commit the minimized input under `corpus/<target>/`, (3) add a deterministic regression test in the owning crate that feeds the same bytes (or the decoded fixture) so the finding never re-enters CI only via the fuzzer. Do not grow corpora with non-minimized corpus dirs from long runs without `cmin`.
 
 Migration fixture harness ([`crates/jackin/tests/migration_fixtures.rs`](crates/jackin/tests/migration_fixtures.rs)) enforces golden equality against `after.toml` and second-pass idempotence for every config/workspace/manifest fixture.
 

@@ -972,3 +972,58 @@ prompt = "Branch:"
 
     assert!(result.unwrap_err().to_string().contains("duplicate"));
 }
+
+/// Property: parse+validate never panics; Ok/Err is total for any RoleManifest.
+#[test]
+fn prop_validate_never_panics_on_parsed_manifest() {
+    use proptest::prelude::*;
+
+    proptest!(|(dockerfile in "[A-Za-z0-9_./-]{1,64}", junk in ".{0,48}")| {
+        let text = format!(
+            "version = \"v1alpha6\"\ndockerfile = \"{dockerfile}\"\n{junk}\n"
+        );
+        // Parsing may fail (deny_unknown / invalid TOML) — never panic either path.
+        if let Ok(manifest) = toml::from_str::<RoleManifest>(&text) {
+            // Validation is total: Ok(warnings) or Err; never panic.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                drop(validate_role_manifest(&manifest));
+                drop(validate_agent_consistency(&manifest));
+            }));
+            prop_assert!(result.is_ok(), "validate must not panic");
+        }
+    });
+}
+
+/// Property: unknown top-level fields are rejected by serde (`deny_unknown_fields`).
+#[test]
+fn prop_unknown_fields_rejected() {
+    use proptest::prelude::*;
+
+    proptest!(|(field in "[a-z][a-z0-9_]{0,12}", value in "[A-Za-z0-9_-]{0,32}")| {
+        prop_assume!(
+            field != "version"
+                && field != "dockerfile"
+                && field != "published_image"
+                && field != "identity"
+                && field != "agents"
+                && field != "claude"
+                && field != "codex"
+                && field != "amp"
+                && field != "kimi"
+                && field != "opencode"
+                && field != "grok"
+                && field != "hooks"
+                && field != "env"
+                && field != "docker"
+        );
+        let text = format!(
+            "version = \"v1alpha6\"\ndockerfile = \"Dockerfile\"\n{field} = \"{value}\"\n"
+        );
+        let err = toml::from_str::<RoleManifest>(&text).expect_err("unknown field must fail");
+        let msg = err.to_string();
+        prop_assert!(
+            msg.contains("unknown") || msg.contains(&field) || msg.contains("did you mean"),
+            "unexpected parse error for unknown field: {msg}"
+        );
+    });
+}

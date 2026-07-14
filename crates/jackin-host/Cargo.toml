@@ -33,5 +33,6 @@ url = { workspace = true }
 workspace = true
 
 [dev-dependencies]
+jackin-test-support = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
