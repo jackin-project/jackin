@@ -108,7 +108,9 @@ async fn non_containerd_image_store_note_emits_diagnostic() {
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"docker_image_store\"")
+        (diagnostics.contains("\"event.name\":\"docker_image_store\"")
+            || (diagnostics.contains("\"event.name\":\"docker_image_store\"")
+                || diagnostics.contains("\"kind\":\"docker_image_store\"")))
             && diagnostics.contains("Docker daemon is not using the containerd image store")
             && diagnostics.contains("\\\"containerd_image_store\\\":false")
             && diagnostics.contains("overlay2"),
@@ -190,11 +192,15 @@ fn build_context_snapshot_records_file_count_and_bytes() {
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"build_context_snapshot\"")
+        (diagnostics.contains("\"event.name\":\"build_context_snapshot\"")
+            || (diagnostics.contains("\"event.name\":\"build_context_snapshot\"")
+                || (diagnostics.contains("\"event.name\":\"build_context_snapshot\"")
+                    || diagnostics.contains("\"kind\":\"build_context_snapshot\""))))
             && diagnostics.contains("derived published build context snapshot")
-            && diagnostics.contains("\\\"source\\\":\\\"published\\\"")
-            && diagnostics.contains("\\\"files\\\":2")
-            && diagnostics.contains("\\\"bytes\\\":16"),
+            && (diagnostics.contains("\"source\":\"published\"")
+                || diagnostics.contains("\\\"source\\\":\\\"published\\\""))
+            && (diagnostics.contains("\"files\":2") || diagnostics.contains("\\\"files\\\":2"))
+            && (diagnostics.contains("\"bytes\":16") || diagnostics.contains("\\\"bytes\\\":16")),
         "build context telemetry missing: {diagnostics}"
     );
 }
@@ -215,7 +221,9 @@ fn image_build_source_diagnostic_reports_published_base() {
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"image_build_source\"")
+        (diagnostics.contains("\"event.name\":\"image_build_source\"")
+            || (diagnostics.contains("\"event.name\":\"image_build_source\"")
+                || diagnostics.contains("\"kind\":\"image_build_source\"")))
             && diagnostics.contains("\\\"source\\\":\\\"published_image\\\"")
             && diagnostics.contains("\\\"reason\\\":\\\"published_image_fresh\\\"")
             && diagnostics.contains("\\\"pull_base_image\\\":true")
@@ -236,7 +244,9 @@ fn image_build_source_diagnostic_reports_workspace_reason() {
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"image_build_source\"")
+        (diagnostics.contains("\"event.name\":\"image_build_source\"")
+            || (diagnostics.contains("\"event.name\":\"image_build_source\"")
+                || diagnostics.contains("\"kind\":\"image_build_source\"")))
             && diagnostics.contains("\\\"source\\\":\\\"workspace_dockerfile\\\"")
             && diagnostics.contains("\\\"reason\\\":\\\"custom_construct\\\"")
             && diagnostics.contains("\\\"pull_base_image\\\":false")
@@ -365,9 +375,17 @@ plugins = []
     handle.await.unwrap();
     drop(active);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
-    assert!(diagnostics.contains("\"kind\":\"runtime_prewarm_done\""));
+    assert!(
+        (diagnostics.contains("\"event.name\":\"runtime_prewarm_done\"")
+            || (diagnostics.contains("\"event.name\":\"runtime_prewarm_done\"")
+                || diagnostics.contains("\"kind\":\"runtime_prewarm_done\"")))
+    );
     assert!(diagnostics.contains("prewarming sibling runtime binaries"));
-    assert!(diagnostics.contains("\"kind\":\"launch_plan\""));
+    assert!(
+        (diagnostics.contains("\"event.name\":\"launch_plan\"")
+            || (diagnostics.contains("\"event.name\":\"launch_plan\"")
+                || diagnostics.contains("\"kind\":\"launch_plan\"")))
+    );
     assert!(diagnostics.contains("PrewarmOnly"));
     assert!(diagnostics.contains("sibling_runtime_prewarm:kimi"));
     assert!(diagnostics.contains("ensure_kimi_binary"));
@@ -417,7 +435,9 @@ plugins = []
     drop(active);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"runtime_prewarm_skipped\"")
+        (diagnostics.contains("\"event.name\":\"runtime_prewarm_skipped\"")
+            || (diagnostics.contains("\"event.name\":\"runtime_prewarm_skipped\"")
+                || diagnostics.contains("\"kind\":\"runtime_prewarm_skipped\"")))
             && diagnostics.contains("selected image was rebuilt")
             && !diagnostics.contains("ensure_kimi_binary"),
         "cold selected-image builds should not start sibling binary work before attach: {diagnostics}"
@@ -448,7 +468,9 @@ async fn sibling_image_prewarm_skips_when_no_sibling_agents() {
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"sibling_image_prewarm_skipped\"")
+        (diagnostics.contains("\"event.name\":\"sibling_image_prewarm_skipped\"")
+            || (diagnostics.contains("\"event.name\":\"sibling_image_prewarm_skipped\"")
+                || diagnostics.contains("\"kind\":\"sibling_image_prewarm_skipped\"")))
             && diagnostics.contains("no sibling runtime images to prewarm"),
         "single-agent roles should not spawn image prewarm work: {diagnostics}"
     );
@@ -496,7 +518,9 @@ plugins = []
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"sibling_image_prewarm_skipped\"")
+        (diagnostics.contains("\"event.name\":\"sibling_image_prewarm_skipped\"")
+            || (diagnostics.contains("\"event.name\":\"sibling_image_prewarm_skipped\"")
+                || diagnostics.contains("\"kind\":\"sibling_image_prewarm_skipped\"")))
             && diagnostics.contains("selected image was rebuilt"),
         "cold selected-image builds should not start sibling image work before attach: {diagnostics}"
     );
@@ -523,7 +547,9 @@ fn selected_image_refresh_records_test_skip_with_reason() {
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"selected_image_refresh_skipped\"")
+        (diagnostics.contains("\"event.name\":\"selected_image_refresh_skipped\"")
+            || (diagnostics.contains("\"event.name\":\"selected_image_refresh_skipped\"")
+                || diagnostics.contains("\"kind\":\"selected_image_refresh_skipped\"")))
             && diagnostics.contains("selected image refresh disabled in unit tests")
             && diagnostics.contains("claude:published_image_stale"),
         "selected refresh decision should be visible in test diagnostics: {diagnostics}"
@@ -1260,7 +1286,9 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"image_cache_hit\"")
+        (diagnostics.contains("\"event.name\":\"image_cache_hit\"")
+            || (diagnostics.contains("\"event.name\":\"image_cache_hit\"")
+                || diagnostics.contains("\"kind\":\"image_cache_hit\"")))
             && diagnostics.contains("reusing derived image")
             && diagnostics.contains("recipe_hash_match")
             && diagnostics.contains("prepare_runtime_binaries")
@@ -1377,7 +1405,9 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
         ImageInvalidationReason::ConstructImageChanged,
     ] {
         assert!(
-            diagnostics.contains("\"kind\":\"image_cache_miss\"")
+            (diagnostics.contains("\"event.name\":\"image_cache_miss\"")
+                || (diagnostics.contains("\"event.name\":\"image_cache_miss\"")
+                    || diagnostics.contains("\"kind\":\"image_cache_miss\"")))
                 && diagnostics.contains(reason.as_str()),
             "diagnostics must explain rebuild reason {}: {diagnostics}",
             reason.as_str()
@@ -1436,7 +1466,9 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"image_cache_miss\"")
+        (diagnostics.contains("\"event.name\":\"image_cache_miss\"")
+            || (diagnostics.contains("\"event.name\":\"image_cache_miss\"")
+                || diagnostics.contains("\"kind\":\"image_cache_miss\"")))
             && diagnostics.contains("local_image_missing"),
         "build decision must include invalidation reason in diagnostics: {diagnostics}"
     );
@@ -1624,10 +1656,14 @@ plugins = []
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"image_cache_hit\"")
+        (diagnostics.contains("\"event.name\":\"image_cache_hit\"")
+            || (diagnostics.contains("\"event.name\":\"image_cache_hit\"")
+                || diagnostics.contains("\"kind\":\"image_cache_hit\"")))
             && diagnostics.contains("published_image_pull")
             && diagnostics.contains("agent_version_check")
-            && !diagnostics.contains("\"kind\":\"image_refresh_background\""),
+            && !(diagnostics.contains("\"event.name\":\"image_refresh_background\"")
+                || (diagnostics.contains("\"event.name\":\"image_refresh_background\"")
+                    || diagnostics.contains("\"kind\":\"image_refresh_background\""))),
         "reuse decision should skip foreground network checks: {diagnostics}"
     );
 }
@@ -1842,7 +1878,9 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"launch_plan\"")
+        (diagnostics.contains("\"event.name\":\"launch_plan\"")
+            || (diagnostics.contains("\"event.name\":\"launch_plan\"")
+                || diagnostics.contains("\"kind\":\"launch_plan\"")))
             && diagnostics.contains("PrewarmOnly")
             && diagnostics.contains("image_reuse:recipe_hash_match"),
         "explicit image prewarm reuse should emit a typed PrewarmOnly launch plan: {diagnostics}"
@@ -1930,7 +1968,9 @@ plugins = []
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"launch_plan\"")
+        (diagnostics.contains("\"event.name\":\"launch_plan\"")
+            || (diagnostics.contains("\"event.name\":\"launch_plan\"")
+                || diagnostics.contains("\"kind\":\"launch_plan\"")))
             && diagnostics.contains("PrewarmOnly")
             && diagnostics.contains("image_reuse:recipe_hash_match"),
         "explicit image prewarm reuse should emit a typed PrewarmOnly launch plan: {diagnostics}"
@@ -2121,7 +2161,9 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"image_cache_miss\"")
+        (diagnostics.contains("\"event.name\":\"image_cache_miss\"")
+            || (diagnostics.contains("\"event.name\":\"image_cache_miss\"")
+                || diagnostics.contains("\"kind\":\"image_cache_miss\"")))
             && diagnostics.contains("construct_image_changed"),
         "construct label mismatch should be explained in diagnostics: {diagnostics}"
     );
@@ -2450,7 +2492,9 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
     }
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"image_cache_miss\"")
+        (diagnostics.contains("\"event.name\":\"image_cache_miss\"")
+            || (diagnostics.contains("\"event.name\":\"image_cache_miss\"")
+                || diagnostics.contains("\"kind\":\"image_cache_miss\"")))
             && diagnostics.contains("recipe_hash_changed"),
         "rebuild decision should be explained in diagnostics: {diagnostics}"
     );

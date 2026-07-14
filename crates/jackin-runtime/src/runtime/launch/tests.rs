@@ -605,7 +605,11 @@ fn auth_provision_launch_plan_surfaces_per_agent_outcomes() {
     emit_auth_provision_launch_plan(&state, "jk-auth-demo");
 
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+    assert!(
+        (jsonl.contains("\"event.name\":\"launch_plan\"")
+            || jsonl.contains("\"kind\":\"launch_plan\"")),
+        "{jsonl}"
+    );
     assert!(jsonl.contains("AuthProvision"), "{jsonl}");
     assert!(jsonl.contains("credential_outcomes"), "{jsonl}");
     assert!(jsonl.contains("\\\"claude\\\":\\\"synced\\\""), "{jsonl}");
@@ -737,13 +741,22 @@ plugins = []
     drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\""),
+        (jsonl.contains("\"event.name\":\"sibling_auth_prewarm_done\"")
+            || jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\"")),
         "{jsonl}"
     );
-    assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+    assert!(
+        (jsonl.contains("\"event.name\":\"launch_plan\"")
+            || jsonl.contains("\"kind\":\"launch_plan\"")),
+        "{jsonl}"
+    );
     assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
     assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
-    assert!(jsonl.contains("\"kind\":\"timing_done\""), "{jsonl}");
+    assert!(
+        (jsonl.contains("\"event.name\":\"timing_done\"")
+            || jsonl.contains("\"kind\":\"timing_done\"")),
+        "{jsonl}"
+    );
     assert!(jsonl.contains("sibling_auth_prewarm"), "{jsonl}");
 }
 
@@ -7338,18 +7351,21 @@ async fn missing_matching_instance_records_launch_plan_rejections() {
     );
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        jsonl.contains("\"kind\":\"launch_plan_rejected\""),
+        (jsonl.contains("\"event.name\":\"launch_plan_rejected\"")
+            || jsonl.contains("\"kind\":\"launch_plan_rejected\"")),
         "{jsonl}"
     );
     assert!(jsonl.contains("AttachExisting"), "{jsonl}");
     assert!(jsonl.contains("StartStopped"), "{jsonl}");
     assert!(jsonl.contains("current_role_container_missing"), "{jsonl}");
     assert!(
-        !jsonl.contains("\"kind\":\"launch_plan\""),
+        !(jsonl.contains("\"event.name\":\"launch_plan\"")
+            || jsonl.contains("\"kind\":\"launch_plan\"")),
         "restore lookup must not select CreateFromValidImage/BuildAndCreate before image decision: {jsonl}"
     );
     assert!(
-        jsonl.contains("\"kind\":\"timing_done\"")
+        (jsonl.contains("\"event.name\":\"timing_done\"")
+            || jsonl.contains("\"kind\":\"timing_done\""))
             && jsonl.contains("current_restore_candidate")
             && jsonl.contains("inspect_current_container")
             && jsonl.contains("create_from_valid_image"),

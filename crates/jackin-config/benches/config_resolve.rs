@@ -34,7 +34,8 @@ fn bench_config(c: &mut Criterion) {
 
     group.bench_function("toml_parse_app_config", |b| {
         b.iter(|| {
-            let cfg: AppConfig = toml::from_str(black_box(SAMPLE)).unwrap_or_else(|e| panic!("{e}"));
+            let cfg: AppConfig =
+                toml::from_str(black_box(SAMPLE)).unwrap_or_else(|e| panic!("{e}"));
             black_box(cfg);
         });
     });
@@ -45,11 +46,13 @@ fn bench_config(c: &mut Criterion) {
                 let tmp = TempDir::new().unwrap_or_else(|e| panic!("{e}"));
                 let paths = JackinPaths::for_tests(tmp.path());
                 std::fs::create_dir_all(&paths.config_dir).unwrap_or_else(|e| panic!("{e}"));
-                std::fs::write(paths.config_dir.join("config.toml"), SAMPLE).unwrap_or_else(|e| panic!("{e}"));
+                std::fs::write(paths.config_dir.join("config.toml"), SAMPLE)
+                    .unwrap_or_else(|e| panic!("{e}"));
                 (tmp, paths)
             },
             |(_tmp, paths)| {
-                let cfg = jackin_config::load_split_config(&paths, None).unwrap_or_else(|e| panic!("{e}"));
+                let cfg = jackin_config::load_split_config(&paths, None)
+                    .unwrap_or_else(|e| panic!("{e}"));
                 black_box(cfg);
             },
             criterion::BatchSize::SmallInput,

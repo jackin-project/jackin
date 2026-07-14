@@ -31,7 +31,8 @@ fn bench_upsert(c: &mut Criterion) {
     group.bench_function("store_usage_snapshots_32", |b| {
         b.iter(|| {
             // Fresh path each iter would dominate; reuse DB and overwrite.
-            store_usage_snapshots(black_box(&db), black_box(&batch)).unwrap_or_else(|e| panic!("{e}"));
+            store_usage_snapshots(black_box(&db), black_box(&batch))
+                .unwrap_or_else(|e| panic!("{e}"));
         });
     });
     group.finish();
