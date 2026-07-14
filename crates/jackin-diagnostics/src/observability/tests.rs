@@ -28,6 +28,8 @@ fn semconv_registry_metric_names_are_stable_wire_strings() {
         "jackin.input.mouse_events",
         "jackin.usage.accounts_refreshed",
         "jackin.errors.count",
+        "jackin.docker.inspect.count",
+        "jackin.db.statement.count",
     ];
     assert_eq!(otel_metrics::ALL.len(), expected.len());
     for (got, want) in otel_metrics::ALL.iter().zip(expected) {

@@ -174,20 +174,48 @@ pub fn set_workspace_kind(kind: &str) {
     set_current_attr(otel_keys::WORKSPACE_KIND, kind);
 }
 
-/// Tag the current screen span with the agent the operator selected.
+/// Record a feature-decision event for the selected agent (plan 007).
+/// Does **not** stamp agent identity onto generic span attributes.
 pub fn set_agent_selected(agent: &str) {
-    set_current_attr(otel_keys::AGENT_SELECTED, agent);
+    emit_feature_decision("agent.selected", agent, "selected");
 }
 
-/// Tag the current screen span with the providers/agents currently active
-/// (comma-joined; empty string when none).
+/// Record a feature-decision event for active agents (plan 007).
 pub fn set_agents_active(agents: &[&str]) {
-    set_current_attr(otel_keys::AGENTS_ACTIVE, &agents.join(","));
+    emit_feature_decision("agents.active", &agents.join(","), "active");
 }
 
-/// Tag the current screen span with the resolved provider.
+/// Record a feature-decision event for the resolved provider (plan 007).
+/// Does **not** stamp provider identity onto generic span attributes.
 pub fn set_provider(provider: &str) {
-    set_current_attr(otel_keys::PROVIDER, provider);
+    emit_feature_decision("provider.selected", provider, "selected");
+}
+
+/// Current screen name for stamping logs/metrics (`jackin.screen.name`).
+#[must_use]
+pub fn current_screen_name() -> Option<&'static str> {
+    #[cfg(feature = "otlp")]
+    {
+        CURRENT.with(|cell| cell.borrow().as_ref().map(|link| link.name))
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        None
+    }
+}
+
+fn emit_feature_decision(key: &str, provider_or_agent: &str, variant: &str) {
+    tracing::event!(
+        target: "jackin_diagnostics",
+        tracing::Level::INFO,
+        "event.name" = "feature.decision",
+        "feature.key" = key,
+        "feature.provider" = provider_or_agent,
+        "feature.variant" = variant,
+        "jackin.component" = "host",
+        "event.outcome" = "success",
+        "feature decision"
+    );
 }
 
 /// Record a discrete operator action (selection, input, confirm, dismiss) as a
@@ -250,13 +278,27 @@ pub fn record_capsule_activity(label: &str, agent: Option<&str>) {
     {
         use opentelemetry::Context;
 
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
         let span = tracing::info_span!("capsule.tab", otel.name = "capsule:tab");
         drop(span.set_parent(Context::new()));
         span.set_attribute(otel_keys::TAB_LABEL, label.to_owned());
+        span.set_attribute(otel_keys::SCREEN_NAME, Screen::Capsule.as_str());
+        span.set_attribute(otel_keys::COMPONENT, "capsule");
+        // Agent identity is a feature-decision event, not a default span attr.
         if let Some(agent) = agent {
-            span.set_attribute(otel_keys::AGENT_SELECTED, agent.to_owned());
+            emit_feature_decision("agent.selected", agent, "tab");
         }
-        span.in_scope(|| tracing::info!(target: "jackin_capsule", "tab spawned: {label}"));
+        span.in_scope(|| {
+            tracing::event!(
+                target: "jackin_capsule",
+                tracing::Level::INFO,
+                "event.name" = "capsule.tab",
+                "jackin.component" = "capsule",
+                "jackin.screen.name" = Screen::Capsule.as_str(),
+                "event.outcome" = "success",
+                "tab spawned: {label}"
+            );
+        });
     }
     #[cfg(not(feature = "otlp"))]
     let _ = (label, agent);

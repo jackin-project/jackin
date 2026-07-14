@@ -194,6 +194,10 @@ pub mod otel_stages {
     pub const CREDENTIALS: &str = "credentials";
     pub const BUILDING: &str = "building";
     pub const PLAN: &str = "plan";
+    pub const RESTORE: &str = "restore";
+    pub const SIDECAR: &str = "sidecar";
+    pub const OP: &str = "op";
+    pub const LAUNCH: &str = "launch";
     pub const ALL: &[&str] = &[
         PREFLIGHT,
         IMAGE,
@@ -207,7 +211,37 @@ pub mod otel_stages {
         CREDENTIALS,
         BUILDING,
         PLAN,
+        RESTORE,
+        SIDECAR,
+        OP,
+        LAUNCH,
     ];
+}
+
+/// Stable span name for a launch stage label (`launch.derived_image`, …).
+/// Unknown labels fall back to `launch.stage` (registered generic) so free
+/// strings cannot invent unbounded span names.
+#[must_use]
+pub fn launch_stage_span_name(stage: &str) -> &'static str {
+    match stage {
+        otel_stages::DERIVED_IMAGE => "launch.derived_image",
+        otel_stages::PREFLIGHT => "launch.preflight",
+        otel_stages::IMAGE => "launch.image",
+        otel_stages::RUN => "launch.run",
+        otel_stages::ATTACH => "launch.attach",
+        otel_stages::CLEANUP => "launch.cleanup",
+        otel_stages::PREPARE => "launch.prepare",
+        otel_stages::START_CONTAINER => "launch.start_container",
+        otel_stages::HARDLINE => "launch.hardline",
+        otel_stages::CREDENTIALS => "launch.credentials",
+        otel_stages::RESTORE => "launch.restore",
+        otel_stages::SIDECAR => "launch.sidecar",
+        otel_stages::LAUNCH => "launch.launch",
+        otel_stages::PLAN => "launch.plan",
+        otel_stages::OP => "launch.op",
+        otel_stages::BUILDING => "launch.building",
+        _ => "launch.stage",
+    }
 }
 
 const ATTR_JACKIN_STAGE: AttrDef = AttrDef {
@@ -644,6 +678,27 @@ pub static EVENT_DEFS: &[EventDef] = &[
         component: "capsule",
         category: "capsule",
         operation: "capsule.error",
+    ),
+    def!(
+        name: "feature.decision",
+        kind: "feature.decision",
+        severity: Severity::Info,
+        body: "feature decision",
+        required: &[],
+        optional: &[
+            AttrDef { key: "feature.key", ty: AttrType::Str },
+            AttrDef { key: "feature.provider", ty: AttrType::Str },
+            AttrDef { key: "feature.variant", ty: AttrType::Str },
+        ],
+        outcomes: OUTCOMES_SUCCESS,
+        privacy: Privacy::Routine,
+        cardinality: Cardinality::Low,
+        sinks: SinkSet::ALL,
+        fingerprint: &[],
+        owner: "jackin-diagnostics",
+        component: "host",
+        category: "feature",
+        operation: "feature.decision",
     ),
     def!(
         name: "capsule.trace",

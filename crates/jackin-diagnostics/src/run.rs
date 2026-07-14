@@ -1171,11 +1171,13 @@ fn timing_key(stage: &str, name: &str) -> String {
 }
 
 fn launch_stage_span(stage: &str) -> tracing::Span {
-    let otel_name = format!("launch.{}", normalize_stage_name(stage));
+    // Registered span names only (plan 007) — free-form stage strings cannot
+    // invent unbounded `launch.{token}` names.
+    let otel_name = crate::registry::launch_stage_span_name(stage);
     let span = tracing::info_span!(
         "launch_stage",
         "jackin.stage" = stage,
-        otel.name = otel_name.as_str(),
+        otel.name = otel_name,
         otel.status_code = tracing::field::Empty,
         otel.status_description = tracing::field::Empty,
     );
@@ -1201,6 +1203,12 @@ fn launch_stage_span(stage: &str) -> tracing::Span {
     span
 }
 
+/// Normalize a free-form stage label for offline tooling / tests.
+/// Launch span names use [`crate::registry::launch_stage_span_name`] instead.
+#[allow(
+    dead_code,
+    reason = "retained for fixture/export-safe label normalization and unit tests"
+)]
 pub(crate) fn normalize_stage_name(stage: &str) -> String {
     let mut normalized = String::with_capacity(stage.len());
     let mut last_was_separator = false;

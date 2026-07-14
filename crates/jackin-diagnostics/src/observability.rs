@@ -89,6 +89,10 @@ pub mod otel_metrics {
     pub const INPUT_MOUSE_EVENTS: &str = "jackin.input.mouse_events";
     pub const USAGE_ACCOUNTS_REFRESHED: &str = "jackin.usage.accounts_refreshed";
     pub const ERRORS_COUNT: &str = "jackin.errors.count";
+    /// Docker inspect calls (plan 007).
+    pub const DOCKER_INSPECT_COUNT: &str = "jackin.docker.inspect.count";
+    /// Turso statement executions (plan 007); dimension `statement.name` only.
+    pub const DB_STATEMENT_COUNT: &str = "jackin.db.statement.count";
     pub const ALL: &[&str] = &[
         PROCESS_CPU_UTILIZATION,
         PROCESS_MEMORY_USAGE,
@@ -107,6 +111,8 @@ pub mod otel_metrics {
         INPUT_MOUSE_EVENTS,
         USAGE_ACCOUNTS_REFRESHED,
         ERRORS_COUNT,
+        DOCKER_INSPECT_COUNT,
+        DB_STATEMENT_COUNT,
     ];
 }
 
@@ -1619,6 +1625,13 @@ fn emit_jsonl_event_with_level(
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
     // exported records carry attributes but an empty body.
+    // Stamp current screen onto the active span so logs/metrics inherit it.
+    #[cfg(feature = "otlp")]
+    if let Some(screen) = crate::current_screen_name() {
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+        tracing::Span::current().set_attribute(otel_keys::SCREEN_NAME, screen);
+    }
+
     if kind == otel_events::DEBUG && !matches!(level, JsonlEventLevel::Error) {
         emit_debug_jsonl_event(
             run_id,

@@ -33,8 +33,8 @@ pub use logging::{
     telemetry_level, telemetry_level_name,
 };
 pub use metrics::{
-    incr_accounts_refreshed, incr_errors, incr_mouse_events, incr_terminal_bytes_received,
-    record_frame, record_render,
+    incr_accounts_refreshed, incr_db_statement, incr_docker_inspect, incr_errors,
+    incr_mouse_events, incr_terminal_bytes_received, record_frame, record_render,
 };
 pub use observability::{
     ContainerOtlp, backend_query_hint, configured_endpoint, configured_endpoint_summary,
@@ -59,9 +59,9 @@ pub use run::{
     mint_session_id, prune_all_runs, prune_old_runs,
 };
 pub use screen::{
-    Screen, ScreenGuard, carry_link_forward, current_traceparent, enter_screen, launch_trace,
-    record_action, record_capsule_activity, set_agent_selected, set_agents_active, set_provider,
-    set_workspace, set_workspace_kind,
+    Screen, ScreenGuard, carry_link_forward, current_screen_name, current_traceparent,
+    enter_screen, launch_trace, record_action, record_capsule_activity, set_agent_selected,
+    set_agents_active, set_provider, set_workspace, set_workspace_kind,
 };
 pub use secret_scrub::scrub_secrets;
 pub use summary::{

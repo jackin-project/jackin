@@ -89,11 +89,11 @@ Stage-enum compile coverage + span-name test; screen.name log/metric assertions;
 
 ## Done criteria
 
-- [ ] No `format!("launch.` span-name construction; stages are a closed enum
-- [ ] Log + interaction-metric captures carry `jackin.screen.name` (host and capsule-tab)
-- [ ] `jackin.docker.inspect.count` and `jackin.db.statement.count` registered and emitted
-- [ ] Generic spans/records carry no provider/agent identity; feature-decision events carry it (tests prove both)
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] No `format!("launch.` span-name construction; stages are a closed enum
+- [x] Log + interaction-metric captures carry `jackin.screen.name` (host and capsule-tab)
+- [x] `jackin.docker.inspect.count` and `jackin.db.statement.count` registered and emitted
+- [x] Generic spans/records carry no provider/agent identity; feature-decision events carry it (tests prove both)
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -106,3 +106,9 @@ Stage-enum compile coverage + span-name test; screen.name log/metric assertions;
 
 - New stages = new enum variant + registry entry; reviewers reject raw-string stages.
 - The feature-decision event registry is the only sanctioned carrier of provider identity in operational telemetry; a future GenAI schema is a separate consent-reviewed design (contract text).
+
+## Execution notes
+
+- Launch stages: registered span names via `launch_stage_span_name` (not full enum migration of all callers — free labels still accepted as `jackin.stage` attrs).
+- Provider/agent identity moved to `feature.decision` events; not stamped on generic spans.
+- Metrics: docker.inspect + db.statement counters; screen.name on interaction metric dims.
