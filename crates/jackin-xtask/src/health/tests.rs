@@ -150,7 +150,7 @@ fn cfg_attr_allow_is_collected() {
 
 #[test]
 fn bare_allow_vs_expect_with_reason_policy() {
-    let bare = parse_suppression_attrs("#[expect(dead_code)]\nfn x() {}\n");
+    let bare = parse_suppression_attrs("#[allow(dead_code)]\nfn x() {}\n");
     assert_eq!(bare.len(), 1);
     assert!(
         bare[0].0 && !bare[0].2,
