@@ -161,7 +161,10 @@ fn record_agent_history_uses_injected_clock() {
     let base = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let clock = Arc::new(ManualClock::with_system_base(base));
     let mut mux = test_mux(40, 80);
-    mux.clock = Arc::clone(&clock);
+    {
+        let shared: Arc<ManualClock> = Arc::clone(&clock);
+        mux.clock = shared;
+    }
 
     mux.record_agent_history(1, "alpha".into(), Some("claude".into()), None);
     let started = mux.session_supervisor.agent_history[0].started_at;
