@@ -7,6 +7,7 @@ Plans hold **unfinished** multi-step work. Fully shipped plan bodies are removed
 | Path | Scope | Status |
 |------|--------|--------|
 | [agent-status/](agent-status/) | Product detection (live goldens, pack rewrite, live authority, remote packs) | Deferred / open residuals |
+| [codebase-health/](codebase-health/) | Deep advisor gap-audit of the codebase-health enforcement roadmap (2026-07-14, commit 846038946): 29 plans, telemetry/OTLP first (001–009), then lints/CI/ownership/testing/perf/docs | Open / TODO |
 
 ## Removed (shipped)
 
