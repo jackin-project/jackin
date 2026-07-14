@@ -12,7 +12,7 @@ ARG SHELLFIRM_VERSION
 RUN cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked --root /opt/shellfirm && \
     /opt/shellfirm/bin/shellfirm --version | grep -F "${SHELLFIRM_VERSION}"
 
-FROM debian:trixie-20260623@sha256:d07d1b51c39f51188e60be9b64e6bf769fa94e187f092bc32b91305cfa34ba5a
+FROM debian:13@sha256:fac46bff2e02f51425b6e33b0e1169f55dfb053d83511ca28aa50c09fd5ed7a4
 
 ARG SHELLFIRM_VERSION
 
