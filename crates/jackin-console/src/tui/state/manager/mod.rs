@@ -1228,3 +1228,6 @@ impl ListShellState for ManagerState<'_> {
         self.list_split_pct = pct;
     }
 }
+
+#[cfg(test)]
+mod tests;

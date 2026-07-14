@@ -851,6 +851,34 @@ jobs:
         run: |
           pending=$(git ls-files --others --exclude-standard '*.pending-snap'; find crates -name '*.pending-snap' -print)
           if [ -n "$pending" ]; then echo "::error::pending insta snapshots found:"; echo "$pending"; exit 1; fi
+      - name: Enumerate changed insta snapshots for review
+        run: |
+          # Plan 024: absence of *.pending-snap is not proof of review. List every
+          # .snap that differs from origin/main so PR reviewers must acknowledge them.
+          base=$(git merge-base origin/main HEAD 2>/dev/null || true)
+          if [ -z "$base" ]; then
+            echo "No merge-base with origin/main; skipping snapshot-diff enumeration."
+            exit 0
+          fi
+          changed=$(git diff --name-only "$base" -- '*.snap' || true)
+          {
+            echo "## Changed insta snapshots"
+            if [ -z "$changed" ]; then
+              echo "_None vs origin/main._"
+            else
+              echo "Reviewer must acknowledge each changed \`.snap\` (hand-edited snapshots that match buggy output are rejected in review):"
+              echo
+              echo '```'
+              echo "$changed"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$changed" ]; then
+            echo "Changed .snap files:"
+            echo "$changed"
+          else
+            echo "No changed .snap files vs origin/main."
+          fi
       - run: cargo test --doc --workspace --locked
       - name: Capture sccache stats
         if: always()
