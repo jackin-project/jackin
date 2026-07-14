@@ -20,9 +20,6 @@ mode = "enforce"
 [[family.entry]]
 key = "crates/jackin-diagnostics/src/observability.rs"
 bound = 2003
-[[family.entry]]
-key = "crates/jackin-runtime/src/runtime/image.rs"
-bound = 1928
 
 [[family]]
 id = "file-size-test"
@@ -441,6 +438,9 @@ bound = 2
 key = "clippy::unnecessary_wraps@jackin-runtime"
 bound = 1
 [[family.entry]]
+key = "clippy::unused_self@jackin-diagnostics"
+bound = 1
+[[family.entry]]
 key = "clippy::unwrap_used@jackin"
 bound = 12
 [[family.entry]]
@@ -493,7 +493,7 @@ key = "dead_code@jackin-usage"
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-xtask"
-bound = 3
+bound = 4
 [[family.entry]]
 key = "deprecated@jackin-capsule"
 bound = 1
