@@ -2796,6 +2796,7 @@ dependencies = [
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-process",
  "jackin-protocol",
  "jackin-term",
  "jackin-tui",
@@ -3080,6 +3081,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-process"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "tokio",
+]
+
+[[package]]
 name = "jackin-protocol"
 version = "0.6.0-dev"
 dependencies = [
@@ -3114,6 +3123,7 @@ dependencies = [
  "jackin-isolation",
  "jackin-launch-tui",
  "jackin-manifest",
+ "jackin-process",
  "jackin-protocol",
  "jackin-test-support",
  "jackin-tui",
@@ -3212,6 +3222,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
+ "jackin-process",
  "proc-macro2",
  "serde",
  "serde_json",

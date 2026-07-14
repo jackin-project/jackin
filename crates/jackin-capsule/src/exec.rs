@@ -163,29 +163,22 @@ pub async fn resolve_credentials(
 
 /// Execute a command with the given environment additions.
 /// Returns (`exit_code`, `stdout`, `stderr`, `redacted_count`).
+///
+/// Transport is [`jackin_process`] with **no read timeout** — the operator
+/// (or `op` Touch ID) may take arbitrarily long; see also `resolve_credentials`.
 pub async fn execute_command(
     command: &str,
     args: &[String],
     extra_env: &std::collections::BTreeMap<String, String>,
     secrets_for_redaction: &[&str],
 ) -> Result<(i32, String, String, u32)> {
-    use std::process::Stdio;
-
-    let mut cmd = tokio::process::Command::new(command);
-    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
-
-    for (k, v) in extra_env {
-        cmd.env(k, v);
-    }
-
-    let output = cmd
-        .spawn()
-        .with_context(|| format!("spawning {command:?}"))?
-        .wait_with_output()
+    let mut request = jackin_process::ExecRequest::new(command, args).no_timeout();
+    request = request.envs(extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    let output = jackin_process::exec_async(&request)
         .await
-        .with_context(|| format!("waiting for {command:?}"))?;
+        .with_context(|| format!("running {command:?}"))?;
 
-    let exit_code = output.status.code().unwrap_or(-1);
+    let exit_code = output.code.unwrap_or(-1);
 
     // Decode to UTF-8. `from_utf8` reuses the child's buffer on the common
     // (valid-UTF-8) path; only invalid bytes pay the lossy re-allocation.

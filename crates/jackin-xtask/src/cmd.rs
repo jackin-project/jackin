@@ -23,8 +23,17 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
 }
 
 /// Capture stdout as bytes. On failure, error includes trimmed stderr.
+///
+/// Routes through [`jackin_process`] when the command is a simple program+args
+/// capture with inherited env; keeps `Command::output` for complex configured
+/// commands (env/cwd/stdio already set on the builder).
 pub(crate) fn output(cmd: &mut Command) -> Result<Vec<u8>> {
     let display = display_command(cmd);
+    // Prefer shared transport for plain captures (no pre-configured stdio).
+    if let Some(request) = try_exec_request(cmd) {
+        return jackin_process::capture_stdout_sync(&request)
+            .with_context(|| format!("running {display}"));
+    }
     #[expect(
         clippy::disallowed_methods,
         reason = "xtask automation shells out to git, gh, cargo, and mise; centralized here"
@@ -40,6 +49,20 @@ pub(crate) fn output(cmd: &mut Command) -> Result<Vec<u8>> {
             stderr.trim()
         ))
     }
+}
+
+/// Build a transport request when `cmd` is a plain program+args capture.
+fn try_exec_request(cmd: &Command) -> Option<jackin_process::ExecRequest> {
+    let program = cmd.get_program();
+    if program.is_empty() {
+        return None;
+    }
+    let args: Vec<_> = cmd.get_args().collect();
+    let mut request = jackin_process::ExecRequest::new(program, args);
+    if let Some(cwd) = cmd.get_current_dir() {
+        request = request.cwd(cwd);
+    }
+    Some(request)
 }
 
 /// Capture stdout as a lossy UTF-8 owned string.

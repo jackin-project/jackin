@@ -78,8 +78,9 @@ Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
         jackin-agent-status pure status detection/arbitration      → core, protocol
         jackin-usage       in-container usage/pricing/telemetry + token monitors → core, protocol, diagnostics
         jackin-term        owned terminal model (vte parser + DamageGrid + GridSnapshot) → (no workspace deps)
+        jackin-process     shared subprocess transport (capture/timeout/retry/status; no redaction) → (no workspace deps)
         jackin-xtask       workspace automation binary (cargo xtask; construct image + dev fixtures)
-                           → (no workspace deps; see Workspace Automation page)
+                           → jackin-process (see Workspace Automation page)
         jackin-dev         contributor PR-verification binary (standalone; no workspace deps)
         jackin-pr-trailers squash-merge trailer extraction CLI (standalone; no workspace deps)
 

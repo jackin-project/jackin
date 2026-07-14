@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+jackin-process = { workspace = true }
 hex = { workspace = true }
 proc-macro2 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

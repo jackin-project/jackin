@@ -18,6 +18,7 @@ members = [
     "crates/jackin-host",
     "crates/jackin-image",
     "crates/jackin-manifest",
+    "crates/jackin-process",
     "crates/jackin-protocol",
     "crates/jackin-launch-tui",
     "crates/jackin-runtime",
@@ -78,6 +79,7 @@ jackin-instance = { version = "0.6.0-dev", path = "crates/jackin-instance" }
 jackin-isolation = { version = "0.6.0-dev", path = "crates/jackin-isolation" }
 jackin-launch-tui = { version = "0.6.0-dev", path = "crates/jackin-launch-tui" }
 jackin-manifest = { version = "0.6.0-dev", path = "crates/jackin-manifest" }
+jackin-process = { version = "0.6.0-dev", path = "crates/jackin-process" }
 jackin-protocol = { version = "0.6.0-dev", path = "crates/jackin-protocol" }
 jackin-runtime = { version = "0.6.0-dev", path = "crates/jackin-runtime" }
 jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
