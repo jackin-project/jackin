@@ -229,7 +229,7 @@ fn exported_log_carries_body_and_attributes() {
         log_attr(&log.record, "event.name").as_deref(),
         Some("compact_kind")
     );
-    assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("d"));
+    assert_eq!(log_attr(&log.record, "jackin.detail").as_deref(), Some("d"));
     assert_eq!(
         log_attr(&log.record, "parallax.run.id").as_deref(),
         Some("run1")
@@ -283,7 +283,7 @@ fn exported_log_body_and_detail_are_redacted() {
     assert_eq!(logs.len(), 1);
     assert_eq!(log_body(&logs[0].record).as_deref(), Some("<redacted>"));
     assert_eq!(
-        log_attr(&logs[0].record, "detail").as_deref(),
+        log_attr(&logs[0].record, "jackin.detail").as_deref(),
         Some("<redacted>")
     );
 }
@@ -312,7 +312,10 @@ fn debug_kind_is_debug_severity_and_filtered_at_info() {
     let log = &debug_logs[0];
     assert_eq!(log.record.severity_number(), Some(Severity::Debug));
     assert_eq!(log_attr(&log.record, "stage"), None);
-    assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("docker"));
+    assert_eq!(
+        log_attr(&log.record, "jackin.detail").as_deref(),
+        Some("docker")
+    );
 }
 
 #[test]
@@ -323,7 +326,7 @@ fn absent_stage_and_detail_are_not_exported_as_sentinels() {
 
     assert_eq!(logs.len(), 1);
     assert_eq!(log_attr(&logs[0].record, "stage"), None);
-    assert_eq!(log_attr(&logs[0].record, "detail"), None);
+    assert_eq!(log_attr(&logs[0].record, "jackin.detail"), None);
     assert_eq!(log_attr(&logs[0].record, "diagnostics_message"), None);
     assert_eq!(log_attr(&logs[0].record, "jackin_jsonl"), None);
 }
@@ -537,7 +540,7 @@ fn subprocess_done_carries_duration_and_exit() {
         Some("git")
     );
     assert_eq!(log_attr(&log.record, "stage"), None);
-    let detail = log_attr(&log.record, "detail").expect("subprocess detail");
+    let detail = log_attr(&log.record, "jackin.detail").expect("subprocess detail");
     assert!(detail.contains("\"program\":\"git\""), "{detail}");
     assert!(detail.contains("\"elapsed_ms\":42"), "{detail}");
     assert!(detail.contains("\"exit_code\":0"), "{detail}");
@@ -670,7 +673,7 @@ fn direct_diagnostics_events_reach_otlp() {
     let crash_log = by_kind("container_crash_log");
     assert_eq!(crash_log.record.severity_number(), Some(Severity::Error));
     assert_eq!(
-        log_attr(&crash_log.record, "detail").as_deref(),
+        log_attr(&crash_log.record, "jackin.detail").as_deref(),
         Some("crash tail")
     );
 }
@@ -694,7 +697,7 @@ fn crash_evidence_is_redacted_and_capped() {
         .iter()
         .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("container_crash_log"))
         .expect("container_crash_log exported");
-    let detail = log_attr(&crash_log.record, "detail").expect("capped evidence detail");
+    let detail = log_attr(&crash_log.record, "jackin.detail").expect("capped evidence detail");
 
     assert!(detail.starts_with("(truncated to last 4096 bytes)\n"));
     assert!(!detail.contains("ghp_"));

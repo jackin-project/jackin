@@ -954,6 +954,18 @@ fn drive_standard_conformance_scenario() -> crate::observability::TestExport {
                 "forced failure for conformance",
                 Some("conformance_error"),
             );
+            // Capsule-bridge shaped record (plan 004/009 host-to-capsule path).
+            tracing::event!(
+                target: "jackin_capsule",
+                tracing::Level::INFO,
+                "event.name" = "capsule.log",
+                "jackin.category" = "capsule",
+                "jackin.component" = "capsule",
+                "event.outcome" = "success",
+                "session.id" = "conformance-session",
+                "parallax.run.id" = "conformance-run",
+                "capsule breadcrumb"
+            );
             run.compact(crate::otel_events::SESSION_DETACH, "operator detached");
 
             for _ in 0..100 {
@@ -1105,6 +1117,65 @@ fn conformance_export_volume_stays_within_budget() {
     let spans = export.spans.get_finished_spans().unwrap();
     assert!(logs.len() <= MAX_DEBUG_LOGS);
     assert!(spans.len() <= MAX_SPANS);
+    // Measured volume artifact for the export-volume ratchet (plan 009).
+    let volume = serde_json::json!({
+        "default_mode_logs": logs.len(),
+        "default_mode_spans": spans.len(),
+        "default_mode_metrics": 0,
+        "max_debug_logs": MAX_DEBUG_LOGS,
+        "max_spans": MAX_SPANS,
+    });
+    let path = std::path::Path::new("target/telemetry-volume.json");
+    if let Some(parent) = path.parent() {
+        drop(fs::create_dir_all(parent));
+    }
+    drop(fs::write(
+        path,
+        serde_json::to_string_pretty(&volume).unwrap_or_default(),
+    ));
+    // Dropped attribute counts must stay zero under the configured limits.
+    for span in &spans {
+        assert_eq!(
+            span.dropped_attributes_count, 0,
+            "span {} dropped attributes",
+            span.name
+        );
+    }
+}
+
+#[cfg(feature = "otlp")]
+#[test]
+fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
+    let _lock = DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let export = drive_standard_conformance_scenario();
+    for log in export.logs.get_emitted_logs().unwrap() {
+        if let Some(body) = conformance_log_body(&log.record) {
+            assert!(!body.starts_with('['), "body has bracket prefix: {body}");
+        }
+        for key in crate::PROHIBITED_TOP_LEVEL_KEYS {
+            assert!(
+                conformance_log_attr(&log.record, key).is_none(),
+                "prohibited key {key} on log"
+            );
+        }
+        // Resource excludes run/session/component (plan 002).
+        assert!(
+            log.resource
+                .get(&opentelemetry::Key::from_static_str(
+                    crate::otel_keys::RUN_ID
+                ))
+                .is_none()
+        );
+        assert!(
+            log.resource
+                .get(&opentelemetry::Key::from_static_str(
+                    crate::otel_keys::COMPONENT
+                ))
+                .is_none()
+        );
+    }
 }
 
 #[cfg(feature = "otlp")]

@@ -376,6 +376,7 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
         }
         "agent_doc_bytes" => measure_agent_doc_bytes(root),
         "export_volume_constants" => measure_export_volume_constants(root),
+        "export_volume_measured" => measure_export_volume_measured(root),
         "perf_dhat_budgets" => measure_perf_dhat_budgets(root),
         "test_layout_violations" => {
             // numeric view not used for presence; return empty
@@ -473,6 +474,35 @@ fn measure_export_volume_constants(root: &Path) -> Result<BTreeMap<String, usize
         out.insert(key.to_owned(), value);
     }
     Ok(out)
+}
+
+/// Prefer measured counts from `target/telemetry-volume.json` (written by the
+/// conformance suite); fall back to source constants when the artifact is absent
+/// (e.g. ratchet clean without a prior nextest run).
+fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>> {
+    let artifact = root.join("target/telemetry-volume.json");
+    if artifact.is_file() {
+        let text = fs::read_to_string(&artifact)
+            .with_context(|| format!("reading measured volume at {}", artifact.display()))?;
+        let value: serde_json::Value = serde_json::from_str(&text)
+            .with_context(|| format!("parsing measured volume at {}", artifact.display()))?;
+        let mut out = BTreeMap::new();
+        for key in [
+            "default_mode_logs",
+            "default_mode_spans",
+            "default_mode_metrics",
+            "max_debug_logs",
+            "max_spans",
+        ] {
+            if let Some(n) = value.get(key).and_then(serde_json::Value::as_u64) {
+                out.insert(key.to_owned(), n as usize);
+            }
+        }
+        if !out.is_empty() {
+            return Ok(out);
+        }
+    }
+    measure_export_volume_constants(root)
 }
 
 fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {

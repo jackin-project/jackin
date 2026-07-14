@@ -827,7 +827,11 @@ mod otlp {
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP log exporter init failed: {e}"))?;
 
+        // Attribute limits: generous but finite (observed max attrs + headroom).
+        // Prevents unbounded dimension growth; DroppedAttributesCount must stay 0.
         let tracer_provider = SdkTracerProvider::builder()
+            .with_max_attributes_per_span(64)
+            .with_max_attributes_per_event(32)
             .with_span_processor(BatchSpanProcessor::builder(span_exporter, Tokio).build())
             .with_resource(resource.clone())
             .build();
@@ -1087,6 +1091,8 @@ mod otlp {
         let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
         let resource = resource(run_id);
         let tracer_provider = SdkTracerProvider::builder()
+            .with_max_attributes_per_span(64)
+            .with_max_attributes_per_event(32)
             .with_simple_exporter(spans.clone())
             .with_resource(resource.clone())
             .build();
@@ -1693,7 +1699,7 @@ fn emit_info_jsonl_event(
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
             "jackin.stage" = stage,
-            detail = detail,
+            "jackin.detail" = detail,
             "error.type" = error_type,
             "{message}"
         ),
@@ -1707,7 +1713,7 @@ fn emit_info_jsonl_event(
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
             "jackin.stage" = stage,
-            detail = detail,
+            "jackin.detail" = detail,
             "{message}"
         ),
         (Some(stage), None, Some(error_type)) => tracing::event!(
@@ -1744,7 +1750,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
-            detail = detail,
+            "jackin.detail" = detail,
             "error.type" = error_type,
             "{message}"
         ),
@@ -1757,7 +1763,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
-            detail = detail,
+            "jackin.detail" = detail,
             "{message}"
         ),
         (None, None, Some(error_type)) => tracing::event!(
@@ -1806,7 +1812,7 @@ fn emit_debug_jsonl_event(
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
             "jackin.stage" = stage,
-            detail = detail,
+            "jackin.detail" = detail,
             "error.type" = error_type,
             "{message}"
         ),
@@ -1820,7 +1826,7 @@ fn emit_debug_jsonl_event(
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
             "jackin.stage" = stage,
-            detail = detail,
+            "jackin.detail" = detail,
             "{message}"
         ),
         (Some(stage), None, Some(error_type)) => tracing::event!(
@@ -1857,7 +1863,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
-            detail = detail,
+            "jackin.detail" = detail,
             "error.type" = error_type,
             "{message}"
         ),
@@ -1870,7 +1876,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
-            detail = detail,
+            "jackin.detail" = detail,
             "{message}"
         ),
         (None, None, Some(error_type)) => tracing::event!(
@@ -1919,7 +1925,7 @@ fn emit_error_jsonl_event(
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
             "jackin.stage" = stage,
-            detail = detail,
+            "jackin.detail" = detail,
             "error.type" = error_type,
             "{message}"
         ),
@@ -1933,7 +1939,7 @@ fn emit_error_jsonl_event(
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
             "jackin.stage" = stage,
-            detail = detail,
+            "jackin.detail" = detail,
             "{message}"
         ),
         (Some(stage), None, Some(error_type)) => tracing::event!(
@@ -1970,7 +1976,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
-            detail = detail,
+            "jackin.detail" = detail,
             "error.type" = error_type,
             "{message}"
         ),
@@ -1983,7 +1989,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
-            detail = detail,
+            "jackin.detail" = detail,
             "{message}"
         ),
         (None, None, Some(error_type)) => tracing::event!(

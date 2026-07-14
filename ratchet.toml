@@ -18,6 +18,9 @@ provider = "file_lines_production"
 cap = 1850
 mode = "enforce"
 [[family.entry]]
+key = "crates/jackin-diagnostics/src/observability.rs"
+bound = 2019
+[[family.entry]]
 key = "crates/jackin-runtime/src/runtime/image.rs"
 bound = 1941
 
@@ -369,12 +372,12 @@ provider = "agent_doc_bytes"
 mode = "report"
 # Report-only Phase 6 context-economy seed; never fails.
 
-# Telemetry-conformance export-volume budgets: constants live in the canonical
-# crates/jackin-diagnostics/src/tests.rs suite; shrink-only via this family.
+# Telemetry-conformance export-volume budgets (plan 009). Prefer measured
+# counts from target/telemetry-volume.json; fall back to source constants.
 [[family]]
 id = "export-volume"
 kind = "numeric"
-provider = "export_volume_constants"
+provider = "export_volume_measured"
 mode = "enforce"
 # Cap 0 → every measured key must be listed (no unlisted firehose constants).
 cap = 0

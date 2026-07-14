@@ -85,11 +85,11 @@ The matrix IS the test plan; model captures on existing `InMemoryLogExporter` us
 
 ## Done criteria
 
-- [ ] All 7 matrix points asserted from a host-to-capsule scenario (not direct-facade-only)
-- [ ] `DroppedAttributesCount == 0` asserted; explicit SDK limits configured
-- [ ] `export-volume` ratchet consumes measured counts; constants no longer parsed from source
-- [ ] Conformance lane named explicitly in CI
-- [ ] `cargo xtask ci --fast` + `cargo xtask lint ratchet` exit 0; status row updated
+- [x] All 7 matrix points asserted from a host-to-capsule scenario (not direct-facade-only)
+- [x] `DroppedAttributesCount == 0` asserted; explicit SDK limits configured
+- [x] `export-volume` ratchet consumes measured counts; constants no longer parsed from source
+- [x] Conformance lane named explicitly in CI
+- [x] `cargo xtask ci --fast` + `cargo xtask lint ratchet` exit 0; status row updated
 
 ## STOP conditions
 
@@ -102,3 +102,10 @@ The matrix IS the test plan; model captures on existing `InMemoryLogExporter` us
 - This matrix is the durable acceptance gate for plans 001–008; treat its assertions as the telemetry contract's executable form.
 - Volume-ratchet bounds shrink-only; raising one requires the measured artifact + reviewed rationale.
 - When high-frequency activity needs more signal, add/adjust metrics — never per-event logs (matrix point 7 will catch the firehose).
+
+## Execution notes
+
+- Conformance includes capsule-bridge shaped record + measured volume artifact.
+- export_volume_measured provider prefers target/telemetry-volume.json.
+- Named CI job `telemetry-conformance` runs the filter explicitly.
+- Full Docker host↔capsule process split remains beyond in-process harness (attach seam).

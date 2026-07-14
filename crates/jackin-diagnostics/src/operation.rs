@@ -213,9 +213,9 @@ pub fn operation_log_with_outcome(
 
     match level {
         OperationLevel::Info => {
-            tracing::info!(
+            tracing::event!(
                 target: OPERATION_TARGET,
-                kind = "operation",
+                tracing::Level::INFO,
                 "event.name" = event_name,
                 "jackin.category" = category,
                 "event.outcome" = outcome.as_str(),
@@ -224,9 +224,9 @@ pub fn operation_log_with_outcome(
             emit_compact_line(category, body);
         }
         OperationLevel::Debug => {
-            tracing::debug!(
+            tracing::event!(
                 target: OPERATION_TARGET,
-                kind = "operation",
+                tracing::Level::DEBUG,
                 "event.name" = event_name,
                 "jackin.category" = category,
                 "event.outcome" = outcome.as_str(),
@@ -235,9 +235,9 @@ pub fn operation_log_with_outcome(
             emit_debug_line(category, body);
         }
         OperationLevel::Warn => {
-            tracing::warn!(
+            tracing::event!(
                 target: OPERATION_TARGET,
-                kind = "operation",
+                tracing::Level::WARN,
                 "event.name" = event_name,
                 "jackin.category" = category,
                 "event.outcome" = outcome.as_str(),
@@ -278,9 +278,9 @@ pub fn operation_error(
 
     let category = registry::lookup(event_name).map_or("error", |d| d.category);
 
-    tracing::error!(
+    tracing::event!(
         target: OPERATION_TARGET,
-        kind = "operation_error",
+        tracing::Level::ERROR,
         "event.name" = event_name,
         "jackin.category" = category,
         "event.outcome" = Outcome::Failure.as_str(),
