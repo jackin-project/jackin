@@ -70,7 +70,7 @@ for grok (until Step 2).
 Create `grok.toml` with blocked (permission/approval prompt) and working (spinner/interrupt) and idle
 (prompt caret) rules, matched against a **real captured grok golden** (plan 005's harness). Add it to
 `AGENT_STATUS_ASSETS` (`derived_image.rs`) and `load_embedded_packs` (`rules.rs`). Do **not** copy herdr's
-TOML verbatim (AGPL) — author jackin's own from real output.
+TOML verbatim (AGPL) — author jackin❯ fixtures from real output.
 
 **Verify**: `cargo nextest run -p jackin-capsule -E 'test(/exhaustive|packs_load/)'` → pass;
 `grep -rn "grok" docker/runtime/agent-status/packs crates/jackin-image/src/derived_image.rs crates/jackin-capsule/src/agent_status/rules.rs` → present in all three.

@@ -170,9 +170,10 @@ fn check_codebase_map(root: &Path) -> Result<()> {
         .with_context(|| format!("reading codebase map at {}", map_path.display()))?;
 
     let members = workspace_package_names(root)?;
+    let member_set: BTreeSet<&str> = members.iter().map(String::as_str).collect();
+
     let mut missing: Vec<String> = Vec::new();
     for name in &members {
-        // Require a whole-token hit so short names don't false-positive.
         let needle = name.as_str();
         let present = map
             .split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
@@ -181,18 +182,54 @@ fn check_codebase_map(root: &Path) -> Result<()> {
             missing.push(name.clone());
         }
     }
-    if missing.is_empty() {
+
+    // Two-way: jackin-* tokens in the map that are not workspace members.
+    let mut stale: Vec<String> = Vec::new();
+    for tok in map.split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_') {
+        if !tok.starts_with("jackin") {
+            continue;
+        }
+        if tok == "jackin" || tok == "jackin❯" {
+            continue;
+        }
+        // crate-shaped: jackin-foo or jackin_foo
+        if !(tok.contains('-') || tok.contains('_')) {
+            continue;
+        }
+        if !member_set.contains(tok) {
+            stale.push(tok.to_owned());
+        }
+    }
+    stale.sort();
+    stale.dedup();
+
+    let mut problems = Vec::new();
+    if !missing.is_empty() {
+        missing.sort();
+        problems.push(format!(
+            "{} workspace crate(s) missing from {map_rel}:\n  {}",
+            missing.len(),
+            missing.join("\n  ")
+        ));
+    }
+    if !stale.is_empty() {
+        problems.push(format!(
+            "{} map token(s) are not workspace members (stale after rename/delete):\n  {}",
+            stale.len(),
+            stale.join("\n  ")
+        ));
+    }
+    if problems.is_empty() {
         emit(&format!(
-            "docs map-check OK — {} workspace crate(s) named in {map_rel}",
+            "docs map-check OK — {} workspace crate(s); two-way map tokens clean in {map_rel}",
             members.len()
         ));
         return Ok(());
     }
-    missing.sort();
     bail!(
-        "{} workspace crate(s) missing from {map_rel}:\n  {}\n\nAdd each name to the Workspace crate structure section (or the map prose) so map↔metadata stays honest.\nre-run: cargo xtask docs map-check",
-        missing.len(),
-        missing.join("\n  ")
+        "{} map-check problem(s):\n{}\n\nre-run: cargo xtask docs map-check",
+        problems.len(),
+        problems.join("\n")
     );
 }
 

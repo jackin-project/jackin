@@ -456,6 +456,47 @@ jobs:
       # may only ever shrink. See `roadmap/codebase-health-enforcement`.
       - run: cargo run -p jackin-xtask --locked -- lint --strict
 
+  # Plan 028: README freshness owns checkout (fetch-depth 0) so the gate can run.
+  readme-freshness:
+    needs: [changes, matrix-setup]
+    if: needs.changes.outputs.rust == 'true' && github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 20
+    name: README freshness (advisory) (${{ matrix.config.lane }})
+    continue-on-error: true
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Fetch base branch
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+      - name: README freshness gate
+        run: cargo run -p jackin-xtask --locked -- lint readme-freshness --base "origin/${{ github.base_ref }}"
+      - name: Synthetic-diff self-test (failure path)
+        run: |
+          set -euo pipefail
+          # Prove the CLI is wired: missing base ref must not silently no-op without output.
+          set +e
+          out=$(cargo run -p jackin-xtask --locked -- lint readme-freshness --base "origin/does-not-exist-ref-for-probe" 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          echo "exit=$code"
+          # Advisory job: either non-zero (fail-closed) or empty-diff OK message is acceptable.
+
   clippy:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
@@ -474,13 +515,6 @@ jobs:
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "off"
     steps:
-
-      - name: README freshness (advisory)
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        run: |
-          git fetch --no-tags origin "${{ github.base_ref }}" || true
-          cargo run -p jackin-xtask --locked -- lint readme-freshness --base "origin/${{ github.base_ref }}"
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain

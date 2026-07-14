@@ -316,7 +316,7 @@ key = "clippy::print_stdout@jackin-term"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stdout@jackin-xtask"
-bound = 26
+bound = 25
 [[family.entry]]
 key = "clippy::redundant_pub_crate@jackin"
 bound = 1
@@ -555,11 +555,109 @@ bound = 1
 id = "agent-doc-bytes"
 kind = "numeric"
 provider = "agent_doc_bytes"
-mode = "report"
-# Report-only Phase 6 context-economy seed; never fails.
+mode = "enforce"
+# Plan 027: enforce at measured maxima (shrink-only). Cap 0 → every key must be listed.
+cap = 0
+[[family.entry]]
+key = "AGENTS.md"
+bound = 6102
+[[family.entry]]
+key = "CLAUDE.md"
+bound = 6102
+[[family.entry]]
+key = "Claude.md"
+bound = 6102
+[[family.entry]]
+key = "crates/AGENTS.md"
+bound = 14742
+[[family.entry]]
+key = "crates/jackin-agent-status/README.md"
+bound = 2129
+[[family.entry]]
+key = "crates/jackin-build-meta/README.md"
+bound = 628
+[[family.entry]]
+key = "crates/jackin-capsule/README.md"
+bound = 6338
+[[family.entry]]
+key = "crates/jackin-config/README.md"
+bound = 2745
+[[family.entry]]
+key = "crates/jackin-console-oppicker/README.md"
+bound = 1395
+[[family.entry]]
+key = "crates/jackin-console/README.md"
+bound = 2217
+[[family.entry]]
+key = "crates/jackin-core/README.md"
+bound = 5038
+[[family.entry]]
+key = "crates/jackin-dev/README.md"
+bound = 1199
+[[family.entry]]
+key = "crates/jackin-diagnostics/README.md"
+bound = 3568
+[[family.entry]]
+key = "crates/jackin-docker/README.md"
+bound = 1681
+[[family.entry]]
+key = "crates/jackin-env/README.md"
+bound = 2872
+[[family.entry]]
+key = "crates/jackin-host/README.md"
+bound = 1756
+[[family.entry]]
+key = "crates/jackin-image/README.md"
+bound = 2685
+[[family.entry]]
+key = "crates/jackin-instance/README.md"
+bound = 1807
+[[family.entry]]
+key = "crates/jackin-isolation/README.md"
+bound = 2155
+[[family.entry]]
+key = "crates/jackin-launch-tui/README.md"
+bound = 1695
+[[family.entry]]
+key = "crates/jackin-lints/README.md"
+bound = 2051
+[[family.entry]]
+key = "crates/jackin-manifest/README.md"
+bound = 1797
+[[family.entry]]
+key = "crates/jackin-pr-trailers/README.md"
+bound = 1882
+[[family.entry]]
+key = "crates/jackin-process/README.md"
+bound = 780
+[[family.entry]]
+key = "crates/jackin-protocol/README.md"
+bound = 1046
+[[family.entry]]
+key = "crates/jackin-runtime/README.md"
+bound = 3515
+[[family.entry]]
+key = "crates/jackin-term/README.md"
+bound = 2915
+[[family.entry]]
+key = "crates/jackin-test-support/README.md"
+bound = 2635
+[[family.entry]]
+key = "crates/jackin-tui-lookbook/README.md"
+bound = 1791
+[[family.entry]]
+key = "crates/jackin-tui/README.md"
+bound = 1033
+[[family.entry]]
+key = "crates/jackin-usage/README.md"
+bound = 2272
+[[family.entry]]
+key = "crates/jackin-xtask/README.md"
+bound = 4878
+[[family.entry]]
+key = "crates/jackin/README.md"
+bound = 2791
 
-# Telemetry-conformance export-volume budgets (plan 009). Prefer measured
-# counts from target/telemetry-volume.json; fall back to source constants.
 [[family]]
 id = "export-volume"
 kind = "numeric"
@@ -671,3 +769,13 @@ bound = 15
 [[family.entry]]
 key = "jackin-usage"
 bound = 7
+
+
+# Plan 027: suite wall-time from nextest junit (report until CI seeds a baseline).
+[[family]]
+id = "suite-time"
+kind = "numeric"
+provider = "suite_time"
+mode = "report"
+# When junit is absent the provider returns empty (no failure). Seed bounds after
+# the first PR CI run with a real junit artifact, then flip to enforce+tolerance.

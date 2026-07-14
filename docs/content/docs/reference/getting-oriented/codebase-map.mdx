@@ -32,7 +32,7 @@ sends readers here for the actual module-level detail.
 
 ## Workspace crate structure
 
-The Cargo workspace is a tiered DAG — dependencies point only downward. A higher tier may name a lower tier; never the reverse. For each crate's purpose, structure table, and public API, use the per-crate README or the generated Behind jackin❯ — crates section (one page per crate, built from the README at docs-build time) — this map stays the tier overview only.
+The Cargo workspace is a tiered DAG — dependencies point only downward. A higher tier may name a lower tier; never the reverse. For each crate's purpose, structure table, and public API, use the per-crate README or the generated Behind jackin❯ — crates section (one page per crate, built from the README at docs-build time) — this map stays the tier overview only. **Dependency visualization decision (plan 028):** the structural tier table on this page plus `cargo xtask lint arch` are the sole authoritative dependency interface; no generated dependency graph is embedded in the docs site.
 
 ```text
 Tier 0  jackin-core        vocabulary + traits + manifest types + JackinPaths +

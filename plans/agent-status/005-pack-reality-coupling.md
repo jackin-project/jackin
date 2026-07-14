@@ -54,10 +54,10 @@ verifiable).
 ### Step 1: Replace circular fixtures with real captured goldens
 
 Capture the actual visible screen (bottom ~24 rows) of each agent in each state **from a real `--debug` run**
-(see `TESTING.md`'s pty-fixture flow) — capture jackin's own goldens. **Do NOT commit herdr's fixture files**:
+(see `TESTING.md`'s pty-fixture flow) — capture jackin❯ own goldens. **Do NOT commit herdr's fixture files**:
 they are files in an AGPL-3.0 repository, so copying them into this Apache-2.0 tree is a license-mixing risk,
 regardless that their *content* is agent terminal output. You may *read* herdr's fixtures in place to learn
-what a real screen looks like, but every committed golden must be captured by jackin from the real agent.
+what a real screen looks like, but every committed golden must be captured by jackin❯ from the real agent.
 Store one golden per (agent, state) and point `packs_load_and_match_fixtures` at the **captured** goldens.
 The rule: **a fixture must originate from
 the agent, never from the pack author.** A pack that doesn't match its captured golden must fail the test.

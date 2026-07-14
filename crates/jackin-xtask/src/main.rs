@@ -11,6 +11,7 @@ mod cmd;
 mod construct;
 mod container_paths_gate;
 mod docs;
+mod fs_util;
 mod headers;
 mod health;
 mod lint;

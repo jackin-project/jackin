@@ -383,6 +383,7 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
             Ok(BTreeMap::new())
         }
         "public_surface_pub_mods" => measure_public_surface_pub_mods(root),
+        "suite_time" => measure_suite_time(root),
         other => bail!("unknown ratchet provider {other:?}"),
     }
 }
@@ -565,6 +566,33 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
             }
         }
     }
+    Ok(out)
+}
+
+
+/// Suite wall-time from nextest junit (plan 027). When no artifact is present
+/// (local default), returns an empty map so the family stays green as report-only.
+fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>> {
+    let mut out = BTreeMap::new();
+    let candidates = [
+        root.join("target/nextest/ci/junit.xml"),
+        root.join("target/nextest/default/junit.xml"),
+    ];
+    let Some(path) = candidates.into_iter().find(|p| p.is_file()) else {
+        return Ok(out);
+    };
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("reading suite junit at {}", path.display()))?;
+    // Sum time= attributes (seconds, possibly fractional) → whole milliseconds.
+    let mut total_ms: u64 = 0;
+    for part in text.split("time=\"").skip(1) {
+        let Some(end) = part.find('"') else { continue };
+        let raw = &part[..end];
+        if let Ok(secs) = raw.parse::<f64>() {
+            total_ms = total_ms.saturating_add((secs * 1000.0).round() as u64);
+        }
+    }
+    out.insert("junit_total_ms".to_owned(), total_ms as usize);
     Ok(out)
 }
 
