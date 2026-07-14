@@ -40,10 +40,10 @@ fn manual_clock_advance_moves_wall_clock_by_exactly_the_delta() {
     let base = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let clock = ManualClock::with_system_base(base);
     assert_eq!(clock.now_system(), base);
-    clock.advance(Duration::from_secs(3600));
+    clock.advance(Duration::from_hours(1));
     assert_eq!(
         clock.now_system().duration_since(base).unwrap(),
-        Duration::from_secs(3600)
+        Duration::from_hours(1)
     );
 }
 

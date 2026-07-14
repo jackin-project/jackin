@@ -4,6 +4,11 @@
 //! cargo bench -p jackin-usage --bench snapshot_upsert -- --test
 //! ```
 
+#![expect(
+    clippy::expect_used,
+    reason = "criterion bench harness: fail-fast fixture setup"
+)]
+
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput};

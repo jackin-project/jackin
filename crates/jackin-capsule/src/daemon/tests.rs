@@ -160,26 +160,8 @@ fn record_agent_history_uses_injected_clock() {
 
     let base = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let clock = Arc::new(ManualClock::with_system_base(base));
-    let clock_dyn: Arc<dyn jackin_core::Clock> = Arc::clone(&clock);
-    let mut mux = Multiplexer::with_clock(
-        40,
-        80,
-        CapsuleConfig {
-            role: "test-role".to_owned(),
-            workdir: "/workspace".to_owned(),
-            agents: Vec::new(),
-            models: BTreeMap::new(),
-            provider_models: BTreeMap::new(),
-            initial_provider: None,
-            claude_marketplaces: Vec::new(),
-            claude_plugins: Vec::new(),
-            exec_bindings: Vec::new(),
-            dirty_exit_policy: None,
-            isolated_worktrees: Vec::new(),
-        },
-        clock_dyn,
-    )
-    .expect("mux");
+    let mut mux = test_mux(40, 80);
+    mux.clock = Arc::clone(&clock);
 
     mux.record_agent_history(1, "alpha".into(), Some("claude".into()), None);
     let started = mux.session_supervisor.agent_history[0].started_at;
@@ -191,9 +173,7 @@ fn record_agent_history_uses_injected_clock() {
 
     clock.advance(Duration::from_secs(30));
     mux.mark_agent_session_exited(1);
-    let exited = mux.session_supervisor.agent_history[0]
-        .exited_at
-        .expect("exited");
+    let exited = mux.session_supervisor.agent_history[0].exited_at.unwrap();
     assert_eq!(
         exited,
         DateTime::<Utc>::from(base + Duration::from_secs(30))
