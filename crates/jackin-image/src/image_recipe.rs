@@ -312,7 +312,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// Test-only label-map builder mirroring the runtime prewarm path. Public
 /// because runtime's `#[cfg(test)]` import surfaces it across the crate
 /// boundary; non-test builds never call it.
-#[allow(clippy::expect_used, reason = "test-only API surface")]
 pub fn image_recipe_label_map_for_test(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
@@ -335,8 +334,8 @@ pub fn image_recipe_label_map_for_test(
 }
 
 /// Test-only label-map builder that takes an explicit install variant.
-#[allow(clippy::expect_used, reason = "test-only API surface")]
-#[allow(
+#[expect(clippy::expect_used, reason = "test-only API surface")]
+#[expect(
     clippy::too_many_arguments,
     reason = "Test-only API surface: passes the full recipe input set to the \
               label-map builder. Each arg is a real recipe input; bundling is a \
@@ -375,7 +374,7 @@ pub fn image_recipe_label_map_for_install_test(
 }
 
 /// Test-only `ExpectedImageRecipe` builder.
-#[allow(clippy::expect_used, reason = "test-only API surface")]
+#[expect(clippy::expect_used, reason = "test-only API surface")]
 pub fn expected_image_recipe_for_test(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,

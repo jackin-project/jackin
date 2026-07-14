@@ -189,8 +189,7 @@ pub fn pre_existing_redundant_mounts_message(original_name: &str, collapses: &[R
     )
 }
 
-#[allow(
-    clippy::too_many_lines,
+#[expect(
     clippy::needless_pass_by_value,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -251,14 +250,6 @@ pub fn plan_editor_save_preview(
     }
 }
 
-#[allow(
-    unfulfilled_lint_expectations,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-#[expect(
-    single_use_lifetimes,
-    reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
-)]
 fn validate_settings_env_keys<'a>(
     scope: &str,
     keys: impl Iterator<Item = &'a String>,
@@ -467,8 +458,7 @@ pub struct SettingsSaveInput<'a> {
 }
 
 /// Save all settings tabs and return the reloaded config model.
-#[allow(
-    clippy::too_many_lines,
+#[expect(
     clippy::needless_pass_by_value,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

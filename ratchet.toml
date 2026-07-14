@@ -19,10 +19,10 @@ cap = 1850
 mode = "enforce"
 [[family.entry]]
 key = "crates/jackin-diagnostics/src/observability.rs"
-bound = 2019
+bound = 2003
 [[family.entry]]
 key = "crates/jackin-runtime/src/runtime/image.rs"
-bound = 1941
+bound = 1928
 
 [[family]]
 id = "file-size-test"
@@ -57,8 +57,17 @@ provider = "expect_per_lint_crate"
 cap = 0
 mode = "enforce"
 [[family.entry]]
+key = "clippy::await_holding_lock@jackin-docker"
+bound = 1
+[[family.entry]]
+key = "clippy::cast_precision_loss@jackin-launch-tui"
+bound = 1
+[[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
 bound = 6
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-console"
+bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-launch-tui"
 bound = 6
@@ -69,8 +78,11 @@ bound = 5
 key = "clippy::cast_sign_loss@jackin-usage"
 bound = 12
 [[family.entry]]
+key = "clippy::cognitive_complexity@jackin-runtime"
+bound = 3
+[[family.entry]]
 key = "clippy::disallowed_methods@jackin"
-bound = 9
+bound = 16
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-build-meta"
 bound = 1
@@ -118,12 +130,48 @@ key = "clippy::disallowed_methods@jackin-tui"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage"
-bound = 3
+bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
 bound = 3
 [[family.entry]]
+key = "clippy::duration_suboptimal_units@jackin"
+bound = 1
+[[family.entry]]
 key = "clippy::duration_suboptimal_units@jackin-env"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-agent-status"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-capsule"
+bound = 11
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-config"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-console"
+bound = 2
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-core"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-launch-tui"
+bound = 4
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-runtime"
+bound = 2
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-term"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-tui"
+bound = 4
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-tui-lookbook"
 bound = 1
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-xtask"
@@ -132,8 +180,11 @@ bound = 1
 key = "clippy::exit@jackin"
 bound = 2
 [[family.entry]]
+key = "clippy::exit@jackin-capsule"
+bound = 1
+[[family.entry]]
 key = "clippy::expect_used@jackin"
-bound = 2
+bound = 13
 [[family.entry]]
 key = "clippy::expect_used@jackin-capsule"
 bound = 1
@@ -148,13 +199,25 @@ key = "clippy::expect_used@jackin-diagnostics"
 bound = 1
 [[family.entry]]
 key = "clippy::expect_used@jackin-image"
-bound = 1
+bound = 3
 [[family.entry]]
 key = "clippy::expect_used@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "clippy::expect_used@jackin-test-support"
 bound = 2
+[[family.entry]]
+key = "clippy::filter_map_next@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::fn_params_excessive_bools@jackin-console"
+bound = 8
+[[family.entry]]
+key = "clippy::fn_params_excessive_bools@jackin-host"
+bound = 1
+[[family.entry]]
+key = "clippy::items_after_statements@jackin-image"
+bound = 1
 [[family.entry]]
 key = "clippy::large_enum_variant@jackin-term"
 bound = 1
@@ -171,6 +234,39 @@ bound = 1
 key = "clippy::let_underscore_must_use@jackin-core"
 bound = 1
 [[family.entry]]
+key = "clippy::map_unwrap_or@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::missing_const_for_fn@jackin-console"
+bound = 1
+[[family.entry]]
+key = "clippy::missing_const_for_fn@jackin-console-oppicker"
+bound = 1
+[[family.entry]]
+key = "clippy::needless_borrow@jackin-runtime"
+bound = 1
+[[family.entry]]
+key = "clippy::needless_collect@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::needless_pass_by_value@jackin-console"
+bound = 3
+[[family.entry]]
+key = "clippy::option_if_let_else@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::option_if_let_else@jackin-console"
+bound = 1
+[[family.entry]]
+key = "clippy::option_if_let_else@jackin-env"
+bound = 1
+[[family.entry]]
+key = "clippy::option_option@jackin-console"
+bound = 2
+[[family.entry]]
+key = "clippy::panic@jackin"
+bound = 7
+[[family.entry]]
 key = "clippy::panic@jackin-capsule"
 bound = 1
 [[family.entry]]
@@ -179,6 +275,9 @@ bound = 1
 [[family.entry]]
 key = "clippy::panic@jackin-term"
 bound = 4
+[[family.entry]]
+key = "clippy::panic@jackin-usage"
+bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin"
 bound = 4
@@ -196,7 +295,7 @@ key = "clippy::print_stderr@jackin-pr-trailers"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-runtime"
-bound = 5
+bound = 8
 [[family.entry]]
 key = "clippy::print_stderr@jackin-xtask"
 bound = 2
@@ -222,10 +321,109 @@ bound = 1
 key = "clippy::print_stdout@jackin-xtask"
 bound = 26
 [[family.entry]]
+key = "clippy::redundant_pub_crate@jackin"
+bound = 1
+[[family.entry]]
 key = "clippy::reversed_empty_ranges@jackin-capsule"
 bound = 1
 [[family.entry]]
+key = "clippy::struct_excessive_bools@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-agent-status"
+bound = 2
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-capsule"
+bound = 5
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-console"
+bound = 14
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-console-oppicker"
+bound = 3
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-core"
+bound = 2
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-launch-tui"
+bound = 1
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-protocol"
+bound = 3
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-term"
+bound = 3
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-tui"
+bound = 1
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-xtask"
+bound = 1
+[[family.entry]]
+key = "clippy::suboptimal_flops@jackin-tui"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-capsule"
+bound = 6
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-console"
+bound = 5
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-env"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-image"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-instance"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-isolation"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-launch-tui"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-runtime"
+bound = 11
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-usage"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_lines@jackin"
+bound = 4
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-capsule"
+bound = 8
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-console"
+bound = 7
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-diagnostics"
+bound = 1
+[[family.entry]]
 key = "clippy::too_many_lines@jackin-env"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-isolation"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-launch-tui"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-protocol"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-runtime"
+bound = 8
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-term"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-tui-lookbook"
+bound = 2
+[[family.entry]]
+key = "clippy::trivially_copy_pass_by_ref@jackin-config"
 bound = 1
 [[family.entry]]
 key = "clippy::type_complexity@jackin-console"
@@ -234,17 +432,38 @@ bound = 1
 key = "clippy::type_complexity@jackin-test-support"
 bound = 1
 [[family.entry]]
-key = "clippy::unwrap_used@jackin"
+key = "clippy::type_complexity@jackin-tui"
 bound = 1
 [[family.entry]]
-key = "clippy::unwrap_used@jackin-capsule"
+key = "clippy::unnecessary_wraps@jackin-config"
+bound = 2
+[[family.entry]]
+key = "clippy::unnecessary_wraps@jackin-runtime"
 bound = 1
+[[family.entry]]
+key = "clippy::unwrap_used@jackin"
+bound = 12
+[[family.entry]]
+key = "clippy::unwrap_used@jackin-capsule"
+bound = 2
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-test-support"
 bound = 1
+[[family.entry]]
+key = "clippy::useless_let_if_seq@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::wildcard_imports@jackin-console"
+bound = 3
+[[family.entry]]
+key = "clippy::wildcard_imports@jackin-term"
+bound = 2
+[[family.entry]]
+key = "clippy::wildcard_imports@jackin-usage"
+bound = 8
 [[family.entry]]
 key = "dead_code@jackin"
 bound = 1
@@ -253,16 +472,19 @@ key = "dead_code@jackin-core"
 bound = 4
 [[family.entry]]
 key = "dead_code@jackin-diagnostics"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "dead_code@jackin-env"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "dead_code@jackin-image"
 bound = 1
 [[family.entry]]
+key = "dead_code@jackin-lints"
+bound = 1
+[[family.entry]]
 key = "dead_code@jackin-runtime"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "dead_code@jackin-tui-lookbook"
 bound = 1
@@ -272,6 +494,12 @@ bound = 1
 [[family.entry]]
 key = "dead_code@jackin-xtask"
 bound = 3
+[[family.entry]]
+key = "deprecated@jackin-capsule"
+bound = 1
+[[family.entry]]
+key = "irrefutable_let_patterns@jackin"
+bound = 1
 [[family.entry]]
 key = "missing_debug_implementations@jackin-capsule"
 bound = 2
@@ -300,8 +528,29 @@ bound = 1
 key = "private_bounds@jackin-protocol"
 bound = 1
 [[family.entry]]
-key = "single_use_lifetimes@jackin-console"
+key = "private_interfaces@jackin-runtime"
+bound = 1
+[[family.entry]]
+key = "unreachable_pub@jackin"
+bound = 1
+[[family.entry]]
+key = "unreachable_pub@jackin-console"
+bound = 2
+[[family.entry]]
+key = "unused_imports@jackin-capsule"
+bound = 2
+[[family.entry]]
+key = "unused_imports@jackin-console"
 bound = 11
+[[family.entry]]
+key = "unused_imports@jackin-runtime"
+bound = 3
+[[family.entry]]
+key = "unused_imports@jackin-usage"
+bound = 9
+[[family.entry]]
+key = "unused_qualifications@jackin-runtime"
+bound = 1
 [[family]]
 id = "agent-doc-bytes"
 kind = "numeric"

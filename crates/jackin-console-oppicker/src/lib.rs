@@ -469,7 +469,7 @@ pub const fn filter_reset_selection_for_stage(
     }
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Orthogonal Esc-back mutation flags for the op-picker Field stage — \
               each bool is an independent state reset (section pointer, field buffer, \
@@ -509,7 +509,7 @@ pub const fn field_stage_back_plan(mode: &OpPickerMode) -> FieldStageBackPlan {
     }
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Orthogonal refresh-mutation flags for the op-picker Field stage — \
               each bool is an independent state update (clear fields, reset list, \
@@ -534,7 +534,7 @@ pub const fn field_stage_refresh_plan(mode: &OpPickerMode) -> FieldStageRefreshP
     }
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Orthogonal Esc-back mutation flags for the op-picker Section stage — \
               each bool is an independent state reset (field buffer, collapsed \

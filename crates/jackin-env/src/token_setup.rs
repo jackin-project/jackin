@@ -289,9 +289,8 @@ struct MintOutcome {
 /// Takes the same injection seams as [`run_setup_with_runner`]: a
 /// pre-resolved Claude probe (`None` on `--reuse`), a capture closure,
 /// an [`OpRunner`] for read-back, and an [`OpWriteRunner`] for create.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
-    clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 fn mint_token_value_with_runner<F>(
@@ -488,7 +487,7 @@ where
 /// The orchestrator's mutation path is gated behind these injection
 /// seams so the unit tests in this module never spawn `op` or
 /// `claude`.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

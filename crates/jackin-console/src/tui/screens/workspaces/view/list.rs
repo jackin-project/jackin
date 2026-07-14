@@ -315,7 +315,7 @@ pub fn render_current_dir_details_pane(
     render_sidebar_body(frame, &layout, &inputs, config, state);
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

@@ -159,7 +159,7 @@ pub(super) async fn handle_load(
     result
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "console command entry point: cwd/config/terminal setup + run-loop orchestration. Tracked for the root-jackin-integration decomposition slice (codebase-health)."
 )]

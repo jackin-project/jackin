@@ -57,7 +57,7 @@ pub(super) fn print_env_table(vars: &[(String, String)]) {
     println!("{table}");
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Config subcommand dispatcher with one arm per subcommand (set/get/\
               unset/show/validate). Each arm applies its focused config mutation; \

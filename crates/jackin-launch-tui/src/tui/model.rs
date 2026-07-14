@@ -12,7 +12,7 @@ pub use jackin_core::launch_progress::{
 };
 
 #[derive(Debug, Clone)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal launch-cockpit state flags (failure_ack, \
               build_log_open, build_log_scroll_dragging, build_log_active, \

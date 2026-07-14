@@ -98,13 +98,6 @@ pub async fn extract_agent_version(
     }
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "Image versioning: records docker-image labels + sibling to-disk per \
-              agent + per-version branch telemetry. Body extraction follows the \
-              deferred-parallel-pass plan; until that slice lands, the inline shape \
-              preserves the per-version state machine."
-)]
 pub(super) async fn record_built_agent_version(
     paths: &JackinPaths,
     image: &str,

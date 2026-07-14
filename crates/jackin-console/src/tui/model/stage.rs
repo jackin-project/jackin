@@ -9,10 +9,6 @@ use crate::tui::debug::{
 };
 
 #[derive(Debug)]
-#[allow(
-    clippy::large_enum_variant,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
     List,
     Editor(Editor),
@@ -64,7 +60,7 @@ pub enum ConsoleInputDispatchPlan {
     Stage(ConsoleManagerStageRoute),
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Twelve orthogonal console-modal-open flags (list_modal, inline \
               pickers, editor_modal, settings pickers, create_prelude_modal) — \
@@ -89,7 +85,7 @@ pub struct ConsoleInputDispatchFacts {
     pub stage_route: ConsoleManagerStageRoute,
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Seven orthogonal stage-modal-open flags (editor_modal, settings \
               pickers, create_prelude_modal, destructive_confirm) — each is an \

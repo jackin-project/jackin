@@ -199,7 +199,7 @@ where
     .await
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Attach-protocol async loop driving the host's request/response \
               exchange with the capsule daemon. Body extraction follows the \
@@ -207,13 +207,13 @@ where
               shape preserves captured socket + reader + writer borrows across \
               the protocol phases."
 )]
-#[allow(
+#[expect(
     clippy::cognitive_complexity,
     reason = "Same justification as the too_many_lines allow: attach protocol \
               async loop branching tracks the request/response routing arms, \
               not algorithmic complexity."
 )]
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Attach-protocol call site propagates the four server/terminal stream \
               handles plus geometry, request payload, initial input, and the winch \

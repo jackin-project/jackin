@@ -446,7 +446,7 @@ impl RoleState {
     /// foreground launch path passes the full `manifest.supported_agents()` set;
     /// [`Self::prepare`] is a convenience wrapper that does the same.
     #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
-    #[allow(
+    #[expect(
         clippy::too_many_arguments,
         reason = "Per-agent prepare carries every per-agent + per-container input \
                   the role-materialize path needs: paths, container identity, \

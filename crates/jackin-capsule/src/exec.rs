@@ -346,7 +346,7 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
 /// Thin terminal wrapper over [`run_capture`]: the socket round-trip lives
 /// there; `run` only renders the captured result to stdout/stderr and exits
 /// with the child's code.
-#[allow(
+#[expect(
     clippy::exit,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

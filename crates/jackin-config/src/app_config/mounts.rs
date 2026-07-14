@@ -93,7 +93,7 @@ impl AppConfig {
         WorkspaceGlobalMountRows::Ambiguous { candidates }
     }
 
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Mount-row resolution: per-mount, per-scope (None / Scope / \
                   Multi-Scope), and per-mount-type (Mount / WorkspaceRef) branches \

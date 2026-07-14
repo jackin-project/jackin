@@ -1,9 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::used_underscore_binding,
-    reason = "operation conformance tests force-flush OTel providers"
-)]
 #![cfg(feature = "otlp")]
 
 //! Export-shape tests for the typed operation facade.

@@ -330,7 +330,7 @@ pub(super) fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
     skip_all,
     fields(role = %selector.key())
 )]
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Top-level launch pipeline that drives run_launch_core with preflight \
               validation, image-materialization, env resolution, and post-launch \
@@ -341,7 +341,7 @@ pub(super) fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
               in a follow-up slice. Until that slice lands, the inline shape \
               preserves captured-locals across phases."
 )]
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Top-level launch pipeline needs paths, config, selector, workspace, \
               docker, runner, opts, and the two trust/branch confirm callbacks to \

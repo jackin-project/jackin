@@ -1,4 +1,4 @@
-#![allow(
+#![expect(
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -365,14 +365,14 @@ impl Multiplexer {
         self.invalidate(FullRedrawReason::DialogChange);
     }
 
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "Action dispatcher with one arm per multiplexed `Action` variant — \
               each arm applies its focused state mutation. Extracting arms into \
               sub-dispatchers would require re-borrowing the multiplexer state \
               across fn boundaries and obscure the per-action readability."
     )]
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Action dispatcher already accepted too_many_lines + too_many_lines \
               allows: per-action arm with nested `match` over sub-actions + \

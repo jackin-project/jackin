@@ -272,20 +272,22 @@ fn untested_large(root: &Path, counts: &BTreeMap<PathBuf, usize>) -> Vec<FileLin
     out
 }
 
-/// Parse `#[allow(...)]` / `#[expect(...)]` (and inner `#!` forms) with a
+/// Parse `#[expect(...)]` / `#[expect(...)]` (and inner `#!` forms) with a
 /// syntax-aware `syn` walk. Returns `(is_allow, lint_names, has_reason)` per
 /// attribute. Comma-containing reason strings never leak as fake lint names.
 pub(crate) fn parse_suppression_attrs(source: &str) -> Vec<(bool, Vec<String>, bool)> {
     let file = match syn::parse_file(source) {
         Ok(file) => file,
-        Err(err) => {
+        Err(_first) => {
             // Hard error for real files is handled by the caller path that
             // names the path; in-test fixtures may be fragments — wrap as a
             // module so item-level attributes still parse.
             let wrapped = format!("mod __jackin_suppression_fragment {{\n{source}\n}}");
             match syn::parse_file(&wrapped) {
                 Ok(file) => file,
-                Err(_) => panic!("suppression parser: syn failed: {err}"),
+                // Unparseable input contributes no suppressions; the gate
+                // that names the path can escalate if needed.
+                Err(_second) => return Vec::new(),
             }
         }
     };
@@ -309,13 +311,13 @@ fn collect_suppression_attr(attr: &syn::Attribute, out: &mut Vec<(bool, Vec<Stri
     let path = attr.path();
     // Unwrap one level of cfg_attr(…, allow/expect(...)).
     if path.is_ident("cfg_attr") {
-        if let syn::Meta::List(list) = &attr.meta {
-            if let Ok(nested) = list.parse_args_with(
+        if let syn::Meta::List(list) = &attr.meta
+            && let Ok(nested) = list.parse_args_with(
                 syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
-            ) {
-                for meta in nested.iter().skip(1) {
-                    collect_meta_suppression(meta, out);
-                }
+            )
+        {
+            for meta in nested.iter().skip(1) {
+                collect_meta_suppression(meta, out);
             }
         }
         return;
@@ -332,9 +334,9 @@ fn collect_meta_suppression(meta: &syn::Meta, out: &mut Vec<(bool, Vec<String>, 
     if !is_allow && !is_expect {
         return;
     }
-    let Ok(nested) =
-        list.parse_args_with(syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated)
-    else {
+    let Ok(nested) = list.parse_args_with(
+        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+    ) else {
         return;
     };
     let mut lints = Vec::new();
@@ -353,7 +355,7 @@ fn collect_meta_suppression(meta: &syn::Meta, out: &mut Vec<(bool, Vec<String>, 
             syn::Meta::List(_inner) => {
                 // Nested lists are not lint names.
             }
-            _ => {}
+            syn::Meta::NameValue(_) => {}
         }
     }
     if !lints.is_empty() {

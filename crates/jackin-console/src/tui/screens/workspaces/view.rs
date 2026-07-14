@@ -60,7 +60,7 @@ pub struct WorkspaceListDisplayRow {
     pub hovered: bool,
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal UI state flags (selected, hovered, \
               current_dir_expanded, current_dir_has_instances) — each tracks an \
@@ -106,7 +106,7 @@ pub enum WorkspaceSidebarPlan {
     ListNames,
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal sidebar-picker visibility flags (provider, \
               launch_provider, new_session, agent, role) — each tracks an \
@@ -1021,7 +1021,7 @@ pub fn render_global_mounts_subpanel(
     );
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

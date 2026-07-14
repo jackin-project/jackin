@@ -5,6 +5,7 @@
     "index",
     "architecture",
     "code-tour",
+    "lint-policy",
     "specs"
   ]
 }

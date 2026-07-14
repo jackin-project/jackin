@@ -3,16 +3,12 @@
 
 //! `DamageGrid` — the Phase 2 v0 terminal model implementation.
 
-#![allow(clippy::empty_line_after_doc_comments, reason = "residual lint budget")]
-
 #[path = "grid/parse.rs"]
 mod parse;
 #[path = "grid/write.rs"]
 mod write;
 
-#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use parse::*;
-#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use write::*;
 
 use std::{
@@ -1205,7 +1201,7 @@ impl DamageGrid {
     }
 
     /// Scroll the active scroll region up by `n` rows, pushing content to scrollback.
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Scroll-region scrolling distinguishes full-scroll vs partial-scroll \
                   branches and within each branch handles scrollback recycling, \

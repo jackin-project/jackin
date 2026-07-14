@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for `runtime/launch.rs`: load pipeline behavioral verification.
-#![allow(
-    clippy::too_many_lines,
+#![expect(
     unused_qualifications,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -2017,7 +2016,7 @@ async fn restore_role_source_override_uses_manifest_source_without_mutating_conf
 /// Signature matches `deny_trust` so both can be passed as the same
 /// function-pointer type to the trust prompt; the `Ok(())` is therefore
 /// load-bearing even though clippy flags it.
-#[allow(
+#[expect(
     clippy::unnecessary_wraps,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

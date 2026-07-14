@@ -7,9 +7,9 @@
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(clippy::wildcard_imports, reason = "target-dependent")
 )]
 use super::*;
 use serde::Deserialize;
@@ -233,7 +233,7 @@ pub(crate) enum MiniMaxWindow {
     Weekly,
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

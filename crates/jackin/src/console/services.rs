@@ -150,7 +150,7 @@ pub(super) mod config {
         pub pending_rename: Option<String>,
     }
 
-    #[allow(
+    #[expect(
         clippy::useless_let_if_seq,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]
@@ -530,7 +530,7 @@ pub(super) mod instances {
         }
     }
 
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Snapshot fan-out walks chunks of containers, each chunk \
                   spawns a thread, each thread joins a panic-payload match — \
@@ -546,7 +546,7 @@ pub(super) mod instances {
         let mut results = Vec::with_capacity(targets.len());
         for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
             let chunk_results = std::thread::scope(|s| {
-                #[allow(
+                #[expect(
                     clippy::needless_collect,
                     reason = "documented residual allow; prefer expect when site is lint-true"
                 )]

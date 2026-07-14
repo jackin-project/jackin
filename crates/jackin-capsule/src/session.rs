@@ -6,11 +6,6 @@
 
 mod osc_policy;
 
-#[allow(
-    unused_imports,
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
 
 //
@@ -401,13 +396,13 @@ pub struct SessionTerminal {
 }
 
 impl Session {
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Session spawn wires PTY + child handle + agent + env into the \
                   multiplexer state. The nested `is_err` + `crate::clog!` + state- \
                   update branches are the per-stage error-reporting protocol."
     )]
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "Same justification as the too_many_lines + excessive_nesting \
               allows: session spawn wires PTY + child handle + agent + env into \
@@ -1491,7 +1486,7 @@ fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>)
 
 #[cfg(test)]
 impl Session {
-    #[allow(
+    #[expect(
         clippy::too_many_arguments,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]

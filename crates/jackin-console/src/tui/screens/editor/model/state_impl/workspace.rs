@@ -1,6 +1,6 @@
-#[allow(
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(clippy::wildcard_imports, reason = "state_impl shares parent surface")
 )]
 use super::super::*;
 
@@ -173,14 +173,6 @@ impl<
     }
 
     #[must_use]
-    #[allow(
-        unfulfilled_lint_expectations,
-        reason = "documented residual allow; prefer expect when site is lint-true"
-    )]
-    #[expect(
-        single_use_lifetimes,
-        reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
-    )]
     pub fn eligible_role_override_selectors<'a>(
         &self,
         registered_roles: impl Iterator<Item = &'a String>,
@@ -192,14 +184,6 @@ impl<
     }
 
     #[must_use]
-    #[allow(
-        unfulfilled_lint_expectations,
-        reason = "documented residual allow; prefer expect when site is lint-true"
-    )]
-    #[expect(
-        single_use_lifetimes,
-        reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
-    )]
     pub fn auth_role_override_selectors<'a>(
         &self,
         registered_roles: impl Iterator<Item = &'a String>,

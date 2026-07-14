@@ -33,7 +33,7 @@ pub(crate) fn run(command: PrCommand) -> Result<()> {
 
 /// Which categories of file the diff touches; each gates a verify-locally block.
 #[derive(Default)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal file-bucket categories (rust, docs, capsule, schema) \
               used by `classify()` to bucket changed files in a PR digest. Each \

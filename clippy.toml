@@ -5,9 +5,12 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
-# Land with first slice/index panic-coverage adoption (plan 019 / roadmap Phase 1).
+# Slice/index restriction family: pure crates adopted; wider rollout deferred
+# with measured per-crate counts (lint-policy.mdx). Test escape valve stays.
 allow-indexing-slicing-in-tests = true
 allow-dbg-in-tests = true
+# No disallowed-types / disallowed-macros yet — evaluated not-banned surfaces
+# (Mutex/Rc-in-async, ring buffers, primitive payloads) recorded in lint-policy.mdx.
 # Function-length / complexity / nesting thresholds.
 # cognitive-complexity: measured max 58 (2026-07-11 census — diagnostics
 # observability helpers) — ratcheted 60 → 58 (R-complexity-threshold / plan 058).

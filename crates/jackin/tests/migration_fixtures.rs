@@ -1,17 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 //! Walk every migration fixture in `tests/fixtures/migrations/` and prove the
 //! current binary still upgrades each historical input to a file that parses
 //! successfully against the current serde schema. The `after.toml` in each
@@ -24,6 +10,11 @@
 //! test covers, so a parse failure is the regression that would break their
 //! upgrade.
 
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 use std::fs;
 use std::path::{Path, PathBuf};
 

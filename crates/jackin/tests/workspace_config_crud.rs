@@ -1,17 +1,7 @@
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
-
 use jackin::workspace::{self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved};
 use jackin_config::ConfigEditor;
 use jackin_core::WorkspaceName;

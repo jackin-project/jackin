@@ -1,4 +1,4 @@
-#![allow(
+#![expect(
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -66,7 +66,7 @@ pub struct RichDriver {
 }
 
 impl RichDriver {
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "RichDriver spawn wires the render thread, the tick loop, the \
                   input loop, and the main task; the nesting is the per-loop-arm \
@@ -608,12 +608,6 @@ impl RichRenderer {
         }
     }
 
-    #[allow(
-        clippy::excessive_nesting,
-        reason = "Popup loop: per-modal-state (Picker / Confirm / Error / etc.) \
-                  branches with per-arm draw + key-read + state-update nested \
-                  through the modal dispatch. The modal nesting is the protocol."
-    )]
     fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
         let mut state = ErrorPopupState::new(title, message);
         loop {
@@ -648,13 +642,7 @@ impl RichRenderer {
         })
     }
 
-    #[allow(
-        clippy::excessive_nesting,
-        reason = "Launch dialog loop: mode (Picker / Inspect) branches with \
-                  per-arm render + key-read + select-flow nested through the \
-                  launcher dialog dispatch. Modal nesting is the protocol."
-    )]
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Launch dialog loop: mode (Picker / Inspect) branches with \
                   per-arm render + key-read + select-flow nested through the \
@@ -802,7 +790,7 @@ impl RichRenderer {
 
     /// D24: read-only inspect surface for dirty/unpushed worktrees.
     /// Returns when the operator presses Esc.
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Inspect-surface loop: per-focus-tab (Repos / Files / Diff) nested \
                   arms for render + key-handle, plus the focus-state-machine nested \

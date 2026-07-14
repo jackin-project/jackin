@@ -1,15 +1,6 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
+#![expect(
     unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+    reason = "shared integration-test helper module: pub organizes fixtures, not a crate export"
 )]
 
 //! Shared test helpers for launch integration tests.

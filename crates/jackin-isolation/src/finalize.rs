@@ -254,7 +254,7 @@ fn rich_exit_dialog(
     }
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Finalize-foreground-session carries every cleanup input the daemon \
               pass must flush: container identity, state directory, agent / role \

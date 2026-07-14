@@ -46,12 +46,6 @@ use jackin_core::JackinPaths;
 
 type ConcreteInstanceAction = ConsoleInstanceAction<jackin_core::Agent>;
 
-#[allow(
-    clippy::too_many_lines,
-    clippy::items_after_statements,
-    clippy::unnecessary_wraps,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub fn handle_list_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,

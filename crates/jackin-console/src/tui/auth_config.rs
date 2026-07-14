@@ -739,7 +739,7 @@ pub fn auth_credential_env_keys() -> BTreeSet<&'static str> {
         .collect()
 }
 
-#[allow(
+#[expect(
     clippy::missing_const_for_fn,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

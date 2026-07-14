@@ -1,21 +1,14 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 //! End-to-end integration test for the workspace manager TUI.
 //! Drives `tui::handle_key` with a scripted key stream — no live
 //! terminal.
 
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
@@ -51,10 +44,6 @@ const fn key(code: KeyCode) -> KeyEvent {
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "integration test waits for an owned background save worker to publish its subscription result"
-)]
 fn wait_for_config_save(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,

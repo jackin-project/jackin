@@ -9,7 +9,7 @@
 //! (or `crate::...` paths). Helpers promoted to pub(super) in coordinator
 //! are reached via `super::`.
 
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -122,7 +122,7 @@ where
     }
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Inner launch-pipeline async body that the R4 File 2 refactor \
               extracted from load_role_with. Mirrors launch_role_runtime's phase \
@@ -131,7 +131,7 @@ where
               launch_role_runtime. Until that slice lands, the inline shape \
               preserves captured-locals across phases."
 )]
-#[allow(
+#[expect(
     clippy::cognitive_complexity,
     reason = "Same justification as the too_many_lines allow: inner launch async \
               body branching tracks the preflight / docker_run / wait / teardown \
@@ -1062,7 +1062,7 @@ where
             role_key: &role_key,
         },
     };
-    #[allow(
+    #[expect(
         clippy::needless_borrow,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]
@@ -1221,10 +1221,6 @@ where
         decision,
         crate::isolation::finalize::FinalizeDecision::Preserved
     );
-    #[allow(
-        clippy::match_same_arms,
-        reason = "documented residual allow; prefer expect when site is lint-true"
-    )]
     match docker.inspect_container_state(&container_name).await {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
             if is_preserved {

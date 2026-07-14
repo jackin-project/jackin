@@ -1205,9 +1205,9 @@ fn launch_stage_span(stage: &str) -> tracing::Span {
 
 /// Normalize a free-form stage label for offline tooling / tests.
 /// Launch span names use [`crate::registry::launch_stage_span_name`] instead.
-#[allow(
-    dead_code,
-    reason = "retained for fixture/export-safe label normalization and unit tests"
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "offline/tooling helper retained for tests")
 )]
 pub(crate) fn normalize_stage_name(stage: &str) -> String {
     let mut normalized = String::with_capacity(stage.len());

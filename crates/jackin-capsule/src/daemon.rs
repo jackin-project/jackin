@@ -163,7 +163,7 @@ struct SessionLaunch {
     missing_debug_implementations,
     reason = "Multiplexer owns PTY sessions and render/input state; targeted debug logs expose the useful fields."
 )]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal multiplexer state flags (detach_requested, \
               selection_copied, pointer_shapes_supported, tab_bar_focused) \
@@ -933,19 +933,13 @@ fn screen_detection_disabled_message(error: &anyhow::Error) -> String {
 }
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Top-level daemon entry point: spawns the event loop, the attach \
               socket acceptor, and the input parser in sequence. Each stage has \
               its own focused init + handoff. Body extraction follows the same \
               deferred-parallel-pass plan as the launch fns — the inline shape \
               preserves captured-runtime state across stages."
-)]
-#[allow(
-    clippy::cognitive_complexity,
-    reason = "Same justification as the too_many_lines allow: daemon entry point \
-              branching tracks the spawn → accept → input-parser init sequence, \
-              not algorithmic complexity."
 )]
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
     crate::pid1::install_sigchld_reaper();

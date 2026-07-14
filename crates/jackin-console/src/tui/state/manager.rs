@@ -197,10 +197,6 @@ impl ManagerState<'_> {
         std::mem::take(&mut self.pending_effects)
     }
 
-    #[allow(
-        clippy::missing_const_for_fn,
-        reason = "documented residual allow; prefer expect when site is lint-true"
-    )]
     pub fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
         self.stage.take_pending_token_generate()
     }

@@ -127,7 +127,7 @@ pub fn summarize_run_file(path: &Path) -> anyhow::Result<DiagnosticsSummary> {
     summarize_reader(BufReader::new(file))
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Diagnostic summary reader: per-event-line parsing + per-section \
               (step / metric / fail / note) branch + state-machine arms. The \

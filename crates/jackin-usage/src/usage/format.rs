@@ -243,7 +243,7 @@ pub(super) fn run_cli_with_timeout(
     Ok(output.stdout)
 }
 
-#[allow(
+#[expect(
     clippy::disallowed_methods,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

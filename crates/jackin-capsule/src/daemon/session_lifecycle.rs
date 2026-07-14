@@ -133,7 +133,7 @@ impl Multiplexer {
     /// agent should return them to whatever they were looking at
     /// before they opened that tab, not to the next-tab-to-the-right
     /// (which feels like a stack push).
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Session-removal fn: per-tab reflow with nested drag/selection \
               cancellation + tab-index clamping. The nesting is the per-tab \

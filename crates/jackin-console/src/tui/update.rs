@@ -241,7 +241,7 @@ pub struct ListPreRenderFocusPlan {
     pub list_names_focused: bool,
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal scroll-reset flags (reset_workspace, reset_global, \
               reset_role_global, reset_roles) — each is an independent reset \
@@ -256,7 +256,7 @@ pub struct ListPreRenderScrollResetPlan {
     pub reset_roles: bool,
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Six orthogonal list pre-render state flags (list_names_focused, \
               preview_focused, sidebar_available, focused_block_scrollable, \
@@ -328,7 +328,7 @@ pub const fn list_names_focus_plan(focused: bool) -> bool {
     focused
 }
 
-#[allow(
+#[expect(
     clippy::fn_params_excessive_bools,
     reason = "Four mutually-exclusive modal visibility flags (github_picker, \
               role_picker, error_popup, container_info) — each is an independent \
@@ -372,7 +372,7 @@ pub const fn list_modal_scroll_target(
     }
 }
 
-#[allow(
+#[expect(
     clippy::fn_params_excessive_bools,
     reason = "Five orthogonal modal visibility flags (workdir_pick, \
               role_picker, op_picker, settings pickers) — each is an independent \
@@ -466,7 +466,7 @@ pub fn console_mouse_wheel_plan(
     }
 }
 
-#[allow(
+#[expect(
     clippy::fn_params_excessive_bools,
     reason = "Four orthogonal focus decision inputs (list_names_focused, \
               preview_focused, sidebar_available, focused_block_scrollable) — each \

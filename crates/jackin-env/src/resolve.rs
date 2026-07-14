@@ -208,7 +208,7 @@ pub fn resolve_op_uri_to_ref(
 
     // Item segment may carry [subtitle] filter — a display extension from jackin❯.
     // Nested condition makes map_or awkward; allow the if-let pattern here.
-    #[allow(
+    #[expect(
         clippy::option_if_let_else,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]

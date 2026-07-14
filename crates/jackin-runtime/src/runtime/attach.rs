@@ -633,7 +633,7 @@ pub async fn spawn_shell_session(
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Spawning a single agent session requires every caller-supplied \
               parameter (paths, container_name, manifest, agent, provider_label, \

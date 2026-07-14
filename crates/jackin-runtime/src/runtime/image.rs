@@ -3,8 +3,6 @@
 
 //! Docker image build pipeline: prepare binaries, build derived image, tag and cache.
 
-#![allow(clippy::empty_line_after_doc_comments, reason = "residual lint budget")]
-
 #[path = "image/version.rs"]
 mod version;
 
@@ -17,7 +15,6 @@ mod prewarm;
 #[cfg(not(test))]
 pub use prewarm::prewarm_role_images;
 pub use prewarm::{ImagePrewarmStatus, RoleImagePrewarmRow};
-#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use version::*;
 
 use published::{PublishedImageFreshness, published_image_freshness, published_image_is_stale};
@@ -97,13 +94,13 @@ fn local_image_buildx_args() -> Vec<&'static str> {
     ]
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Decide-role-image: per-cache-state + per-invalidation-reason + \
               per-build-strategy branches nested with telemetry. Inline shape \
               preserves the per-decision-arm state machine."
 )]
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Decide-role-image call site propagates paths, selector, cached + \
               validated repos, rebuild + branch override + pinned sha, docker, \
@@ -724,11 +721,6 @@ pub(super) fn reuse_needs_background_staleness_check(
             .any(|agent| version_check::stored_version(paths, agent, image).is_some())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "The background sentinel mirrors selected-image refresh inputs \
-              so it can resolve the same role and rebuild the same selected image."
-)]
 pub(super) fn spawn_reuse_staleness_sentinel(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -866,11 +858,6 @@ async fn prewarm_agent_image(
 }
 
 #[cfg(not(test))]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Sentinel rebuild uses the same role/image inputs as explicit \
-              prewarm plus the reused image tag it is checking."
-)]
 async fn reuse_staleness_sentinel(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -1002,7 +989,7 @@ async fn reuse_staleness_reason(
     None
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Prewarming the agent image needs every caller-supplied input \
               (paths, selector, cached + validated repos, branch override, \
@@ -1140,7 +1127,7 @@ async fn prewarm_agent_image_from_validated_repo(
     }
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Background refresh needs the full build-agent-image context plus \
               the confirmed staleness reason."
@@ -1363,7 +1350,7 @@ fn cache_bust_value_for_build(
 /// published-image construct version label — so the heavy role layers are built
 /// or tagged once per (role commit, construct) and overlay rebuilds don't touch
 /// them.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Resolving the local role base needs every caller-supplied input \
               (selector, branch + head sha, cached + validated repos, published \
@@ -1542,7 +1529,7 @@ async fn ensure_local_role_base(
 }
 
 /// Build the Docker image for the role. Returns the image name.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Building the agent image needs every caller-supplied input \
               (paths, selector, cached + validated repos, agent, runtime \
@@ -1551,7 +1538,7 @@ async fn ensure_local_role_base(
               the build pipeline. Named-arg reads match the per-input propagation \
               idiom the image builder walks."
 )]
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Same justification as the too_many_arguments allow: build-agent- \
               image carries every caller-supplied input through the build \
@@ -1921,7 +1908,7 @@ pub(super) async fn role_git_sha_for_recipe(
     head_sha
 }
 
-#[allow(
+#[expect(
     unused_imports,
     reason = "re-exported so runtime/image/tests.rs can reach them via super::*"
 )]

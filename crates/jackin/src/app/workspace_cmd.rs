@@ -14,7 +14,7 @@ use jackin_core::{JackinPaths, WorkspaceName};
 use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::BollardDockerClient;
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Workspace subcommand dispatch arms (Create / List / Show / Edit / \
               AddMount / RemoveMount / SetDefaultRole / SetDefaultAgent / \

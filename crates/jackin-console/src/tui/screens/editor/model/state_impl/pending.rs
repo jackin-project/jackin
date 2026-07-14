@@ -1,6 +1,6 @@
-#[allow(
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(clippy::wildcard_imports, reason = "state_impl shares parent surface")
 )]
 use super::super::*;
 

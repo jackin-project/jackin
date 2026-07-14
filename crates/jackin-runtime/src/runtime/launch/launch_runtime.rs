@@ -5,7 +5,7 @@
 //! (+ host passthrough + debug env helpers) extracted from launch coordinator (File1).
 //! All items `pub(crate)` re-exported from the coordinator to preserve `super::` / `use super::*` .
 
-#![allow(
+#![expect(
     private_interfaces,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -215,7 +215,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
 
 /// Launch the role container after the caller has prepared the private network
 /// and `DinD` sidecar.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Launch pipeline coordinator with three distinct phases (profile \
               validation + apparmor probe + run/launch/teardown sequence). \
@@ -227,7 +227,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
               burn-down strategy: while this `#[allow]` is recorded, the \
               deferred body-extraction slice remains tracked as a roadmap item."
 )]
-#[allow(
+#[expect(
     clippy::cognitive_complexity,
     reason = "Same justification as the too_many_lines allow: launch pipeline \
               branching depth tracks the bring-up / phase / teardown sequence \

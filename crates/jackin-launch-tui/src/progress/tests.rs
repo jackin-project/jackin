@@ -82,10 +82,6 @@ async fn cancel_after_while_waiting_started_interrupts_pending_future() {
 }
 
 #[test]
-#[allow(
-    clippy::panic,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 fn poisoned_failure_ack_lock_recovers_without_auto_acknowledging() {
     let progress = test_progress();
     let view = Arc::clone(progress.view_for_test());

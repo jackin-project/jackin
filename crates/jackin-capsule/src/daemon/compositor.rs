@@ -142,7 +142,7 @@ impl Multiplexer {
     ///
     /// Returns the ANSI output to send to the attach client, or `None` if the
     /// Ratatui terminal fails to draw (the caller then skips the frame).
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "Per-frame compositor that snapshots the multiplexer state and \
                   renders the resulting capsule frame to ANSI bytes. The inline \

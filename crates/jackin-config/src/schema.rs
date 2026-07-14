@@ -27,7 +27,7 @@ use crate::versions::current_workspace_version;
 // ─── Serde helper ────────────────────────────────────────────────────────────
 
 /// `skip_serializing_if` requires `fn(&T) -> bool`.
-#[allow(
+#[expect(
     clippy::trivially_copy_pass_by_ref,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
