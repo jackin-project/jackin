@@ -23,6 +23,7 @@ pub mod auth;
 pub mod build_log_sink;
 pub mod clock;
 pub mod constants;
+pub mod container_id;
 pub mod container_paths;
 pub mod debug_log;
 pub mod docker;
@@ -45,6 +46,7 @@ pub mod paths;
 pub mod prompt_result;
 pub mod runner;
 pub mod selector;
+pub mod session_id;
 pub mod standalone_dialog;
 pub mod status;
 pub mod tui_widgets;
@@ -62,6 +64,7 @@ pub use ansi_tokens::{POINTER_DEFAULT, POINTER_HAND, encode_osc52_clipboard_writ
 pub use auth::AuthForwardMode;
 pub use build_log_sink::BuildLogSink;
 pub use clock::{Clock, ManualClock, SystemClock};
+pub use container_id::{ContainerId, ContainerIdError};
 pub use debug_log::{DebugLogSink, emit_debug_line, is_debug_mode, set_global_sink};
 pub use docker::{
     ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
@@ -86,6 +89,7 @@ pub use paths::{JackinPaths, PathsError};
 pub use prompt_result::PromptResult;
 pub use runner::{CommandRunner, RunOptions};
 pub use selector::{RoleSelector, Selector, SelectorError, runtime_slug};
+pub use session_id::{SessionId, SessionIdError};
 pub use standalone_dialog::{
     StandaloneDialogSink, error_popup, exit_dialog_with_inspect, set_global_dialog_sink,
 };

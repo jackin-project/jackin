@@ -1,0 +1,30 @@
+---
+title: "Domain newtypes census"
+---
+
+Boundary decision record for Ownership item 4 (plan 020). Each named concept records the intended type or an explicit primitive decision at real boundaries.
+
+## Six names
+
+| Name | Type | Owner | Decision |
+|---|---|---|---|
+| `WorkspaceName` | `jackin_core::WorkspaceName` | core | **Adopted** — validated config-file stem (existing). |
+| `SessionId` | `jackin_core::SessionId` | core | **Adopted** — non-zero `u64`; thread at daemon/attach/protocol as call sites touch them. Internal daemon `HashMap<u64, Session>` may keep raw keys until a dedicated migration. |
+| `ContainerId` | `jackin_core::ContainerId` | core | **Adopted** — non-empty name without whitespace/path separators; thread at runtime/docker instance boundaries. |
+| `RoleRef` | — | core/manifest | **Primitive for now** (`String` / `RoleSelector`) — selector + namespaced key already exist; newtype deferred until a validation rule beyond selector parse is needed. |
+| `TokenCount` | — | usage | **Primitive for now** (`u64`) — usage/pricing paths already use domain structs; avoid double-wrapping until a cross-crate unit mismatch appears. |
+| `MountPath` | — | config/isolation | **Primitive for now** (`String`/`PathBuf`) — mount tables mix host absolute paths and container dst paths; a single newtype would blur that distinction. Prefer `host_src`/`container_dst` field names. |
+
+## Error taxonomy pilot
+
+`jackin-config` remains the next thiserror pilot target (smallest public API with real fallible constructors). Runtime/capsule stay mostly `anyhow` at reporting boundaries until the config pilot measures adapter cost.
+
+## Adjunct decisions
+
+- **Result-first constructors**: newtypes use `Result` constructors (`SessionId::new`, `ContainerId::parse`, `WorkspaceName::parse`).
+- **`async fn` in trait Send**: survey deferred; no blanket `async_trait` expansion.
+- **`#[non_exhaustive]`**: public error enums that may grow should be `non_exhaustive` when first published; current newtype errors are closed.
+
+## Public-surface note (plan 019)
+
+Executable `public-surface` ratchet (`public_surface_pub_mods`) measures root `pub mod` counts per crate. Growth is shrink-only; API snapshots were intentionally not chosen as the gate.

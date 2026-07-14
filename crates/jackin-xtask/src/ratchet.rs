@@ -382,8 +382,41 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
             // numeric view not used for presence; return empty
             Ok(BTreeMap::new())
         }
+        "public_surface_pub_mods" => measure_public_surface_pub_mods(root),
         other => bail!("unknown ratchet provider {other:?}"),
     }
+}
+
+/// Per-crate count of `pub mod` lines (proxy for foundational surface growth).
+/// Shrink-only ratchet — plan 019 growth report alternative to API snapshots.
+fn measure_public_surface_pub_mods(root: &Path) -> Result<BTreeMap<String, usize>> {
+    let crates_dir = root.join("crates");
+    let mut out: BTreeMap<String, usize> = BTreeMap::new();
+    if !crates_dir.is_dir() {
+        return Ok(out);
+    }
+    for entry in fs::read_dir(&crates_dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let lib = entry.path().join("src/lib.rs");
+        if !lib.is_file() {
+            continue;
+        }
+        let text =
+            fs::read_to_string(&lib).with_context(|| format!("reading {}", lib.display()))?;
+        let mut count = 0usize;
+        for line in text.lines() {
+            let t = line.trim_start();
+            if t.starts_with("pub mod ") || t.starts_with("pub(crate) mod ") {
+                count += 1;
+            }
+        }
+        out.insert(name, count);
+    }
+    Ok(out)
 }
 
 /// Composite key for expect family rows: `{lint}@{crate}`.

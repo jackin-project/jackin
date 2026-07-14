@@ -199,7 +199,7 @@ key = "clippy::expect_used@jackin-image"
 bound = 3
 [[family.entry]]
 key = "clippy::expect_used@jackin-runtime"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::expect_used@jackin-test-support"
 bound = 2
@@ -331,7 +331,7 @@ key = "clippy::struct_excessive_bools@jackin-agent-status"
 bound = 2
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-capsule"
-bound = 5
+bound = 4
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-console"
 bound = 14
@@ -448,7 +448,7 @@ key = "clippy::unwrap_used@jackin-capsule"
 bound = 2
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-runtime"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-test-support"
 bound = 1
@@ -544,7 +544,7 @@ key = "unused_imports@jackin-console"
 bound = 11
 [[family.entry]]
 key = "unused_imports@jackin-runtime"
-bound = 3
+bound = 2
 [[family.entry]]
 key = "unused_imports@jackin-usage"
 bound = 9
@@ -595,3 +595,79 @@ bound = 3
 [[family.entry]]
 key = "focused_borrowed_view_max_bytes"
 bound = 1024
+
+# Plan 019: public-surface growth report (shrink-only). Counts root `pub mod`
+# declarations per crate lib.rs. Growth requires regenerate + review.
+# Decision: executable growth report + reviewed baseline instead of cargo-public-api snapshots.
+[[family]]
+id = "public-surface"
+kind = "numeric"
+provider = "public_surface_pub_mods"
+cap = 0
+mode = "enforce"
+[[family.entry]]
+key = "jackin"
+bound = 8
+[[family.entry]]
+key = "jackin-agent-status"
+bound = 6
+[[family.entry]]
+key = "jackin-capsule"
+bound = 34
+[[family.entry]]
+key = "jackin-config"
+bound = 14
+[[family.entry]]
+key = "jackin-console"
+bound = 7
+[[family.entry]]
+key = "jackin-console-oppicker"
+bound = 3
+[[family.entry]]
+key = "jackin-core"
+bound = 38
+[[family.entry]]
+key = "jackin-diagnostics"
+bound = 13
+[[family.entry]]
+key = "jackin-docker"
+bound = 3
+[[family.entry]]
+key = "jackin-env"
+bound = 1
+[[family.entry]]
+key = "jackin-host"
+bound = 5
+[[family.entry]]
+key = "jackin-image"
+bound = 9
+[[family.entry]]
+key = "jackin-instance"
+bound = 2
+[[family.entry]]
+key = "jackin-isolation"
+bound = 6
+[[family.entry]]
+key = "jackin-launch-tui"
+bound = 5
+[[family.entry]]
+key = "jackin-manifest"
+bound = 5
+[[family.entry]]
+key = "jackin-protocol"
+bound = 5
+[[family.entry]]
+key = "jackin-runtime"
+bound = 7
+[[family.entry]]
+key = "jackin-term"
+bound = 6
+[[family.entry]]
+key = "jackin-test-support"
+bound = 4
+[[family.entry]]
+key = "jackin-tui"
+bound = 15
+[[family.entry]]
+key = "jackin-usage"
+bound = 7

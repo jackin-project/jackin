@@ -26,10 +26,10 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 016 | Launch pipeline phase contracts + `run_launch_core` harness + benchmark | P2 | L | — | DONE |
 | 017 | Capsule daemon decomposition + injectable boundary ports | P2 | L | — | DONE |
 | 018 | One shared command-transport model (xtask / capsule / runtime) | P3 | L | — | DONE |
-| 019 | Narrow foundational `pub mod` surfaces + public-surface growth ratchet | P2 | L | — | TODO |
-| 020 | Domain newtypes census + typed error taxonomy | P3 | L | — | TODO |
-| 021 | TUI/console convergence: `drive_frame`, scroll classifier, editor cleanup | P3 | L | — | TODO |
-| 022 | Root CLI handler split + TTY fallback + `launch` deprecation warning | P2 | M | — | TODO |
+| 019 | Narrow foundational `pub mod` surfaces + public-surface growth ratchet | P2 | L | — | DONE |
+| 020 | Domain newtypes census + typed error taxonomy | P3 | L | — | DONE |
+| 021 | TUI/console convergence: `drive_frame`, scroll classifier, editor cleanup | P3 | L | — | DONE |
+| 022 | Root CLI handler split + TTY fallback + `launch` deprecation warning | P2 | M | — | DONE |
 | 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | TODO |
 | 024 | Spec gate: syntax-aware citations, close `MISSING` entries, snapshot review policy | P2 | L | — | TODO |
 | 025 | Deterministic time: wall-clock seam + first boundary conversions | P2 | M | — | TODO |
