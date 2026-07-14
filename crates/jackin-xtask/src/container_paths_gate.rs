@@ -269,11 +269,10 @@ fn measure_jackin_literals(root: &Path) -> Result<Vec<LiteralHit>> {
                     line: line_no + 1,
                     literal: lit,
                 });
-                rest = &after[end.min(after.len())..];
-                if rest.is_empty() {
-                    break;
-                }
-                rest = &rest[rest.chars().next().map(|c| c.len_utf8()).unwrap_or(1)..];
+                // Advance past the closing quote when present so the next
+                // `"\/jackin` search continues.
+                let next = after.get(end..).unwrap_or("");
+                rest = next.get(1..).unwrap_or("");
             }
         }
     }
