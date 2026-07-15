@@ -10,7 +10,7 @@ use crate::tui::components::{
     provider_picker::ProviderPickerState,
 };
 use crate::tui::sidebar_layout::{SidebarScrollAreas, focused_mount_scroll_area_still_scrollable};
-use jackin_tui::runtime::UpdateResult;
+use termrock::runtime::UpdateResult;
 
 pub type ConsoleUpdate<E> = UpdateResult<E>;
 

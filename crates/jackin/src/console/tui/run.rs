@@ -269,7 +269,7 @@ where
         context: jackin_console::tui::runtime::ConsoleViewContext { config, cwd },
     };
     let confirm_state = state.quit_confirm.as_ref();
-    jackin_tui::runtime::drive_frame(terminal, &view, &*state, main_area, |frame| {
+    termrock::runtime::drive_frame(terminal, &view, &*state, main_area, |frame| {
         if let Some(confirm) = confirm_state {
             let hint_row = ratatui::layout::Rect {
                 x: main_area.x,

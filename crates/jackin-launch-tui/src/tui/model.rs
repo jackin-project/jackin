@@ -113,7 +113,7 @@ pub struct LaunchViewView<'a> {
     pub context: LaunchRenderContext<'a>,
 }
 
-impl jackin_tui::runtime::View<LaunchView> for LaunchViewView<'_> {
+impl termrock::runtime::View<LaunchView> for LaunchViewView<'_> {
     fn render(
         &self,
         model: &LaunchView,

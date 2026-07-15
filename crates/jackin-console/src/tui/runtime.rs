@@ -23,7 +23,7 @@ pub struct ConsoleView<'a> {
     pub context: ConsoleViewContext<'a>,
 }
 
-impl jackin_tui::runtime::View<crate::tui::console::ConsoleState> for ConsoleView<'_> {
+impl termrock::runtime::View<crate::tui::console::ConsoleState> for ConsoleView<'_> {
     fn render(
         &self,
         model: &crate::tui::console::ConsoleState,

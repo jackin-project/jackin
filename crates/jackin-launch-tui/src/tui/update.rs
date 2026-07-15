@@ -4,7 +4,7 @@
 //! Launch cockpit update helpers.
 
 use jackin_tui::components::StatusFooterHover;
-use jackin_tui::runtime::UpdateResult;
+use termrock::runtime::UpdateResult;
 
 use crate::tui::components::build_log_dialog::refresh_build_log_layout;
 use crate::tui::effect::LaunchEffect;

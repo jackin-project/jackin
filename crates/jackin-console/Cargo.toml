@@ -21,6 +21,7 @@ jackin-diagnostics = { workspace = true }
 jackin-env = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-tui = { workspace = true }
+termrock = { workspace = true }
 nix = { workspace = true, features = ["term"] }
 open = "5.3.4"
 ratatui = { workspace = true }

@@ -9,7 +9,8 @@ use ratatui::layout::Rect;
 
 use jackin_config::AppConfig;
 use jackin_tui::components::FocusOwner;
-use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
+use jackin_tui::runtime::BlockingSubscription;
+use termrock::runtime::{Subscription, SubscriptionPoll};
 
 use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use crate::tui::model::{

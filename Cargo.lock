@@ -2881,6 +2881,7 @@ dependencies = [
  "open",
  "ratatui",
  "tempfile",
+ "termrock",
  "toml",
  "tui-widget-list",
 ]
@@ -2894,6 +2895,7 @@ dependencies = [
  "jackin-core",
  "jackin-diagnostics",
  "jackin-tui",
+ "termrock",
  "tui-widget-list",
 ]
 
@@ -3828,7 +3830,7 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "chrono",
  "getrandom 0.2.17",
  "http",
@@ -4768,7 +4770,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "petgraph",
@@ -4787,7 +4789,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -6403,7 +6405,7 @@ dependencies = [
 [[package]]
 name = "termrock"
 version = "0.6.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=30d3c0cf18ddba07af3fbb872aaf48088cae7539#30d3c0cf18ddba07af3fbb872aaf48088cae7539"
+source = "git+https://github.com/tailrocks/termrock.git?rev=771d0007c59d3be0d389f127dae94c5ab1b593ba#771d0007c59d3be0d389f127dae94c5ab1b593ba"
 dependencies = [
  "anstyle-parse 0.2.7",
  "base64 0.22.1",
