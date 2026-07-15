@@ -755,7 +755,8 @@ where
         cleanup.run(docker).await;
         return Err(error);
     }
-    let _trust: TrustSeeded = TrustSeeded;
+    let trust: TrustSeeded = TrustSeeded;
+    let TrustSeeded = trust;
 
     if agent != jackin_core::Agent::Codex {
         let _expiry_days = workspace_opt
@@ -1098,7 +1099,8 @@ where
         cleanup.run(docker).await;
     }
     launch_result?;
-    let _launched: RuntimeLaunched = RuntimeLaunched;
+    let launched: RuntimeLaunched = RuntimeLaunched;
+    let RuntimeLaunched = launched;
     // Launch succeeded. From here on the cleanup struct is reused
     // to tear down docker resources at session end (clean exit,
     // crash, NotFound, etc.); the host-side socket dir + Capsule
@@ -1355,5 +1357,6 @@ where
     let classified: CleanupClassified = CleanupClassified {
         container_name: container_name.clone(),
     };
-    Ok(classified.container_name)
+    let CleanupClassified { container_name } = classified;
+    Ok(container_name)
 }
