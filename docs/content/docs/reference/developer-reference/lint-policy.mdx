@@ -44,7 +44,7 @@ Every `[workspace.lints.clippy]` entry at `allow` as of this census. Level-decis
 | `unreadable_literal` | allow | 17 | 2026-07-14 | large integer literals in tests/benches | revisit at next toolchain major |
 | `unnecessary_debug_formatting` | allow | 2 | 2026-07-14 | debug formatting in operator-facing paths | revisit when count >5 |
 | `struct_field_names` | allow | 3 | 2026-07-14 | domain field prefixes matching type names | revisit at next public API pass |
-| `missing_errors_doc` | allow | 356 | 2026-07-14 | docs backlog; not a safety gate | re-measure after docs campaign; promote when <50 |
+| `missing_errors_doc` | allow | 356 | 2026-07-14 | docs backlog; not a safety gate | re-measure after docs campaign; promote when below 50 |
 | `missing_panics_doc` | allow | 9 | 2026-07-14 | small panics-doc backlog | re-measure when count changes >20% |
 | `must_use_candidate` | allow | 662 | 2026-07-14 | noise-dominant on pure getters | re-measure at next toolchain major only |
 | `module_name_repetitions` | allow | 376 | 2026-07-14 | intentional `foo::FooBar` domain naming | re-measure at next toolchain major only |
