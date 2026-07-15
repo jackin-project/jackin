@@ -9,8 +9,8 @@ use crate::console::tui::{
 };
 use jackin_config::AppConfig;
 use jackin_console::tui::effect::ConsoleEffect;
+use jackin_console::tui::runtime::spawn_blocking_subscription;
 use jackin_console::tui::screens::workspaces::update::saved_workspace_selected_index;
-use jackin_tui::runtime::spawn_blocking_subscription;
 
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,

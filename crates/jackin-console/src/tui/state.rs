@@ -15,10 +15,10 @@ use std::rc::Rc;
 
 use ratatui::layout::Rect;
 
+use crate::tui::runtime::BlockingSubscription;
 use jackin_config::{AppConfig, MountConfig, WorkspaceConfig};
 use jackin_core::EnvValue;
 use jackin_env::OpCache;
-use jackin_tui::runtime::BlockingSubscription;
 use termrock::components::{ConfirmState, ErrorPopupState, FocusOwner, TextInputState};
 
 use crate::tui::auth::AuthKind;

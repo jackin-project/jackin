@@ -40,7 +40,7 @@ pub struct FileBrowserState {
     /// whose origin can't be resolved — the overlay then omits the row.
     pub pending_git_url: Option<String>,
     pub(super) pending_git_url_rx:
-        Option<jackin_tui::runtime::BlockingSubscription<Option<String>>>,
+        Option<crate::tui::runtime::BlockingSubscription<Option<String>>>,
     /// Which button is highlighted in the git-repo prompt.
     pub pending_git_focus: GitPromptFocus,
 }

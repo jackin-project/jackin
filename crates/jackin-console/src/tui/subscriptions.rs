@@ -3,7 +3,7 @@
 
 //! Long-lived event sources that drive the host console TUI loop.
 
-use jackin_tui::runtime::BlockingSubscription;
+use crate::tui::runtime::BlockingSubscription;
 
 pub const INSTANCE_REFRESH_SOCKET_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(500);

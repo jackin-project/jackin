@@ -9,8 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::tui::runtime::BlockingSubscription;
 use directories::BaseDirs;
-use jackin_tui::runtime::BlockingSubscription;
 
 use crate::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
 pub use crate::tui::components::file_browser::{FolderEntry, FolderListing};
@@ -174,7 +174,7 @@ pub fn state_from_home_with_hidden() -> anyhow::Result<FileBrowserState> {
 pub fn start_listing_request(
     request: FileBrowserListingRequest,
 ) -> BlockingSubscription<FileBrowserListingResult> {
-    jackin_tui::runtime::spawn_named_blocking_subscription(
+    crate::tui::runtime::spawn_named_blocking_subscription(
         "jackin-file-browser-listing",
         move || run_listing_request(request),
     )
@@ -323,7 +323,7 @@ pub fn resolve_git_url(path: &Path) -> Option<String> {
 }
 
 pub fn start_git_url_resolution(path: PathBuf) -> BlockingSubscription<Option<String>> {
-    jackin_tui::runtime::spawn_named_blocking_subscription(
+    crate::tui::runtime::spawn_named_blocking_subscription(
         "jackin-file-browser-git-url",
         move || resolve_git_url(&path),
     )

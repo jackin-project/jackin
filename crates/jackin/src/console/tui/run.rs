@@ -300,23 +300,25 @@ where
             );
             let chip_row = debug_chip_row(bar_area);
             if let Some(chip) =
-                termrock::components::status_footer_debug_chip_rect(chip_row, &run_id)
+                jackin_console::tui::components::status_footer::status_footer_debug_chip_rect(
+                    chip_row, &run_id,
+                )
             {
                 mouse_state
                     .chrome_hover_tracker
                     .register(chip, ConsoleChromeHover::DebugChip);
             }
-            termrock::components::render_status_footer_right_group(
+            jackin_console::tui::components::status_footer::render_status_footer_right_group(
                 frame,
                 chip_row,
                 "",
-                termrock::components::StatusRightGroup {
+                jackin_console::tui::components::status_footer::StatusRightGroup {
                     usage: None,
                     container: "",
                     run_id: Some(&run_id),
                 },
                 1.0,
-                termrock::components::StatusFooterHover {
+                jackin_console::tui::components::status_footer::StatusFooterHover {
                     left: false,
                     usage: false,
                     right: false,
@@ -331,7 +333,8 @@ where
         ms.list_modal.as_ref()
     {
         let rect = modal.rect(main_area);
-        let overlay = termrock::components::container_info_hyperlink_overlay(rect, info);
+        let overlay =
+            jackin_console::tui::components::container_info_surface::hyperlink_overlay(rect, info);
         if !overlay.is_empty() {
             let mut out = std::io::stdout();
             drop(std::io::Write::write_all(&mut out, &overlay));

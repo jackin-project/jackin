@@ -7,8 +7,8 @@ use std::rc::Rc;
 
 use ratatui::layout::Rect;
 
+use crate::tui::runtime::BlockingSubscription;
 use jackin_config::AppConfig;
-use jackin_tui::runtime::BlockingSubscription;
 use termrock::components::FocusOwner;
 use termrock::runtime::{Subscription, SubscriptionPoll};
 

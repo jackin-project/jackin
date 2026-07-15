@@ -56,7 +56,7 @@ impl FileBrowserState {
 
     pub fn attach_git_url_resolution(
         &mut self,
-        rx: jackin_tui::runtime::BlockingSubscription<Option<String>>,
+        rx: crate::tui::runtime::BlockingSubscription<Option<String>>,
     ) {
         self.pending_git_url = None;
         self.pending_git_url_rx = Some(rx);

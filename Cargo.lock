@@ -2876,12 +2876,12 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-env",
  "jackin-protocol",
- "jackin-tui",
  "nix 0.31.3",
  "open",
  "ratatui",
  "tempfile",
  "termrock",
+ "tokio",
  "toml",
  "tui-widget-list",
 ]
