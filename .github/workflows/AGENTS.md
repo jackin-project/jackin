@@ -32,5 +32,6 @@ Apply these rules to every workflow under this directory. They define the reposi
 
 - Derive one `is_publish` value and gate every external write on `main`. Feature branches may build and test but never publish.
 - Cancel stale runs per publish stream. Serialize only the job that writes a shared external resource, with a non-cancelling job-level concurrency group.
+- Scope workflow concurrency by ref for validation and branch build-only dispatches. Only `main` publishing runs may share a repository-wide concurrency group.
 - A green PR must predict a green `main`: provide a read-only PR equivalent for every main-only invariant, and do not make required checks depend on transient third-party network state.
 - If a change affects a push-only, main-only, dispatch-only, or `workflow_run` job, dispatch it against the PR branch with `gh workflow run` before merging.

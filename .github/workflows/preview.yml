@@ -19,7 +19,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: homebrew-preview-publish
+  # Branch dispatches are build-only and must not contend with the main publish.
+  group: homebrew-preview-${{ github.ref == 'refs/heads/main' && 'publish' || github.ref }}
   cancel-in-progress: true
 
 jobs:
