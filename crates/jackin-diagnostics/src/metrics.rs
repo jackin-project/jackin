@@ -4,14 +4,12 @@
 //! frequency paths (plan 042). All recorders no-op when OTLP metrics were not
 //! installed (no provider → zero cost beyond one atomic load).
 
-#[cfg(feature = "otlp")]
 use std::sync::OnceLock;
 
 /// Install hot-path instruments on the process meter. Called once from
 /// `init_metrics` (host and capsule).
 ///
 /// Returns `true` when this call won the process-wide `OnceLock` (first install).
-#[cfg(feature = "otlp")]
 pub(crate) fn install_hot_path(meter: &opentelemetry::metrics::Meter) -> bool {
     use crate::observability::otel_metrics as names;
     let metrics = HotPathMetrics {
@@ -74,7 +72,6 @@ pub(crate) fn install_hot_path(meter: &opentelemetry::metrics::Meter) -> bool {
     HOT_PATH.set(metrics).is_ok()
 }
 
-#[cfg(feature = "otlp")]
 struct HotPathMetrics {
     terminal_bytes_sent: opentelemetry::metrics::Counter<u64>,
     terminal_bytes_received: opentelemetry::metrics::Counter<u64>,
@@ -89,27 +86,20 @@ struct HotPathMetrics {
     db_statement_count: opentelemetry::metrics::Counter<u64>,
 }
 
-#[cfg(feature = "otlp")]
 static HOT_PATH: OnceLock<HotPathMetrics> = OnceLock::new();
 
 /// Record one emitted client frame: bytes, cursor moves, painted cells.
 pub fn record_frame(bytes: u64, cursor_moves: u64, painted_cells: u64) {
-    #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
         let dims = screen_metric_dims();
         m.terminal_bytes_sent.add(bytes, &dims);
         m.terminal_cursor_moves.add(cursor_moves, &dims);
         m.render_painted_cells.add(painted_cells, &dims);
     }
-    #[cfg(not(feature = "otlp"))]
-    {
-        let _ = (bytes, cursor_moves, painted_cells);
-    }
 }
 
 /// Record one render: duration histogram + frames counter (+ optional cells).
 pub fn record_render(duration_us: u64, painted_cells: u64) {
-    #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
         let dims = screen_metric_dims();
         m.render_duration.record(duration_us, &dims);
@@ -118,13 +108,8 @@ pub fn record_render(duration_us: u64, painted_cells: u64) {
             m.render_painted_cells.add(painted_cells, &dims);
         }
     }
-    #[cfg(not(feature = "otlp"))]
-    {
-        let _ = (duration_us, painted_cells);
-    }
 }
 
-#[cfg(feature = "otlp")]
 fn screen_metric_dims() -> Vec<opentelemetry::KeyValue> {
     use opentelemetry::KeyValue;
     match crate::current_screen_name() {
@@ -135,19 +120,13 @@ fn screen_metric_dims() -> Vec<opentelemetry::KeyValue> {
 
 /// PTY bytes received into a session.
 pub fn incr_terminal_bytes_received(bytes: u64) {
-    #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
         m.terminal_bytes_received.add(bytes, &[]);
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        let _ = bytes;
     }
 }
 
 /// Host cockpit mouse event handled.
 pub fn incr_mouse_events() {
-    #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
         let dims = screen_metric_dims();
         m.input_mouse_events.add(1, &dims);
@@ -156,7 +135,6 @@ pub fn incr_mouse_events() {
 
 /// Docker inspect operation completed.
 pub fn incr_docker_inspect() {
-    #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
         m.docker_inspect_count.add(1, &[]);
     }
@@ -164,41 +142,26 @@ pub fn incr_docker_inspect() {
 
 /// Database statement executed (`statement.name` is a registered const, never SQL).
 pub fn incr_db_statement(statement_name: &'static str) {
-    #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
         use opentelemetry::KeyValue;
         m.db_statement_count
             .add(1, &[KeyValue::new("statement.name", statement_name)]);
     }
-    #[cfg(not(feature = "otlp"))]
-    {
-        let _ = statement_name;
-    }
 }
 
 /// Usage accounts refreshed in one pass.
 pub fn incr_accounts_refreshed(count: u64) {
-    #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
         m.usage_accounts_refreshed.add(count, &[]);
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        let _ = count;
     }
 }
 
 /// Typed error counter (`error.type` attribute).
 pub fn incr_errors(error_type: &str) {
-    #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
         use opentelemetry::KeyValue;
         m.errors_count
             .add(1, &[KeyValue::new("error.type", error_type.to_owned())]);
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        let _ = error_type;
     }
 }
 
@@ -207,7 +170,7 @@ pub fn incr_errors(error_type: &str) {
 /// `HOT_PATH` is a `OnceLock`, so the first install wins for the whole test
 /// process. Always install through this helper so the provider has a reader
 /// that can force-flush into `InMemoryMetricExporter`.
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 struct HotPathTestRig {
     provider: opentelemetry_sdk::metrics::SdkMeterProvider,
     exporter: opentelemetry_sdk::metrics::InMemoryMetricExporter,
@@ -215,14 +178,14 @@ struct HotPathTestRig {
     instruments_owned: bool,
 }
 
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 static HOT_PATH_TEST_RIG: OnceLock<HotPathTestRig> = OnceLock::new();
 
 /// Test-only: install instruments once with an in-memory metric exporter.
 ///
 /// Safe to call from multiple tests; subsequent calls are no-ops once the
 /// process-wide rig (or production `HOT_PATH`) is set.
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 pub(crate) fn install_hot_path_for_test(_meter: &opentelemetry::metrics::Meter) {
     ensure_hot_path_test_rig();
 }
@@ -231,7 +194,7 @@ pub(crate) fn install_hot_path_for_test(_meter: &opentelemetry::metrics::Meter) 
 ///
 /// Returns `true` when counters can be read back via
 /// [`collect_hot_path_counter_sums`] (instruments owned by this rig).
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 pub(crate) fn ensure_hot_path_test_rig() -> bool {
     use opentelemetry::metrics::MeterProvider as _;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
@@ -258,7 +221,7 @@ pub(crate) fn ensure_hot_path_test_rig() -> bool {
 /// Returns `None` when the test rig does not own the process instruments
 /// (another install won the `OnceLock`) or export failed. Missing names map
 /// to `0` (instrument never recorded).
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 pub(crate) fn collect_hot_path_counter_sums(names: &[&str]) -> Option<Vec<u64>> {
     let rig = HOT_PATH_TEST_RIG.get()?;
     if !rig.instruments_owned {
@@ -277,7 +240,7 @@ pub(crate) fn collect_hot_path_counter_sums(names: &[&str]) -> Option<Vec<u64>> 
 }
 
 /// Number of metric streams with exported data in the test provider.
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 pub(crate) fn collect_hot_path_metric_count() -> Option<usize> {
     let rig = HOT_PATH_TEST_RIG.get()?;
     if !rig.instruments_owned {
@@ -295,7 +258,7 @@ pub(crate) fn collect_hot_path_metric_count() -> Option<usize> {
     )
 }
 
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 fn sum_resource_counters(
     resource: &opentelemetry_sdk::metrics::data::ResourceMetrics,
     names: &[&str],

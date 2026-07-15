@@ -42,7 +42,6 @@ pub enum OperationLevel {
 pub fn operation_span(name: &'static str, attrs: &[(&'static str, String)]) -> Span {
     let span = tracing::info_span!("operation", otel.name = name,);
 
-    #[cfg(feature = "otlp")]
     {
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
         span.set_attribute(otel_keys::COMPONENT, "host".to_owned());
@@ -53,12 +52,6 @@ pub fn operation_span(name: &'static str, attrs: &[(&'static str, String)]) -> S
             span.set_attribute(*key, value.clone());
         }
     }
-    #[cfg(not(feature = "otlp"))]
-    {
-        // Attr attachment requires the OTLP OpenTelemetrySpanExt path.
-        let _unused_without_otlp = attrs.len();
-    }
-
     span
 }
 
@@ -92,15 +85,7 @@ impl OperationGuard {
         self.completed.store(true, Ordering::SeqCst);
     }
 
-    #[cfg_attr(
-        not(feature = "otlp"),
-        expect(
-            clippy::unused_self,
-            reason = "body is otlp-gated; self used when otlp is on"
-        )
-    )]
     fn record_completion(&self, outcome: Outcome, error_type: Option<&'static str>) {
-        #[cfg(feature = "otlp")]
         {
             use opentelemetry::trace::Status;
             use tracing_opentelemetry::OpenTelemetrySpanExt as _;
@@ -113,10 +98,6 @@ impl OperationGuard {
             if matches!(outcome, Outcome::Failure | Outcome::Timeout) {
                 self.span.set_status(Status::error(outcome.as_str()));
             }
-        }
-        #[cfg(not(feature = "otlp"))]
-        {
-            let _ = (outcome, error_type);
         }
     }
 }
@@ -153,17 +134,12 @@ pub fn operation_record_exit_code(code: Option<i32>) {
 /// Stamp caller attributes on the current span (dynamic fields cannot go through
 /// the tracing event macro).
 fn stamp_attrs_on_current(attrs: &[(&'static str, String)]) {
-    #[cfg(feature = "otlp")]
     {
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
         let span = Span::current();
         for (key, value) in attrs {
             span.set_attribute(*key, value.clone());
         }
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        let _unused_without_otlp = attrs.len();
     }
 }
 
@@ -295,7 +271,6 @@ pub fn operation_error(
         "{body}"
     );
 
-    #[cfg(feature = "otlp")]
     {
         use opentelemetry::trace::Status;
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
@@ -308,26 +283,16 @@ pub fn operation_error(
 
 /// Record a u64 counter add for `name` when a meter provider is installed.
 pub fn operation_metric(name: &'static str, value: u64, attrs: &[(&'static str, String)]) {
-    #[cfg(feature = "otlp")]
     {
         crate::observability::record_operation_metric(name, value, attrs);
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        let _ = (name, value, attrs);
     }
 }
 
 /// Stamp an i64 attribute on an existing operation span (OTLP builds only).
 pub fn operation_set_i64_attr(span: &Span, key: &'static str, value: i64) {
-    #[cfg(feature = "otlp")]
     {
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
         span.set_attribute(key, value);
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        let _ = (span, key, value);
     }
 }
 

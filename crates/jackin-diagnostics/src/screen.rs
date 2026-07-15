@@ -21,13 +21,10 @@
 
 use tracing::Span;
 
-#[cfg(feature = "otlp")]
 static CAPSULE_SCREEN_ACTIVE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-#[cfg(feature = "otlp")]
 use opentelemetry::trace::{SpanContext, TraceContextExt as _};
-#[cfg(feature = "otlp")]
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
 use crate::observability::otel_keys;
@@ -64,7 +61,6 @@ impl Screen {
     }
 }
 
-#[cfg(feature = "otlp")]
 #[derive(Clone, Debug)]
 struct ScreenLink {
     name: &'static str,
@@ -72,7 +68,6 @@ struct ScreenLink {
     ctx: SpanContext,
 }
 
-#[cfg(feature = "otlp")]
 thread_local! {
     static CURRENT: std::cell::RefCell<Option<ScreenLink>> =
         const { std::cell::RefCell::new(None) };
@@ -91,7 +86,6 @@ thread_local! {
 #[must_use = "the screen span ends as soon as the guard is dropped"]
 pub struct ScreenGuard {
     span: Span,
-    #[cfg(feature = "otlp")]
     previous: Option<ScreenLink>,
 }
 
@@ -112,7 +106,6 @@ impl ScreenGuard {
     }
 }
 
-#[cfg(feature = "otlp")]
 impl Drop for ScreenGuard {
     fn drop(&mut self) {
         CURRENT.with(|cell| *cell.borrow_mut() = self.previous.take());
@@ -123,7 +116,6 @@ impl Drop for ScreenGuard {
 pub fn enter_screen(screen: Screen) -> ScreenGuard {
     let span = tracing::info_span!("screen", otel.name = screen.as_str());
 
-    #[cfg(feature = "otlp")]
     let guard = {
         use opentelemetry::Context;
 
@@ -161,9 +153,6 @@ pub fn enter_screen(screen: Screen) -> ScreenGuard {
         ScreenGuard { span, previous }
     };
 
-    #[cfg(not(feature = "otlp"))]
-    let guard = ScreenGuard { span };
-
     guard
 }
 
@@ -198,20 +187,13 @@ pub fn set_provider(provider: &str) {
 /// Current screen name for stamping logs/metrics (`jackin.screen.name`).
 #[must_use]
 pub fn current_screen_name() -> Option<&'static str> {
-    #[cfg(feature = "otlp")]
-    {
-        CURRENT
-            .with(|cell| cell.borrow().as_ref().map(|link| link.name))
-            .or_else(|| {
-                CAPSULE_SCREEN_ACTIVE
-                    .load(std::sync::atomic::Ordering::Relaxed)
-                    .then_some(Screen::Capsule.as_str())
-            })
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        None
-    }
+    CURRENT
+        .with(|cell| cell.borrow().as_ref().map(|link| link.name))
+        .or_else(|| {
+            CAPSULE_SCREEN_ACTIVE
+                .load(std::sync::atomic::Ordering::Relaxed)
+                .then_some(Screen::Capsule.as_str())
+        })
 }
 
 fn emit_feature_decision(key: &str, provider_or_agent: &str, variant: &str) {
@@ -232,7 +214,6 @@ fn emit_feature_decision(key: &str, provider_or_agent: &str, variant: &str) {
 /// timestamped event on the current screen span. `target` is the thing acted
 /// on, when there is one.
 pub fn record_action(action: &str, target: Option<&str>) {
-    #[cfg(feature = "otlp")]
     {
         use opentelemetry::KeyValue;
         with_current(|link| {
@@ -243,8 +224,6 @@ pub fn record_action(action: &str, target: Option<&str>) {
             link.span.add_event("user.action", attrs);
         });
     }
-    #[cfg(not(feature = "otlp"))]
-    let _ = (action, target);
 }
 
 /// Run a launch future under its own `launch` screen trace, tagging the
@@ -284,7 +263,6 @@ where
 /// session timeline) along with the tab label and agent. Used inside the
 /// capsule, where each tab is a distinct surface the operator works in.
 pub fn record_capsule_activity(label: &str, agent: Option<&str>) {
-    #[cfg(feature = "otlp")]
     {
         use opentelemetry::Context;
 
@@ -311,11 +289,9 @@ pub fn record_capsule_activity(label: &str, agent: Option<&str>) {
             );
         });
     }
-    #[cfg(not(feature = "otlp"))]
-    let _ = (label, agent);
 }
 
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 pub(crate) fn reset_capsule_screen_for_test() {
     CAPSULE_SCREEN_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
 }
@@ -325,7 +301,6 @@ pub(crate) fn reset_capsule_screen_for_test() {
 /// successor starts in a different stack frame (the console list handing off to
 /// the launch flow that begins after `run_console` returns).
 pub fn carry_link_forward() {
-    #[cfg(feature = "otlp")]
     CURRENT.with(|cell| {
         if let Some(link) = cell.borrow().as_ref() {
             let snapshot = (link.name, link.ctx.clone());
@@ -339,31 +314,19 @@ pub fn carry_link_forward() {
 /// `None` when no screen is active or OTLP is not compiled in.
 #[must_use]
 pub fn current_traceparent() -> Option<String> {
-    #[cfg(feature = "otlp")]
-    {
-        CURRENT.with(|cell| {
-            cell.borrow()
-                .as_ref()
-                .filter(|link| link.ctx.is_valid())
-                .map(|link| format_traceparent(&link.ctx))
-        })
-    }
-    #[cfg(not(feature = "otlp"))]
-    None
+    CURRENT.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .filter(|link| link.ctx.is_valid())
+            .map(|link| format_traceparent(&link.ctx))
+    })
 }
 
-#[cfg(feature = "otlp")]
 fn set_current_attr(key: &'static str, value: &str) {
     let value = value.to_owned();
     with_current(|link| link.span.set_attribute(key, value.clone()));
 }
 
-#[cfg(not(feature = "otlp"))]
-fn set_current_attr(key: &'static str, value: &str) {
-    let _ = (key, value);
-}
-
-#[cfg(feature = "otlp")]
 fn with_current(f: impl FnOnce(&ScreenLink)) {
     CURRENT.with(|cell| {
         if let Some(link) = cell.borrow().as_ref() {
@@ -373,7 +336,6 @@ fn with_current(f: impl FnOnce(&ScreenLink)) {
 }
 
 /// Format a span context as a W3C `traceparent` header value.
-#[cfg(feature = "otlp")]
 fn format_traceparent(ctx: &SpanContext) -> String {
     format!(
         "00-{}-{}-{:02x}",

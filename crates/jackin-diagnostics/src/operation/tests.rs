@@ -1,5 +1,3 @@
-#![cfg(feature = "otlp")]
-
 //! Export-shape tests for the typed operation facade.
 
 use opentelemetry::logs::{AnyValue, Severity};

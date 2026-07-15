@@ -22,7 +22,7 @@ default = []
 [dependencies]
 jackin-core = { workspace = true }
 jackin-protocol = { workspace = true }
-jackin-diagnostics = { workspace = true, features = ["otlp"] }
+jackin-diagnostics = { workspace = true }
 jackin-telemetry = { path = "../jackin-telemetry" }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }

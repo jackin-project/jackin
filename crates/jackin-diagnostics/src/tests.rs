@@ -925,28 +925,20 @@ fn rich_terminal_owned_combines_both_flags() {
 
 // ── OpenTelemetry conformance tests ─────────────────────────────────────────
 
-#[cfg(feature = "otlp")]
 const MAX_DEBUG_LOGS: usize = 64;
-#[cfg(feature = "otlp")]
 const MAX_SPANS: usize = 48;
-#[cfg(feature = "otlp")]
 const CONFORMANCE_ARGV_CANARY: &str = "--password=conformance-argv-secret";
-#[cfg(feature = "otlp")]
 const CONFORMANCE_URL_CANARY: &str = "https://example.invalid/api?token=conformance-query-secret";
-#[cfg(feature = "otlp")]
 const CONFORMANCE_INSPECT_CANARY: &str =
     r#"{"Config":{"Env":["TOKEN=conformance-inspect-secret"]}}"#;
-#[cfg(feature = "otlp")]
 const CONFORMANCE_TERMINAL_CANARY: &str = "\u{1b}[31mconformance-terminal-bytes\u{1b}[0m";
 
 /// Combined host + capsule export from the dual-bootstrap conformance scenario.
-#[cfg(feature = "otlp")]
 struct ConformanceExport {
     host: crate::observability::TestExport,
     capsule: crate::observability::TestExport,
 }
 
-#[cfg(feature = "otlp")]
 impl ConformanceExport {
     fn all_logs(&self) -> Vec<opentelemetry_sdk::logs::in_memory_exporter::LogDataWithResource> {
         let mut logs = self.host.logs.get_emitted_logs().unwrap_or_default();
@@ -962,7 +954,6 @@ impl ConformanceExport {
 }
 
 /// Workspace `target/telemetry-volume.json` (plan 009 measured export-volume).
-#[cfg(feature = "otlp")]
 fn telemetry_volume_artifact_path() -> std::path::PathBuf {
     // nextest CWD is the package dir; always write to the workspace target so
     // `cargo xtask lint ratchet` (repo root) consumes the same file.
@@ -975,7 +966,6 @@ fn telemetry_volume_artifact_path() -> std::path::PathBuf {
 /// Capsule phase: separate `test_capsule_layers` bootstrap (no host JSONL layer)
 /// driving production [`emit_session_start_for_test`] plus capsule-target
 /// breadcrumbs — not synthetic events on the host subscriber.
-#[cfg(feature = "otlp")]
 fn drive_standard_conformance_scenario() -> ConformanceExport {
     use crate::operation::{OperationLevel, operation_error, operation_log, operation_span};
     use crate::screen::{Screen, enter_screen};
@@ -1107,7 +1097,6 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
     ConformanceExport { host, capsule }
 }
 
-#[cfg(feature = "otlp")]
 fn conformance_log_body(record: &opentelemetry_sdk::logs::SdkLogRecord) -> Option<String> {
     use opentelemetry::logs::AnyValue;
 
@@ -1117,7 +1106,6 @@ fn conformance_log_body(record: &opentelemetry_sdk::logs::SdkLogRecord) -> Optio
     })
 }
 
-#[cfg(feature = "otlp")]
 fn conformance_log_attr(
     record: &opentelemetry_sdk::logs::SdkLogRecord,
     key: &str,
@@ -1133,7 +1121,6 @@ fn conformance_log_attr(
         })
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_exported_bodies_have_no_bracket_prefix() {
     let _lock = DIAGNOSTICS_TEST_LOCK
@@ -1150,7 +1137,6 @@ fn conformance_exported_bodies_have_no_bracket_prefix() {
     }
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_records_have_complete_otlp_shape() {
     use opentelemetry::logs::Severity;
@@ -1190,7 +1176,6 @@ fn conformance_records_have_complete_otlp_shape() {
     assert!(observed.contains(&Severity::Error));
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_export_invokes_sensitive_boundary_canary_gate() {
     let _lock = DIAGNOSTICS_TEST_LOCK
@@ -1217,7 +1202,6 @@ fn conformance_export_invokes_sensitive_boundary_canary_gate() {
     );
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
     use opentelemetry::logs::Severity;
@@ -1261,7 +1245,6 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
     );
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_waterfall_has_distinct_rows() {
     let _lock = DIAGNOSTICS_TEST_LOCK
@@ -1294,7 +1277,6 @@ fn conformance_waterfall_has_distinct_rows() {
     );
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_logs_correlate_to_traces() {
     let _lock = DIAGNOSTICS_TEST_LOCK
@@ -1313,7 +1295,6 @@ fn conformance_logs_correlate_to_traces() {
     );
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_export_volume_stays_within_budget() {
     let _lock = DIAGNOSTICS_TEST_LOCK
@@ -1353,7 +1334,6 @@ fn conformance_export_volume_stays_within_budget() {
     }
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
     let _lock = DIAGNOSTICS_TEST_LOCK
@@ -1388,7 +1368,6 @@ fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
     }
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_screen_dimension_is_stamped() {
     let _lock = DIAGNOSTICS_TEST_LOCK
@@ -1403,7 +1382,6 @@ fn conformance_screen_dimension_is_stamped() {
     }));
 }
 
-#[cfg(feature = "otlp")]
 #[test]
 fn conformance_derived_image_stage_links_to_launch() {
     let _lock = DIAGNOSTICS_TEST_LOCK

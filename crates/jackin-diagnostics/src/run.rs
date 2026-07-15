@@ -176,7 +176,6 @@ struct DiagnosticsMetrics {
     cache_misses: u64,
 }
 
-#[cfg(feature = "otlp")]
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DomainMetricsSnapshot {
     pub event_counts: BTreeMap<String, u64>,
@@ -903,7 +902,6 @@ impl RunDiagnostics {
         }
     }
 
-    #[cfg(feature = "otlp")]
     pub(crate) fn domain_metrics_snapshot(&self) -> DomainMetricsSnapshot {
         let metrics = locked(&self.metrics);
         DomainMetricsSnapshot {
@@ -1196,7 +1194,6 @@ fn launch_stage_span(stage: crate::DiagnosticStage) -> tracing::Span {
         otel.status_code = tracing::field::Empty,
         otel.status_description = tracing::field::Empty,
     );
-    #[cfg(feature = "otlp")]
     {
         use crate::observability::otel_keys;
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;

@@ -37,7 +37,7 @@ jackin-agent-status = { workspace = true }
 jackin-core = { workspace = true }
 # OTLP export for the in-container session, runtime-gated on the endpoint the
 # host injects. Pulls the opentelemetry stack into the capsule image.
-jackin-diagnostics = { workspace = true, features = ["otlp"] }
+jackin-diagnostics = { workspace = true }
 jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-telemetry = { path = "../jackin-telemetry" }

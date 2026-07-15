@@ -1,5 +1,3 @@
-#![cfg(feature = "otlp")]
-
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
 
 use super::{Screen, format_traceparent};

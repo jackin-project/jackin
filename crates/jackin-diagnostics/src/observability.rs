@@ -251,7 +251,6 @@ pub fn init_tracing_for(
     run_id: &str,
     identity: ServiceIdentity,
 ) -> anyhow::Result<bool> {
-    #[cfg(feature = "otlp")]
     {
         if let Some(endpoints) = otlp::endpoints() {
             return match otlp::init(debug, run_id, identity, &endpoints) {
@@ -279,7 +278,6 @@ pub fn init_tracing_for(
 /// Install the JSONL-only subscriber as a fallback. Ignores an
 /// already-installed error: that means a subscriber exists, which is all the
 /// fallback needs. Only the otlp build reaches this (the failed-exporter path).
-#[cfg(feature = "otlp")]
 fn install_jsonl_only() {
     drop(
         tracing_subscriber::registry()
@@ -294,14 +292,7 @@ fn install_jsonl_only() {
 /// use this to fail fast with a clear operator error before doing any work.
 #[must_use]
 pub fn unsupported_otlp_protocol() -> Option<String> {
-    #[cfg(feature = "otlp")]
-    {
-        otlp::first_unsupported_protocol()
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        None
-    }
+    otlp::first_unsupported_protocol()
 }
 
 /// Flush and shut down the OTLP exporters, if any are active.
@@ -312,7 +303,6 @@ pub fn unsupported_otlp_protocol() -> Option<String> {
 /// including `?` error early-returns — rather than only the success path.
 /// No-op in default builds and when no endpoint was configured.
 pub(crate) fn shutdown_otlp() {
-    #[cfg(feature = "otlp")]
     otlp::shutdown();
 }
 
@@ -320,7 +310,6 @@ pub(crate) fn shutdown_otlp() {
 /// counterpart to the host's guard-driven [`shutdown_otlp`]; the capsule has no
 /// `ActiveRunGuard`, so it calls this explicitly before the daemon exits.
 pub fn shutdown_capsule_tracing() {
-    #[cfg(feature = "otlp")]
     otlp::shutdown();
 }
 
@@ -336,18 +325,12 @@ pub fn init_capsule_tracing(
     run_id: Option<&str>,
     traceparent: Option<&str>,
 ) -> anyhow::Result<bool> {
-    #[cfg(feature = "otlp")]
     let activated = match otlp::base_endpoint() {
         Some(endpoint) => {
             otlp::init_capsule(session_id, run_id, traceparent, &endpoint)?;
             true
         }
         None => false,
-    };
-    #[cfg(not(feature = "otlp"))]
-    let activated = {
-        let _ = (session_id, run_id, traceparent);
-        false
     };
     Ok(activated)
 }
@@ -356,27 +339,13 @@ pub fn init_capsule_tracing(
 /// when export is off / not compiled.
 #[must_use]
 pub fn configured_endpoint() -> Option<String> {
-    #[cfg(feature = "otlp")]
-    {
-        otlp::base_endpoint()
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        None
-    }
+    otlp::base_endpoint()
 }
 
 /// Human-readable host OTLP endpoint configuration for debug banners.
 #[must_use]
 pub fn configured_endpoint_summary() -> Option<String> {
-    #[cfg(feature = "otlp")]
-    {
-        otlp::endpoint_summary()
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        None
-    }
+    otlp::endpoint_summary()
 }
 
 /// Operator-facing backend query line for a run id, when an OTLP endpoint is
@@ -402,14 +371,7 @@ pub fn backend_query_hint(run_id: &str) -> Option<String> {
 /// it as never requested. Always `false` without the `otlp` feature.
 #[must_use]
 pub fn otlp_endpoint_configured() -> bool {
-    #[cfg(feature = "otlp")]
-    {
-        otlp::any_endpoint_configured()
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        false
-    }
+    otlp::any_endpoint_configured()
 }
 
 /// How a launched container should reach the host OTLP backend.
@@ -435,14 +397,7 @@ pub fn container_otlp() -> Option<ContainerOtlp> {
 /// a reachable collector instead of silently disabling capsule export. gRPC sends
 /// every signal to one target, so a single endpoint is the right container shape.
 fn container_endpoint() -> Option<String> {
-    #[cfg(feature = "otlp")]
-    {
-        otlp::container_endpoint()
-    }
-    #[cfg(not(feature = "otlp"))]
-    {
-        None
-    }
+    otlp::container_endpoint()
 }
 
 /// Rewrite a host-loopback OTLP endpoint to `host.docker.internal` (the host
@@ -483,7 +438,6 @@ mod tests;
 /// Only compiled with `--features otlp`; entirely absent from default builds
 /// so there is zero link-time cost. No `fmt` layer is attached: OTLP export is
 /// a separate sink from the operator's screen, which stays free of the firehose.
-#[cfg(feature = "otlp")]
 mod otlp {
     use std::sync::OnceLock;
 
@@ -1573,7 +1527,6 @@ mod otlp {
 }
 
 /// Crate-visible wrapper for [`crate::operation_metric`].
-#[cfg(feature = "otlp")]
 pub(crate) fn record_operation_metric(
     name: &'static str,
     value: u64,
@@ -1582,10 +1535,10 @@ pub(crate) fn record_operation_metric(
     otlp::record_operation_metric(name, value, attrs);
 }
 
-#[cfg(all(feature = "otlp", any(test, feature = "test-support")))]
+#[cfg(any(test, feature = "test-support"))]
 pub use otlp::{TestExport, test_capsule_layers};
 /// In-memory export rig for crate tests (operation facade, conformance).
-#[cfg(all(test, feature = "otlp"))]
+#[cfg(test)]
 pub(crate) use otlp::{emit_session_start_for_test, test_layers};
 
 pub(crate) fn emit_jsonl_event(
@@ -1759,7 +1712,6 @@ pub(crate) fn correlation_ids(
     run_id: &str,
     fallback_span_id: Option<&str>,
 ) -> (String, Option<String>) {
-    #[cfg(feature = "otlp")]
     {
         use opentelemetry::trace::TraceContextExt as _;
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
@@ -1829,7 +1781,6 @@ fn emit_jsonl_event_with_level(
     // The trailing format message becomes the OTLP log body — without it,
     // exported records carry attributes but an empty body.
     // Stamp current screen onto the active span so logs/metrics inherit it.
-    #[cfg(feature = "otlp")]
     if let Some(screen) = crate::current_screen_name() {
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
         tracing::Span::current().set_attribute(otel_keys::SCREEN_NAME, screen);
