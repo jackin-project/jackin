@@ -72,6 +72,7 @@ jackin-env = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 predicates = { workspace = true }
+syn = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 [[bench]]

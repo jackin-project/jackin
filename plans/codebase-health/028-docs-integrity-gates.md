@@ -80,7 +80,7 @@ Fixture-driven tests per gate (steps 1, 3-self-test, 4); real-tree green after d
 - [x] Map audit: non-member entries, missing tier, missing README/crate-page link all fail with file-level messages; real tree green
 - [x] Dependency-viz decision recorded on the map page
 - [x] Freshness gate runs post-checkout in its own visible job; synthetic-diff proof exists; severity decision recorded
-- [ ] Config-key drift gate live both directions (severity per direction recorded); real tree green
+- [x] Config-key drift gate live both directions (severity per direction recorded); real tree green
 - [ ] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
@@ -95,3 +95,7 @@ Fixture-driven tests per gate (steps 1, 3-self-test, 4); real-tree green after d
 - The severity decisions (freshness, undocumented-key direction) are recorded advisory-first; revisit after false-positive data accumulates.
 
 **Index deviation (audit 2026-07-15)**: IN PROGRESS — config-key drift gate still missing; map/freshness criteria met.
+
+## Execution notes
+
+- Config-key drift is blocking in both directions. `docs_commands` parses the serde-derived public structs in `schema.rs`, `app_config.rs`, and `auth.rs`; the configuration reference carries explicit field markers. A two-sided fixture proves documented-but-gone and schema-added-but-undocumented failures, and the real-tree inventory is green.

@@ -46,6 +46,81 @@ Each file carries its own `version = "v1alpha8"` stamp, so a dotfile-managed set
 
 ## config.toml schema
 
+{/* Machine-checked persisted-field inventory. Keep these markers beside the
+schema reference; `docs_commands` compares them with the serde structs. */}
+<!-- config-key: AgentAuthConfig.auth_forward -->
+<!-- config-key: AgentAuthConfig.sync_source_dir -->
+<!-- config-key: AppConfig.amp -->
+<!-- config-key: AppConfig.claude -->
+<!-- config-key: AppConfig.codex -->
+<!-- config-key: AppConfig.dirty_exit_policy -->
+<!-- config-key: AppConfig.docker -->
+<!-- config-key: AppConfig.env -->
+<!-- config-key: AppConfig.git -->
+<!-- config-key: AppConfig.github -->
+<!-- config-key: AppConfig.grok -->
+<!-- config-key: AppConfig.kimi -->
+<!-- config-key: AppConfig.opencode -->
+<!-- config-key: AppConfig.role_repo_refresh_ttl_seconds -->
+<!-- config-key: AppConfig.roles -->
+<!-- config-key: AppConfig.runtime -->
+<!-- config-key: AppConfig.telemetry -->
+<!-- config-key: AppConfig.version -->
+<!-- config-key: AppConfig.workspaces -->
+<!-- config-key: DockerConfig.grants -->
+<!-- config-key: DockerConfig.mounts -->
+<!-- config-key: DockerConfig.profile -->
+<!-- config-key: GitConfig.coauthor_trailer -->
+<!-- config-key: GitConfig.dco -->
+<!-- config-key: GithubAuthConfig.auth_forward -->
+<!-- config-key: GithubAuthConfig.env -->
+<!-- config-key: GlobalMountConfig.dst -->
+<!-- config-key: GlobalMountConfig.readonly -->
+<!-- config-key: GlobalMountConfig.src -->
+<!-- config-key: KeepAwakeConfig.enabled -->
+<!-- config-key: MountConfig.dst -->
+<!-- config-key: MountConfig.isolation -->
+<!-- config-key: MountConfig.readonly -->
+<!-- config-key: MountConfig.src -->
+<!-- config-key: RoleSource.env -->
+<!-- config-key: RoleSource.git -->
+<!-- config-key: RoleSource.trusted -->
+<!-- config-key: RuntimeConfig.default_backend -->
+<!-- config-key: TelemetryConfig.categories -->
+<!-- config-key: TelemetryConfig.level -->
+<!-- config-key: WorkspaceConfig.allowed_roles -->
+<!-- config-key: WorkspaceConfig.amp -->
+<!-- config-key: WorkspaceConfig.claude -->
+<!-- config-key: WorkspaceConfig.codex -->
+<!-- config-key: WorkspaceConfig.default_agent -->
+<!-- config-key: WorkspaceConfig.default_role -->
+<!-- config-key: WorkspaceConfig.dirty_exit_policy -->
+<!-- config-key: WorkspaceConfig.docker -->
+<!-- config-key: WorkspaceConfig.env -->
+<!-- config-key: WorkspaceConfig.git_pull_on_entry -->
+<!-- config-key: WorkspaceConfig.github -->
+<!-- config-key: WorkspaceConfig.grok -->
+<!-- config-key: WorkspaceConfig.keep_awake -->
+<!-- config-key: WorkspaceConfig.kimi -->
+<!-- config-key: WorkspaceConfig.last_role -->
+<!-- config-key: WorkspaceConfig.mounts -->
+<!-- config-key: WorkspaceConfig.opencode -->
+<!-- config-key: WorkspaceConfig.roles -->
+<!-- config-key: WorkspaceConfig.runtime -->
+<!-- config-key: WorkspaceConfig.version -->
+<!-- config-key: WorkspaceConfig.workdir -->
+<!-- config-key: WorkspaceDockerConfig.grants -->
+<!-- config-key: WorkspaceDockerConfig.profile -->
+<!-- config-key: WorkspaceRoleOverride.amp -->
+<!-- config-key: WorkspaceRoleOverride.claude -->
+<!-- config-key: WorkspaceRoleOverride.codex -->
+<!-- config-key: WorkspaceRoleOverride.env -->
+<!-- config-key: WorkspaceRoleOverride.github -->
+<!-- config-key: WorkspaceRoleOverride.grok -->
+<!-- config-key: WorkspaceRoleOverride.kimi -->
+<!-- config-key: WorkspaceRoleOverride.opencode -->
+<!-- config-key: WorkspaceRuntimeConfig.backend -->
+
 The configuration is TOML. Global settings live at
 `~/.config/jackin/config.toml`; saved workspaces live one-per-file under
 `~/.config/jackin/workspaces/`. The CLI and console manage both locations
