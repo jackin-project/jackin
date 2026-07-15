@@ -8,6 +8,8 @@ mod debug_log_adapter;
 pub mod logging;
 pub mod metrics;
 pub mod observability;
+#[cfg(feature = "test-support")]
+mod observability_test_support;
 pub mod operation;
 pub mod operator_notice;
 pub mod redact;

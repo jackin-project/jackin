@@ -1027,8 +1027,9 @@ mod otlp {
         directive
     }
 
-    #[cfg(test)]
-    pub(crate) struct TestExport {
+    #[cfg(any(test, feature = "test-support"))]
+    #[derive(Debug)]
+    pub struct TestExport {
         pub(crate) spans: opentelemetry_sdk::trace::InMemorySpanExporter,
         pub(crate) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
         pub(crate) tracer_provider: SdkTracerProvider,
@@ -1081,8 +1082,8 @@ mod otlp {
     /// Mirrors production `init_capsule`: capsule Resource, **no**
     /// `JackinDiagnosticsLayer`. Call [`emit_session_start_for_test`] under the
     /// returned subscriber to drive the production session-start path.
-    #[cfg(test)]
-    pub(crate) fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber) {
         use opentelemetry::trace::TracerProvider as _;
 
         let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
@@ -1394,9 +1395,11 @@ pub(crate) fn record_operation_metric(
     otlp::record_operation_metric(name, value, attrs);
 }
 
+#[cfg(any(test, feature = "test-support"))]
+pub use otlp::{TestExport, test_capsule_layers};
 /// In-memory export rig for crate tests (operation facade, conformance).
 #[cfg(all(test, feature = "otlp"))]
-pub(crate) use otlp::{TestExport, emit_session_start_for_test, test_capsule_layers, test_layers};
+pub(crate) use otlp::{emit_session_start_for_test, test_layers};
 
 pub(crate) fn emit_jsonl_event(
     run_id: &str,

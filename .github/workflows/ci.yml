@@ -951,7 +951,7 @@ jobs:
         with:
           install_args: "rust cargo:cargo-nextest"
       - name: Run telemetry conformance filter
-        run: cargo nextest run -p jackin-diagnostics --all-features --locked -E 'test(/conformance/)'
+        run: cargo nextest run -p jackin-diagnostics -p jackin-capsule --all-features --locked -E 'test(/conformance/)'
   fuzz:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
