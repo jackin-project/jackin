@@ -22,7 +22,7 @@ use jackin_core::{ChangedFile, changed_files, unpushed_commit_count};
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_protocol::{CapsuleConfig, EXIT_ACTION_PATH, ExitAction};
 use std::path::Path;
-use std::process::Stdio;
+use jackin_process::{ExecRequest, StdioMode};
 
 /// One isolated worktree carrying uncommitted or unpushed work.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,19 +73,15 @@ impl CommandRunner for GitRunner {
         cwd: Option<&Path>,
         _opts: &RunOptions,
     ) -> anyhow::Result<()> {
-        let mut cmd = std::process::Command::new(program);
-        cmd.args(args);
+        let mut request = ExecRequest::new(program, args)
+            .stdout_mode(StdioMode::Null)
+            .stderr_mode(StdioMode::Null);
         if let Some(dir) = cwd {
-            cmd.current_dir(dir);
+            request = request.cwd(dir);
         }
-        let status = cmd
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?
-            .wait()?;
-        if !status.success() {
-            anyhow::bail!("{program} exited with {status}");
+        let result = jackin_process::exec_sync(&request)?;
+        if !result.success {
+            anyhow::bail!("{program} exited with code {:?}", result.code);
         }
         Ok(())
     }
@@ -96,18 +92,12 @@ impl CommandRunner for GitRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        let mut cmd = std::process::Command::new(program);
-        cmd.args(args);
+        let mut request = ExecRequest::new(program, args);
         if let Some(dir) = cwd {
-            cmd.current_dir(dir);
+            request = request.cwd(dir);
         }
-        let output = cmd
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?
-            .wait_with_output()?;
-        if !output.status.success() {
+        let output = jackin_process::exec_sync(&request)?;
+        if !output.success {
             anyhow::bail!(
                 "{program} {args:?} failed: {}",
                 String::from_utf8_lossy(&output.stderr).trim()
