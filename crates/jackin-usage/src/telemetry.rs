@@ -158,6 +158,7 @@ pub fn bridge_log_structured(
 
     match level {
         BridgeLevel::Trace => tracing::event!(
+            name: "capsule.trace",
             target: "jackin_capsule",
             tracing::Level::TRACE,
             "event.name" = event_name,
@@ -169,6 +170,7 @@ pub fn bridge_log_structured(
             "{body}"
         ),
         BridgeLevel::Debug => tracing::event!(
+            name: "capsule.debug",
             target: "jackin_capsule",
             tracing::Level::DEBUG,
             "event.name" = event_name,
@@ -180,6 +182,7 @@ pub fn bridge_log_structured(
             "{body}"
         ),
         BridgeLevel::Info => tracing::event!(
+            name: "capsule.log",
             target: "jackin_capsule",
             tracing::Level::INFO,
             "event.name" = event_name,
@@ -191,6 +194,7 @@ pub fn bridge_log_structured(
             "{body}"
         ),
         BridgeLevel::Warn => tracing::event!(
+            name: "capsule.warn",
             target: "jackin_capsule",
             tracing::Level::WARN,
             "event.name" = event_name,
@@ -202,6 +206,7 @@ pub fn bridge_log_structured(
             "{body}"
         ),
         BridgeLevel::Error => tracing::event!(
+            name: "capsule.error",
             target: "jackin_capsule",
             tracing::Level::ERROR,
             "event.name" = event_name,
