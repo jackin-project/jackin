@@ -476,7 +476,7 @@ fn all_provider_snapshots_round_trip_from_turso_to_usage_overlay_rows() {
 }
 
 #[test]
-fn telemetry_store_records_schema_version() {
+fn usage_snapshot_store_records_schema_version() {
     let dir = tempfile::tempdir().expect("tempdir");
     let db = dir.path().join("usage.db");
 

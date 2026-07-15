@@ -88,7 +88,7 @@ where
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_time()
             .build()
-            .map_err(|err| format!("create telemetry store runtime failed: {err}"))?;
+            .map_err(|err| format!("create usage snapshot store runtime failed: {err}"))?;
         RUNTIME.get_or_init(move || runtime)
     };
     runtime.block_on(future)
@@ -97,7 +97,7 @@ where
 async fn open_store(path: &Path) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|err| format!("create telemetry store dir failed: {err}"))?;
+            .map_err(|err| format!("create usage snapshot store dir failed: {err}"))?;
     }
     let path = path_to_turso(path)?;
     static STORE_CONNECTIONS: OnceLock<tokio::sync::Mutex<HashMap<String, Connection>>> =
@@ -109,7 +109,7 @@ async fn open_store(path: &Path) -> Result<Connection, String> {
     }
     let conn = connect_local(&path)
         .await
-        .map_err(|err| format!("open telemetry store failed: {err}"))?;
+        .map_err(|err| format!("open usage snapshot store failed: {err}"))?;
     record_connection_build(&path);
     // Schema creation + the ALTER-based migration are idempotent but not free;
     // run them once per database path per process. Keyed by the resolved turso
@@ -130,7 +130,7 @@ async fn open_store(path: &Path) -> Result<Connection, String> {
 fn path_to_turso(path: &Path) -> Result<String, String> {
     path.to_str()
         .map(str::to_owned)
-        .ok_or_else(|| "telemetry store path is not utf8".to_owned())
+        .ok_or_else(|| "usage snapshot store path is not utf8".to_owned())
 }
 
 #[cfg(test)]
@@ -199,7 +199,7 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
         ",
     )
     .await
-    .map_err(|err| format!("initialize telemetry store schema failed: {err}"))?;
+    .map_err(|err| format!("initialize usage snapshot store schema failed: {err}"))?;
     ensure_account_snapshot_columns(conn).await?;
     conn.execute(
         "INSERT INTO _meta (key, value) VALUES ('schema_version', ?1)
@@ -207,7 +207,7 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
         [SCHEMA_VERSION],
     )
     .await
-    .map_err(|err| format!("record telemetry store schema version failed: {err}"))?;
+    .map_err(|err| format!("record usage snapshot store schema version failed: {err}"))?;
     Ok(())
 }
 

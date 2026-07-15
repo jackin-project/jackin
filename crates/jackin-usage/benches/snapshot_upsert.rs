@@ -10,7 +10,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput};
 use jackin_protocol::control::FocusedUsageView;
-use jackin_usage::telemetry_store::store_usage_snapshots;
+use jackin_usage::usage_snapshot_store::store_usage_snapshots;
 use tempfile::TempDir;
 
 fn views(n: usize) -> Vec<FocusedUsageView> {

@@ -186,7 +186,7 @@ pub struct UsageCache {
     codex_rpc_gate: ManagedCliLaunchGate,
     grok_rpc_gate: ManagedCliLaunchGate,
     refresh_schedule: UsageRefreshSchedule,
-    telemetry_store_path: PathBuf,
+    usage_snapshot_store_path: PathBuf,
     /// Destination for accounts.json materialization. Production uses
     /// [`MATERIALIZED_USAGE_ACCOUNTS_PATH`]; benches/tests inject a temp path
     /// via [`UsageCache::set_accounts_materialize_path`].
@@ -322,12 +322,12 @@ impl UsageCache {
     /// because `jackin-capsule`'s `daemon/tests.rs` uses it from a separate
     /// crate and Rust's `cfg(test)` does not propagate across crates.
     #[doc(hidden)]
-    pub fn set_telemetry_store_path(&mut self, path: PathBuf) {
-        self.telemetry_store_path = path;
+    pub fn set_usage_snapshot_store_path(&mut self, path: PathBuf) {
+        self.usage_snapshot_store_path = path;
     }
 
     /// Test-only helper: seed a snapshot into the cache. Kept `pub` for the
-    /// same cross-crate reason as `set_telemetry_store_path`.
+    /// same cross-crate reason as `set_usage_snapshot_store_path`.
     #[doc(hidden)]
     pub fn insert_snapshot_for_test(
         &mut self,
@@ -543,12 +543,12 @@ impl UsageCache {
             stored_views.push(view);
         }
         if !stored_views.is_empty() {
-            let result = crate::telemetry_store::store_usage_snapshots(
-                &self.telemetry_store_path,
+            let result = crate::usage_snapshot_store::store_usage_snapshots(
+                &self.usage_snapshot_store_path,
                 &stored_views,
             );
             self.telemetry_persist_failed = log_persist_transition(
-                "usage telemetry store write",
+                "usage usage snapshot store write",
                 self.telemetry_persist_failed,
                 result,
             );
@@ -588,7 +588,7 @@ impl Default for UsageCache {
             codex_rpc_gate: ManagedCliLaunchGate::default(),
             grok_rpc_gate: ManagedCliLaunchGate::default(),
             refresh_schedule: UsageRefreshSchedule::default(),
-            telemetry_store_path: PathBuf::from(TELEMETRY_STORE_PATH),
+            usage_snapshot_store_path: PathBuf::from(TELEMETRY_STORE_PATH),
             accounts_materialize_path: PathBuf::from(MATERIALIZED_USAGE_ACCOUNTS_PATH),
             telemetry_persist_failed: false,
             accounts_materialize_failed: false,
