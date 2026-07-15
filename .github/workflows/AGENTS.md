@@ -22,6 +22,10 @@ Apply these rules to every workflow under this directory. They define the reposi
 - Use `${{ github.token }}` for same-repository reads and Actions cache access. Reserve `${{ secrets.GH_READONLY_TOKEN }}` for cross-repository reads, including `jdx/mise-action` downloads and private sibling repositories.
 - Declare third-party CLI selection variables such as `BUILDX_BUILDER`, `GH_TOKEN`, and `RUSTUP_TOOLCHAIN` at job scope. Workflow-level `env` is only for in-house naming with no tool side effect.
 
+## Runner Capacity
+
+- Automatic PR CI, Construct, and jackin-dev jobs use the Velnor runner lane; keep GitHub-hosted runners for `main` and explicit dispatch parity runs. This prevents independent PRs from competing for the hosted-runner quota while Velnor capacity is idle.
+
 ## Publishing and Parity
 
 - Derive one `is_publish` value and gate every external write on `main`. Feature branches may build and test but never publish.
