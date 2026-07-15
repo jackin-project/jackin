@@ -36,9 +36,11 @@ Freeze has two prerequisites inside the donor repository. First, wire the lookbo
 Two gates would otherwise conflict: `jackin❯` migration requires byte-identical rendering, while per-component conformance requires display-width correctness and non-color cues that the donor demonstrably violates today (character-count width math in hint spans, select-list labels, the status-footer right group, and error-dialog wrapping; a color-only panel focus border). The resolution is explicit sequencing:
 
 1. **Extraction tier — required before the first consumer pin.** Neutral naming, no product dependency, borrowed render data, stable IDs, no-panic tiny/empty rectangles, documented public items, neutral stories, and deterministic renders. Known rendering defects are carried through unchanged and bug-compatible.
-2. **Quality tier — required before the first tag.** Display-width correctness everywhere, non-color focus/selection/error cues, and any other fix that changes rendered bytes. Each lands in `termrock` as its own reviewed change with regenerated fixtures and a migration note after `jackin❯` parity passes; `jackin❯` adopts it through a deliberate revision repin that reviews the visual diff.
+2. **Quality tier — required before the first tag.** Display-width correctness everywhere, non-color focus/selection/error cues, and any later non-blocking rendering defect admitted through the reviewed re-freeze protocol below. Each backlog item lands in `termrock` as its own reviewed change with regenerated fixtures and a migration note after `jackin❯` parity passes; `jackin❯` adopts it through a deliberate revision repin that reviews the visual diff.
 
 During extraction and migration no rendering-behavior fix may ride along silently: a parity diff that traces to an unrecorded "improvement" fails the gate, and the quality backlog artifact is the only permitted list of deferred fixes.
+
+If implementation discovers a security defect, data-loss path, or panic on a documented valid input after freeze, the same branch returns to Stage 0, fixes the donor, regenerates the affected fixtures/inventories, and freezes a new baseline before extraction resumes. A newly discovered non-blocking rendering defect is added to the reviewed quality backlog and carried through parity. This is an evidence reset inside the one implementation PR, not permission for a silent TermRock-only fix or a second PR.
 
 ## Classification rules
 
@@ -82,11 +84,11 @@ These packages have the smallest behavioral surface and unlock removal of the fi
 
 ### Batch B - leaf widgets
 
-Move simple buffer-rendering components first: panel, modal backdrop, hint bar, filter display, button/action strip, toast, and tabs. Convert them to the one stable widget convention and remove public duplicate `render_*` wrappers.
+Move simple buffer-rendering components first: panel, modal backdrop, hint bar, button/action strip, toast, and tabs. Convert them to the one stable widget convention and remove public duplicate `render_*` wrappers.
 
 ### Batch C - stateful widgets
 
-Move scrollable lists, select list, text input, dialogs, status slots, detail table, and diff view after the foundation API is exercised. This is where stable IDs, borrowed row models, configurable labels, external validation/filtering, Unicode cursor rules, and explicit state mutation must be resolved.
+Move scrollable lists, select list, text input (including the filter composition/preset), dialogs, status slots, detail table, and diff view after the foundation API is exercised. This is where stable IDs, borrowed row models, configurable labels, external validation/filtering, Unicode cursor rules, and explicit state mutation must be resolved. No separate public `FilterField` or modal stack/router is introduced.
 
 ### Batch D - terminal and lookbook adapters
 
@@ -105,9 +107,11 @@ Keep or rebuild locally:
 
 ## History extraction
 
-Create the repository through a history-preserving filter, then make debranding and API cleanup as new reviewable commits. The filter should include the two donor crate paths, selected neutral helpers currently under `jackin-core`, generic lookbook documentation, committed SVG seeds, and only the relevant design history. Record the exact donor revision and command in `provenance.toml`.
+Prepare the repository through a history-preserving path filter, then make debranding and API cleanup as new reviewable commits before the first external source push. Retain the complete history of the two donor crate paths plus exact, path-complete generic lookbook documentation, committed SVG seeds, relevant design files, and the root `LICENSE`/`NOTICE`. Do not filter a mixed `jackin-core` file to capture individual helpers: move or reimplement the neutral code in a new signed commit and record its source file, donor revision, and meaningful source commit in `provenance.toml`. The neutral bootstrap retains the applicable donor notice, may relocate the license text under `LICENSES/`, and creates a TermRock-specific `REUSE.toml` rather than inheriting `jackin❯`'s broad package annotation.
 
-[`git-filter-repo`](https://github.com/newren/git-filter-repo) is the maintained history-rewriting tool referenced by the plan. Run it on a dedicated clone, never on the active jackin❯ workspace. Verify authors, timestamps, file licenses, tags, and the source-revision mapping before publishing the new default branch.
+[`git-filter-repo`](https://github.com/newren/git-filter-repo) is the maintained history-rewriting tool referenced by the plan. Run it on a dedicated clone, never on the active jackin❯ workspace. Verify authors, timestamps, file licenses, source-revision mapping, secret scan, binary-size scan, and retained paths before publishing. Historical donor commits may contain product vocabulary and may not build outside the former monorepo; the first published TermRock head and API must be neutral, standalone, and green. Publish only `main`, never donor branches or tags, and treat the first TermRock tag in Stage 5 as the only initial release tag.
+
+Imported commits are provenance and are not retroactively DCO-signed. `provenance.toml` records the inherited boundary; every new TermRock-authored commit after that boundary must carry DCO sign-off and build independently. Create the public GitHub repository empty and do not push the raw filtered tip. The first push contains inherited history plus the reviewed neutralization/bootstrap commits, with the scanned buildable commit as the visible `main` head.
 
 No TablePro, TablePlus, Zedis, or other reference-project source belongs in this history. Those projects may inform product concepts in other repositories; `termrock` contains only Tailrocks-owned/donor code and compatible dependencies with reviewed licenses.
 
@@ -116,7 +120,10 @@ No TablePro, TablePlus, Zedis, or other reference-project source belongs in this
 ```text
 one jackin❯ implementation branch + PR (open through every stage)
         |
-        +--> TermRock history bootstrap -> signed direct-main checkpoints
+        +--> local filtered history -> neutral standalone bootstrap
+        |                                  |
+        |                                  v
+        |                      first/direct-main green checkpoints
         |                                  |
         |                                  v
         |                           immutable TermRock revisions
@@ -169,6 +176,8 @@ Capsule keeps its locally painted status bar and hand-painted hint rows through 
 
 Each slice pins a tested `termrock` revision and runs the whole workspace because changing public Ratatui types can surface failures outside files that import `jackin_tui` directly.
 
+At every stage boundary, compare the frozen donor revision with current `origin/main`. Before final donor deletion and again before the implementation PR merges, merge current `origin/main` with the normal non-rewriting merge-sync policy. If upstream touched a donor module, consumer, fixture, dependency cell, or canonical TUI document, regenerate the affected inventory/parity evidence and port the change to its decided owner before advancing.
+
 No slice merges early. The single implementation PR remains the review surface
 for the cumulative migration, while its commit sequence preserves bounded
 review and rollback points.
@@ -209,6 +218,8 @@ The new public component API should allow visible-window projection rather than 
 ### External repository ready
 
 - [ ] Provenance and REUSE checks pass for every extracted and generated file.
+- [ ] The Apache license text and applicable original donor `NOTICE` attribution ship in the repository and package artifacts; TermRock's `REUSE.toml` names the new package and only its actual files.
+- [ ] The public repository contains only `main`; the first visible head was neutral, standalone, scanned, and buildable, with inherited commits separated from new DCO-signed commits by the recorded provenance boundary.
 - [ ] Base `termrock` builds with no product, Tokio, or Crossterm dependency.
 - [ ] Every component and logical interaction API builds without features; enabling `crossterm` adds only event/backend/session convenience and preserves canonical renders.
 - [ ] Every public item is documented and present in the reviewed API report.
@@ -234,5 +245,7 @@ The new public component API should allow visible-window projection rather than 
 - [ ] No other Tailrocks product repository was checked out, patched, built, validated, migrated, or released by this roadmap.
 - [ ] Every quality-backlog fix (display width, non-color cues) landed with regenerated fixtures and a migration note before the first tag.
 - [ ] The first tag has semver, package, docs, license, and `jackin❯` compatibility evidence.
+- [ ] The first tag is the committed API baseline; automated semver comparison starts with subsequent candidates.
+- [ ] TermRock `main` protection is enabled after the final bootstrap checkpoint, before this roadmap closes.
 
 These gates make repository extraction reversible until the donor deletion, while preventing an indefinite dual implementation after ownership changes.

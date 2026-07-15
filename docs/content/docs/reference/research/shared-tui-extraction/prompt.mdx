@@ -8,7 +8,7 @@ title: "Shared TUI Extraction Research Brief"
 
 ## Mission
 
-Design and execute a history-preserving extraction of `crates/jackin-tui`, the neutral `crates/jackin-tui-lookbook` harness/CLI, and the generic component catalog into the independent Apache-2.0 `tailrocks/termrock` repository. The initial packages are `termrock` and `termrock-lookbook`. Migrate `jackin❯` without behavior changes. Do not touch or validate another product repository.
+Design and execute a path-history-preserving extraction of `crates/jackin-tui`, the neutral `crates/jackin-tui-lookbook` harness/CLI, and the generic component catalog into the independent public Apache-2.0 `tailrocks/termrock` repository. The initial packages are `termrock` and `termrock-lookbook`. Migrate `jackin❯` without behavior changes. Do not touch or validate another product repository.
 
 The research must answer:
 
@@ -41,7 +41,7 @@ In scope:
 - compile-checked direct, TEA, component-oriented, Flux, buffer-only, manual Crossterm, and managed Crossterm examples using the same public components without a required TermRock runtime;
 - interactive lookbook CLI, deterministic render artifacts, and terminal-size conformance;
 - a same-repository Fumadocs component catalog backed by generated SVG states and a coverage manifest;
-- one future `jackin❯` implementation branch/PR for the complete roadmap, DCO-signed TermRock bootstrap commits pushed directly to its `main`, and exact revision pins for every consumer checkpoint;
+- one future `jackin❯` implementation branch/PR for the complete roadmap, inherited donor history kept as original provenance, every new TermRock bootstrap commit DCO-signed/buildable, the first neutral standalone head and later checkpoints pushed directly to `main`, and exact revision pins for every consumer checkpoint;
 - post-bootstrap Git branch/fork iteration with exact revision pins for durable consumer builds; crates.io publication is optional;
 - complete `jackin❯` donor migration as the only consumer adoption in this roadmap;
 - public API documentation, semver, MSRV, Ratatui/Crossterm compatibility, CI, and releases.

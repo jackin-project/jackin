@@ -8,6 +8,8 @@ title: "07 - Repository Engineering"
 
 ## Initial repository
 
+Create `tailrocks/termrock` as an empty public repository after the Stage 0 namespace/owner/trademark gates pass. Do not let GitHub generate a seed README/license commit. Prepare the filtered history and neutral standalone bootstrap in a dedicated clone, scan it locally, and make the first push to `main` only when its visible head is buildable; never publish the raw filtered tip, donor branches, or donor tags.
+
 ```text
 tailrocks/termrock/
 |- AGENTS.md
@@ -15,7 +17,9 @@ tailrocks/termrock/
 |- Cargo.toml
 |- Cargo.lock
 |- LICENSES/Apache-2.0.txt
+|- NOTICE
 |- REUSE.toml
+|- provenance.toml
 |- deny.toml
 |- rust-toolchain.toml
 |- mise.toml
@@ -65,9 +69,9 @@ Carry over the useful jackin❯ defaults:
 - edition and MSRV in one workspace package policy;
 - `debug = 1` in development and thin LTO for release binaries;
 - all tools pinned in <RepoFile path="mise.toml" />, with the lockfile enabled;
-- Conventional Commits and DCO sign-off from the first commit;
-- during the roadmap bootstrap only, signed buildable checkpoints push directly to `main` with no TermRock PR, and source/story/SVG/docs changes stay in the same commit;
-- after the roadmap completes, protect `main`, require one PR per branch, and require docs in the same PR as API changes;
+- Conventional Commits and DCO sign-off for every new TermRock-authored commit after the recorded imported-history boundary; inherited donor commits preserve their original metadata and are not retroactively signed;
+- during the roadmap bootstrap only, new signed buildable checkpoints push directly to `main` with no TermRock PR, and source/story/SVG/docs changes stay in the same commit;
+- after the final tag/checkpoint and before the roadmap closes, protect `main`, require one PR per branch, and require docs in the same PR as API changes;
 - action references pinned by full commit SHA, including checkout and REUSE.
 
 Do not copy the current dependency exception ledgers. Generate a new `deny.toml` from the small actual graph. Permit Apache-2.0 and MIT by policy, add an exception only with a reason, deny yanked crates and unknown registries/Git sources, and deny wildcard requirements. `cargo-deny` should also reject duplicate versions unless the repository records a narrow reviewed exception. This is especially important for `ratatui-core`: two incompatible copies in one process can make otherwise identical public types fail to interoperate.
@@ -103,7 +107,7 @@ The base crate must also pass `cargo check -p termrock --no-default-features` an
 - compare the current `termrock` API with the latest immutable tag using `cargo-semver-checks` after the first tag;
 - require `cargo package -p termrock --locked` and inspect `cargo package --list` in CI;
 - package `termrock-lookbook` only if it is intended for registry distribution; otherwise keep `publish = false` and build the CLI from Git;
-- verify package archives include license, readme, source, and required generated metadata but exclude target output and docs build caches;
+- verify package archives include license, applicable notice/attribution, readme, source, and required generated metadata but exclude target output and docs build caches;
 - reject missing public docs and unapproved new root re-exports;
 - upload an API diff artifact when a public API changes, even when the pre-1.0 version policy permits it.
 
@@ -116,10 +120,10 @@ The base crate must also pass `cargo check -p termrock --no-default-features` an
 | `dependency-policy` | `cargo shear --deny-warnings`; `cargo deny check licenses bans sources` |
 | `advisories` | `cargo audit --deny warnings`, plus scheduled `cargo deny check advisories` |
 | `reuse` | `reuse lint` or the pinned REUSE action |
-| `dco` | every commit carries a valid `Signed-off-by` trailer |
+| `dco` | every new TermRock-authored commit after the provenance boundary carries a valid `Signed-off-by` trailer; imported donor commits retain original metadata |
 | `history-provenance` | extraction manifest names donor repository, source revision, paths, filter command, and retained copyright holders |
 
-REUSE requires comprehensive, machine-readable license and copyright information per file. Preserve existing SPDX headers during history extraction, put the Apache-2.0 text under `LICENSES/`, and annotate generated SVG/JSON assets through headers, sidecar files, or `REUSE.toml`. See the [REUSE 3.3 specification](https://reuse.software/spec/) and [REUSE FAQ](https://reuse.software/faq/).
+REUSE requires comprehensive, machine-readable license and copyright information per file. Preserve existing SPDX headers during history extraction, put the Apache-2.0 text under `LICENSES/`, retain a root `NOTICE` containing the applicable original donor notice and any TermRock addition, and annotate generated SVG/JSON assets through headers, sidecar files, or the new TermRock-specific `REUSE.toml`. Do not copy the donor's repository-wide `REUSE.toml` annotation unchanged because its package identity and broad path rule describe `jackin❯`, not the extracted repository. See the [REUSE 3.3 specification](https://reuse.software/spec/) and [REUSE FAQ](https://reuse.software/faq/).
 
 ## Render and catalog gates
 
@@ -153,8 +157,9 @@ The donor currently has 29 committed SVG previews and 18 Rust files using `TestB
 ## Documentation gates
 
 The same change unit that changes a public component changes its story, SVG,
-and Fumadocs page: one signed commit during direct-`main` bootstrap and one PR
-after bootstrap. Required docs jobs:
+and Fumadocs page: one new signed commit during direct-`main` bootstrap and one
+PR after bootstrap. Imported history predates this TermRock rule. Required docs
+jobs:
 
 - install with `bun install --frozen-lockfile` or `bun ci` from the committed Bun lock;
 - cache only Bun's download cache, not `node_modules` or generated site output;
@@ -222,6 +227,7 @@ The first adoption artifact is an immutable Git revision, not a binary release. 
 - require a clean main-branch revision and all required aggregators;
 - ensure the workspace version and tag agree;
 - run semver, package, license, docs, standalone-example, and `jackin❯` compatibility gates;
+- treat the reviewed API report at the first tag as the initial baseline; run `cargo-semver-checks` against that tag only for subsequent candidates;
 - create annotated `v0.y.z` tags and a GitHub release with migration notes;
 - publish to crates.io only after an explicit operator decision and registry ownership check;
 - build standalone lookbook binaries only if users need installation without Cargo; do not inherit jackin❯'s unrelated cross-platform archive matrix by default.

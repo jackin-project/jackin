@@ -4,13 +4,7 @@ title: "04 - Extraction And Migration Plan"
 
 # 04 - Extraction And Migration Plan
 
-This is a two-repository program delivered through one future `jackin❯`
-feature branch and one pull request. The PR remains open through Stages 0-5;
-stage boundaries are signed checkpoint commits, not independently merged PRs.
-During bootstrap, TermRock is created if absent and receives DCO-signed,
-buildable commits directly on its `main` without a TermRock PR. This approved
-exception and the exact-revision integration protocol are defined in
-[Decision 18](/reference/research/shared-tui-extraction/05-decision-record/#18-single-pr-delivery-topology).
+This is a two-repository program delivered through one future `jackin❯` feature branch and one pull request. The PR remains open through Stages 0-5; stage boundaries are signed checkpoint commits, not independently merged PRs. During bootstrap, TermRock is created empty if absent. Filtered history and new TermRock commits are prepared in a dedicated clone; only a neutral, scanned, standalone head is first pushed directly to `main`, without a TermRock PR. Every later bootstrap head follows the same direct-`main` rule. This approved exception and the exact-revision integration protocol are defined in [Decision 18](/reference/research/shared-tui-extraction/05-decision-record/#18-single-pr-delivery-topology).
 
 Only `tailrocks/termrock` and `jackin❯` participate. Other Tailrocks products
 explain why the API must be neutral, but this program does not check out,
@@ -23,6 +17,7 @@ modify, build, validate, migrate, or release any of them.
 - surface in the implementation launch summary that the approved program creates `tailrocks/termrock` if absent and pushes bootstrap commits directly to its `main`;
 - revalidate the time-sensitive GitHub repository and crates.io package namespaces and record the intended owners immediately before creation/publication;
 - record the operator's trademark disposition before public launch; no dedicated domain is required because the initial catalog is hosted with the repository;
+- record the donor `origin/main` revision and the Stage 0 re-freeze/merge-sync protocol from [Decision 20](/reference/research/shared-tui-extraction/05-decision-record/#20-long-running-branch-drift);
 - verify the history-preserving extraction tool and attribution procedure;
 - freeze the lookbook CLI, Fumadocs component-page contract, and extract/parameterize/remain ledger;
 - generate the public API, consumer map, story/render manifest, dependency tree, compatibility matrix, and provenance record defined in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/);
@@ -36,21 +31,24 @@ Exit gate: no ownership ambiguity remains; the single PR is open; freeze
 evidence is reproducible; and the external repository name, owners, and direct
 `main` write scope are recorded before the first external push.
 
-## Stage 1: Create the external donor history
+## Stage 1: Prepare the external donor history
 
-- create `tailrocks/termrock` with the Rust workspace, Fumadocs application, governance, CI, dependency/license gates, cache policy, and release automation specified in [07 - Repository engineering](/reference/research/shared-tui-extraction/07-repository-engineering/);
-- use `git filter-repo` or equivalent to retain the two donor paths plus the neutral component pages, preview assets, and relevant TUI design history;
-- preserve authorship, timestamps where possible, SPDX headers, copyright, LICENSE, and NOTICE/attribution;
-- record the source repository and extraction revision;
-- move the interactive terminal lookbook, SVG generation/check behavior, and neutral story registry into the external lookbook package;
-- make debranding/reorganization reviewable signed commits in the new repository rather than copying a final anonymous snapshot;
-- push each buildable checkpoint directly to TermRock `main`, run its available push gates, and record the immutable commit in the `jackin❯` implementation PR.
+- create an empty public `tailrocks/termrock` without a generated README/license commit, secondary branch, or tag; prepare its source in a dedicated local extraction clone;
+- use `git filter-repo` or equivalent to retain the complete two-donor-path history plus exact, path-complete neutral component pages, preview assets, relevant TUI design files, and the root `LICENSE`/`NOTICE` history;
+- preserve authorship, timestamps where possible, SPDX headers, copyright, Apache license text, and all applicable donor `NOTICE` attribution; create a TermRock-specific `REUSE.toml` rather than carrying the donor's repository-wide annotation unchanged;
+- record the source repository, extraction revision, retained paths, filter command, and imported-history boundary;
+- do not filter mixed `jackin-core` files for individual helpers; move/reimplement their neutral code in later signed commits and record source-file/revision lineage;
+- scan the filtered history for secrets, incompatible licenses, oversized binaries, and source from reference projects; do not push donor branches or tags;
+- prepare the path/reorganization map without committing a partial new TermRock bootstrap;
+- keep the prepared history local through Stage 2: an inherited filtered tip may not build outside the monorepo and must never be advertised as a TermRock checkpoint.
 
-Exit gate: provenance can trace extracted code to donor commits, the published TermRock `main` checkpoint is buildable, and its push validation is green.
+Exit gate: provenance can trace extracted code to donor commits, the pre-publish history/license/secret review passes, and the dedicated clone is ready for neutralization without any raw donor tip having been published.
 
-## Stage 2: Break product coupling
+## Stage 2: Break product coupling and publish
 
 - move neutral text, scrolling, dialog, and bottom-chrome ownership from `jackin-core` to the shared crate in foundation-first order;
+- establish the Rust workspace, Fumadocs application, governance, CI, dependency/license gates, cache policy, and release automation specified in [07 - Repository engineering](/reference/research/shared-tui-extraction/07-repository-engineering/);
+- move the interactive terminal lookbook, SVG generation/check behavior, and neutral story registry into the external lookbook package;
 - keep environment-aware path-display policy such as `shorten_home` in `jackin-core` and remove its `jackin-tui` re-export; TermRock text APIs do not read `$HOME` or own path presentation;
 - remove agent/container/brand-specific exports and stories;
 - introduce the private/builder-based semantic theme and consumer brand/header input;
@@ -60,9 +58,12 @@ Exit gate: provenance can trace extracted code to donor commits, the published T
 - derive lookbook SVG colors from the shared theme values, asserting the committed SVGs stay byte-identical;
 - carry every quality-backlog defect through unchanged: no width or non-color fix rides along with the ownership move;
 - convert public rendering to the stable `Widget for &T` / `StatefulWidget for &T` convention, with borrowed render data and stable consumer IDs;
-- ensure public APIs contain no consumer model.
+- ensure public APIs contain no consumer model;
+- resolve the frozen component dispositions exactly: filter behavior is a `TextInput` composition rather than a public `FilterField`; TermRock has backdrop/dialog/hit primitives but no modal stack/router; scroll state uses `usize` logical units, clips in logical space, and uses one centralized saturating `u16` conversion only at the Ratatui edge;
+- make every new TermRock-authored change after the provenance boundary a DCO-signed, buildable commit; inherited donor commits are not retroactively signed or required to build standalone;
+- after the neutral standalone head passes local source, build, render, provenance, license, and secret checks, push only `main` to the empty public repository and run the available push gates; record that immutable commit in the `jackin❯` implementation PR.
 
-Exit gate: `cargo tree` and source audit show no Tailrocks product dependency, and neutral tests/render fixtures pass.
+Exit gate: `cargo tree` and source audit show no Tailrocks product dependency; neutral tests/render fixtures pass; the first published TermRock `main` head is buildable and green; and no donor branch or tag was published.
 
 ## Stage 3: Establish revision-consumable quality
 
@@ -73,23 +74,24 @@ Exit gate: `cargo tree` and source audit show no Tailrocks product dependency, a
 - document and test terminal, list, render, and check CLI operations;
 - test the supported Rust/Ratatui/Crossterm matrix on macOS and Linux;
 - run formatting, lint, unit, docs, dependency, license, and supply-chain checks;
-- run default/no-default, all-feature, feature-powerset, MSRV, rustdoc, package, public-API-report, catalog-coverage, deterministic-render, and declared-platform checks; create the automated semver baseline only at the first tag;
+- run default/no-default, all-feature, feature-powerset, MSRV, rustdoc, package, public-API-report, catalog-coverage, deterministic-render, and declared-platform checks; commit the reviewed public API report, while the first tag later establishes the automated semver comparison baseline;
 - publish an immutable Git revision and migration guide; publishing a crates.io preview remains optional.
 
 Exit gate: an external minimal consumer can pin one full commit SHA, build and render without `jackin❯` code, open the Fumadocs catalog, and reproduce the committed previews.
 
 ## Stage 4: Migrate `jackin❯`
 
-- depend on an immutable Git revision, or a preview release if one exists;
+- depend on the tested full TermRock `main` commit through Cargo's `rev` form and commit <RepoFile path="Cargo.lock" />; do not switch this migration to a preview release or tag;
 - replace imports incrementally without product redesign or a broad compatibility re-export facade;
 - retain product components/stories locally;
-- move generic component documentation, neutral SVG previews, and the neutral interaction conventions (tab pattern, focusability, hover-scroll, modal stacking, hint discipline) to the external Fumadocs site as debranded pages, while retaining `jackin❯` composition and design-decision docs that link out;
+- move generic component documentation, neutral SVG previews, and the neutral interaction conventions (tab pattern, focusability, hover-scroll, dialog/backdrop layering without a shared modal stack, hint discipline) to the external Fumadocs site as debranded pages, while retaining `jackin❯` composition and design-decision docs that link out;
 - remove the local generic lookbook CLI only after equivalent external terminal/render/check workflows pass;
 - migrate every `jackin-core` compatibility caller before deleting duplicates;
 - re-home the Tokio subscription spawn helpers into `jackin-console`;
 - keep Capsule's locally painted status bar and hint rows; converging them on the shared `Tabs`/`HintBar` is a post-parity follow-up, not a migration requirement;
 - compare console, Capsule, launch, input, mouse, modal, terminal-restoration, lookbook, and SVG fixtures;
 - update canonical TUI docs to identify shared versus `jackin❯` ownership;
+- compare the frozen donor revision with current `origin/main`; before donor deletion, merge current `origin/main` by the normal merge-sync policy and regenerate affected inventory/parity evidence for any upstream TUI change;
 - delete in-tree donor crates only after parity and dependency audits pass.
 
 All migration slices are commits on the one implementation branch. Each slice
@@ -107,13 +109,15 @@ publish compatibility shims.
 ## Stage 5: Stabilize TermRock
 
 - land every quality-backlog fix (display width, non-color cues) with regenerated fixtures and migration notes before the first tag;
-- publish the first Git tag after `jackin❯` runs the final pinned revision successfully, and decide separately whether crates.io publication adds enough value;
+- publish the first annotated Git tag after `jackin❯` runs the final pinned revision successfully; the tag establishes the future semver-check baseline, while `jackin❯` remains pinned to the full commit and crates.io publication remains a separate operator decision;
 - follow the shared-project-first Ratatui/Crossterm upgrade policy: the library upgrades first and `jackin❯` repins as the compatibility oracle, with one supported pair per revision line;
 - maintain compatibility and migration notes for the TermRock/`jackin❯` revision pair;
 - keep branch/fork iteration available while requiring exact commit pins for durable consumer changes;
 - defer every other product adoption and every component beyond the donor set to separately scoped future work;
 - split `termrock-testing` only after repeated cross-consumer test-helper demand;
-- measure API churn, dependency weight, render performance, and maintenance load before broadening scope.
+- measure API churn, dependency weight, render performance, and maintenance load before broadening scope;
+- enable protected-branch/pull-request governance for TermRock after the final tag/checkpoint and before the roadmap closes;
+- merge current `origin/main` into the `jackin❯` implementation branch again before final merge, rerunning any evidence affected by upstream changes.
 
 The final `jackin❯` PR commit retires this roadmap item only after the TermRock
 tag, donor deletion, documentation transfer, and all completion
@@ -126,10 +130,11 @@ gates are present. Partial completion is not merged.
 | premature generalization | classify every item as extract, parameterize, remain, or remove; reject components beyond the existing donor set |
 | visual or interaction regression | freeze verified fixtures, migrate `jackin❯` before redesign, and require the parity matrix before donor deletion |
 | silent quality fixes during migration | record every known defect in `quality-backlog.md`; reject any unrecorded render change until parity completes |
+| newly discovered blocking donor defect | return the same branch to Stage 0, fix the donor, regenerate evidence, and re-freeze before continuing |
 | dependency inversion or framework capture | reject consumer imports and executor-specific public types; keep widgets independent from `runtime` and keep Crossterm additive |
 | cross-repository deadlock | publish an immutable TermRock revision first, migrate one consumer slice at a time, and retain only not-yet-migrated donor modules |
 | oversized single PR | structure the one branch as stage/slice checkpoint commits, maintain an evidence index, and keep every checkpoint independently reviewable and green |
-| incomplete public TermRock `main` | push only buildable signed checkpoints, run validation on every push, publish no tag until Stage 5, and repair forward rather than rewriting history |
+| incomplete public TermRock `main` | prepare filtered history locally, first publish only a neutral buildable head, require every new TermRock commit after the provenance boundary to be signed/buildable, and repair forward rather than rewriting history |
 | brand or domain leakage | require semantic/data-driven APIs and keep product fixtures, wording, effects, and policy in each consumer |
 | history or license loss | use history-preserving extraction, record the exact source/filter command, and require independent provenance/REUSE review |
 | mutable dependency drift | allow trusted branches only for iteration; require a full revision or immutable release plus the committed lockfile for durable changes |
@@ -142,6 +147,7 @@ when its applicable control lacks evidence.
 - [ ] No Tailrocks product crate is a dependency of the shared component crate.
 - [ ] No public shared type contains a product domain model.
 - [ ] Donor history and license attribution are independently reviewed.
+- [ ] Only TermRock `main` was published; inherited donor commits are clearly separated from new signed/buildable commits, and no donor branch/tag or raw filtered tip was advertised.
 - [ ] All public components have docs, tests, and neutral lookbook states.
 - [ ] The extracted CLI can interactively preview, list, render, and verify every neutral story.
 - [ ] The standalone Fumadocs site renders generated SVG states and fails verification when component docs, stories, or previews drift.
@@ -150,6 +156,7 @@ when its applicable control lacks evidence.
 - [ ] The quality backlog was carried bug-compatible through extraction and migration; every fix landed post-parity with regenerated fixtures.
 - [ ] Base `termrock` builds without Tokio or Crossterm; every component remains available there, while the optional Crossterm integration passes additivity, partial-initialization, and PTY restoration tests.
 - [ ] Public API and package diffs pass the documented semver/package policy.
+- [ ] The first tag is the recorded initial API baseline; `cargo-semver-checks` comparisons start with subsequent candidates rather than a nonexistent prior release.
 - [ ] `jackin❯` parity passes before local donor deletion.
 - [ ] The post-bootstrap repository policy permits trusted branch/fork iteration but requires immutable commits or releases for durable builds.
 - [ ] No other Tailrocks product repository was checked out, changed, or used as a completion gate.

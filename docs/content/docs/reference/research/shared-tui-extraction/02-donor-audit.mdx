@@ -35,8 +35,8 @@ Chapter [09 - Component redesign catalog](/reference/research/shared-tui-extract
 - ANSI text parsing;
 - pure OSC 8/22/52 escape encoding and pointer-shape naming (`PointerShape`), extracted as typed request/encoder data with no emission;
 - executor-neutral runtime contracts and the `drive_frame` frame driver in a base module that is optional by use and required by no widget;
-- `Panel`, `TabStrip`, `ButtonStrip`, confirmation/error dialogs, filter input, hints, scrollable panel/list, selection list, text input, toast, and diff view — status-popup behavior folds into the generic message/toast surface without a dedicated public type;
-- modal backdrop/lifecycle and generic dialog layout;
+- `Panel`, `TabStrip`, `ButtonStrip`, confirmation/error dialogs, hints, scrollable panel/list, selection list, text input plus a documented filter composition/preset, toast, and diff view — no separate public `FilterField`, while status-popup behavior folds into the generic message/toast surface without a dedicated public type;
+- modal backdrop, pure inside/outside hit classification, and generic dialog layout — modal stack, parent-chain lifecycle, and application routing remain consumer-local;
 - lookbook registry, interactive driver, SVG/golden renderer, and fixture runner;
 - neutral component catalog pages and the generated-preview workflow that feeds them.
 
@@ -52,6 +52,7 @@ Chapter [09 - Component redesign catalog](/reference/research/shared-tui-extract
 - give the shared tab strip per-tab glyph/state slots and stable click regions, and cover Capsule's wrapped-hint behavior in the hint bar, so the Capsule status bar and hint rows can converge on shared widgets after parity;
 - derive the lookbook SVG color table from the shared theme values instead of the duplicated hex table hardcoded in the SVG writer today;
 - turn the preview binary into the external project's documented terminal/render/check CLI without retaining `jackin❯` paths or wording.
+- standardize logical scroll offsets, lengths, and indices on `usize`; clip values in logical space, then convert terminal geometry through one centralized saturating `u16` edge helper.
 
 ## Keep in `jackin❯`
 

@@ -27,19 +27,21 @@ All measurements were taken from the active jackin❯ branch on 2026-07-15. File
 - **Initial packages:** `termrock` for reusable components and `termrock-lookbook` for the story/render library plus preview CLI.
 - **Renderer:** Ratatui only. Do not design a renderer-neutral abstraction or support competing TUI frameworks.
 - **Base dependency:** `ratatui-core`; every component works without features, while additive Crossterm event/backend/session convenience is optional and Tokio is absent from the shared crate.
-- **License:** Apache-2.0, preserving donor history, authorship, SPDX headers, copyright, and attribution.
+- **License:** Apache-2.0, preserving path-level donor history, authorship, SPDX headers, copyright, and attribution; inherited snapshots may contain historical product vocabulary, while the first advertised TermRock head/API is neutral.
 - **Documentation:** a Fumadocs component catalog in the same repository, backed by committed CLI-generated SVG previews.
 - **First consumer:** `jackin❯`, migrated without visible redesign.
 - **Later consumers:** Holla, Velnor runner/job TUI, justified Parallax interactive CLI workflows, TableRock, and independent Tailrocks development tools, all through separately scoped future work.
 - **Boundary:** shared components, terminal lifecycle, theme, input/focus/layout, lookbook, and render-conformance only. No agent, job, trace, database, credential, command-execution, or telemetry models.
 - **Post-bootstrap consumption:** branches and trusted forks support cross-repository iteration, while durable consumer changes pin a full Git commit SHA and commit <RepoFile path="Cargo.lock" />.
-- **Implementation delivery:** one future `jackin❯` branch/PR covers the complete roadmap; TermRock bootstrap checkpoints are signed commits pushed directly to its `main`, and `jackin❯` pins each exact revision.
+- **Implementation delivery:** one future `jackin❯` branch/PR covers the complete roadmap; filtered history is prepared locally, every new TermRock commit is signed/buildable, only the neutral standalone head and later checkpoints push directly to `main`, and `jackin❯` pins each exact revision.
 - **Execution scope:** only TermRock and `jackin❯`; no other product checkout, change, validation, or migration is a gate.
 - **Release:** crates.io is optional; consumers can adopt immutable Git revisions before any registry publication and may later pin semver releases.
 - **Terminal baseline:** modern truecolor terminals (Ghostty-class) with OSC 8/22/52 support; the library ships no capability-degradation code.
-- **Sequencing:** bug-compatible extraction and byte-identical `jackin❯` parity first; recorded quality fixes (display width, non-color cues) land after parity and before the first tag.
+- **Sequencing:** bug-compatible extraction and byte-identical `jackin❯` parity first; recorded quality fixes (display width, non-color cues) land after parity and before the first tag/API baseline.
 - **Runtime:** executor-neutral update/view/subscription contracts and the `drive_frame` frame driver live in the base `runtime` module, optional by use and required by no widget; Tokio integration stays consumer-owned.
 - **Scope:** the existing donor component set only; new components are explicit post-extraction roadmap work.
+
+The dossier is implementation-ready: every architecture decision is closed. Namespace/owner/trademark revalidation and current-`main` synchronization are explicit Stage 0 execution gates, not missing design work.
 
 ## Read order
 

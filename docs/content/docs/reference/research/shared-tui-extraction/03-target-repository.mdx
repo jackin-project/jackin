@@ -35,7 +35,9 @@ tailrocks/termrock
 
 Start with two packages: the reusable component crate and a lookbook package that exposes the story/render library plus its CLI. Do not create a third CLI crate only to wrap the lookbook. Add a public testing crate only after two consumers require the same `TestBackend`, event fixtures, or golden-render helpers.
 
-The Fumadocs application lives in the same repository. Component source, stories, generated SVGs, docs pages, and their verification gate therefore advance in one change unit and cannot drift across repositories: one signed direct-`main` commit during bootstrap, then one normal TermRock PR after the roadmap completes.
+The repository is public and is created empty without an auto-generated seed commit. Filtered donor history stays in a dedicated clone until the neutral standalone head passes the pre-publish history/license/secret scan and local build. The first push publishes only `main`, with the reviewed head above the inherited history; donor branches, donor tags, and the raw filtered tip are never advertised.
+
+The Fumadocs application lives in the same repository. Component source, stories, generated SVGs, docs pages, and their verification gate therefore advance in one change unit and cannot drift across repositories: one signed direct-`main` commit during bootstrap, then one normal TermRock PR after the roadmap completes. This atomicity applies to new TermRock commits; imported donor commits remain unmodified provenance.
 
 ## Public API rules
 
@@ -66,7 +68,7 @@ Theme
   link / link_hover
 ```
 
-Ship the current phosphor style as `Theme::tailrocks_phosphor()`. A consumer provides product name/mark and may override semantic tokens. Consistency comes from component behavior and meaning, not every application rendering an identical brand header. The phosphor preset reproduces the donor's exact color values so `jackin❯` migration fixtures stay byte-identical; product-specific tokens (Capsule menu states, brand block, debug amber, rain colors) remain `jackin❯`-local constants layered above the semantic theme.
+Ship the current phosphor style as `Theme::tailrocks_phosphor()`. For the initial revision line, `Theme::default()` and a new builder resolve to that preset, preserving donor fixtures and making the shared Tailrocks visual vocabulary convenient without shipping a fixed header. A consumer provides product name/mark and may select or override semantic tokens. Consistency comes from component behavior and meaning, not every application rendering an identical brand header. The phosphor preset reproduces the donor's exact color values so `jackin❯` migration fixtures stay byte-identical; product-specific tokens (Capsule menu states, brand block, debug amber, rain colors) remain `jackin❯`-local constants layered above the semantic theme.
 
 ## Runtime contract
 
@@ -159,7 +161,7 @@ Every public component page includes:
 
 The CLI generates a manifest alongside SVGs so docs navigation and component coverage can be checked mechanically. Generated previews are committed for static hosting and reviewable diffs. CI runs the lookbook check, docs build, type checks, tests, and internal-link checks; a public component without a neutral story, generated preview, and catalog page is incomplete.
 
-The catalog also owns the neutral interaction conventions the components implement — the W3C-style tab pattern, focusability and hover-scroll rules, modal stacking, hint discipline, and the navigation model — extracted from `jackin❯`'s TUI design pages and debranded. Component behavior alone does not make two products consistent; the conventions that govern how components combine must travel with them. `jackin❯` keeps only product composition and policy decisions, linking to the external convention pages instead of duplicating them.
+The catalog also owns the neutral interaction conventions the components implement — the W3C-style tab pattern, focusability and hover-scroll rules, dialog/backdrop layering, hint discipline, and the navigation model — extracted from `jackin❯`'s TUI design pages and debranded. The layering page documents how consumers compose the shared primitives; TermRock does not implement a modal stack, parent-chain lifecycle, or application router. Component behavior alone does not make two products consistent, so the conventions governing composition travel with the components. `jackin❯` keeps product-specific composition and policy decisions, linking to the external convention pages instead of duplicating them.
 
 When `jackin❯` migrates, the external site becomes the canonical component API catalog. jackin❯ keeps only product-specific TUI design decisions, composition guidance, and conformance stories; it removes the generic lookbook CLI, neutral component pages, and duplicate generated SVG assets after parity passes.
 
@@ -178,6 +180,6 @@ Consumers pin semver releases or immutable revisions. Branch dependencies are al
 
 Ratatui/Crossterm upgrades propagate shared-project-first: because public types come from `ratatui-core`, each Ratatui bump is a breaking `termrock` change that lands with regenerated fixtures and a migration note, after which `jackin❯` repins as the compatibility oracle. Future adopters follow the same policy through their own separately scoped changes. No consumer upgrades Ratatui ahead of the library, and exactly one Ratatui/Crossterm pair is supported per revision line. Issue routing follows reproducibility: defects reproducible with a neutral story belong to the shared repository, product-state defects to the consumer, with cross-links when behavior spans both.
 
-Repository governance has one explicit bootstrap exception: while this roadmap's single `jackin❯` PR is open, DCO-signed, buildable TermRock checkpoints push directly to `main` and do not open TermRock PRs. After the final roadmap checkpoint, TermRock enables its normal protected-`main`, branch, and pull-request workflow for all later changes.
+Repository governance has one explicit bootstrap exception: while this roadmap's single `jackin❯` PR is open, every new TermRock-authored commit after the recorded imported-history boundary is DCO-signed and buildable, and green checkpoints push directly to `main` without TermRock PRs. Imported donor commits are preserved provenance rather than retroactively signed standalone builds. After the final tag/checkpoint, TermRock enables its normal protected-`main`, branch, and pull-request workflow before the roadmap closes.
 
 Repository CI, caching, dependency policy, render/catalog coverage, and release automation are specified in [07 - Repository engineering](/reference/research/shared-tui-extraction/07-repository-engineering/). The generated extraction inventory and parity gates are specified in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).

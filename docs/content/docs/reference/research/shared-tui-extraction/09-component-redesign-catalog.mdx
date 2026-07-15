@@ -237,7 +237,7 @@ workflow.
 |---|---|---|
 | `geometry.rs` | split | Move display-width, clipping, fixed-prefix windows, and generic tab geometry; leave `agent_display_name` in jackin❯. Replace index-returning tab hit tests with stable IDs. |
 | `keymap.rs` | parameterize | Keep logical chords and binding dispatch. Feature-gate Crossterm conversion, separate the Capsule raw-byte decoder, make hint text caller data, and remove the global scroll-hint keymap. |
-| `scroll.rs` plus scroll helpers in `jackin-core` | consolidate | Create one canonical offset/axis/thumb/viewport implementation. Retain the maintained `tui-scrollbar` dependency as the single proportional thumb-metrics source. Choose one integer policy, document saturation, and remove parallel `usize`/`u16` APIs unless the conversion is unavoidable at the Ratatui edge. |
+| `scroll.rs` plus scroll helpers in `jackin-core` | consolidate | Create one canonical offset/axis/thumb/viewport implementation. Retain the maintained `tui-scrollbar` dependency as the single proportional thumb-metrics source. Use `usize` for logical offsets, lengths, and indices; clip in logical space and convert through one centralized saturating `u16` helper only at the Ratatui geometry edge, never wrapping or silently truncating. Remove parallel public `usize`/`u16` APIs. |
 | `theme.rs` plus root RGB constants | reimplement | Replace public product constants with semantic `Theme` roles, private storage, builders, component overrides, and the optional Tailrocks phosphor preset. Capsule/debug/rain meanings stay local. |
 | `runtime.rs` | split | Extract the executor-neutral contracts and `drive_frame` into the base `runtime` module, optional by use and referenced by no widget: pure Ratatui, and `jackin❯` mandates one shared frame driver across console, Capsule, and launch, so donor deletion would otherwise strand it. Tokio receiver implementations, spawn helpers, and the fallback runtime stay in `jackin❯` (`jackin-console`), connecting through the module's closure adapter because coherence forbids direct foreign impls. |
 | `terminal_modes.rs` | reimplement | Replace two mouse helper functions with the scoped, partial-initialization-safe session described in chapter 06. Event polling and panic/signal policy remain application-owned. |
@@ -246,7 +246,7 @@ workflow.
 | `ansi.rs` | split | Keep only proven generic encoding/sanitization helpers in a policy-neutral module. Brand banners, help/version output, and direct terminal emission remain local. Raw overlay byte vectors are replaced by the typed `osc` request/encoder surface. |
 | root `PointerShape`, OSC 22 names, OSC 52 helper | extract | Move to `osc` as typed pointer/clipboard/hyperlink requests plus pure encoders. Emission timing and policy stay in the consumer; no widget returns raw escape bytes. |
 | `url_text.rs` | remain | URL opening and log-redaction policy are not widget responsibilities. Promote pure parsing only after a second consumer proves an identical contract. |
-| `host_colors.rs` | optional adapter later | Host OSC color discovery performs terminal I/O and is not required to render a widget. Keep it in jackin❯ until independently demanded. |
+| `host_colors.rs` | remain | Host OSC color discovery performs terminal I/O and is not required to render a widget. Keep it in jackin❯; any future extraction requires a separately scoped decision. |
 | `prune_output.rs`, `output.rs` | remain/split | Direct CLI output stays local. Promote only a pure bounded-lines projection if a second consumer needs the same behavior. |
 | `animation.rs` | remain | Digital rain, launch/exit timing, output, and host ownership encode product behavior. A future generic animation crate requires separate evidence. |
 
@@ -258,7 +258,7 @@ workflow.
 |---|---|---|
 | `bottom_chrome` | `layout::Slots` | Replace the fixed hint/spacer/footer policy with caller-supplied bottom slot heights. Keep saturating geometry and zero-height behavior. jackin❯ can provide its three-row preset locally. |
 | `button_strip` | `widgets::ActionBar<Id>` | Borrow items containing stable ID, label, enabled state, and optional style override. Store focused ID in state, return activated ID, derive hit regions from layout, and remove public line/style/rect helper duplication. |
-| `filter_input` | `widgets::TextInput` preset or `FilterField` | Render a consumer label/query with semantic input styles. Do not own filtering or assume a picker. Extract separately only if its behavior remains distinct after the text-input redesign. |
+| `filter_input` | `widgets::TextInput` composition/preset | Render a consumer label/query with semantic input styles over the shared text-input contract. Do not own filtering or assume a picker. The initial API publishes no separate `FilterField`; the neutral filter state is a lookbook/docs composition over `TextInput`. |
 | `hint_bar` | `widgets::HintBar` | Borrow typed hint descriptors containing chord display and caller label. Support wrapping and priority/visibility without owning a keymap or action wording. Keep display-width measurement. Wrapping must cover the Capsule wrapped-hint behavior so its hand-painted rows can converge post-parity. |
 | `hover_tracker` | `interaction::HoverState<Id>` | Track stable IDs over borrowed `HitRegion<Id>` values. Make pointer update pure and allocation-bounded; no callbacks or component names. |
 | `modal_backdrop` | `widgets::Backdrop` | Accept semantic style/character policy and implement `Widget for &Backdrop`; never assume black or the Tailrocks palette. |
@@ -289,7 +289,7 @@ workflow.
 |---|---|---|
 | `brand_header` | jackin❯ composition | It renders the literal jackin❯ wordmark and brand colors. Consumers can compose a generic panel/line today; a shared branded header is not yet a neutral primitive. |
 | `focus_owner` | split | Replace `ButtonFocus` and the tab/button-specific owner enum with generic `FocusState<Id>` or consumer state. Do not publish workflow-shaped focus enums. |
-| `modal_lifecycle` | split | Pure backdrop and inside/outside hit classification may move. The generic stack is small but becomes public only if two consumers need identical parent-chain semantics; application modal routing remains local. |
+| `modal_lifecycle` | split | Extract only the pure backdrop and inside/outside hit classification. Do not publish a generic stack or parent-chain lifecycle in the initial API; application modal routing remains local, and a future shared stack requires a separately scoped two-consumer decision. |
 
 No component is copied unchanged merely to preserve its current Rust path. The
 new repository should preserve useful implementation history, but neutralizing

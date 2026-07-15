@@ -42,7 +42,7 @@ default = []
 crossterm = ["dep:crossterm", "dep:ratatui-crossterm"]
 ```
 
-The exact dependency names and versions are confirmed during repository bootstrap against the selected Ratatui release. The policy is more important than the spelling:
+The dependency split is fixed. The initial tested cell comes from the donor lock: `ratatui-core` 0.1.2 in `termrock`, `ratatui-crossterm` 0.1.2 plus `crossterm` 0.29.0 behind the feature, and umbrella `ratatui` 0.30.2 only where the lookbook/application examples need it. Manifest requirements may use compatible ranges, but <RepoFile path="Cargo.lock" /> and `compatibility.toml` record that exact cell, and the graph must contain no duplicate Ratatui core or Crossterm version. Other focused dependency patch versions remain bounded Stage 2 implementation finalization under Decision 17. The fixed policy is:
 
 - base `termrock` contains no Tokio, async runtime, stdout/stderr, filesystem, network, process, telemetry, or secret dependency;
 - Crossterm types do not appear in the default API; conversion from Crossterm events and terminal-session ownership are feature-gated adapters;
@@ -199,7 +199,7 @@ The executor-neutral runtime contracts — `Dirty`, `UpdateResult<E>`, `Subscrip
 
 The current palette exposes product constants for rain animation, Capsule menu states, debug chips, status tabs, and links from <RepoFile path="crates/jackin-tui/src/lib.rs">crates/jackin-tui/src/lib.rs</RepoFile>. That is a product stylesheet, not a reusable theme API.
 
-`Theme` should have private fields and a builder/default path. Components request semantic roles rather than palette names:
+`Theme` should have private fields and a builder/default path. For the initial revision line, both `Theme::default()` and a new builder start from `Theme::tailrocks_phosphor()`; consumers opt into another palette or override tokens explicitly. Components request semantic roles rather than palette names:
 
 ```text
 canvas / surface / elevated / backdrop
@@ -211,7 +211,7 @@ input / input_invalid
 scroll_track / scroll_thumb
 ```
 
-Do not expose a trait with one required method per token: adding a token would break implementors. A private representation with `Theme::style(Role)` and a `ThemeBuilder` can add a role with a documented fallback. `Theme::tailrocks_phosphor()` preserves the established look without making `PHOSPHOR_GREEN` the contract of every widget.
+Do not expose a trait with one required method per token: adding a token would break implementors. A private representation with `Theme::style(Role)` and a `ThemeBuilder` can add a role with a documented fallback. `Theme::tailrocks_phosphor()` preserves the established look without making `PHOSPHOR_GREEN` the contract of every widget. Changing a default token is a behavioral API change that requires regenerated renders and a migration note.
 
 Component-specific style overrides are data passed to that component, not new global constants. All states also require a non-color signal: glyph, border, label, modifier, or position. Color cannot be the only indication of focus, selection, error, or progress. The donor violates this today (panel focus is a color-only border change); the fix is a recorded quality-tier item that lands after `jackin❯` parity, not during extraction.
 
