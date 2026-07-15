@@ -1,6 +1,6 @@
 # Codebase-health enforcement plans
 
-Generated 2026-07-14 at commit `846038946` by a deep advisor audit of every section of the [codebase-health enforcement roadmap](../../docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx). The roadmap page is the acceptance contract; each plan below closes one coherent cluster of its open items. Telemetry convergence (OTEL/OTLP) is the first focus per operator instruction — plans 001–009 — and later plans assume the earlier telemetry plans have landed.
+Generated 2026-07-14 at commit `846038946` by a deep advisor audit of the codebase-health enforcement roadmap, which was retired after every plan completed. This directory preserves the implementation and acceptance record. Telemetry convergence (OTEL/OTLP) is the first focus per operator instruction — plans 001–009 — and later plans assume the earlier telemetry plans have landed.
 
 Each executor: read the plan fully before starting, run the drift check first, honor STOP conditions, and update your row here when done. One plan = one branch = one PR (repo rule: never commit `main`; sign every commit with `-s`; push after every commit).
 

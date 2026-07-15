@@ -1,6 +1,6 @@
 //! Workspace dependency-direction check — tier-graph model.
 //!
-//! Workstream 4 of `codebase-health-enforcement`. Every workspace member
+//! Workstream 4 of the completed codebase-health track. Every workspace member
 //! has a declared tier (`TIERS`); production edges must point at a
 //! *strictly lower* tier, so a new crate gets a rule automatically by
 //! appearing in `TIERS`. Dev-dependencies may point anywhere except into

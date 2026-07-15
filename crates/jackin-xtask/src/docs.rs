@@ -907,25 +907,56 @@ fn remove_page(meta_path: &Path, entry: &str) -> Result<()> {
     write_meta(meta_path, &meta)
 }
 
-/// Find the `(group)/meta.json` whose `pages` registers `../<slug>`.
-fn find_group_meta(roadmap: &Path, slug: &str) -> Result<Option<PathBuf>> {
-    let entry = format!("../{slug}");
-    for dir in crate::fs_util::read_dir_sorted(roadmap)? {
-        let path = dir.path();
-        let meta = path.join("meta.json");
-        if !meta.is_file() {
-            continue;
-        }
+/// Find the `meta.json` entry that registers a roadmap item.
+fn find_group_registration(
+    roadmap: &Path,
+    item: &Path,
+    slug: &str,
+) -> Result<Option<(PathBuf, String)>> {
+    let mut metas = Vec::new();
+    collect_meta_files(roadmap, &mut metas)?;
+    for meta in metas {
+        let colocated = meta.parent() == item.parent();
+        let entries = if colocated {
+            [slug.to_owned(), format!("../{slug}")]
+        } else {
+            [format!("../{slug}"), slug.to_owned()]
+        };
         let value = read_meta(&meta)?;
-        let referenced = value
-            .get("pages")
-            .and_then(Value::as_array)
-            .is_some_and(|pages| pages.iter().any(|p| p.as_str() == Some(entry.as_str())));
-        if referenced {
-            return Ok(Some(meta));
+        if let Some(entry) = entries.into_iter().find(|entry| {
+            value
+                .get("pages")
+                .and_then(Value::as_array)
+                .is_some_and(|pages| pages.iter().any(|p| p.as_str() == Some(entry.as_str())))
+        }) {
+            return Ok(Some((meta, entry)));
         }
     }
     Ok(None)
+}
+
+fn find_roadmap_item(roadmap: &Path, slug: &str) -> Result<PathBuf> {
+    let filename = format!("{slug}.mdx");
+    let mut files = Vec::new();
+    collect_text_files(roadmap, &mut files)?;
+    let matches = files
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name == filename.as_str())
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [item] => Ok(item.clone()),
+        [] => bail!(
+            "no roadmap item named `{filename}` under {}",
+            roadmap.display()
+        ),
+        _ => bail!(
+            "multiple roadmap items named `{filename}` under {}; slugs must be unique",
+            roadmap.display()
+        ),
+    }
 }
 
 /// True when `line` references `slug` as a roadmap route (`roadmap/<slug>`) or a
@@ -992,10 +1023,7 @@ fn collect_text_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 
 fn roadmap_retire(docs_root: &Path, args: RoadmapRetireArgs) -> Result<()> {
     let roadmap = docs_root.join(ROADMAP_REL);
-    let item = roadmap.join(format!("{}.mdx", args.slug));
-    if !item.is_file() {
-        bail!("no roadmap item at {}", item.display());
-    }
+    let item = find_roadmap_item(&roadmap, &args.slug)?;
 
     if args.partial {
         return retire_partial(&item);
@@ -1010,7 +1038,7 @@ fn roadmap_retire(docs_root: &Path, args: RoadmapRetireArgs) -> Result<()> {
 fn retire_plan(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Result<()> {
     let content =
         fs::read_to_string(item).with_context(|| format!("reading {}", item.display()))?;
-    let group = find_group_meta(roadmap, slug)?;
+    let group = find_group_registration(roadmap, item, slug)?;
     let links = inbound_links(docs_root, slug, item)?;
 
     emit(&format!("Retirement plan for `{slug}` (read-only)\n"));
@@ -1019,12 +1047,12 @@ fn retire_plan(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Res
     emit("   in roadmap/index.mdx; repoint the inbound links listed below.");
     emit("2. Then run: cargo xtask roadmap retire <slug> --apply\n");
     match group {
-        Some(meta) => emit(&format!(
-            "Sidebar entry to drop: `../{slug}` in {}",
+        Some((meta, entry)) => emit(&format!(
+            "Sidebar entry to drop: `{entry}` in {}",
             meta.display()
         )),
         None => emit(&format!(
-            "WARNING: `../{slug}` is not registered in any roadmap group sidebar"
+            "WARNING: `{slug}` is not registered in any roadmap group sidebar"
         )),
     }
     if links.is_empty() {
@@ -1075,8 +1103,8 @@ fn retire_partial(item: &Path) -> Result<()> {
 /// `--apply`: drop the sidebar entry, delete the page, audit, fail on a dangling
 /// inbound link.
 fn retire_apply(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Result<()> {
-    let meta = find_group_meta(roadmap, slug)?
-        .with_context(|| format!("`../{slug}` is not registered in any roadmap group sidebar"))?;
+    let (meta, entry) = find_group_registration(roadmap, item, slug)?
+        .with_context(|| format!("`{slug}` is not registered in any roadmap group sidebar"))?;
 
     // Gate BEFORE any mutation: the only reference allowed to survive is the
     // group's own sidebar entry (which this command removes). Any other inbound
@@ -1099,11 +1127,11 @@ fn retire_apply(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Re
         );
     }
 
-    remove_page(&meta, &format!("../{slug}"))?;
+    remove_page(&meta, &entry)?;
     fs::remove_file(item).with_context(|| format!("deleting {}", item.display()))?;
     validate_tree(roadmap, "roadmap")?;
     emit(&format!(
-        "Retired `{slug}`: removed `../{slug}` from {}, deleted the page, sidebar audit clean, no dangling links.",
+        "Retired `{slug}`: removed `{entry}` from {}, deleted the page, sidebar audit clean, no dangling links.",
         meta.display()
     ));
     Ok(())

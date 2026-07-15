@@ -5,7 +5,7 @@ panic hooks (capsule `crates/jackin-usage/src/logging.rs` panic hook / host
 `crates/jackin-diagnostics/src/run.rs` `run.error_typed("panic", …)`).
 
 Append-only. Reviewed when choosing the next lint family adoption (Phase 7
-item 1 of the codebase-health-enforcement roadmap).
+item 1 of the completed codebase-health plan track).
 
 | Date | Symptom | Root cause | Characterization test | Gate/lint/budget adopted (or reason none) |
 |------|---------|------------|----------------------|-------------------------------------------|

@@ -22,7 +22,7 @@ Individually verified codebase-health plans removed on 2026-07-15:
 - **014** — OSC 8 hyperlink identity repointing fix
 - **025** — deterministic-time seam and first boundary conversions
 
-Routine code-health roadmap (ongoing quality program, not a residual ledger): [codebase-health-enforcement](../docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx).
+Completed routine code-health implementation archive: [codebase-health](codebase-health/).
 
 Hard external pin only (no plan file): **iai-callgrind** — project CI has no valgrind; re-evaluate when a valgrind-capable runner exists.
 

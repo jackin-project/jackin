@@ -1,4 +1,4 @@
-# ratchet.toml — unified shrink-only budgets (codebase-health-enforcement Phase 7).
+# ratchet.toml — unified shrink-only budgets (completed codebase-health Phase 7).
 # Each entry: a metric (computed by a named provider in jackin-xtask), a bound,
 # and shrink-only semantics: measured > bound fails (growth); measured < bound
 # fails telling you to tighten the bound; measured == bound is steady state.

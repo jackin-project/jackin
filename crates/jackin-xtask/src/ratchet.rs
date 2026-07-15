@@ -1,4 +1,4 @@
-//! Unified shrink-only ratchet engine (codebase-health-enforcement Phase 7).
+//! Unified shrink-only ratchet engine (completed codebase-health Phase 7).
 //!
 //! One declarative `ratchet.toml` plus one semantics implementation for every
 //! budget family. Numeric families use high-water-mark shrink-only checks;

@@ -88,7 +88,7 @@ enum Command {
     ///
     /// Use as `cargo xtask schema-check --base origin/main`.
     SchemaCheck(schema::SchemaCheckArgs),
-    /// Codebase-health lint gates (codebase-health-enforcement W3 + W4).
+    /// Codebase-health lint gates (completed codebase-health W3 + W4).
     ///
     /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
     /// ratchet, the test-file-layout rule, the AGENTS/CLAUDE symlink rule, and
@@ -121,7 +121,7 @@ enum Command {
     /// Use as `cargo xtask release-verify <archive>.tar.gz`.
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
-    /// Report-only code-health dashboard (codebase-health-enforcement Phase 0).
+    /// Report-only code-health dashboard (completed codebase-health Phase 0).
     ///
     /// Use as `cargo xtask health`, `cargo xtask health --format json`, or
     /// `cargo xtask health --write-baseline`.

@@ -3,7 +3,7 @@
 
 //! Formatting, CLI, and JSON helpers shared by every usage provider.
 //!
-//! Extracted from `usage.rs` as Phase 2 of codebase-health-enforcement
+//! Extracted from `usage.rs` as Phase 2 of the completed codebase-health track
 //! (Workstream C, file-size ratchet). Lives in a sibling module so the
 //! provider-specific sections in `usage.rs` only carry their own logic,
 //! not the shared display/parsing utilities every provider depends on.

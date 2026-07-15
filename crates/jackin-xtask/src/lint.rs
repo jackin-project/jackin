@@ -1,4 +1,4 @@
-//! File-size ratchet gate (Workstream B of codebase-health-enforcement).
+//! File-size ratchet gate (Workstream B of the completed codebase-health track).
 //!
 //! ```sh
 //! cargo xtask lint files             # enforce, fail on violation

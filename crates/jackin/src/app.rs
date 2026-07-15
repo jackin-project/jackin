@@ -130,7 +130,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     // jackin-core::operator_notice port-trait dispatcher so domain
     // crates (L0) can call `jackin_core::emit_compact_line` without
     // depending on the L2 diagnostics layer. Per the A5 unblock
-    // work in `codebase-health-enforcement`.
+    // work in the completed codebase-health track.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
     jackin_diagnostics::install_debug_log_sink();
     jackin_launch_tui::install_standalone_dialog_sink();
