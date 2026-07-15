@@ -22,7 +22,7 @@ const DEFAULT_AGENT: &str = "claude";
 /// - PID == 1 → daemon mode (supervisor + multiplexer + socket control plane)
 /// - PID != 1 → client mode (connect to daemon, run interactive UI)
 #[tokio::main(flavor = "current_thread")]
-#[allow(
+#[expect(
     clippy::excessive_nesting,
     reason = "Top-level CLI dispatch match over subcommands, where some arms (notably \
               `new` and `--focus`) nest further matches to validate argv. Each branch \

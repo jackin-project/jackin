@@ -5,12 +5,23 @@
 //! existing messages; JSON is additive; Github emits workflow-command
 //! annotations (`::error file=…`) when running under Actions.
 
+use std::cell::Cell;
 use std::env;
 use std::io::{self, Write};
 
 use anyhow::{Context, Result, bail};
-use clap::ValueEnum;
+use clap::{Args, ValueEnum};
 use serde::Serialize;
+
+thread_local! {
+    static STRUCTURED_OUTPUT: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether legacy human-only gate status lines should be emitted.
+#[must_use]
+pub(crate) fn human_output() -> bool {
+    STRUCTURED_OUTPUT.with(|value| !value.get())
+}
 
 /// Output format for gate reports.
 #[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, Eq)]
@@ -22,6 +33,21 @@ pub(crate) enum Format {
     Json,
     /// GitHub Actions workflow-command annotations + human block on stderr.
     Github,
+}
+
+/// Shared CLI output option embedded by first-party gate commands.
+#[derive(Args, Clone, Copy, Debug, Default)]
+pub(crate) struct FormatArgs {
+    /// Gate output format. JSON and GitHub modes emit structured diagnostics.
+    #[arg(long, value_enum)]
+    pub format: Option<Format>,
+}
+
+impl FormatArgs {
+    #[must_use]
+    pub(crate) fn resolved(self) -> Format {
+        Format::detect(self.format)
+    }
 }
 
 impl Format {
@@ -47,10 +73,9 @@ pub(crate) struct Violation {
     /// Repo-relative file path.
     pub file: String,
     /// Optional 1-based line number.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<u64>,
-    /// One sentence: why this is a violation.
-    pub why: String,
+    /// One sentence describing the violation.
+    pub message: String,
     /// The exact clearing edit or command.
     pub fix: String,
     /// Narrowest rerun command.
@@ -101,6 +126,49 @@ impl Report {
     }
 }
 
+/// Run a prose-first gate behind the shared structured-report contract.
+///
+/// Existing gates keep their actionable error text while JSON/GitHub callers
+/// receive a stable schema. Gates with richer collectors can construct a
+/// [`Report`] directly, as the file-size and agent-file gates do.
+pub(crate) fn run_gate(
+    format: Format,
+    gate: &'static str,
+    file: &'static str,
+    fix: &'static str,
+    rerun: &'static str,
+    run: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    if matches!(format, Format::Human) {
+        return run();
+    }
+    STRUCTURED_OUTPUT.with(|value| value.set(true));
+    let result = run();
+    STRUCTURED_OUTPUT.with(|value| value.set(false));
+    report_from_result(gate, file, fix, rerun, result).emit(format)
+}
+
+fn report_from_result(
+    gate: &'static str,
+    file: &'static str,
+    fix: &'static str,
+    rerun: &'static str,
+    result: Result<()>,
+) -> Report {
+    let violations = match result {
+        Ok(()) => Vec::new(),
+        Err(error) => vec![Violation {
+            rule: gate,
+            file: file.to_owned(),
+            line: None,
+            message: format!("{error:#}"),
+            fix: fix.to_owned(),
+            rerun: rerun.to_owned(),
+        }],
+    };
+    Report::new(gate, violations)
+}
+
 fn emit_human(report: &Report) -> Result<()> {
     let mut out = io::stdout().lock();
     if report.ok {
@@ -121,7 +189,7 @@ fn emit_human(report: &Report) -> Result<()> {
         } else {
             writeln!(out, "  {}  [{}]", v.file, v.rule).context("writing human report")?;
         }
-        writeln!(out, "    why:  {}", v.why).context("writing human report")?;
+        writeln!(out, "    message: {}", v.message).context("writing human report")?;
         writeln!(out, "    fix:  {}", v.fix).context("writing human report")?;
         writeln!(out, "    rerun: {}", v.rerun).context("writing human report")?;
     }
@@ -145,7 +213,7 @@ fn emit_github(report: &Report) -> Result<()> {
         props.push_str(&format!(",title={}", escape_workflow_prop(v.rule)));
         let msg = format!(
             "{} Fix: {} Rerun: {}",
-            escape_workflow_data(&v.why),
+            escape_workflow_data(&v.message),
             escape_workflow_data(&v.fix),
             escape_workflow_data(&v.rerun)
         );
@@ -165,7 +233,7 @@ fn emit_github(report: &Report) -> Result<()> {
             )
             .context("writing human stderr")?;
             for v in &report.violations {
-                writeln!(err, "  {} — {}", v.file, v.why).context("writing human stderr")?;
+                writeln!(err, "  {} — {}", v.file, v.message).context("writing human stderr")?;
             }
         }
     }

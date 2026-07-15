@@ -1,18 +1,32 @@
 //! Brand-prose gate: `cargo xtask docs brand`.
 //!
 //! Enforces RULES.md: product name is always `jackin❯` in prose. Forbidden:
-//! `jackin'`, `Jackin`, `Jackin'`. Bare `jackin` is legal for code identifiers.
-//! Code fences, inline code spans, and URL tokens are stripped before matching.
+//! `jackin'`, `Jackin`, `Jackin'`, and bare `jackin` used as the product name
+//! (not as an identifier/command/path). Classification strips fenced code,
+//! inline backticks, URLs, path-like tokens, and identifier shapes
+//! (`jackin-…`, `jackin_…`, `JACKIN_…`, `jackin.…`).
+//!
+//! ## Prose trees (include / exclude)
+//!
+//! | Tree | Policy |
+//! |---|---|
+//! | Root `*.md` | include (non-recursive) |
+//! | `crates/*/README.md`, `crates/*/AGENTS.md`, `crates/AGENTS.md` | include |
+//! | `docs/content/**` (`*.md`/`*.mdx`) | include |
+//! | `plans/**/*.md` | include (plan 029) |
+//! | `security-review/`, `docker/`, `.github/` | exclude — ops/CI prose; revisit if brand copy moves there |
+//! | Code / binary crates `src/**` | exclude (not prose) |
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-/// Allowlist of `path:substring` pairs that may carry forbidden spellings in
-/// prose (rule-example sentences). Empty at birth — fence/inline stripping
-/// covers RULES.md / AGENTS.md examples which only use backticks.
-const ALLOWLIST: &[(&str, &str)] = &[];
+/// Allowlist of `path:substring` pairs that may carry forbidden spellings.
+const ALLOWLIST: &[(&str, &str)] = &[
+    // Crate/package identifier heading, not the product brand in prose.
+    ("crates/jackin/README.md", "# jackin"),
+];
 
 /// Forbidden brand spellings (case-sensitive; `Jackin` is its own entry).
 const FORBIDDEN: &[&str] = &["jackin'", "Jackin'", "Jackin"];
@@ -45,9 +59,16 @@ pub(super) fn check_brand(root: &Path) -> Result<()> {
                     line.trim()
                 ));
             }
+            if contains_bare_brand_prose(line) && !is_allowlisted(&rel, line) {
+                let msg = format!(
+                    "{rel}:{}: bare brand `jackin` in prose — write `jackin❯` for the product name, or backtick identifiers/commands/paths (RULES.md). matched line: {}",
+                    line_no + 1,
+                    line.trim()
+                );
+                problems.push(msg);
+            }
         }
     }
-
     if problems.is_empty() {
         emit(&format!("brand gate OK — {} files scanned", files.len()));
         return Ok(());
@@ -146,18 +167,16 @@ fn strip_urls(text: &str) -> String {
 }
 
 fn collect_prose_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(root)? {
+        let path = entry.path();
         if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
             out.push(path);
         }
     }
     let crates_dir = root.join("crates");
     if crates_dir.is_dir() {
-        for entry in fs::read_dir(&crates_dir)
-            .with_context(|| format!("reading {}", crates_dir.display()))?
-        {
-            let path = entry?.path();
+        for entry in crate::fs_util::read_dir_sorted(&crates_dir)? {
+            let path = entry.path();
             if !path.is_dir() {
                 continue;
             }
@@ -177,12 +196,16 @@ fn collect_prose_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     if content.is_dir() {
         walk_mdx(&content, out)?;
     }
+    let plans = root.join("plans");
+    if plans.is_dir() {
+        walk_mdx(&plans, out)?;
+    }
     Ok(())
 }
 
 fn walk_mdx(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             if path.file_name().is_some_and(|n| {
                 matches!(
@@ -203,6 +226,57 @@ fn walk_mdx(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// True when lowercase standalone `jackin` appears as prose brand (not followed
+/// by `❯` or `>`, and not an identifier/path/command shape).
+fn contains_bare_brand_prose(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"jackin") {
+            let after = i + 6;
+            // Identifiers, backticks (inline code not yet stripped in unit tests),
+            // and path/config punctuation are not prose brand.
+            let before_ok = i == 0
+                || !(is_ident_byte(bytes[i - 1])
+                    || bytes[i - 1] == b'`'
+                    || bytes[i - 1] == b'/'
+                    || bytes[i - 1] == b'.'
+                    || bytes[i - 1] == b'~');
+            if before_ok {
+                let rest = &line[after..];
+                if rest.starts_with('❯') || rest.starts_with('>') {
+                    i = after;
+                    continue;
+                }
+                if rest.starts_with('-')
+                    || rest.starts_with('_')
+                    || rest.starts_with('.')
+                    || rest.starts_with('/')
+                    || rest.starts_with('`')
+                {
+                    i = after;
+                    continue;
+                }
+                if rest.as_bytes().first().is_some_and(|b| is_ident_byte(*b)) {
+                    i = after;
+                    continue;
+                }
+                return true;
+            }
+        }
+        if bytes[i..].starts_with(b"JACKIN") {
+            i += 6;
+            continue;
+        }
+        i += 1;
+    }
+    false
+}
+
+const fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
 fn relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root).map_or_else(
         |_| path.to_string_lossy().into_owned(),
@@ -216,7 +290,9 @@ fn emit(line: &str) {
         reason = "jackin-xtask is a CLI; the brand report is its output"
     )]
     {
-        println!("{line}");
+        if crate::report::human_output() {
+            println!("{line}");
+        }
     }
 }
 

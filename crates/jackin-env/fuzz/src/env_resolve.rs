@@ -1,8 +1,8 @@
 //! Fuzz pure env resolution + reserved-name validation — never panic.
 #![no_main]
 use jackin_config::AppConfig;
-use jackin_core::env_model::is_reserved;
-use jackin_core::manifest::EnvVarDecl;
+use jackin_core::is_reserved;
+use jackin_core::EnvVarDecl;
 use jackin_env::{EnvPrompter, PromptResult, resolve_env, resolve_env_with_overrides, validate_reserved_names};
 use libfuzzer_sys::fuzz_target;
 use std::collections::BTreeMap;

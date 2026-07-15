@@ -1661,7 +1661,7 @@ fn preview_shows_compact_running_badge_for_active_instances() {
 
     let mut state = ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
     state.instances = vec![
-        jackin_core::instance::InstanceIndexEntry {
+        jackin_core::InstanceIndexEntry {
             instance_id: "k7p9m2xq".into(),
             container_base: "jackin-demo-alpha-k7p9m2xq".into(),
             workspace_name: Some("demo".into()),
@@ -1669,10 +1669,10 @@ fn preview_shows_compact_running_badge_for_active_instances() {
             workdir: "/workspace/demo".into(),
             role_key: "alpha".into(),
             agent_runtime: "claude".into(),
-            status: jackin_core::instance::InstanceStatus::Active,
+            status: jackin_core::InstanceStatus::Active,
             updated_at: "2026-05-11T00:00:00Z".into(),
         },
-        jackin_core::instance::InstanceIndexEntry {
+        jackin_core::InstanceIndexEntry {
             instance_id: "done0001".into(),
             container_base: "jackin-demo-alpha-done0001".into(),
             workspace_name: Some("demo".into()),
@@ -1680,7 +1680,7 @@ fn preview_shows_compact_running_badge_for_active_instances() {
             workdir: "/workspace/demo".into(),
             role_key: "alpha".into(),
             agent_runtime: "claude".into(),
-            status: jackin_core::instance::InstanceStatus::CleanExited,
+            status: jackin_core::InstanceStatus::CleanExited,
             updated_at: "2026-05-11T00:00:00Z".into(),
         },
     ];

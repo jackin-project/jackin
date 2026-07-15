@@ -128,7 +128,7 @@ impl LaunchProgress {
             detail: detail.clone(),
             set_activity,
         });
-        self.diagnostics.stage(kind, stage.label(), &detail, None);
+        self.diagnostics.stage(kind, stage, &detail, None);
     }
 
     pub fn stage_started(&mut self, stage: LaunchStage, detail: impl Into<String>) {
@@ -165,7 +165,7 @@ impl LaunchProgress {
         self.update_view(LaunchMessage::StageFailed(failure));
         self.diagnostics.stage(
             "stage_failed",
-            stage.label(),
+            stage,
             &summary,
             detail.as_deref().or(next_step.as_deref()),
         );

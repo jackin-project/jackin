@@ -6,13 +6,13 @@
 use jackin_tui::components::StatusFooterHover;
 use ratatui::text::Line;
 
-pub use jackin_core::launch_progress::{
+pub use jackin_core::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchStage, LaunchTargetKind,
     PromptContextLine, StageLabelTransition, StageStatus, StageView,
 };
 
 #[derive(Debug, Clone)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal launch-cockpit state flags (failure_ack, \
               build_log_open, build_log_scroll_dragging, build_log_active, \

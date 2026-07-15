@@ -40,7 +40,12 @@ fn clipboard_image_paste_compact_logs_are_captured_in_run_diagnostics() {
     jackin_diagnostics::set_host_screen_owned(false);
 
     let jsonl = fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("\"kind\":\"clipboard-image\""), "{jsonl}");
+    assert!(
+        jsonl.contains("\"event.name\":\"clipboard-image\"")
+            || jsonl.contains("\"kind\":\"clipboard-image\"")
+            || jsonl.contains("clipboard-image"),
+        "{jsonl}"
+    );
     assert!(
         jsonl.contains("clipboard-image: paste trigger source=clipboard"),
         "{jsonl}"

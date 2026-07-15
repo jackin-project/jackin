@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{InstanceError, SyncSourceValidationError};
 use jackin_config::{AuthForwardMode, GithubAuthMode};
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 use std::path::Path;
 
 /// Validate that `source_dir` carries the credential structure `agent`
@@ -332,15 +332,11 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
     let mut cli_failure: Option<HostMissingReason> = None;
 
     if host_home_is_real(host_home) {
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "GitHub auth provisioning is called from spawn_blocking during launch"
-        )]
-        match std::process::Command::new("gh")
-            .args(["auth", "token", "--hostname", "github.com"])
-            .output()
-        {
-            Ok(output) if output.status.success() => {
+        match jackin_process::exec_sync(&jackin_process::ExecRequest::new(
+            "gh",
+            ["auth", "token", "--hostname", "github.com"],
+        )) {
+            Ok(output) if output.success => {
                 let token = String::from_utf8_lossy(&output.stdout).trim().to_owned();
                 if !token.is_empty() {
                     let user = hosts_yml
@@ -363,22 +359,24 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 jackin_diagnostics::debug_log!(
                     "github_auth",
-                    "gh auth token exited non-zero ({}); stderr={stderr}",
-                    output.status,
+                    "gh auth token exited non-zero ({:?}); stderr={stderr}",
+                    output.code,
                 );
                 cli_failure = Some(HostMissingReason::GhCliFailed {
                     stderr: stderr.trim().to_owned(),
                 });
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(e)
+                if e.chain().any(|cause| {
+                    cause
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
+                }) =>
+            {
                 jackin_diagnostics::debug_log!("github_auth", "gh not on PATH: {e}");
             }
             Err(e) => {
-                jackin_diagnostics::debug_log!(
-                    "github_auth",
-                    "gh auth token spawn failed ({:?}): {e}",
-                    e.kind()
-                );
+                jackin_diagnostics::debug_log!("github_auth", "gh auth token spawn failed: {e}");
                 // Treat any non-NotFound spawn error as a CLI failure
                 // signal too — the operator's gh is in a broken state
                 // and the launch notice should say so.
@@ -940,7 +938,7 @@ impl RoleState {
 /// `wipe_on_oauth` — when `true`, the role-state file is wiped on `OAuthToken`.
 /// When `false`, the existing file is preserved (Codex: `OAuthToken` is a
 /// parser-rejected no-op; preserving the file allows recovery from a bypass).
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -1211,15 +1209,12 @@ const CLAUDE_KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
 /// Returns `None` on lookup failure or an empty value.
 #[cfg(target_os = "macos")]
 fn read_claude_keychain(service: &str) -> Option<String> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "macOS Keychain read runs inside spawn_blocking during launch"
-    )]
-    let output = std::process::Command::new("security")
-        .args(["find-generic-password", "-s", service, "-w"])
-        .output()
-        .ok()?;
-    if output.status.success() {
+    let output = jackin_process::exec_sync(&jackin_process::ExecRequest::new(
+        "security",
+        ["find-generic-password", "-s", service, "-w"],
+    ))
+    .ok()?;
+    if output.success {
         let creds = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         if !creds.is_empty() {
             return Some(creds);

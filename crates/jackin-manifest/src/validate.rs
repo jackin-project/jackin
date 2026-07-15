@@ -11,8 +11,8 @@
 //! Not responsible for: parsing the manifest file (`manifest.rs`), or
 //! validating the role-repo filesystem (`repo.rs`).
 
-use jackin_core::env_model::extract_interpolation_refs;
-use jackin_core::manifest::{EnvVarDecl, ManifestWarning, RoleManifest};
+use jackin_core::extract_interpolation_refs;
+use jackin_core::{EnvVarDecl, ManifestWarning, RoleManifest};
 
 /// Return whether `name` is a valid env var identifier (ASCII alphanumeric/underscore, no leading digit).
 pub fn is_valid_env_var_name(name: &str) -> bool {
@@ -126,7 +126,7 @@ pub fn validate_role_manifest(manifest: &RoleManifest) -> anyhow::Result<Vec<Man
             );
         }
 
-        if let Some((_, value)) = jackin_core::env_model::RESERVED_RUNTIME_ENV_VARS
+        if let Some((_, value)) = jackin_core::RESERVED_RUNTIME_ENV_VARS
             .iter()
             .find(|(reserved, _)| name == reserved)
         {
@@ -168,7 +168,7 @@ pub fn validate_role_manifest(manifest: &RoleManifest) -> anyhow::Result<Vec<Man
 
     // Cycle detection via topological sort (shared with
     // env_resolver::resolve_env — one Kahn's implementation).
-    jackin_core::env_model::topological_env_order(&manifest.env)?;
+    jackin_core::topological_env_order(&manifest.env)?;
 
     Ok(warnings)
 }

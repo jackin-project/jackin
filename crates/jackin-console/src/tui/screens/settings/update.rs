@@ -232,7 +232,7 @@ pub const fn settings_general_key_plan(key: KeyCode, is_dirty: bool) -> Settings
     }
 }
 
-#[allow(
+#[expect(
     clippy::fn_params_excessive_bools,
     reason = "Four orthogonal env-key plan inputs (key, plain_modifier, ...) \
               — each is an independent input the env-key planner reads to route \
@@ -1140,7 +1140,7 @@ pub struct SettingsTrustRowSelectPlan {
     pub content_focused: bool,
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal settings-tab focus flags (mounts, env, auth, trust) \
               describing which sub-scroll pane is currently focusable — each tracks \
@@ -1188,7 +1188,7 @@ pub const fn settings_scroll_focus_plan(
     }
 }
 
-#[allow(
+#[expect(
     clippy::fn_params_excessive_bools,
     reason = "Four orthogonal settings-modal visibility flags (error_popup, \
               mounts_modal, env_modal, auth_modal) — each is an independent \

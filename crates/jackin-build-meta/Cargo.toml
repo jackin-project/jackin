@@ -16,5 +16,8 @@ repository.workspace = true
 [lib]
 path = "src/lib.rs"
 
+[dependencies]
+jackin-process = { workspace = true }
+
 [lints]
 workspace = true

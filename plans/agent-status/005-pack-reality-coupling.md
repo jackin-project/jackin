@@ -12,7 +12,7 @@
 - **Depends on**: none (blocks 007)
 - **Category**: bug (detection infrastructure)
 - **Planned at**: commit `5d3661cff`, 2026-07-03
-- **Implementation status**: **RESIDUAL** (kept after 2026-07-12 deep audit). Partial live jackin❯ captures exist (Claude/Codex/Amp/OpenCode/Kimi/Grok slices), but full per-agent blocked/working/idle agent-originated goldens and anti-circularity contract remain open — synthetic fixtures still present.
+- **Implementation status**: **RESIDUAL** (verified 2026-07-15). Live jackin❯ captures cover working/idle broadly and blocked for some agents, but circular synthetic fixtures remain; agent-originated blocked goldens are still missing for Kimi/OpenCode/Grok, and runtime version drift has no observable `EvidenceNote`/`clog!` signal.
 
 ## Why this matters
 
@@ -54,10 +54,10 @@ verifiable).
 ### Step 1: Replace circular fixtures with real captured goldens
 
 Capture the actual visible screen (bottom ~24 rows) of each agent in each state **from a real `--debug` run**
-(see `TESTING.md`'s pty-fixture flow) — capture jackin's own goldens. **Do NOT commit herdr's fixture files**:
+(see `TESTING.md`'s pty-fixture flow) — capture jackin❯ own goldens. **Do NOT commit herdr's fixture files**:
 they are files in an AGPL-3.0 repository, so copying them into this Apache-2.0 tree is a license-mixing risk,
 regardless that their *content* is agent terminal output. You may *read* herdr's fixtures in place to learn
-what a real screen looks like, but every committed golden must be captured by jackin from the real agent.
+what a real screen looks like, but every committed golden must be captured by jackin❯ from the real agent.
 Store one golden per (agent, state) and point `packs_load_and_match_fixtures` at the **captured** goldens.
 The rule: **a fixture must originate from
 the agent, never from the pack author.** A pack that doesn't match its captured golden must fail the test.
@@ -89,7 +89,7 @@ occurrences (b); `cargo clippy -p jackin-capsule -- -D warnings` → exit 0.
 
 - [ ] Pack fixtures are real captured goldens (agent-originated), not glosses of the pack strings — PARTIAL: live captures now cover several working/idle slices; full per-agent blocked/working/idle coverage remains open
 - [ ] The match harness would FAIL a fabricated pack (proven by the fixtures the fabricated packs don't match) — PARTIAL with the newly captured slices; full proof waits on complete goldens
-- [x] Out-of-window CLI does not make runtime matching dark; bundled packs stay live. A loud runtime drift note remains blocked until a non-invasive runtime CLI-version source exists
+- [ ] Bundled packs stay live out of window, but the required loud runtime drift `EvidenceNote` + `clog!` is not implemented because no runtime CLI-version source is wired
 - [x] `accepts_cli_version` is either wired into the image build (fails on drift) or removed with its comments
 - [x] `plans/agent-status/README.md` row updated
 

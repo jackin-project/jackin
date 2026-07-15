@@ -1,6 +1,6 @@
 ---
 title: Publishing Role Images
-description: What jackin requires from a built agent role image and how to build one with or without the provided GitHub Actions workflow
+description: What jackin❯ requires from a built agent role image and how to build one with or without the provided GitHub Actions workflow
 ---
 
 <Aside type="note">
@@ -9,11 +9,11 @@ This page is **for role authors** — anyone who needs to build and publish a Do
 
 ## Required OCI labels
 
-Every published role image must carry two OCI labels that jackin reads at launch time:
+Every published role image must carry two OCI labels that jackin❯ reads at launch time:
 
 | Label | Value | Purpose |
 |---|---|---|
-| `jackin.construct.version` | The version tag from the `FROM` line (e.g. `0.2`) | Staleness detection — jackin warns when the published image was built from an older construct than the one currently resolved for a new build |
+| `jackin.construct.version` | The version tag from the `FROM` line (e.g. `0.2`) | Staleness detection — jackin❯ warns when the published image was built from an older construct than the one currently resolved for a new build |
 | `jackin.role.git.sha` | The short (7-char) git commit SHA of the role repo at build time | Version display and staleness tracking — compared against the role checkout's HEAD |
 
 <Aside type="caution">
@@ -21,7 +21,7 @@ If either label is missing or set to `unknown`, jackin❯ treats the image as bu
 </Aside>
 
 <Aside type="note">
-Keys use dotted namespacing (`jackin.construct.version`, `jackin.role.git.sha`). `jackin-role publish-labels --role-git-sha <sha>` prints this label set for workflows and custom CI so the runtime freshness contract stays in the binary instead of duplicated in YAML. Until your role re-publishes with the updated `jackin-role-action`, jackin falls back to a local workspace rebuild for that role (correct, just not the fast published path). See [Image Labels & Recipe Hash](/reference/runtime/image-labels/) for the full label schema jackin verifies.
+Keys use dotted namespacing (`jackin.construct.version`, `jackin.role.git.sha`). `jackin-role publish-labels --role-git-sha <sha>` prints this label set for workflows and custom CI so the runtime freshness contract stays in the binary instead of duplicated in YAML. Until your role re-publishes with the updated `jackin-role-action`, jackin❯ falls back to a local workspace rebuild for that role (correct, just not the fast published path). See [Image Labels & Recipe Hash](/reference/runtime/image-labels/) for the full label schema jackin❯ verifies.
 </Aside>
 
 ## Using the provided workflow (recommended)
@@ -81,7 +81,7 @@ If your role repo is not on GitHub, or if you use a different CI/CD system (GitL
    #                            ^^^— this is the construct version
    ```
 
-   If the `jackin-role` binary is available in your CI environment (download it from the [jackin releases](https://github.com/jackin-project/jackin/releases)), prefer asking it for the complete label set:
+   If the `jackin-role` binary is available in your CI environment (download it from the [jackin❯ releases](https://github.com/jackin-project/jackin/releases)), prefer asking it for the complete label set:
 
    ```sh
    ROLE_GIT_SHA=$(git rev-parse HEAD)
@@ -124,7 +124,7 @@ If your role repo is not on GitHub, or if you use a different CI/CD system (GitL
 Using `--label` at build time (or the `labels:` input in `docker/build-push-action`) bypasses this: the label is applied to the final image manifest without touching the Dockerfile instruction stream. Your expensive tool-installation `RUN` layers remain cached across commits.
 
 <Aside type="tip">
-If you are migrating from an older role repo that has `ARG CONSTRUCT_VERSION`/`LABEL jackin.construct.version` and `ARG ROLE_GIT_SHA`/`LABEL jackin.role.git.sha` in the Dockerfile, remove those declarations and switch to `--label` flags at build time. The `FROM` line is still how jackin reads the construct version — it does not need to be re-declared as an `ARG`.
+If you are migrating from an older role repo that has `ARG CONSTRUCT_VERSION`/`LABEL jackin.construct.version` and `ARG ROLE_GIT_SHA`/`LABEL jackin.role.git.sha` in the Dockerfile, remove those declarations and switch to `--label` flags at build time. The `FROM` line is still how jackin❯ reads the construct version — it does not need to be re-declared as an `ARG`.
 </Aside>
 
 ### Example: GitLab CI
@@ -209,4 +209,4 @@ jobs:
 
 - The final stage **must** start from `projectjackin/construct:<version>-<distro>` (see [Role Repositories](/guides/role-repos/#the-repo-contract) for the full contract).
 - No `ARG CONSTRUCT_VERSION` or `ARG ROLE_GIT_SHA` declarations are needed. The workflow or `--label` flags at build time handle both.
-- The construct version jackin reads for staleness detection comes from the `FROM` line — not from a label or ARG. Keep the version tag in the `FROM` line accurate and let Renovate track updates.
+- The construct version jackin❯ reads for staleness detection comes from the `FROM` line — not from a label or ARG. Keep the version tag in the `FROM` line accurate and let Renovate track updates.

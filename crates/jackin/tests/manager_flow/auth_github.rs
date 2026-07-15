@@ -1,17 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 //! GitHub-kind auth-form integration tests for the manager TUI.
 //!
 //! Extracted from `manager_flow.rs` to keep each test binary under the
@@ -38,10 +24,6 @@ use super::*;
 // assert the persisted TOML carries BOTH the `[github]`
 // auth_forward = "token" block AND the `GH_TOKEN` env var on the
 // matching `[github.env]` block.
-#[allow(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 #[test]
 fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()> {
     let temp = tempdir()?;

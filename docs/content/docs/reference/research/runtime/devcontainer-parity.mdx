@@ -156,7 +156,7 @@ update endpoints). Capabilities required: `--cap-add=NET_ADMIN`,
    opt in per launch.
 2. **Make it a per-agent declaration.** Add a `[network]` section to
    `jackin.role.toml` where agent authors can declare the required egress
-   list. jackin merges the declared list with an operator-level allowlist in
+   list. jackin❯ merges the declared list with an operator-level allowlist in
    `config.toml`. Cost: schema + merge logic.
 3. **Make it a per-workspace declaration.** Same mechanism but keyed on
    workspace instead of agent. Closer to how Docker Sandboxes scopes network
@@ -174,22 +174,22 @@ microvm track.
 
 ### Finding 2 — Generate a `devcontainer.json` alongside the derived image
 
-**Gap**: jackin builds and runs the image itself; there is no way to point VS
+**Gap**: jackin❯ builds and runs the image itself; there is no way to point VS
 Code, Cursor, or Codespaces at the same image for IDE features like Go-to-
 Definition, debugging, or extension auto-install.
 
 **Options**:
 
-1. **Emit `devcontainer.json` when jackin builds the derived image.** Write
+1. **Emit `devcontainer.json` when jackin❯ builds the derived image.** Write
    it into the workspace's `.devcontainer/` directory (or a jackin-managed
-   shadow dir) so IDEs can consume it. Fields: build target (use the jackin
-   image directly), `runArgs`, mounts matching what jackin would mount,
+   shadow dir) so IDEs can consume it. Fields: build target (use the jackin❯
+   image directly), `runArgs`, mounts matching what jackin❯ would mount,
    `postStartCommand` for per-start jackin❯ runtime hooks, `postCreateCommand`
    only for one-time initialization, an extensions list curated per agent.
 2. **Ship a static reference `devcontainer.json` in the docs.** Operators
    copy it into their project. Zero product change, lowest cost. Loses
    coupling to jackin❯ actual runtime config.
-3. **Skip IDE integration.** jackin stays a terminal-first product. Users
+3. **Skip IDE integration.** jackin❯ stays a terminal-first product. Users
    who want IDE integration use the standalone upstream devcontainer.
 
 **Recommendation**: Option 1 is the most aligned with jackin❯ positioning
@@ -201,7 +201,7 @@ runtime setup that must rerun when the container restarts, and reserve
 `postCreateCommand` for one-time image/container initialization. It should set
 `waitFor` to the command that gates a usable agent environment so VS Code and
 Cursor do not attach before firewall setup, mounted homes, and runtime
-bootstrap are ready. The parity check should compare jackin launch readiness
+bootstrap are ready. The parity check should compare jackin❯ launch readiness
 against devcontainer `waitFor` semantics, not only generated fields.
 
 ### Finding 3 — Scope the `claude` user's sudo

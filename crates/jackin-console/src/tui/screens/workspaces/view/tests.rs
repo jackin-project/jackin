@@ -4,7 +4,7 @@
 //! Tests for `view`.
 use super::*;
 use crate::tui::screens::workspaces::model::ManagerListRow;
-use jackin_core::instance::InstanceStatus;
+use jackin_core::InstanceStatus;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
 fn instance_row_label(instance_id: &str, role_key: &str) -> InstanceRowLabel {

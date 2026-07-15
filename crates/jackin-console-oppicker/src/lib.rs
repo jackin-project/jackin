@@ -17,9 +17,9 @@ pub use state::{LoadResult, OpPickerState};
 /// to `jackin-core` types already available in this crate.
 pub type OpPickerCoreSelection = OpPickerSelection<
     jackin_core::OpRef,
-    jackin_core::op_types::OpAccount,
-    jackin_core::op_types::OpVault,
-    jackin_core::op_types::OpItem,
+    jackin_core::OpAccount,
+    jackin_core::OpVault,
+    jackin_core::OpItem,
     jackin_core::FieldTarget,
 >;
 
@@ -360,14 +360,14 @@ pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
     },
 }
 
-pub use jackin_core::op_types::{OpAccount as OpPickerAccount, OpVault as OpPickerVault};
+pub use jackin_core::{OpAccount as OpPickerAccount, OpVault as OpPickerVault};
 /// Re-exported from `jackin-core` — canonical definitions live there so
 /// `jackin-env` no longer depends on `jackin-console` for data types.
-pub use jackin_core::op_types::{OpField as OpPickerField, OpItem as OpPickerItem};
+pub use jackin_core::{OpField as OpPickerField, OpItem as OpPickerItem};
 
 /// Session-scoped metadata cache for picker drill-down panes.
 pub type OpPickerCache =
-    jackin_core::op_cache::OpCache<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
+    jackin_core::OpCache<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
 
 /// A single row in the field-picker display list.
 #[derive(Debug, Clone)]
@@ -469,7 +469,7 @@ pub const fn filter_reset_selection_for_stage(
     }
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Orthogonal Esc-back mutation flags for the op-picker Field stage — \
               each bool is an independent state reset (section pointer, field buffer, \
@@ -509,7 +509,7 @@ pub const fn field_stage_back_plan(mode: &OpPickerMode) -> FieldStageBackPlan {
     }
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Orthogonal refresh-mutation flags for the op-picker Field stage — \
               each bool is an independent state update (clear fields, reset list, \
@@ -534,7 +534,7 @@ pub const fn field_stage_refresh_plan(mode: &OpPickerMode) -> FieldStageRefreshP
     }
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Orthogonal Esc-back mutation flags for the op-picker Section stage — \
               each bool is an independent state reset (field buffer, collapsed \
@@ -1043,8 +1043,8 @@ where
 {
     let mut out: Vec<Option<String>> = vec![None];
     for reference in references {
-        if let Some(name) = jackin_core::op_reference::parse_op_reference(reference.as_ref())
-            .and_then(|parts| parts.section)
+        if let Some(name) =
+            jackin_core::parse_op_reference(reference.as_ref()).and_then(|parts| parts.section)
             && !out
                 .iter()
                 .any(|section| section.as_deref() == Some(name.as_str()))
@@ -1069,9 +1069,7 @@ where
     let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
 
     for (idx, reference) in references.into_iter().enumerate() {
-        match jackin_core::op_reference::parse_op_reference(reference.as_ref())
-            .and_then(|parts| parts.section)
-        {
+        match jackin_core::parse_op_reference(reference.as_ref()).and_then(|parts| parts.section) {
             None => unsectioned.push(idx),
             Some(name) => {
                 if let Some(entry) = sections.iter_mut().find(|(section, _)| section == &name) {
@@ -1119,8 +1117,8 @@ where
         .into_iter()
         .enumerate()
         .filter(|(_, reference)| {
-            let section = jackin_core::op_reference::parse_op_reference(reference.as_ref())
-                .and_then(|parts| parts.section);
+            let section =
+                jackin_core::parse_op_reference(reference.as_ref()).and_then(|parts| parts.section);
             section.as_deref() == selected_section
         })
         .map(|(idx, _)| FieldDisplayRow::Field { field_idx: idx })
@@ -1218,8 +1216,8 @@ pub fn build_op_picker_ref<'a>(
         selected_item.name.to_owned()
     };
 
-    if let Some(section_name) = jackin_core::op_reference::parse_op_reference(field.reference)
-        .and_then(|parts| parts.section)
+    if let Some(section_name) =
+        jackin_core::parse_op_reference(field.reference).and_then(|parts| parts.section)
     {
         return BuiltOpPickerRef {
             op: format!(

@@ -16,8 +16,8 @@
 ///
 /// Call this once per test that calls `load_role` or any function that internally
 /// invokes `ensure_available`.
-pub fn install_all_test_stubs(paths: &jackin_core::paths::JackinPaths) {
-    use jackin_core::agent::Agent;
+pub fn install_all_test_stubs(paths: &jackin_core::JackinPaths) {
+    use jackin_core::Agent;
     for agent in &[
         Agent::Claude,
         Agent::Codex,
