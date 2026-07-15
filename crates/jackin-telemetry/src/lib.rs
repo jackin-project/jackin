@@ -17,6 +17,7 @@ pub mod privacy;
 pub mod propagation;
 pub mod schema;
 pub mod spawn;
+pub mod ui;
 
 pub use event::{Attr, EventDef, FieldSet, Rejection, Severity, Value, emit_event};
 pub use health::{FacadeHealth, facade_health, record_export_rejection};

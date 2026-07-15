@@ -127,12 +127,19 @@ macro_rules! emit_named {
         let screen_id = $fields.str(schema::attrs::std_attrs::APP_SCREEN_ID);
         let screen_name = $fields.str(schema::attrs::std_attrs::APP_SCREEN_NAME);
         let action_name = $fields.str(schema::attrs::UI_ACTION_NAME);
+        let visit_id = $fields.str(schema::attrs::UI_SCREEN_VISIT_ID);
+        let transition_reason = $fields.str(schema::attrs::UI_TRANSITION_REASON);
+        let widget_id = $fields.str(schema::attrs::std_attrs::APP_WIDGET_ID);
+        let navigation_sequence = $fields.attrs.iter().find_map(|attr| match attr {
+            Attr { key: schema::attrs::UI_NAVIGATION_SEQUENCE, value: Value::U64(value) } => Some(*value),
+            _ => None,
+        });
         let error_type = $fields.str(schema::attrs::std_attrs::ERROR_TYPE);
         let body = $fields.body.unwrap_or("");
         match $level {
             Severity::Trace => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
-            Severity::Debug => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
-            Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
+            Severity::Debug => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "error.type" = error_type, message = body),
+            Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "error.type" = error_type, message = body),
             Severity::Warn => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
             Severity::Error => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
         }
