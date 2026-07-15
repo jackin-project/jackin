@@ -64,7 +64,7 @@ jobs:
 
   source-changed:
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -442,7 +442,7 @@ jobs:
 
   publish-gate:
     needs: [matrix-setup, source-changed, build-preview, build-jackin-capsule]
-    if: needs.source-changed.outputs.source == 'true' && needs.matrix-setup.outputs.has_github == 'true'
+    if: github.ref == 'refs/heads/main' && needs.source-changed.outputs.source == 'true' && needs.matrix-setup.outputs.has_github == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
@@ -504,7 +504,7 @@ jobs:
 
   publish-preview:
     needs: [source-changed, build-preview, build-jackin-capsule, publish-gate]
-    if: needs.source-changed.outputs.source == 'true' && needs.publish-gate.outputs.ci_ok == 'true'
+    if: github.ref == 'refs/heads/main' && needs.source-changed.outputs.source == 'true' && needs.publish-gate.outputs.ci_ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     concurrency:
