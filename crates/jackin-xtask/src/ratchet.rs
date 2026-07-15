@@ -11,6 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -588,33 +589,72 @@ fn measure_export_volume_constants(root: &Path) -> Result<BTreeMap<String, usize
     Ok(out)
 }
 
-/// Prefer measured counts from `target/telemetry-volume.json` (written by the
-/// conformance suite); fall back to source constants when the artifact is absent
-/// (e.g. ratchet clean without a prior nextest run).
+/// Measured default-mode export volume from `target/telemetry-volume.json`.
+///
+/// Sole provider input for the `export-volume` family (plan 009). Does **not**
+/// parse `MAX_*` source constants. When the artifact is missing, generates it by
+/// running the conformance volume test so lint/ratchet (which runs before nextest
+/// in `ci --fast`) still enforces measured counts.
 fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>> {
     let artifact = root.join("target/telemetry-volume.json");
-    if artifact.is_file() {
-        let text = fs::read_to_string(&artifact)
-            .with_context(|| format!("reading measured volume at {}", artifact.display()))?;
-        let value: serde_json::Value = serde_json::from_str(&text)
-            .with_context(|| format!("parsing measured volume at {}", artifact.display()))?;
-        let mut out = BTreeMap::new();
-        for key in [
-            "default_mode_logs",
-            "default_mode_spans",
-            "default_mode_metrics",
-            "max_debug_logs",
-            "max_spans",
-        ] {
-            if let Some(n) = value.get(key).and_then(serde_json::Value::as_u64) {
-                out.insert(key.to_owned(), n as usize);
-            }
-        }
-        if !out.is_empty() {
-            return Ok(out);
-        }
+    if !artifact.is_file() {
+        ensure_telemetry_volume_artifact(root)?;
     }
-    measure_export_volume_constants(root)
+    let text = fs::read_to_string(&artifact).with_context(|| {
+        format!(
+            "reading measured volume at {} — run `cargo nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'` first",
+            artifact.display()
+        )
+    })?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .with_context(|| format!("parsing measured volume at {}", artifact.display()))?;
+    let mut out = BTreeMap::new();
+    // Only measured keys — never MAX_* ceilings (those are in-test guardrails).
+    for key in [
+        "default_mode_logs",
+        "default_mode_spans",
+        "default_mode_metrics",
+    ] {
+        let Some(n) = value.get(key).and_then(serde_json::Value::as_u64) else {
+            bail!(
+                "measured volume at {} missing required key `{key}`",
+                artifact.display()
+            );
+        };
+        out.insert(key.to_owned(), n as usize);
+    }
+    Ok(out)
+}
+
+/// Run the conformance volume test to produce `target/telemetry-volume.json`.
+fn ensure_telemetry_volume_artifact(root: &Path) -> Result<()> {
+    let status = Command::new("cargo")
+        .args([
+            "nextest",
+            "run",
+            "-p",
+            "jackin-diagnostics",
+            "--all-features",
+            "--locked",
+            "-E",
+            "test(conformance_export_volume)",
+        ])
+        .current_dir(root)
+        .status()
+        .context("spawning cargo nextest for telemetry-volume artifact")?;
+    if !status.success() {
+        bail!(
+            "failed to generate target/telemetry-volume.json via conformance_export_volume (exit {status})"
+        );
+    }
+    let artifact = root.join("target/telemetry-volume.json");
+    if !artifact.is_file() {
+        bail!(
+            "conformance_export_volume ran but did not write {}",
+            artifact.display()
+        );
+    }
+    Ok(())
 }
 
 fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {

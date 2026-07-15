@@ -1091,6 +1091,7 @@ mod otlp {
         let test_level = if debug { "debug" } else { "info" };
         let span_directive = export_filter_directive(test_level);
         let log_directive = export_filter_directive(test_level);
+        // Host bootstrap: JackinDiagnosticsLayer (JSONL) + host Resource.
         let subscriber = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .with(span_layer.with_filter(EnvFilter::new(span_directive)))
@@ -1105,6 +1106,60 @@ mod otlp {
             },
             subscriber,
         )
+    }
+
+    /// Capsule-side in-memory bootstrap (plan 009 dual-bootstrap).
+    ///
+    /// Mirrors production `init_capsule`: capsule Resource, **no**
+    /// `JackinDiagnosticsLayer`. Call [`emit_session_start_for_test`] under the
+    /// returned subscriber to drive the production session-start path.
+    #[cfg(test)]
+    pub(crate) fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber) {
+        use opentelemetry::trace::TracerProvider as _;
+
+        let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+        let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
+        let resource = capsule_resource();
+        let tracer_provider = SdkTracerProvider::builder()
+            .with_max_attributes_per_span(64)
+            .with_max_attributes_per_event(32)
+            .with_simple_exporter(spans.clone())
+            .with_resource(resource.clone())
+            .build();
+        let logger_provider = SdkLoggerProvider::builder()
+            .with_log_processor(PromoteEventNameProcessor)
+            .with_simple_exporter(logs.clone())
+            .with_resource(resource)
+            .build();
+        let tracer = tracer_provider.tracer("jackin");
+        let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+        let test_level = if debug { "debug" } else { "info" };
+        let span_directive = export_filter_directive(test_level);
+        let log_directive = export_filter_directive(test_level);
+        let subscriber = tracing_subscriber::registry()
+            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(log_layer.with_filter(EnvFilter::new(log_directive)));
+
+        (
+            TestExport {
+                spans,
+                logs,
+                tracer_provider,
+                logger_provider,
+            },
+            subscriber,
+        )
+    }
+
+    /// Test-only entry into production [`emit_session_start`] (plan 009).
+    #[cfg(test)]
+    pub(crate) fn emit_session_start_for_test(
+        session_id: &str,
+        run_id: Option<&str>,
+        traceparent: Option<&str>,
+    ) {
+        emit_session_start(session_id, run_id, traceparent);
     }
 
     /// Emit the session-start marker: a short span in its own trace, linked to
@@ -1373,7 +1428,7 @@ pub(crate) fn record_operation_metric(
 
 /// In-memory export rig for crate tests (operation facade, conformance).
 #[cfg(all(test, feature = "otlp"))]
-pub(crate) use otlp::{TestExport, test_layers};
+pub(crate) use otlp::{TestExport, emit_session_start_for_test, test_capsule_layers, test_layers};
 
 pub(crate) fn emit_jsonl_event(
     run_id: &str,

@@ -901,14 +901,63 @@ fn rich_terminal_owned_combines_both_flags() {
 const MAX_DEBUG_LOGS: usize = 64;
 #[cfg(feature = "otlp")]
 const MAX_SPANS: usize = 48;
+#[cfg(feature = "otlp")]
+const CONFORMANCE_ARGV_CANARY: &str = "--password=conformance-argv-secret";
+#[cfg(feature = "otlp")]
+const CONFORMANCE_URL_CANARY: &str = "https://example.invalid/api?token=conformance-query-secret";
+#[cfg(feature = "otlp")]
+const CONFORMANCE_INSPECT_CANARY: &str =
+    r#"{"Config":{"Env":["TOKEN=conformance-inspect-secret"]}}"#;
+#[cfg(feature = "otlp")]
+const CONFORMANCE_TERMINAL_CANARY: &str = "\u{1b}[31mconformance-terminal-bytes\u{1b}[0m";
+
+/// Combined host + capsule export from the dual-bootstrap conformance scenario.
+#[cfg(feature = "otlp")]
+struct ConformanceExport {
+    host: crate::observability::TestExport,
+    capsule: crate::observability::TestExport,
+}
 
 #[cfg(feature = "otlp")]
-fn drive_standard_conformance_scenario() -> crate::observability::TestExport {
-    use crate::operation::{OperationLevel, operation_log, operation_span};
+impl ConformanceExport {
+    fn all_logs(&self) -> Vec<opentelemetry_sdk::logs::in_memory_exporter::LogDataWithResource> {
+        let mut logs = self.host.logs.get_emitted_logs().unwrap_or_default();
+        logs.extend(self.capsule.logs.get_emitted_logs().unwrap_or_default());
+        logs
+    }
+
+    fn all_spans(&self) -> Vec<opentelemetry_sdk::trace::SpanData> {
+        let mut spans = self.host.spans.get_finished_spans().unwrap_or_default();
+        spans.extend(self.capsule.spans.get_finished_spans().unwrap_or_default());
+        spans
+    }
+}
+
+/// Workspace `target/telemetry-volume.json` (plan 009 measured export-volume).
+#[cfg(feature = "otlp")]
+fn telemetry_volume_artifact_path() -> std::path::PathBuf {
+    // nextest CWD is the package dir; always write to the workspace target so
+    // `cargo xtask lint ratchet` (repo root) consumes the same file.
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/telemetry-volume.json")
+}
+
+/// Dual-bootstrap host→capsule conformance scenario (plan 009).
+///
+/// Host phase: host `test_layers` + run/stage/process facades.
+/// Capsule phase: separate `test_capsule_layers` bootstrap (no host JSONL layer)
+/// driving production [`emit_session_start_for_test`] plus capsule-target
+/// breadcrumbs — not synthetic events on the host subscriber.
+#[cfg(feature = "otlp")]
+fn drive_standard_conformance_scenario() -> ConformanceExport {
+    use crate::operation::{OperationLevel, operation_error, operation_log, operation_span};
     use crate::screen::{Screen, enter_screen};
 
-    let (export, subscriber) = crate::observability::test_layers(true, "conformance-run");
-    tracing::subscriber::with_default(subscriber, || {
+    const RUN_ID: &str = "conformance-run";
+    const SESSION_ID: &str = "conformance-session";
+
+    // ── Host bootstrap ──────────────────────────────────────────────────
+    let (host, host_sub) = crate::observability::test_layers(true, RUN_ID);
+    tracing::subscriber::with_default(host_sub, || {
         let tmp = tempfile::tempdir().expect("tempdir");
         let paths = JackinPaths::for_tests(tmp.path());
         let run = RunDiagnostics::start(&paths, true, "conformance").expect("run start");
@@ -949,24 +998,13 @@ fn drive_standard_conformance_scenario() -> crate::observability::TestExport {
             );
             drop(guard);
 
-            run.error_typed(
-                "E_CONFORM",
-                "forced failure for conformance",
-                Some("conformance_error"),
+            // Forced attach-shaped failure on the host launch path (typed error).
+            operation_error(
+                "error.typed",
+                "conformance_error",
+                "forced attach failure for conformance",
+                &[],
             );
-            // Capsule-bridge shaped record (plan 004/009 host-to-capsule path).
-            tracing::event!(
-                target: "jackin_capsule",
-                tracing::Level::INFO,
-                "event.name" = "capsule.log",
-                "jackin.category" = "capsule",
-                "jackin.component" = "capsule",
-                "event.outcome" = "success",
-                "session.id" = "conformance-session",
-                "parallax.run.id" = "conformance-run",
-                "capsule breadcrumb"
-            );
-            run.compact(crate::otel_events::SESSION_DETACH, "operator detached");
 
             for _ in 0..100 {
                 crate::metrics::record_frame(32, 1, 4);
@@ -977,15 +1015,54 @@ fn drive_standard_conformance_scenario() -> crate::observability::TestExport {
                 OperationLevel::Info,
                 "conformance.secret",
                 "security",
-                "token=abc123FAKE_not_a_real_secret",
+                &format!(
+                    "argv={CONFORMANCE_ARGV_CANARY} url={CONFORMANCE_URL_CANARY} inspect={CONFORMANCE_INSPECT_CANARY}"
+                ),
                 &[],
             );
         });
         drop(launch);
     });
-    drop(export.logger_provider.force_flush());
-    drop(export.tracer_provider.force_flush());
-    export
+    drop(host.logger_provider.force_flush());
+    drop(host.tracer_provider.force_flush());
+
+    // ── Capsule bootstrap (separate provider, production session-start) ─
+    let (capsule, capsule_sub) = crate::observability::test_capsule_layers(true);
+    tracing::subscriber::with_default(capsule_sub, || {
+        // Same code path as init_capsule → emit_session_start after attach.
+        crate::observability::emit_session_start_for_test(SESSION_ID, Some(RUN_ID), None);
+
+        // Capsule breadcrumb through the capsule target/bridge shape (plan 004).
+        // Emitted under the capsule subscriber, not the host facade.
+        tracing::event!(
+            target: "jackin_capsule",
+            tracing::Level::INFO,
+            "event.name" = "capsule.log",
+            "jackin.category" = "capsule",
+            "jackin.component" = "capsule",
+            "event.outcome" = "success",
+            "session.id" = SESSION_ID,
+            "parallax.run.id" = RUN_ID,
+            "capsule breadcrumb"
+        );
+
+        // Expected detach (not a failure): registry-validated session.detach.
+        tracing::event!(
+            target: "jackin_capsule",
+            tracing::Level::INFO,
+            "event.name" = "capsule.session.detach",
+            "jackin.category" = "capsule",
+            "jackin.component" = "capsule",
+            "event.outcome" = "expected_close",
+            "session.id" = SESSION_ID,
+            "parallax.run.id" = RUN_ID,
+            "operator detached"
+        );
+    });
+    drop(capsule.logger_provider.force_flush());
+    drop(capsule.tracer_provider.force_flush());
+
+    ConformanceExport { host, capsule }
 }
 
 #[cfg(feature = "otlp")]
@@ -1021,7 +1098,7 @@ fn conformance_exported_bodies_have_no_bracket_prefix() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    for log in export.logs.get_emitted_logs().unwrap() {
+    for log in export.all_logs() {
         if let Some(body) = conformance_log_body(&log.record) {
             assert!(
                 !body.contains("[jackin debug") && !body.contains("[jackin-capsule"),
@@ -1033,16 +1110,28 @@ fn conformance_exported_bodies_have_no_bracket_prefix() {
 
 #[cfg(feature = "otlp")]
 #[test]
-fn conformance_export_scrubs_token_shaped_values() {
+fn conformance_export_invokes_sensitive_boundary_canary_gate() {
     let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let logs = export.logs.get_emitted_logs().unwrap();
+    let logs = export.all_logs();
     let dump = format!("{logs:?}");
-    assert!(
-        !dump.contains("abc123FAKE_not_a_real_secret"),
-        "synthetic secret must not appear in export: {dump}"
+    for canary in [
+        CONFORMANCE_ARGV_CANARY,
+        CONFORMANCE_URL_CANARY,
+        CONFORMANCE_INSPECT_CANARY,
+        CONFORMANCE_TERMINAL_CANARY,
+    ] {
+        assert!(
+            !dump.contains(canary),
+            "sensitive-boundary canary leaked into export: {canary:?}"
+        );
+    }
+    assert_eq!(
+        crate::redact::redact_text("token=conformance-direct-canary"),
+        "<redacted>",
+        "matrix must invoke the production redaction helper"
     );
 }
 
@@ -1055,7 +1144,7 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let logs = export.logs.get_emitted_logs().unwrap();
+    let logs = export.all_logs();
     let errors: Vec<_> = logs
         .iter()
         .filter(|log| log.record.severity_number() == Some(Severity::Error))
@@ -1066,9 +1155,28 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
             || conformance_log_attr(&log.record, "error.type").as_deref()
                 == Some("conformance_error")
     }));
-    assert!(logs.iter().any(|log| {
-        conformance_log_attr(&log.record, "event.name").as_deref() == Some("capsule.session.detach")
-    }));
+    // Detach is emitted on the capsule bootstrap, not the host facade.
+    assert!(
+        logs.iter().any(|log| {
+            conformance_log_attr(&log.record, "event.name").as_deref()
+                == Some("capsule.session.detach")
+                && conformance_log_attr(&log.record, "event.outcome").as_deref()
+                    == Some("expected_close")
+        }),
+        "expected_close detach must come from capsule bootstrap"
+    );
+    assert!(
+        export
+            .capsule
+            .logs
+            .get_emitted_logs()
+            .unwrap()
+            .iter()
+            .any(|log| {
+                conformance_log_attr(&log.record, "event.name").as_deref() == Some("capsule.log")
+            }),
+        "capsule bootstrap must export capsule.log breadcrumbs"
+    );
 }
 
 #[cfg(feature = "otlp")]
@@ -1078,12 +1186,29 @@ fn conformance_waterfall_has_distinct_rows() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let spans = export.spans.get_finished_spans().unwrap();
+    let spans = export.all_spans();
     let names: std::collections::BTreeSet<_> =
         spans.iter().map(|span| span.name.to_string()).collect();
     assert!(
         names.len() >= 3,
         "expected at least three span names: {names:?}"
+    );
+    // Capsule session-start span must appear on the capsule exporter only.
+    assert!(
+        export
+            .capsule
+            .spans
+            .get_finished_spans()
+            .unwrap()
+            .iter()
+            .any(|span| {
+                span.name.as_ref().contains("session")
+                    || span.attributes.iter().any(|a| {
+                        a.key.as_str() == crate::otel_keys::COMPONENT
+                            && format!("{}", a.value) == "capsule"
+                    })
+            }),
+        "capsule bootstrap must export a session-start span"
     );
 }
 
@@ -1094,8 +1219,8 @@ fn conformance_logs_correlate_to_traces() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let spans = export.spans.get_finished_spans().unwrap();
-    let logs = export.logs.get_emitted_logs().unwrap();
+    let spans = export.all_spans();
+    let logs = export.all_logs();
     assert!(!spans.is_empty(), "scenario must export spans");
     assert!(
         logs.iter()
@@ -1113,26 +1238,27 @@ fn conformance_export_volume_stays_within_budget() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let logs = export.logs.get_emitted_logs().unwrap();
-    let spans = export.spans.get_finished_spans().unwrap();
+    let logs = export.all_logs();
+    let spans = export.all_spans();
+    // In-test guardrails only (not ratchet input — plan 009 measured path).
     assert!(logs.len() <= MAX_DEBUG_LOGS);
     assert!(spans.len() <= MAX_SPANS);
-    // Measured volume artifact for the export-volume ratchet (plan 009).
+    // Measured volume artifact for the export-volume ratchet. Only measured
+    // counts — no MAX_* ceilings (those stay as test-local guardrails above).
     let volume = serde_json::json!({
         "default_mode_logs": logs.len(),
         "default_mode_spans": spans.len(),
         "default_mode_metrics": 0,
-        "max_debug_logs": MAX_DEBUG_LOGS,
-        "max_spans": MAX_SPANS,
     });
-    let path = std::path::Path::new("target/telemetry-volume.json");
+    let path = telemetry_volume_artifact_path();
     if let Some(parent) = path.parent() {
-        drop(fs::create_dir_all(parent));
+        fs::create_dir_all(parent).expect("create target/ for volume artifact");
     }
-    drop(fs::write(
-        path,
-        serde_json::to_string_pretty(&volume).unwrap_or_default(),
-    ));
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&volume).expect("serialize volume"),
+    )
+    .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
     // Dropped attribute counts must stay zero under the configured limits.
     for span in &spans {
         assert_eq!(
@@ -1150,7 +1276,7 @@ fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    for log in export.logs.get_emitted_logs().unwrap() {
+    for log in export.all_logs() {
         if let Some(body) = conformance_log_body(&log.record) {
             assert!(!body.starts_with('['), "body has bracket prefix: {body}");
         }
@@ -1160,7 +1286,7 @@ fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
                 "prohibited key {key} on log"
             );
         }
-        // Resource excludes run/session/component (plan 002).
+        // Resource excludes run/session/component (plan 002) on host and capsule.
         assert!(
             log.resource
                 .get(&opentelemetry::Key::from_static_str(
@@ -1185,7 +1311,7 @@ fn conformance_screen_dimension_is_stamped() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let spans = export.spans.get_finished_spans().unwrap();
+    let spans = export.all_spans();
     assert!(spans.iter().any(|span| {
         span.attributes
             .iter()
@@ -1200,7 +1326,7 @@ fn conformance_derived_image_stage_links_to_launch() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let spans = export.spans.get_finished_spans().unwrap();
+    let spans = export.all_spans();
     let derived = spans
         .iter()
         .find(|span| span.name.as_ref() == "launch.derived_image")

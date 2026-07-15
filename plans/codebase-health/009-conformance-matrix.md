@@ -105,7 +105,8 @@ The matrix IS the test plan; model captures on existing `InMemoryLogExporter` us
 
 ## Execution notes
 
-- Conformance includes capsule-bridge shaped record + measured volume artifact.
-- export_volume_measured provider prefers target/telemetry-volume.json.
+- Dual-bootstrap scenario: host `test_layers` then capsule `test_capsule_layers` + production `emit_session_start_for_test` (not synthetic host-only capsule events).
+- Attach failure is host-path typed `operation_error`; expected detach + capsule.log on capsule bootstrap. Full attach-protocol/Docker E2E remains out of scope.
+- `export_volume_measured` reads only `target/telemetry-volume.json` (`default_mode_{logs,spans,metrics}`); generates the artifact via `conformance_export_volume` when missing — **no** `MAX_*` constant fallback. Source constants remain in-test guardrails only.
+- Matrix point 4 invokes the production redaction helper and sweeps argv, URL-query, inspect-JSON, and terminal-byte canaries across the combined export.
 - Named CI job `telemetry-conformance` runs the filter explicitly.
-- Full Docker host↔capsule process split remains beyond in-process harness (attach seam).

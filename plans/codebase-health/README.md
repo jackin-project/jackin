@@ -16,7 +16,7 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 006 | `JACKIN_DEBUG` cutover: one reader + dated removal boundary | P1 | S | — | DONE |
 | 007 | Trace & dimension coverage: stage registry, screen.name, missing metrics | P1 | M | 001 | DONE |
 | 008 | Migrate failure-prone HTTP/Docker/attach/process paths to typed telemetry | P1 | L | 001, 004 | DONE |
-| 009 | Exporter-backed host-to-capsule conformance matrix + measured volume ratchet | P1 | L | 002, 003, 004, 005 | IN PROGRESS |
+| 009 | Exporter-backed host-to-capsule conformance matrix + measured volume ratchet | P1 | L | 002, 003, 004, 005 | DONE |
 | 010 | Syntax-aware suppression parser; purge fake ratchet lint keys | P1 | M | — | DONE |
 | 011 | Lint policy completion: `allow_attributes`, full census, restriction decisions | P2 | M | 010 | DONE |
 | 012 | Advisory CI honesty: Miri per crate, hakari decision, Dylint pilot closure | P2 | S | — | DONE |
@@ -53,7 +53,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 
 | Plan | One-line deviation |
 |------|--------------------|
-| 009 | Matrix point 4 redaction helpers still absent — structural prohibitions only (plan-allowed). |
+| 009 | Dual-bootstrap host+capsule in-process (no Docker); measured export-volume sole ratchet input; sensitive-boundary canary sweep live. |
 | 018 | Three consumers on `jackin-process`; remaining `Command::new` sites enumerated (sensitive-boundary / PTY / tooling) — see plan Execution notes. |
 | 019 | jackin-config + jackin-core private impl modules; curated root re-exports; justified remainders `container_paths`/`debug_log`/`test_support`. |
 | 021 | Three `drive_frame` callers (console/launch/capsule); editor wildcards + shared modal scroll; dialog sub-loops documented out-of-scope. |

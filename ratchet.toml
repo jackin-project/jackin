@@ -19,7 +19,7 @@ cap = 1850
 mode = "enforce"
 [[family.entry]]
 key = "crates/jackin-diagnostics/src/observability.rs"
-bound = 2003
+bound = 2058
 
 [[family]]
 id = "file-size-test"
@@ -647,21 +647,25 @@ key = "crates/jackin-xtask/README.md"
 bound = 5038
 [[family.entry]]
 key = "crates/jackin/README.md"
-bound = 2791
+bound = 2790
 
 [[family]]
 id = "export-volume"
 kind = "numeric"
 provider = "export_volume_measured"
 mode = "enforce"
-# Cap 0 → every measured key must be listed (no unlisted firehose constants).
+# Cap 0 → every measured key > 0 must be listed (no unlisted firehose).
+# Bounds are measured default-mode counts from target/telemetry-volume.json
+# (written by conformance_export_volume); regenerate after intentional growth:
+#   cargo nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'
+#   cargo xtask lint ratchet --print export-volume
 cap = 0
 [[family.entry]]
-key = "max_debug_logs"
-bound = 64
+key = "default_mode_logs"
+bound = 18
 [[family.entry]]
-key = "max_spans"
-bound = 48
+key = "default_mode_spans"
+bound = 7
 
 # dhat allocation ceilings (source: jackin-capsule perf_budgets).
 # iai-callgrind: PINNED — project CI images do not ship valgrind; re-evaluate
