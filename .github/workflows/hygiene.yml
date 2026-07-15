@@ -897,12 +897,32 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Restore prior health snapshots
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p target/health-history
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '[.artifacts[] | select(.expired == false and (.name | startswith("health-snapshot-")))] | .[:12][] | .archive_download_url' \
+            > target/health-history/urls.txt
+          : > health-history.jsonl
+          index=0
+          while IFS= read -r url; do
+            [ -n "$url" ] || continue
+            index=$((index + 1))
+            gh api "$url" > "target/health-history/${index}.zip"
+            unzip -p "target/health-history/${index}.zip" health-snapshot.json \
+              | jq -c . >> health-history.jsonl
+          done < target/health-history/urls.txt
       - name: Emit health JSON
         run: |
           set -euo pipefail
           cargo run -p jackin-xtask --locked -- health --format json | tee health-snapshot.json
+          jq -c . health-snapshot.json >> health-history.jsonl
           {
             echo "### Health snapshot"
+            echo "Series snapshots: $(wc -l < health-history.jsonl)"
             echo
             echo '```json'
             head -c 8000 health-snapshot.json || true
@@ -913,5 +933,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: health-snapshot-${{ github.run_id }}
-          path: health-snapshot.json
+          path: |
+            health-snapshot.json
+            health-history.jsonl
           if-no-files-found: warn
