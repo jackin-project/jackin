@@ -1,6 +1,6 @@
 # GitHub Agent Rules
 
-Apply this file to pull requests, GitHub metadata, composite actions, and repository automation under `.github/`. Workflow-specific rules live in [`workflows/AGENTS.md`](workflows/AGENTS.md).
+Apply this file to pull requests, GitHub metadata, composite actions, and repository automation under `.github/`. Workflow-specific rules are directory-local.
 
 ## Pull Requests
 
@@ -17,4 +17,4 @@ Apply this file to pull requests, GitHub metadata, composite actions, and reposi
 ## Actions and Composites
 
 - Pin third-party actions to a full commit SHA with the upstream version comment. Use the least privileged `permissions` required by each workflow or job.
-- Changes under `.github/workflows/` must follow [`workflows/AGENTS.md`](workflows/AGENTS.md). Keep composite actions reusable and apply the same token and cache rules when they participate in workflows.
+- Before changing `.github/workflows/`, read and follow that directory's local instructions. Keep composite actions reusable and apply the same token and cache rules when they participate in workflows.
