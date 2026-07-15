@@ -109,10 +109,13 @@ pub async fn run(cli: Cli) -> Result<()> {
     // (TTY-capable → console; otherwise silent help). When `run` is invoked
     // with an explicit `Command::Console` (tests / direct callers), bare
     // None still maps to console for backward compatibility.
-    // Note: `jackin launch` no longer exists as a CLI command — deprecation N/A.
     let command = match cli.command {
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
+    };
+    let command = {
+        let mut stderr = std::io::stderr().lock();
+        normalize_deprecated_command(command, &mut stderr)
     };
     if let Command::Role(command) = command {
         return crate::role_authoring::run(command);
@@ -153,6 +156,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             )
             .await
         }
+        Command::Launch(_) => unreachable!("launch is normalized to load before dispatch"),
         Command::Console(ConsoleArgs {}) => load_cmd::handle_console(config, paths, debug).await,
         Command::Hardline(args) => {
             load_cmd::handle_hardline(args, config, paths, debug, connect_docker).await
@@ -257,6 +261,7 @@ fn announce_run_teardown(diagnostics: &jackin_diagnostics::RunDiagnostics) {
 const fn command_name(command: &Command) -> &'static str {
     match command {
         Command::Load(_) => "load",
+        Command::Launch(_) => "launch",
         Command::Hardline(_) => "hardline",
         Command::Eject(_) => "eject",
         Command::Exile => "exile",
@@ -275,6 +280,19 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Status(_) => "status",
         Command::Usage(_) => "usage",
         Command::Help { .. } => "help",
+    }
+}
+
+const LAUNCH_DEPRECATION_WARNING: &str =
+    "warning: `jackin launch` is deprecated; use `jackin load` instead";
+
+fn normalize_deprecated_command(command: Command, warning: &mut impl std::io::Write) -> Command {
+    match command {
+        Command::Launch(args) => {
+            drop(writeln!(warning, "{LAUNCH_DEPRECATION_WARNING}"));
+            Command::Load(args)
+        }
+        command => command,
     }
 }
 

@@ -16,11 +16,6 @@
 //! is scaffolded at the bottom of this file but intentionally left as stubs.
 //! Tier 1 is always-on within the `e2e` feature gate.
 
-#![expect(
-    clippy::expect_used,
-    clippy::disallowed_methods,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
 #![cfg(feature = "e2e")]
 use std::process::Command;
 

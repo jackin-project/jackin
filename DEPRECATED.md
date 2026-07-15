@@ -19,6 +19,15 @@ Each entry has:
 
 ## Active deprecations
 
+### `jackin launch` command
+
+- **Item**: `jackin launch` CLI verb (hidden compatibility alias).
+- **Type**: `cli`.
+- **Deprecated since**: 2026-07-15 (plan 022 completion).
+- **Replacement**: `jackin load` with the same arguments and flags.
+- **Remove when**: two consecutive releases show no operator reports requiring the alias.
+- **Where**: `crates/jackin/src/cli.rs` (parser alias) and `crates/jackin/src/app.rs` (warning and normalization).
+
 ### JACKIN_DEBUG as telemetry control (alias + dual inject)
 
 - **Item**: `JACKIN_DEBUG` env as a telemetry control / dual host→container inject.

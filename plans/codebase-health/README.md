@@ -55,7 +55,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 |------|--------------------|
 | 009 | Dual-bootstrap host+capsule in-process (no Docker); measured export-volume sole ratchet input; canary/redact gate invoked. |
 | 019 | jackin-config + jackin-core private impl modules; curated root re-exports; justified remainders `container_paths`/`debug_log`/`test_support`. |
-| 022 | Launch deprecation STOP (command already gone); root CLI handlers split; four `too_many_lines` expects removed. |
+| 022 | Launch is hidden load-alias + stderr deprecation warning; handlers split (no too_many_lines expects).
 | 027 | suite-time enforce-when-junit (skip without); agent-doc enforce; problem matcher; health trend/tightening. |
 
 ## Findings considered and rejected (do not re-audit)

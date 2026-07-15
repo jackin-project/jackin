@@ -113,6 +113,9 @@ pub struct Cli {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     Load(LoadArgs),
+    /// Deprecated compatibility spelling for `load`.
+    #[command(hide = true)]
+    Launch(LoadArgs),
     Hardline(HardlineArgs),
     Eject(EjectArgs),
     /// Pull every running role out at once
