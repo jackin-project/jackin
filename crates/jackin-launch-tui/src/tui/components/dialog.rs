@@ -19,6 +19,41 @@ pub fn render_dialog_backdrop(frame: &mut Frame<'_>, area: Rect) {
     frame.render_widget(&backdrop, area);
 }
 
+#[must_use]
+pub fn exact_dialog_rect(area: Rect, width: u16, height: u16) -> Rect {
+    termrock::layout::resolve_dialog(
+        area,
+        termrock::layout::DialogSpec {
+            min_width: width,
+            preferred_width: width,
+            max_width: width,
+            min_height: height,
+            preferred_height: height,
+            max_height: height,
+            margin: 0,
+            placement: termrock::layout::Placement::Centered,
+        },
+    )
+}
+
+#[must_use]
+pub fn percent_dialog_rect(
+    area: Rect,
+    width_pct: u16,
+    min_width: u16,
+    width_margin: u16,
+    height_margin: u16,
+    height: u16,
+) -> Rect {
+    let max_width = area.width.saturating_sub(width_margin).max(min_width);
+    let width = (area.width.saturating_mul(width_pct) / 100).clamp(min_width, max_width);
+    exact_dialog_rect(
+        area,
+        width,
+        height.min(area.height.saturating_sub(height_margin)),
+    )
+}
+
 pub fn donor_dialog_scroll(
     scroll: &termrock::scroll::DialogScroll,
 ) -> jackin_tui::components::DialogBodyScroll {

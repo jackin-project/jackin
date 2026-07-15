@@ -4,16 +4,17 @@
 //! Launch failure popup rendering and hit-testing.
 
 use jackin_tui::components::{
-    ErrorPopupRow, ErrorPopupState, ModalRectSpec, dialog_inner_chunks,
-    error_popup_hyperlink_overlay, error_popup_row_value_rect_groups, modal_rect,
-    render_error_dialog_in, required_height,
+    ErrorPopupRow, ErrorPopupState, dialog_inner_chunks, error_popup_hyperlink_overlay,
+    error_popup_row_value_rect_groups, render_error_dialog_in, required_height,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
 use termrock::HintSpan;
 
-use crate::tui::components::dialog::{donor_dialog_scroll, render_dialog_backdrop};
+use crate::tui::components::dialog::{
+    donor_dialog_scroll, exact_dialog_rect, render_dialog_backdrop,
+};
 use crate::tui::components::footer::launch_overlay_chrome_areas;
 use crate::{FailureCopyTarget, LaunchFailure, LaunchView};
 
@@ -149,13 +150,7 @@ fn failure_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
         popup_w.saturating_sub(2),
         area.height.saturating_sub(2).max(7),
     );
-    modal_rect(
-        area,
-        ModalRectSpec::Exact {
-            width: popup_w,
-            height,
-        },
-    )
+    exact_dialog_rect(area, popup_w, height)
 }
 
 #[must_use]

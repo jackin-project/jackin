@@ -3,10 +3,9 @@
 
 //! Launch container-info dialog helpers.
 
-use jackin_tui::components::ModalRectSpec;
 use jackin_tui::components::{
     ContainerInfoRow, ContainerInfoState, DebugInfo, container_info_required_height,
-    dialog_scroll_axes, modal_rect, render_container_info,
+    dialog_scroll_axes, render_container_info,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -14,7 +13,9 @@ use ratatui::widgets::Clear;
 use termrock::HintSpan;
 
 use crate::LaunchView;
-use crate::tui::components::dialog::{donor_dialog_scroll, render_dialog_backdrop};
+use crate::tui::components::dialog::{
+    donor_dialog_scroll, percent_dialog_rect, render_dialog_backdrop,
+};
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
 fn debug_info_hint_spans(axes: jackin_tui::components::ScrollAxes) -> Vec<HintSpan<'static>> {
@@ -133,16 +134,7 @@ pub fn launch_container_info_rect(
 ) -> Rect {
     let body = launch_overlay_chrome_areas(area, debug_mode).body;
     let height = container_info_required_height(state);
-    modal_rect(
-        body,
-        ModalRectSpec::PercentClampWithMargin {
-            width_pct: 60,
-            min_width: 40,
-            width_margin: 2,
-            height_margin: 2,
-            height,
-        },
-    )
+    percent_dialog_rect(body, 60, 40, 2, 2, height)
 }
 
 #[cfg(test)]

@@ -663,9 +663,8 @@ impl RichRenderer {
         title: &str,
         candidates: &[crate::LaunchCandidate],
     ) -> anyhow::Result<crate::LaunchDialogResult> {
-        use crate::tui::components::dialog::dialog_backdrop;
+        use crate::tui::components::dialog::{dialog_backdrop, percent_dialog_rect};
         use jackin_tui::components::{ConfirmState, render_confirm_dialog};
-        use jackin_tui::components::{ModalRectSpec, modal_rect};
         use termrock::HintSpan;
 
         // Item 0 = "Start new session"; items 1..=N = candidates.
@@ -705,16 +704,7 @@ impl RichRenderer {
                                 .unwrap_or(u16::MAX)
                                 .saturating_add(4);
                             let height = rows.clamp(6, box_area.height.saturating_sub(2).max(6));
-                            modal_rect(
-                                box_area,
-                                ModalRectSpec::PercentClampWithMargin {
-                                    width_pct: 80,
-                                    min_width: 40.min(box_area.width),
-                                    width_margin: 2,
-                                    height_margin: 2,
-                                    height,
-                                },
-                            )
+                            percent_dialog_rect(box_area, 80, 40.min(box_area.width), 2, 2, height)
                         };
                         use jackin_tui::components::render_select_list;
                         render_select_list(frame, picker_rect, &picker, title, &[]);
@@ -767,15 +757,13 @@ impl RichRenderer {
                         let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
                         use crate::tui::components::prompts::confirm_hint_spans;
                         use jackin_tui::components::{confirm_required_height, confirm_width_pct};
-                        let rect = modal_rect(
+                        let rect = percent_dialog_rect(
                             box_area,
-                            ModalRectSpec::PercentClampWithMargin {
-                                width_pct: confirm_width_pct(&confirm),
-                                min_width: 0,
-                                width_margin: 2,
-                                height_margin: 2,
-                                height: confirm_required_height(&confirm),
-                            },
+                            confirm_width_pct(&confirm),
+                            0,
+                            2,
+                            2,
+                            confirm_required_height(&confirm),
                         );
                         render_confirm_dialog(frame, rect, &confirm);
                         termrock::widgets::render_hint_bar(frame, hint_area, &confirm_hint_spans());

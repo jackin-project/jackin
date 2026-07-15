@@ -3,12 +3,10 @@
 
 //! Launch prompt dialog rendering and geometry.
 
-use jackin_tui::components::ModalRectSpec;
 use jackin_tui::components::{
     ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
-    confirm_width_pct, modal_rect, render_confirm_dialog, render_error_dialog_in,
-    render_select_list, render_text_input, required_height as error_dialog_required_height,
-    text_input_prompt_rect,
+    confirm_width_pct, render_confirm_dialog, render_error_dialog_in, render_select_list,
+    render_text_input, required_height as error_dialog_required_height, text_input_prompt_rect,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -16,6 +14,7 @@ use ratatui::text::Line;
 use termrock::HintSpan;
 
 use crate::tui::components::dialog::dialog_backdrop;
+use crate::tui::components::dialog::{exact_dialog_rect, percent_dialog_rect};
 
 fn select_list_hint_spans() -> Vec<HintSpan<'static>> {
     vec![
@@ -114,26 +113,24 @@ fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Re
         .max(context_w)
         .saturating_add(6)
         .clamp(min_w, max_w);
-    modal_rect(area, ModalRectSpec::Exact { width, height })
+    exact_dialog_rect(area, width, height)
 }
 
 fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
-    modal_rect(
+    percent_dialog_rect(
         area,
-        ModalRectSpec::PercentClampWithMargin {
-            width_pct: confirm_width_pct(state),
-            min_width: 0,
-            width_margin: 2,
-            height_margin: 2,
-            height: confirm_required_height(state),
-        },
+        confirm_width_pct(state),
+        0,
+        2,
+        2,
+        confirm_required_height(state),
     )
 }
 
 fn error_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
     let width = (area.width.saturating_mul(3) / 4).clamp(40, area.width.max(40));
     let height = error_dialog_required_height(state, width.saturating_sub(2), area.height);
-    modal_rect(area, ModalRectSpec::Exact { width, height })
+    exact_dialog_rect(area, width, height)
 }
 
 /// Footer-hint keys for the launch text prompt. `skippable` adds the
