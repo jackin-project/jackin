@@ -151,6 +151,25 @@ fn status(layout: &DaemonLayout) -> Result<()> {
                     println!("coredumps: unsupported ({residual_risk})");
                 }
             }
+            let health = request(
+                &layout.socket_path,
+                env!("JACKIN_VERSION"),
+                DaemonRequestKind::TelemetryHealth,
+            )?;
+            match health.kind {
+                DaemonResponseKind::TelemetryHealth(report) => println!(
+                    "telemetry: {} signal(s), traces {}/{}, logs {}/{}, metrics {}/{}",
+                    report.health.active_signals,
+                    report.health.traces.successes,
+                    report.health.traces.attempts,
+                    report.health.logs.successes,
+                    report.health.logs.attempts,
+                    report.health.metrics.successes,
+                    report.health.metrics.attempts,
+                ),
+                DaemonResponseKind::Error { message } => anyhow::bail!("{message}"),
+                other => anyhow::bail!("unexpected daemon health response: {other:?}"),
+            }
             Ok(())
         }
         DaemonResponseKind::Error { message } => anyhow::bail!("{message}"),

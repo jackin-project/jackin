@@ -325,6 +325,16 @@ fn control_reply_for_request_shapes_usage_variants() {
 }
 
 #[test]
+fn control_reply_exposes_typed_telemetry_health() {
+    let mut mux = single_pane_tab_mux();
+    let reply = control_reply_for_request(&mut mux, ClientMsg::TelemetryHealth);
+    let ServerMsg::TelemetryHealth { report } = reply else {
+        panic!("expected telemetry health");
+    };
+    assert!(report.active_signals <= 3);
+}
+
+#[test]
 fn control_reply_report_runtime_event_applies_to_session_and_acks() {
     let mut mux = single_pane_tab_mux();
     let (session, _session_rx) = test_session_with_agent(24, 80, Some("opencode".to_owned()));

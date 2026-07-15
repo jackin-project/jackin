@@ -26,6 +26,8 @@ pub struct ControlRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 /// `ClientMsg` protocol enum.
 pub enum ClientMsg {
+    /// Request the capsule process's typed telemetry health snapshot.
+    TelemetryHealth,
     /// Request the current session inventory.
     Status,
     /// Request the tab/pane tree snapshot.
@@ -91,6 +93,7 @@ impl ClientMsg {
     pub const fn rpc_method(&self) -> &'static str {
         match self {
             Self::Status => "jackin.capsule.Control/Status",
+            Self::TelemetryHealth => "jackin.capsule.Control/TelemetryHealth",
             Self::Snapshot => "jackin.capsule.Control/Snapshot",
             Self::Agents => "jackin.capsule.Control/Agents",
             Self::ReportRuntimeEvent { .. } => "jackin.capsule.Control/ReportRuntimeEvent",
@@ -111,6 +114,7 @@ impl ServerMsg {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::SessionList { .. } => "SessionList",
+            Self::TelemetryHealth { .. } => "TelemetryHealth",
             Self::Snapshot { .. } => "Snapshot",
             Self::AgentRegistry { .. } => "AgentRegistry",
             Self::UsageFocused { .. } => "UsageFocused",
@@ -128,6 +132,11 @@ impl ServerMsg {
 #[serde(tag = "type", rename_all = "snake_case")]
 /// `ServerMsg` protocol enum.
 pub enum ServerMsg {
+    /// Current jackin❯-owned exporter and facade health observations.
+    TelemetryHealth {
+        /// Typed process-local health snapshot.
+        report: TelemetryHealthSnapshot,
+    },
     /// Current session inventory.
     SessionList {
         /// Current session inventory.
@@ -190,6 +199,36 @@ pub enum ServerMsg {
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+/// Sanitized process-local telemetry health exposed over control protocols.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetryHealthSnapshot {
+    /// Number of active OTLP signals.
+    pub active_signals: u8,
+    /// Trace exporter health.
+    pub traces: TelemetrySignalHealth,
+    /// Log exporter health.
+    pub logs: TelemetrySignalHealth,
+    /// Metric exporter health.
+    pub metrics: TelemetrySignalHealth,
+    /// Governed facade rejection count.
+    pub facade_rejections: u64,
+    /// Whether orderly shutdown completed.
+    pub shutdown_completed: bool,
+    /// Whether orderly shutdown succeeded.
+    pub shutdown_succeeded: bool,
+}
+
+/// Outer observations for one OTLP signal.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetrySignalHealth {
+    /// Export attempts.
+    pub attempts: u64,
+    /// Successful exports.
+    pub successes: u64,
+    /// Failed exports.
+    pub failures: u64,
 }
 
 /// Per-session token-spend totals reported by the in-container token monitor.

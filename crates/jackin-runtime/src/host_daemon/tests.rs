@@ -82,6 +82,45 @@ fn hello_reports_protocol_without_adapters() {
 }
 
 #[test]
+fn telemetry_health_round_trip_is_typed_and_sanitized() {
+    let (_temp, _paths, layout) = layout();
+    let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+    let request = DaemonRequest {
+        id: "health".to_owned(),
+        protocol_version: DAEMON_PROTOCOL_VERSION,
+        build_id: "test-build".to_owned(),
+        ctx: TelemetryContext::v1(),
+        kind: DaemonRequestKind::TelemetryHealth,
+    };
+    let response = handle_request_line(
+        &serde_json::to_string(&request).unwrap(),
+        &layout,
+        "test-build",
+        &CoredumpPolicy::Disabled,
+        &mut attention,
+    );
+    let DaemonResponseKind::TelemetryHealth(report) = response.kind else {
+        panic!("expected typed telemetry health response");
+    };
+    assert_eq!(
+        report.health.active_signals,
+        report.fingerprint.active_signals
+    );
+    let json = serde_json::to_string(&report).unwrap().to_ascii_lowercase();
+    assert!(!json.contains("authorization"));
+    assert!(!json.contains("header"));
+    assert!(!json.contains("certificate"));
+}
+
+#[test]
+fn endpoint_fingerprint_keeps_authority_only() {
+    assert_eq!(
+        endpoint_authority("https://token@example.test:4317/private/path"),
+        Some("example.test:4317".to_owned())
+    );
+}
+
+#[test]
 fn protocol_and_build_mismatch_fail_closed() {
     let (_temp, _paths, layout) = layout();
     let mut attention = AttentionAdapter::new(RecordingNotifier::default());

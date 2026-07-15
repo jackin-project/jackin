@@ -37,6 +37,7 @@ pub struct DaemonRequest {
 pub enum DaemonRequestKind {
     Hello,
     Status,
+    TelemetryHealth,
     AttentionSnapshot {
         container_name: String,
         panes: Vec<AttentionPaneStatus>,
@@ -49,6 +50,7 @@ impl DaemonRequestKind {
         match self {
             Self::Hello => "jackin.host.Daemon/Hello",
             Self::Status => "jackin.host.Daemon/Status",
+            Self::TelemetryHealth => "jackin.host.Daemon/TelemetryHealth",
             Self::AttentionSnapshot { .. } => "jackin.host.Daemon/AttentionSnapshot",
             Self::Shutdown => "jackin.host.Daemon/Shutdown",
         }
@@ -71,6 +73,7 @@ pub enum DaemonResponseKind {
         capabilities: Vec<String>,
     },
     Status(DaemonStatus),
+    TelemetryHealth(TelemetryHealthReport),
     AttentionAccepted {
         notifications: usize,
         muted: bool,
@@ -91,6 +94,41 @@ pub struct DaemonStatus {
     pub socket_path: PathBuf,
     pub coredump_policy: CoredumpPolicy,
     pub adapters_enabled: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetryHealthReport {
+    pub fingerprint: SanitizedConfigFingerprint,
+    pub health: TelemetryHealthSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SanitizedConfigFingerprint {
+    pub endpoint_authority: Option<String>,
+    pub compression: String,
+    pub tls: bool,
+    pub sampler: String,
+    pub active_signals: u8,
+    pub service_name: String,
+    pub app_mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetryHealthSnapshot {
+    pub active_signals: u8,
+    pub traces: TelemetrySignalHealth,
+    pub logs: TelemetrySignalHealth,
+    pub metrics: TelemetrySignalHealth,
+    pub facade_rejections: u64,
+    pub shutdown_completed: bool,
+    pub shutdown_succeeded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetrySignalHealth {
+    pub attempts: u64,
+    pub successes: u64,
+    pub failures: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -597,6 +635,10 @@ fn handle_request(
                 },
             }),
         },
+        DaemonRequestKind::TelemetryHealth => DaemonResponse {
+            id,
+            kind: DaemonResponseKind::TelemetryHealth(telemetry_health_report()),
+        },
         DaemonRequestKind::AttentionSnapshot {
             container_name,
             panes,
@@ -627,6 +669,48 @@ fn handle_request(
         );
     }
     response
+}
+
+fn telemetry_health_report() -> TelemetryHealthReport {
+    let health = jackin_diagnostics::telemetry_health_snapshot();
+    let signal = |value: jackin_diagnostics::TelemetrySignalHealth| TelemetrySignalHealth {
+        attempts: value.attempts,
+        successes: value.successes,
+        failures: value.failures,
+    };
+    TelemetryHealthReport {
+        fingerprint: SanitizedConfigFingerprint {
+            endpoint_authority: jackin_diagnostics::configured_endpoint()
+                .as_deref()
+                .and_then(endpoint_authority),
+            compression: std::env::var("OTEL_EXPORTER_OTLP_COMPRESSION")
+                .unwrap_or_else(|_| "none".to_owned()),
+            tls: jackin_diagnostics::configured_endpoint()
+                .is_some_and(|endpoint| endpoint.starts_with("https://")),
+            sampler: std::env::var("OTEL_TRACES_SAMPLER")
+                .unwrap_or_else(|_| "parentbased_always_on".to_owned()),
+            active_signals: health.active_signals,
+            service_name: "jackin-host-daemon".to_owned(),
+            app_mode: "daemon".to_owned(),
+        },
+        health: TelemetryHealthSnapshot {
+            active_signals: health.active_signals,
+            traces: signal(health.traces),
+            logs: signal(health.logs),
+            metrics: signal(health.metrics),
+            facade_rejections: health.facade_rejections,
+            shutdown_completed: health.shutdown_completed,
+            shutdown_succeeded: health.shutdown_succeeded,
+        },
+    }
+}
+
+fn endpoint_authority(endpoint: &str) -> Option<String> {
+    let without_scheme = endpoint
+        .split_once("://")
+        .map_or(endpoint, |(_, rest)| rest);
+    let authority = without_scheme.split('/').next()?.split('@').next_back()?;
+    (!authority.is_empty()).then(|| authority.to_owned())
 }
 
 pub trait AttentionNotifierAdapter {

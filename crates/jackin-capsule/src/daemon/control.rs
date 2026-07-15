@@ -38,6 +38,12 @@ pub fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
 
 pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg {
     match msg {
+        ClientMsg::TelemetryHealth => {
+            let health = jackin_diagnostics::telemetry_health_snapshot();
+            ServerMsg::TelemetryHealth {
+                report: telemetry_health_snapshot(health),
+            }
+        }
         ClientMsg::Status => ServerMsg::SessionList {
             sessions: mux.session_infos(),
         },
@@ -113,6 +119,29 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");
             ServerMsg::Unknown
         }
+    }
+}
+
+fn telemetry_health_snapshot(
+    health: jackin_diagnostics::TelemetryHealth,
+) -> jackin_protocol::control::TelemetryHealthSnapshot {
+    fn signal(
+        health: jackin_diagnostics::TelemetrySignalHealth,
+    ) -> jackin_protocol::control::TelemetrySignalHealth {
+        jackin_protocol::control::TelemetrySignalHealth {
+            attempts: health.attempts,
+            successes: health.successes,
+            failures: health.failures,
+        }
+    }
+    jackin_protocol::control::TelemetryHealthSnapshot {
+        active_signals: health.active_signals,
+        traces: signal(health.traces),
+        logs: signal(health.logs),
+        metrics: signal(health.metrics),
+        facade_rejections: health.facade_rejections,
+        shutdown_completed: health.shutdown_completed,
+        shutdown_succeeded: health.shutdown_succeeded,
     }
 }
 
