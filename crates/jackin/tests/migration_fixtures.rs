@@ -97,7 +97,17 @@ fn assert_unknown_field_policy(file_kind: &str, policy: UnknownFieldPolicy, migr
     let before = fs::read_to_string(dir.join("before.toml")).unwrap();
     let temp = tempfile::tempdir().unwrap();
     let target = temp.path().join(filename_for(file_kind));
-    let mutated = format!("{before}\nx_unknown_probe = \"1\"\n");
+    // Place the probe before the first table so it remains a top-level key;
+    // appending after a table would make it a field of that table in TOML.
+    let mutated = if let Some(table_start) = before.find("\n[") {
+        format!(
+            "{}\nx_unknown_probe = \"1\"\n{}",
+            &before[..table_start],
+            &before[table_start..]
+        )
+    } else {
+        format!("{before}\nx_unknown_probe = \"1\"\n")
+    };
     fs::write(&target, &mutated).unwrap();
     match migrate(&target) {
         Ok(()) => {
