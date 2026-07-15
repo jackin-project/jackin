@@ -760,9 +760,9 @@ key = "jackin-usage"
 bound = 7
 
 
-# Plan 027: suite wall-time from nextest junit. mode=enforce when junit present;
-# provider empty → family skipped (local/PR without junit). Scheduled hygiene/
-# nextest lanes that emit junit.xml enforce the bound (~15% headroom).
+# Plan 027: suite wall-time from nextest junit. The provider reports zero when
+# no artifact exists; zero and ordinary headroom are advisory, while growth
+# beyond the ceiling fails wherever nextest emits junit.xml.
 [[family]]
 id = "suite-time"
 kind = "numeric"

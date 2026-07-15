@@ -270,6 +270,12 @@ fn check_families(
                             "{id}/{key}: budgeted but file missing — delete the stale budget row; regenerate: {RERUN} --print {id}",
                             id = family.id
                         )),
+                        NumericVerdict::StaleUnderCap { measured } if suite_time => {
+                            report_lines.push(format!(
+                                "suite-time/{key}: measured {measured}ms under ceiling {bound}ms (headroom OK)"
+                            ));
+                            None
+                        }
                         NumericVerdict::StaleUnderCap { measured } => Some(format!(
                             "{id}/{key}: measured {measured} ≤ cap {cap} — no longer needs grandfathering; delete the budget row; regenerate: {RERUN} --print {id}",
                             id = family.id

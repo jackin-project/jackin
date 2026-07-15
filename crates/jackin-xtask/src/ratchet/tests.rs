@@ -1,8 +1,8 @@
 //! Unit tests for pure ratchet semantics.
 
 use super::{
-    NumericVerdict, PresenceVerdict, check_curated_pub_mods, check_numeric_entry,
-    check_numeric_unlisted, check_presence,
+    Config, Entry, Family, NumericVerdict, PresenceVerdict, check_curated_pub_mods, check_families,
+    check_numeric_entry, check_numeric_unlisted, check_presence,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -170,6 +170,28 @@ fn suite_time_absent_junit_measures_zero() {
     let dir = tempfile::tempdir().expect("tempdir");
     let measured = measure_suite_time(dir.path()).expect("measure");
     assert_eq!(measured.get("junit_total_ms"), Some(&0));
+}
+
+#[test]
+fn suite_time_absent_junit_is_advisory_not_stale() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = Config {
+        family: vec![Family {
+            id: "suite-time".into(),
+            kind: "numeric".into(),
+            provider: "suite_time".into(),
+            cap: None,
+            mode: "enforce".into(),
+            entry: vec![Entry {
+                key: "junit_total_ms".into(),
+                bound: Some(3_600_000),
+            }],
+        }],
+    };
+
+    let outcome = check_families(dir.path(), &config, None).expect("check family");
+    assert!(outcome.problems.is_empty(), "{:?}", outcome.problems);
+    assert!(outcome.report_lines.iter().any(|line| line.contains("0ms")));
 }
 
 #[test]
