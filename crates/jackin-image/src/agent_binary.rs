@@ -13,7 +13,7 @@ use crate::binary_artifact::{
     parse_sha256_hex, repair_executable_file,
 };
 use anyhow::{Context, Result};
-use jackin_core::{Agent, JackinPaths};
+use jackin_core::{Agent, Clock, JackinPaths, SystemClock};
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -855,7 +855,15 @@ fn read_release_file(path: &Path) -> Option<AgentRelease> {
 }
 
 fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
-    read_cached_release_at(paths, agent, SystemTime::now())
+    read_cached_release_with_clock(paths, agent, &SystemClock)
+}
+
+fn read_cached_release_with_clock(
+    paths: &JackinPaths,
+    agent: Agent,
+    clock: &dyn Clock,
+) -> Option<AgentRelease> {
+    read_cached_release_at(paths, agent, clock.now_system())
 }
 
 /// TTL check against an injected wall-clock instant (plan 025).

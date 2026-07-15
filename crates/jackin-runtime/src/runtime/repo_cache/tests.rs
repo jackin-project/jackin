@@ -781,23 +781,25 @@ async fn register_agent_repo_rejects_stale_non_git_directory() {
 
 #[test]
 fn fetch_head_age_at_is_deterministic() {
-    use std::time::Duration;
+    use jackin_core::ManualClock;
     let dir = tempdir().unwrap();
     let git = dir.path().join(".git");
     std::fs::create_dir_all(&git).unwrap();
     let fetch_head = git.join("FETCH_HEAD");
     std::fs::write(&fetch_head, "deadbeef\n").unwrap();
     let modified = std::fs::metadata(&fetch_head).unwrap().modified().unwrap();
-    let now = modified + Duration::from_mins(2);
-    let age = fetch_head_age_at(dir.path(), now).expect("age");
+    let clock = Arc::new(ManualClock::with_system_base(modified));
+    clock.advance(Duration::from_mins(2));
+    let age = fetch_head_age_at(dir.path(), clock.now_system()).expect("age");
     assert_eq!(age, Duration::from_mins(2));
+    let options = RepoResolveOptions::interactive(false).with_clock(clock);
     assert_eq!(
-        fetch_fresh_within_ttl_at(dir.path(), Duration::from_mins(1), now),
+        fetch_fresh_within_ttl_with_clock(dir.path(), Duration::from_mins(1), &*options.clock,),
         None,
         "stale beyond ttl"
     );
     assert_eq!(
-        fetch_fresh_within_ttl_at(dir.path(), Duration::from_mins(3), now),
+        fetch_fresh_within_ttl_with_clock(dir.path(), Duration::from_mins(3), &*options.clock,),
         Some(Duration::from_mins(2)),
         "fresh within ttl"
     );

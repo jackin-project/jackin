@@ -1027,7 +1027,11 @@ fn sha256_prefix(value: &str) -> String {
 }
 
 fn upstream_expiry_stamp() -> String {
-    upstream_expiry_stamp_at(chrono::Utc::now())
+    upstream_expiry_stamp_with_clock(&jackin_core::SystemClock)
+}
+
+fn upstream_expiry_stamp_with_clock(clock: &dyn jackin_core::Clock) -> String {
+    upstream_expiry_stamp_at(chrono::DateTime::<chrono::Utc>::from(clock.now_system()))
 }
 
 fn upstream_expiry_stamp_at(now: chrono::DateTime<chrono::Utc>) -> String {
@@ -1036,7 +1040,11 @@ fn upstream_expiry_stamp_at(now: chrono::DateTime<chrono::Utc>) -> String {
 }
 
 fn now_utc_rfc3339() -> String {
-    now_utc_rfc3339_at(chrono::Utc::now())
+    now_utc_rfc3339_with_clock(&jackin_core::SystemClock)
+}
+
+fn now_utc_rfc3339_with_clock(clock: &dyn jackin_core::Clock) -> String {
+    now_utc_rfc3339_at(chrono::DateTime::<chrono::Utc>::from(clock.now_system()))
 }
 
 fn now_utc_rfc3339_at(now: chrono::DateTime<chrono::Utc>) -> String {
@@ -1143,7 +1151,12 @@ pub fn expiry_days_for_launch(
 /// Days remaining until `expiry` (YYYY-MM-DD), or `None` when the
 /// stamp cannot be parsed. Negative values mean expired.
 pub(crate) fn days_until_expiry(expiry: &str) -> Option<i64> {
-    days_until_expiry_at(expiry, chrono::Utc::now().date_naive())
+    days_until_expiry_with_clock(expiry, &jackin_core::SystemClock)
+}
+
+fn days_until_expiry_with_clock(expiry: &str, clock: &dyn jackin_core::Clock) -> Option<i64> {
+    let now = chrono::DateTime::<chrono::Utc>::from(clock.now_system());
+    days_until_expiry_at(expiry, now.date_naive())
 }
 
 /// Days remaining until `expiry` relative to an injected `today` (plan 025).

@@ -408,22 +408,26 @@ fn sha256_digest_strips_prefix_only_for_sha256() {
 
 #[test]
 fn read_cached_release_at_past_ttl_without_wall_clock() {
-    use std::time::Duration;
+    use jackin_core::ManualClock;
     let dir = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(dir.path());
     write_cached_release(&paths, &release_fixture()).unwrap();
     let path = metadata_cache_path(&paths, Agent::Claude);
     let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
-    // Inject now = modified + CACHE_TTL exactly → stale.
-    let now = modified + CACHE_TTL;
+    let clock = ManualClock::with_system_base(modified);
+    clock.advance(CACHE_TTL);
     assert!(
-        read_cached_release_at(&paths, Agent::Claude, now).is_none(),
+        read_cached_release_with_clock(&paths, Agent::Claude, &clock).is_none(),
         "exactly CACHE_TTL old must miss"
     );
-    // Just under TTL → hit.
-    let fresh = modified + CACHE_TTL - Duration::from_secs(1);
+    let fresh_clock = ManualClock::with_system_base(modified);
+    fresh_clock.advance(
+        CACHE_TTL
+            .checked_sub(Duration::from_secs(1))
+            .expect("TTL exceeds one second"),
+    );
     assert!(
-        read_cached_release_at(&paths, Agent::Claude, fresh).is_some(),
+        read_cached_release_with_clock(&paths, Agent::Claude, &fresh_clock).is_some(),
         "under TTL must hit"
     );
 }

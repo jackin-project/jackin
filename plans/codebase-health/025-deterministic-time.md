@@ -89,3 +89,35 @@ One focused ManualClock regression test per converted boundary (the roadmap's pe
 
 - New expiry/retry/lifecycle code takes a `Clock` from birth — reviewer rule.
 - Remaining census sites convert boundary-by-boundary with the same recipe; the census note is the queue.
+
+## Execution notes
+
+Completed on `chore/codebase-health-plans`. The image metadata TTL receives a
+`&dyn Clock`, role-repo refresh options own an `Arc<dyn Clock>`, token expiry
+and issuance helpers receive `&dyn Clock`, and capsule session lifecycle uses
+the multiplexer clock. Each boundary advances `ManualClock` in its focused
+regression test; the production wrappers select `SystemClock`.
+
+Remaining production wall-clock census (2026-07-15; file:line from this PR):
+
+- Behavior/lifecycle next: `crates/jackin-capsule/src/daemon.rs:437`,
+  `crates/jackin-instance/src/manifest.rs:613`,
+  `crates/jackin-runtime/src/runtime/host_attach.rs:987`,
+  `crates/jackin-usage/src/token_monitor/claude.rs:98`,
+  `crates/jackin-usage/src/usage.rs:1370`, and `crates/jackin/src/preflight.rs:418`.
+- Telemetry/log timestamps: `crates/jackin-diagnostics/src/run.rs:1164,1290`
+  and `crates/jackin-usage/src/logging.rs:135,193`.
+- File naming, export identity, or content-addressing (intentionally outside
+  the behavioral seam): `crates/jackin-capsule/src/clipboard.rs:215`,
+  `crates/jackin-capsule/src/daemon/file_export.rs:291`,
+  `crates/jackin-host/src/host_clipboard.rs:288`,
+  `crates/jackin-runtime/src/runtime/image/build.rs:58`,
+  `crates/jackin-runtime/src/runtime/launch/launch_dind.rs:388`,
+  `crates/jackin-runtime/src/runtime/repo_cache.rs:101`, and
+  `crates/jackin-runtime/src/runtime/universe.rs:36`.
+- Baseline generation only: `crates/jackin-xtask/src/health.rs:897`.
+
+The converted TTL/expiry paths contain no direct `SystemTime::now()` or
+`Utc::now()` reads. The one remaining read in `repo_cache.rs:101` generates a
+collision-resistant migration directory suffix and is explicitly in the
+file-naming class, not the converted refresh-TTL boundary.
