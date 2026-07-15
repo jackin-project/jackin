@@ -16,7 +16,7 @@ cargo-binstall = "1.21.0"
 "cargo:cargo-nextest" = "0.9.136"
 "cargo:cargo-shear" = "1.13.0"
 "cargo:cargo-zigbuild" = "0.23.0"
-"cargo:codebook-lsp" = "0.3.41"
+"cargo:codebook-lsp" = { version = "0.3.41", default-features = false }
 "cargo:sccache" = "0.16.0"
 "cargo:dylint-link" = "6.0.1"
 cosign = "3.1.1"
