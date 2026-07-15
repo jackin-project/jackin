@@ -106,9 +106,12 @@ Benches run in `--test` mode in CI-fast (Criterion smoke); allocation lane + har
 - `cargo xtask frame-timing` now measures a real 120×36 PTY console first paint and Down-arrow-to-repaint over three independent processes. Hygiene uploads the versioned JSON beside cold-start hyperfine output.
 - `build-time` uses `mode = "artifact-ceiling"`: local/PR runs report an explicit skip without `target/build-times.json`; the scheduled measurement job copies its artifact into place and enforces reviewed clean/incremental ceilings before upload.
 - Local PTY sampling measured first-frame max **62 ms** and input-to-frame max
-  **350 ms** across three processes. Local crate build samples are much faster
-  than GHA and must not set `build-time` ceilings. Two Hygiene ubuntu-latest
-  samples measured clean seconds runtime **74–102**, capsule **58–79**,
-  console **15–20**, config **7–10**, term **1**. Checked-in ceilings use ~40%
-  headroom over the higher sample (shared-runner wall-clock variance): clean
+  **350 ms** across three processes. Hygiene run `29397482618` independently
+  measured a **99 ms** first-frame maximum and **0 ms** input-to-frame maximum
+  across three GitHub-hosted processes and uploaded the versioned artifact.
+  Local crate build samples are much faster
+  than GHA and must not set `build-time` ceilings. Three Hygiene ubuntu-latest
+  samples measured clean seconds runtime **74–107**, capsule **58–79**,
+  console **15–20**, config **7–10**, term **0–1**. Checked-in ceilings use at
+  least 33% headroom over the higher sample (shared-runner wall-clock variance): clean
   **143 / 111 / 28 / 14 / 2**, incremental **12 / 8 / 6 / 2 / 3**.
