@@ -779,7 +779,7 @@ pub fn handle_settings_env_modal(
             target,
             state: mut picker,
         } => {
-            match inline_picker_plan(picker.handle_key(key)) {
+            match crate::tui::update::op_picker_inline_plan(picker.handle_key(key)) {
                 // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }

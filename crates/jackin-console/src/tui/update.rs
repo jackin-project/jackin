@@ -605,6 +605,17 @@ pub fn inline_picker_plan<T>(outcome: jackin_tui::ModalOutcome<T>) -> InlinePick
 }
 
 #[must_use]
+pub fn op_picker_inline_plan<T>(
+    outcome: jackin_console_oppicker::ModalOutcome<T>,
+) -> InlinePickerPlan<T> {
+    match outcome {
+        jackin_console_oppicker::ModalOutcome::Commit(value) => InlinePickerPlan::Commit(value),
+        jackin_console_oppicker::ModalOutcome::Cancel => InlinePickerPlan::Dismiss,
+        jackin_console_oppicker::ModalOutcome::Continue => InlinePickerPlan::Continue,
+    }
+}
+
+#[must_use]
 pub fn file_browser_modal_plan<T>(
     outcome: crate::tui::components::file_browser::FileBrowserOutcome<T>,
 ) -> FileBrowserModalPlan<T> {
@@ -712,7 +723,7 @@ pub const fn bool_confirm_modal_plan(
 
 #[must_use]
 pub fn create_op_picker_plan<Reference, Account, Vault, Item, FieldTarget>(
-    outcome: jackin_tui::ModalOutcome<
+    outcome: jackin_console_oppicker::ModalOutcome<
         crate::tui::components::op_picker::OpPickerSelection<
             Reference,
             Account,
@@ -731,7 +742,7 @@ pub fn create_op_picker_plan<Reference, Account, Vault, Item, FieldTarget>(
     >,
 > {
     match outcome {
-        jackin_tui::ModalOutcome::Commit(selection) => match selection {
+        jackin_console_oppicker::ModalOutcome::Commit(selection) => match selection {
             crate::tui::components::op_picker::OpPickerSelection::NewItem { .. }
             | crate::tui::components::op_picker::OpPickerSelection::EditItemField { .. } => {
                 CreateOpPickerPlan::Commit(selection)
@@ -740,8 +751,8 @@ pub fn create_op_picker_plan<Reference, Account, Vault, Item, FieldTarget>(
                 CreateOpPickerPlan::Dismiss
             }
         },
-        jackin_tui::ModalOutcome::Cancel => CreateOpPickerPlan::Dismiss,
-        jackin_tui::ModalOutcome::Continue => CreateOpPickerPlan::Continue,
+        jackin_console_oppicker::ModalOutcome::Cancel => CreateOpPickerPlan::Dismiss,
+        jackin_console_oppicker::ModalOutcome::Continue => CreateOpPickerPlan::Continue,
     }
 }
 

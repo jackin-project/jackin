@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use jackin_tui::runtime::BlockingSubscription;
+use crate::BlockingSubscription;
 use termrock::runtime::{Subscription, SubscriptionPoll};
 
 use crate::{

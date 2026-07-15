@@ -930,7 +930,7 @@ pub fn handle_editor_modal(
                 handle_token_generate_pick(editor, target, outcome);
                 return EditorModalOutcome::Continue;
             }
-            match inline_picker_plan(outcome) {
+            match crate::tui::update::op_picker_inline_plan(outcome) {
                 // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }

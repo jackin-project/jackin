@@ -34,7 +34,8 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
     let multi_account = state.account_count() > 1;
 
     if let Some(input) = state.naming_stage_input() {
-        jackin_tui::components::text_input::render_text_input(frame, area, input);
+        let donor = jackin_tui::components::TextInputState::new(input.label(), input.value());
+        jackin_tui::components::text_input::render_text_input(frame, area, &donor);
         return;
     }
 
