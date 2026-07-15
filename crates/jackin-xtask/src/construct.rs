@@ -196,12 +196,9 @@ fn doctor_buildx(cfg: &Config) -> Result<()> {
 
 fn reset_buildx(cfg: &Config) -> Result<()> {
     // A missing builder is fine to "remove"; ignore that failure only.
-    drop(
-        docker(["buildx", "rm", "--force", &cfg.buildx_builder])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status(),
-    );
+    let mut remove = docker(["buildx", "rm", "--force", &cfg.buildx_builder]);
+    remove.stdout(Stdio::null()).stderr(Stdio::null());
+    drop(crate::cmd::run(&mut remove));
     run_checked(docker([
         "buildx",
         "create",

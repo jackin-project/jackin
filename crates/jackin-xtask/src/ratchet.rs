@@ -11,7 +11,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -753,7 +752,8 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
 
 /// Run the conformance volume test to produce `target/telemetry-volume.json`.
 fn ensure_telemetry_volume_artifact(root: &Path) -> Result<()> {
-    let status = Command::new("cargo")
+    let mut command = crate::cmd::command("cargo");
+    command
         .args([
             "nextest",
             "run",
@@ -764,14 +764,9 @@ fn ensure_telemetry_volume_artifact(root: &Path) -> Result<()> {
             "-E",
             "test(conformance_export_volume)",
         ])
-        .current_dir(root)
-        .status()
-        .context("spawning cargo nextest for telemetry-volume artifact")?;
-    if !status.success() {
-        bail!(
-            "failed to generate target/telemetry-volume.json via conformance_export_volume (exit {status})"
-        );
-    }
+        .current_dir(root);
+    crate::cmd::run(&mut command)
+        .context("failed to generate target/telemetry-volume.json via conformance_export_volume")?;
     let artifact = root.join("target/telemetry-volume.json");
     if !artifact.is_file() {
         bail!(
