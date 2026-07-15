@@ -9,11 +9,13 @@ use crate::tui::state::AuthRow;
 use crate::tui::state::{AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin_config::{
-    AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode,
+    AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode, MountConfig,
+    WorkspaceConfig, WorkspaceRoleOverride,
 };
-use jackin_config::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
-use jackin_core::{OpRef, env_model};
-use jackin_env::OpRunner;
+use jackin_core::{
+    ANTHROPIC_API_KEY_ENV_NAME, EnvValue, MountIsolation, OpRef, RoleSelector, ZAI_API_KEY_ENV_NAME,
+};
+use jackin_env::{OpCache, OpRunner};
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
@@ -95,7 +97,7 @@ fn build_state() -> (AppConfig, ManagerState<'static>) {
             src: "/code/proj".into(),
             dst: "/code/proj".into(),
             readonly: false,
-            isolation: jackin_config::MountIsolation::Shared,
+            isolation: MountIsolation::Shared,
         }],
         allowed_roles: vec!["smith".into()],
         ..Default::default()
@@ -223,7 +225,7 @@ fn auth_form_save_persists_workspace_layer_into_pending() {
     let value = editor
         .pending
         .env
-        .get(env_model::ANTHROPIC_API_KEY_ENV_NAME)
+        .get(ANTHROPIC_API_KEY_ENV_NAME)
         .expect("credential env var must be set");
     match value {
         EnvValue::Plain(s) => assert_eq!(s, "secret"),
@@ -618,7 +620,7 @@ fn auth_form_save_persists_role_layer_into_pending() {
     assert_eq!(cfg.auth_forward, AuthForwardMode::ApiKey);
     let env_val = role_entry
         .env
-        .get(env_model::ANTHROPIC_API_KEY_ENV_NAME)
+        .get(ANTHROPIC_API_KEY_ENV_NAME)
         .expect("role env credential must be set");
     match env_val {
         EnvValue::Plain(s) => assert_eq!(s, "abc"),
@@ -1175,7 +1177,7 @@ fn d_on_zai_workspace_mode_row_clears_env_key() {
         panic!()
     };
     editor.pending.env.insert(
-        env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        ZAI_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("zai-key".into()),
     );
     // Detail rows render for the selected kind; focus the Z.AI section.
@@ -1195,10 +1197,7 @@ fn d_on_zai_workspace_mode_row_clears_env_key() {
     editor.active_field = FieldFocus::Row(idx);
     handle_d_on_auth_row(editor, &cfg);
     assert!(
-        !editor
-            .pending
-            .env
-            .contains_key(env_model::ZAI_API_KEY_ENV_NAME),
+        !editor.pending.env.contains_key(ZAI_API_KEY_ENV_NAME),
         "D on Z.AI WorkspaceMode must remove ZAI_API_KEY from the workspace env"
     );
 }
@@ -1408,7 +1407,7 @@ fn github_role_override_picker_filters_already_overridden_roles() {
             src: "/code/proj".into(),
             dst: "/code/proj".into(),
             readonly: false,
-            isolation: jackin_config::MountIsolation::Shared,
+            isolation: MountIsolation::Shared,
         }],
         allowed_roles: vec!["smith".into(), "brown".into()],
         ..Default::default()
@@ -1453,11 +1452,7 @@ fn github_role_override_picker_filters_already_overridden_roles() {
     // The picker exposes its candidate list as the `roles` field —
     // pull the keys and assert "brown" was filtered out before the
     // picker was even seeded.
-    let labels: Vec<String> = picker
-        .roles
-        .iter()
-        .map(jackin_core::RoleSelector::key)
-        .collect();
+    let labels: Vec<String> = picker.roles.iter().map(RoleSelector::key).collect();
     assert!(
         labels.iter().any(|s| s == "smith"),
         "smith must remain a candidate; got {labels:?}"

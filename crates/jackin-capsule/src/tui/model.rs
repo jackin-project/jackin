@@ -32,7 +32,7 @@ impl MuxMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four mutually-exclusive gesture flags (dialog_open, dragging, \
               selecting, awaiting_prefix) — each is an independent input-gesture \
@@ -61,7 +61,7 @@ pub(crate) fn mux_mode_for_state(state: MuxModeState) -> MuxMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal pointer-shape input flags (dragging, selecting, \
               dialog_open, link_target_available, no_button_motion) plus two \
@@ -166,7 +166,7 @@ pub(crate) fn hover_target_for_state(state: HoverState) -> Option<HoverTarget> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal cursor-visibility factors (dialog_open, \
               focused_pane_available, focused_session_received_output, \

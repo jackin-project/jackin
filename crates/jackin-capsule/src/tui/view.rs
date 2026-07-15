@@ -31,7 +31,7 @@ pub(crate) enum PaneScreen<'a> {
     View(jackin_term::GridView<'a>),
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Six orthogonal render-state flags on the per-frame snapshot \
               (zoomed, dialog_open, menu_hovered, selection_copied, \

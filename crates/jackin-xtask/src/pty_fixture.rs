@@ -123,10 +123,21 @@ fn capsule_log_paths(raw: &str) -> Vec<PathBuf> {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        if value.get("kind").and_then(serde_json::Value::as_str) != Some("container_started") {
+        // Accept v1 `kind`/`detail` and v2 `event.name`/`jackin.detail`.
+        let is_container_started = value.get("kind").and_then(serde_json::Value::as_str)
+            == Some("container_started")
+            || value
+                .get("event.name")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|n| n.contains("container") && n.contains("start"));
+        if !is_container_started {
             continue;
         }
-        let Some(detail) = value.get("detail").and_then(serde_json::Value::as_str) else {
+        let Some(detail) = value
+            .get("detail")
+            .or_else(|| value.get("jackin.detail"))
+            .and_then(serde_json::Value::as_str)
+        else {
             continue;
         };
         let Ok(detail) = serde_json::from_str::<serde_json::Value>(detail) else {

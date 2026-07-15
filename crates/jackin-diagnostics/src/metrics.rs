@@ -60,6 +60,16 @@ pub(crate) fn install_hot_path(meter: &opentelemetry::metrics::Meter) -> bool {
             .with_unit("1")
             .with_description("Typed diagnostics errors by error.type")
             .build(),
+        docker_inspect_count: meter
+            .u64_counter(names::DOCKER_INSPECT_COUNT)
+            .with_unit("{inspection}")
+            .with_description("Docker inspect operations")
+            .build(),
+        db_statement_count: meter
+            .u64_counter(names::DB_STATEMENT_COUNT)
+            .with_unit("{statement}")
+            .with_description("Database statements executed (bounded statement.name)")
+            .build(),
     };
     HOT_PATH.set(metrics).is_ok()
 }
@@ -75,6 +85,8 @@ struct HotPathMetrics {
     input_mouse_events: opentelemetry::metrics::Counter<u64>,
     usage_accounts_refreshed: opentelemetry::metrics::Counter<u64>,
     errors_count: opentelemetry::metrics::Counter<u64>,
+    docker_inspect_count: opentelemetry::metrics::Counter<u64>,
+    db_statement_count: opentelemetry::metrics::Counter<u64>,
 }
 
 #[cfg(feature = "otlp")]
@@ -84,9 +96,10 @@ static HOT_PATH: OnceLock<HotPathMetrics> = OnceLock::new();
 pub fn record_frame(bytes: u64, cursor_moves: u64, painted_cells: u64) {
     #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
-        m.terminal_bytes_sent.add(bytes, &[]);
-        m.terminal_cursor_moves.add(cursor_moves, &[]);
-        m.render_painted_cells.add(painted_cells, &[]);
+        let dims = screen_metric_dims();
+        m.terminal_bytes_sent.add(bytes, &dims);
+        m.terminal_cursor_moves.add(cursor_moves, &dims);
+        m.render_painted_cells.add(painted_cells, &dims);
     }
     #[cfg(not(feature = "otlp"))]
     {
@@ -98,15 +111,25 @@ pub fn record_frame(bytes: u64, cursor_moves: u64, painted_cells: u64) {
 pub fn record_render(duration_us: u64, painted_cells: u64) {
     #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
-        m.render_duration.record(duration_us, &[]);
-        m.render_frames.add(1, &[]);
+        let dims = screen_metric_dims();
+        m.render_duration.record(duration_us, &dims);
+        m.render_frames.add(1, &dims);
         if painted_cells > 0 {
-            m.render_painted_cells.add(painted_cells, &[]);
+            m.render_painted_cells.add(painted_cells, &dims);
         }
     }
     #[cfg(not(feature = "otlp"))]
     {
         let _ = (duration_us, painted_cells);
+    }
+}
+
+#[cfg(feature = "otlp")]
+fn screen_metric_dims() -> Vec<opentelemetry::KeyValue> {
+    use opentelemetry::KeyValue;
+    match crate::current_screen_name() {
+        Some(name) => vec![KeyValue::new("jackin.screen.name", name)],
+        None => Vec::new(),
     }
 }
 
@@ -126,7 +149,30 @@ pub fn incr_terminal_bytes_received(bytes: u64) {
 pub fn incr_mouse_events() {
     #[cfg(feature = "otlp")]
     if let Some(m) = HOT_PATH.get() {
-        m.input_mouse_events.add(1, &[]);
+        let dims = screen_metric_dims();
+        m.input_mouse_events.add(1, &dims);
+    }
+}
+
+/// Docker inspect operation completed.
+pub fn incr_docker_inspect() {
+    #[cfg(feature = "otlp")]
+    if let Some(m) = HOT_PATH.get() {
+        m.docker_inspect_count.add(1, &[]);
+    }
+}
+
+/// Database statement executed (`statement.name` is a registered const, never SQL).
+pub fn incr_db_statement(statement_name: &'static str) {
+    #[cfg(feature = "otlp")]
+    if let Some(m) = HOT_PATH.get() {
+        use opentelemetry::KeyValue;
+        m.db_statement_count
+            .add(1, &[KeyValue::new("statement.name", statement_name)]);
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        let _ = statement_name;
     }
 }
 
@@ -228,6 +274,25 @@ pub(crate) fn collect_hot_path_counter_sums(names: &[&str]) -> Option<Vec<u64>> 
         sum_resource_counters(resource, names, &mut totals);
     }
     Some(totals)
+}
+
+/// Number of metric streams with exported data in the test provider.
+#[cfg(all(test, feature = "otlp"))]
+pub(crate) fn collect_hot_path_metric_count() -> Option<usize> {
+    let rig = HOT_PATH_TEST_RIG.get()?;
+    if !rig.instruments_owned {
+        return None;
+    }
+    rig.exporter.reset();
+    rig.provider.force_flush().ok()?;
+    let finished = rig.exporter.get_finished_metrics().ok()?;
+    Some(
+        finished
+            .iter()
+            .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
+            .map(|scope| scope.metrics().count())
+            .sum(),
+    )
 }
 
 #[cfg(all(test, feature = "otlp"))]

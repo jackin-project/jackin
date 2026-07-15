@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -293,10 +292,8 @@ fn actionlint_args(root: &Path) -> Result<Vec<OsString>> {
         bail!("{} does not exist", workflows.display());
     }
     let mut files = Vec::new();
-    for entry in
-        std::fs::read_dir(&workflows).with_context(|| format!("reading {}", workflows.display()))?
-    {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(&workflows)? {
+        let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "yml") {
             files.push(
                 path.strip_prefix(root)
@@ -379,14 +376,14 @@ fn parse_capsule_export(output: &str) -> Result<PathBuf> {
 
 fn run_step(root: &Path, step: &Step) -> Result<()> {
     emit(&format!("==> {}", display_step(step)));
-    let mut cmd = Command::new(&step.program);
+    let mut cmd = crate::cmd::command(&step.program);
     cmd.args(&step.args).current_dir(root).envs(&step.env);
     crate::cmd::run(&mut cmd).with_context(|| format!("step {}", step.name))
 }
 
 fn output_step(root: &Path, step: &Step) -> Result<String> {
     emit(&format!("==> {}", display_step(step)));
-    let mut cmd = Command::new(&step.program);
+    let mut cmd = crate::cmd::command(&step.program);
     cmd.args(&step.args).current_dir(root).envs(&step.env);
     crate::cmd::output_string(&mut cmd).with_context(|| format!("step {}", step.name))
 }

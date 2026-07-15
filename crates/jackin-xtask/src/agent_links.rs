@@ -29,6 +29,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 
 use crate::docs::repo_root;
+use crate::report::{self, FormatArgs};
 
 const TARGET_BASENAME: &str = "AGENTS.md";
 const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules"];
@@ -37,21 +38,39 @@ const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules"];
 const CONVENTION_DOC: &str = "crates/AGENTS.md";
 
 #[derive(Args, Debug)]
-pub(crate) struct LintAgentLinksArgs {}
+pub(crate) struct LintAgentLinksArgs {
+    #[command(flatten)]
+    output: FormatArgs,
+}
 
 #[expect(
     clippy::print_stdout,
     reason = "jackin-xtask is a CLI; the lint report is its output"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 pub(crate) fn enforce() -> Result<()> {
-    run(LintAgentLinksArgs {})
+    run(LintAgentLinksArgs {
+        output: FormatArgs::default(),
+    })
 }
 
-pub(crate) fn run(_args: LintAgentLinksArgs) -> Result<()> {
+pub(crate) fn run(args: LintAgentLinksArgs) -> Result<()> {
+    report::run_gate(
+        args.output.resolved(),
+        "agent-links",
+        "AGENTS.md",
+        "remove links or cross-references to AGENTS.md files",
+        "cargo xtask lint agent-links",
+        run_inner,
+    )
+}
+
+fn run_inner() -> Result<()> {
     let root = repo_root()?;
     let mut files: Vec<PathBuf> = Vec::new();
     collect(&root, &mut files)?;
@@ -78,8 +97,8 @@ pub(crate) fn run(_args: LintAgentLinksArgs) -> Result<()> {
 /// Recursively collect every `README.md` and `AGENTS.md`, skipping build/VCS
 /// dirs.
 fn collect(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(root)? {
+        let path = entry.path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if path.is_dir() {
             if SKIP_DIRS.contains(&name) {

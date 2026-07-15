@@ -4,8 +4,8 @@
 //! Tests for `restore`.
 use super::*;
 use crate::instance::{DockerResources, NewInstanceManifest};
-use jackin_core::isolation::MountIsolation;
-use jackin_core::isolation_record::{CleanupStatus, IsolationRecord};
+use jackin_core::MountIsolation;
+use jackin_core::{CleanupStatus, IsolationRecord};
 use tempfile::tempdir;
 
 fn manifest_for(container: &str) -> InstanceManifest {
@@ -17,7 +17,7 @@ fn manifest_for(container: &str) -> InstanceManifest {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",

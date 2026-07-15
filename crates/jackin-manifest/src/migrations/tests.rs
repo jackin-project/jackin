@@ -95,5 +95,39 @@ fn manifest_migrations_chain_reaches_current() {
     // CURRENT_MANIFEST_VERSION. The shared helper catches typos,
     // missing middle steps, backward steps, cycles, and duplicate
     // `from` forks on every CI run.
-    jackin_config::migrations::assert_registry_chain(MANIFEST_MIGRATIONS, CURRENT_MANIFEST_VERSION);
+    jackin_config::assert_registry_chain(MANIFEST_MIGRATIONS, CURRENT_MANIFEST_VERSION);
+}
+
+/// Property: migrate(migrate(x)) == migrate(x) for versioned minimal manifests.
+#[test]
+fn prop_manifest_migration_idempotent() {
+    use proptest::prelude::*;
+
+    let versions = [
+        "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6",
+    ];
+    proptest!(|(idx in 0usize..versions.len())| {
+        let version = versions[idx];
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("jackin.role.toml");
+        std::fs::write(
+            &path,
+            format!("version = \"{version}\"\ndockerfile = \"Dockerfile\"\n"),
+        )
+        .unwrap();
+
+        drop(migrate_manifest_file(&path));
+        let first = std::fs::read_to_string(&path).unwrap();
+        let second_result = migrate_manifest_file(&path);
+        prop_assert!(second_result.is_ok(), "second migrate must succeed");
+        // Already current → None
+        if version == CURRENT_MANIFEST_VERSION {
+            prop_assert!(second_result.as_ref().unwrap().is_none());
+        }
+        let second = std::fs::read_to_string(&path).unwrap();
+        prop_assert_eq!(&first, &second, "migration must be idempotent");
+        // Output must always validate as a RoleManifest
+        let parsed: Result<crate::RoleManifest, _> = toml::from_str(&second);
+        prop_assert!(parsed.is_ok(), "migrated manifest must parse: {:?}", parsed.err());
+    });
 }

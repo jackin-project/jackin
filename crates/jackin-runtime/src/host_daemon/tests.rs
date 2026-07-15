@@ -160,6 +160,17 @@ fn attention_adapter_notifies_on_blocked_and_done_edges_only() {
 }
 
 #[test]
+fn attention_adapter_rejects_invalid_container_identity() {
+    let mut adapter = AttentionAdapter::new(RecordingNotifier::default());
+
+    let error = adapter
+        .ingest_snapshot("invalid/container", &snapshot(AgentState::Blocked))
+        .unwrap_err();
+
+    assert!(error.to_string().contains("validating attention snapshot"));
+}
+
+#[test]
 fn attention_snapshot_request_reports_muted_without_dispatch_count() {
     let (_temp, _paths, layout) = layout();
     let mut attention = AttentionAdapter::new(RecordingNotifier {

@@ -27,7 +27,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::instance::InstanceManifest;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 
 const LOG_FILE_NAME: &str = "multiplexer.log";
 

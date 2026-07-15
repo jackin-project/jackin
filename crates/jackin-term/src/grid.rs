@@ -3,16 +3,12 @@
 
 //! `DamageGrid` — the Phase 2 v0 terminal model implementation.
 
-#![allow(clippy::empty_line_after_doc_comments, reason = "residual lint budget")]
-
 #[path = "grid/parse.rs"]
 mod parse;
 #[path = "grid/write.rs"]
 mod write;
 
-#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use parse::*;
-#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use write::*;
 
 use std::{
@@ -156,9 +152,11 @@ pub struct DamageGrid {
     last_preserved_block: Option<Vec<Vec<Cell>>>,
     /// Active OSC 8 token while writing cells.
     active_hyperlink_token: u32,
-    /// OSC 8 id → internal token mapping.
-    osc8_id_to_token: HashMap<String, u32>,
-    /// Internal token → hyperlink target mapping.
+    /// OSC 8 (id, uri) → internal token mapping.
+    /// Keyed by both id and uri so reusing an id with a different URI allocates
+    /// a fresh token and never repoints earlier cells (hover/click identity).
+    osc8_id_to_token: HashMap<(String, String), u32>,
+    /// Internal token → hyperlink target mapping (immutable once written).
     hyperlink_targets: HashMap<u32, String>,
     /// Next hyperlink token to allocate.
     next_hyperlink_token: u32,
@@ -971,8 +969,9 @@ impl DamageGrid {
         }
     }
 
-    fn alloc_hyperlink_token(&mut self, id: &str) -> u32 {
-        if let Some(&token) = self.osc8_id_to_token.get(id) {
+    fn alloc_hyperlink_token(&mut self, id: &str, uri: &str) -> u32 {
+        let key = (id.to_owned(), uri.to_owned());
+        if let Some(&token) = self.osc8_id_to_token.get(&key) {
             return token;
         }
         if self.osc8_id_to_token.len() >= OSC8_HYPERLINK_CAP {
@@ -983,7 +982,7 @@ impl DamageGrid {
         if self.next_hyperlink_token == 0 {
             self.next_hyperlink_token = 1;
         }
-        self.osc8_id_to_token.insert(id.to_owned(), token);
+        self.osc8_id_to_token.insert(key, token);
         token
     }
 
@@ -1205,7 +1204,7 @@ impl DamageGrid {
     }
 
     /// Scroll the active scroll region up by `n` rows, pushing content to scrollback.
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Scroll-region scrolling distinguishes full-scroll vs partial-scroll \
                   branches and within each branch handles scrollback recycling, \
@@ -1594,12 +1593,23 @@ impl DamageGrid {
                 if uri.is_empty() {
                     self.clear_active_hyperlink_state();
                 } else {
-                    let token = self.alloc_hyperlink_token(&id);
+                    let token = self.alloc_hyperlink_token(&id, &uri);
                     self.active_hyperlink_token = token;
                     if self.hyperlink_targets.len() >= OSC8_HYPERLINK_CAP {
                         self.clear_hyperlink_maps();
                     }
-                    self.hyperlink_targets.insert(token, uri.clone());
+                    // Targets are immutable once written: (id,uri) keying means
+                    // a fresh token is allocated on URI change, so insert never
+                    // overwrites an existing token with a different URI.
+                    debug_assert!(
+                        self.hyperlink_targets
+                            .get(&token)
+                            .is_none_or(|existing| existing == &uri),
+                        "hyperlink token target must be immutable"
+                    );
+                    self.hyperlink_targets
+                        .entry(token)
+                        .or_insert_with(|| uri.clone());
                 }
                 // OSC 8 is modeled as cell metadata (both the interned token for
                 // hover lookup and the inline `Hyperlink` the renderer reads) and

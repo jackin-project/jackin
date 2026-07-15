@@ -5,8 +5,8 @@
 use super::super::naming::matching_family;
 use super::*;
 use crate::instance::{DockerResources, InstanceManifest};
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_docker::docker_client::{ContainerRow, ContainerState, NetworkRow};
 use jackin_test_support::{FakeDockerClient, FakeRunner};
 use std::collections::{HashMap, VecDeque};
@@ -48,7 +48,7 @@ async fn purge_all_removes_matching_state_directories() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -73,7 +73,7 @@ async fn purge_all_removes_matching_state_directories() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -240,7 +240,7 @@ async fn eject_agent_removes_manifest_recorded_sidecar_resources() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -793,7 +793,7 @@ fn make_instance_at(paths: &JackinPaths, container: &str, status: InstanceStatus
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -1153,7 +1153,7 @@ async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",

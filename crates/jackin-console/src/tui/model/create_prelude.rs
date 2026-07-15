@@ -94,7 +94,7 @@ impl CreatePreludeTextInputTarget for crate::tui::screens::editor::model::TextIn
     }
 }
 
-#[allow(
+#[expect(
     clippy::fn_params_excessive_bools,
     reason = "Five orthogonal modal-input availability booleans (file_browser_src, \
               mount_dst_choice, text_input_dst, workdir_pick, text_input_name) — \

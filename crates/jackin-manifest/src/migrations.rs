@@ -14,7 +14,7 @@ use anyhow::bail;
 use toml_edit::DocumentMut;
 
 /// Current role-manifest schema version string (e.g. `"v1alpha6"`).
-pub use jackin_core::constants::CURRENT_MANIFEST_VERSION;
+pub use jackin_core::CURRENT_MANIFEST_VERSION;
 
 const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
     jackin_config::MigrationStep {
@@ -54,7 +54,7 @@ const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
 ];
 
 /// Serde-default helper returning [`CURRENT_MANIFEST_VERSION`] as a `String`.
-pub use jackin_core::constants::current_manifest_version;
+pub use jackin_core::current_manifest_version;
 
 /// Migrate `path` (typically `<repo>/jackin.role.toml`) to
 /// `CURRENT_MANIFEST_VERSION`.

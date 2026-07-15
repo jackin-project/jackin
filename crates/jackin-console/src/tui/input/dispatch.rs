@@ -37,7 +37,7 @@ use crate::tui::update::{DismissibleModalPlan, dismissible_modal_plan};
 type ValidateAuthSourceFolder =
     dyn Fn(Option<crate::tui::auth::AuthKind>, &std::path::Path) -> Result<(), String>;
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Top-level input dispatcher handling every per-stage key binding \
               inline. Each stage's arm carries its own focused state transition; \

@@ -62,7 +62,7 @@ pub(super) mod config {
     ) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
         editor_doc.upsert_agent_source(key, source);
-        editor_doc.save()
+        Ok(editor_doc.save()?)
     }
 
     pub(crate) fn start_role_source_persist(
@@ -94,7 +94,7 @@ pub(super) mod config {
     fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
         editor_doc.remove_workspace(&WorkspaceName::parse(name).map_err(anyhow::Error::from)?)?;
-        editor_doc.save()
+        Ok(editor_doc.save()?)
     }
 
     pub(crate) fn start_remove_workspace(
@@ -124,7 +124,7 @@ pub(super) mod config {
         for row in pending {
             editor_doc.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
         }
-        editor_doc.save()
+        Ok(editor_doc.save()?)
     }
 
     pub(crate) enum WorkspaceSaveMode {
@@ -150,7 +150,7 @@ pub(super) mod config {
         pub pending_rename: Option<String>,
     }
 
-    #[allow(
+    #[expect(
         clippy::useless_let_if_seq,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]
@@ -424,26 +424,24 @@ pub(super) mod instances {
     }
 
     pub(crate) fn running_role_containers() -> anyhow::Result<Vec<String>> {
-        let mut command = std::process::Command::new("docker");
-        command.args([
-            "ps",
-            "--filter",
-            "label=jackin.kind=role",
-            "--format",
-            "{{.Names}}",
-        ]);
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "instance refresh is launched through spawn_blocking_subscription"
-        )]
-        let output = command
-            .output()
-            .map_err(anyhow::Error::new)
+        let request = jackin_process::ExecRequest::new(
+            "docker",
+            [
+                "ps",
+                "--filter",
+                "label=jackin.kind=role",
+                "--format",
+                "{{.Names}}",
+            ],
+        );
+        // Instance refresh is launched through spawn_blocking_subscription;
+        // keep the docker listing on the shared process transport.
+        let output = jackin_process::exec_sync(&request)
             .context("starting docker ps for live instance reconciliation")?;
         anyhow::ensure!(
-            output.status.success(),
+            output.success,
             "docker ps exited with status {:?}: {}",
-            output.status.code(),
+            output.code,
             String::from_utf8_lossy(&output.stderr).trim()
         );
         Ok(String::from_utf8_lossy(&output.stdout)
@@ -530,7 +528,7 @@ pub(super) mod instances {
         }
     }
 
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Snapshot fan-out walks chunks of containers, each chunk \
                   spawns a thread, each thread joins a panic-payload match — \
@@ -546,7 +544,7 @@ pub(super) mod instances {
         let mut results = Vec::with_capacity(targets.len());
         for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
             let chunk_results = std::thread::scope(|s| {
-                #[allow(
+                #[expect(
                     clippy::needless_collect,
                     reason = "documented residual allow; prefer expect when site is lint-true"
                 )]

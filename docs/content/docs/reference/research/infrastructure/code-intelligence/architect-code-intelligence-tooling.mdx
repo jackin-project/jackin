@@ -7,7 +7,7 @@ description: "Equip the-architect with a Rust code-intelligence stack — ast-gr
 
 ## Objective
 
-Equip the the-architect role with a Rust code-intelligence stack and make the agent use it: structural search and refactor (`ast-grep`), semantic navigation (`rust-analyzer`), the cargo verifiers (`nextest`, `clippy`, `rustfmt`), and a resident file-search server (`fff`). A code-intelligence server, `codedb`, is carried as an A/B evaluation arm against native search. The guidance that tells the agent which tool to reach for — and, critically, the routing rule that stops two tools from both claiming "all search" — is authored once and applied to every runtime the role supports (`claude`, `codex`, `amp`, `kimi`, `opencode`) with no duplicated content. Deliver everything inside the external [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) repository, opt-in and role-scoped, with no change to jackin core.
+Equip the the-architect role with a Rust code-intelligence stack and make the agent use it: structural search and refactor (`ast-grep`), semantic navigation (`rust-analyzer`), the cargo verifiers (`nextest`, `clippy`, `rustfmt`), and a resident file-search server (`fff`). A code-intelligence server, `codedb`, is carried as an A/B evaluation arm against native search. The guidance that tells the agent which tool to reach for — and, critically, the routing rule that stops two tools from both claiming "all search" — is authored once and applied to every runtime the role supports (`claude`, `codex`, `amp`, `kimi`, `opencode`) with no duplicated content. Deliver everything inside the external [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) repository, opt-in and role-scoped, with no change to jackin❯ core.
 
 This item also records the **evaluation** of the candidate tools (`ast-grep`, `codedb`, `fff`, `ast-index`) that produced this stack, so the choice is auditable and the deferred candidates have a documented home. The broad market sweep and the token-economics A/B protocol live in the research dossier [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/); this roadmap item is the **decision record** and the implementation plan, not a duplicate of that evidence.
 
@@ -302,7 +302,7 @@ Because the guidance lives in the agent's home, it applies to every workspace th
 
 ## Verification
 
-Smoke-test from a jackin checkout (always `--debug`; share the printed run id if something misbehaves):
+Smoke-test from a jackin❯ checkout (always `--debug`; share the printed run id if something misbehaves):
 
 ```bash
 cargo run --bin jackin -- load the-architect . --debug

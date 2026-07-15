@@ -728,7 +728,7 @@ pub struct TrustPreviewRow {
 }
 
 #[must_use]
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Workspace-save preview renderer: per-section (header / mount / auth / \
               env / role / status) line builder. Inline shape preserves the \
