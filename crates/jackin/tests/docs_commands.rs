@@ -19,7 +19,7 @@ use clap::error::ErrorKind;
 use jackin::cli::Cli;
 use syn::{Fields, Item, Visibility};
 
-const CONFIG_KEY_MARKER: &str = "<!-- config-key: ";
+const CONFIG_KEY_MARKER: &str = "{/* config-key: ";
 
 fn schema_config_keys(source: &str) -> syn::Result<BTreeSet<String>> {
     let mut keys = BTreeSet::new();
@@ -68,7 +68,7 @@ fn documented_config_keys(source: &str) -> BTreeSet<String> {
         .filter_map(|line| {
             line.trim()
                 .strip_prefix(CONFIG_KEY_MARKER)?
-                .strip_suffix(" -->")
+                .strip_suffix(" */}")
                 .map(str::to_owned)
         })
         .collect()
@@ -639,6 +639,20 @@ fn config_key_drift_reports_both_directions() {
     let (documented_but_gone, schema_but_undocumented) = config_key_drift(&schema, &docs);
     assert_eq!(documented_but_gone, ["AppConfig.removed"]);
     assert_eq!(schema_but_undocumented, ["AppConfig.runtime"]);
+}
+
+#[test]
+fn config_key_markers_use_valid_mdx_comments() {
+    let keys = documented_config_keys(
+        "{/* config-key: AppConfig.version */}\n{/* config-key: AppConfig.runtime */}\n",
+    );
+    assert_eq!(
+        keys,
+        BTreeSet::from([
+            "AppConfig.runtime".to_owned(),
+            "AppConfig.version".to_owned(),
+        ])
+    );
 }
 
 #[test]
