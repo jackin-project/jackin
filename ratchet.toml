@@ -774,6 +774,45 @@ mode = "enforce"
 key = "junit_total_ms"
 bound = 3600000
 
+# Scheduled build-time ceilings from target/build-times.json. The Hygiene lane
+# enforces these after measurement; local/PR lint reports an artifact skip.
+[[family]]
+id = "build-time"
+kind = "numeric"
+provider = "build_times"
+mode = "artifact-ceiling"
+cap = 0
+[[family.entry]]
+key = "jackin-runtime.clean_s"
+bound = 900
+[[family.entry]]
+key = "jackin-runtime.incremental_s"
+bound = 180
+[[family.entry]]
+key = "jackin-capsule.clean_s"
+bound = 900
+[[family.entry]]
+key = "jackin-capsule.incremental_s"
+bound = 180
+[[family.entry]]
+key = "jackin-console.clean_s"
+bound = 900
+[[family.entry]]
+key = "jackin-console.incremental_s"
+bound = 180
+[[family.entry]]
+key = "jackin-term.clean_s"
+bound = 900
+[[family.entry]]
+key = "jackin-term.incremental_s"
+bound = 180
+[[family.entry]]
+key = "jackin-config.clean_s"
+bound = 900
+[[family.entry]]
+key = "jackin-config.incremental_s"
+bound = 180
+
 # Per-function syntax decision count. Clippy owns the absolute cognitive-
 # complexity threshold; this measured family prevents today's structurally
 # complex production functions from growing and requires new functions to stay
@@ -840,4 +879,4 @@ key = "jackin-usage"
 bound = 29
 [[family.entry]]
 key = "jackin-xtask"
-bound = 27
+bound = 28

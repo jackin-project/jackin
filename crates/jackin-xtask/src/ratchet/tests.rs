@@ -191,7 +191,53 @@ fn suite_time_absent_junit_is_advisory_not_stale() {
 
     let outcome = check_families(dir.path(), &config, None).expect("check family");
     assert!(outcome.problems.is_empty(), "{:?}", outcome.problems);
-    assert!(outcome.report_lines.iter().any(|line| line.contains("0ms")));
+    assert!(
+        outcome
+            .report_lines
+            .iter()
+            .any(|line| line.starts_with("suite-time/junit_total_ms:"))
+    );
+}
+
+#[test]
+fn build_times_flattens_scheduled_artifact() {
+    use super::measure_build_times;
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("target")).expect("mkdir");
+    fs::write(
+        dir.path().join("target/build-times.json"),
+        r#"{"jackin-core":{"clean_s":12,"incremental_s":3}}"#,
+    )
+    .expect("write artifact");
+    let measured = measure_build_times(dir.path()).expect("measure");
+    assert_eq!(measured.get("jackin-core.clean_s"), Some(&12));
+    assert_eq!(measured.get("jackin-core.incremental_s"), Some(&3));
+}
+
+#[test]
+fn build_time_family_skips_without_scheduled_artifact() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = Config {
+        family: vec![Family {
+            id: "build-time".into(),
+            kind: "numeric".into(),
+            provider: "build_times".into(),
+            cap: Some(0),
+            mode: "artifact-ceiling".into(),
+            entry: vec![Entry {
+                key: "jackin-core.clean_s".into(),
+                bound: Some(30),
+            }],
+        }],
+    };
+    let outcome = check_families(dir.path(), &config, None).expect("check family");
+    assert!(outcome.problems.is_empty());
+    assert!(
+        outcome
+            .report_lines
+            .iter()
+            .any(|line| line.contains("skipped"))
+    );
 }
 
 #[test]

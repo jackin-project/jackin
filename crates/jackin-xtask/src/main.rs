@@ -11,6 +11,7 @@ mod cmd;
 mod construct;
 mod container_paths_gate;
 mod docs;
+mod frame_timing;
 mod fs_util;
 mod headers;
 mod health;
@@ -61,6 +62,8 @@ enum Command {
     /// Extract a PTY byte-stream fixture from a `--debug` run log for the
     /// capsule render-conformance harness.
     PtyFixture(pty_fixture::PtyFixtureArgs),
+    /// Measure console first-frame and input-to-frame latency through a PTY.
+    FrameTiming(frame_timing::FrameTimingArgs),
     /// Scaffold a new roadmap item and register it in the sidebar.
     ///
     /// Use as `cargo xtask change new <slug> --group <group>`.
@@ -179,6 +182,7 @@ fn main() -> ExitCode {
         Command::Ci(args) => ci::run(args),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
+        Command::FrameTiming(args) => frame_timing::run(args),
         Command::Change(cmd) => docs::run_change(cmd),
         Command::Docs(cmd) => docs::run_docs(cmd),
         Command::Research(cmd) => docs::run_research(cmd),

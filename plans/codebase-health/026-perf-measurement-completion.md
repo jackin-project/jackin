@@ -98,3 +98,10 @@ Benches run in `--test` mode in CI-fast (Criterion smoke); allocation lane + har
 
 - Each recorded baseline unlocks its roadmap decision (incremental reads, batched statements, clone removal, reflow) — file follow-ups with numbers attached.
 - Budgets ratchet shrink-only once repeatability is proven; never budget from a single run.
+
+## Execution notes
+
+- Config/manifest and token-log/upsert/scrollback benchmarks run in Criterion test mode; baseline commands and scheduled artifacts are the durable comparison input.
+- Dhat remains on the documented static-ceiling arm: scheduled tests execute and artifact measured output, while source ceilings remain deterministic guardrails until three same-runner samples establish stability.
+- `cargo xtask frame-timing` now measures a real 120×36 PTY console first paint and Down-arrow-to-repaint over three independent processes. Hygiene uploads the versioned JSON beside cold-start hyperfine output.
+- `build-time` uses `mode = "artifact-ceiling"`: local/PR runs report an explicit skip without `target/build-times.json`; the scheduled measurement job copies its artifact into place and enforces reviewed clean/incremental ceilings before upload.

@@ -243,6 +243,14 @@ fn check_families(
         match family.kind.as_str() {
             "numeric" => {
                 let measured = invoke_provider(root, &family.provider)?;
+                let artifact_ceiling = is_artifact_ceiling(family);
+                if absent_scheduled_artifact(family, &measured) {
+                    report_lines.push(format!(
+                        "{} (scheduled enforce; skipped - artifact absent)",
+                        family.id
+                    ));
+                    continue;
+                }
                 let cap = family.cap.unwrap_or(0);
                 let budgeted: BTreeMap<&str, usize> = family
                     .entry
@@ -263,16 +271,17 @@ fn check_families(
                     // only Growth fails (prevent suite regressions). Shrink is
                     // advisory via report_lines so flaky local/CI variance does
                     // not thrash the bound.
-                    let suite_time = family.id == "suite-time";
+                    let ceiling_only = is_ceiling_only(family, artifact_ceiling);
                     let msg = match v {
                         NumericVerdict::Ok => None,
                         NumericVerdict::StaleMissing => Some(format!(
                             "{id}/{key}: budgeted but file missing — delete the stale budget row; regenerate: {RERUN} --print {id}",
                             id = family.id
                         )),
-                        NumericVerdict::StaleUnderCap { measured } if suite_time => {
+                        NumericVerdict::StaleUnderCap { measured } if ceiling_only => {
                             report_lines.push(format!(
-                                "suite-time/{key}: measured {measured}ms under ceiling {bound}ms (headroom OK)"
+                                "{}/{key}: measured {measured} under ceiling {bound} (headroom OK)",
+                                family.id
                             ));
                             None
                         }
@@ -280,9 +289,10 @@ fn check_families(
                             "{id}/{key}: measured {measured} ≤ cap {cap} — no longer needs grandfathering; delete the budget row; regenerate: {RERUN} --print {id}",
                             id = family.id
                         )),
-                        NumericVerdict::Shrink { measured, budgeted } if suite_time => {
+                        NumericVerdict::Shrink { measured, budgeted } if ceiling_only => {
                             report_lines.push(format!(
-                                "suite-time/{key}: measured {measured}ms under ceiling {budgeted}ms (headroom OK)"
+                                "{}/{key}: measured {measured} under ceiling {budgeted} (headroom OK)",
+                                family.id
                             ));
                             None
                         }
@@ -371,6 +381,18 @@ fn check_families(
     })
 }
 
+fn is_artifact_ceiling(family: &Family) -> bool {
+    family.mode == "artifact-ceiling"
+}
+
+fn absent_scheduled_artifact(family: &Family, measured: &BTreeMap<String, usize>) -> bool {
+    is_artifact_ceiling(family) && measured.is_empty()
+}
+
+fn is_ceiling_only(family: &Family, artifact_ceiling: bool) -> bool {
+    family.id == "suite-time" || artifact_ceiling
+}
+
 fn read_config(path: &Path) -> Result<Config> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("reading {CONFIG_PATH} at {}", path.display()))?;
@@ -393,7 +415,7 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
                 .collect())
         }
         "agent_doc_bytes" => measure_agent_doc_bytes(root),
-        "export_volume_constants" => measure_export_volume_constants(root),
+        "build_times" => measure_build_times(root),
         "export_volume_measured" => measure_export_volume_measured(root),
         "perf_dhat_budgets" => measure_perf_dhat_budgets(root),
         "test_layout_violations" => {
@@ -686,29 +708,6 @@ fn measure_perf_dhat_budgets(root: &Path) -> Result<BTreeMap<String, usize>> {
     Ok(out)
 }
 
-/// Read the telemetry-conformance `MAX_DEBUG_LOGS` / `MAX_SPANS` constants.
-fn measure_export_volume_constants(root: &Path) -> Result<BTreeMap<String, usize>> {
-    let path = root.join("crates/jackin-diagnostics/src/tests.rs");
-    let text = fs::read_to_string(&path)
-        .with_context(|| format!("reading export-volume constants at {}", path.display()))?;
-    let mut out = BTreeMap::new();
-    for (key, name) in [
-        ("max_debug_logs", "MAX_DEBUG_LOGS"),
-        ("max_spans", "MAX_SPANS"),
-    ] {
-        let needle = format!("const {name}: usize = ");
-        let Some(rest) = text.split(&needle).nth(1) else {
-            bail!("missing {name} in {}", path.display());
-        };
-        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
-        let value: usize = digits
-            .parse()
-            .with_context(|| format!("parsing {name} value from {}", path.display()))?;
-        out.insert(key.to_owned(), value);
-    }
-    Ok(out)
-}
-
 /// Measured default-mode export volume from `target/telemetry-volume.json`.
 ///
 /// Sole provider input for the `export-volume` family (plan 009). Does **not**
@@ -799,6 +798,37 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
                 let n = fs::metadata(&readme).map_or(0, |m| m.len() as usize);
                 out.insert(rel, n);
             }
+        }
+    }
+    Ok(out)
+}
+
+/// Scheduled per-crate clean and incremental build seconds.
+fn measure_build_times(root: &Path) -> Result<BTreeMap<String, usize>> {
+    let path = root.join("target/build-times.json");
+    if !path.is_file() {
+        return Ok(BTreeMap::new());
+    }
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("reading build times at {}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .with_context(|| format!("parsing build times at {}", path.display()))?;
+    let crates = value
+        .as_object()
+        .with_context(|| format!("build times at {} must be a JSON object", path.display()))?;
+    let mut out = BTreeMap::new();
+    for (crate_name, timings) in crates {
+        for field in ["clean_s", "incremental_s"] {
+            let seconds = timings
+                .get(field)
+                .and_then(serde_json::Value::as_u64)
+                .with_context(|| {
+                    format!(
+                        "build times at {} missing integer {crate_name}.{field}",
+                        path.display()
+                    )
+                })?;
+            out.insert(format!("{crate_name}.{field}"), seconds as usize);
         }
     }
     Ok(out)

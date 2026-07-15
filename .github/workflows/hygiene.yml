@@ -203,8 +203,7 @@ jobs:
             target/criterion/**/estimates.json
           if-no-files-found: warn
 
-  # Advisory cold-start wall-clock for the jackin binary (plan 048).
-  # Measures process start + --help only — not TUI first frame.
+  # Advisory cold-start and real PTY frame timing (plans 026/048).
   # Plan 026: run dhat-heap allocation suites (advisory). Static const budgets
   # in jackin-capsule/src/perf_budgets.rs remain the ratchet source until
   # multi-run stability is proven (see TESTING.md allocation lane).
@@ -254,7 +253,7 @@ jobs:
           if-no-files-found: warn
 
   cold-start-bench:
-    name: Cold-start hyperfine (advisory)
+    name: Cold-start and PTY frame timing (advisory)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -299,11 +298,26 @@ jobs:
             echo "| --- | ---: |"
             jq -r '.results[] | "| `\(.command)` | \(.mean) |"' cold-start.json
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Measure PTY first-frame and input-to-frame
+        run: |
+          set -euo pipefail
+          cargo run -p jackin-xtask --locked -- frame-timing \
+            --binary target/release/jackin \
+            --output frame-timing.json \
+            --samples 3
+          {
+            echo
+            echo "### PTY frame timing (advisory)"
+            echo
+            jq -r '"- First-frame max: \(.first_frame_max_ms) ms\n- Input-to-frame max: \(.input_to_frame_max_ms) ms\n- Samples: \(.samples | length)"' frame-timing.json
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload cold-start artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cold-start-bench
-          path: cold-start.json
+          path: |
+            cold-start.json
+            frame-timing.json
           if-no-files-found: error
 
   # Advisory rust-analyzer workspace load check (plan 048).
@@ -367,10 +381,9 @@ jobs:
           path: ra-stats.txt
           if-no-files-found: error
 
-  # Advisory per-crate clean + incremental build times (plan 048).
-  # Shell wall-clock only — not a PR gate; feeds plan 017 later.
+  # Scheduled per-crate clean + incremental build-time ceiling (plans 026/048).
   build-time-measure:
-    name: Per-crate build times (advisory)
+    name: Per-crate build-time ratchet
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -442,6 +455,12 @@ jobs:
           echo >> build-times.json
           echo '}' >> build-times.json
           cat build-times.json
+      - name: Enforce scheduled build-time ceilings
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          cp build-times.json target/build-times.json
+          cargo run -p jackin-xtask --locked -- lint ratchet
       - name: Upload build-time artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

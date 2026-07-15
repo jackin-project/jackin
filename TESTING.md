@@ -183,22 +183,23 @@ Trigger manually: `gh workflow run Hygiene` (or wait for the daily cron).
 | ASan fuzz (scheduled) | `scheduled-hygiene` step | step log | advisory (PR fuzz stays `--sanitizer none`) |
 | cargo-mutants | `mutants` | `mutants-out` | advisory — never fails job |
 | hakari timing | `hakari-timing` | `cargo-timings-hygiene-baseline` | advisory investigation only |
-| Cold-start hyperfine | `cold-start-bench` | `cold-start.json` (`jackin --help`, `jackin console --help`) | advisory — no PR gate |
+| Cold-start + PTY frames | `cold-start-bench` | `cold-start.json`, `frame-timing.json` (first frame + input repaint, 3 samples) | advisory measurement |
 | rust-analyzer clean | `rust-analyzer-clean` | `ra-stats.txt` | advisory — `continue-on-error` on error grep |
-| Per-crate build times | `build-time-measure` | `build-times.json` (5 crates × clean/incremental) | advisory — no PR gate |
+| Per-crate build times | `build-time-measure` | `build-times.json` (5 crates × clean/incremental) | scheduled `build-time` ceiling ratchet |
 | dylint render purity | `dylint-advisory` | `dylint-findings` | advisory — `continue-on-error`; nightly pin in `crates/jackin-lints` |
 
 
 
 ## First-frame / input-to-frame harness (plan 026)
 
-Cold-start Hygiene still measures `jackin --help` / `jackin console --help` only.
-A PTY first-frame timing harness is deferred until a stable frame sentinel exists
-on the host console headless path (alt-screen entry + first complete paint). When
-added, it will live under `cargo xtask` and emit an advisory JSON artifact on the
-scheduled Hygiene lane before any budget is ratcheted. **Do not budget from a
-single run.**
+`cargo xtask frame-timing` launches the built host console through a 120×36 PTY,
+waits for alternate-screen entry plus the first substantial paint, injects a
+Down-arrow event, and measures the next repaint. Three independent samples are
+written to `frame-timing.json`; the scheduled lane keeps this advisory because
+host scheduling noise is still material, but a missing/blank frame fails the
+job instead of silently producing a number.
 
-Build-time measurements (`build-times.json` from Hygiene `build-time-measure`)
-remain advisory artifacts; a `build-time` ratchet family is not enforced until
-tolerance bands are proven across ≥3 scheduled runs on the same runner class.
+The same Hygiene workflow writes `build-times.json`, copies it to `target/`, and
+runs the `build-time` artifact-ceiling ratchet. The family is skipped explicitly
+when the scheduled artifact is absent (normal local/PR lint) and hard-fails the
+scheduled job when any clean or incremental build exceeds its reviewed ceiling.

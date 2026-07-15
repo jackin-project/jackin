@@ -49,8 +49,8 @@ pub(crate) struct Violation {
     /// Optional 1-based line number.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<u64>,
-    /// One sentence: why this is a violation.
-    pub why: String,
+    /// One sentence describing the violation.
+    pub message: String,
     /// The exact clearing edit or command.
     pub fix: String,
     /// Narrowest rerun command.
@@ -121,7 +121,7 @@ fn emit_human(report: &Report) -> Result<()> {
         } else {
             writeln!(out, "  {}  [{}]", v.file, v.rule).context("writing human report")?;
         }
-        writeln!(out, "    why:  {}", v.why).context("writing human report")?;
+        writeln!(out, "    message: {}", v.message).context("writing human report")?;
         writeln!(out, "    fix:  {}", v.fix).context("writing human report")?;
         writeln!(out, "    rerun: {}", v.rerun).context("writing human report")?;
     }
@@ -145,7 +145,7 @@ fn emit_github(report: &Report) -> Result<()> {
         props.push_str(&format!(",title={}", escape_workflow_prop(v.rule)));
         let msg = format!(
             "{} Fix: {} Rerun: {}",
-            escape_workflow_data(&v.why),
+            escape_workflow_data(&v.message),
             escape_workflow_data(&v.fix),
             escape_workflow_data(&v.rerun)
         );
@@ -165,7 +165,7 @@ fn emit_github(report: &Report) -> Result<()> {
             )
             .context("writing human stderr")?;
             for v in &report.violations {
-                writeln!(err, "  {} — {}", v.file, v.why).context("writing human stderr")?;
+                writeln!(err, "  {} — {}", v.file, v.message).context("writing human stderr")?;
             }
         }
     }

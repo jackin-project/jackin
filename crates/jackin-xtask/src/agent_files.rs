@@ -95,7 +95,7 @@ fn check(root: &Path, dirs: &[&str]) -> Result<()> {
         ));
         return Ok(());
     }
-    let problems: Vec<String> = violations.into_iter().map(|v| v.why).collect();
+    let problems: Vec<String> = violations.into_iter().map(|v| v.message).collect();
     bail!(
         "{} agent-file symlink violation(s):\n  {}",
         problems.len(),
@@ -115,7 +115,7 @@ fn collect_violations(root: &Path, dirs: &[&str]) -> Result<Vec<Violation>> {
                 rule: "agents",
                 file: file.clone(),
                 line: None,
-                why: format!("{file}: missing AGENTS.md"),
+                message: format!("{file}: missing AGENTS.md"),
                 fix: format!(
                     "create `{file}` with crate/dir contributor rules (see crates/AGENTS.md)"
                 ),
@@ -133,7 +133,7 @@ fn collect_violations(root: &Path, dirs: &[&str]) -> Result<Vec<Violation>> {
                     rule: "agents",
                     file: file.clone(),
                     line: None,
-                    why: format!(
+                    message: format!(
                         "{file}: missing README.md (crates/AGENTS.md hard rule: every crate carries README.md + AGENTS.md + CLAUDE.md)"
                     ),
                     fix: format!(
@@ -153,7 +153,7 @@ fn collect_violations(root: &Path, dirs: &[&str]) -> Result<Vec<Violation>> {
                     rule: "agents",
                     file: file.clone(),
                     line: None,
-                    why: format!("{file}: not a symlink"),
+                    message: format!("{file}: not a symlink"),
                     fix: format!("rm `{file}` && ln -s AGENTS.md `{file}`"),
                     rerun: RERUN.into(),
                 });
@@ -164,7 +164,7 @@ fn collect_violations(root: &Path, dirs: &[&str]) -> Result<Vec<Violation>> {
                     rule: "agents",
                     file: file.clone(),
                     line: None,
-                    why: format!("{file}: missing CLAUDE.md"),
+                    message: format!("{file}: missing CLAUDE.md"),
                     fix: format!("ln -s AGENTS.md `{file}`"),
                     rerun: RERUN.into(),
                 });
@@ -185,7 +185,7 @@ fn check_symlink_target(root: &Path, claude: &Path, violations: &mut Vec<Violati
         rule: "agents",
         file: file.clone(),
         line: None,
-        why: format!(
+        message: format!(
             "{file}: symlink target is `{}`, expected `AGENTS.md`",
             target.display()
         ),
