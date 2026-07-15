@@ -132,7 +132,7 @@ jackin❯ is a functional proof of concept, not a stable product line. **`Claude
 
 ### Codebase health
 
-- **[Unified OpenTelemetry observability](/roadmap/unified-otel-observability/)** — one-time cross-crate refactor to make structured `tracing`-based OpenTelemetry emission the only observability path: retire the prefix-tagged printf conventions (`[jackin-capsule]`, `[jackin debug …]`, freeform `[jackin]` lines), stamp every signal with run/session identity, and align spans, logs, and metrics with the screen/block/crate structure of the codebase (status: open — design proposal)
+- **[Unified OpenTelemetry observability](/roadmap/unified-otel-observability/)** — one-time cross-crate refactor to make structured `tracing`-based OpenTelemetry emission the only observability path: retire the prefix-tagged printf conventions (`[jackin-capsule]`, `[jackin debug …]`, freeform `[jackin]` lines), stamp every signal with run/session identity, and align spans, logs, and metrics with the screen/block/crate structure of the codebase (status: open — design settled, planning pending)
 - **[Open review findings catalog](/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations; five confirmed findings currently need fixes (two previously-cataloged rows were verified resolved and dropped). Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning") (status: open)
 
 ### Documentation infrastructure
