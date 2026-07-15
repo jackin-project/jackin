@@ -3,13 +3,12 @@
 
 //! Launch cockpit footer helpers.
 
-use jackin_tui::components::{
-    BottomChromeAreas, StatusRightGroup, bottom_chrome_areas, render_status_footer_right_group,
-};
+use jackin_tui::components::{StatusRightGroup, render_status_footer_right_group};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::LaunchView;
+use crate::tui::components::chrome::{BottomChromeAreas, bottom_chrome_areas};
 
 /// The status-bar activity text: the current step with an upper-cased first
 /// word and a trailing ellipsis (`wiring private network` -> `Wiring private

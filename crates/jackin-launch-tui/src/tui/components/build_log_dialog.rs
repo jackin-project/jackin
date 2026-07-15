@@ -4,8 +4,8 @@
 //! Launch docker-build log overlay helpers.
 
 use jackin_tui::components::{
-    bottom_chrome_areas, is_scrollable, render_scrollable_block,
-    scrollbar_offset_for_track_position, vertical_scrollbar_area, viewport_height, viewport_width,
+    is_scrollable, render_scrollable_block, scrollbar_offset_for_track_position,
+    vertical_scrollbar_area, viewport_height, viewport_width,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -17,6 +17,7 @@ use termrock::style::DIALOG_SURFACE;
 
 use crate::LaunchView;
 use crate::tui::components::cells::coalesce_cells;
+use crate::tui::components::chrome::bottom_chrome_areas;
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

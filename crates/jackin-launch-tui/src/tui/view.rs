@@ -3,13 +3,13 @@
 
 //! Launch cockpit top-level frame composition.
 
-use jackin_tui::components::{BOTTOM_CHROME_ROWS, bottom_chrome_areas};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::Clear;
 
 use crate::LaunchView;
 use crate::tui::components::build_log_dialog::render_build_log_dialog;
+use crate::tui::components::chrome::{BOTTOM_CHROME_ROWS, bottom_chrome_areas};
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state, render_launch_container_info,
 };

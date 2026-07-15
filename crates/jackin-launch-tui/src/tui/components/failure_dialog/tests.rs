@@ -1,12 +1,12 @@
 use super::{
     failure_copy_target_at, failure_popup_hyperlink_overlay, failure_popup_value_rect_scrolled,
 };
+use crate::tui::components::chrome::bottom_chrome_areas;
 use crate::tui::components::failure_dialog::failure_popup_rows;
 use crate::tui::model::{LaunchIdentity, LaunchTargetKind};
 use crate::tui::update::initial_view;
 use crate::tui::view::render_launch_frame;
 use crate::{FailureCopyTarget, LaunchStage, tui::model::LaunchFailure};
-use jackin_tui::components::bottom_chrome_areas;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
 fn row_text(buf: &Buffer, row: u16, width: u16) -> String {

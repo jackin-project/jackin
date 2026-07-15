@@ -3,9 +3,11 @@
 
 //! Shared launch dialog backdrop geometry.
 
-use jackin_tui::components::{ModalBackdrop, bottom_chrome_areas};
+use jackin_tui::components::ModalBackdrop;
 use ratatui::Frame;
 use ratatui::layout::Rect;
+
+use crate::tui::components::chrome::bottom_chrome_areas;
 
 /// Paint the shared solid dialog backdrop over the content body and split the
 /// standard bottom chrome into hint/spacer/footer rows.
