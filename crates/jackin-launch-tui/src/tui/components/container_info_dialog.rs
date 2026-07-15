@@ -5,7 +5,7 @@
 
 use jackin_tui::components::ModalRectSpec;
 use jackin_tui::components::{
-    ContainerInfoRow, ContainerInfoState, DebugInfo, ModalBackdrop, container_info_required_height,
+    ContainerInfoRow, ContainerInfoState, DebugInfo, container_info_required_height,
     dialog_scroll_axes, modal_rect, render_container_info,
 };
 use ratatui::Frame;
@@ -14,6 +14,7 @@ use ratatui::widgets::Clear;
 use termrock::HintSpan;
 
 use crate::LaunchView;
+use crate::tui::components::dialog::render_dialog_backdrop;
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
 fn debug_info_hint_spans(axes: jackin_tui::components::ScrollAxes) -> Vec<HintSpan<'static>> {
@@ -108,7 +109,7 @@ pub fn render_launch_container_info(
     let chrome = launch_overlay_chrome_areas(area, debug_mode);
     let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
     let rect = launch_container_info_rect(area, &state, debug_mode);
-    frame.render_widget(ModalBackdrop, chrome.body);
+    render_dialog_backdrop(frame, chrome.body);
     render_container_info(frame, rect, &state);
     let axes = dialog_scroll_axes(state.content_width(), state.content_height(), rect);
     let mut hint_spans = debug_info_hint_spans(axes);

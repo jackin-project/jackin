@@ -4,7 +4,7 @@
 //! Launch failure popup rendering and hit-testing.
 
 use jackin_tui::components::{
-    ErrorPopupRow, ErrorPopupState, ModalBackdrop, ModalRectSpec, dialog_inner_chunks,
+    ErrorPopupRow, ErrorPopupState, ModalRectSpec, dialog_inner_chunks,
     error_popup_hyperlink_overlay, error_popup_row_value_rect_groups, modal_rect,
     render_error_dialog_in, required_height,
 };
@@ -13,6 +13,7 @@ use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
 use termrock::HintSpan;
 
+use crate::tui::components::dialog::render_dialog_backdrop;
 use crate::tui::components::footer::launch_overlay_chrome_areas;
 use crate::{FailureCopyTarget, LaunchFailure, LaunchView};
 
@@ -379,7 +380,7 @@ pub fn render_failure_popup(
     debug_mode: bool,
 ) {
     let chrome = launch_overlay_chrome_areas(area, debug_mode);
-    frame.render_widget(ModalBackdrop, chrome.body);
+    render_dialog_backdrop(frame, chrome.body);
 
     let state = failure_error_state(failure, run_id, Some(view));
     let rect = failure_popup_rect(chrome.body, &state);
