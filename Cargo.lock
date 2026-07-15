@@ -3170,7 +3170,6 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-test-support",
- "jackin-tui",
  "nix 0.31.3",
  "owo-colors 4.3.0",
  "ratatui",

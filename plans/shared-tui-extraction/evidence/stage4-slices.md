@@ -13,6 +13,7 @@
 - Migration exposed a source-compatibility gap in the neutral runtime contract. TermRock repaired it forward in `771d0007c59d3be0d389f127dae94c5ab1b593ba`; jackin❯ repinned that full revision.
 - `Dirty`, `UpdateResult`, `NoEffect`, `Subscription`, `SubscriptionPoll`, `Component`, `View`, `drive_frame`, and `drive_render` now resolve from `termrock::runtime`.
 - Tokio receiver/spawn plumbing remains consumer-owned while its final console relocation proceeds.
+- `jackin-runtime` test-only prompt and layout fixtures now resolve through TermRock or launch-owned policy; its donor dependency was removed and all 608 library tests passed.
 
 ## Launch foundations
 
