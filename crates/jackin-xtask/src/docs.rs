@@ -16,7 +16,7 @@
 //! cargo xtask roadmap audit                       # validate roadmap meta.json
 //! ```
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -219,10 +219,21 @@ fn check_codebase_map(root: &Path) -> Result<()> {
         .with_context(|| format!("reading codebase map at {}", map_path.display()))?;
 
     let members = workspace_package_names(root)?;
+    let tiers: BTreeMap<&str, u8> = crate::arch::TIERS.iter().copied().collect();
+
+    check_codebase_map_text(&map, &members, &tiers, map_rel)
+}
+
+fn check_codebase_map_text(
+    map: &str,
+    members: &[String],
+    tiers: &BTreeMap<&str, u8>,
+    map_rel: &str,
+) -> Result<()> {
     let member_set: BTreeSet<&str> = members.iter().map(String::as_str).collect();
 
     let mut missing: Vec<String> = Vec::new();
-    for name in &members {
+    for name in members {
         let needle = name.as_str();
         let present = map
             .split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
@@ -267,6 +278,41 @@ fn check_codebase_map(root: &Path) -> Result<()> {
             stale.len(),
             stale.join("\n  ")
         ));
+    }
+    for name in members {
+        let row = map.lines().find(|line| {
+            line.starts_with('|')
+                && line
+                    .split('|')
+                    .nth(1)
+                    .is_some_and(|cell| cell.contains(&format!("](/reference/crates/{name}/)")))
+        });
+        let Some(row) = row else {
+            problems.push(format!(
+                "{map_rel}: missing inventory row and crate-page link for {name}"
+            ));
+            continue;
+        };
+        let expected_tier = tiers.get(name.as_str()).copied();
+        match expected_tier {
+            Some(tier)
+                if row
+                    .split('|')
+                    .nth(2)
+                    .is_some_and(|cell| cell.trim() == tier.to_string()) => {}
+            Some(tier) => problems.push(format!(
+                "{map_rel}: {name} inventory row is missing architecture tier {tier}"
+            )),
+            None => problems.push(format!(
+                "{map_rel}: {name} has no tier in the executable architecture inventory"
+            )),
+        }
+        let readme_path = format!("path=\"crates/{name}/README.md\"");
+        if !row.contains(&readme_path) {
+            problems.push(format!(
+                "{map_rel}: {name} inventory row is missing README link {readme_path}"
+            ));
+        }
     }
     if problems.is_empty() {
         emit(&format!(
