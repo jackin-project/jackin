@@ -24,6 +24,60 @@ const LEGACY_NAMESPACE_ALLOWLIST: &[&str] = &[
 
 const NON_TELEMETRY_DOTTED_NAME_FILES: &[&str] = &["crates/jackin-runtime/src/runtime/naming.rs"];
 
+// Shrink-only migration inventories. A new file never joins these lists: it
+// must use the governed facade/spawn helpers from its first commit.
+const RAW_SPAWN_ALLOWLIST: &[&str] = &[
+    "crates/jackin-capsule/src/daemon.rs",
+    "crates/jackin-capsule/src/daemon/context_mgmt.rs",
+    "crates/jackin-capsule/src/daemon/input_dispatch.rs",
+    "crates/jackin-capsule/src/daemon/multiplexer_utils.rs",
+    "crates/jackin-capsule/src/daemon/resource_metrics.rs",
+    "crates/jackin-capsule/src/pr_context.rs",
+    "crates/jackin-capsule/src/runtime_setup.rs",
+    "crates/jackin-capsule/src/session.rs",
+    "crates/jackin-capsule/src/socket.rs",
+    "crates/jackin-capsule/src/util.rs",
+    "crates/jackin-env/src/host_claude.rs",
+    "crates/jackin-env/src/op_cli.rs",
+    "crates/jackin-host/src/caffeinate.rs",
+    "crates/jackin-host/src/host_clipboard.rs",
+    "crates/jackin-image/src/agent_binary.rs",
+    "crates/jackin-image/src/capsule_binary.rs",
+    "crates/jackin-launch-tui/src/tui/input.rs",
+    "crates/jackin-launch-tui/src/tui/run.rs",
+    "crates/jackin-runtime/src/exec_host.rs",
+    "crates/jackin-runtime/src/runtime/image.rs",
+    "crates/jackin-runtime/src/runtime/image/prewarm.rs",
+    "crates/jackin-runtime/src/runtime/launch/git_pull.rs",
+    "crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs",
+    "crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core/orchestrate.rs",
+    "crates/jackin-runtime/src/runtime/launch/launch_runtime.rs",
+    "crates/jackin-runtime/src/runtime/prewarm_trigger.rs",
+    "crates/jackin-tui/src/runtime.rs",
+    "crates/jackin-usage/src/usage/codex.rs",
+    "crates/jackin-usage/src/usage/format.rs",
+    "crates/jackin-usage/src/usage/grok.rs",
+    "crates/jackin-usage/src/usage/refresh.rs",
+    "crates/jackin/src/app.rs",
+    "crates/jackin/src/cli/prewarm.rs",
+    "crates/jackin/src/cli/status.rs",
+    "crates/jackin/src/role_claude_plugins.rs",
+];
+
+const RAW_TRACING_ALLOWLIST: &[&str] = &[
+    "crates/jackin-instance/src/lib.rs",
+    "crates/jackin-runtime/src/runtime/attach.rs",
+    "crates/jackin-runtime/src/runtime/cleanup.rs",
+    "crates/jackin-runtime/src/runtime/host_attach.rs",
+    "crates/jackin-runtime/src/runtime/image.rs",
+    "crates/jackin-runtime/src/runtime/launch/git_pull.rs",
+    "crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs",
+    "crates/jackin-runtime/src/runtime/progress.rs",
+    "crates/jackin-usage/src/telemetry.rs",
+    "crates/jackin-usage/src/usage.rs",
+    "crates/jackin-usage/src/usage/refresh.rs",
+];
+
 #[derive(Args, Debug)]
 pub(crate) struct TelemetryRegistryArgs {
     /// Regenerate Rust sources from the registry before validating.
@@ -52,7 +106,109 @@ pub(crate) fn run(args: TelemetryRegistryArgs) -> Result<()> {
     let _generate = args.generate;
     validate_registry_matches_rust(&root)?;
     validate_legacy_namespaces(&root)?;
+    validate_source_policy(&root)?;
     validate_with_weaver(&root)
+}
+
+fn validate_source_policy(root: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    collect_source_files(&root.join("crates"), root, &mut files)?;
+    let mut violations = Vec::new();
+    for (relative, source) in files {
+        let path = relative.to_string_lossy();
+        let raw_spawn = [
+            "tokio::spawn(",
+            "tokio::task::spawn_blocking(",
+            "spawn_blocking(",
+            "std::thread::spawn(",
+            "thread::spawn(",
+            ".spawn_local(",
+        ];
+        if raw_spawn.iter().any(|needle| source.contains(needle))
+            && !path.starts_with("crates/jackin-telemetry/src/spawn.rs")
+            && !RAW_SPAWN_ALLOWLIST.contains(&path.as_ref())
+        {
+            violations.push(format!("{path}: unmanaged async/thread spawn"));
+        }
+        let raw_tracing = [
+            "tracing::event!(",
+            "tracing::info!(",
+            "tracing::warn!(",
+            "tracing::error!(",
+            "tracing::debug!(",
+            "tracing::trace!(",
+            "tracing::span!(",
+            "tracing::info_span!(",
+        ];
+        if raw_tracing.iter().any(|needle| source.contains(needle))
+            && !path.starts_with("crates/jackin-telemetry/")
+            && !path.starts_with("crates/jackin-diagnostics/")
+            && !RAW_TRACING_ALLOWLIST.contains(&path.as_ref())
+        {
+            violations.push(format!("{path}: raw tracing call outside governed facade"));
+        }
+        if (source.contains("#[tracing::instrument") || source.contains("#[instrument"))
+            && !source.contains("skip_all")
+        {
+            violations.push(format!("{path}: tracing instrument must declare skip_all"));
+        }
+        if (source.contains("opentelemetry::logs") || source.contains("LoggerProvider"))
+            && !path.starts_with("crates/jackin-telemetry/")
+            && !path.starts_with("crates/jackin-diagnostics/")
+        {
+            violations.push(format!("{path}: raw OpenTelemetry logs API"));
+        }
+        if source.contains("tracing_subscriber::fmt")
+            && !path.starts_with("crates/jackin-diagnostics/")
+        {
+            violations.push(format!(
+                "{path}: formatter layer outside diagnostics composition root"
+            ));
+        }
+    }
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        bail!(
+            "telemetry source-policy violations:\n  {}",
+            violations.join("\n  ")
+        )
+    }
+}
+
+fn collect_source_files(
+    dir: &Path,
+    root: &Path,
+    files: &mut Vec<(std::path::PathBuf, String)>,
+) -> Result<()> {
+    let mut entries = fs::read_dir(dir)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_source_files(&path, root, files)?;
+            continue;
+        }
+        if path.extension().and_then(|value| value.to_str()) != Some("rs") {
+            continue;
+        }
+        let relative = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
+        let text = relative.to_string_lossy();
+        if text.contains("/tests/")
+            || text.ends_with("/tests.rs")
+            || text.contains("/benches/")
+            || text.contains("/fuzz/")
+            || text.starts_with("crates/jackin-xtask/")
+            || text.starts_with("crates/jackin-dev/")
+            || text.starts_with("crates/jackin-pr-trailers/")
+            || text.contains("lookbook")
+            || text.starts_with("crates/jackin-lints/")
+        {
+            continue;
+        }
+        files.push((relative, fs::read_to_string(&path)?));
+    }
+    Ok(())
 }
 
 fn validate_with_weaver(root: &Path) -> Result<()> {
