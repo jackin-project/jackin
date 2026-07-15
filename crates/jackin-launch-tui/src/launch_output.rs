@@ -20,18 +20,18 @@ pub struct LaunchTuiOutputSink;
 
 impl LaunchOutputSink for LaunchTuiOutputSink {
     fn print_deploying<'a>(&'a self, role_name: &'a str) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
-        Box::pin(jackin_tui::output::print_deploying(role_name))
+        Box::pin(crate::output::print_deploying(role_name))
     }
 
     fn step_fail(&self, msg: &str) {
-        jackin_tui::output::step_fail(msg);
+        crate::output::step_fail(msg);
     }
 
     fn warp_out(&self, host_screen_owned: bool) {
-        jackin_tui::animation::warp_out(host_screen_owned);
+        crate::animation::warp_out(host_screen_owned);
     }
 
     fn warp_end_caption(&self, elapsed: Option<std::time::Duration>, host_screen_owned: bool) {
-        jackin_tui::animation::warp_end_caption(elapsed, host_screen_owned);
+        crate::animation::warp_end_caption(elapsed, host_screen_owned);
     }
 }
