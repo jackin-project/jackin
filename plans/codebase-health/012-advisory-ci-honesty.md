@@ -111,3 +111,8 @@ CI-config plan: verification is actionlint + observed-run evidence + docs gates.
 - The upstream 6.0.1 prebuilt embeds its release-builder `dylint_driver` path;
   the lane source-builds the same pinned version under `target/dylint-tools`
   and invokes it explicitly.
+- Hygiene run `29397057453` completed the exit-checked Hakari experiment on
+  2026-07-15. Clean locked workspace builds took **152 seconds before** and
+  **152 seconds after** `init`, `generate`, and `manage-deps` (0 seconds / 0%).
+  The explicit decision is **no-adopt**: the generated workspace-hack and its
+  dependency maintenance have no measured build-time return.

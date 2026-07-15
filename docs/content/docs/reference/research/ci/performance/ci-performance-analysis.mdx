@@ -62,7 +62,7 @@ Items 2 and 3 are complementary: 2 makes each compile cheaper; 3 makes there be 
 
 | # | Change | Verdict |
 |---|---|---|
-| 9 | `cargo-hakari` (workspace-hack) | **No-adopt pending first measured delta** (plan 012): hygiene now records before/after wall-clock; flip only if a scheduled run proves a win. |
+| 9 | `cargo-hakari` (workspace-hack) | **No-adopt** (plan 012): Hygiene run `29397057453` measured **152s before** and **152s after** a generated, fully managed workspace-hack (0% improvement), so its maintenance cost has no measured return. |
 | 10 | `mold` linker (x86_64-scoped) | Depot's Zed benchmark showed only **−0.7%** — not link-bound. Measure before investing; do not assume a win. |
 | 11 | Nightly parallel frontend (`-Z threads`, `-Z share-generics`) | −22.7% build on Zed, but adds toolchain risk; run as a measured CI-only experiment, never on the ship path. |
 | 12 | Micro-opts: `upload-artifact` `compression-level: 0` for tarballs, per-platform Buildx cache exports, slow-test-first scheduling | Small and safe; do opportunistically. |
