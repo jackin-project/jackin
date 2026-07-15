@@ -24,6 +24,7 @@ Apply these rules to every workflow under this directory. They define the reposi
 
 ## Runner Capacity
 
+- PR CI bootstrap jobs (path classification and lane selection) run on Velnor so hosted-runner admission cannot delay the matrix decision. Keep them dependency-free and short.
 - Construct PR builds use the Velnor runner lane, where the persistent BuildKit cache makes the two platform jobs fast. Keep the high-fan-out Rust CI matrix on GitHub-hosted runners unless Velnor capacity is scaled to match it; otherwise a small self-hosted pool serializes one PR's matrix.
 
 ## Publishing and Parity
