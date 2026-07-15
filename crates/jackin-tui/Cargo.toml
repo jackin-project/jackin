@@ -24,6 +24,7 @@ crossterm = { workspace = true }
 jackin-core = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
 ratatui = { workspace = true }
+termrock = { workspace = true }
 similar = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "rt", "sync", "time"] }
 tui-scrollbar = { workspace = true }

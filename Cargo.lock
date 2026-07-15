@@ -114,7 +114,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
 dependencies = [
  "anstyle",
- "anstyle-parse",
+ "anstyle-parse 1.0.0",
  "anstyle-query",
  "anstyle-wincon",
  "colorchoice",
@@ -127,6 +127,15 @@ name = "anstyle"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
+
+[[package]]
+name = "anstyle-parse"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7644824f0aa2c7b9384579234ef10eb7efb6a0deb83f9630a49594dd9c15c2"
+dependencies = [
+ "utf8parse",
+]
 
 [[package]]
 name = "anstyle-parse"
@@ -2917,7 +2926,7 @@ dependencies = [
 name = "jackin-diagnostics"
 version = "0.6.0-dev"
 dependencies = [
- "anstyle-parse",
+ "anstyle-parse 1.0.0",
  "anyhow",
  "criterion",
  "jackin-core",
@@ -3202,13 +3211,14 @@ dependencies = [
 name = "jackin-tui"
 version = "0.6.0-dev"
 dependencies = [
- "anstyle-parse",
+ "anstyle-parse 1.0.0",
  "base64 0.22.1",
  "crossterm",
  "jackin-core",
  "owo-colors 4.3.0",
  "ratatui",
  "similar 3.1.1",
+ "termrock",
  "tokio",
  "tui-scrollbar",
  "unicode-width 0.2.2",
@@ -6384,6 +6394,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "411c5bf740737c7918b8b1fe232dca4dc9f8e754b8ad5e20966814001ed0ac6b"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "termrock"
+version = "0.6.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=30d3c0cf18ddba07af3fbb872aaf48088cae7539#30d3c0cf18ddba07af3fbb872aaf48088cae7539"
+dependencies = [
+ "anstyle-parse 0.2.7",
+ "base64 0.22.1",
+ "ratatui-core",
+ "ratatui-widgets",
+ "similar 2.7.0",
+ "tui-scrollbar",
+ "unicode-segmentation",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
