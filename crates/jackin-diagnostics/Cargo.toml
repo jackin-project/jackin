@@ -42,8 +42,8 @@ otlp = [
 test-support = ["otlp", "opentelemetry_sdk/testing"]
 
 [dependencies]
+crossterm = { workspace = true }
 jackin-core = { workspace = true }
-jackin-tui = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 rand = { workspace = true }
@@ -53,7 +53,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 # Inlined from `jackin_core::ansi_text` (A3) and `jackin_core::prune_output`
 # (A3) so this crate (L1, depended on by 8 L0/L1/L2 crates) does not need
-# to pull `jackin-tui` (L3) for the two small helpers `prune_all_runs` uses.
+# keep diagnostics independent from the shared rendering layer.
 anstyle-parse = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
 # OTLP export (optional — only compiled in with `--features otlp`)
