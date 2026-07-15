@@ -8,8 +8,8 @@ use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
 use termrock::HintSpan;
 use termrock::components::{
-    ErrorPopupRow, ErrorPopupState, dialog_inner_chunks, error_popup_hyperlink_overlay,
-    error_popup_row_value_rect_groups, render_error_dialog_in, required_height,
+    ErrorPopupRow, ErrorPopupState, dialog_inner_chunks, error_popup_row_value_rect_groups,
+    render_error_dialog_in, required_height,
 };
 
 use crate::tui::components::dialog::{exact_dialog_rect, render_dialog_backdrop};
@@ -418,7 +418,35 @@ pub fn failure_popup_hyperlink_overlay(
         horizontal: 1,
         vertical: 1,
     });
-    error_popup_hyperlink_overlay(inner, &state)
+    encode_error_hyperlink_overlay(inner, &state)
+}
+
+fn encode_error_hyperlink_overlay(inner: Rect, state: &ErrorPopupState) -> Vec<u8> {
+    let groups = state.row_value_rect_groups(inner);
+    let mut out = Vec::new();
+    for (row, rects) in state.rows.iter().zip(groups) {
+        let Some(href) = row.href.as_deref() else {
+            continue;
+        };
+        let mut remaining = row.value.as_str();
+        for rect in rects {
+            let visible = termrock::display_cols_slice(remaining, 0, usize::from(rect.width));
+            if visible.is_empty() {
+                break;
+            }
+            remaining = &remaining[visible.len()..];
+            out.extend_from_slice(format!("\x1b[{};{}H", rect.y + 1, rect.x + 1).as_bytes());
+            out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, href));
+            let color = termrock::LINK_FG;
+            out.extend_from_slice(
+                format!("\x1b[38;2;{};{};{}m\x1b[1;4m", color.r, color.g, color.b).as_bytes(),
+            );
+            out.extend_from_slice(visible.as_bytes());
+            out.extend_from_slice(&termrock::osc::encode_hyperlink_close());
+            out.extend_from_slice(b"\x1b[0m");
+        }
+    }
+    out
 }
 
 /// Footer-hint keys for the launch failure popup. The dismiss group derives
