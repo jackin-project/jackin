@@ -2770,7 +2770,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "syn 2.0.118",
+ "syn 2.0.119",
  "tabled",
  "tempfile",
  "thiserror 2.0.18",
