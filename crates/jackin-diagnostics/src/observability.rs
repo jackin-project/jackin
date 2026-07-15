@@ -21,6 +21,70 @@ pub use health::{
     TelemetryHealth, TelemetrySignalHealth, record_telemetry_rejection, telemetry_health_snapshot,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ValidationReport {
+    pub elapsed: std::time::Duration,
+    pub health: TelemetryHealth,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ValidationFailure {
+    NoEndpoint,
+    Disabled,
+    Inactive,
+    Export(&'static str),
+    Rejected,
+}
+
+impl std::fmt::Display for ValidationFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoEndpoint => formatter.write_str("no endpoint configured"),
+            Self::Disabled => formatter.write_str("OpenTelemetry SDK is disabled"),
+            Self::Inactive => formatter.write_str("telemetry providers are not active"),
+            Self::Export(signal) => write!(formatter, "telemetry export failed for {signal}"),
+            Self::Rejected => {
+                formatter.write_str("telemetry marker was rejected by the governed facade")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ValidationFailure {}
+
+/// Emit one marker for every signal and synchronously confirm exporter delivery.
+pub fn validate_delivery() -> Result<ValidationReport, ValidationFailure> {
+    if std::env::var("OTEL_SDK_DISABLED").is_ok_and(|value| value.eq_ignore_ascii_case("true")) {
+        return Err(ValidationFailure::Disabled);
+    }
+    if !otlp_endpoint_configured() {
+        return Err(ValidationFailure::NoEndpoint);
+    }
+    let before = telemetry_health_snapshot();
+    if before.active_signals != 3 {
+        return Err(ValidationFailure::Inactive);
+    }
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
+            .map_err(|_| ValidationFailure::Rejected)?;
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .map_err(|_| ValidationFailure::Rejected)?;
+    jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
+        .add(1, &[])
+        .map_err(|_| ValidationFailure::Rejected)?;
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    let started = std::time::Instant::now();
+    otlp::validate_flush()?;
+    let health = telemetry_health_snapshot();
+    Ok(ValidationReport {
+        elapsed: started.elapsed(),
+        health,
+    })
+}
+
 const JSONL_TARGET: &str = "jackin_diagnostics::jsonl";
 
 /// OTLP/tracing attribute keys — the single source of truth for jackin❯'s
@@ -551,6 +615,33 @@ mod otlp {
             }
             health::record_shutdown(true);
         }
+    }
+
+    pub(super) fn validate_flush() -> Result<(), super::ValidationFailure> {
+        let providers = PROVIDERS.lock().expect("provider lock");
+        let providers = providers
+            .as_ref()
+            .ok_or(super::ValidationFailure::Inactive)?;
+        let trace = providers.tracer.force_flush();
+        health::record_signal_export(health::Signal::Traces, trace.is_ok());
+        let logs = providers.logger.force_flush();
+        health::record_signal_export(health::Signal::Logs, logs.is_ok());
+        let metrics = providers
+            .meter
+            .as_ref()
+            .ok_or(super::ValidationFailure::Inactive)?
+            .force_flush();
+        health::record_signal_export(health::Signal::Metrics, metrics.is_ok());
+        if trace.is_err() {
+            return Err(super::ValidationFailure::Export("traces"));
+        }
+        if logs.is_err() {
+            return Err(super::ValidationFailure::Export("logs"));
+        }
+        if metrics.is_err() {
+            return Err(super::ValidationFailure::Export("metrics"));
+        }
+        Ok(())
     }
 
     static PROVIDERS: std::sync::Mutex<Option<OtlpProviders>> = std::sync::Mutex::new(None);

@@ -50,6 +50,9 @@ pub const RPC_CLIENT: SpanDef = SpanDef {
 pub const RPC_SERVER: SpanDef = SpanDef {
     name: schema::spans::RPC_SERVER,
 };
+pub const TELEMETRY_VALIDATE: SpanDef = SpanDef {
+    name: schema::spans::TELEMETRY_VALIDATE,
+};
 
 #[derive(Debug)]
 pub struct OperationGuard {
@@ -168,6 +171,9 @@ fn make_span(name: &str, root: bool) -> Option<Span> {
             schema::spans::RPC_SERVER => {
                 tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "rpc.server", otel.kind = "server")
             }
+            schema::spans::TELEMETRY_VALIDATE => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "telemetry.validate")
+            }
             _ => return None,
         });
     }
@@ -204,6 +210,9 @@ fn make_span(name: &str, root: bool) -> Option<Span> {
         }
         schema::spans::RPC_SERVER => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "rpc.server", otel.kind = "server")
+        }
+        schema::spans::TELEMETRY_VALIDATE => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "telemetry.validate")
         }
         _ => return None,
     })

@@ -25,5 +25,5 @@ fn contract_closed_set_sizes_are_stable() {
     assert_eq!(enums::LaunchStageName::ALL.len(), 11);
     assert_eq!(enums::AgentName::ALL.len(), 6);
     assert_eq!(enums::ScreenId::ALL.len(), 6);
-    assert_eq!(metrics::ALL.len(), 29);
+    assert_eq!(metrics::ALL.len(), 30);
 }

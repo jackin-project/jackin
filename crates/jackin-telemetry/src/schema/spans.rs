@@ -13,6 +13,7 @@ pub const CONNECTION_ATTEMPT: &str = "connection.attempt";
 pub const PROCESS_COMMAND: &str = "process.command";
 pub const RPC_CLIENT: &str = "rpc.client";
 pub const RPC_SERVER: &str = "rpc.server";
+pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 
 pub const ALL: &[&str] = &[
     CLI_COMMAND,
@@ -26,4 +27,5 @@ pub const ALL: &[&str] = &[
     PROCESS_COMMAND,
     RPC_CLIENT,
     RPC_SERVER,
+    TELEMETRY_VALIDATE,
 ];

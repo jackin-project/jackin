@@ -14,6 +14,8 @@ use jackin_core::JackinPaths;
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum DiagnosticsCommand {
+    /// Emit one marked log, trace, and metric and confirm OTLP delivery
+    Validate,
     /// Summarize a diagnostics run JSONL artifact
     Summary(DiagnosticsSummaryArgs),
     /// Compare multiple diagnostics run JSONL artifacts
@@ -69,9 +71,23 @@ pub enum DiagnosticsCompareFormat {
 
 pub fn run(command: &DiagnosticsCommand, paths: &JackinPaths) -> anyhow::Result<()> {
     match command {
+        DiagnosticsCommand::Validate => validate(),
         DiagnosticsCommand::Summary(args) => summary(args, paths),
         DiagnosticsCommand::Compare(args) => compare(args, paths),
     }
+}
+
+fn validate() -> anyhow::Result<()> {
+    let report = jackin_diagnostics::validate_delivery()?;
+    let endpoint = jackin_diagnostics::configured_endpoint_summary()
+        .unwrap_or_else(|| "configured endpoint".to_owned());
+    println!("telemetry: endpoint {endpoint}");
+    println!("signals:   traces ok  logs ok  metrics ok");
+    println!(
+        "delivery:  confirmed (flush {}ms)",
+        report.elapsed.as_millis()
+    );
+    Ok(())
 }
 
 fn summary(args: &DiagnosticsSummaryArgs, paths: &JackinPaths) -> anyhow::Result<()> {

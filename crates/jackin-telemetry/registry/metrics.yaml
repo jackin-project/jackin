@@ -28,3 +28,4 @@ groups:
   - { id: metric.terminal.render.cells, type: metric, metric_name: terminal.render.cells, instrument: counter, unit: "{cell}", brief: Terminal cells painted., stability: development }
   - { id: metric.terminal.render.duration, type: metric, metric_name: terminal.render.duration, instrument: histogram, unit: s, brief: Terminal render duration., stability: development }
   - { id: metric.telemetry.rejections, type: metric, metric_name: telemetry.rejections, instrument: counter, unit: "{rejection}", brief: Governed facade rejections., stability: development, attributes: [{ ref: telemetry.signal, requirement_level: required }, { ref: telemetry.rejection.reason, requirement_level: required }] }
+  - { id: metric.telemetry.validate, type: metric, metric_name: telemetry.validate, instrument: counter, unit: "{validation}", brief: Telemetry delivery validation markers., stability: development }

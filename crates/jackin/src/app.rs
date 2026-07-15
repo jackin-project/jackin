@@ -329,6 +329,7 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Daemon(_) => "daemon",
         Command::Logs(_) => "logs",
         Command::Doctor(_) => "doctor",
+        Command::Diagnostics(crate::cli::DiagnosticsCommand::Validate) => "diagnostics.validate",
         Command::Diagnostics(_) => "diagnostics",
         Command::Status(_) => "status",
         Command::Usage(_) => "usage",

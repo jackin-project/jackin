@@ -100,6 +100,10 @@ pub const APP_CRASH: EventDef = EventDef {
     name: schema::events::APP_CRASH,
     severity: Severity::Error,
 };
+pub const TELEMETRY_VALIDATE: EventDef = EventDef {
+    name: schema::events::TELEMETRY_VALIDATE,
+    severity: Severity::Info,
+};
 
 fn validate(def: &'static EventDef, fields: &FieldSet<'_>) -> Result<(), Rejection> {
     if !schema::events::ALL.contains(&def.name) {
@@ -161,6 +165,9 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
         }
         schema::events::APP_JANK => emit_named!("app.jank", def.severity, fields),
         schema::events::APP_CRASH => emit_named!("app.crash", def.severity, fields),
+        schema::events::TELEMETRY_VALIDATE => {
+            emit_named!("telemetry.validate", def.severity, fields)
+        }
         _ => unreachable!("validated closed event registry"),
     }
     Ok(())

@@ -172,6 +172,11 @@ pub const TELEMETRY_REJECTIONS: InstrumentDef = InstrumentDef {
     unit: "{rejection}",
     kind: InstrumentKind::Counter,
 };
+pub const TELEMETRY_VALIDATE: InstrumentDef = InstrumentDef {
+    name: "telemetry.validate",
+    unit: "{validation}",
+    kind: InstrumentKind::Counter,
+};
 
 static METER: OnceLock<Meter> = OnceLock::new();
 static SERIES: OnceLock<Mutex<HashMap<&'static str, HashSet<String>>>> = OnceLock::new();

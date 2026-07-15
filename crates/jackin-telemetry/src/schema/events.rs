@@ -10,6 +10,7 @@ pub const UI_WIDGET_FOCUSED: &str = "ui.widget.focused";
 pub const UI_WIDGET_UNFOCUSED: &str = "ui.widget.unfocused";
 pub const APP_JANK: &str = "app.jank";
 pub const APP_CRASH: &str = "app.crash";
+pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 
 pub const ALL: &[&str] = &[
     SESSION_START,
@@ -20,4 +21,5 @@ pub const ALL: &[&str] = &[
     UI_WIDGET_UNFOCUSED,
     APP_JANK,
     APP_CRASH,
+    TELEMETRY_VALIDATE,
 ];
