@@ -94,8 +94,18 @@ fn should_null_stdin(opts: &RunOptions) -> bool {
     opts.null_stdin || (!opts.interactive && jackin_diagnostics::rich_terminal_owned())
 }
 
-fn record_subprocess_done(program: &str, started: Instant, status: ExitStatus) {
-    jackin_diagnostics::operation_record_exit_code(status.code());
+fn record_subprocess_done(
+    operation: &jackin_telemetry::OperationGuard,
+    program: &str,
+    started: Instant,
+    status: ExitStatus,
+) {
+    if let Some(code) = status.code() {
+        let _ = operation.set_attr(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+            value: jackin_telemetry::Value::I64(i64::from(code)),
+        });
+    }
     jackin_diagnostics::active_subprocess_done(
         program,
         started.elapsed().as_millis() as u64,
@@ -254,21 +264,19 @@ async fn await_child_with_timeout(
     }
 }
 
-fn enter_process_execute(program: &str, args: &[&str]) -> jackin_diagnostics::OperationGuard {
-    let redacted = redact_env_args(args).join(" ");
-    jackin_diagnostics::enter_operation(
-        jackin_diagnostics::otel_events::PROCESS_EXECUTE,
-        &[
-            (
-                jackin_diagnostics::otel_keys::PROCESS_COMMAND,
-                program.to_owned(),
-            ),
-            (
-                jackin_diagnostics::otel_keys::PROCESS_ARGS_REDACTED,
-                redacted,
-            ),
-        ],
+fn enter_process_execute(program: &str) -> jackin_telemetry::OperationGuard {
+    let executable = Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("unknown");
+    jackin_telemetry::operation(
+        &jackin_telemetry::operation::PROCESS_COMMAND,
+        &[jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+            value: jackin_telemetry::Value::Str(executable),
+        }],
     )
+    .expect("registered process command operation")
 }
 
 impl CommandRunner for ShellRunner {
@@ -279,7 +287,7 @@ impl CommandRunner for ShellRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
-        let op_guard = enter_process_execute(program, args);
+        let op_guard = enter_process_execute(program);
         self.log_command(program, args, cwd);
 
         // `interactive` must own the real terminal, so the arms below resolve it
@@ -301,9 +309,9 @@ impl CommandRunner for ShellRunner {
             let started = Instant::now();
             let mut child = cmd.spawn()?;
             let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
-            record_subprocess_done(program, started, status);
+            record_subprocess_done(&op_guard, program, started, status);
             if !status.success() {
-                op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
+                op_guard.complete(jackin_telemetry::schema::enums::OutcomeValue::Failure, None);
                 return Err(cmd_failed(program, args).into());
             }
         } else if opts.quiet {
@@ -314,9 +322,9 @@ impl CommandRunner for ShellRunner {
                 .stderr(std::process::Stdio::null());
             let mut child = cmd.spawn()?;
             let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
-            record_subprocess_done(program, started, status);
+            record_subprocess_done(&op_guard, program, started, status);
             if !status.success() {
-                op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
+                op_guard.complete(jackin_telemetry::schema::enums::OutcomeValue::Failure, None);
                 return Err(cmd_failed(program, args).into());
             }
         } else if opts.capture_stderr || opts.capture_stdout {
@@ -339,13 +347,13 @@ impl CommandRunner for ShellRunner {
             let started = Instant::now();
             let mut child = cmd.spawn()?;
             let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
-            record_subprocess_done(program, started, status);
+            record_subprocess_done(&op_guard, program, started, status);
             if !status.success() {
-                op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
+                op_guard.complete(jackin_telemetry::schema::enums::OutcomeValue::Failure, None);
                 return Err(cmd_failed(program, args).into());
             }
         }
-        op_guard.complete(jackin_diagnostics::Outcome::Success, None);
+        op_guard.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
         Ok(())
     }
 
@@ -382,7 +390,7 @@ impl ShellRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
-        let op_guard = enter_process_execute(program, args);
+        let op_guard = enter_process_execute(program);
         let mut cmd = Self::build_command(program, args, cwd);
         Self::apply_run_opts(&mut cmd, opts);
         if opts.capture_stdout {
@@ -395,14 +403,8 @@ impl ShellRunner {
         let mut child = match cmd.spawn() {
             Ok(child) => child,
             Err(error) => {
-                jackin_diagnostics::operation_error(
-                    jackin_diagnostics::otel_events::PROCESS_EXECUTE,
-                    "process_spawn_error",
-                    &format!("failed to spawn {program}: {error}"),
-                    &[],
-                );
                 op_guard.complete(
-                    jackin_diagnostics::Outcome::Failure,
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
                     Some("process_spawn_error"),
                 );
                 return Err(error.into());
@@ -466,7 +468,7 @@ impl ShellRunner {
         let stdout_buf = stdout_result?;
         let stderr_buf = stderr_result?;
         let status = status?;
-        record_subprocess_done(program, started, status);
+        record_subprocess_done(&op_guard, program, started, status);
         self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
         let command = format!("{} {}", program, redact_env_args(args).join(" "));
         if opts.tee_to_build_log
@@ -531,14 +533,14 @@ impl ShellRunner {
                 }
                 .into());
             }
-            op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
+            op_guard.complete(jackin_telemetry::schema::enums::OutcomeValue::Failure, None);
             return Err(DockerError::CommandFailedSeeStderr {
                 program: program.to_owned(),
                 args: args.join(" "),
             }
             .into());
         }
-        op_guard.complete(jackin_diagnostics::Outcome::Success, None);
+        op_guard.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
         Ok(())
     }
 
@@ -564,6 +566,7 @@ impl ShellRunner {
         cwd: Option<&Path>,
         mode: CaptureMode,
     ) -> anyhow::Result<String> {
+        let operation = enter_process_execute(program);
         self.log_command(program, args, cwd);
         let mut command = Self::build_command(program, args, cwd);
         command
@@ -574,8 +577,12 @@ impl ShellRunner {
         }
         let started = Instant::now();
         let output = command.output().await?;
-        record_subprocess_done(program, started, output.status);
+        record_subprocess_done(&operation, program, started, output.status);
         if !output.status.success() {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some("process_exit_nonzero"),
+            );
             match mode {
                 CaptureMode::Secret => {
                     return Err(cmd_failed(program, args).into());
@@ -594,6 +601,7 @@ impl ShellRunner {
                 }
             }
         }
+        operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         if self.debug && !stdout.is_empty() {
             match mode {
