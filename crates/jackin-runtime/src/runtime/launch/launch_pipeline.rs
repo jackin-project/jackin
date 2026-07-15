@@ -132,7 +132,7 @@ fn defer_operator_env<'a>(
 
     let config_clone = config.clone();
     let host_env = opts.host_env.clone();
-    DeferredOperatorEnv::Spawned(tokio::task::spawn_blocking(move || {
+    DeferredOperatorEnv::Spawned(jackin_telemetry::spawn::joined_blocking(move || {
         let needed_agents = credential_agents;
         if let Some(host_env) = host_env {
             let default_runner = jackin_env::OpCli::new();
@@ -967,7 +967,7 @@ pub(crate) async fn load_role_with(
                 );
                 let debug = opts.debug;
                 let git_program = git_pull_program(opts);
-                let handle = tokio::task::spawn_blocking(move || {
+                let handle = jackin_telemetry::spawn::joined_blocking(move || {
                     super::pull_git_sources_with_git(sources, debug, &git_program, false)
                 });
                 git_pull_join = Some(DeferredGitPull {
@@ -985,7 +985,7 @@ pub(crate) async fn load_role_with(
             // single-threaded executor is never parked on the join.
             let debug = opts.debug;
             let git_program = git_pull_program(opts);
-            let handle = tokio::task::spawn_blocking(move || {
+            let handle = jackin_telemetry::spawn::joined_blocking(move || {
                 super::pull_git_sources_with_git(sources, debug, &git_program, true)
             });
             git_pull_join = Some(DeferredGitPull {

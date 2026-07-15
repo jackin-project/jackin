@@ -170,7 +170,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         );
     }
 
-    Some(tokio::task::spawn_blocking(move || {
+    Some(jackin_telemetry::spawn::joined_blocking(move || {
         let resolve_mode = |a: jackin_core::Agent| {
             let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
             jackin_config::resolve_mode(&config, a, ws.as_ref(), &role_key)
@@ -837,40 +837,41 @@ pub(crate) async fn launch_role_runtime(
         "prepare_socket_dir",
         Some(container_name),
     );
-    let prepare_socket_dir_result = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        std::fs::create_dir_all(&socket_dir_for_mkdir)?;
-        std::fs::create_dir_all(&usage_shared_dir_for_mkdir)?;
-        std::fs::write(
-            socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
-            capsule_config_contents_for_write,
-        )?;
-        if let Some((passwd_line, group_line)) = extrausers_entries_for_write {
-            if let Some(parent) = extrausers_passwd_for_write.parent() {
-                std::fs::create_dir_all(parent)?;
+    let prepare_socket_dir_result =
+        jackin_telemetry::spawn::joined_blocking(move || -> std::io::Result<()> {
+            std::fs::create_dir_all(&socket_dir_for_mkdir)?;
+            std::fs::create_dir_all(&usage_shared_dir_for_mkdir)?;
+            std::fs::write(
+                socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+                capsule_config_contents_for_write,
+            )?;
+            if let Some((passwd_line, group_line)) = extrausers_entries_for_write {
+                if let Some(parent) = extrausers_passwd_for_write.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                super::write_if_changed_atomic(
+                    &extrausers_passwd_for_write,
+                    &extrausers_tmp,
+                    passwd_line.as_bytes(),
+                )?;
+                super::write_if_changed_atomic(
+                    &extrausers_group_for_write,
+                    &extrausers_group_tmp,
+                    group_line.as_bytes(),
+                )?;
             }
-            super::write_if_changed_atomic(
-                &extrausers_passwd_for_write,
-                &extrausers_tmp,
-                passwd_line.as_bytes(),
-            )?;
-            super::write_if_changed_atomic(
-                &extrausers_group_for_write,
-                &extrausers_group_tmp,
-                group_line.as_bytes(),
-            )?;
-        }
-        Ok(())
-    })
-    .await
-    .context("socket dir mkdir worker join")
-    .and_then(|result| {
-        result.with_context(|| {
-            format!(
-                "creating host-side socket dir {} for container {container_name}",
-                socket_dir.display(),
-            )
+            Ok(())
         })
-    });
+        .await
+        .context("socket dir mkdir worker join")
+        .and_then(|result| {
+            result.with_context(|| {
+                format!(
+                    "creating host-side socket dir {} for container {container_name}",
+                    socket_dir.display(),
+                )
+            })
+        });
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "prepare_socket_dir",

@@ -63,7 +63,7 @@ pub(crate) fn pull_git_sources_with_git(
         let git_program = git_program.to_path_buf();
         pulls.push((
             src.clone(),
-            std::thread::spawn(move || {
+            jackin_telemetry::spawn::thread_joined(move || {
                 let request = jackin_process::ExecRequest::new(git_program, ["-C", &src, "pull"])
                     .envs([("GIT_TERMINAL_PROMPT", "0")]);
                 match jackin_process::exec_sync(&request) {

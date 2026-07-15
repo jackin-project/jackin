@@ -48,7 +48,11 @@ async fn roundtrip_with_auth(
     let server_task =
         tokio::spawn(async move { handle_connection(server, &allowed, caller_auth).await });
 
-    let body = serde_json::to_vec(&serde_json::json!({ "refs": request_refs })).unwrap();
+    let body = serde_json::to_vec(&serde_json::json!({
+        "ctx": { "v": jackin_telemetry::propagation::VERSION },
+        "refs": request_refs,
+    }))
+    .unwrap();
     if client
         .write_all(&(body.len() as u32).to_be_bytes())
         .await

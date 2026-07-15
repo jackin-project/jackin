@@ -53,6 +53,8 @@ use jackin_image::derived_image::AgentInstall;
 use jackin_image::image_recipe::expected_image_recipes;
 use jackin_image::version_check;
 use jackin_manifest::repo::CachedRepo;
+#[cfg(not(test))]
+use jackin_telemetry::spawn::JoinSetExt as _;
 
 #[cfg(test)]
 pub(crate) use jackin_image::image_recipe::{
@@ -436,57 +438,60 @@ pub(super) fn spawn_sibling_runtime_prewarm(
             Some(&detail),
         );
     }
-    Some(tokio::spawn(async move {
-        if let Some(run) = &active_run {
-            run.stage(
-                "runtime_prewarm_started",
-                jackin_diagnostics::DiagnosticStage::AgentBinaries,
-                "prewarming sibling runtime binaries",
-                Some(&agents),
-            );
-        }
-        if let Some(run) = &active_run {
-            run.timing_started(
-                jackin_diagnostics::DiagnosticStage::AgentBinaries,
-                "sibling_runtime_prewarm",
-                Some(&agents),
-            );
-        }
-        let result = prepare_agent_binaries(
-            &paths,
-            &siblings,
-            jackin_diagnostics::DiagnosticStage::AgentBinaries,
-            false,
-        )
-        .await;
-        let timing_detail = match &result {
-            Ok(prepared) => agent_binary_prepare_summary(prepared),
-            Err(error) => format!("failed: {error:#}"),
-        };
-        if let Some(run) = &active_run {
-            run.timing_done(
-                jackin_diagnostics::DiagnosticStage::AgentBinaries,
-                "sibling_runtime_prewarm",
-                Some(&timing_detail),
-            );
-        }
-        if let Some(run) = active_run {
-            match result {
-                Ok(prepared) => run.stage(
-                    "runtime_prewarm_done",
+    Some(jackin_telemetry::spawn::spawn_detached(
+        &jackin_telemetry::operation::BACKGROUND_CYCLE,
+        async move {
+            if let Some(run) = &active_run {
+                run.stage(
+                    "runtime_prewarm_started",
                     jackin_diagnostics::DiagnosticStage::AgentBinaries,
-                    "prewarmed sibling runtime binaries",
-                    Some(&agent_binary_prepare_summary(&prepared)),
-                ),
-                Err(error) => run.stage(
-                    "runtime_prewarm_failed",
-                    jackin_diagnostics::DiagnosticStage::AgentBinaries,
-                    "sibling runtime binary prewarm failed",
-                    Some(&format!("{error:#}")),
-                ),
+                    "prewarming sibling runtime binaries",
+                    Some(&agents),
+                );
             }
-        }
-    }))
+            if let Some(run) = &active_run {
+                run.timing_started(
+                    jackin_diagnostics::DiagnosticStage::AgentBinaries,
+                    "sibling_runtime_prewarm",
+                    Some(&agents),
+                );
+            }
+            let result = prepare_agent_binaries(
+                &paths,
+                &siblings,
+                jackin_diagnostics::DiagnosticStage::AgentBinaries,
+                false,
+            )
+            .await;
+            let timing_detail = match &result {
+                Ok(prepared) => agent_binary_prepare_summary(prepared),
+                Err(error) => format!("failed: {error:#}"),
+            };
+            if let Some(run) = &active_run {
+                run.timing_done(
+                    jackin_diagnostics::DiagnosticStage::AgentBinaries,
+                    "sibling_runtime_prewarm",
+                    Some(&timing_detail),
+                );
+            }
+            if let Some(run) = active_run {
+                match result {
+                    Ok(prepared) => run.stage(
+                        "runtime_prewarm_done",
+                        jackin_diagnostics::DiagnosticStage::AgentBinaries,
+                        "prewarmed sibling runtime binaries",
+                        Some(&agent_binary_prepare_summary(&prepared)),
+                    ),
+                    Err(error) => run.stage(
+                        "runtime_prewarm_failed",
+                        jackin_diagnostics::DiagnosticStage::AgentBinaries,
+                        "sibling runtime binary prewarm failed",
+                        Some(&format!("{error:#}")),
+                    ),
+                }
+            }
+        },
+    ))
 }
 
 pub(super) fn spawn_sibling_image_prewarm(
@@ -541,62 +546,65 @@ pub(super) fn spawn_sibling_image_prewarm(
         let selector = selector.clone();
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
-        tokio::spawn(async move {
-            let agents = siblings
-                .iter()
-                .map(|agent| agent.slug())
-                .collect::<Vec<_>>()
-                .join(",");
-            if let Some(run) = jackin_diagnostics::active_run() {
-                run.stage(
-                    "sibling_image_prewarm_started",
-                    jackin_diagnostics::DiagnosticStage::DerivedImage,
-                    "prewarming sibling runtime images",
-                    Some(&agents),
-                );
-            }
-
-            jackin_diagnostics::active_timing_started(
-                jackin_diagnostics::DiagnosticStage::DerivedImage,
-                "sibling_image_prewarm",
-                Some(&agents),
-            );
-            let (built, reused, failed) = prewarm_sibling_images_concurrently(
-                paths,
-                selector,
-                role_git,
-                branch_override,
-                siblings,
-            )
-            .await;
-            let timing_detail = if failed.is_empty() {
-                format!("built={built}; reused={reused}")
-            } else {
-                format!("built={built}; reused={reused}; failed={}", failed.len())
-            };
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::DerivedImage,
-                "sibling_image_prewarm",
-                Some(&timing_detail),
-            );
-            if let Some(run) = jackin_diagnostics::active_run() {
-                if failed.is_empty() {
+        jackin_telemetry::spawn::spawn_detached(
+            &jackin_telemetry::operation::BACKGROUND_CYCLE,
+            async move {
+                let agents = siblings
+                    .iter()
+                    .map(|agent| agent.slug())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                if let Some(run) = jackin_diagnostics::active_run() {
                     run.stage(
-                        "sibling_image_prewarm_done",
+                        "sibling_image_prewarm_started",
                         jackin_diagnostics::DiagnosticStage::DerivedImage,
-                        "prewarmed sibling runtime images",
-                        Some(&format!("built={built}; reused={reused}")),
-                    );
-                } else {
-                    run.stage(
-                        "sibling_image_prewarm_failed",
-                        jackin_diagnostics::DiagnosticStage::DerivedImage,
-                        "sibling runtime image prewarm finished with failures",
-                        Some(&failed.join("; ")),
+                        "prewarming sibling runtime images",
+                        Some(&agents),
                     );
                 }
-            }
-        });
+
+                jackin_diagnostics::active_timing_started(
+                    jackin_diagnostics::DiagnosticStage::DerivedImage,
+                    "sibling_image_prewarm",
+                    Some(&agents),
+                );
+                let (built, reused, failed) = prewarm_sibling_images_concurrently(
+                    paths,
+                    selector,
+                    role_git,
+                    branch_override,
+                    siblings,
+                )
+                .await;
+                let timing_detail = if failed.is_empty() {
+                    format!("built={built}; reused={reused}")
+                } else {
+                    format!("built={built}; reused={reused}; failed={}", failed.len())
+                };
+                jackin_diagnostics::active_timing_done(
+                    jackin_diagnostics::DiagnosticStage::DerivedImage,
+                    "sibling_image_prewarm",
+                    Some(&timing_detail),
+                );
+                if let Some(run) = jackin_diagnostics::active_run() {
+                    if failed.is_empty() {
+                        run.stage(
+                            "sibling_image_prewarm_done",
+                            jackin_diagnostics::DiagnosticStage::DerivedImage,
+                            "prewarmed sibling runtime images",
+                            Some(&format!("built={built}; reused={reused}")),
+                        );
+                    } else {
+                        run.stage(
+                            "sibling_image_prewarm_failed",
+                            jackin_diagnostics::DiagnosticStage::DerivedImage,
+                            "sibling runtime image prewarm finished with failures",
+                            Some(&failed.join("; ")),
+                        );
+                    }
+                }
+            },
+        );
     }
 }
 
@@ -617,7 +625,7 @@ async fn prewarm_sibling_images_concurrently(
         let selector = selector.clone();
         let role_git = role_git.clone();
         let branch_override = branch_override.clone();
-        tasks.spawn(async move {
+        tasks.spawn_joined_on(async move {
             let result = prewarm_sibling_image(
                 &paths,
                 &selector,
@@ -672,63 +680,66 @@ pub(super) fn spawn_selected_image_refresh(
         let selector = selector.clone();
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
-        tokio::spawn(async move {
-            if let Some(run) = jackin_diagnostics::active_run() {
-                run.stage(
-                    "selected_image_refresh_started",
-                    jackin_diagnostics::DiagnosticStage::DerivedImage,
-                    "refreshing selected runtime image in background",
-                    Some(&format!("{}:{}", selected_agent.slug(), reason.as_str())),
-                );
-            }
-
-            let timing_detail = format!("{}:{}", selected_agent.slug(), reason.as_str());
-            jackin_diagnostics::active_timing_started(
-                jackin_diagnostics::DiagnosticStage::DerivedImage,
-                "selected_image_refresh",
-                Some(&timing_detail),
-            );
-            let result = prewarm_agent_image(
-                &paths,
-                &selector,
-                &role_git,
-                branch_override.as_deref(),
-                selected_agent,
-                debug,
-            )
-            .await;
-            let timing_done = match &result {
-                Ok(row) => format!("{}:{:?}", row.agent.slug(), row.status),
-                Err(error) => format!("{}: failed: {error:#}", selected_agent.slug()),
-            };
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::DerivedImage,
-                "selected_image_refresh",
-                Some(&timing_done),
-            );
-
-            if let Some(run) = jackin_diagnostics::active_run() {
-                match result {
-                    Ok(row) => run.stage(
-                        "selected_image_refresh_done",
+        jackin_telemetry::spawn::spawn_detached(
+            &jackin_telemetry::operation::BACKGROUND_CYCLE,
+            async move {
+                if let Some(run) = jackin_diagnostics::active_run() {
+                    run.stage(
+                        "selected_image_refresh_started",
                         jackin_diagnostics::DiagnosticStage::DerivedImage,
-                        "refreshed selected runtime image in background",
-                        Some(&format!(
-                            "{}:{:?}:{}",
-                            row.agent.slug(),
-                            row.status,
-                            row.image
-                        )),
-                    ),
-                    Err(error) => run.stage(
-                        "selected_image_refresh_failed",
-                        jackin_diagnostics::DiagnosticStage::DerivedImage,
-                        "selected runtime image refresh failed",
-                        Some(&format!("{}: {error:#}", selected_agent.slug())),
-                    ),
+                        "refreshing selected runtime image in background",
+                        Some(&format!("{}:{}", selected_agent.slug(), reason.as_str())),
+                    );
                 }
-            }
-        });
+
+                let timing_detail = format!("{}:{}", selected_agent.slug(), reason.as_str());
+                jackin_diagnostics::active_timing_started(
+                    jackin_diagnostics::DiagnosticStage::DerivedImage,
+                    "selected_image_refresh",
+                    Some(&timing_detail),
+                );
+                let result = prewarm_agent_image(
+                    &paths,
+                    &selector,
+                    &role_git,
+                    branch_override.as_deref(),
+                    selected_agent,
+                    debug,
+                )
+                .await;
+                let timing_done = match &result {
+                    Ok(row) => format!("{}:{:?}", row.agent.slug(), row.status),
+                    Err(error) => format!("{}: failed: {error:#}", selected_agent.slug()),
+                };
+                jackin_diagnostics::active_timing_done(
+                    jackin_diagnostics::DiagnosticStage::DerivedImage,
+                    "selected_image_refresh",
+                    Some(&timing_done),
+                );
+
+                if let Some(run) = jackin_diagnostics::active_run() {
+                    match result {
+                        Ok(row) => run.stage(
+                            "selected_image_refresh_done",
+                            jackin_diagnostics::DiagnosticStage::DerivedImage,
+                            "refreshed selected runtime image in background",
+                            Some(&format!(
+                                "{}:{:?}:{}",
+                                row.agent.slug(),
+                                row.status,
+                                row.image
+                            )),
+                        ),
+                        Err(error) => run.stage(
+                            "selected_image_refresh_failed",
+                            jackin_diagnostics::DiagnosticStage::DerivedImage,
+                            "selected runtime image refresh failed",
+                            Some(&format!("{}: {error:#}", selected_agent.slug())),
+                        ),
+                    }
+                }
+            },
+        );
     }
 }
 
@@ -774,55 +785,58 @@ pub(super) fn spawn_reuse_staleness_sentinel(
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
         let image = image.to_owned();
-        tokio::spawn(async move {
-            if let Some(run) = jackin_diagnostics::active_run() {
-                run.stage(
-                    "reuse_staleness_sentinel_started",
-                    jackin_diagnostics::DiagnosticStage::DerivedImage,
-                    "checking reused runtime image staleness in background",
-                    Some(&format!("{}:{image}", selected_agent.slug())),
-                );
-            }
-
-            let result = reuse_staleness_sentinel(
-                &paths,
-                &selector,
-                &role_git,
-                branch_override.as_deref(),
-                selected_agent,
-                &image,
-                debug,
-            )
-            .await;
-
-            if let Some(run) = jackin_diagnostics::active_run() {
-                match result {
-                    Ok(Some(row)) => run.stage(
-                        "reuse_staleness_sentinel_done",
+        jackin_telemetry::spawn::spawn_detached(
+            &jackin_telemetry::operation::BACKGROUND_CYCLE,
+            async move {
+                if let Some(run) = jackin_diagnostics::active_run() {
+                    run.stage(
+                        "reuse_staleness_sentinel_started",
                         jackin_diagnostics::DiagnosticStage::DerivedImage,
-                        "refreshed reused runtime image in background",
-                        Some(&format!(
-                            "{}:{:?}:{}",
-                            row.agent.slug(),
-                            row.status,
-                            row.image
-                        )),
-                    ),
-                    Ok(None) => run.stage(
-                        "reuse_staleness_sentinel_done",
-                        jackin_diagnostics::DiagnosticStage::DerivedImage,
-                        "reused runtime image is still fresh",
+                        "checking reused runtime image staleness in background",
                         Some(&format!("{}:{image}", selected_agent.slug())),
-                    ),
-                    Err(error) => run.stage(
-                        "reuse_staleness_sentinel_failed",
-                        jackin_diagnostics::DiagnosticStage::DerivedImage,
-                        "reuse staleness sentinel failed",
-                        Some(&format!("{}: {error:#}", selected_agent.slug())),
-                    ),
+                    );
                 }
-            }
-        });
+
+                let result = reuse_staleness_sentinel(
+                    &paths,
+                    &selector,
+                    &role_git,
+                    branch_override.as_deref(),
+                    selected_agent,
+                    &image,
+                    debug,
+                )
+                .await;
+
+                if let Some(run) = jackin_diagnostics::active_run() {
+                    match result {
+                        Ok(Some(row)) => run.stage(
+                            "reuse_staleness_sentinel_done",
+                            jackin_diagnostics::DiagnosticStage::DerivedImage,
+                            "refreshed reused runtime image in background",
+                            Some(&format!(
+                                "{}:{:?}:{}",
+                                row.agent.slug(),
+                                row.status,
+                                row.image
+                            )),
+                        ),
+                        Ok(None) => run.stage(
+                            "reuse_staleness_sentinel_done",
+                            jackin_diagnostics::DiagnosticStage::DerivedImage,
+                            "reused runtime image is still fresh",
+                            Some(&format!("{}:{image}", selected_agent.slug())),
+                        ),
+                        Err(error) => run.stage(
+                            "reuse_staleness_sentinel_failed",
+                            jackin_diagnostics::DiagnosticStage::DerivedImage,
+                            "reuse staleness sentinel failed",
+                            Some(&format!("{}: {error:#}", selected_agent.slug())),
+                        ),
+                    }
+                }
+            },
+        );
     }
 }
 

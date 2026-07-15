@@ -60,7 +60,7 @@ pub fn start(
     sock_path: PathBuf,
     allowed_bindings: Vec<ExecBinding>,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
+    jackin_telemetry::spawn::spawn_stream("exec_host.connection", async move {
         if let Err(e) = run_listener(&sock_path, &allowed_bindings, CallerAuth::CapsuleDaemon).await
         {
             // A returned error is a startup failure (bind/chmod/mkdir) — the

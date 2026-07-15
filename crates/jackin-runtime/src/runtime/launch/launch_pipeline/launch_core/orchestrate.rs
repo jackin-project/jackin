@@ -696,7 +696,7 @@ where
     let role_key_owned = role_key.to_owned();
     let github_ctx_owned = configured.github_ctx.clone();
     let role_state_future = async move {
-        tokio::task::spawn_blocking(move || {
+        jackin_telemetry::spawn::joined_blocking(move || {
             let resolve_mode = |candidate| {
                 jackin_config::resolve_mode(
                     &config_owned,
