@@ -1,23 +1,16 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 //! Seeded chaos helpers for the Docker-backed E2E lane (plan 046).
 //!
 //! Deterministic `xorshift64` schedule; seed from `JACKIN_CHAOS_SEED` or a
 //! fixed default. Every docker filter is scoped by the harness's
 //! `jackin.class` label / name prefix.
 
+#![expect(
+    clippy::expect_used,
+    clippy::disallowed_methods,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 use std::path::Path;
 use std::time::{Duration, Instant};
 

@@ -66,7 +66,7 @@ pub(crate) enum LaunchError {
     ))]
     AuthCredentialMissing {
         /// Agent the launch was for (drives the var name and remediation copy).
-        agent: jackin_core::agent::Agent,
+        agent: jackin_core::Agent,
         /// Resolved `auth_forward` mode that requires the credential.
         mode: jackin_config::AuthForwardMode,
         /// Well-known credential env var (e.g. `ANTHROPIC_API_KEY`,
@@ -120,7 +120,7 @@ fn render_label_width<T>(rows: &[(String, T)]) -> usize {
 /// directly and ignores this rendering — they intentionally share the
 /// data, not the formatting.
 fn render_auth_credential_missing(
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     mode: jackin_config::AuthForwardMode,
     env_var: &str,
     workspace: &str,
@@ -205,7 +205,7 @@ fn render_auth_credential_missing(
 /// glance which TOML layer wins.
 pub(super) fn build_mode_resolution(
     cfg: &AppConfig,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     workspace: Option<&jackin_core::WorkspaceName>,
     role: &str,
 ) -> Vec<(String, Option<jackin_config::AuthForwardMode>)> {

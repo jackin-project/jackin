@@ -193,9 +193,9 @@ More concretely: Docker Sandboxes CLI (as of May 2026) has no events stream, no 
 |---|---|---|
 | VM per session (own kernel) | ✅ proprietary VMM | ✅ Virtualization.framework |
 | Private Docker daemon (no `--privileged`) | ✅ built-in | ✅ rootless DinD inside VM (requires Docker hardening) |
-| Credentials never in sandbox | ✅ host-side credential proxy (built-in) | ✅ jackin-exec (jackin builds this) |
-| Network domain allowlist | ✅ host-side proxy (built-in) | ✅ egress policy (jackin builds this) |
-| Per-operation filesystem/network policy | ❌ | ✅ zerobox (jackin builds this) |
+| Credentials never in sandbox | ✅ host-side credential proxy (built-in) | ✅ jackin-exec (jackin❯ builds this) |
+| Network domain allowlist | ✅ host-side proxy (built-in) | ✅ egress policy (jackin❯ builds this) |
+| Per-operation filesystem/network policy | ❌ | ✅ zerobox (jackin❯ builds this) |
 | TUI-native operator approval UI | ❌ | ✅ jackin❯ owns the terminal |
 | Role system (Dockerfile-based) | ❌ fixed agent runners | ✅ full role authoring |
 | Session reconnect / eject / purge | ❌ | ✅ |

@@ -15,8 +15,8 @@ fn repo(path: &str) -> DirtyRepo {
     }
 }
 
-fn changed_file(status: char, path: &str) -> jackin_core::worktree_dirty::ChangedFile {
-    jackin_core::worktree_dirty::ChangedFile {
+fn changed_file(status: char, path: &str) -> jackin_core::ChangedFile {
+    jackin_core::ChangedFile {
         status,
         path: path.to_owned(),
     }

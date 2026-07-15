@@ -13,7 +13,7 @@
 
 use crate::ImageError;
 use jackin_core::Agent;
-use jackin_core::manifest::{ClaudeConfig, HooksConfig};
+use jackin_core::{ClaudeConfig, HooksConfig};
 use jackin_manifest::ValidatedRoleRepo;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -70,10 +70,6 @@ const AGENT_STATUS_ASSETS: &[(&str, &str)] = &[
 ];
 const ZSHENV_SOURCE_SHIM_PATH: &str = ".jackin-runtime/zshenv-source-shim";
 const ZSH_TITLE_SHIM_PATH: &str = ".jackin-runtime/zsh-title-shim";
-#[allow(
-    clippy::literal_string_with_formatting_args,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)] // shell ${...}, not a Rust format arg
 const ZSHENV_SOURCE_SHIM: &str = "\
 if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then
   __jackin_rc=0
@@ -426,7 +422,7 @@ pub fn render_derived_dockerfile(
     // construct. Derived-from-derived builds (`base_image_override`)
     // also skip the second append because the first build added the
     // marker line to /home/agent/.zshrc.
-    #[allow(
+    #[expect(
         clippy::items_after_statements,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]

@@ -47,7 +47,7 @@ pub(crate) fn emit_launch_plan_for_run(
     .to_string();
     run.stage(
         "launch_plan",
-        "restore",
+        jackin_diagnostics::DiagnosticStage::Restore,
         &format!("selected launch plan {plan}"),
         Some(&detail),
     );
@@ -101,7 +101,7 @@ pub(crate) fn emit_rejected_launch_plan_for_run(
     .to_string();
     run.stage(
         "launch_plan_rejected",
-        "restore",
+        jackin_diagnostics::DiagnosticStage::Restore,
         &format!("rejected launch plan {plan}"),
         Some(&detail),
     );

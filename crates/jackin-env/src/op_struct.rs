@@ -3,8 +3,8 @@
 
 //! `OpStructRunner` and `OpWriteRunner` traits for structured 1Password access.
 
-use jackin_core::op_types::{OpAccount, OpField, OpItem, OpVault};
 use jackin_core::{FieldTarget, OpRef};
+use jackin_core::{OpAccount, OpField, OpItem, OpVault};
 
 /// Structural `op` queries used by the picker — metadata browser.
 ///

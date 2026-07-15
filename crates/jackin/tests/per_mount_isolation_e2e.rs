@@ -1,17 +1,8 @@
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
-
 mod common;
 
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
@@ -86,10 +77,6 @@ impl CommandRunner for ScriptedRunner {
 }
 
 #[tokio::test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 async fn materialize_then_clean_exit_removes_record_and_branch() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();

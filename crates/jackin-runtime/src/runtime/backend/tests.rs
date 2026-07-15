@@ -13,7 +13,7 @@ fn test_manifest(container: &str, backend: Option<BackendResources>) -> Instance
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",

@@ -18,11 +18,11 @@ jackin: warning: docker pull docker.io/chainargos/jackin-agent-brown:latest fail
 Error response from daemon: pull access denied for chainargos/jackin-agent-brown, repository does not exist or may require 'docker login'
 ```
 
-jackin never sends registry credentials when pulling. The pull path in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> calls bollard `create_image` with the `RegistryAuth` argument hard-coded to `None`. Because the freshness check in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> treats *any* pull failure as "image is stale", an auth failure is indistinguishable from a genuinely outdated image — so jackin falls through to a full workspace rebuild from the Dockerfile (13+ minutes in the report above) and never tells the operator the real problem was a missing login.
+jackin❯ never sends registry credentials when pulling. The pull path in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> calls bollard `create_image` with the `RegistryAuth` argument hard-coded to `None`. Because the freshness check in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> treats *any* pull failure as "image is stale", an auth failure is indistinguishable from a genuinely outdated image — so jackin❯ falls through to a full workspace rebuild from the Dockerfile (13+ minutes in the report above) and never tells the operator the real problem was a missing login.
 
 ### Root cause — the bug class, not the missing argument
 
-The `auth: None` argument is the symptom. The structural cause is that jackin has no place for an operator to declare credentials for an external endpoint. There is no `[registry]`/`[[registries]]` block in the config schema (<RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> defines `AppConfig` and `WorkspaceConfig` with auth blocks only for the agent API key and the GitHub token). Because there is no general credential-source layer, every external secret jackin has ever needed was solved as a one-off:
+The `auth: None` argument is the symptom. The structural cause is that jackin❯ has no place for an operator to declare credentials for an external endpoint. There is no `[registry]`/`[[registries]]` block in the config schema (<RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> defines `AppConfig` and `WorkspaceConfig` with auth blocks only for the agent API key and the GitHub token). Because there is no general credential-source layer, every external secret jackin❯ has ever needed was solved as a one-off:
 
 - Agent API keys and GitHub token — bespoke fields in <RepoFile path="crates/jackin-config/src/auth.rs">crates/jackin-config/src/auth.rs</RepoFile>.
 - 1Password / env references — resolved ad hoc through the host-socket daemon in <RepoFile path="crates/jackin-capsule/src/exec.rs">crates/jackin-capsule/src/exec.rs</RepoFile>.
@@ -50,7 +50,7 @@ The structural move is a configurations layer: a list of named, scoped endpoint 
 
 ### Pull through bollard, not the docker CLI
 
-The pull path must stay in-process via the bollard API, not shell out to the `docker` CLI. The CLI offers no way to hold a session or inject ad-hoc credentials per pull; bollard does, and jackin already calls it. This was verified against the pinned `bollard 0.21.0`:
+The pull path must stay in-process via the bollard API, not shell out to the `docker` CLI. The CLI offers no way to hold a session or inject ad-hoc credentials per pull; bollard does, and jackin❯ already calls it. This was verified against the pinned `bollard 0.21.0`:
 
 - `create_image(options, body, credentials: Option<DockerCredentials>)` — the third argument is the injection point. Today it is `None` in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile>. bollard base64-encodes the credentials into the `X-Registry-Auth` header itself — the same mechanism the CLI uses internally.
 - `bollard::auth::DockerCredentials { username, password, auth, email, serveraddress, identitytoken, registrytoken }` — all `Option<String>`. (Note: the type is `DockerCredentials`, not `RegistryAuth`.)
@@ -93,17 +93,17 @@ struct EcrProvider {
 // else call get_authorization_token, store { creds, expires_at }.
 ```
 
-"Authenticate once" for ECR means the operator configures the AWS profile/SSO once (or runs on a role-bearing instance/IRSA); jackin mints fresh ~12h tokens on demand, transparently, with no re-login and — with the native `aws-sdk-ecr` path — no helper binary to install. Static credentials (PATs) need no refresh at all. This is the heart of the desired UX: provide credentials once, never be forced to re-authenticate mid-flow.
+"Authenticate once" for ECR means the operator configures the AWS profile/SSO once (or runs on a role-bearing instance/IRSA); jackin❯ mints fresh ~12h tokens on demand, transparently, with no re-login and — with the native `aws-sdk-ecr` path — no helper binary to install. Static credentials (PATs) need no refresh at all. This is the heart of the desired UX: provide credentials once, never be forced to re-authenticate mid-flow.
 
 ### Recommended default + escape hatches
 
-- **Default (zero config):** the `docker-config` provider. If the operator has already run `docker login` or installed the ECR credential helper, jackin works with no jackin-side configuration — this is "provide once," reusing the host's existing login.
+- **Default (zero config):** the `docker-config` provider. If the operator has already run `docker login` or installed the ECR credential helper, jackin❯ works with no jackin-side configuration — this is "provide once," reusing the host's existing login.
 - **Native `ecr` config entry:** best UX for the private-ECR forcing case — AWS credential chain plus automatic refresh, no helper install. Recommended for the reported failure.
 - **Explicit `[[registries]]` entries:** env / `op://` / command credential sources for everything else, declarable global or per workspace.
 
 ### Concept-validation PoC
 
-Before committing to the design, a ~30-line throwaway (no jackin integration) proves the whole approach: obtain an ECR token (`aws ecr get-login-password` or `aws-sdk-ecr`), build a `DockerCredentials { username: "AWS", password: token, serveraddress: <registry>, .. }`, and call `create_image(.., Some(creds))` to pull a private ECR image. If that pulls clean, bollard + in-process credentials + per-pull resolution is validated end to end.
+Before committing to the design, a ~30-line throwaway (no jackin❯ integration) proves the whole approach: obtain an ECR token (`aws ecr get-login-password` or `aws-sdk-ecr`), build a `DockerCredentials { username: "AWS", password: token, serveraddress: <registry>, .. }`, and call `create_image(.., Some(creds))` to pull a private ECR image. If that pulls clean, bollard + in-process credentials + per-pull resolution is validated end to end.
 
 ### Decided: config surface — narrow surface, general guts
 
@@ -133,7 +133,7 @@ Each entry: `name` (operator label), `match` (host pattern for resolving an imag
 
 ### Decided: zero-config default — auto-read host docker config
 
-When an image reference matches no `[[registries]]` entry, jackin falls back to the host's `~/.docker/config.json`, honoring `credsStore` and `credHelpers` (via the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate). Why: this is exactly how docker, buildkit, and skopeo already behave, so it is least-surprise; an operator who has run `docker login` or installed `docker-credential-ecr-login` gets working private pulls with zero jackin configuration — the "provide once" promise. Reading `~/.docker/config.json` is a host read, allowed under `HOST_AND_CONTAINER.md` (no opt-in needed; no host writes). Resolution stays host-side and credentials are handed only to the docker daemon via bollard's auth header — they never enter the container env or image layers (container credential exposure).
+When an image reference matches no `[[registries]]` entry, jackin❯ falls back to the host's `~/.docker/config.json`, honoring `credsStore` and `credHelpers` (via the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate). Why: this is exactly how docker, buildkit, and skopeo already behave, so it is least-surprise; an operator who has run `docker login` or installed `docker-credential-ecr-login` gets working private pulls with zero jackin❯ configuration — the "provide once" promise. Reading `~/.docker/config.json` is a host read, allowed under `HOST_AND_CONTAINER.md` (no opt-in needed; no host writes). Resolution stays host-side and credentials are handed only to the docker daemon via bollard's auth header — they never enter the container env or image layers (container credential exposure).
 
 Precedence: an explicit matching `[[registries]]` entry wins over the host-config fallback; a per-workspace entry wins over a global entry for the same host.
 
@@ -177,7 +177,7 @@ The native `ecr` kind uses `aws-sdk-ecr` `get_authorization_token` over the defa
 credentials = { ecr = { region = "us-east-1", profile = "prod" } }
 ```
 
-`region` may be derived from the registry host (`<acct>.dkr.ecr.<region>.amazonaws.com`) so it is optional when the `match` host carries it; `profile` is optional (default chain otherwise). Token caching: store `{ DockerCredentials, expires_at }` per registry, refresh when within a small skew (~5 min) of `expires_at`. This is the "authenticate once" payoff — operator configures AWS once; jackin mints ~12h tokens on demand.
+`region` may be derived from the registry host (`<acct>.dkr.ecr.<region>.amazonaws.com`) so it is optional when the `match` host carries it; `profile` is optional (default chain otherwise). Token caching: store `{ DockerCredentials, expires_at }` per registry, refresh when within a small skew (~5 min) of `expires_at`. This is the "authenticate once" payoff — operator configures AWS once; jackin❯ mints ~12h tokens on demand.
 
 ### Decided: `jackin registry login` (keychain-backed)
 

@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Cell width + row helpers extracted from grid.rs.
-#[allow(
-    unused_imports,
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(clippy::wildcard_imports, reason = "target-dependent")
 )]
 use super::*;
 

@@ -143,8 +143,8 @@ pub fn list_name_lines(
 }
 
 pub fn instance_details_pane(
-    entry: &jackin_core::instance::InstanceIndexEntry,
-    sessions: &[jackin_core::instance::SessionRecord],
+    entry: &jackin_core::InstanceIndexEntry,
+    sessions: &[jackin_core::SessionRecord],
     session_load_error: bool,
     snapshot: Option<&jackin_protocol::InstanceSnapshot>,
     selected_pane: Option<u64>,
@@ -158,7 +158,7 @@ pub fn instance_details_pane(
 }
 
 fn instance_details_content(
-    sessions: &[jackin_core::instance::SessionRecord],
+    sessions: &[jackin_core::SessionRecord],
     session_load_error: bool,
     snapshot: Option<&jackin_protocol::InstanceSnapshot>,
     selected_pane: Option<u64>,
@@ -207,9 +207,8 @@ pub fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &ManagerSta
     }) {
         WorkspaceSidebarPlan::InlineProviderPicker => {
             if let Some(picker) = state.inline_provider_picker.as_ref() {
-                let short_id =
-                    jackin_core::constants::instance_id_from_container_base(&picker.context)
-                        .unwrap_or(picker.context.as_str());
+                let short_id = jackin_core::instance_id_from_container_base(&picker.context)
+                    .unwrap_or(picker.context.as_str());
                 render_provider_picker_sidebar(
                     frame,
                     area,
@@ -235,8 +234,8 @@ pub fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &ManagerSta
         WorkspaceSidebarPlan::InlineNewSessionPicker => {
             if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref()
             {
-                let short_id = jackin_core::constants::instance_id_from_container_base(container)
-                    .unwrap_or(container);
+                let short_id =
+                    jackin_core::instance_id_from_container_base(container).unwrap_or(container);
                 render_agent_picker_sidebar(frame, area, short_id, picker, sidebar_owns_focus);
             }
         }
@@ -315,15 +314,15 @@ pub fn render_current_dir_details_pane(
     render_sidebar_body(frame, &layout, &inputs, config, state);
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub fn render_instance_details_pane(
     frame: &mut Frame<'_>,
     area: Rect,
-    entry: &jackin_core::instance::InstanceIndexEntry,
-    sessions: &[jackin_core::instance::SessionRecord],
+    entry: &jackin_core::InstanceIndexEntry,
+    sessions: &[jackin_core::SessionRecord],
     session_load_error: bool,
     snapshot: Option<&jackin_protocol::InstanceSnapshot>,
     selected_pane: Option<u64>,

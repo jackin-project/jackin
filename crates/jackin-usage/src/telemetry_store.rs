@@ -14,7 +14,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use crate::store_backend::{Connection, Row, connect_local, params};
-use jackin_core::account_key::account_key_hash;
+use jackin_core::account_key_hash;
 use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
 #[cfg(test)]
 use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
@@ -279,10 +279,12 @@ async fn upsert_account_snapshot_rows(
     conn: &Connection,
     rows: Vec<StoredAccountUsageSnapshot>,
 ) -> Result<(), String> {
+    jackin_diagnostics::incr_db_statement("begin");
     conn.execute("BEGIN", ())
         .await
         .map_err(|err| format!("begin telemetry snapshot transaction failed: {err}"))?;
     for row in rows {
+        jackin_diagnostics::incr_db_statement("upsert_account_usage_snapshot");
         if let Err(err) = conn
             .execute(
             "

@@ -3,13 +3,13 @@
 
 //! `Claude` / `Anthropic` usage snapshot.
 //!
-//! Carved out of `usage.rs` during codebase-health-enforcement Workstream W5
+//! Carved out of `usage.rs` during the completed codebase-health Workstream W5
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(clippy::wildcard_imports, reason = "target-dependent")
 )]
 use super::*;
 use serde::Deserialize;
@@ -661,10 +661,6 @@ fn has_equivalent_claude_window(
 /// they share one builder with `limits`-sourced windows. Weekly-scoped windows
 /// (Sonnet/Opus/Routines) get the weekly duration so they are paced uniformly
 /// with a `weekly_scoped` Fable limit.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 fn legacy_claude_quota_windows(
     five_hour: Option<ClaudeOAuthUsageWindow>,
     seven_day: Option<ClaudeOAuthUsageWindow>,

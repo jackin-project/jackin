@@ -26,7 +26,7 @@ use super::{
 /// `focus_swap_reset`) with one derivation (§3.4 of the capsule rendering
 /// plan).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct AssertedClientState {
+pub(crate) struct AssertedClientState {
     pub(super) bracketed_paste: bool,
     pub(super) application_cursor: bool,
     pub(super) kitty_flags: u32,
@@ -40,7 +40,7 @@ type SgrRegion = (ratatui::layout::Rect, SgrMetadata);
 type PaneRegions = (Vec<HyperlinkRegion>, Vec<SgrRegion>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct PaneRegionCache {
+pub(crate) struct PaneRegionCache {
     key: PaneRegionCacheKey,
     hyperlinks: Vec<HyperlinkRegion>,
     sgr: Vec<SgrRegion>,
@@ -61,18 +61,18 @@ impl Multiplexer {
     /// branch is the wipe policy (a real `\x1b[2J` precedes the frame for
     /// `FirstAttach` and `Resize` only).
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
-        if self.rendered_generation == self.frame_generation {
+        if self.render.rendered_generation == self.render.frame_generation {
             return Vec::new();
         }
-        let generation = self.frame_generation;
-        let reason = self.last_invalidate_reason.take();
-        let wipe = self.wipe_pending.take();
+        let generation = self.render.frame_generation;
+        let reason = self.render.last_invalidate_reason.take();
+        let wipe = self.render.wipe_pending.take();
         let started = Instant::now();
         let alloc_before = crate::alloc_telemetry::snapshot();
         if wipe.is_some() {
             // Terminal::clear() emits the screen erase and resets Ratatui's
             // previous buffer so FirstAttach/Resize get a real baseline reset.
-            drop(self.ratatui_terminal.clear());
+            drop(self.render.ratatui_terminal.clear());
         }
         let Some(output) = self.compose_ratatui_frame() else {
             // compose_ratatui_frame only returns None if the Ratatui draw
@@ -82,7 +82,7 @@ impl Multiplexer {
             crate::clog!("compose_pending_frame: ratatui draw failed; skipping frame");
             return Vec::new();
         };
-        self.rendered_generation = generation;
+        self.render.rendered_generation = generation;
         jackin_diagnostics::record_render(started.elapsed().as_micros() as u64, 0);
         crate::ctrace_payload!(
             "render: reason={} wipe={} generation={} bytes={} duration_us={} term={}x{} dialog_open={}",
@@ -91,8 +91,8 @@ impl Multiplexer {
             generation,
             output.len(),
             started.elapsed().as_micros(),
-            self.term_cols,
-            self.term_rows,
+            self.render.term_cols,
+            self.render.term_rows,
             self.dialog_open(),
         );
         if let Some(delta) = crate::alloc_telemetry::delta_since(alloc_before) {
@@ -108,15 +108,15 @@ impl Multiplexer {
 
     pub(super) fn append_outer_terminal_title(&mut self, buf: &mut Vec<u8>) {
         let title = compose_outer_terminal_title(
-            &self.workdir,
+            &self.launch_env.workdir,
             self.context_bar_branch(),
-            self.pull_request_context.as_deref(),
+            self.pr_watch.pull_request_context.as_deref(),
         );
-        if self.last_outer_terminal_title.as_deref() == Some(title.as_str()) {
+        if self.client_registry.last_outer_terminal_title.as_deref() == Some(title.as_str()) {
             return;
         }
         append_osc_window_title(buf, &title);
-        self.last_outer_terminal_title = Some(title);
+        self.client_registry.last_outer_terminal_title = Some(title);
     }
 
     /// Prepend the outer-terminal title to a freshly composed frame.
@@ -142,7 +142,7 @@ impl Multiplexer {
     ///
     /// Returns the ANSI output to send to the attach client, or `None` if the
     /// Ratatui terminal fails to draw (the caller then skips the frame).
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "Per-frame compositor that snapshots the multiplexer state and \
                   renders the resulting capsule frame to ANSI bytes. The inline \
@@ -151,21 +151,21 @@ impl Multiplexer {
     )]
     fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
-        use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen, render_capsule_ratatui_frame};
+        use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen};
 
-        let term_rows = self.term_rows;
-        let term_cols = self.term_cols;
-        let active_tab = self.active_tab;
+        let term_rows = self.render.term_rows;
+        let term_cols = self.render.term_cols;
+        let active_tab = self.session_supervisor.active_tab;
         // `focused_usage_snapshot()` returns an owned view; move the headline out
         // rather than cloning on the per-frame compose path.
         let usage_status_label = self.focused_usage_snapshot().status_bar_label;
-        let tabs = &self.tabs;
+        let tabs = &self.session_supervisor.tabs;
         let panes = self.visible_panes();
         // Frame-geometry trace: the status bar owns rows 0..STATUS_BAR_ROWS, so
         // every pane's outer rect must start at or below that. A pane whose
         // `outer.row` is smaller means its top border is being drawn over the
-        // status bar — the resize-residue class. Logged per frame (firehose,
-        // JACKIN_DEBUG only) so a soak run pins the exact offending frame.
+        // status bar — the resize-residue class. Logged per frame at the
+        // firehose tier so a soak run pins the exact offending frame.
         // Skip the per-pane trace loop entirely unless the firehose is on; the
         // individual `cdebug!`s self-gate, but the loop and its arg setup would
         // otherwise run every frame on the compose hot path.
@@ -175,7 +175,7 @@ impl Multiplexer {
                 "frame-geom: term={}x{} content_rows={} status_rows={} panes={}",
                 term_cols,
                 term_rows,
-                self.content_rows,
+                self.render.content_rows,
                 status_rows,
                 panes.len(),
             );
@@ -203,7 +203,7 @@ impl Multiplexer {
         // and the active-tab underline goes green through the same abstraction
         // that drives pane-border focus and cursor visibility. Otherwise the
         // owner follows the focused pane.
-        let focus_owner = if self.tab_bar_focused {
+        let focus_owner = if self.render.tab_bar_focused {
             jackin_tui::components::FocusOwner::TabBar
         } else {
             focused_id.map_or(
@@ -215,7 +215,7 @@ impl Multiplexer {
         let dialog_open = self.dialog_open();
         // Status-bar inputs snapshotted before the draw closure borrows self.
         let session_states = self.snapshot_session_states();
-        let prefix_mode = self.status_bar.prefix_mode;
+        let prefix_mode = self.status.status_bar.prefix_mode;
         // Lay out row 0 once per frame. The owned plan is shared with the
         // status-bar widget (paint), the tab tooltip, and the click-region
         // refresh below, so the bar is never laid out more than once per frame.
@@ -226,20 +226,25 @@ impl Multiplexer {
             &session_states,
             prefix_mode,
         );
-        let hover_target = self.hover_target;
+        let hover_target = self.render.hover_target;
         let hovered_tab = crate::tui::view::hovered_tab(hover_target);
         let menu_hovered = crate::tui::view::hovered_menu(hover_target);
         // Selection highlight is only meaningful in the unzoomed multi-pane
         // view; a zoom toggle cancels it, matching the raw path's gate.
-        let selection = if zoomed { None } else { self.selection };
-        let selection_copied = self.selection_copied;
+        let selection = if zoomed {
+            None
+        } else {
+            self.clipboard.selection
+        };
+        let selection_copied = self.clipboard.selection_copied;
 
         // Snapshot session display titles before the draw closure borrows self.
         let pane_titles: Vec<(u64, String)> = panes
             .iter()
             .filter_map(|pane| {
-                self.sessions
-                    .get(&pane.id)
+                self.session_supervisor
+                    .sessions
+                    .get(pane.id)
                     .map(|s| (pane.id, session_display_title(s)))
             })
             .collect();
@@ -249,7 +254,7 @@ impl Multiplexer {
         let pane_scrollbars: Vec<(u64, usize, usize)> = panes
             .iter()
             .filter_map(|pane| {
-                self.sessions.get_mut(&pane.id).map(|s| {
+                self.session_supervisor.sessions.get_mut(pane.id).map(|s| {
                     // Alt-screen apps (Claude Code, vim, …) own their own
                     // scroll — jackin keeps no scrollback for them, so report
                     // filled=0 to suppress the scrollbar thumb on their border.
@@ -265,8 +270,8 @@ impl Multiplexer {
         // Snapshot dialog state (fully owned) before the draw closure.
         let dialog_snapshot: Option<(DialogRatatuiSnapshot, (u16, u16, u16, u16))> = if dialog_open
         {
-            let pr_branch = self.pull_request_context_branch.as_deref();
-            let pr_info = self.pull_request_context.as_deref();
+            let pr_branch = self.pr_watch.pull_request_context_branch.as_deref();
+            let pr_info = self.pr_watch.pull_request_context.as_deref();
             let pr_loading = self.pull_request_context_loading();
             let github = crate::tui::components::dialog::github_context_view_from_state(
                 pr_branch, pr_info, pr_loading,
@@ -301,7 +306,7 @@ impl Multiplexer {
 
         // Snapshot scrollback state for the focused session before the draw closure.
         let scrollback_active = focused_id
-            .and_then(|id| self.sessions.get(&id))
+            .and_then(|id| self.session_supervisor.sessions.get(id))
             .is_some_and(|s| s.scrollback_offset() != 0);
         let main_scroll_axes = focused_id
             .and_then(|id| {
@@ -325,7 +330,7 @@ impl Multiplexer {
         // cached per-pane metadata scans.
         let mut damaged_panes = HashSet::new();
         for pane in &panes {
-            if let Some(session) = self.sessions.get_mut(&pane.id)
+            if let Some(session) = self.session_supervisor.sessions.get_mut(pane.id)
                 && !session.shadow_grid.dirty_spans().is_empty()
             {
                 damaged_panes.insert(pane.id);
@@ -341,7 +346,7 @@ impl Multiplexer {
         let pane_screens: Vec<(u64, PaneScreen<'_>)> = panes
             .iter()
             .filter_map(|pane| {
-                self.sessions.get(&pane.id).map(|s| {
+                self.session_supervisor.sessions.get(pane.id).map(|s| {
                     let view = s
                         .shadow_grid
                         .scrollback_view(s.scrollback_offset(), pane.inner.rows);
@@ -351,7 +356,7 @@ impl Multiplexer {
             .collect();
         if crate::logging::debug_enabled() {
             for pane in &panes {
-                let Some(session) = self.sessions.get(&pane.id) else {
+                let Some(session) = self.session_supervisor.sessions.get(pane.id) else {
                     continue;
                 };
                 let actual_filled = session.scrollback_filled();
@@ -413,11 +418,12 @@ impl Multiplexer {
             None
         };
         let branch = self.context_bar_branch().map(str::to_owned);
-        let pull_request = self.pull_request_context.clone();
+        let pull_request = self.pr_watch.pull_request_context.clone();
         let pull_request_loading = self.pull_request_context_loading();
-        let palette_key = self.input_parser.palette_key().unwrap_or(0x1C);
-        let clipboard_image_notice = self.clipboard_image_notice.clone();
+        let palette_key = self.control.input_parser.palette_key().unwrap_or(0x1C);
+        let clipboard_image_notice = self.clipboard.clipboard_image_notice.clone();
         let link_hover_notice = self
+            .render
             .link_hover_url
             .as_ref()
             .map(|url| format!("Open link: {url}"));
@@ -425,10 +431,10 @@ impl Multiplexer {
         // Frame hyperlink layer (§3.4): the encoder brackets exactly these
         // cells with OSC 8 during emission — no raw overlay writes.
         let (mut hyperlink_regions, sgr_regions) = cached_pane_regions(
-            &mut self.pane_region_cache,
+            &mut self.render.pane_region_cache,
             &panes,
             &pane_screens,
-            &self.sessions,
+            &self.session_supervisor.sessions,
             &damaged_panes,
             focused_id,
         );
@@ -447,60 +453,74 @@ impl Multiplexer {
                 Vec::new()
             };
         hyperlink_regions.extend(ui_hyperlink_regions);
-        self.ratatui_terminal
+        self.render
+            .ratatui_terminal
             .backend_mut()
             .set_hyperlink_regions(hyperlink_regions);
-        self.ratatui_terminal
+        self.render
+            .ratatui_terminal
             .backend_mut()
             .set_sgr_regions(sgr_regions);
 
-        let result = self.ratatui_terminal.draw(|frame| {
-            render_capsule_ratatui_frame(
-                frame,
-                CapsuleRatatuiFrame {
-                    tabs,
-                    status_plan: &status_plan,
-                    term_cols,
-                    term_rows,
-                    panes: &panes,
-                    pane_titles: &pane_titles,
-                    focus_owner,
-                    zoomed,
-                    dialog_open,
-                    dialog_snapshot: dialog_snapshot.as_ref(),
-                    pane_screens: &pane_screens,
-                    prefix_mode,
-                    hovered_tab,
-                    menu_hovered,
-                    selection,
-                    selection_copied,
-                    scrollbars: &pane_scrollbars,
-                    branch: branch.as_deref(),
-                    usage_status_label: Some(usage_status_label.as_str()),
-                    pull_request: pull_request.as_deref(),
-                    pull_request_loading,
-                    instance_id_label: self.status_bar.instance_id_label(),
-                    hover_target,
-                    scrollback_active,
-                    main_scroll_axes,
-                    debug_run_id: debug_run_id_owned.as_deref(),
-                    dialog_hint_spans: dialog_hint_spans.as_deref(),
-                    palette_key,
-                    clipboard_image_notice: clipboard_image_notice.as_deref(),
-                    link_hover_notice: link_hover_notice.as_deref(),
-                },
-            );
-        });
+        let frame_model = CapsuleRatatuiFrame {
+            tabs,
+            status_plan: &status_plan,
+            term_cols,
+            term_rows,
+            panes: &panes,
+            pane_titles: &pane_titles,
+            focus_owner,
+            zoomed,
+            dialog_open,
+            dialog_snapshot: dialog_snapshot.as_ref(),
+            pane_screens: &pane_screens,
+            prefix_mode,
+            hovered_tab,
+            menu_hovered,
+            selection,
+            selection_copied,
+            scrollbars: &pane_scrollbars,
+            branch: branch.as_deref(),
+            usage_status_label: Some(usage_status_label.as_str()),
+            pull_request: pull_request.as_deref(),
+            pull_request_loading,
+            instance_id_label: self.status.status_bar.instance_id_label(),
+            hover_target,
+            scrollback_active,
+            main_scroll_axes,
+            debug_run_id: debug_run_id_owned.as_deref(),
+            dialog_hint_spans: dialog_hint_spans.as_deref(),
+            palette_key,
+            clipboard_image_notice: clipboard_image_notice.as_deref(),
+            link_hover_notice: link_hover_notice.as_deref(),
+        };
+        let area = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: term_cols,
+            height: term_rows,
+        };
+        // Shared drive_frame (plan 021) — CapsuleView is the View adapter.
+        let result = jackin_tui::runtime::drive_frame(
+            &mut self.render.ratatui_terminal,
+            &crate::tui::runtime::CapsuleView,
+            &frame_model,
+            area,
+            |_| {},
+        );
 
         // Keep tab/menu click regions in sync with the columns the widget
         // just painted, from the same plan the widget rendered, so hit-testing
         // is correct after a Ratatui frame without re-laying out the bar.
-        self.status_bar.set_click_regions_from_plan(&status_plan);
+        self.status
+            .status_bar
+            .set_click_regions_from_plan(&status_plan);
 
         match result {
             Ok(_) => {
                 let mut output = Vec::new();
-                self.ratatui_terminal
+                self.render
+                    .ratatui_terminal
                     .backend_mut()
                     .drain_output_into(&mut output);
                 drop(pane_screens);
@@ -516,9 +536,10 @@ impl Multiplexer {
     }
 
     pub(super) fn snapshot_session_states(&self) -> Vec<(u64, VisibleAgentState)> {
-        self.sessions
+        self.session_supervisor
+            .sessions
             .iter()
-            .map(|(&id, s)| (id, visible_agent_state_from_protocol(s.state)))
+            .map(|(id, s)| (id, visible_agent_state_from_protocol(s.state)))
             .collect()
     }
 
@@ -535,7 +556,7 @@ impl Multiplexer {
         focused_pane_rect: Option<Rect>,
     ) {
         let dialog_open = self.dialog_open();
-        let focused = focused_id.and_then(|id| self.sessions.get(&id));
+        let focused = focused_id.and_then(|id| self.session_supervisor.sessions.get(id));
         let desired = AssertedClientState {
             bracketed_paste: focused.is_some_and(|s| s.shadow_grid.bracketed_paste()),
             application_cursor: focused.is_some_and(|s| s.shadow_grid.application_cursor()),
@@ -552,7 +573,7 @@ impl Multiplexer {
                 _ => false,
             },
         };
-        let last = self.last_asserted_client_state;
+        let last = self.render.last_asserted_client_state;
         if last.is_none_or(|l| l.bracketed_paste != desired.bracketed_paste) {
             buf.extend_from_slice(if desired.bracketed_paste {
                 b"\x1b[?2004h"
@@ -604,7 +625,7 @@ impl Multiplexer {
             // record explicit for the first frame after attach.
             buf.extend_from_slice(b"\x1b[?25l");
         }
-        self.last_asserted_client_state = Some(desired);
+        self.render.last_asserted_client_state = Some(desired);
     }
 }
 
@@ -612,7 +633,7 @@ fn cached_pane_regions(
     cache: &mut std::collections::HashMap<u64, PaneRegionCache>,
     panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
-    sessions: &std::collections::HashMap<u64, crate::session::Session>,
+    sessions: &super::SessionRegistry,
     damaged_panes: &HashSet<u64>,
     focused_id: Option<u64>,
 ) -> PaneRegions {
@@ -622,7 +643,7 @@ fn cached_pane_regions(
     let mut hyperlinks = Vec::new();
     let mut sgr = Vec::new();
     for pane in panes {
-        let Some(session) = sessions.get(&pane.id) else {
+        let Some(session) = sessions.get(pane.id) else {
             cache.remove(&pane.id);
             continue;
         };
@@ -734,14 +755,14 @@ fn cell_safe_uri(cell: &jackin_term::Cell) -> Option<&str> {
 fn pane_hyperlink_regions(
     panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
-    sessions: &std::collections::HashMap<u64, crate::session::Session>,
+    sessions: &super::SessionRegistry,
 ) -> Vec<(ratatui::layout::Rect, String)> {
     pane_cell_runs(
         panes,
         pane_screens,
         |id| {
             sessions
-                .get(&id)
+                .get(id)
                 .is_some_and(crate::session::Session::allow_frame_hyperlinks)
         },
         |cell| cell_safe_uri(cell).map(str::to_owned),

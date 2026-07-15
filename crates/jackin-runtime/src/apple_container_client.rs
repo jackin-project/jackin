@@ -5,7 +5,7 @@
 //!
 //! Unlike the Docker backend which uses the bollard async Rust API,
 //! Apple Container has no Rust API — all lifecycle operations shell out
-//! to the `container` CLI using `tokio::process::Command`.
+//! to the `container` CLI using the shared process transport.
 //!
 //! This module defines the `AppleContainerApi` trait and its production
 //! implementation `AppleContainerClient`. A `FakeAppleContainerClient`
@@ -68,7 +68,7 @@ impl AppleContainerInfo {
 
 /// Trait for the apple-container backend lifecycle operations.
 ///
-/// All methods shell out to the `container` CLI via `tokio::process::Command`.
+/// All methods shell out to the `container` CLI via `jackin-process`.
 /// The Docker backend uses bollard (typed async API) — this trait is NOT
 /// compatible with `DockerApi` and requires a separate implementation.
 pub trait AppleContainerApi: Send + Sync {
@@ -115,11 +115,10 @@ impl AppleContainerClient {
             "apple-container",
             "container_state action={sub} name={name}"
         );
-        let output = tokio::process::Command::new("container")
-            .args([sub, name])
-            .output()
-            .await?;
-        if !output.status.success() {
+        let output =
+            jackin_process::exec_async(&jackin_process::ExecRequest::new("container", [sub, name]))
+                .await?;
+        if !output.success {
             let stderr = String::from_utf8_lossy(&output.stderr);
             jackin_diagnostics::debug_log!(
                 "apple-container",
@@ -144,20 +143,22 @@ impl Default for AppleContainerClient {
 
 impl AppleContainerApi for AppleContainerClient {
     async fn run_container(&self, name: &str, spec: &AppleContainerSpec) -> Result<()> {
-        let mut cmd = tokio::process::Command::new("container");
-        cmd.arg("run").arg("--name").arg(name).arg("-d"); // detached
+        let mut args: Vec<std::ffi::OsString> =
+            vec!["run".into(), "--name".into(), name.into(), "-d".into()];
 
         for (k, v) in &spec.env {
-            cmd.arg("-e").arg(format!("{k}={v}"));
+            args.extend(["-e".into(), format!("{k}={v}").into()]);
         }
         for (host, container) in &spec.mounts {
-            cmd.arg("-v")
-                .arg(format!("{}:{}", host.display(), container.display()));
+            args.extend([
+                "-v".into(),
+                format!("{}:{}", host.display(), container.display()).into(),
+            ]);
         }
         for cap in &spec.caps_add {
-            cmd.arg("--cap-add").arg(cap);
+            args.extend(["--cap-add".into(), cap.into()]);
         }
-        cmd.arg(&spec.image).arg("jackin-capsule");
+        args.extend([spec.image.clone().into(), "jackin-capsule".into()]);
 
         jackin_diagnostics::debug_log!(
             "apple-container",
@@ -165,8 +166,10 @@ impl AppleContainerApi for AppleContainerClient {
             spec.image
         );
 
-        let output = cmd.output().await?;
-        if !output.status.success() {
+        let output =
+            jackin_process::exec_async(&jackin_process::ExecRequest::new("container", &args))
+                .await?;
+        if !output.success {
             let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!("container run failed: {}", stderr.trim());
         }
@@ -175,17 +178,16 @@ impl AppleContainerApi for AppleContainerClient {
     }
 
     async fn exec_attach(&self, name: &str) -> Result<tokio::process::Child> {
-        use std::process::Stdio;
         jackin_diagnostics::debug_log!(
             "apple-container",
             "attach transport=container-exec name={name}"
         );
-        let child = tokio::process::Command::new("container")
-            .args(["exec", "-it", name, "jackin-capsule"])
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()?;
+        let request =
+            jackin_process::ExecRequest::new("container", ["exec", "-it", name, "jackin-capsule"])
+                .stdin_mode(jackin_process::StdioMode::Inherit)
+                .stdout_mode(jackin_process::StdioMode::Inherit)
+                .stderr_mode(jackin_process::StdioMode::Inherit);
+        let child = jackin_process::spawn_async(&request)?;
         Ok(child)
     }
 
@@ -207,11 +209,12 @@ impl AppleContainerApi for AppleContainerClient {
     }
 
     async fn list_containers(&self, name_prefix: &str) -> Result<Vec<AppleContainerInfo>> {
-        let output = tokio::process::Command::new("container")
-            .args(["ps", "--all", "--format", "json"])
-            .output()
-            .await?;
-        if !output.status.success() {
+        let output = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+            "container",
+            ["ps", "--all", "--format", "json"],
+        ))
+        .await?;
+        if !output.success {
             // Distinguish "command failed" (CLI missing, daemon down, perms)
             // from "no containers". Returning Ok(vec![]) here would mask the
             // failure as an empty list, making is_container_running report
@@ -323,7 +326,11 @@ impl AppleContainerApi for FakeAppleContainerClient {
 
     async fn exec_attach(&self, _name: &str) -> Result<tokio::process::Child> {
         // Fake exec — returns a command that exits immediately.
-        let child = tokio::process::Command::new("true").spawn()?;
+        let request = jackin_process::ExecRequest::new("true", None::<&str>)
+            .stdin_mode(jackin_process::StdioMode::Inherit)
+            .stdout_mode(jackin_process::StdioMode::Inherit)
+            .stderr_mode(jackin_process::StdioMode::Inherit);
+        let child = jackin_process::spawn_async(&request)?;
         Ok(child)
     }
 

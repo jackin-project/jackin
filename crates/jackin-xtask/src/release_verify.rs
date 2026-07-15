@@ -132,7 +132,7 @@ fn verify_cosign_bundle(archive: &Path, bundle_path: &Path) -> Result<()> {
     let archive_arg = path_arg(archive)?;
     let bundle_arg = path_arg(bundle_path)?;
     run_checked(
-        Command::new("cosign").args([
+        crate::cmd::command("cosign").args([
             "verify-blob",
             "--bundle",
             bundle_arg,
@@ -149,7 +149,13 @@ fn verify_cosign_bundle(archive: &Path, bundle_path: &Path) -> Result<()> {
 fn verify_github_attestation(archive: &Path) -> Result<()> {
     let archive_arg = path_arg(archive)?;
     run_checked(
-        Command::new("gh").args(["attestation", "verify", archive_arg, "--repo", GITHUB_REPO]),
+        crate::cmd::command("gh").args([
+            "attestation",
+            "verify",
+            archive_arg,
+            "--repo",
+            GITHUB_REPO,
+        ]),
         "gh attestation verify",
     )
 }

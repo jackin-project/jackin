@@ -3,14 +3,10 @@
 
 //! `Codex` / `OpenAI` usage snapshot.
 //!
-//! Carved out of `usage.rs` during codebase-health-enforcement Workstream W5
+//! Carved out of `usage.rs` during the completed codebase-health Workstream W5
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 use super::*;
 use serde::Deserialize;
 
@@ -779,7 +775,7 @@ pub(crate) fn fetch_codex_rpc_usage(
         )?;
         // The account label is non-essential (rate limits already succeeded), so
         // an RPC failure here degrades to no label rather than failing the whole
-        // snapshot. Logged at the firehose tier (visible under JACKIN_DEBUG): an
+        // snapshot. Logged at the firehose tier (visible at telemetry debug): an
         // absent account is usually a legitimate plan shape, not a fault, so this
         // does not warrant always-on `clog!` noise on every refresh.
         let account_value = codex_rpc_request(
@@ -790,7 +786,15 @@ pub(crate) fn fetch_codex_rpc_usage(
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )
-        .inspect_err(|error| crate::cdebug!("codex account/read RPC failed: {error}"))
+        .inspect_err(|error| {
+            crate::cdebug!("codex account/read RPC failed: {error}");
+            jackin_diagnostics::operation_error(
+                "usage.refresh",
+                "usage_rpc_failed",
+                "codex account/read RPC failed",
+                &[],
+            );
+        })
         .ok();
         let limits = serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value)
             .map_err(|err| format!("Codex app-server rate limit decode failed: {err}"))?;

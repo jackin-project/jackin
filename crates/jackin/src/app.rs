@@ -105,9 +105,10 @@ pub async fn run(cli: Cli) -> Result<()> {
         return Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
     }
 
-    // Resolve the subcommand. Bare `jackin` currently routes to the same
-    // console handler as `jackin console`; the TTY-capability fallback and
-    // the deprecation warning for `launch` land in a follow-up commit.
+    // Resolve the subcommand. Bare `jackin` is classified in `cli/dispatch.rs`
+    // (TTY-capable → console; otherwise silent help). When `run` is invoked
+    // with an explicit `Command::Console` (tests / direct callers), bare
+    // None still maps to console for backward compatibility.
     let command = match cli.command {
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
@@ -129,7 +130,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     // jackin-core::operator_notice port-trait dispatcher so domain
     // crates (L0) can call `jackin_core::emit_compact_line` without
     // depending on the L2 diagnostics layer. Per the A5 unblock
-    // work in `codebase-health-enforcement`.
+    // work in the completed codebase-health track.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
     jackin_diagnostics::install_debug_log_sink();
     jackin_launch_tui::install_standalone_dialog_sink();

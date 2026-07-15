@@ -1,11 +1,11 @@
 ---
 title: Image Labels & Recipe Hash
-description: The Docker image labels jackin stamps on derived role images, what each means, and how the recipe hash that drives warm reuse is calculated
+description: The Docker image labels jackin❯ stamps on derived role images, what each means, and how the recipe hash that drives warm reuse is calculated
 ---
 
-This page documents the label schema jackin stamps on **local derived role images** and how the **recipe hash** that decides warm reuse is computed. It is the source of truth for contributors; keep it in sync with <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" />.
+This page documents the label schema jackin❯ stamps on **local derived role images** and how the **recipe hash** that decides warm reuse is computed. It is the source of truth for contributors; keep it in sync with <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" />.
 
-The derived image is always a thin jackin overlay (capsule, agents, normalization) built `FROM` a **local role base** image `jk_<role>__base:<sha>`. The overlay never depends on the published image's mutable `:latest` tag — jackin always materializes an immutable local base first, from one of two sources:
+The derived image is always a thin jackin❯ overlay (capsule, agents, normalization) built `FROM` a **local role base** image `jk_<role>__base:<sha>`. The overlay never depends on the published image's mutable `:latest` tag — jackin❯ always materializes an immutable local base first, from one of two sources:
 
 - **Fresh published image** → pull `docker.io/.../jackin-the-architect:latest`, verify its Docker labels prove it was built from the current role commit, and tag it as the local `jk_<role>__base:<sha>` (no role rebuild, no restamp Docker build). The overlay then derives `FROM` that local tag.
 - **Published image missing/outdated, or a custom construct is in play** → build the base locally from the role Dockerfile (construct `FROM` overridden by `JACKIN_CONSTRUCT_IMAGE` when set), tagged `jk_<role>__base:<sha>`.
@@ -46,13 +46,13 @@ fn hash(&self) -> Result<String> {
 
 Agent CLI binary versions are **not** an `ImageRecipe` input: the current baked binary versions are stamped as diagnostic labels, while recipe reuse is governed by the supported-agent set and overlay shape. Claude plugin declarations are recipe input because plugins are baked into the derived image. The host UID is recipe input because `/home/agent` is chowned to that UID during the derived image build; reusing an image built for another UID would break owner-only syscalls such as `chmod(2)`.
 
-At launch jackin recomputes the expected recipe from current inputs, hashes it, and compares to the stored label. **Match → reuse** (skip `docker build`, runtime-binary prep, token lookup, and the version probe). **Mismatch → rebuild.**
+At launch jackin❯ recomputes the expected recipe from current inputs, hashes it, and compares to the stored label. **Match → reuse** (skip `docker build`, runtime-binary prep, token lookup, and the version probe). **Mismatch → rebuild.**
 
 Because every recipe field is folded into this hash, a change to any of them invalidates the image even when the field has no standalone label of its own (see [Dropped labels](#dropped-labels)).
 
 ## Schema gate: `jackin.image.recipe.version`
 
-A short constant (currently `v8`) checked **before** the hash. The hash is only comparable if both sides used the same recipe schema; if a jackin upgrade changes the `ImageRecipe` shape or label set, the version is bumped so old images fail the gate (`RecipeVersionChanged`) and rebuild rather than mis-comparing hashes. Bumping it invalidates all prior images at once.
+A short constant (currently `v8`) checked **before** the hash. The hash is only comparable if both sides used the same recipe schema; if a jackin❯ upgrade changes the `ImageRecipe` shape or label set, the version is bumped so old images fail the gate (`RecipeVersionChanged`) and rebuild rather than mis-comparing hashes. Bumping it invalidates all prior images at once.
 
 ## Identity & version labels (local derived image)
 
@@ -76,11 +76,11 @@ Every published role image must carry exactly these two (written by role CI — 
 | `jackin.role.git.sha` | short role-repo commit SHA the image was built from |
 | `jackin.construct.version` | construct version tag from the role Dockerfile `FROM` line |
 
-jackin pulls the published base and verifies `jackin.role.git.sha` against the role checkout's HEAD to decide whether to tag the published image as the local base, or build the base from the workspace Dockerfile. Role publishing workflows should get these labels from `jackin-role publish-labels --role-git-sha <sha>` so the publish path and runtime freshness check share one contract.
+jackin❯ pulls the published base and verifies `jackin.role.git.sha` against the role checkout's HEAD to decide whether to tag the published image as the local base, or build the base from the workspace Dockerfile. Role publishing workflows should get these labels from `jackin-role publish-labels --role-git-sha <sha>` so the publish path and runtime freshness check share one contract.
 
 ## Local role base
 
-The role base is always materialized locally as `jk_<role>__base:<sha>` — the role content with **no** jackin overlay — so the derived overlay builds `FROM` a stable local tag rather than the published `:latest`. The base is either a local tag of a pulled, label-verified published image or a local build of the role Dockerfile (construct `FROM` overridden when `JACKIN_CONSTRUCT_IMAGE` is set). Locally built bases carry two labels:
+The role base is always materialized locally as `jk_<role>__base:<sha>` — the role content with **no** jackin❯ overlay — so the derived overlay builds `FROM` a stable local tag rather than the published `:latest`. The base is either a local tag of a pulled, label-verified published image or a local build of the role Dockerfile (construct `FROM` overridden when `JACKIN_CONSTRUCT_IMAGE` is set). Locally built bases carry two labels:
 
 | Label | Meaning |
 |---|---|

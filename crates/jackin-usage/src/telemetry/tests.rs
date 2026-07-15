@@ -23,6 +23,8 @@ struct CapturedEvent {
     level: tracing::Level,
     target: String,
     message: String,
+    event_name: Option<String>,
+    component: Option<String>,
 }
 
 impl<S> Layer<S> for CaptureLayer
@@ -36,6 +38,8 @@ where
             level: *event.metadata().level(),
             target: event.metadata().target().to_owned(),
             message: visitor.message.unwrap_or_default(),
+            event_name: visitor.event_name,
+            component: visitor.component,
         });
     }
 }
@@ -43,11 +47,22 @@ where
 #[derive(Default)]
 struct MessageVisitor {
     message: Option<String>,
+    event_name: Option<String>,
+    component: Option<String>,
 }
 
 impl Visit for MessageVisitor {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        match field.name() {
+            "event.name" => self.event_name = Some(value.to_owned()),
+            "jackin.component" => self.component = Some(value.to_owned()),
+            "message" => self.message = Some(value.to_owned()),
+            _ => {}
+        }
+    }
+
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
+        if field.name() == "message" && self.message.is_none() {
             self.message = Some(format!("{value:?}").trim_matches('"').to_owned());
         }
     }
@@ -71,36 +86,35 @@ fn bridge_log_uses_requested_severity_and_target() {
     set_otlp_active_for_test(false);
 
     let events = events.lock().unwrap().clone();
-    assert_eq!(
-        events,
-        vec![
-            CapturedEvent {
-                level: tracing::Level::TRACE,
-                target: "jackin_capsule".to_owned(),
-                message: "trace line".to_owned(),
-            },
-            CapturedEvent {
-                level: tracing::Level::DEBUG,
-                target: "jackin_capsule".to_owned(),
-                message: "debug line".to_owned(),
-            },
-            CapturedEvent {
-                level: tracing::Level::INFO,
-                target: "jackin_capsule".to_owned(),
-                message: "info line".to_owned(),
-            },
-            CapturedEvent {
-                level: tracing::Level::WARN,
-                target: "jackin_capsule".to_owned(),
-                message: "warn line".to_owned(),
-            },
-            CapturedEvent {
-                level: tracing::Level::ERROR,
-                target: "jackin_capsule".to_owned(),
-                message: "error line".to_owned(),
-            },
-        ]
-    );
+    assert_eq!(events.len(), 5);
+    for event in &events {
+        assert_eq!(event.target, "jackin_capsule");
+        assert!(
+            !event.message.starts_with('['),
+            "bridge body must be prefix-free: {}",
+            event.message
+        );
+        assert_eq!(event.component.as_deref(), Some("capsule"));
+        assert!(
+            event
+                .event_name
+                .as_deref()
+                .is_some_and(|n| n.starts_with("capsule."))
+        );
+    }
+    assert_eq!(events[0].level, tracing::Level::TRACE);
+    assert_eq!(events[0].message, "trace line");
+    assert_eq!(events[0].event_name.as_deref(), Some("capsule.trace"));
+    assert_eq!(events[1].level, tracing::Level::DEBUG);
+    assert_eq!(events[1].message, "debug line");
+    assert_eq!(events[2].level, tracing::Level::INFO);
+    assert_eq!(events[2].message, "info line");
+    assert_eq!(events[2].event_name.as_deref(), Some("capsule.log"));
+    assert_eq!(events[3].level, tracing::Level::WARN);
+    assert_eq!(events[3].message, "warn line");
+    assert_eq!(events[4].level, tracing::Level::ERROR);
+    assert_eq!(events[4].message, "error line");
+    assert_eq!(events[4].event_name.as_deref(), Some("capsule.error"));
 }
 
 #[test]
