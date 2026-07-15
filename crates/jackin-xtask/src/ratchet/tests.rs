@@ -171,3 +171,25 @@ fn suite_time_absent_junit_is_empty() {
     let measured = measure_suite_time(dir.path()).expect("measure");
     assert!(measured.is_empty());
 }
+
+#[test]
+fn function_complexity_reports_per_crate_max_and_ignores_tests() {
+    use super::measure_rust_function_complexity;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("crates/example/src");
+    fs::create_dir_all(&src).expect("mkdir");
+    fs::write(
+        src.join("lib.rs"),
+        "fn small(v: bool) { if v {} }\nfn larger(v: bool) { if v {} else if !v {} }\n",
+    )
+    .expect("write source");
+    fs::write(
+        src.join("tests.rs"),
+        "fn ignored() { if true {} else if false {} else if true {} }\n",
+    )
+    .expect("write tests");
+
+    let measured = measure_rust_function_complexity(dir.path()).expect("measure");
+    assert_eq!(measured.get("example"), Some(&2));
+    assert_eq!(measured.len(), 1);
+}

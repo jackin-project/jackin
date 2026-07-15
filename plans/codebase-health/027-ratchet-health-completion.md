@@ -42,7 +42,7 @@ Self-measuring-maintenance items 1 and 3 plus feedback-loop leftovers: the ratch
 
 **In scope**: `suite_time` provider (consuming the nextest junit artifact schema — read `rust-nextest.yml:134-166` for its artifact shape) + family (scheduled enforcement, tolerance-banded); `agent-doc-bytes` flip to enforce with seeded per-file bounds at current maxima; a scheduled `health-trend` job appending `health --format json` output to an artifact-based series + a trend section in the report + a tightening-proposal output ("N budgets with ≥20% headroom for ≥4 weeks"); shared `--format json` (file/line/message/fix/rerun) across `lint`/`docs` gates that lack it + one repo problem matcher; `read_dir_sorted` helper + enforcement (disallowed-methods entry or xtask self-check) for gate code.
 
-**Out of scope**: public-surface provider if plan 019 shipped it (check first); measured-complexity provider (record as deferred with rationale — static threshold + expect-counts suffice until evidence says otherwise; the roadmap allows tightening only after fresh measured maxima anyway); the agent-legibility task suite (roadmap defers it explicitly).
+**Out of scope**: public-surface provider if plan 019 shipped it (check first); the agent-legibility task suite (owned by its separate roadmap item).
 
 ## Git workflow
 
@@ -90,7 +90,7 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 - [x] Per-main health series + trend section + tightening proposal exist with an observed run
 - [x] All first-party gates emit structured JSON; problem matcher registered
 - [x] Gate code uses sorted directory iteration with an enforcement mechanism
-- [x] `cargo xtask ci --fast` exits 0; status row updated; deferred measured-complexity decision recorded
+- [x] `cargo xtask ci --fast` exits 0; status row updated; measured-complexity family enforced
 
 ## STOP conditions
 
@@ -114,6 +114,9 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 - Health report `trend` section + tightening proposals (agent-doc headroom vs ratchet bounds).
 - `fs_util::read_dir_sorted` + tests; brand gate and public-surface measure use it.
 - Problem matcher: `.github/problem-matchers/xtask.json` registered in `ci.yml` lint job and `docs.yml`.
-- Measured-complexity provider **deferred** (static clippy threshold + expect-counts suffice).
+- Measured `rust-function-complexity` provider parses production Rust with
+  `syn`, records each crate's current maximum control-flow decision count, and
+  enforces shrink-only growth with an unlisted cap of 20. Clippy retains the
+  independent absolute cognitive-complexity threshold.
 
 **Index deviation**: none remaining for 027 Done criteria (suite-time scheduled enforce when junit present).

@@ -779,3 +779,71 @@ mode = "enforce"
 [[family.entry]]
 key = "junit_total_ms"
 bound = 3600000
+
+# Per-function syntax decision count. Clippy owns the absolute cognitive-
+# complexity threshold; this measured family prevents today's structurally
+# complex production functions from growing and requires new functions to stay
+# at or below the unlisted cap.
+[[family]]
+id = "rust-function-complexity"
+kind = "numeric"
+provider = "rust_function_complexity"
+mode = "enforce"
+cap = 20
+[[family.entry]]
+key = "jackin"
+bound = 28
+[[family.entry]]
+key = "jackin-agent-status"
+bound = 26
+[[family.entry]]
+key = "jackin-capsule"
+bound = 88
+[[family.entry]]
+key = "jackin-config"
+bound = 22
+[[family.entry]]
+key = "jackin-console"
+bound = 73
+[[family.entry]]
+key = "jackin-diagnostics"
+bound = 28
+[[family.entry]]
+key = "jackin-env"
+bound = 29
+[[family.entry]]
+key = "jackin-host"
+bound = 21
+[[family.entry]]
+key = "jackin-image"
+bound = 28
+[[family.entry]]
+key = "jackin-isolation"
+bound = 23
+[[family.entry]]
+key = "jackin-launch-tui"
+bound = 41
+[[family.entry]]
+key = "jackin-lints"
+bound = 27
+[[family.entry]]
+key = "jackin-protocol"
+bound = 77
+[[family.entry]]
+key = "jackin-runtime"
+bound = 96
+[[family.entry]]
+key = "jackin-term"
+bound = 66
+[[family.entry]]
+key = "jackin-tui"
+bound = 52
+[[family.entry]]
+key = "jackin-tui-lookbook"
+bound = 48
+[[family.entry]]
+key = "jackin-usage"
+bound = 29
+[[family.entry]]
+key = "jackin-xtask"
+bound = 28

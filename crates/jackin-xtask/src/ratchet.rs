@@ -16,6 +16,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde::Deserialize;
+use syn::visit::{self, Visit};
 
 const CONFIG_PATH: &str = "ratchet.toml";
 const RERUN: &str = "cargo xtask lint ratchet";
@@ -405,8 +406,132 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
             Ok(BTreeMap::new())
         }
         "public_surface_pub_mods" => measure_public_surface_pub_mods(root),
+        "rust_function_complexity" => measure_rust_function_complexity(root),
         "suite_time" => measure_suite_time(root),
         other => bail!("unknown ratchet provider {other:?}"),
+    }
+}
+
+/// Deterministic syntax-level decision count for production Rust functions.
+///
+/// This is deliberately independent of Clippy's evolving cognitive-complexity
+/// implementation. It gives the shrink-only engine stable, reviewable per-crate
+/// maxima while Clippy continues to enforce the absolute workspace threshold.
+fn measure_rust_function_complexity(root: &Path) -> Result<BTreeMap<String, usize>> {
+    let mut files = Vec::new();
+    collect_production_rust_files(&root.join("crates"), &mut files)?;
+    collect_production_rust_files(&root.join("src"), &mut files)?;
+    files.sort();
+
+    let mut measured = BTreeMap::new();
+    for path in files {
+        let source = fs::read_to_string(&path)
+            .with_context(|| format!("reading complexity source {}", path.display()))?;
+        let syntax = syn::parse_file(&source)
+            .with_context(|| format!("parsing complexity source {}", path.display()))?;
+        let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy();
+        let mut functions = FunctionComplexityVisitor {
+            path: &relative,
+            measured: &mut measured,
+        };
+        functions.visit_file(&syntax);
+    }
+    Ok(measured)
+}
+
+fn collect_production_rust_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            if path.file_name().is_some_and(|name| name == "tests") {
+                continue;
+            }
+            collect_production_rust_files(&path, files)?;
+        } else if path.extension().is_some_and(|extension| extension == "rs")
+            && path.file_name().is_none_or(|name| name != "tests.rs")
+        {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+struct FunctionComplexityVisitor<'a> {
+    path: &'a str,
+    measured: &'a mut BTreeMap<String, usize>,
+}
+
+impl<'ast> Visit<'ast> for FunctionComplexityVisitor<'_> {
+    fn visit_item_fn(&mut self, function: &'ast syn::ItemFn) {
+        self.record(&function.sig.ident.to_string(), &function.block);
+    }
+
+    fn visit_impl_item_fn(&mut self, function: &'ast syn::ImplItemFn) {
+        self.record(&function.sig.ident.to_string(), &function.block);
+    }
+}
+
+impl FunctionComplexityVisitor<'_> {
+    fn record(&mut self, _name: &str, block: &syn::Block) {
+        let mut counter = DecisionVisitor::default();
+        counter.visit_block(block);
+        if counter.count == 0 {
+            return;
+        }
+        let crate_key = self
+            .path
+            .strip_prefix("crates/")
+            .and_then(|path| path.split('/').next())
+            .unwrap_or("jackin-root");
+        let entry = self.measured.entry(crate_key.to_owned()).or_default();
+        *entry = (*entry).max(counter.count);
+    }
+}
+
+#[derive(Default)]
+struct DecisionVisitor {
+    count: usize,
+}
+
+impl<'ast> Visit<'ast> for DecisionVisitor {
+    fn visit_expr_if(&mut self, node: &'ast syn::ExprIf) {
+        self.count += 1;
+        visit::visit_expr_if(self, node);
+    }
+
+    fn visit_expr_match(&mut self, node: &'ast syn::ExprMatch) {
+        self.count += node.arms.len().saturating_sub(1);
+        visit::visit_expr_match(self, node);
+    }
+
+    fn visit_expr_for_loop(&mut self, node: &'ast syn::ExprForLoop) {
+        self.count += 1;
+        visit::visit_expr_for_loop(self, node);
+    }
+
+    fn visit_expr_while(&mut self, node: &'ast syn::ExprWhile) {
+        self.count += 1;
+        visit::visit_expr_while(self, node);
+    }
+
+    fn visit_expr_loop(&mut self, node: &'ast syn::ExprLoop) {
+        self.count += 1;
+        visit::visit_expr_loop(self, node);
+    }
+
+    fn visit_expr_binary(&mut self, node: &'ast syn::ExprBinary) {
+        if matches!(node.op, syn::BinOp::And(_) | syn::BinOp::Or(_)) {
+            self.count += 1;
+        }
+        visit::visit_expr_binary(self, node);
+    }
+
+    fn visit_expr_try(&mut self, node: &'ast syn::ExprTry) {
+        self.count += 1;
+        visit::visit_expr_try(self, node);
     }
 }
 
