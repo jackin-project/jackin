@@ -21,7 +21,6 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 011 | Lint policy completion: `allow_attributes`, full census, restriction decisions | P2 | M | 010 | DONE |
 | 012 | Advisory CI honesty: Miri per crate, hakari decision, Dylint pilot closure | P2 | S | — | DONE |
 | 013 | Executable boundary gates: Turso sole-owner + forbidden-root path audit | P2 | M | — | DONE |
-| 014 | Fix OSC 8 hyperlink identity repointing (bug) | P1 | M | — | DONE |
 | 015 | Split `runtime/image.rs` by ownership; drop its ratchet exception | P2 | L | — | DONE |
 | 016 | Launch pipeline phase contracts + `run_launch_core` harness + benchmark | P2 | L | — | IN PROGRESS — phases mostly typestate labels; monolith complexity remains |
 | 017 | Capsule daemon decomposition + injectable boundary ports | P2 | L | — | IN PROGRESS — field bags without subsystem methods/fake-port suite |
@@ -30,15 +29,16 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 020 | Domain newtypes census + typed error taxonomy | P3 | L | — | IN PROGRESS — SessionId/ContainerId not threaded; config APIs still anyhow |
 | 021 | TUI/console convergence: `drive_frame`, scroll classifier, editor cleanup | P3 | L | — | DONE |
 | 022 | Root CLI handler split + TTY fallback + `launch` deprecation warning | P2 | M | — | DONE |
-| 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | IN PROGRESS — env resolution-order property suite missing |
+| 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | DONE |
 | 024 | Spec gate: syntax-aware citations, close `MISSING` entries, snapshot review policy | P2 | L | — | DONE |
-| 025 | Deterministic time: wall-clock seam + first boundary conversions | P2 | M | — | DONE |
 | 026 | Measured performance completion: missing benches, allocation lane, first-frame harness | P3 | L | — | DONE |
-| 027 | Ratchet & health completion: suite-time/public-surface providers, trends, JSON diagnostics | P3 | M | 010 | IN PROGRESS — fs sorted-dir enforcement incomplete; health series is single-run |
-| 028 | Docs integrity gates: codebase-map audit, README-freshness wiring, config-key drift | P2 | M | — | IN PROGRESS — map gate missing tier/README cross-check |
-| 029 | Brand gate completion: bare-brand prose, `plans/` tree, exemption classes | P2 | M | — | IN PROGRESS — roadmap audit table still claims bare-brand advisory |
+| 027 | Ratchet & health completion: suite-time/public-surface providers, trends, JSON diagnostics | P3 | M | 010 | IN PROGRESS — multi-run health history trend deltas incomplete |
+| 028 | Docs integrity gates: codebase-map audit, README-freshness wiring, config-key drift | P2 | M | — | IN PROGRESS — config-key drift gate missing |
+| 029 | Brand gate completion: bare-brand prose, `plans/` tree, exemption classes | P2 | M | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
+
+Plans **014** (OSC 8) and **025** (deterministic time) were removed from `plans/codebase-health/` after full ship; code is SoT.
 
 ## Dependency notes
 

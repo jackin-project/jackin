@@ -87,7 +87,7 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 ## Done criteria
 
 - [x] `suite-time` family live (scheduled enforcement); `agent-doc-bytes` enforcing with seeded maxima
-- [x] Per-main health series + trend section + tightening proposal exist with an observed run
+- [ ] Per-main health series + trend section + tightening proposal exist with an observed run
 - [x] All first-party gates emit structured JSON; problem matcher registered
 - [x] Gate code uses sorted directory iteration with an enforcement mechanism
 - [ ] `cargo xtask ci --fast` exits 0; status row updated; measured-complexity family enforced
@@ -126,7 +126,7 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
   audit`. Every violation contains `file`, nullable `line`, `message`, `fix`,
   and `rerun`; a forced-error reporter fixture asserts all five keys.
 
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — health multi-run series + sorted-`read_dir` enforcement incomplete; see implementer audit rollup.
+**Index deviation (audit 2026-07-15)**: IN PROGRESS — multi-run health history trend deltas incomplete; sorted-`read_dir` enforcement now present.
 
 The final Hygiene lane restores up to 12 unexpired prior snapshot artifacts,
 compacts them into `health-history.jsonl`, appends the current report, and

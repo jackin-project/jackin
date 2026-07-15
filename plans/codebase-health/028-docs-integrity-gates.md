@@ -94,4 +94,4 @@ Fixture-driven tests per gate (steps 1, 3-self-test, 4); real-tree green after d
 - Docs-site `metaCompletenessError` and the xtask map audit now overlap benignly (different failure surfaces); keep both, they check different artifacts.
 - The severity decisions (freshness, undocumented-key direction) are recorded advisory-first; revisit after false-positive data accumulates.
 
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+**Index deviation (audit 2026-07-15)**: IN PROGRESS — config-key drift gate still missing; map/freshness criteria met.

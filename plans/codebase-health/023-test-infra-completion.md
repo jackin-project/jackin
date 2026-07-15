@@ -79,7 +79,7 @@ Steps 1–3 are all test work; the gates above are the verification. Total suite
 - [x] No duplicate FakeDockerClient/FakeRunner outside test-support (console stubs resolved or recorded)
 - [x] Property suites in manifest/config/env covering idempotence, validity, unknown-field, reserved-key, ordering invariants
 - [x] `decode_frames` in scheduled fuzz + PR smoke + committed seed corpus + written promotion rule
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -92,4 +92,4 @@ Steps 1–3 are all test work; the gates above are the verification. Total suite
 - New fakes go to test-support when ≥2 consumers exist (the roadmap's own bar).
 - Fuzz findings: minimize, commit to corpus, add regression test — the written rule from step 3d is the contract.
 
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+**Index deviation (audit 2026-07-15)**: none — Done criteria FULL; index DONE.
