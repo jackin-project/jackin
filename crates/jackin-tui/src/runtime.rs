@@ -316,17 +316,17 @@ where
 ///
 /// This adapter lets modal and prompt loops converge on [`drive_frame`]
 /// without inventing a persistent model/view type for a short-lived widget.
-pub fn drive_render<'a, B, F>(
-    terminal: &'a mut ratatui::Terminal<B>,
+pub fn drive_render<B, F>(
+    terminal: &mut ratatui::Terminal<B>,
     render: F,
-) -> Result<ratatui::CompletedFrame<'a>, B::Error>
+) -> Result<ratatui::CompletedFrame<'_>, B::Error>
 where
     B: ratatui::backend::Backend,
     F: FnOnce(&mut ratatui::Frame<'_>),
 {
     let area = terminal.size()?;
     let view = ClosureView(std::cell::RefCell::new(Some(render)));
-    drive_frame(terminal, &view, &(), area, |_| {})
+    drive_frame(terminal, &view, &(), area.into(), |_| {})
 }
 
 #[cfg(test)]
