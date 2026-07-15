@@ -302,7 +302,7 @@ impl Multiplexer {
         let mut unblocked = false;
         let mut delivered = false;
         if let Some(focused) = self.active_focused_id()
-            && let Some(session) = self.session_supervisor.sessions.get_mut(&focused)
+            && let Some(session) = self.session_supervisor.sessions.get_mut(focused)
         {
             if session.scrollback_offset() != 0 {
                 session.scroll_to_live();
@@ -323,7 +323,7 @@ impl Multiplexer {
         let mut paste = Vec::new();
         let bracketed = self
             .active_focused_id()
-            .and_then(|focused| self.session_supervisor.sessions.get(&focused))
+            .and_then(|focused| self.session_supervisor.sessions.get(focused))
             .is_some_and(crate::session::Session::bracketed_paste);
         if bracketed {
             paste.extend_from_slice(b"\x1b[200~");
@@ -511,7 +511,7 @@ impl Multiplexer {
                     b"\x1b[O".as_ref()
                 };
                 if let Some(focused) = self.active_focused_id()
-                    && let Some(session) = self.session_supervisor.sessions.get(&focused)
+                    && let Some(session) = self.session_supervisor.sessions.get(focused)
                     && session.focus_events_enabled()
                 {
                     session.send_input(bytes);
@@ -565,7 +565,7 @@ impl Multiplexer {
                 let Some(focused) = self.active_focused_id() else {
                     return;
                 };
-                let Some(session) = self.session_supervisor.sessions.get_mut(&focused) else {
+                let Some(session) = self.session_supervisor.sessions.get_mut(focused) else {
                     return;
                 };
                 let debug_enabled = crate::logging::debug_enabled();

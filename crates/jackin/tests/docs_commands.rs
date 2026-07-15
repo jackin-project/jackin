@@ -21,39 +21,32 @@ use syn::{Fields, Item, Visibility};
 
 const CONFIG_KEY_MARKER: &str = "<!-- config-key: ";
 
-fn schema_config_keys(source: &str) -> BTreeSet<String> {
-    let file = syn::parse_file(source).expect("config schema must parse as Rust");
-    file.items
-        .into_iter()
-        .filter_map(|item| match item {
-            Item::Struct(item)
-                if matches!(item.vis, Visibility::Public(_)) && derives_serde(&item.attrs) =>
+fn schema_config_keys(source: &str) -> syn::Result<BTreeSet<String>> {
+    let mut keys = BTreeSet::new();
+    for item in syn::parse_file(source)?.items {
+        let Item::Struct(item) = item else { continue };
+        if !matches!(item.vis, Visibility::Public(_)) || !derives_serde(&item.attrs)? {
+            continue;
+        }
+        let Fields::Named(fields) = item.fields else {
+            continue;
+        };
+        let struct_name = item.ident;
+        for field in fields.named {
+            if matches!(field.vis, Visibility::Public(_))
+                && let Some(ident) = field.ident
             {
-                Some(item)
+                keys.insert(format!("{struct_name}.{ident}"));
             }
-            _ => None,
-        })
-        .flat_map(|item| {
-            let struct_name = item.ident.to_string();
-            match item.fields {
-                Fields::Named(fields) => fields
-                    .named
-                    .into_iter()
-                    .filter(|field| matches!(field.vis, Visibility::Public(_)))
-                    .filter_map(move |field| {
-                        field.ident.map(|ident| format!("{struct_name}.{}", ident))
-                    })
-                    .collect::<Vec<_>>(),
-                _ => Vec::new(),
-            }
-        })
-        .collect()
+        }
+    }
+    Ok(keys)
 }
 
-fn derives_serde(attrs: &[syn::Attribute]) -> bool {
-    attrs.iter().any(|attr| {
+fn derives_serde(attrs: &[syn::Attribute]) -> syn::Result<bool> {
+    for attr in attrs {
         if !attr.path().is_ident("derive") {
-            return false;
+            continue;
         }
         let mut found = false;
         attr.parse_nested_meta(|meta| {
@@ -61,10 +54,12 @@ fn derives_serde(attrs: &[syn::Attribute]) -> bool {
                 found = true;
             }
             Ok(())
-        })
-        .expect("derive attribute must parse");
-        found
-    })
+        })?;
+        if found {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn documented_config_keys(source: &str) -> BTreeSet<String> {
@@ -647,7 +642,7 @@ fn config_key_drift_reports_both_directions() {
 }
 
 #[test]
-fn config_reference_matches_public_schema_fields() {
+fn config_reference_matches_public_schema_fields() -> anyhow::Result<()> {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let schema_paths = [
         manifest.join("../jackin-config/src/schema.rs"),
@@ -655,21 +650,15 @@ fn config_reference_matches_public_schema_fields() {
         manifest.join("../jackin-config/src/auth.rs"),
     ];
     let docs_path = manifest.join("../../docs/content/docs/reference/runtime/configuration.mdx");
-    let schema = schema_paths
-        .iter()
-        .flat_map(|path| {
-            let source = fs::read_to_string(path)
-                .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
-            schema_config_keys(&source)
-        })
-        .collect();
-    let documented = documented_config_keys(
-        &fs::read_to_string(&docs_path)
-            .unwrap_or_else(|error| panic!("reading {}: {error}", docs_path.display())),
-    );
+    let mut schema = BTreeSet::new();
+    for path in &schema_paths {
+        schema.extend(schema_config_keys(&fs::read_to_string(path)?)?);
+    }
+    let documented = documented_config_keys(&fs::read_to_string(&docs_path)?);
     let (documented_but_gone, schema_but_undocumented) = config_key_drift(&schema, &documented);
     assert!(
         documented_but_gone.is_empty() && schema_but_undocumented.is_empty(),
         "config-key drift:\n  documented but gone: {documented_but_gone:#?}\n  schema but undocumented: {schema_but_undocumented:#?}"
     );
+    Ok(())
 }

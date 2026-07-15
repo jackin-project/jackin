@@ -342,7 +342,11 @@ fn control_reply_report_runtime_event_applies_to_session_and_acks() {
     );
 
     assert!(matches!(reply, ServerMsg::Ack));
-    let authority = mux.session_supervisor.sessions[&1]
+    let authority = mux
+        .session_supervisor
+        .sessions
+        .get(1)
+        .expect("session is registered")
         .authority
         .as_ref()
         .expect("event applied to the addressed session's authority");
@@ -1185,7 +1189,7 @@ fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
 
     mux.session_supervisor
         .sessions
-        .get_mut(&2)
+        .get_mut(2)
         .expect("right pane session")
         .feed_pty(b"\x1b]2;right pane title\x07\x1b[2;1HRIGHT-PANE-UPDATE");
     let frame = compose_after(&mut mux, FullRedrawReason::PtyOutput);
@@ -1240,7 +1244,7 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
     assert!(
         mux.session_supervisor
             .sessions
-            .get_mut(&1)
+            .get_mut(1)
             .expect("test session")
             .set_scrollback_offset(1)
     );
@@ -2822,7 +2826,7 @@ fn wheel_forwards_to_mouse_enabled_tui() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         0
@@ -2859,7 +2863,7 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
         assert_eq!(
             mux.session_supervisor
                 .sessions
-                .get(&1)
+                .get(1)
                 .unwrap()
                 .scrollback_offset(),
             3
@@ -2894,7 +2898,7 @@ fn wheel_back_to_live_repaints_body_and_footer() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         3
@@ -2923,7 +2927,7 @@ fn wheel_back_to_live_repaints_body_and_footer() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         0
@@ -3054,7 +3058,7 @@ fn mode_reconciliation_resets_agent_modes_on_focus_swap() {
     }
     mux.session_supervisor
         .sessions
-        .get_mut(&1)
+        .get_mut(1)
         .expect("first pane")
         .feed_pty(b"\x1b[?2004h\x1b[?1h\x1b[>1u");
     let asserted = compose_after(&mut mux, FullRedrawReason::FirstAttach);
@@ -3148,7 +3152,7 @@ fn scrollbar_click_jumps_scrollback() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         filled,
@@ -3168,7 +3172,7 @@ fn scrollbar_click_jumps_scrollback() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         0,
@@ -3230,7 +3234,7 @@ fn retained_scrollback_draws_scrollbar_at_live_tail() {
         assert_eq!(
             mux.session_supervisor
                 .sessions
-                .get(&1)
+                .get(1)
                 .unwrap()
                 .scrollback_offset(),
             0
@@ -3264,7 +3268,7 @@ fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
         assert_eq!(
             mux.session_supervisor
                 .sessions
-                .get(&1)
+                .get(1)
                 .unwrap()
                 .scrollback_offset(),
             0
@@ -3301,7 +3305,7 @@ fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
         assert_eq!(
             mux.session_supervisor
                 .sessions
-                .get(&1)
+                .get(1)
                 .unwrap()
                 .scrollback_offset(),
             3
@@ -3348,7 +3352,7 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
     );
 
     let inner = mux.visible_panes()[0].inner;
-    let session = mux.session_supervisor.sessions.get(&1).unwrap();
+    let session = mux.session_supervisor.sessions.get(1).unwrap();
     let offset = session.scrollback_offset();
     let filled = session.scrollback_filled();
     let top_content_row = filled.saturating_sub(offset);
@@ -3405,7 +3409,7 @@ fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
         assert_eq!(
             mux.session_supervisor
                 .sessions
-                .get(&1)
+                .get(1)
                 .unwrap()
                 .scrollback_offset(),
             3
@@ -3450,7 +3454,7 @@ fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
         assert_eq!(
             mux.session_supervisor
                 .sessions
-                .get(&1)
+                .get(1)
                 .unwrap()
                 .scrollback_offset(),
             2
@@ -3490,7 +3494,7 @@ fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         0
@@ -3532,7 +3536,7 @@ fn wheel_sends_cursor_fallback_to_alt_screen_tui_with_retained_primary_scrollbac
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         0
@@ -4918,7 +4922,7 @@ fn apply_action_wheel_scrolls_scrollback() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         3
@@ -4951,7 +4955,7 @@ fn typed_input_snaps_scrollback_to_live_without_screen_erase() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         0,
@@ -5046,7 +5050,7 @@ fn apply_action_wheel_noops_at_scrollback_boundary() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         filled
@@ -5340,7 +5344,7 @@ fn selection_motion_above_pane_scrolls_into_history() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         1,
@@ -5354,7 +5358,7 @@ fn selection_motion_above_pane_scrolls_into_history() {
         .clipboard
         .selection
         .expect("selection should remain active");
-    let session = mux.session_supervisor.sessions.get(&1).unwrap();
+    let session = mux.session_supervisor.sessions.get(1).unwrap();
     assert_eq!(
         selection.end_row,
         session
@@ -5401,7 +5405,7 @@ fn selection_motion_below_pane_scrolls_toward_live_tail() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .unwrap()
             .scrollback_offset(),
         3,
@@ -5415,7 +5419,7 @@ fn selection_motion_below_pane_scrolls_toward_live_tail() {
         .clipboard
         .selection
         .expect("selection should remain active");
-    let session = mux.session_supervisor.sessions.get(&1).unwrap();
+    let session = mux.session_supervisor.sessions.get(1).unwrap();
     let prefix = session
         .scrollback_offset()
         .min(session.scrollback_filled())
@@ -6823,7 +6827,7 @@ fn double_click_on_scrolled_back_row_copies_the_history_word() {
     assert_eq!(
         mux.session_supervisor
             .sessions
-            .get(&1)
+            .get(1)
             .expect("session")
             .scrollback_offset(),
         5,
@@ -6951,11 +6955,7 @@ fn reattach_updates_capabilities_without_resetting_model_palette() {
     assert!(!mux.client_registry.attached_capabilities.pointer_shapes);
     assert!(!mux.client_registry.pointer_shapes_supported);
 
-    let session = mux
-        .session_supervisor
-        .sessions
-        .get_mut(&1)
-        .expect("session");
+    let session = mux.session_supervisor.sessions.get_mut(1).expect("session");
     session.feed_pty(b"\x1b]10;?\x07\x1b]11;?\x07\x1b[6n");
     drop(session.drain_passthrough());
     let replies = vec![
@@ -7034,7 +7034,7 @@ fn feed_and_compose(
     session_id: u64,
     bytes: &[u8],
 ) {
-    if let Some(session) = mux.session_supervisor.sessions.get_mut(&session_id) {
+    if let Some(session) = mux.session_supervisor.sessions.get_mut(session_id) {
         session.feed_pty(bytes);
         drop(session.drain_passthrough());
     }
@@ -7069,7 +7069,7 @@ fn assert_screen_matches_model(mux: &mut Multiplexer, client: &VirtualClient, co
         let session = mux
             .session_supervisor
             .sessions
-            .get(&pane.id)
+            .get(pane.id)
             .unwrap_or_else(|| panic!("{context}: pane {} has no session", pane.id));
         let view = session
             .shadow_grid
@@ -7121,7 +7121,7 @@ fn assert_cursor_contract(mux: &mut Multiplexer, client: &VirtualClient, context
             let session = mux
                 .session_supervisor
                 .sessions
-                .get(&id)
+                .get(id)
                 .expect("focused session");
             cursor_visible_for_state(CursorVisibilityState {
                 dialog_open,
@@ -7144,7 +7144,7 @@ fn assert_cursor_contract(mux: &mut Multiplexer, client: &VirtualClient, context
         let session = mux
             .session_supervisor
             .sessions
-            .get(&id)
+            .get(id)
             .expect("focused session");
         let (vt_row, vt_col) = session.shadow_grid.cursor_position();
         assert_eq!(
@@ -7220,7 +7220,7 @@ fn full_scroll_cycle_keeps_screen_equal_to_model() {
     assert_ne!(
         mux.session_supervisor
             .sessions
-            .get(&sid)
+            .get(sid)
             .unwrap()
             .scrollback_offset(),
         0
@@ -7236,7 +7236,7 @@ fn full_scroll_cycle_keeps_screen_equal_to_model() {
     while mux
         .session_supervisor
         .sessions
-        .get(&sid)
+        .get(sid)
         .unwrap()
         .scrollback_offset()
         != 0
@@ -7504,7 +7504,7 @@ fn selection_residue_cleared_after_copy_click() {
 fn combining_mark_joins_base_character() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, "e\u{301}!".as_bytes());
-    let session = mux.session_supervisor.sessions.get(&sid).unwrap();
+    let session = mux.session_supervisor.sessions.get(sid).unwrap();
     let view = session.shadow_grid.scrollback_view(0, 1);
     assert_eq!(
         view.cell(0, 0).map(Cell::contents),
@@ -7522,7 +7522,7 @@ fn combining_mark_joins_base_character() {
 fn vs16_emoji_stays_one_cluster() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, "\u{2601}\u{fe0f}X".as_bytes());
-    let session = mux.session_supervisor.sessions.get(&sid).unwrap();
+    let session = mux.session_supervisor.sessions.get(sid).unwrap();
     let view = session.shadow_grid.scrollback_view(0, 1);
     assert_eq!(
         view.cell(0, 0).map(Cell::contents),
@@ -7551,7 +7551,7 @@ fn halfwidth_katakana_dakuten_width_echoes_to_client() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, "\u{ff76}\u{ff9e}X".as_bytes());
     assert_frame_conformance(&mut mux, &client, "dakuten width echo-back");
-    let session = mux.session_supervisor.sessions.get(&sid).unwrap();
+    let session = mux.session_supervisor.sessions.get(sid).unwrap();
     let view = session.shadow_grid.scrollback_view(0, 1);
     assert_eq!(
         view.cell(0, 0).map(Cell::contents),
@@ -7581,7 +7581,7 @@ fn zwj_family_emoji_stays_one_cluster() {
     let family = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}";
     feed_and_compose(&mut mux, &mut client, sid, family.as_bytes());
     assert_frame_conformance(&mut mux, &client, "ZWJ family width echo-back");
-    let session = mux.session_supervisor.sessions.get(&sid).unwrap();
+    let session = mux.session_supervisor.sessions.get(sid).unwrap();
     let view = session.shadow_grid.scrollback_view(0, 1);
     assert_eq!(
         view.cell(0, 0).map(Cell::contents),
@@ -7595,7 +7595,7 @@ fn wide_lead_overwrite_blanks_continuation() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, "\u{4f60}".as_bytes());
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[1;1HA");
-    let session = mux.session_supervisor.sessions.get(&sid).unwrap();
+    let session = mux.session_supervisor.sessions.get(sid).unwrap();
     let view = session.shadow_grid.scrollback_view(0, 1);
     let continuation = view.cell(0, 1).expect("continuation cell");
     assert!(
@@ -7609,7 +7609,7 @@ fn decstr_soft_reset_is_handled_in_grid() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[1m\x1b[?25l\x1b[5;10r");
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[!p");
-    let session = mux.session_supervisor.sessions.get_mut(&sid).unwrap();
+    let session = mux.session_supervisor.sessions.get_mut(sid).unwrap();
     assert!(
         !session.shadow_grid.hide_cursor(),
         "DECSTR must reset cursor visibility in the grid"
@@ -7691,7 +7691,7 @@ fn decscusr_reconciles_per_pane_and_never_forwards_raw() {
     feed_and_compose(&mut mux, &mut client, sid, b"hello");
 
     // The agent picks a bar cursor; the next frame reconciles it.
-    if let Some(session) = mux.session_supervisor.sessions.get_mut(&sid) {
+    if let Some(session) = mux.session_supervisor.sessions.get_mut(sid) {
         session.feed_pty(b"\x1b[5 q");
         let passthrough = session.drain_passthrough();
         assert!(
@@ -7730,7 +7730,7 @@ fn render_perf_probe() {
     let mut durations_us: Vec<u128> = Vec::with_capacity(300);
     let mut bytes: Vec<usize> = Vec::with_capacity(300);
     for i in 0..300 {
-        if let Some(session) = mux.session_supervisor.sessions.get_mut(&sid) {
+        if let Some(session) = mux.session_supervisor.sessions.get_mut(sid) {
             session.feed_pty(&codex_chunk(i));
             drop(session.drain_passthrough());
         }

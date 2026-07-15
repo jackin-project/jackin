@@ -57,8 +57,8 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             event,
             payload,
         } => {
-            let session_known = mux.session_supervisor.sessions.contains_key(&session_id);
-            if let Some(session) = mux.session_supervisor.sessions.get_mut(&session_id) {
+            let session_known = mux.session_supervisor.sessions.contains_key(session_id);
+            if let Some(session) = mux.session_supervisor.sessions.get_mut(session_id) {
                 session.apply_runtime_event(
                     &source_id,
                     &runtime,
@@ -80,7 +80,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         }
         // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
         ClientMsg::StatusCapture { session_id } => {
-            if let Some(session) = mux.session_supervisor.sessions.get(&session_id) {
+            if let Some(session) = mux.session_supervisor.sessions.get(session_id) {
                 if let Err(e) = write_status_capture(session_id, session) {
                     crate::clog!("status.capture: session {session_id} failed: {e:#}");
                 }
@@ -217,7 +217,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             // surface `[I` as literal text at the prompt.
             if !mux.dialog_captures_input()
                 && let Some(focused) = mux.active_focused_id()
-                && let Some(s) = mux.session_supervisor.sessions.get(&focused)
+                && let Some(s) = mux.session_supervisor.sessions.get(focused)
                 && s.focus_events_enabled()
             {
                 s.send_input(b"\x1b[I");
@@ -226,7 +226,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::FocusOut => {
             if !mux.dialog_captures_input()
                 && let Some(focused) = mux.active_focused_id()
-                && let Some(s) = mux.session_supervisor.sessions.get(&focused)
+                && let Some(s) = mux.session_supervisor.sessions.get(focused)
                 && s.focus_events_enabled()
             {
                 s.send_input(b"\x1b[O");

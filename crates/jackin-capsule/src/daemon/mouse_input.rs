@@ -244,7 +244,7 @@ impl Multiplexer {
             drop_trace("no-focused-pane");
             return false;
         };
-        let Some(session) = self.session_supervisor.sessions.get(&focused) else {
+        let Some(session) = self.session_supervisor.sessions.get(focused) else {
             drop_trace("session-gone");
             return false;
         };
@@ -307,7 +307,7 @@ impl Multiplexer {
         {
             return false;
         }
-        let Some(session) = self.session_supervisor.sessions.get_mut(&focused) else {
+        let Some(session) = self.session_supervisor.sessions.get_mut(focused) else {
             return false;
         };
         if session.shadow_grid.alternate_screen() {
@@ -368,7 +368,7 @@ impl Multiplexer {
         {
             return None;
         }
-        let session = self.session_supervisor.sessions.get(&id)?;
+        let session = self.session_supervisor.sessions.get(id)?;
         if session.mouse_enabled() {
             // Pane's program wants the mouse — defer to PTY forward.
             return None;
@@ -407,7 +407,7 @@ impl Multiplexer {
             None
         };
         let (scrollback_filled, scrollback_offset) =
-            if let Some(session) = self.session_supervisor.sessions.get_mut(&session_id) {
+            if let Some(session) = self.session_supervisor.sessions.get_mut(session_id) {
                 if let Some(delta) = scroll_delta {
                     session.scroll_by(delta);
                 }
@@ -489,7 +489,7 @@ impl Multiplexer {
         let rows = self
             .session_supervisor
             .sessions
-            .get(&sel.session_id)
+            .get(sel.session_id)
             .map(|session| session.render_content_snapshot(sel.inner.cols))
             .unwrap_or_default();
         self.copy_selection_rows(sel, &rows);
@@ -552,7 +552,7 @@ impl Multiplexer {
     /// word's display-column bounds come from `word_bounds_in_row` over the
     /// session's content snapshot.
     fn select_word_at(&mut self, candidate: &SelectionState) -> bool {
-        let Some(session) = self.session_supervisor.sessions.get(&candidate.session_id) else {
+        let Some(session) = self.session_supervisor.sessions.get(candidate.session_id) else {
             crate::cdebug!("word select skipped: session={} gone", candidate.session_id);
             return false;
         };
@@ -617,7 +617,7 @@ impl Multiplexer {
             crate::cdebug!("visible url open skipped: focused pane has no visible rect");
             return false;
         };
-        let Some(session) = self.session_supervisor.sessions.get(&session_id) else {
+        let Some(session) = self.session_supervisor.sessions.get(session_id) else {
             crate::cdebug!("visible url open skipped: focused session={session_id} gone");
             return false;
         };
@@ -674,7 +674,7 @@ impl Multiplexer {
             }
             return None;
         };
-        let Some(session) = self.session_supervisor.sessions.get(&candidate.session_id) else {
+        let Some(session) = self.session_supervisor.sessions.get(candidate.session_id) else {
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
                     "visible url open skipped ({log_suffix}): session={} gone",
@@ -716,7 +716,7 @@ impl Multiplexer {
         anchor_col: u16,
         log_suffix: Option<&str>,
     ) -> Option<HostOpenTarget> {
-        let Some(session) = self.session_supervisor.sessions.get(&session_id) else {
+        let Some(session) = self.session_supervisor.sessions.get(session_id) else {
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
                     "visible url open skipped ({log_suffix}): session={session_id} gone"

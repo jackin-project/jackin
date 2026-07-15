@@ -244,7 +244,7 @@ impl Multiplexer {
             .filter_map(|pane| {
                 self.session_supervisor
                     .sessions
-                    .get(&pane.id)
+                    .get(pane.id)
                     .map(|s| (pane.id, session_display_title(s)))
             })
             .collect();
@@ -254,7 +254,7 @@ impl Multiplexer {
         let pane_scrollbars: Vec<(u64, usize, usize)> = panes
             .iter()
             .filter_map(|pane| {
-                self.session_supervisor.sessions.get_mut(&pane.id).map(|s| {
+                self.session_supervisor.sessions.get_mut(pane.id).map(|s| {
                     // Alt-screen apps (Claude Code, vim, …) own their own
                     // scroll — jackin keeps no scrollback for them, so report
                     // filled=0 to suppress the scrollbar thumb on their border.
@@ -306,7 +306,7 @@ impl Multiplexer {
 
         // Snapshot scrollback state for the focused session before the draw closure.
         let scrollback_active = focused_id
-            .and_then(|id| self.session_supervisor.sessions.get(&id))
+            .and_then(|id| self.session_supervisor.sessions.get(id))
             .is_some_and(|s| s.scrollback_offset() != 0);
         let main_scroll_axes = focused_id
             .and_then(|id| {
@@ -330,7 +330,7 @@ impl Multiplexer {
         // cached per-pane metadata scans.
         let mut damaged_panes = HashSet::new();
         for pane in &panes {
-            if let Some(session) = self.session_supervisor.sessions.get_mut(&pane.id)
+            if let Some(session) = self.session_supervisor.sessions.get_mut(pane.id)
                 && !session.shadow_grid.dirty_spans().is_empty()
             {
                 damaged_panes.insert(pane.id);
@@ -346,7 +346,7 @@ impl Multiplexer {
         let pane_screens: Vec<(u64, PaneScreen<'_>)> = panes
             .iter()
             .filter_map(|pane| {
-                self.session_supervisor.sessions.get(&pane.id).map(|s| {
+                self.session_supervisor.sessions.get(pane.id).map(|s| {
                     let view = s
                         .shadow_grid
                         .scrollback_view(s.scrollback_offset(), pane.inner.rows);
@@ -356,7 +356,7 @@ impl Multiplexer {
             .collect();
         if crate::logging::debug_enabled() {
             for pane in &panes {
-                let Some(session) = self.session_supervisor.sessions.get(&pane.id) else {
+                let Some(session) = self.session_supervisor.sessions.get(pane.id) else {
                     continue;
                 };
                 let actual_filled = session.scrollback_filled();
@@ -556,7 +556,7 @@ impl Multiplexer {
         focused_pane_rect: Option<Rect>,
     ) {
         let dialog_open = self.dialog_open();
-        let focused = focused_id.and_then(|id| self.session_supervisor.sessions.get(&id));
+        let focused = focused_id.and_then(|id| self.session_supervisor.sessions.get(id));
         let desired = AssertedClientState {
             bracketed_paste: focused.is_some_and(|s| s.shadow_grid.bracketed_paste()),
             application_cursor: focused.is_some_and(|s| s.shadow_grid.application_cursor()),
@@ -643,7 +643,7 @@ fn cached_pane_regions(
     let mut hyperlinks = Vec::new();
     let mut sgr = Vec::new();
     for pane in panes {
-        let Some(session) = sessions.get(&pane.id) else {
+        let Some(session) = sessions.get(pane.id) else {
             cache.remove(&pane.id);
             continue;
         };
@@ -762,7 +762,7 @@ fn pane_hyperlink_regions(
         pane_screens,
         |id| {
             sessions
-                .get(&id)
+                .get(id)
                 .is_some_and(crate::session::Session::allow_frame_hyperlinks)
         },
         |cell| cell_safe_uri(cell).map(str::to_owned),

@@ -50,7 +50,7 @@ impl Multiplexer {
     pub(super) fn open_container_info_dialog(&mut self) {
         let focused_agent = self
             .active_focused_id()
-            .and_then(|id| self.session_supervisor.sessions.get(&id))
+            .and_then(|id| self.session_supervisor.sessions.get(id))
             .and_then(|s| s.agent.clone());
         let container_name = self.status.status_bar.container_name().to_owned();
         let diagnostics = crate::container_context::resolve_container_diagnostics();

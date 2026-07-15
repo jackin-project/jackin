@@ -177,25 +177,25 @@ pub(super) struct SessionSupervisor {
 pub(crate) struct SessionRegistry(HashMap<SessionId, Session>);
 
 impl SessionRegistry {
-    pub(crate) fn get(&self, id: &u64) -> Option<&Session> {
-        SessionId::new(*id).ok().and_then(|id| self.0.get(&id))
+    pub(crate) fn get(&self, id: u64) -> Option<&Session> {
+        SessionId::new(id).ok().and_then(|id| self.0.get(&id))
     }
 
-    pub(crate) fn get_mut(&mut self, id: &u64) -> Option<&mut Session> {
-        SessionId::new(*id).ok().and_then(|id| self.0.get_mut(&id))
+    pub(crate) fn get_mut(&mut self, id: u64) -> Option<&mut Session> {
+        SessionId::new(id).ok().and_then(|id| self.0.get_mut(&id))
     }
 
-    pub(crate) fn contains_key(&self, id: &u64) -> bool {
+    pub(crate) fn contains_key(&self, id: u64) -> bool {
         self.get(id).is_some()
     }
 
     pub(crate) fn insert(&mut self, id: u64, session: Session) -> Option<Session> {
-        let id = SessionId::new(id).expect("allocated session ids are positive");
+        let id = SessionId::new(id).ok()?;
         self.0.insert(id, session)
     }
 
-    pub(crate) fn remove(&mut self, id: &u64) -> Option<Session> {
-        SessionId::new(*id).ok().and_then(|id| self.0.remove(&id))
+    pub(crate) fn remove(&mut self, id: u64) -> Option<Session> {
+        SessionId::new(id).ok().and_then(|id| self.0.remove(&id))
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (u64, &Session)> {
@@ -224,14 +224,6 @@ impl SessionRegistry {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-}
-
-impl std::ops::Index<&u64> for SessionRegistry {
-    type Output = Session;
-
-    fn index(&self, id: &u64) -> &Self::Output {
-        self.get(id).expect("session id is registered")
     }
 }
 
@@ -895,7 +887,7 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
     // `done`. Acknowledge it each tick (idempotent — only done→idle changes
     // anything), which records the seen revision.
     if let Some(focused) = mux.active_focused_id()
-        && let Some(session) = mux.session_supervisor.sessions.get_mut(&focused)
+        && let Some(session) = mux.session_supervisor.sessions.get_mut(focused)
         && let Some(effective) = session.status.acknowledge()
     {
         session.state = effective;
@@ -1331,7 +1323,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // `mux.send_output` (which takes `&mut Multiplexer`).
                         let mut to_emit: Vec<Vec<u8>> = Vec::new();
                         let mut reassert_outer_terminal_title = false;
-                        if let Some(session) = mux.session_supervisor.sessions.get_mut(&session_id) {
+                        if let Some(session) = mux.session_supervisor.sessions.get_mut(session_id) {
                             session.feed_pty(&data);
                             // Always drain the OSC + unhandled-CSI
                             // passthrough buffer so a backgrounded
@@ -1376,7 +1368,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         if let Some(base) = reason.take() {
                             let tail = mux
                                 .session_supervisor.sessions
-                                .get(&session_id)
+                                .get(session_id)
                                 .and_then(|session| session.diagnostic_tail(12));
                             reason = Some(match tail {
                                 Some(tail) => {

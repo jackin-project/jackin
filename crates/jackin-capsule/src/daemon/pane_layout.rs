@@ -84,7 +84,7 @@ impl Multiplexer {
             // (e.g. the source pane exited mid-action). Undo the
             // session insert so the spawned PTY + child + tasks do
             // not leak as an orphan that no tab tree references.
-            if let Some(orphan) = self.session_supervisor.sessions.remove(&new_id) {
+            if let Some(orphan) = self.session_supervisor.sessions.remove(new_id) {
                 orphan.terminate();
             }
             // The history record was pushed at spawn (above), before placement
@@ -134,7 +134,7 @@ impl Multiplexer {
         let from_id = tab.focused_id;
         self.session_supervisor
             .sessions
-            .get(&from_id)
+            .get(from_id)
             .map_or((None, Vec::new(), None), |session| {
                 let (env, label) = session.provider.as_ref().map_or_else(
                     || (Vec::new(), None),
@@ -163,7 +163,7 @@ impl Multiplexer {
             next_focus.is_some()
         );
         tab.tree.remove(id);
-        if let Some(session) = self.session_supervisor.sessions.remove(&id) {
+        if let Some(session) = self.session_supervisor.sessions.remove(id) {
             session.terminate();
         }
         // Drop the tab's zoom reference when the killed pane was the
@@ -189,7 +189,7 @@ impl Multiplexer {
         let content_rect = content_rect(self.render.content_rows, self.render.term_cols);
         if let Some(zoom_id) = self.active_zoomed_id() {
             let inner = content_rect.shrink(1);
-            if let Some(session) = self.session_supervisor.sessions.get_mut(&zoom_id) {
+            if let Some(session) = self.session_supervisor.sessions.get_mut(zoom_id) {
                 session.resize(inner.rows, inner.cols);
             }
             return;
@@ -198,7 +198,7 @@ impl Multiplexer {
             let leaves = tab.tree.leaves(content_rect);
             for (id, rect) in leaves {
                 let inner = rect.shrink(1);
-                if let Some(session) = self.session_supervisor.sessions.get_mut(&id) {
+                if let Some(session) = self.session_supervisor.sessions.get_mut(id) {
                     session.resize(inner.rows, inner.cols);
                 }
             }
@@ -313,7 +313,7 @@ impl Multiplexer {
         let ids = tab.tree.all_ids();
         let pane_count = ids.len();
         let panes = ids.into_iter().filter_map(|id| {
-            self.session_supervisor.sessions.get(&id).map(|session| {
+            self.session_supervisor.sessions.get(id).map(|session| {
                 let provider_label = session
                     .provider
                     .as_ref()
@@ -423,7 +423,7 @@ impl Multiplexer {
         // bytes into their PTY would surface as literal `[I` /
         // `[O` text at the prompt.
         if let Some(o) = old
-            && let Some(s) = self.session_supervisor.sessions.get(&o)
+            && let Some(s) = self.session_supervisor.sessions.get(o)
             && s.focus_events_enabled()
         {
             s.send_input(b"\x1b[O");
@@ -431,7 +431,7 @@ impl Multiplexer {
         // Cursor and mode state for the newly focused pane are reconciled
         // by the next composed frame (§3.4) — no assertion site here.
         if let Some(n) = new
-            && let Some(s) = self.session_supervisor.sessions.get(&n)
+            && let Some(s) = self.session_supervisor.sessions.get(n)
             && s.focus_events_enabled()
         {
             s.send_input(b"\x1b[I");
@@ -495,7 +495,7 @@ impl Multiplexer {
     pub(super) fn clear_focused_pane(&mut self) {
         self.cancel_drag();
         if let Some(id) = self.active_focused_id()
-            && let Some(session) = self.session_supervisor.sessions.get_mut(&id)
+            && let Some(session) = self.session_supervisor.sessions.get_mut(id)
         {
             session.clear_scrollback_and_request_screen_clear();
         }

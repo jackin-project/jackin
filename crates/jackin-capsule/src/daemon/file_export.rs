@@ -71,7 +71,7 @@ impl Multiplexer {
         let Some(selection) = self.clipboard.selection else {
             return false;
         };
-        let Some(session) = self.session_supervisor.sessions.get(&selection.session_id) else {
+        let Some(session) = self.session_supervisor.sessions.get(selection.session_id) else {
             return false;
         };
         let rows = session.render_content_snapshot(selection.inner.cols);
@@ -98,7 +98,7 @@ impl Multiplexer {
     fn export_path_under_cursor(&self) -> Option<String> {
         let session_id = self.active_focused_id()?;
         let inner = self.active_focused_inner_rect()?;
-        let session = self.session_supervisor.sessions.get(&session_id)?;
+        let session = self.session_supervisor.sessions.get(session_id)?;
         if session.scrollback_offset() != 0 {
             return None;
         }
@@ -110,10 +110,7 @@ impl Multiplexer {
 
     fn export_path_at_mouse_cell(&self, row: u16, col: u16) -> Option<String> {
         let candidate = self.detect_selection_start(row, col)?;
-        let session = self
-            .session_supervisor
-            .sessions
-            .get(&candidate.session_id)?;
+        let session = self.session_supervisor.sessions.get(candidate.session_id)?;
         let rows = session.render_content_snapshot(candidate.inner.cols);
         let row = rows.get(candidate.anchor_row)?;
         word_token(row, candidate.anchor_col)

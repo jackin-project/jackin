@@ -16,6 +16,16 @@ use serde::Deserialize;
 
 pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+fn usage_refresh_error_type(error: &str) -> &'static str {
+    if usage_error_is_rate_limited(error) {
+        "usage_http_rate_limited"
+    } else if error.to_ascii_lowercase().contains("http") {
+        "usage_http_failed"
+    } else {
+        "usage_provider_failed"
+    }
+}
+
 pub(crate) fn collect_usage_refresh_results<F>(
     due_targets: Vec<UsageRefreshTarget>,
     probe: F,
@@ -67,16 +77,9 @@ where
             match result {
                 Ok(result) => {
                     if let Some(error) = result.view.last_error.as_deref() {
-                        let error_type = if usage_error_is_rate_limited(error) {
-                            "usage_http_rate_limited"
-                        } else if error.to_ascii_lowercase().contains("http") {
-                            "usage_http_failed"
-                        } else {
-                            "usage_provider_failed"
-                        };
                         jackin_diagnostics::operation_error(
                             "usage.refresh",
-                            error_type,
+                            usage_refresh_error_type(error),
                             "usage provider refresh failed",
                             &[],
                         );

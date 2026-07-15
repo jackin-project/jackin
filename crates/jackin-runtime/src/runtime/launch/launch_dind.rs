@@ -462,6 +462,15 @@ pub(crate) fn prewarmed_dind_state_container_name(paths: &JackinPaths) -> Option
     (state.schema_version == 1 && state.kept).then_some(state.dind)
 }
 
+fn record_prewarm_adoption_skip(reason: &str) {
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Sidecar,
+        "adopt_prewarmed_dind",
+        Some(&format!("skip:{reason}")),
+    );
+    emit_prewarmed_dind_adoption("skipped", reason);
+}
+
 /// Opportunistically consume the explicit kept sidecar prewarm as a one-shot
 /// launch resource. The warmed resource names are recorded in the instance
 /// manifest and normal session/eject cleanup owns them after launch succeeds.
@@ -475,12 +484,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         Some(PREWARM_STATE_FILE),
     );
     let Some(lock) = try_lock_prewarmed_dind(paths) else {
-        jackin_diagnostics::active_timing_done(
-            jackin_diagnostics::DiagnosticStage::Sidecar,
-            "adopt_prewarmed_dind",
-            Some("skip:locked"),
-        );
-        emit_prewarmed_dind_adoption("skipped", "locked");
+        record_prewarm_adoption_skip("locked");
         return None;
     };
     let state = match read_prewarmed_dind_state(paths) {

@@ -98,7 +98,7 @@ impl Multiplexer {
             tab_ids.len()
         );
         for id in tab_ids {
-            if let Some(session) = self.session_supervisor.sessions.remove(&id) {
+            if let Some(session) = self.session_supervisor.sessions.remove(id) {
                 self.mark_agent_session_exited(id);
                 session.terminate();
             }
@@ -215,7 +215,7 @@ impl Multiplexer {
                 }
             }
         }
-        self.session_supervisor.sessions.remove(&session_id);
+        self.session_supervisor.sessions.remove(session_id);
         self.mark_agent_session_exited(session_id);
         if let Some(tab_idx) = owning_tab
             && let Some(tab) = self.session_supervisor.tabs.get_mut(tab_idx)

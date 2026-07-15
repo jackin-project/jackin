@@ -223,7 +223,7 @@ impl Multiplexer {
     /// Agent codename and provider label of the currently focused session.
     fn focused_agent_provider(&self) -> (Option<String>, Option<String>) {
         self.active_focused_id()
-            .and_then(|id| self.session_supervisor.sessions.get(&id))
+            .and_then(|id| self.session_supervisor.sessions.get(id))
             .map_or((None, None), |session| {
                 (
                     session.agent.clone(),
@@ -285,7 +285,7 @@ impl Multiplexer {
             .collect::<Vec<_>>();
         let focused = self
             .active_focused_id()
-            .and_then(|id| self.session_supervisor.sessions.get(&id))
+            .and_then(|id| self.session_supervisor.sessions.get(id))
             .and_then(session_refresh_target);
         let focused = self.usage.pending_usage_refresh.take().or(focused);
         if active_targets.is_empty() && focused.is_none() {
@@ -413,7 +413,7 @@ impl Multiplexer {
                     .tree
                     .leaves(placeholder_rect)
                     .into_iter()
-                    .map(|(id, _)| match self.session_supervisor.sessions.get(&id) {
+                    .map(|(id, _)| match self.session_supervisor.sessions.get(id) {
                         Some(session) => PaneSnapshot {
                             session_id: id,
                             label: session.label.clone(),
