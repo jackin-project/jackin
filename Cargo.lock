@@ -2757,6 +2757,7 @@ dependencies = [
  "jackin-image",
  "jackin-launch-tui",
  "jackin-manifest",
+ "jackin-process",
  "jackin-protocol",
  "jackin-runtime",
  "jackin-test-support",

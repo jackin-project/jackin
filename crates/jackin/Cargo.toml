@@ -69,6 +69,7 @@ assert_cmd = { workspace = true }
 jackin-config = { workspace = true, features = ["test-support"] }
 jackin-env = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
+jackin-process = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 predicates = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
