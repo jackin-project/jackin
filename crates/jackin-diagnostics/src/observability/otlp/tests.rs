@@ -171,6 +171,16 @@ fn two_resources_share_stable_build_identity() {
     );
     assert_eq!(attr(&a, keys::RUN_ID), None);
     assert_eq!(attr(&b, keys::RUN_ID), None);
+    assert_ne!(
+        attr(
+            &a,
+            jackin_telemetry::schema::attrs::std_attrs::SERVICE_INSTANCE_ID
+        ),
+        attr(
+            &b,
+            jackin_telemetry::schema::attrs::std_attrs::SERVICE_INSTANCE_ID
+        )
+    );
 }
 
 #[test]

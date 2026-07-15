@@ -87,6 +87,10 @@ pub mod std_attrs {
     pub const SERVICE_INSTANCE_ID: &str = "service.instance.id";
     pub const PROCESS_PID: &str = "process.pid";
     pub const PROCESS_EXECUTABLE_NAME: &str = "process.executable.name";
+    pub const PROCESS_RUNTIME_NAME: &str = "process.runtime.name";
+    pub const PROCESS_RUNTIME_VERSION: &str = "process.runtime.version";
+    pub const OS_TYPE: &str = "os.type";
+    pub const OS_VERSION: &str = "os.version";
     pub const PROCESS_EXIT_CODE: &str = "process.exit.code";
     pub const PROCESS_COMMAND: &str = "process.command";
     pub const CONTAINER_ID: &str = "container.id";
@@ -114,6 +118,10 @@ pub mod std_attrs {
         SERVICE_INSTANCE_ID,
         PROCESS_PID,
         PROCESS_EXECUTABLE_NAME,
+        PROCESS_RUNTIME_NAME,
+        PROCESS_RUNTIME_VERSION,
+        OS_TYPE,
+        OS_VERSION,
         PROCESS_EXIT_CODE,
         PROCESS_COMMAND,
         CONTAINER_ID,

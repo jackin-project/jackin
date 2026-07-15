@@ -241,6 +241,14 @@ impl ServiceIdentity {
         service_name: "jackin-capsule",
         app_mode: jackin_telemetry::schema::enums::AppMode::Capsule,
     };
+    pub const DAEMON: Self = Self {
+        service_name: "jackin-daemon",
+        app_mode: jackin_telemetry::schema::enums::AppMode::Daemon,
+    };
+    pub const ROLE: Self = Self {
+        service_name: "jackin-role",
+        app_mode: jackin_telemetry::schema::enums::AppMode::OneShot,
+    };
 }
 
 pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<bool> {
@@ -776,7 +784,7 @@ mod otlp {
                     .map(|name| name.to_string_lossy().into_owned())
             })
             .unwrap_or_else(|| identity.service_name.to_owned());
-        let attributes = vec![
+        let mut attributes = vec![
             KeyValue::new(std_attrs::SERVICE_NAMESPACE, "jackin"),
             KeyValue::new(std_attrs::SERVICE_NAME, identity.service_name),
             KeyValue::new(std_attrs::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
@@ -787,9 +795,21 @@ mod otlp {
             KeyValue::new(std_attrs::PROCESS_PID, i64::from(std::process::id())),
             KeyValue::new(std_attrs::PROCESS_EXECUTABLE_NAME, executable_name),
             KeyValue::new(attrs::APP_MODE, identity.app_mode.as_str()),
-            KeyValue::new("os.type", std::env::consts::OS),
-            KeyValue::new("process.runtime.name", "rust"),
+            KeyValue::new(std_attrs::OS_TYPE, std::env::consts::OS),
+            KeyValue::new(std_attrs::PROCESS_RUNTIME_NAME, "rust"),
         ];
+        if let Some(version) = sysinfo::System::long_os_version() {
+            attributes.push(KeyValue::new(std_attrs::OS_VERSION, version));
+        }
+        if let Some(version) = option_env!("RUSTC_VERSION") {
+            attributes.push(KeyValue::new(std_attrs::PROCESS_RUNTIME_VERSION, version));
+        }
+        if identity == ServiceIdentity::CAPSULE
+            && let Ok(container_id) = std::env::var("HOSTNAME")
+            && !container_id.trim().is_empty()
+        {
+            attributes.push(KeyValue::new(std_attrs::CONTAINER_ID, container_id));
+        }
         Resource::builder().with_attributes(attributes).build()
     }
 

@@ -228,10 +228,11 @@ impl RunDiagnostics {
         // `init_tracing` returns whether OTLP export was actually installed. That
         // drives the file gate: the file is the fallback sink, written whenever
         // the backend is NOT receiving (or forced on with JACKIN_DIAGNOSTICS_FILE).
-        let identity = if command == "console" {
-            crate::observability::ServiceIdentity::HOST_INTERACTIVE
-        } else {
-            crate::observability::ServiceIdentity::HOST_ONE_SHOT
+        let identity = match command {
+            "console" => crate::observability::ServiceIdentity::HOST_INTERACTIVE,
+            "daemon" => crate::observability::ServiceIdentity::DAEMON,
+            "role" => crate::observability::ServiceIdentity::ROLE,
+            _ => crate::observability::ServiceIdentity::HOST_ONE_SHOT,
         };
         let (otlp_active, otlp_error) =
             match crate::observability::init_tracing_for(debug, &run_id, identity) {
