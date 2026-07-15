@@ -69,7 +69,7 @@ Exit gate: an external minimal consumer can pin one full commit SHA, build and r
 - depend on an immutable Git revision, or a preview release if one exists;
 - replace imports incrementally without product redesign or a broad compatibility re-export facade;
 - retain product components/stories locally;
-- move generic component documentation and neutral SVG previews to the external Fumadocs site, while retaining `jackin❯` composition and design-decision docs;
+- move generic component documentation, neutral SVG previews, and the neutral interaction conventions (tab pattern, focusability, hover-scroll, modal stacking, hint discipline) to the external Fumadocs site as debranded pages, while retaining `jackin❯` composition and design-decision docs that link out;
 - remove the local generic lookbook CLI only after equivalent external terminal/render/check workflows pass;
 - migrate every `jackin-core` compatibility caller before deleting duplicates;
 - re-home the Tokio subscription spawn helpers into `jackin-console` (final placement decided at the migration PR);

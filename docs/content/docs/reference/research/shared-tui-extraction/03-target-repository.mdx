@@ -43,7 +43,7 @@ The Fumadocs application lives in the same repository. Component source, stories
 4. **Data-driven actions.** Tabs, buttons, hints, menus, and badges accept stable IDs, labels, state, and policy from the consumer.
 5. **Complete keyboard path.** Mouse interaction may mirror actions, but focus, keyboard activation, and visible hints remain complete.
 6. **Stable geometry.** Dynamic labels, hover, selection, loading, and errors cannot shift fixed controls unpredictably.
-7. **Executor restraint.** Widgets and state do not require Tokio. The initial base crate has no async-runtime dependency; add an adapter only after two consumers prove the same executor-neutral need.
+7. **Executor restraint.** Widgets and state do not require Tokio, and the base crate has no async-runtime dependency. The optional executor-neutral `runtime` module covers update/view/subscription contracts and the frame driver; Tokio integration stays consumer-owned.
 8. **Controlled dependencies.** MSRV and Ratatui/Crossterm support are published and tested.
 9. **Two-consumer graduation.** Product-local components remain local until a second concrete consumer needs the same neutral contract.
 10. **One renderer.** Public components target Ratatui directly; do not create a lowest-common-denominator renderer abstraction.
@@ -85,7 +85,7 @@ examples. Every example uses the same public widgets and interaction types
 while defining its own root state and routing, proving that TermRock supports
 application patterns and optional convenience instead of prescribing either.
 
-The base `termrock` crate depends on `ratatui-core`, following Ratatui's guidance for widget-library authors. Every component, state, logical action, outcome, theme, and buffer-rendering contract works with `default-features = false`. The optional `crossterm` feature adds event conversion, `CrosstermBackend` integration, and a managed terminal-session builder for raw mode, alternate screen, mouse capture, cursor, and restoration. It does not add alternative components or change base behavior. The lookbook enables that feature; a buffer-only consumer does not compile a terminal backend. The initial library has no Tokio feature.
+The base `termrock` crate depends on `ratatui-core`, following Ratatui's guidance for widget-library authors. Every component, state, logical action, outcome, theme, and buffer-rendering contract works with `default-features = false`. The optional `crossterm` feature adds event conversion, `CrosstermBackend` integration, and a managed terminal-session builder for raw mode, alternate screen, mouse capture, cursor, and restoration. It does not add alternative components or change base behavior. The lookbook enables that feature; a buffer-only consumer does not compile a terminal backend. The library has no Tokio feature.
 
 See [06 - Public API and refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/) for the module graph, widget conventions, theme structure, terminal-session contract, and module-by-module refactoring ledger.
 See [09 - Component redesign catalog](/reference/research/shared-tui-extraction/09-component-redesign-catalog/) for the Ratatui TEA/component boundary and the replacement contract for every donor component file.

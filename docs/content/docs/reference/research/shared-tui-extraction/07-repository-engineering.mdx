@@ -139,7 +139,7 @@ Required jobs:
 5. Coverage fails when a public catalog component lacks a story, docs page, keyboard contract, or canonical preview.
 6. Ratatui `TestBackend` buffer assertions cover exact cells/styles for behavior that SVG output could hide. Ratatui exposes `TestBackend::assert_buffer` specifically for deterministic buffer comparison; see the [TestBackend API](https://docs.rs/ratatui/0.30.2/ratatui/backend/struct.TestBackend.html#method.assert_buffer).
 
-Only one platform owns canonical render files, initially Linux with a fixed locale and Unicode-width dependency lock. Other platforms run buffer/behavior tests but do not rewrite fixtures. This prevents line-ending or font-tool differences from creating multiple authorities.
+Only one platform owns canonical render files: Linux, with a fixed locale and Unicode-width dependency lock. Other platforms run buffer/behavior tests but do not rewrite fixtures. This prevents line-ending or font-tool differences from creating multiple authorities.
 
 The donor currently has 29 committed SVG previews and 18 Rust files using `TestBackend`, counted on 2026-07-15 with `find` and `rg -l`. They become the parity seed, not automatic public stories: product-specific agent, workspace, container, and role fixtures are replaced with neutral data before moving.
 

@@ -46,7 +46,7 @@ Some of these neutral types also exist as compatibility copies or lower-layer de
 - replace hardcoded `jackin❯` brand output with consumer-provided brand/header data;
 - make bottom chrome, tabs, status, badges, hints, and actions data-driven;
 - replace use-case-specific modal rectangle functions with generic responsive dialog specifications;
-- keep Tokio runtime helpers consumer-owned initially so widgets do not force an executor;
+- keep Tokio subscription helpers consumer-owned so widgets never force an executor, while the executor-neutral contracts and frame driver move to the shared optional runtime module;
 - define public state IDs and callbacks/messages without consumer domain types;
 - give the shared tab strip per-tab glyph/state slots and stable click regions, and cover Capsule's wrapped-hint behavior in the hint bar, so the Capsule status bar and hint rows can converge on shared widgets after parity;
 - derive the lookbook SVG color table from the shared theme values instead of the duplicated hex table hardcoded in the SVG writer today;
