@@ -308,7 +308,7 @@ impl RichRenderer {
         if entered_alt_screen {
             crossterm::terminal::enable_raw_mode().context("entering raw mode for launch TUI")?;
             stdout.execute(EnterAlternateScreen)?;
-            jackin_tui::terminal_modes::enable_mouse_capture(&mut stdout)
+            crate::tui::input::enable_mouse_capture(&mut stdout)
                 .context("enabling mouse capture for launch TUI")?;
         }
         stdout.execute(crossterm::cursor::Hide)?;
@@ -1110,7 +1110,7 @@ impl RichRenderer {
         self.host.set_rich_surface_active(false);
         drop(self.terminal.backend_mut().execute(crossterm::cursor::Show));
         if self.entered_alt_screen {
-            drop(jackin_tui::terminal_modes::disable_mouse_capture(
+            drop(crate::tui::input::disable_mouse_capture(
                 self.terminal.backend_mut(),
             ));
             drop(crossterm::terminal::disable_raw_mode());

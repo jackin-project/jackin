@@ -68,7 +68,7 @@ fn forced_terminal_restore_resets_other_host_modes() {
     write_forced_terminal_restore(&mut out).expect("restore bytes");
     let rendered = String::from_utf8(out).expect("utf8 escape bytes");
 
-    assert!(rendered.contains(jackin_tui::ansi::RESET));
+    assert!(rendered.contains(ANSI_RESET));
     assert!(rendered.contains("\x1b]22;default\x1b\\"));
     assert!(rendered.contains("\x1b[?1004l"));
     assert!(rendered.contains("\x1b[?2004l"));
