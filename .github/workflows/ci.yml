@@ -581,6 +581,42 @@ jobs:
         with:
           artifact-name: sccache-stats-ci-clippy-${{ matrix.config.lane }}
           heading: sccache ci clippy (${{ matrix.config.lane }})
+
+  tui-lookbook-drift:
+    needs: [changes, matrix-setup, cargo-registry-warmup]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 30
+    name: TUI lookbook drift (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_OFFLINE: "true"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          install_args: "cargo-binstall rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: ./.github/actions/cache-cargo-registry
+      - run: cargo run --locked -p jackin-tui-lookbook -- --check docs/public/tui-lookbook
+
   dependency-policy:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
@@ -1313,6 +1349,7 @@ jobs:
       - cargo-registry-warmup
       - fmt
       - clippy
+      - tui-lookbook-drift
       - dependency-policy
       - schema-check
       - file-size-gate
