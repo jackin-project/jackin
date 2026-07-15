@@ -107,8 +107,8 @@ Benches run in `--test` mode in CI-fast (Criterion smoke); allocation lane + har
 - `build-time` uses `mode = "artifact-ceiling"`: local/PR runs report an explicit skip without `target/build-times.json`; the scheduled measurement job copies its artifact into place and enforces reviewed clean/incremental ceilings before upload.
 - Local PTY sampling measured first-frame max **62 ms** and input-to-frame max
   **350 ms** across three processes. Local crate build samples are much faster
-  than GHA and must not set `build-time` ceilings. Hygiene run
-  `29396473635` (ubuntu-latest) measured clean seconds runtime **74**, capsule
-  **58**, console **15**, config **7** (incremental stayed under the prior
-  local-seeded bounds). Checked-in clean ceilings use ~15% headroom:
-  **86 / 67 / 18 / 9** with incremental **10 / 7 / 5 / 2 / 3**.
+  than GHA and must not set `build-time` ceilings. Two Hygiene ubuntu-latest
+  samples measured clean seconds runtime **74–102**, capsule **58–79**,
+  console **15–20**, config **7–10**, term **1**. Checked-in ceilings use ~40%
+  headroom over the higher sample (shared-runner wall-clock variance): clean
+  **143 / 111 / 28 / 14 / 2**, incremental **12 / 8 / 6 / 2 / 3**.
