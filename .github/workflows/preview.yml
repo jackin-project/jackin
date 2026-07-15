@@ -314,7 +314,7 @@ jobs:
         uses: ./.github/actions/configure-sccache
         with:
           scope: release-archive-jackin-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.target }}
-          write: "true"
+          write: ${{ github.ref == 'refs/heads/main' }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -413,7 +413,7 @@ jobs:
         uses: ./.github/actions/configure-sccache
         with:
           scope: release-archive-capsule-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.target }}
-          write: "true"
+          write: ${{ github.ref == 'refs/heads/main' }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
