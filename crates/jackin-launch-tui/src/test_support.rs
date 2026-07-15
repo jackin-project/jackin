@@ -1,4 +1,4 @@
-use jackin_core::launch_progress::LaunchHostTerminal;
+use jackin_core::LaunchHostTerminal;
 
 struct TestHostTerminal;
 

@@ -58,7 +58,7 @@ There are six mechanically distinct ways to get a coding agent's conversation ou
 | **C** | **Built-in OpenTelemetry** | Agent's own instrumentation emits OTLP logs/metrics/traces | Live | Semi — env-configured once, then passive | Yes |
 | **D** | **Wire interception** | The agent↔model HTTP boundary (base-URL redirect, fetch patch, MITM) | Live | Yes — operator controls env/proxy, agent unaware | Config blessed; capture-via-proxy operational |
 | **E** | **Headless stream-json** | Agent stdout in `--print` / `--output-format stream-json` mode | Live | No — you launch the run headless | Yes |
-| **F** | **Multiplexer screen scrape** | jackin❯ own `DamageGrid` screen + scrollback for the pane | Live / post-hoc | Yes — jackin owns the PTY | n/a (jackin-internal) |
+| **F** | **Multiplexer screen scrape** | jackin❯ own `DamageGrid` screen + scrollback for the pane | Live / post-hoc | Yes — jackin❯ owns the PTY | n/a (jackin-internal) |
 
 A seventh item is not a tap but the shared *schema* these converge on: the **OpenTelemetry GenAI semantic conventions** (`gen_ai.*` — `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, token-usage and finish-reason attributes; the older opt-in `gen_ai.content.prompt`/`gen_ai.content.completion` events were deprecated in semconv v1.38.0). Where Déjà Vu needs a normalized on-the-wire vocabulary, this is the standard to align to.
 
@@ -90,7 +90,7 @@ Each agent's *resume* command is the proof its format is replayable — if the a
 | Surface | Yields | Passive? | Stability |
 |---|---|---|---|
 | **Native JSONL** `~/.claude/projects/<encoded-cwd>/<id>.jsonl` (subagents in `…/<id>/subagents/agent-*.jsonl`) | Full thread: user/assistant/`tool_use`/`tool_result`/`thinking`, `uuid`↔`parentUuid` tree, model, token usage, cwd, git | Yes | Internal format (undocumented; stable in practice) |
-| **Hooks** (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, `SessionStart/End`, …) | stdin JSON; `UserPromptSubmit.prompt` (literal text), `PostToolUse.tool_response`; **every payload carries `transcript_path`** → pivot to the JSONL | No (jackin installs at launch) | Vendor-blessed |
+| **Hooks** (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, `SessionStart/End`, …) | stdin JSON; `UserPromptSubmit.prompt` (literal text), `PostToolUse.tool_response`; **every payload carries `transcript_path`** → pivot to the JSONL | No (jackin❯ installs at launch) | Vendor-blessed |
 | **Built-in OTEL** (`CLAUDE_CODE_ENABLE_TELEMETRY=1`) | `claude_code.user_prompt` (redacted unless `OTEL_LOG_USER_PROMPTS=1`), `tool_result`, `tool_decision`, `api_request`; cost/token metrics. `OTEL_LOG_RAW_API_BODIES=1` (or `=file:<dir>`) emits full request+response bodies incl. **assistant text and the full conversation history** | Semi (env set once) | Vendor-blessed; **extended-thinking always redacted** |
 | **`--print --output-format stream-json`** (`--include-partial-messages`) | Live NDJSON: `system`(init), `assistant`(text+`tool_use`), `user`(tool_result), `stream_event` deltas, `result`(usage) | No (you launch headless) | Vendor-blessed |
 | **`ANTHROPIC_BASE_URL` redirect / fetch-patch** (`claude-trace` fetch-patch, and cross-agent proxies like `claude-tap`) | Full wire request+response: system prompt, tool defs, all messages, **thinking blocks**, cache/token usage | Yes | Operational; **interactive `claude` ignores `ANTHROPIC_BASE_URL` — reliable only with `-p`** ([#36998](https://github.com/anthropics/claude-code/issues/36998)); fetch-patch (claude-trace via `node --require`) works in both |
@@ -266,7 +266,7 @@ The default capture path is host-side and read-only against agent state: it read
 Per the [security model](/guides/security-model/) and the never-mutate-the-host-silently contract, this item is explicit about what it touches on the host:
 
 - **Reads** the per-instance agent homes under `~/.jackin/data/<container>/` (jackin❯ own data; reading is always allowed) and runs read-only network fetches of the operator's *own* Amp threads/streams using the already-forwarded `AMP_API_KEY`.
-- **Writes** only under `~/.jackin/data/deja-vu/` — jackin❯ own host root, the sanctioned location for jackin-owned state. It never writes into the operator's repositories, `~/.claude/`, `~/.codex/`, `~/.config/gh/`, dotfiles, or any non-jackin path.
+- **Writes** only under `~/.jackin/data/deja-vu/` — jackin❯ own host root, the sanctioned location for jackin-owned state. It never writes into the operator's repositories, `~/.claude/`, `~/.codex/`, `~/.config/gh/`, dotfiles, or any non-jackin❯ path.
 - Capture is **opt-in and surfaced** (config flag / CLI flag), and the archive location is reported, consistent with the host-effects contract. The wire-interception (D) and screen-scrape (F) vectors, because they can capture secrets and model-facing payloads, are additionally opt-in and redaction-aware. No container-side path is required for the file-reading path; if a future capsule-side capture point is added it lives under `/jackin/` (e.g. `/jackin/deja-vu/`), never under `/run`, `/var`, or `/tmp`.
 
 ## Phases

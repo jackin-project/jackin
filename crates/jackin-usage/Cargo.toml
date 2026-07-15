@@ -47,3 +47,11 @@ harness = false
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "token_log_reread"
+harness = false
+
+[[bench]]
+name = "snapshot_upsert"
+harness = false

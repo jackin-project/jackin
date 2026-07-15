@@ -15,7 +15,7 @@ const FALLBACK_INSTALL_COMMAND: &str =
 
 /// [`crate::agent::runtime::AgentRuntime`] adapter for Grok Build.
 #[derive(Debug)]
-pub struct GrokRuntime;
+pub(crate) struct GrokRuntime;
 
 impl crate::agent::runtime::private::Sealed for GrokRuntime {}
 

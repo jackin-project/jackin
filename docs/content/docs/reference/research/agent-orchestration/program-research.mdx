@@ -63,7 +63,7 @@ Every borrowed idea has to survive these filters:
 |---|---|---|
 | [`graemerocher/multicode`](https://github.com/graemerocher/multicode) | Parallel workspace table, GitHub status links, `multicode-remote`, skill-driven tags, Codex provider support, editor launcher, autonomous queue config, Apple-container experiments | Linux-first `bwrap`/`systemd-run` core; isolation is convenience, not a strong boundary; some Apple-container workflows still mount the host Docker socket |
 | [`dredozubov/hazmat`](https://github.com/dredozubov/hazmat) | Session contract, tier decision flow, native macOS containment, strict integration rules, rollback/proof discipline | macOS-only; one hardcoded `agent` user; no smooth multi-agent fleet surface |
-| [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/security/) | MicroVM plus private Docker daemon, host-side network proxy, credential injection outside the VM, branch worktrees under `.sbx/` | Product is tied to Docker Desktop; not an extensible jackin role ecosystem; credentials/network proxy are not available primitives in plain Docker |
+| [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/security/) | MicroVM plus private Docker daemon, host-side network proxy, credential injection outside the VM, branch worktrees under `.sbx/` | Product is tied to Docker Desktop; not an extensible jackin❯ role ecosystem; credentials/network proxy are not available primitives in plain Docker |
 | [`ogulcancelik/herdr`](https://github.com/ogulcancelik/herdr) | Two-stage done state (Done vs Idle), foreground-process ownership, semantic integration reports, visible-screen arbitration, workspace-level status roll-up, notification suppression when tab is focused, sound-escalation opt-in, and blocking `wait` semantics on the socket API | AGPL-3.0 (embedding conflicts with jackin❯ Apache 2.0 license); heuristics degrade when the observed terminal is `docker attach` rather than the agent process; no container isolation, mount model, or auth forwarding | See [Agent runtime status authority](/roadmap/agent-runtime-status/) |
 | [`kitlangton/cellshot`](https://github.com/kitlangton/cellshot), [asciinema](https://github.com/asciinema/asciinema), [Charmbracelet VHS](https://github.com/charmbracelet/vhs), and terminal test/record tools | Treat terminal sessions as observable, scriptable, replayable objects: structured cells, visible-text waits, input injection, `.cast`/JSONL traces, and text/JSON/SVG/PNG artifact bundles | Most tools own their own PTY daemon, browser terminal, or host process; jackin❯ should expose the existing Capsule PTY/session state instead of nesting another runtime. See [Terminal observation and automation](/reference/research/agent-orchestration/terminal-observation/terminal-observation-automation/) |
 | [`stablyai/orca`](https://github.com/stablyai/orca) | Worktree-per-task visual orchestration, diff-annotation-to-agent feedback loop, embedded Chromium per worktree (Design Mode), 30+ zero-config runtimes, WebGL multi-pane terminals, mobile companion | Host-native agents run as host user; no container boundary; isolated UX ideas are the borrow target, not the isolation model. See [Orca ADE research](/reference/research/agent-orchestration/orca-ade/) |
@@ -97,7 +97,7 @@ just because another tool has it.
 Some adjacent-tool features are attractive but would cut against jackin❯
 values if copied directly.
 
-| Idea | Why not copy directly | Safer jackin alternative |
+| Idea | Why not copy directly | Safer jackin❯ alternative |
 |---|---|---|
 | Host Docker socket passthrough | Any agent with daemon access can create privileged containers or host bind mounts; this collapses the sandbox boundary | Private daemon only: DinD, rootless DinD, microVM-owned Docker, or Kubernetes-controlled pods |
 | Same-absolute-path workspace passthrough everywhere | Elegant in microVMs, but it would break jackin❯ explicit `dst` mount model in Docker/container backends | Keep `dst` explicit; only use same-path passthrough inside a backend that natively needs and explains it |
@@ -108,7 +108,7 @@ values if copied directly.
 
 ## Critical read of Hazmat
 
-Hazmat is not a jackin replacement. It is a containment-first launcher that
+Hazmat is not a jackin❯ replacement. It is a containment-first launcher that
 treats "what can the agent reach?" as the product question. That makes it a
 high-signal reference for jackin❯ security and trust surface.
 
@@ -134,7 +134,7 @@ high-signal reference for jackin❯ security and trust surface.
    are governed. The proof found ordering bugs, which is exactly the kind of
    failure mode jackin❯ should care about.
 
-### Where Hazmat does not match jackin
+### Where Hazmat does not match jackin❯
 
 - It is **macOS-native and intentionally platform-specific**. jackin❯ needs the
   same operator concepts across macOS, Linux, WSL, servers, and eventually
@@ -146,7 +146,7 @@ high-signal reference for jackin❯ security and trust surface.
 - Its strongest no-VM path depends on **macOS user isolation and seatbelt**.
   That is useful inspiration, not a portable backend.
 
-### Hazmat ideas worth turning into jackin roadmap items
+### Hazmat ideas worth turning into jackin❯ roadmap items
 
 | Candidate | jackin❯-shaped version | Roadmap item |
 |---|---|---|
@@ -189,7 +189,7 @@ not as an assumption that every backend can match immediately.
 
 - jackin❯ should keep **role repositories** as the unit of runtime
   distribution. Docker Sandboxes templates are useful, but they are not a
-  replacement for jackin roles.
+  replacement for jackin❯ roles.
 - jackin❯ should preserve **mount destination control**. Docker Sandboxes'
   same-absolute-path passthrough is elegant for worktrees, but jackin❯
   `dst`-based workspace model is more explicit and portable.
@@ -266,7 +266,7 @@ present in jackin❯ today; **planned** means a roadmap item already exists;
 ## Track B — Containment and recovery comparison
 
 This track folds Hazmat and Docker Sandboxes into the roadmap without making
-jackin pretend to be either one.
+jackin❯ pretend to be either one.
 
 | Concern | Hazmat | Docker Sandboxes | jackin❯ direction |
 |---|---|---|---|
@@ -403,7 +403,7 @@ This is a guide, not a constraint. The tracks are intentionally separable.
 ## Key structural insights
 
 1. **A launch contract is the common substrate.** Hazmat proves that a visible
-   session contract turns security posture into product UX. In jackin, the same
+   session contract turns security posture into product UX. In jackin❯, the same
    contract also unlocks safer stack integrations, network policies, snapshot
    previews, and backend comparisons.
 2. **Live status and persistence still drive fleet work.** The multicode track
@@ -448,7 +448,7 @@ This is a guide, not a constraint. The tracks are intentionally separable.
    per-session command, console action, or all three? Recommended default:
    command/console action first, config only for stable dev servers; always
    show active mappings in the contract/status surface.
-7. **Persistence budget.** Should jackin show per-instance disk usage and
+7. **Persistence budget.** Should jackin❯ show per-instance disk usage and
    cleanup recommendations before adding microVM/private-daemon backends?
    Recommended default: yes, because Docker Sandboxes-style persistence is
    useful only if operators can see and reclaim it.
@@ -527,11 +527,11 @@ Research snapshots: May 9, 2026; agent-status addendum May 22, 2026. The cross-p
 - [Docker Sandboxes security model](https://docs.docker.com/ai/sandboxes/security/) —
   hypervisor, network, Docker Engine, and credential isolation layers.
 
-### Local jackin references
+### Local jackin❯ references
 
 - [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) —
   deep Docker Sandboxes, OrbStack, and libkrun/smolvm comparison already
-  captured in the jackin roadmap.
+  captured in the jackin❯ roadmap.
 - [Per-mount isolation](/guides/workspaces/#per-mount-isolation) —
   worktree/clone design and Docker Sandboxes branch-mode comparison.
 - [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) —

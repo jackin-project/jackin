@@ -16,7 +16,7 @@ title: "08 — Retrieval, memory, and state offloading"
 
 On the modeled session profile (local phase-0 measurement: ~6 sessions/day, 19 API calls/session, 5.5k uncached input, 85k cache-write, 1.17M cache-read, 27k output, ~$22/day), retrieval/memory/state techniques act on the input side: cache reads 32% + cache writes 29% + uncached input 2% = **63% of dollars**. The mechanism is always the same: replace re-replay (transcript) and re-derivation (re-exploring the codebase) with recall from a cheap external store — disk files, a memory directory, or a billed summary. Output-side techniques are in [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/); cache mechanics in [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/); the measurement harness in [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
 
-## Local measurements (jackin repo, method: `python3 /tmp/ct.py claude-fable-5 < file` → `count_tokens` API)
+## Local measurements (jackin❯ repo, method: `python3 /tmp/ct.py claude-fable-5 < file` → `count_tokens` API)
 
 | Item | Tokens | Note |
 |---|---|---|

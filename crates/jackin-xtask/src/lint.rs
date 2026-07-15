@@ -1,4 +1,4 @@
-//! File-size ratchet gate (Workstream B of codebase-health-enforcement).
+//! File-size ratchet gate (Workstream B of the completed codebase-health track).
 //!
 //! ```sh
 //! cargo xtask lint files             # enforce, fail on violation
@@ -109,7 +109,7 @@ pub(crate) fn run(args: LintFilesArgs) -> Result<()> {
             rule: "file-size",
             file: p.key,
             line: None,
-            why: p.message.clone(),
+            message: p.message.clone(),
             fix: format!(
                 "update `ratchet.toml` family `{}` (or refactor the source); regenerate: cargo xtask lint ratchet --print {}",
                 p.family, p.family
@@ -134,8 +134,8 @@ pub(crate) fn measure_lines(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
 }
 
 fn walk(dir: &Path, out: &mut BTreeMap<PathBuf, usize>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             walk(&path, out)?;
             continue;
@@ -176,7 +176,7 @@ fn check(root: &Path, budget: &Budget, counts: &BTreeMap<PathBuf, usize>) -> Res
         ));
         return Ok(());
     }
-    let mut problems: Vec<String> = violations.into_iter().map(|v| v.why).collect();
+    let mut problems: Vec<String> = violations.into_iter().map(|v| v.message).collect();
     problems.sort_unstable();
     bail!(
         "{} file-size violation(s):\n  {}",
@@ -246,7 +246,7 @@ fn collect_violations(
                     rule: "file-size",
                     file: rel,
                     line: None,
-                    why: why.clone(),
+                    message: why.clone(),
                     fix: format!(
                         "refactor `{why}` below {budgeted} lines, or under the {cap}-line cap and delete the budget row"
                     ),
@@ -261,7 +261,7 @@ fn collect_violations(
                 rule: "file-size",
                 file: rel.clone(),
                 line: None,
-                why: why.clone(),
+                message: why.clone(),
                 fix: format!(
                     "split `{rel}` under the {cap}-line cap, or add a budget row at {lines} in ratchet.toml"
                 ),
@@ -270,7 +270,7 @@ fn collect_violations(
         }
     }
 
-    violations.sort_by(|a, b| a.file.cmp(&b.file).then(a.why.cmp(&b.why)));
+    violations.sort_by(|a, b| a.file.cmp(&b.file).then(a.message.cmp(&b.message)));
     violations
 }
 
@@ -290,7 +290,7 @@ fn push_budget_entry(
             rule: "file-size",
             file: rel.to_owned(),
             line: None,
-            why,
+            message: why,
             fix: format!("delete the stale `{rel}` row from ratchet.toml"),
             rerun: RERUN.into(),
         });
@@ -304,7 +304,7 @@ fn push_budget_entry(
             rule: "file-size",
             file: rel.to_owned(),
             line: None,
-            why,
+            message: why,
             fix: format!("delete the `{rel}` row from ratchet.toml (file is under the cap)"),
             rerun: RERUN.into(),
         });
@@ -316,7 +316,7 @@ fn push_budget_entry(
             rule: "file-size",
             file: rel.to_owned(),
             line: None,
-            why,
+            message: why,
             fix: format!("set `{rel}` budget lines = {measured} in ratchet.toml"),
             rerun: RERUN.into(),
         });

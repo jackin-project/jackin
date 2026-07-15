@@ -11,7 +11,7 @@ Every `jackin` command invocation mints a **run ID** before any work begins and 
 ~/.jackin/data/diagnostics/runs/<run-id>.jsonl
 ```
 
-A run ID is a bare unique value with no prefix: a jackin-minted id is six hex characters (for example, `8b4766`); when a wrapper such as Parallax propagates its run id, jackin adopts that value instead. The host CLI prints the run ID at exit for every run and at startup in `--debug` mode. Launches inject `JACKIN_RUN_ID` into the role container whenever a run is active; debug launches inject `JACKIN_RUN_DIAGNOSTICS_PATH` only when a host JSONL file is actually being written, so Capsule's Debug info dialog never fabricates a host file path.
+A run ID is a bare unique value with no prefix: a jackin-minted id is six hex characters (for example, `8b4766`); when a wrapper such as Parallax propagates its run id, jackin❯ adopts that value instead. The host CLI prints the run ID at exit for every run and at startup in `--debug` mode. Launches inject `JACKIN_RUN_ID` into the role container whenever a run is active; debug launches inject `JACKIN_RUN_DIAGNOSTICS_PATH` only when a host JSONL file is actually being written, so Capsule's Debug info dialog never fabricates a host file path.
 
 Up to 200 run artifacts are retained; any artifact older than 30 days is pruned on the next run. Command-specific output logs (from `write_command_output`) are stored as sibling files named `<run-id>.<command-name>.log`.
 

@@ -344,3 +344,92 @@ fn aggregated_resolution_error_is_typed_source() {
         other => panic!("expected Aggregated, got {other}"),
     }
 }
+
+/// Property: any reserved runtime name in global env is rejected.
+#[test]
+fn prop_reserved_names_always_rejected() {
+    use jackin_core::RESERVED_RUNTIME_ENV_VARS;
+    use proptest::prelude::*;
+
+    let reserved: Vec<&'static str> = RESERVED_RUNTIME_ENV_VARS.iter().map(|(n, _)| *n).collect();
+
+    proptest!(|(idx in 0usize..reserved.len())| {
+        let key = reserved[idx];
+        let mut config = AppConfig::default();
+        config
+            .env
+            .insert(key.to_owned(), EnvValue::Plain("x".into()));
+        let err = validate_reserved_names(&config).expect_err("reserved must fail");
+        match err {
+            OperatorEnvError::ReservedNames { count, details } => {
+                prop_assert!(count >= 1);
+                prop_assert!(details.contains(key), "{details}");
+            }
+            other => prop_assert!(false, "unexpected error: {other}"),
+        }
+    });
+}
+
+/// Property: non-reserved names are accepted by the reserved-name gate.
+#[test]
+fn prop_non_reserved_names_accepted() {
+    use jackin_core::is_reserved;
+    use proptest::prelude::*;
+
+    proptest!(|(name in "[A-Z][A-Z0-9_]{0,24}")| {
+        prop_assume!(!is_reserved(&name));
+        let mut config = AppConfig::default();
+        config
+            .env
+            .insert(name, EnvValue::Plain("ok".into()));
+        prop_assert!(validate_reserved_names(&config).is_ok());
+    });
+}
+
+/// Property: later selected layers always override earlier layers.
+#[test]
+fn prop_operator_env_follows_declared_layer_precedence() {
+    use proptest::prelude::*;
+
+    proptest!(|(
+        global in "[a-zA-Z0-9_-]{0,24}",
+        role in "[a-zA-Z0-9_-]{0,24}",
+        workspace in "[a-zA-Z0-9_-]{0,24}",
+        workspace_role in "[a-zA-Z0-9_-]{0,24}",
+    )| {
+        let key = "LAYERED_VALUE";
+        let mut config = AppConfig::default();
+        config.env.insert(key.into(), EnvValue::Plain(global));
+        config.roles.insert(
+            "alpha".into(),
+            RoleSource {
+                git: "https://example.invalid/alpha.git".into(),
+                trusted: true,
+                env: BTreeMap::from([(key.into(), EnvValue::Plain(role))]),
+            },
+        );
+        config.workspaces.insert(
+            "work".into(),
+            WorkspaceConfig {
+                workdir: "/workspace".into(),
+                env: BTreeMap::from([(key.into(), EnvValue::Plain(workspace))]),
+                roles: BTreeMap::from([(
+                    "alpha".into(),
+                    WorkspaceRoleOverride {
+                        env: BTreeMap::from([(
+                            key.into(),
+                            EnvValue::Plain(workspace_role.clone()),
+                        )]),
+                        ..WorkspaceRoleOverride::default()
+                    },
+                )]),
+                ..WorkspaceConfig::default()
+            },
+        );
+
+        prop_assert_eq!(
+            lookup_operator_env_raw(&config, Some("alpha"), Some(&wn("work")), key),
+            Some(workspace_role),
+        );
+    });
+}

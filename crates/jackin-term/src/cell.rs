@@ -25,7 +25,7 @@ pub enum Color {
 
 /// Cell attributes (a subset of SGR properties the capsule reads).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Standard CSI SGR boolean attribute set (bold, italic, inverse, dim, \
               strikethrough, slow_blink, rapid_blink, conceal, overline) — nine \

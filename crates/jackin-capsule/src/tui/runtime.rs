@@ -5,13 +5,11 @@
 //!
 //! The shared TEA `Component<Ev, Msg>` and `View<Model>` contracts live in
 //! `jackin_tui::runtime`. This module is the capsule's implementation of
-//! those traits over its surface types. The existing render path in
-//! `tui/view.rs` (`render_capsule_ratatui_frame`) and the existing input
-//! path in `tui/input.rs` (`InputParser::parse`) are unchanged; the trait
-//! impls are thin delegations that satisfy the shared contract at the type
-//! level. Migrating the call sites in `daemon/compositor.rs` and the
-//! attach-loop in `tui/run.rs` to dispatch through these traits is a
-//! follow-up tracked in G3.
+//! those traits over its surface types. `CapsuleView` is the production
+//! adapter: `daemon/compositor.rs` routes the Ratatui frame through
+//! [`jackin_tui::runtime::drive_frame`] (plan 021). Render still
+//! delegates to `tui/view.rs` (`render_capsule_ratatui_frame`); input
+//! still parses via `tui/input.rs` (`InputParser::parse`).
 
 use crate::tui::input::{InputEvent, InputParser};
 use crate::tui::view::CapsuleRatatuiFrame;

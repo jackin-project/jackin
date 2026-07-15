@@ -1,4 +1,4 @@
-//! Report-only code-health dashboard (codebase-health-enforcement Phase 0).
+//! Report-only code-health dashboard (completed codebase-health Phase 0).
 //!
 //! ```sh
 //! cargo xtask health                  # human report
@@ -12,12 +12,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::docs::repo_root;
 
@@ -109,6 +108,54 @@ struct AdvisoryNote {
 }
 
 #[derive(Debug, Serialize)]
+struct TighteningProposal {
+    family: String,
+    measured: usize,
+    bound: usize,
+    headroom_pct: u32,
+    note: String,
+}
+
+#[derive(Debug, Serialize)]
+struct TrendDelta {
+    family: String,
+    baseline: usize,
+    current: usize,
+    delta: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoricalReport {
+    agent_docs: Vec<DocBytesHistory>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DocBytesHistory {
+    path: String,
+    bytes: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoryEnvelope {
+    observed_at_unix: u64,
+    report: HistoricalReport,
+}
+
+struct HistorySnapshot {
+    observed_at_unix: Option<u64>,
+    agent_docs: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct TrendSection {
+    baseline_label: String,
+    history_snapshots: usize,
+    deltas: Vec<TrendDelta>,
+    proposals: Vec<TighteningProposal>,
+    note: String,
+}
+
+#[derive(Debug, Serialize)]
 struct Report {
     largest_production_files: Vec<FileLines>,
     largest_test_files: Vec<FileLines>,
@@ -119,6 +166,8 @@ struct Report {
     duplicate_helpers: Vec<DuplicateHelper>,
     advisory: AdvisoryNote,
     verification_map: BTreeMap<String, String>,
+    /// Plan 027: headroom vs ratchet / baseline for shrink proposals.
+    trend: TrendSection,
 }
 
 pub(crate) fn run(args: HealthArgs) -> Result<()> {
@@ -159,6 +208,8 @@ fn collect(root: &Path, min_crates: usize) -> Result<Report> {
         bare_allow_attrs as f64 / allow_attrs as f64
     };
 
+    let trend = build_trend_section(root, &agent_docs)?;
+
     Ok(Report {
         largest_production_files,
         largest_test_files,
@@ -176,6 +227,7 @@ fn collect(root: &Path, min_crates: usize) -> Result<Report> {
             ),
         },
         verification_map,
+        trend,
     })
 }
 
@@ -194,20 +246,27 @@ fn measure_rs_files(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
 }
 
 pub(crate) fn walk_rs_paths(dir: &Path) -> Result<Vec<PathBuf>> {
+    const SKIP_DIRS: &[&str] = &[".git", "node_modules", "target"];
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
-        for entry in
-            fs::read_dir(&current).with_context(|| format!("reading {}", current.display()))?
-        {
-            let path = entry?.path();
+        for entry in crate::fs_util::read_dir_sorted(&current)? {
+            let path = entry.path();
             if path.is_dir() {
+                let name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("");
+                if SKIP_DIRS.contains(&name) {
+                    continue;
+                }
                 stack.push(path);
             } else if path.extension().is_some_and(|ext| ext == "rs") {
                 out.push(path);
             }
         }
     }
+    out.sort();
     Ok(out)
 }
 
@@ -272,113 +331,103 @@ fn untested_large(root: &Path, counts: &BTreeMap<PathBuf, usize>) -> Vec<FileLin
     out
 }
 
-/// Parse `#[allow(..., reason = "documented residual allow; prefer expect when site is lint-true")]` / `#[expect(...)]` (and inner `#!` forms) from source.
-///
-/// Returns `(is_allow, lint_names, has_reason)` per attribute.
+/// Parse `#[expect(...)]` / `#[expect(...)]` (and inner `#!` forms) with a
+/// syntax-aware `syn` walk. Returns `(is_allow, lint_names, has_reason)` per
+/// attribute. Comma-containing reason strings never leak as fake lint names.
 pub(crate) fn parse_suppression_attrs(source: &str) -> Vec<(bool, Vec<String>, bool)> {
-    let mut out = Vec::new();
-    let bytes = source.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] != b'#' {
-            i += 1;
-            continue;
+    let file = match syn::parse_file(source) {
+        Ok(file) => file,
+        Err(_first) => {
+            // Hard error for real files is handled by the caller path that
+            // names the path; in-test fixtures may be fragments — wrap as a
+            // module so item-level attributes still parse.
+            let wrapped = format!("mod __jackin_suppression_fragment {{\n{source}\n}}");
+            match syn::parse_file(&wrapped) {
+                Ok(file) => file,
+                // Unparseable input contributes no suppressions; the gate
+                // that names the path can escalate if needed.
+                Err(_second) => return Vec::new(),
+            }
         }
-        let rest = &source[i..];
-        let after_hash = if rest.starts_with("#[") {
-            2
-        } else if rest.starts_with("#![") {
-            3
-        } else {
-            i += 1;
-            continue;
-        };
-        let after = &source[i + after_hash..];
-        let is_allow = after.starts_with("allow");
-        let is_expect = after.starts_with("expect");
-        if !is_allow && !is_expect {
-            i += 1;
-            continue;
-        }
-        let keyword_len = if is_allow { 5 } else { 6 };
-        let after_kw = &after[keyword_len..];
-        let Some(paren_start) = after_kw.find('(') else {
-            i += 1;
-            continue;
-        };
-        if after_kw[..paren_start].chars().any(|c| !c.is_whitespace()) {
-            i += 1;
-            continue;
-        }
-        let body_start = i + after_hash + keyword_len + paren_start + 1;
-        let Some(body_end) = find_matching_paren(&source[body_start..]) else {
-            i += 1;
-            continue;
-        };
-        let body = &source[body_start..body_start + body_end];
-        let has_reason = body.contains("reason");
-        let lints = parse_lint_list(body);
-        if !lints.is_empty() {
-            out.push((is_allow, lints, has_reason));
-        }
-        i = body_start + body_end + 1;
-    }
-    out
+    };
+    let mut visitor = SuppressionVisitor { out: Vec::new() };
+    syn::visit::Visit::visit_file(&mut visitor, &file);
+    visitor.out
 }
 
-fn find_matching_paren(s: &str) -> Option<usize> {
-    let mut depth = 1usize;
-    let mut in_str = false;
-    let mut escape = false;
-    for (idx, ch) in s.char_indices() {
-        if in_str {
-            if escape {
-                escape = false;
-            } else if ch == '\\' {
-                escape = true;
-            } else if ch == '"' {
-                in_str = false;
+struct SuppressionVisitor {
+    out: Vec<(bool, Vec<String>, bool)>,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for SuppressionVisitor {
+    fn visit_attribute(&mut self, attr: &'ast syn::Attribute) {
+        collect_suppression_attr(attr, &mut self.out);
+        syn::visit::visit_attribute(self, attr);
+    }
+}
+
+fn collect_suppression_attr(attr: &syn::Attribute, out: &mut Vec<(bool, Vec<String>, bool)>) {
+    let path = attr.path();
+    // Unwrap one level of cfg_attr(…, allow/expect(...)).
+    if path.is_ident("cfg_attr") {
+        if let syn::Meta::List(list) = &attr.meta
+            && let Ok(nested) = list.parse_args_with(
+                syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+            )
+        {
+            for meta in nested.iter().skip(1) {
+                collect_meta_suppression(meta, out);
             }
-            continue;
         }
-        match ch {
-            '"' => in_str = true,
-            '(' => depth += 1,
-            ')' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(idx);
+        return;
+    }
+    collect_meta_suppression(&attr.meta, out);
+}
+
+fn collect_meta_suppression(meta: &syn::Meta, out: &mut Vec<(bool, Vec<String>, bool)>) {
+    let syn::Meta::List(list) = meta else {
+        return;
+    };
+    let is_allow = list.path.is_ident("allow");
+    let is_expect = list.path.is_ident("expect");
+    if !is_allow && !is_expect {
+        return;
+    }
+    let Ok(nested) = list.parse_args_with(
+        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+    ) else {
+        return;
+    };
+    let mut lints = Vec::new();
+    let mut has_reason = false;
+    for item in nested {
+        match item {
+            syn::Meta::Path(path) => {
+                let name = path_to_lint_name(&path);
+                if !name.is_empty() {
+                    lints.push(name);
                 }
             }
-            _ => {}
+            syn::Meta::NameValue(nv) if nv.path.is_ident("reason") => {
+                has_reason = true;
+            }
+            syn::Meta::List(_inner) => {
+                // Nested lists are not lint names.
+            }
+            syn::Meta::NameValue(_) => {}
         }
     }
-    None
+    if !lints.is_empty() {
+        out.push((is_allow, lints, has_reason));
+    }
 }
 
-fn parse_lint_list(body: &str) -> Vec<String> {
-    let mut lints = Vec::new();
-    for part in body.split(',') {
-        let part = part.trim();
-        if part.is_empty() || part.starts_with("reason") {
-            continue;
-        }
-        let token = part
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .trim_matches(|c: char| c == '(' || c == ')');
-        if token.is_empty() || token.contains('=') {
-            continue;
-        }
-        if token
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':')
-        {
-            lints.push(String::from(token));
-        }
-    }
-    lints
+fn path_to_lint_name(path: &syn::Path) -> String {
+    path.segments
+        .iter()
+        .map(|seg| seg.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::")
 }
 
 pub(crate) fn crate_name_from_path(root: &Path, path: &Path) -> String {
@@ -530,8 +579,7 @@ fn scan_agent_docs(root: &Path) -> Result<Vec<DocBytes>> {
     if !crates_dir.is_dir() {
         return Ok(out);
     }
-    for entry in fs::read_dir(&crates_dir)? {
-        let entry = entry?;
+    for entry in crate::fs_util::read_dir_sorted(&crates_dir)? {
         if !entry.file_type()?.is_dir() {
             continue;
         }
@@ -639,12 +687,12 @@ fn build_verification_map(root: &Path) -> Result<BTreeMap<String, String>> {
         id: String,
     }
 
-    let mut meta_cmd = Command::new("cargo");
+    let mut meta_cmd = crate::cmd::command("cargo");
     meta_cmd
         .args(["metadata", "--format-version=1", "--no-deps"])
         .current_dir(root);
     let output = crate::cmd::output_raw(&mut meta_cmd).context("running cargo metadata")?;
-    if !output.status.success() {
+    if !output.success {
         bail!(
             "cargo metadata failed: {}",
             String::from_utf8_lossy(&output.stderr)
@@ -666,6 +714,165 @@ fn build_verification_map(root: &Path) -> Result<BTreeMap<String, String>> {
         map.insert(pkg.name, cmd);
     }
     Ok(map)
+}
+
+fn history_snapshot(line: &str) -> Option<HistorySnapshot> {
+    if let Ok(envelope) = serde_json::from_str::<HistoryEnvelope>(line) {
+        return Some(HistorySnapshot {
+            observed_at_unix: Some(envelope.observed_at_unix),
+            agent_docs: envelope
+                .report
+                .agent_docs
+                .into_iter()
+                .map(|doc| (doc.path, doc.bytes))
+                .collect(),
+        });
+    }
+    serde_json::from_str::<HistoricalReport>(line)
+        .ok()
+        .map(|report| HistorySnapshot {
+            observed_at_unix: None,
+            agent_docs: report
+                .agent_docs
+                .into_iter()
+                .map(|doc| (doc.path, doc.bytes))
+                .collect(),
+        })
+}
+
+fn read_health_history(path: &Path) -> Result<Vec<HistorySnapshot>> {
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(path)?;
+    Ok(text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(history_snapshot)
+        .collect())
+}
+
+/// Compare the live report with restored per-main snapshots. Tightening is
+/// proposed only after four dated observations span at least four weeks and
+/// every observation, plus the current value, retains 20% headroom.
+fn build_trend_section(root: &Path, agent_docs: &[DocBytes]) -> Result<TrendSection> {
+    let history = root.join("health-history.jsonl");
+    let snapshots = read_health_history(&history)?;
+    let baseline_label = if snapshots.is_empty() {
+        String::from("no local health history (CI restores health-snapshot artifacts)")
+    } else {
+        format!("health-history.jsonl ({} snapshot(s))", snapshots.len())
+    };
+
+    // Parse agent-doc-bytes bounds from ratchet.toml (best-effort; skip if missing).
+    let mut bounds: BTreeMap<String, usize> = BTreeMap::new();
+    let ratchet_path = root.join("ratchet.toml");
+    if ratchet_path.is_file() {
+        let text = fs::read_to_string(&ratchet_path)?;
+        let mut in_agent_docs = false;
+        let mut pending_key: Option<String> = None;
+        for line in text.lines() {
+            let t = line.trim();
+            if t.starts_with("id = ") {
+                in_agent_docs = t.contains("\"agent-doc-bytes\"");
+                pending_key = None;
+                continue;
+            }
+            if !in_agent_docs {
+                continue;
+            }
+            if t.starts_with("id = ") && !t.contains("agent-doc-bytes") {
+                break;
+            }
+            if let Some(rest) = t.strip_prefix("key = \"") {
+                let key = rest.trim_end_matches('"').to_owned();
+                pending_key = Some(key);
+            } else if let Some(rest) = t.strip_prefix("bound = ")
+                && let Some(key) = pending_key.take()
+                && let Ok(bound) = rest.trim().parse::<usize>()
+            {
+                bounds.insert(key, bound);
+            }
+        }
+    }
+
+    let baseline = snapshots
+        .iter()
+        .min_by_key(|snapshot| snapshot.observed_at_unix.unwrap_or(u64::MIN));
+    let mut deltas = Vec::new();
+    if let Some(baseline) = baseline {
+        for doc in agent_docs {
+            if let Some(&prior) = baseline.agent_docs.get(&doc.path) {
+                deltas.push(TrendDelta {
+                    family: format!("agent-doc-bytes/{}", doc.path),
+                    baseline: prior,
+                    current: doc.bytes,
+                    delta: doc.bytes as i64 - prior as i64,
+                });
+            }
+        }
+    }
+
+    let dated: Vec<_> = snapshots
+        .iter()
+        .filter_map(|snapshot| snapshot.observed_at_unix.map(|at| (at, snapshot)))
+        .collect();
+    let observed_span = dated
+        .iter()
+        .map(|(at, _)| *at)
+        .min()
+        .zip(dated.iter().map(|(at, _)| *at).max())
+        .map_or(0, |(first, last)| last.saturating_sub(first));
+    let sustained_window = dated.len() >= 4 && observed_span >= 28 * 24 * 60 * 60;
+
+    let mut proposals = Vec::new();
+    for doc in agent_docs {
+        let Some(&bound) = bounds.get(&doc.path) else {
+            continue;
+        };
+        if bound == 0 {
+            continue;
+        }
+        let headroom = bound.saturating_sub(doc.bytes);
+        let headroom_pct = ((headroom as u64 * 100) / bound as u64) as u32;
+        let ceiling = bound.saturating_mul(80) / 100;
+        let sustained = sustained_window
+            && dated.iter().all(|(_, snapshot)| {
+                snapshot
+                    .agent_docs
+                    .get(&doc.path)
+                    .is_some_and(|value| *value <= ceiling)
+            });
+        if headroom_pct >= 20 && doc.bytes <= ceiling && sustained {
+            proposals.push(TighteningProposal {
+                family: format!("agent-doc-bytes/{}", doc.path),
+                measured: doc.bytes,
+                bound,
+                headroom_pct,
+                note: format!(
+                    "maintained at least 20% headroom across {} dated snapshots spanning {} days",
+                    dated.len(),
+                    observed_span / (24 * 60 * 60)
+                ),
+            });
+        }
+    }
+
+    proposals.sort_by(|a, b| {
+        b.headroom_pct
+            .cmp(&a.headroom_pct)
+            .then_with(|| a.family.cmp(&b.family))
+    });
+
+    Ok(TrendSection {
+        baseline_label,
+        history_snapshots: snapshots.len(),
+        deltas,
+        proposals,
+        note: String::from(
+            "Deltas compare current values with the oldest restored observation. Proposals require ≥20% headroom across four dated snapshots spanning ≥28 days and remain human-applied.",
+        ),
+    })
 }
 
 fn print_human(report: &Report) {
@@ -751,6 +958,27 @@ fn print_human(report: &Report) {
         report.advisory.allow_attrs
     ));
     emit(&format!("  note: {}", report.advisory.note));
+    emit("");
+    emit("## Trend & tightening proposals (plan 027)");
+    emit(&format!("  baseline: {}", report.trend.baseline_label));
+    emit(&format!("  note: {}", report.trend.note));
+    for delta in &report.trend.deltas {
+        emit(&format!(
+            "  {} baseline={} current={} delta={:+}",
+            delta.family, delta.baseline, delta.current, delta.delta
+        ));
+    }
+    if report.trend.proposals.is_empty() {
+        emit("  (no families with ≥20% headroom under current snapshot bounds)");
+    } else {
+        for p in &report.trend.proposals {
+            emit(&format!(
+                "  {} measured={} bound={} headroom={}%",
+                p.family, p.measured, p.bound, p.headroom_pct
+            ));
+            emit(&format!("    → {}", p.note));
+        }
+    }
     emit("");
     emit("## Verification map (Phase 6 narrowest-command)");
     emit(&format!(

@@ -3,7 +3,7 @@
 
 //! Tests for the parent module.
 use super::*;
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 
 #[test]
 fn pricing_table_returns_estimate_for_known_model() {

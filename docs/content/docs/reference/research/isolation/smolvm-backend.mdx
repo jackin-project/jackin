@@ -126,7 +126,7 @@ Apple Container framework is not an active research track in this roadmap item. 
 | Docker compatibility | OCI images boot without Docker daemon; Docker-in-guest under research (ext4 bind, virtio-net required) | Private Docker Engine is a core feature | **`--privileged` not supported** — DinD blocked; rootless DinD via `--cap-add` unconfirmed |
 | File sharing | Directory volume mounts | Workspace mounted at same absolute host path | `-v` bind mounts (same absolute host path) |
 | Network policy | Network off by default, `--allow-host` allowlist | Host-side proxy, allow/deny policy, raw TCP/UDP/ICMP blocked | Per-container IP via vmnet; isolation unconfirmed for agent use cases |
-| Credential posture | jackin must provide its own credential model | Host-side credential proxy injects selected outbound API auth | jackin must provide its own credential model |
+| Credential posture | jackin❯ must provide its own credential model | Host-side credential proxy injects selected outbound API auth | jackin❯ must provide its own credential model |
 | Maturity risk | Pre-1.0 fast-moving runtime | New but backed by Docker's ecosystem | v0.11.0 (Mar 2026), fast-moving, multi-container networking rough edges |
 | Attach/PTY | CLI-based (`smolvm machine exec -it`), HTTP/OpenAPI via Unix socket | `sbx exec` | gRPC over vsock (vminitd); `container exec` CLI; I/O + signal streaming built in |
 | Lifecycle API for Rust | HTTP/OpenAPI over Unix socket — Rust-friendly | Unknown | Swift XPC native; shell out to `container` CLI |
@@ -502,7 +502,7 @@ smolvm's network posture is interesting because the README says network is off b
 
 Mapping to jackin❯:
 
-| jackin policy | smolvm mapping to validate |
+| jackin❯ policy | smolvm mapping to validate |
 |---|---|
 | deny | omit `--net` |
 | allowlist | `--net --allow-host <host>` for each allowed host |
@@ -530,7 +530,7 @@ What TSI does *not* give jackin❯:
 - raw bytes are already TLS-encrypted by the guest
 
 A real jackin❯ credential proxy on smolvm needs a cooperating in-guest HTTP proxy with a trusted CA cert installed inside the role environment. The HTTP proxy can speak vsock to the host-side credential daemon ([host-bridge](/roadmap/host-bridge/)) which holds the raw token. TSI's role narrows to "enforce that all outbound HTTPS routes through the proxy and nothing else escapes" — a useful primitive, but it is *complementary* to the credential broker, not a replacement.
-| connection logs | not provided by README; jackin may need its own proxy/log layer |
+| connection logs | not provided by README; jackin❯ may need its own proxy/log layer |
 
 This may make smolvm a useful implementation path for early network egress policy, but only after confirming how DNS, redirects, package managers, and registry auth behave under `--allow-host`.
 

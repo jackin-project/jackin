@@ -1,9 +1,12 @@
 //! Unit tests for pure ratchet semantics.
 
 use super::{
-    NumericVerdict, PresenceVerdict, check_numeric_entry, check_numeric_unlisted, check_presence,
+    Config, Entry, Family, NumericVerdict, PresenceVerdict, check_curated_pub_mods, check_families,
+    check_numeric_entry, check_numeric_unlisted, check_presence,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::Path;
 
 #[test]
 fn numeric_growth_fails() {
@@ -76,4 +79,185 @@ fn presence_stale_and_new() {
     assert!(v.iter().any(|(k, ver)| {
         k == "a.rs" && matches!(ver, PresenceVerdict::New { reason } if reason == "bad")
     }));
+}
+
+#[test]
+fn curated_pub_mods_rejects_extra_root_mod() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Valid curated siblings so the only failure is the intentional leak.
+    for (crate_name, body) in [
+        ("jackin-config", "mod private;\npub mod test_support;\n"),
+        (
+            "jackin-core",
+            "mod private;\npub mod container_paths;\npub mod debug_log;\n",
+        ),
+    ] {
+        let lib = dir
+            .path()
+            .join("crates")
+            .join(crate_name)
+            .join("src/lib.rs");
+        fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
+        fs::write(&lib, body).expect("write lib");
+    }
+    let lib = dir.path().join("crates/jackin-env/src/lib.rs");
+    fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
+    fs::write(
+        &lib,
+        "mod env_layer;\npub mod test_support;\npub mod leaked;\n",
+    )
+    .expect("write lib");
+    let err = check_curated_pub_mods(dir.path()).expect_err("extra pub mod must fail");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("leaked") && msg.contains("jackin-env"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn curated_pub_mods_accepts_env_pilot_shape() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let shapes = [
+        ("jackin-env", "mod env_layer;\npub mod test_support;\n"),
+        ("jackin-config", "mod private;\npub mod test_support;\n"),
+        (
+            "jackin-core",
+            "mod private;\npub mod container_paths;\npub mod debug_log;\n",
+        ),
+    ];
+    for (crate_name, body) in shapes {
+        let lib = dir
+            .path()
+            .join("crates")
+            .join(crate_name)
+            .join("src/lib.rs");
+        fs::create_dir_all(lib.parent().expect("parent")).expect("mkdir");
+        fs::write(&lib, body).expect("write lib");
+    }
+    check_curated_pub_mods(dir.path()).expect("curated pilot shapes ok");
+}
+
+#[test]
+fn real_tree_curated_pub_mods_green() {
+    // Workspace root is two levels up from this crate when run via cargo test.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root");
+    check_curated_pub_mods(&root).expect("real tree curated surfaces green");
+}
+
+#[test]
+fn suite_time_parses_fixture_junit_ms() {
+    use super::measure_suite_time;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let junit_dir = dir.path().join("target/nextest/ci");
+    fs::create_dir_all(&junit_dir).expect("mkdir");
+    // Two time attributes: 1.5s + 2s → 3500ms sum (attributes on suite + case).
+    fs::write(
+        junit_dir.join("junit.xml"),
+        r#"<?xml version="1.0"?><testsuites time="1.5"><testsuite time="2.0"></testsuite></testsuites>"#,
+    )
+    .expect("write junit");
+    let measured = measure_suite_time(dir.path()).expect("measure");
+    assert_eq!(measured.get("junit_total_ms").copied(), Some(3500));
+}
+
+#[test]
+fn suite_time_absent_junit_measures_zero() {
+    use super::measure_suite_time;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let measured = measure_suite_time(dir.path()).expect("measure");
+    assert_eq!(measured.get("junit_total_ms"), Some(&0));
+}
+
+#[test]
+fn suite_time_absent_junit_is_advisory_not_stale() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = Config {
+        family: vec![Family {
+            id: "suite-time".into(),
+            kind: "numeric".into(),
+            provider: "suite_time".into(),
+            cap: None,
+            mode: "enforce".into(),
+            entry: vec![Entry {
+                key: "junit_total_ms".into(),
+                bound: Some(3_600_000),
+            }],
+        }],
+    };
+
+    let outcome = check_families(dir.path(), &config, None).expect("check family");
+    assert!(outcome.problems.is_empty(), "{:?}", outcome.problems);
+    assert!(
+        outcome
+            .report_lines
+            .iter()
+            .any(|line| line.starts_with("suite-time/junit_total_ms:"))
+    );
+}
+
+#[test]
+fn build_times_flattens_scheduled_artifact() {
+    use super::measure_build_times;
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("target")).expect("mkdir");
+    fs::write(
+        dir.path().join("target/build-times.json"),
+        r#"{"jackin-core":{"clean_s":12,"incremental_s":3}}"#,
+    )
+    .expect("write artifact");
+    let measured = measure_build_times(dir.path()).expect("measure");
+    assert_eq!(measured.get("jackin-core.clean_s"), Some(&12));
+    assert_eq!(measured.get("jackin-core.incremental_s"), Some(&3));
+}
+
+#[test]
+fn build_time_family_skips_without_scheduled_artifact() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = Config {
+        family: vec![Family {
+            id: "build-time".into(),
+            kind: "numeric".into(),
+            provider: "build_times".into(),
+            cap: Some(0),
+            mode: "artifact-ceiling".into(),
+            entry: vec![Entry {
+                key: "jackin-core.clean_s".into(),
+                bound: Some(30),
+            }],
+        }],
+    };
+    let outcome = check_families(dir.path(), &config, None).expect("check family");
+    assert!(outcome.problems.is_empty());
+    assert!(
+        outcome
+            .report_lines
+            .iter()
+            .any(|line| line.contains("skipped"))
+    );
+}
+
+#[test]
+fn function_complexity_reports_per_crate_max_and_ignores_tests() {
+    use super::measure_rust_function_complexity;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("crates/example/src");
+    fs::create_dir_all(&src).expect("mkdir");
+    fs::write(
+        src.join("lib.rs"),
+        "fn small(v: bool) { if v {} }\nfn larger(v: bool) { if v {} else if !v {} }\n",
+    )
+    .expect("write source");
+    fs::write(
+        src.join("tests.rs"),
+        "fn ignored() { if true {} else if false {} else if true {} }\n",
+    )
+    .expect("write tests");
+
+    let measured = measure_rust_function_complexity(dir.path()).expect("measure");
+    assert_eq!(measured.get("example"), Some(&2));
+    assert_eq!(measured.len(), 1);
 }

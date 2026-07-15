@@ -136,7 +136,7 @@ pub fn plan_edit(
 pub fn apply_isolation_overrides(
     mounts: &mut [MountConfig],
     overrides: &[(String, MountIsolation)],
-) -> anyhow::Result<()> {
+) -> crate::ConfigResult<()> {
     for (dst, mode) in overrides {
         let target = mounts.iter_mut().find(|m| m.dst == *dst).ok_or_else(|| {
             anyhow::Error::from(ConfigError::msg(format!(

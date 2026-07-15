@@ -3,7 +3,7 @@
 
 //! Tests for the parent module.
 use crate::token_monitor::TokenSession;
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 
 #[test]
 fn amp_token_reader_parses_thread_messages() {

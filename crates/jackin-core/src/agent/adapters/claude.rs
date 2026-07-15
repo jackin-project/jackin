@@ -17,7 +17,7 @@ const FALLBACK_INSTALL_COMMAND: &str =
 
 /// [`crate::agent::runtime::AgentRuntime`] adapter for Claude Code.
 #[derive(Debug)]
-pub struct ClaudeRuntime;
+pub(crate) struct ClaudeRuntime;
 
 impl crate::agent::runtime::private::Sealed for ClaudeRuntime {}
 

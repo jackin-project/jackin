@@ -14,39 +14,39 @@
 use crate::repo_contract::MANIFEST_FILENAME;
 use anyhow::Context;
 /// Env var name for the `DinD` hostname injected into role containers.
-pub use jackin_core::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME;
+pub use jackin_core::JACKIN_DIND_HOSTNAME_ENV_NAME;
 /// Env var name of the in-container jackin❯ sentinel (`JACKIN`).
-pub use jackin_core::env_model::JACKIN_ENV_NAME;
+pub use jackin_core::JACKIN_ENV_NAME;
 /// Value written to [`JACKIN_ENV_NAME`].
-pub use jackin_core::env_model::JACKIN_ENV_VALUE;
+pub use jackin_core::JACKIN_ENV_VALUE;
 use std::path::Path;
 
 /// Per-role Amp configuration table.
-pub use jackin_core::manifest::AmpConfig;
+pub use jackin_core::AmpConfig;
 /// Per-role Claude Code configuration.
-pub use jackin_core::manifest::ClaudeConfig;
+pub use jackin_core::ClaudeConfig;
 /// Claude Code marketplace entry declared in the role manifest.
-pub use jackin_core::manifest::ClaudeMarketplaceConfig;
+pub use jackin_core::ClaudeMarketplaceConfig;
 /// Per-role Codex configuration.
-pub use jackin_core::manifest::CodexConfig;
+pub use jackin_core::CodexConfig;
 /// Declaration of one role-level environment variable.
-pub use jackin_core::manifest::EnvVarDecl;
+pub use jackin_core::EnvVarDecl;
 /// One hook path entry with label and in-image filename.
-pub use jackin_core::manifest::HookEntry;
+pub use jackin_core::HookEntry;
 /// Optional setup/source/preflight hook paths.
-pub use jackin_core::manifest::HooksConfig;
+pub use jackin_core::HooksConfig;
 /// Git identity (`user.name`) from the role manifest.
-pub use jackin_core::manifest::IdentityConfig;
+pub use jackin_core::IdentityConfig;
 /// Per-role Kimi configuration.
-pub use jackin_core::manifest::KimiConfig;
+pub use jackin_core::KimiConfig;
 /// Optional role-level Docker security settings (manifest `docker` table).
-pub use jackin_core::manifest::ManifestDockerConfig;
+pub use jackin_core::ManifestDockerConfig;
 /// Non-fatal manifest validation warning.
-pub use jackin_core::manifest::ManifestWarning;
+pub use jackin_core::ManifestWarning;
 /// Per-role `OpenCode` configuration.
-pub use jackin_core::manifest::OpencodeConfig;
+pub use jackin_core::OpencodeConfig;
 /// Top-level role manifest parsed from `jackin.role.toml`.
-pub use jackin_core::manifest::RoleManifest;
+pub use jackin_core::RoleManifest;
 
 /// Load and validate a `jackin.role.toml` from `repo_dir`.
 ///

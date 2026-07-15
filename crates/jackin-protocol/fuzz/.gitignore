@@ -1,3 +1,5 @@
 /artifacts/
-/corpus/
 /target/
+/corpus/*
+!/corpus/decode_frames/
+!/corpus/decode_frames/**

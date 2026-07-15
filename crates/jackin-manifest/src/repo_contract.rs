@@ -16,13 +16,13 @@ use dockerfile_parser_rs::{Dockerfile, Instruction};
 use crate::repo::RoleRepoValidationError;
 
 /// Role Dockerfile basename (`Dockerfile`).
-pub use jackin_core::constants::DOCKERFILE_NAME;
+pub use jackin_core::DOCKERFILE_NAME;
 /// Role manifest basename (`jackin.role.toml`).
 ///
 /// Re-exported from `jackin-core` — callers use
 /// `crate::repo_contract::MANIFEST_FILENAME` for backward compat while the
 /// canonical definition lives in the leaf crate.
-pub use jackin_core::constants::MANIFEST_FILENAME;
+pub use jackin_core::MANIFEST_FILENAME;
 
 /// Registry image name for the construct base (`projectjackin/construct`).
 pub const CONSTRUCT_REGISTRY_IMAGE: &str = "projectjackin/construct";

@@ -3,6 +3,23 @@
 
 //! Tests for app dispatch.
 use super::*;
+use clap::Parser as _;
+
+#[test]
+fn retired_launch_command_is_rejected() {
+    let error = Cli::try_parse_from(["jackin", "launch", "agent-smith", "workspace"])
+        .expect_err("retired launch syntax must not parse");
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::InvalidSubcommand);
+}
+
+#[test]
+fn load_command_remains_the_launch_entry_point() {
+    let cli =
+        Cli::try_parse_from(["jackin", "load", "agent-smith"]).expect("load syntax should parse");
+
+    assert!(matches!(cli.command, Some(Command::Load(_))));
+}
 
 #[test]
 fn parse_auth_forward_mode_from_cli_accepts_sync() {

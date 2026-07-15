@@ -131,6 +131,10 @@ jobs:
           name: nextest-junit-${{ matrix.group }}-${{ matrix.config.lane }}
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
+      # Plan 027: suite-time family enforces when junit exists (skipped locally).
+      - name: Suite-time ratchet (scheduled enforce)
+        if: always() && hashFiles('target/nextest/ci/junit.xml') != ''
+        run: cargo run -p jackin-xtask --locked -- lint ratchet
       - name: Slowest tests summary
         if: always()
         shell: bash

@@ -223,9 +223,9 @@ Confidence note: all dollar arithmetic rests on one locally measured session mix
 | 6 | vLLM V1: "less than 1% decrease in throughput even when the cache hit rate is 0%"; default-on; "several times" at high hit rate | https://vllm.ai/blog/2025-01-27-v1-alpha-release (refetched; source typo "perfix" sic) | |
 | 7 | vLLM APC prefill-only scope; block-hash design, sha256 default v0.11 | https://docs.vllm.ai/en/stable/features/automatic_prefix_caching/ , /en/latest/design/prefix_caching/ (sweep-fetched, not refetched) | |
 | 8 | SGLang "up to 6.4x higher throughput"; v2; no venue listed | https://arxiv.org/abs/2312.07104 (refetched) | |
-| 9 | "Up to 5x" + baselines vllm v0.2.5 / guidance v0.1.8 / TGI v1.3.0 | https://lmsys.org/blog/2024-01-17-sglang/ (sweep-fetched) | |
-| 10 | HiCache internal "up to 6x throughput / up to 80% TTFT cut"; Novita Qwen3-Coder-480B 25K-tok ~8-turn: TTFT −56%, throughput 2x, hit 40%→80%; Ant DeepSeek-R1-671B: −84% TTFT; tiers + `--hicache-ratio 2` | https://lmsys.org/blog/2025-09-10-sglang-hicache/ (refetched) | |
-| 11 | Router "up to 1.9x throughput / 3.8x hit rate"; 82,665→158,596 tok/s; 20%→75%; approximate radix tree, communication-free; workload caveat | https://lmsys.org/blog/2024-12-04-sglang-v0-4/ (refetched) | |
+| 9 | "Up to 5x" + baselines vllm v0.2.5 / guidance v0.1.8 / TGI v1.3.0 | https://www.lmsys.org/blog/2024-01-17-sglang/ (sweep-fetched) | |
+| 10 | HiCache internal "up to 6x throughput / up to 80% TTFT cut"; Novita Qwen3-Coder-480B 25K-tok ~8-turn: TTFT −56%, throughput 2x, hit 40%→80%; Ant DeepSeek-R1-671B: −84% TTFT; tiers + `--hicache-ratio 2` | https://www.lmsys.org/blog/2025-09-10-sglang-hicache/ (refetched) | |
+| 11 | Router "up to 1.9x throughput / 3.8x hit rate"; 82,665→158,596 tok/s; 20%→75%; approximate radix tree, communication-free; workload caveat | https://www.lmsys.org/blog/2024-12-04-sglang-v0-4/ (refetched) | |
 | 12 | LMCache "up to 15x improvement in throughput" (multi-round QA, doc analysis) | https://arxiv.org/abs/2510.09665 (sweep-fetched) | |
 | 13 | LMCache MoE ~13x TTFT (0.29s vs 3.98s; p99 1.30 vs 13.55); Momento >50% cold-start | vendor blogs blog.lmcache.ai, gomomento.com (sweep-fetched, vendor-reported) | |
 | 14 | Semantic cache 61.6-68.8% hit, 92.5-97.3% positive-hit, consumer-QA categories | https://arxiv.org/abs/2411.05276 (sweep, via search digest — tables not independently read) | |
