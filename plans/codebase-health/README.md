@@ -53,7 +53,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 
 | Plan | One-line deviation |
 |------|--------------------|
-| 009 | Dual-bootstrap host+capsule in-process (no Docker); measured export-volume sole ratchet input; point 4 structural prohibitions only. |
+| 009 | Dual-bootstrap host+capsule in-process (no Docker); measured export-volume sole ratchet input; canary/redact gate invoked. |
 | 018 | Three consumers on `jackin-process`; remaining `Command::new` sites enumerated (sensitive-boundary / PTY / tooling) — see plan Execution notes. |
 | 019 | jackin-config + jackin-core private impl modules; curated root re-exports; justified remainders `container_paths`/`debug_log`/`test_support`. |
 | 021 | Three `drive_frame` callers (console/launch/capsule); editor wildcards + shared modal scroll; dialog sub-loops documented out-of-scope. |
