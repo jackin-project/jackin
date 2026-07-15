@@ -15,7 +15,7 @@ const FALLBACK_INSTALL_COMMAND: &str =
 
 /// [`crate::agent::runtime::AgentRuntime`] adapter for Amp.
 #[derive(Debug)]
-pub struct AmpRuntime;
+pub(crate) struct AmpRuntime;
 
 impl crate::agent::runtime::private::Sealed for AmpRuntime {}
 

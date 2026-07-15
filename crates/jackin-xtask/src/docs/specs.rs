@@ -2,13 +2,18 @@
 //!
 //! Every INV row in `docs/content/docs/reference/developer-reference/specs/*.mdx`
 //! must carry a `Tests` cell. Cited test paths use the greppable form
-//! `crate::module::tests::fn_name` (or the literal `MISSING`). Broken
-//! citations fail; `MISSING` cells warn.
+//! `crate::module::tests::fn_name`. Broken citations fail; `MISSING` cells fail
+//! (no warning-only escape hatch — add a real test or drop the row).
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result, bail};
+use syn::parse::Parser as _;
+use syn::punctuated::Punctuated;
+use syn::{Attribute, Item, Meta, Token};
 
 const SPECS_REL: &str = "docs/content/docs/reference/developer-reference/specs";
 
@@ -20,14 +25,12 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
 
     let mut inv_rows = 0usize;
     let mut cited_ok = 0usize;
-    let mut missing = 0usize;
     let mut problems = Vec::new();
-    let mut warnings = Vec::new();
+    let mut crates_for_reconcile: BTreeSet<String> = BTreeSet::new();
+    let mut citations: Vec<(String, String, String)> = Vec::new();
 
-    for entry in
-        fs::read_dir(&specs_dir).with_context(|| format!("reading {}", specs_dir.display()))?
-    {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(&specs_dir)? {
+        let path = entry.path();
         if path.extension().is_none_or(|ext| ext != "mdx") {
             continue;
         }
@@ -56,13 +59,19 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
                 continue;
             }
             if cell == "MISSING" || cell == "`MISSING`" {
-                missing += 1;
-                warnings.push(format!("{rel}: {} Tests = MISSING", row.inv));
+                problems.push(format!(
+                    "{rel}: {} Tests = MISSING (add a real cited test; MISSING fails the gate)",
+                    row.inv
+                ));
                 continue;
             }
             for citation in split_citations(cell) {
                 match verify_citation(root, &citation) {
-                    Ok(()) => cited_ok += 1,
+                    Ok(crate_name) => {
+                        cited_ok += 1;
+                        crates_for_reconcile.insert(crate_name);
+                        citations.push((rel.clone(), row.inv.clone(), citation));
+                    }
                     Err(reason) => problems.push(format!(
                         "{rel}: {} citation `{citation}` — {reason}",
                         row.inv
@@ -72,8 +81,11 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
         }
     }
 
-    for w in &warnings {
-        emit_warn(w);
+    if problems.is_empty()
+        && !citations.is_empty()
+        && let Err(msg) = reconcile_with_nextest(root, &crates_for_reconcile, &citations)
+    {
+        problems.push(msg);
     }
 
     if !problems.is_empty() {
@@ -84,8 +96,15 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
         );
     }
 
+    let reconciled =
+        std::env::var_os("JACKIN_SPECS_RECONCILE").is_some() || std::env::var_os("CI").is_some();
     emit(&format!(
-        "spec gate OK — {inv_rows} INV rows, {cited_ok} cited tests verified, {missing} MISSING"
+        "spec gate OK — {inv_rows} INV rows, {cited_ok} cited tests verified (syn{})",
+        if reconciled {
+            " + nextest reconcile"
+        } else {
+            "; set JACKIN_SPECS_RECONCILE=1 for runner list"
+        }
     ));
     Ok(())
 }
@@ -153,9 +172,10 @@ fn split_citations(cell: &str) -> Vec<String> {
     out
 }
 
-/// Map `crate_name::module::path::tests::fn_name` to a source file and check
-/// that `fn fn_name` exists.
-fn verify_citation(root: &Path, citation: &str) -> Result<(), String> {
+/// Map `crate_name::module::path::tests::fn_name` to a source file, require a
+/// recognized test attribute via `syn`, and return the crate name for runner
+/// reconciliation.
+fn verify_citation(root: &Path, citation: &str) -> Result<String, String> {
     let parts: Vec<&str> = citation.split("::").collect();
     if parts.len() < 3 {
         return Err("expected form crate::module::tests::fn_name".into());
@@ -191,13 +211,21 @@ fn verify_citation(root: &Path, citation: &str) -> Result<(), String> {
             continue;
         }
         let text = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        if has_fn(&text, fn_name) {
-            return Ok(());
-        }
-        return Err(format!(
-            "fn `{fn_name}` not found in {}",
-            relative(root, path)
-        ));
+        return match find_test_fn(&text, fn_name) {
+            TestFnStatus::Ok => Ok(crate_name.to_owned()),
+            TestFnStatus::HelperOnly => Err(format!(
+                "fn `{fn_name}` exists in {} but lacks a test attribute (#[test]/#[tokio::test]/#[rstest]) — helpers are not coverage",
+                relative(root, path)
+            )),
+            TestFnStatus::Missing => Err(format!(
+                "fn `{fn_name}` not found in {}",
+                relative(root, path)
+            )),
+            TestFnStatus::ParseError(msg) => Err(format!(
+                "failed to parse {} as Rust: {msg}",
+                relative(root, path)
+            )),
+        };
     }
 
     Err(format!(
@@ -206,30 +234,230 @@ fn verify_citation(root: &Path, citation: &str) -> Result<(), String> {
     ))
 }
 
-fn has_fn(text: &str, fn_name: &str) -> bool {
-    for line in text.lines() {
-        let t = line.trim();
-        for prefix in [
-            "pub(crate) fn ",
-            "pub fn ",
-            "fn ",
-            "async fn ",
-            "pub async fn ",
-            "pub(crate) async fn ",
-        ] {
-            if let Some(rest) = t.strip_prefix(prefix)
-                && rest.starts_with(fn_name)
-                && is_fn_name_boundary(&rest[fn_name.len()..])
-            {
-                return true;
-            }
-        }
-    }
-    false
+#[derive(Debug)]
+enum TestFnStatus {
+    Ok,
+    HelperOnly,
+    Missing,
+    ParseError(String),
 }
 
-fn is_fn_name_boundary(after: &str) -> bool {
-    after.is_empty() || after.starts_with('(') || after.starts_with('<') || after.starts_with("::")
+fn find_test_fn(text: &str, fn_name: &str) -> TestFnStatus {
+    let file = match syn::parse_file(text) {
+        Ok(f) => f,
+        Err(e) => return TestFnStatus::ParseError(e.to_string()),
+    };
+    let mut found_helper = false;
+    for item in file.items {
+        match inspect_item(&item, fn_name) {
+            Some(true) => return TestFnStatus::Ok,
+            Some(false) => found_helper = true,
+            None => {}
+        }
+    }
+    if found_helper {
+        TestFnStatus::HelperOnly
+    } else {
+        TestFnStatus::Missing
+    }
+}
+
+fn inspect_item(item: &Item, fn_name: &str) -> Option<bool> {
+    match item {
+        Item::Fn(func) if func.sig.ident == fn_name => Some(has_test_attribute(&func.attrs)),
+        Item::Mod(module) => {
+            if let Some((_, items)) = &module.content {
+                let mut found_helper = false;
+                for nested in items {
+                    match inspect_item(nested, fn_name) {
+                        Some(true) => return Some(true),
+                        Some(false) => found_helper = true,
+                        None => {}
+                    }
+                }
+                if found_helper {
+                    return Some(false);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn has_test_attribute(attrs: &[Attribute]) -> bool {
+    attrs
+        .iter()
+        .any(|attr| is_test_path(attr.path()) || cfg_attr_adds_test(attr))
+}
+
+fn is_test_path(path: &syn::Path) -> bool {
+    path.segments.last().is_some_and(|segment| {
+        matches!(
+            segment.ident.to_string().as_str(),
+            "test" | "rstest" | "test_case"
+        )
+    })
+}
+
+fn cfg_attr_adds_test(attr: &Attribute) -> bool {
+    if !attr.path().is_ident("cfg_attr") {
+        return false;
+    }
+    let Meta::List(list) = &attr.meta else {
+        return false;
+    };
+    let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
+    let Ok(metas) = parser.parse2(list.tokens.clone()) else {
+        return false;
+    };
+    metas.iter().skip(1).any(|meta| is_test_path(meta.path()))
+}
+
+/// Reconcile cited test function names against `cargo nextest list` for the
+/// packages that appear in citations.
+///
+/// Opt-in: package listing is ~30–60s, so the default gate is syn-only. Enable
+/// with `JACKIN_SPECS_RECONCILE=1` or when `CI=true` (docs CI sets `CI`).
+fn reconcile_with_nextest(
+    root: &Path,
+    crates: &BTreeSet<String>,
+    citations: &[(String, String, String)],
+) -> Result<(), String> {
+    let reconcile =
+        std::env::var_os("JACKIN_SPECS_RECONCILE").is_some() || std::env::var_os("CI").is_some();
+    if !reconcile {
+        return Ok(());
+    }
+    static CACHE: OnceLock<Result<BTreeMap<String, BTreeSet<String>>, String>> = OnceLock::new();
+    let by_crate = CACHE.get_or_init(|| load_nextest_tests(root, crates));
+    let by_crate = match by_crate {
+        Ok(m) => m,
+        Err(e) if e.contains("not installed") || e.contains("No such file") => {
+            emit(&format!("warning: nextest reconciliation skipped ({e})"));
+            return Ok(());
+        }
+        Err(e) => return Err(format!("nextest reconciliation failed: {e}")),
+    };
+
+    let mut missing = Vec::new();
+    for (rel, inv, citation) in citations {
+        let parts: Vec<&str> = citation.split("::").collect();
+        let crate_name = parts[0];
+        let fn_name = parts[parts.len() - 1];
+        let Some(names) = by_crate.get(crate_name) else {
+            missing.push(format!(
+                "{rel}: {inv} citation `{citation}` — crate not present in nextest list"
+            ));
+            continue;
+        };
+        // nextest binary IDs look like `jackin_console::tui::state::manager::tests::fn`
+        // or `jackin_console::path::tests::fn` — match on trailing `::fn_name`.
+        let suffix = format!("::{fn_name}");
+        let hit = names
+            .iter()
+            .any(|id| id.ends_with(&suffix) || id == fn_name);
+        if !hit {
+            missing.push(format!(
+                "{rel}: {inv} citation `{citation}` — test not listed by `cargo nextest list` for package `{crate_name}`"
+            ));
+        }
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(missing.join("\n  "))
+    }
+}
+
+fn load_nextest_tests(
+    root: &Path,
+    crates: &BTreeSet<String>,
+) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for crate_name in crates {
+        let pkg = crate_name.replace('_', "-");
+        let mut cmd = crate::cmd::command("cargo");
+        cmd.current_dir(root)
+            .args(["nextest", "list", "-p", &pkg, "--message-format", "json"]);
+        let output = crate::cmd::output_raw(&mut cmd)
+            .map_err(|e| format!("spawn cargo nextest list -p {pkg}: {e}"))?;
+        if !output.success {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("no such command") || stderr.contains("is not installed") {
+                return Err("cargo-nextest not installed".into());
+            }
+            return Err(format!(
+                "cargo nextest list -p {pkg} failed: {}",
+                stderr.chars().take(400).collect::<String>()
+            ));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut names = BTreeSet::new();
+        // nextest JSON lines or single object — accept either.
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                collect_test_ids(&v, &mut names);
+            }
+        }
+        if names.is_empty()
+            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout)
+        {
+            collect_test_ids(&v, &mut names);
+        }
+        out.insert(crate_name.clone(), names);
+    }
+    Ok(out)
+}
+
+fn collect_test_ids(value: &serde_json::Value, out: &mut BTreeSet<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(name) = map.get("name").and_then(|v| v.as_str()) {
+                out.insert(name.to_owned());
+            }
+            if let Some(id) = map.get("id").and_then(|v| v.as_str()) {
+                out.insert(id.to_owned());
+            }
+            // nextest list JSON carries case names under `testcases` / `tests`
+            // maps or arrays; also recurse all values so suite nesting is covered.
+            for (k, v) in map {
+                if matches!(k.as_str(), "testcases" | "tests") {
+                    collect_testcase_entries(v, out);
+                }
+                collect_test_ids(v, out);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_test_ids(item, out);
+            }
+        }
+        serde_json::Value::String(s) if s.contains("::") => {
+            out.insert(s.clone());
+        }
+        _ => {}
+    }
+}
+
+fn collect_testcase_entries(value: &serde_json::Value, out: &mut BTreeSet<String>) {
+    match value {
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_test_ids(item, out);
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            for name in obj.keys() {
+                out.insert(name.clone());
+            }
+        }
+        _ => {}
+    }
 }
 
 fn relative(root: &Path, path: &Path) -> String {
@@ -245,17 +473,9 @@ fn emit(line: &str) {
         reason = "jackin-xtask is a CLI; the spec report is its output"
     )]
     {
-        println!("{line}");
-    }
-}
-
-fn emit_warn(line: &str) {
-    #[expect(
-        clippy::print_stdout,
-        reason = "jackin-xtask is a CLI; MISSING warnings are part of the gate report"
-    )]
-    {
-        println!("warning: {line}");
+        if crate::report::human_output() {
+            println!("{line}");
+        }
     }
 }
 

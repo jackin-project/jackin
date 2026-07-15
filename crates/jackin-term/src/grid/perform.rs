@@ -45,7 +45,7 @@ impl vte::Perform for DamageGrid {
         }
     }
 
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "vte::Perform trait dispatcher (`csi_dispatch`) requires a single \
                   exhaustive match on the CSI parameter byte covering every ANSI / \

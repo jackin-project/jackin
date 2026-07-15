@@ -12,12 +12,12 @@ use super::{
 
 impl Multiplexer {
     pub(super) fn pull_request_context_loading(&self) -> bool {
-        let Some(branch) = self.pull_request_context_branch.as_deref() else {
+        let Some(branch) = self.pr_watch.pull_request_context_branch.as_deref() else {
             return false;
         };
-        self.pull_request_lookup.in_flight
-            && !self.workdir_context.is_default_branch(branch)
-            && self.pull_request_context.is_none()
+        self.pr_watch.pull_request_lookup.in_flight
+            && !self.launch_env.workdir_context.is_default_branch(branch)
+            && self.pr_watch.pull_request_context.is_none()
     }
 
     pub(super) fn maybe_spawn_git_branch_context_lookup(&mut self, now: Instant) {
@@ -29,21 +29,24 @@ impl Multiplexer {
     }
 
     fn spawn_git_branch_context_lookup(&mut self, now: Instant, respect_cooldown: bool) {
-        if !self.workdir_context.git_available && !self.workdir_context.is_git_repo {
+        if !self.launch_env.workdir_context.git_available
+            && !self.launch_env.workdir_context.is_git_repo
+        {
             return;
         }
-        if self.git_branch_lookup.in_flight {
+        if self.pr_watch.git_branch_lookup.in_flight {
             return;
         }
         if respect_cooldown
             && self
+                .pr_watch
                 .git_branch_lookup
                 .cooldown_active(now, GIT_BRANCH_CONTEXT_POLL_INTERVAL)
         {
             return;
         }
-        let request_id = self.git_branch_lookup.begin_spawn(now);
-        let workdir = self.workdir.clone();
+        let request_id = self.pr_watch.git_branch_lookup.begin_spawn(now);
+        let workdir = self.launch_env.workdir.clone();
         self.spawn_context_lookup(
             "git-branch-context",
             move || git_current_context(&workdir),
@@ -67,16 +70,16 @@ impl Multiplexer {
         now: Instant,
         mode: PullRequestLookupMode,
     ) -> bool {
-        if self.pull_request_lookup.in_flight {
+        if self.pr_watch.pull_request_lookup.in_flight {
             if mode == PullRequestLookupMode::ForceRefresh {
                 crate::cdebug!(
                     "pull-request-context: force-refresh skipped: in-flight lookup request_id={} will satisfy",
-                    self.pull_request_lookup.request_id
+                    self.pr_watch.pull_request_lookup.request_id
                 );
             }
             return false;
         }
-        if !self.workdir_context.gh_available {
+        if !self.launch_env.workdir_context.gh_available {
             if mode == PullRequestLookupMode::RespectCache {
                 return false;
             }
@@ -84,13 +87,13 @@ impl Multiplexer {
                 "pull-request-context: force-refresh scheduling lookup despite startup gh unavailable"
             );
         }
-        let Some(branch) = self.pull_request_context_branch.clone() else {
+        let Some(branch) = self.pr_watch.pull_request_context_branch.clone() else {
             if mode == PullRequestLookupMode::ForceRefresh {
                 crate::cdebug!("pull-request-context: force-refresh skipped: no branch");
             }
             return false;
         };
-        if self.workdir_context.is_default_branch(&branch) {
+        if self.launch_env.workdir_context.is_default_branch(&branch) {
             if mode == PullRequestLookupMode::ForceRefresh {
                 crate::cdebug!(
                     "pull-request-context: force-refresh skipped: branch {branch} is default"
@@ -101,14 +104,14 @@ impl Multiplexer {
         if self.pull_request_cache_blocks_lookup(&branch, now, mode) {
             return false;
         }
-        let request_id = self.pull_request_lookup.begin_spawn(now);
-        let workdir = self.workdir.clone();
+        let request_id = self.pr_watch.pull_request_lookup.begin_spawn(now);
+        let workdir = self.launch_env.workdir.clone();
         let branch_for_event = branch.clone();
         // Snapshot HEAD at spawn time so the cache entry the result
         // populates is keyed on the head the worker actually queried,
-        // not whatever `self.pull_request_context_head` happens to be
+        // not whatever `self.pr_watch.pull_request_context_head` happens to be
         // at apply time.
-        let head_for_event = self.pull_request_context_head.clone();
+        let head_for_event = self.pr_watch.pull_request_context_head.clone();
         self.spawn_context_lookup(
             "pull-request-context",
             move || match gh_pull_request_info(&workdir, branch.as_str()) {
@@ -143,7 +146,7 @@ impl Multiplexer {
         T: Send + 'static,
         E: FnOnce(T) -> SessionEvent + Send + 'static,
     {
-        let event_tx = self.event_tx.clone();
+        let event_tx = self.control.event_tx.clone();
         let emit = move || {
             let value = work();
             if event_tx.send(to_event(value)).is_err() {
@@ -179,13 +182,13 @@ impl Multiplexer {
         crate::cdebug!(
             "git-branch-context: lookup loaded request_id={} current_request_id={} context={:?}",
             request_id,
-            self.git_branch_lookup.request_id,
+            self.pr_watch.git_branch_lookup.request_id,
             context,
         );
-        if request_id != self.git_branch_lookup.request_id {
+        if request_id != self.pr_watch.git_branch_lookup.request_id {
             return false;
         }
-        self.git_branch_lookup.in_flight = false;
+        self.pr_watch.git_branch_lookup.in_flight = false;
         self.apply_git_context(context, now)
     }
 
@@ -198,21 +201,23 @@ impl Multiplexer {
         // Steady-state polling path: (branch, head) unchanged, no chrome
         // update needed, but the spawn-gate may still admit a refresh if
         // the cache aged out.
-        if self.pull_request_context_branch == branch && self.pull_request_context_head == head {
+        if self.pr_watch.pull_request_context_branch == branch
+            && self.pr_watch.pull_request_context_head == head
+        {
             return self.maybe_spawn_pull_request_context_lookup(now);
         }
-        let old_branch = self.pull_request_context_branch.take();
-        let old_head = self.pull_request_context_head.take();
-        let old_pull_request = self.pull_request_context.clone();
-        self.pull_request_context_branch = branch.clone();
-        self.pull_request_context_head = head.clone();
+        let old_branch = self.pr_watch.pull_request_context_branch.take();
+        let old_head = self.pr_watch.pull_request_context_head.take();
+        let old_pull_request = self.pr_watch.pull_request_context.clone();
+        self.pr_watch.pull_request_context_branch = branch.clone();
+        self.pr_watch.pull_request_context_head = head.clone();
         // Detached HEAD (head Some, branch None) is still a git repo; a
         // bare `branch.is_some()` would miss the `git checkout <sha>` case.
-        if (branch.is_some() || head.is_some()) && !self.workdir_context.is_git_repo {
-            self.workdir_context.is_git_repo = true;
+        if (branch.is_some() || head.is_some()) && !self.launch_env.workdir_context.is_git_repo {
+            self.launch_env.workdir_context.is_git_repo = true;
             // Offload the synchronous `git` subprocess to the blocking pool so
             // it doesn't stall the daemon's render thread (Defect 43).
-            let workdir = self.workdir.clone();
+            let workdir = self.launch_env.workdir.clone();
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn_blocking(move || {
                     // Result discarded: the next git-branch watcher tick will
@@ -220,10 +225,10 @@ impl Multiplexer {
                     drop(resolve_default_branch(&workdir));
                 });
             } else {
-                self.workdir_context.default_branch = resolve_default_branch(&workdir);
+                self.launch_env.workdir_context.default_branch = resolve_default_branch(&workdir);
             }
         }
-        self.pull_request_context = branch
+        self.pr_watch.pull_request_context = branch
             .as_ref()
             .and_then(|branch| self.cached_pull_request_for_branch(branch, now));
 
@@ -233,19 +238,19 @@ impl Multiplexer {
         // apply path also runs a second (branch, head) equality check as
         // defense-in-depth for any future call site that bypasses this
         // path.
-        let in_flight_before = self.pull_request_lookup.in_flight;
-        self.pull_request_lookup.invalidate_in_flight();
+        let in_flight_before = self.pr_watch.pull_request_lookup.in_flight;
+        self.pr_watch.pull_request_lookup.invalidate_in_flight();
         crate::cdebug!(
             "git-branch-context: context flip old_branch={:?} old_head={:?} new_branch={:?} new_head={:?} invalidated_in_flight={}",
             old_branch,
             old_head,
-            self.pull_request_context_branch,
-            self.pull_request_context_head,
+            self.pr_watch.pull_request_context_branch,
+            self.pr_watch.pull_request_context_head,
             in_flight_before
         );
-        let changed = old_branch != self.pull_request_context_branch
-            || old_head != self.pull_request_context_head
-            || old_pull_request != self.pull_request_context;
+        let changed = old_branch != self.pr_watch.pull_request_context_branch
+            || old_head != self.pr_watch.pull_request_context_head
+            || old_pull_request != self.pr_watch.pull_request_context;
         let resized = self.reconcile_content_rows();
         self.maybe_spawn_pull_request_context_lookup(now);
         resized || changed
@@ -277,10 +282,10 @@ impl Multiplexer {
         outcome: PullRequestLookupOutcome,
         now: Instant,
     ) -> bool {
-        if request_id != self.pull_request_lookup.request_id {
+        if request_id != self.pr_watch.pull_request_lookup.request_id {
             crate::cdebug!(
                 "pull-request-context: dropping stale result request_id={request_id} (current={})",
-                self.pull_request_lookup.request_id
+                self.pr_watch.pull_request_lookup.request_id
             );
             // `in_flight` belongs to the NEW lookup spawned during the
             // branch flip — clearing it here lets the spawn-gate admit
@@ -288,7 +293,7 @@ impl Multiplexer {
             return false;
         }
         let pre_loading = self.pull_request_context_loading();
-        self.pull_request_lookup.in_flight = false;
+        self.pr_watch.pull_request_lookup.in_flight = false;
         let post_loading = self.pull_request_context_loading();
         // `in_flight` just flipped from true → false, which changes the
         // `Resolving PR · …` ↔ `Branch · …` slot in the bottom bar even
@@ -306,9 +311,9 @@ impl Multiplexer {
         // cached value; the next state-ticker tick retries.
         let pull_request = match outcome {
             PullRequestLookupOutcome::Resolved(pr) => {
-                if !self.workdir_context.gh_available {
+                if !self.launch_env.workdir_context.gh_available {
                     crate::clog!("pull-request-context: gh lookup succeeded after startup miss");
-                    self.workdir_context.gh_available = true;
+                    self.launch_env.workdir_context.gh_available = true;
                 }
                 pr
             }
@@ -322,16 +327,16 @@ impl Multiplexer {
         // through `apply_git_context`, which bumps `request_id` via
         // `pull_request_lookup.invalidate_in_flight`), refuse to assign
         // or cache so we cannot stamp data against the wrong key.
-        if self.pull_request_context_branch.as_ref() != Some(&branch)
-            || self.pull_request_context_head != head
+        if self.pr_watch.pull_request_context_branch.as_ref() != Some(&branch)
+            || self.pr_watch.pull_request_context_head != head
         {
             crate::cdebug!(
                 "pull-request-context: (branch, head) drift between spawn and apply — \
                  spawn=({:?}, {:?}) apply=({:?}, {:?}); refusing to assign or cache",
                 branch,
                 head,
-                self.pull_request_context_branch,
-                self.pull_request_context_head,
+                self.pr_watch.pull_request_context_branch,
+                self.pr_watch.pull_request_context_head,
             );
             // We just cleared in_flight a few lines above; schedule a
             // fresh lookup for the current (branch, head) so the bar
@@ -341,7 +346,7 @@ impl Multiplexer {
             return loading_changed;
         }
         self.purge_expired_pull_request_cache_entries(now);
-        self.pull_request_context_cache.insert(
+        self.pr_watch.pull_request_context_cache.insert(
             branch.clone(),
             PullRequestContextCacheEntry {
                 checked_at: now,
@@ -349,8 +354,8 @@ impl Multiplexer {
                 pull_request: pull_request.clone(),
             },
         );
-        let changed = self.pull_request_context != pull_request;
-        self.pull_request_context = pull_request;
+        let changed = self.pr_watch.pull_request_context != pull_request;
+        self.pr_watch.pull_request_context = pull_request;
         if self.reconcile_content_rows() {
             return true;
         }
@@ -363,10 +368,11 @@ impl Multiplexer {
     /// between two PRs" workflow keeps both warm, while monotonic growth
     /// across hundreds of branches gets pruned.
     pub(super) fn purge_expired_pull_request_cache_entries(&mut self, now: Instant) {
-        let before = self.pull_request_context_cache.len();
-        self.pull_request_context_cache
+        let before = self.pr_watch.pull_request_context_cache.len();
+        self.pr_watch
+            .pull_request_context_cache
             .retain(|_, entry| !entry.is_expired(now));
-        let dropped = before - self.pull_request_context_cache.len();
+        let dropped = before - self.pr_watch.pull_request_context_cache.len();
         if dropped > 0 {
             crate::cdebug!(
                 "pull-request-context: purged {dropped} expired cache entries (ttl=2x{:?})",
@@ -380,16 +386,20 @@ impl Multiplexer {
         branch: &str,
         now: Instant,
     ) -> Option<Arc<PullRequestInfo>> {
-        self.pull_request_context_cache
+        self.pr_watch
+            .pull_request_context_cache
             .get(branch)
-            .filter(|entry| entry.is_fresh(self.pull_request_context_head.as_ref(), now))
+            .filter(|entry| entry.is_fresh(self.pr_watch.pull_request_context_head.as_ref(), now))
             .and_then(|entry| entry.pull_request.clone())
     }
 
     pub(super) fn pull_request_cache_is_fresh(&self, branch: &str, now: Instant) -> bool {
-        self.pull_request_context_cache
+        self.pr_watch
+            .pull_request_context_cache
             .get(branch)
-            .is_some_and(|entry| entry.is_fresh(self.pull_request_context_head.as_ref(), now))
+            .is_some_and(|entry| {
+                entry.is_fresh(self.pr_watch.pull_request_context_head.as_ref(), now)
+            })
     }
 
     pub(super) fn pull_request_cache_blocks_lookup(
@@ -404,10 +414,10 @@ impl Multiplexer {
     /// Current branch for the chrome bar. Daemon supplies Git/default-branch
     /// facts; the TUI component owns the visible filtering rule.
     pub(super) fn context_bar_branch(&self) -> Option<&str> {
-        let branch = self.pull_request_context_branch.as_deref()?;
+        let branch = self.pr_watch.pull_request_context_branch.as_deref()?;
         crate::tui::components::branch_context_bar::visible_branch(
             Some(branch),
-            self.workdir_context.is_default_branch(branch),
+            self.launch_env.workdir_context.is_default_branch(branch),
         )
     }
 }

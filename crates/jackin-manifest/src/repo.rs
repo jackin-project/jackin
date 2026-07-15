@@ -9,8 +9,8 @@
 //! (`manifest::migrations`).
 
 use jackin_core::JackinPaths;
+use jackin_core::RoleManifest;
 use jackin_core::RoleSelector;
-use jackin_core::manifest::RoleManifest;
 
 use crate::repo_contract::{MANIFEST_FILENAME, ValidatedDockerfile, validate_agent_dockerfile};
 use std::path::{Component, Path, PathBuf};

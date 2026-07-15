@@ -4,7 +4,7 @@
 //! Tests for `list_geometry`.
 use super::*;
 use crate::tui::screens::workspaces::model::ManagerListRow;
-use jackin_core::instance::InstanceStatus;
+use jackin_core::InstanceStatus;
 
 #[test]
 fn workspace_rows_account_for_cursor_and_instances() {

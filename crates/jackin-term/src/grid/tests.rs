@@ -1095,8 +1095,10 @@ fn resize_same_size_and_width_only_do_not_grow_arena_pool() {
 #[test]
 fn hyperlink_id_map_stays_bounded() {
     let mut grid = DamageGrid::new(4, 20, 100);
+    // Cap counts (id, uri) interning keys; unique pairs fill the map.
     for i in 0..(OSC8_HYPERLINK_CAP * 2) {
-        let _ = grid.alloc_hyperlink_token(&format!("id-{i}"));
+        let _ =
+            grid.alloc_hyperlink_token(&format!("id-{i}"), &format!("https://example.test/{i}"));
     }
     assert!(grid.osc8_id_to_token.len() <= OSC8_HYPERLINK_CAP);
 }
@@ -1104,7 +1106,7 @@ fn hyperlink_id_map_stays_bounded() {
 #[test]
 fn reset_modes_clears_hyperlink_maps() {
     let mut grid = DamageGrid::new(4, 20, 100);
-    let _ = grid.alloc_hyperlink_token("some-id");
+    let _ = grid.alloc_hyperlink_token("some-id", "https://example.test");
     // also seed a target entry the way OSC 8 does
     grid.hyperlink_targets
         .insert(1, "https://example.test".to_owned());
@@ -1112,4 +1114,42 @@ fn reset_modes_clears_hyperlink_maps() {
     grid.reset_modes();
     assert!(grid.osc8_id_to_token.is_empty());
     assert!(grid.hyperlink_targets.is_empty());
+}
+
+#[test]
+fn osc8_id_reuse_with_new_uri_keeps_earlier_cells() {
+    let mut g = DamageGrid::new(2, 40, 100);
+    g.process(b"\x1b]8;id=x;https://a\x07A\x1b]8;;\x07");
+    g.process(b"\x1b]8;id=x;https://b\x07B\x1b]8;;\x07");
+    assert_eq!(
+        g.hyperlink_target_at_content_row(0, 0),
+        Some("https://a"),
+        "earlier cell must not repoint when id is reused with a new URI"
+    );
+    assert_eq!(g.hyperlink_target_at_content_row(0, 1), Some("https://b"));
+}
+
+#[test]
+fn osc8_empty_id_updates_do_not_repoint() {
+    let mut g = DamageGrid::new(2, 40, 100);
+    g.process(b"\x1b]8;;https://a\x07A\x1b]8;;\x07");
+    g.process(b"\x1b]8;;https://b\x07B\x1b]8;;\x07");
+    assert_eq!(
+        g.hyperlink_target_at_content_row(0, 0),
+        Some("https://a"),
+        "anonymous (empty id) links must not share a mutable target"
+    );
+    assert_eq!(g.hyperlink_target_at_content_row(0, 1), Some("https://b"));
+}
+
+#[test]
+fn osc8_same_id_same_uri_shares_token() {
+    let mut g = DamageGrid::new(2, 40, 100);
+    g.process(b"\x1b]8;id=x;https://a\x07A\x1b]8;;\x07");
+    g.process(b"\x1b]8;id=x;https://a\x07B\x1b]8;;\x07");
+    assert_eq!(g.hyperlink_target_at_content_row(0, 0), Some("https://a"));
+    assert_eq!(g.hyperlink_target_at_content_row(0, 1), Some("https://a"));
+    // One (id,uri) key → one token → one target entry.
+    assert_eq!(g.osc8_id_to_token.len(), 1);
+    assert_eq!(g.hyperlink_targets.len(), 1);
 }

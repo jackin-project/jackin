@@ -32,7 +32,7 @@ jackin❯ split across multiple GitHub repos. This repo owns CLI; siblings own r
 | [`jackin-project/jackin`](https://github.com/jackin-project/jackin) (this repo) | CLI source, `construct` Dockerfile under `docker/construct/`, docs site under `docs/`, CI workflows |
 | [`jackin-project/jackin-agent-smith`](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose role (`agent-smith`) |
 | [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) | Rust-development role (`the-architect`) used to develop jackin❯ itself |
-| [`jackin-project/homebrew-tap`](https://github.com/jackin-project/homebrew-tap) | Homebrew formulae — preview now, stable once jackin reaches first stable release |
+| [`jackin-project/homebrew-tap`](https://github.com/jackin-project/homebrew-tap) | Homebrew formulae — preview now, stable once jackin❯ reaches first stable release |
 | [`jackin-project/jackin-marketplace`](https://github.com/jackin-project/jackin-marketplace) | Claude plugin marketplace consumed by role manifests |
 | [`jackin-project/validate-agent-action`](https://github.com/jackin-project/validate-agent-action) | GitHub Action validating `jackin.role.toml` in role repos |
 | [`jackin-project/jackin-dev`](https://github.com/jackin-project/jackin-dev) | Legacy/internal dev tooling and shared dotfiles; the installed PR verification binary now lives in this repo under `crates/jackin-dev/` |

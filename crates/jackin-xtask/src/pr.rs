@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -33,7 +32,7 @@ pub(crate) fn run(command: PrCommand) -> Result<()> {
 
 /// Which categories of file the diff touches; each gates a verify-locally block.
 #[derive(Default)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal file-bucket categories (rust, docs, capsule, schema) \
               used by `classify()` to bucket changed files in a PR digest. Each \
@@ -148,7 +147,7 @@ fn body(args: BodyArgs) -> Result<()> {
 }
 
 fn changed_files(root: &Path, base: &str) -> Result<Vec<String>> {
-    let mut cmd = Command::new("git");
+    let mut cmd = crate::cmd::command("git");
     cmd.arg("-C")
         .arg(root)
         .args(["diff", "--name-only", &format!("{base}...HEAD")]);

@@ -20,10 +20,6 @@ use super::{BANNER, HELP_STYLES};
 // Launch-time toggles plus the
 // positional `selector` / `target` / `mounts` map directly to CLI flags;
 // bundling them into nested structs would obscure rather than clarify.
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     before_help = BANNER,

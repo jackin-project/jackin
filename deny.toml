@@ -183,7 +183,7 @@ skip = [
 # workspace crate map durable — a reintroduced shim or god-crate
 # recurrence fails one of these three checks instead of being a
 # reviewer's memory burden. See
-# docs/content/docs/roadmap/codebase-health-enforcement.mdx (W4).
+# Completed codebase-health plan track (W4).
 [bans.workspace-dependencies]
 duplicates = "deny"
 include-path-dependencies = true

@@ -1,9 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::used_underscore_binding,
-    reason = "operation conformance tests force-flush OTel providers"
-)]
 #![cfg(feature = "otlp")]
 
 //! Export-shape tests for the typed operation facade.
@@ -13,11 +7,15 @@ use opentelemetry::trace::Status;
 use opentelemetry_sdk::logs::SdkLogRecord;
 use opentelemetry_sdk::trace::SpanData;
 
-use super::{OperationLevel, operation_error, operation_log, operation_span};
+use super::{
+    OperationLevel, enter_operation, operation_error, operation_log, operation_log_with_outcome,
+    operation_span,
+};
 use crate::logging::{begin_debug_buffering, drain_debug_buffer_for_test, set_debug_mode};
 use crate::observability::otel_events;
 use crate::observability::otel_keys;
 use crate::observability::{TestExport, test_layers};
+use crate::registry::Outcome;
 
 fn log_attr(record: &SdkLogRecord, key: &str) -> Option<String> {
     record
@@ -63,10 +61,12 @@ fn operation_log_export_body_is_prefix_free_with_attrs() {
     // Info level: hermetic under capsule-exported JACKIN_TELEMETRY_LEVEL=info.
     // Debug-tier export is covered by console-mirror + the error/span tests.
     let export = export_after(false, "op-log-run", || {
+        let span = operation_span(otel_events::PROCESS_EXECUTE, &[]);
+        let _entered = span.enter();
         operation_log(
             OperationLevel::Info,
-            "container.inspected",
-            "docker",
+            "process.execute",
+            "process",
             "container inspected",
             &[(otel_keys::COMPONENT, "host".into())],
         );
@@ -85,11 +85,22 @@ fn operation_log_export_body_is_prefix_free_with_attrs() {
     );
     assert_eq!(
         log_attr(&record.record, "event.name").as_deref(),
-        Some("container.inspected")
+        Some("process.execute")
     );
     assert_eq!(
         log_attr(&record.record, "jackin.category").as_deref(),
-        Some("docker")
+        Some("process")
+    );
+    // Dynamic attrs are span-stamped (tracing macro static-field constraint).
+    let spans = export.spans.get_finished_spans().unwrap();
+    let span = spans
+        .iter()
+        .find(|s| s.name.as_ref() == otel_events::PROCESS_EXECUTE)
+        .expect("process.execute span");
+    assert_eq!(
+        span_attr(span, otel_keys::COMPONENT).as_deref(),
+        Some("host"),
+        "caller attrs must survive onto the span"
     );
 }
 
@@ -102,7 +113,12 @@ fn operation_error_exports_error_severity_and_type() {
     let export = export_after(false, "op-err-run", || {
         let span = operation_span(otel_events::PROCESS_EXECUTE, &[]);
         let _entered = span.enter();
-        operation_error("process_spawn_error", "failed to spawn", &[]);
+        operation_error(
+            otel_events::PROCESS_EXECUTE,
+            "process_spawn_error",
+            "failed to spawn",
+            &[],
+        );
     });
 
     let logs = export.logs.get_emitted_logs().unwrap();
@@ -111,8 +127,13 @@ fn operation_error_exports_error_severity_and_type() {
         .find(|log| log.record.severity_number() == Some(Severity::Error))
         .expect("ERROR log exported");
     assert_eq!(
-        log_attr(&error.record, "error_type").as_deref(),
+        log_attr(&error.record, "error.type").as_deref(),
         Some("process_spawn_error")
+    );
+    assert_eq!(log_attr(&error.record, "error_type"), None);
+    assert_eq!(
+        log_attr(&error.record, "event.name").as_deref(),
+        Some(otel_events::PROCESS_EXECUTE)
     );
 
     let spans = export.spans.get_finished_spans().unwrap();
@@ -158,6 +179,42 @@ fn operation_span_exports_otel_name_and_attrs() {
         span_attr(span, otel_keys::PROCESS_ARGS_REDACTED).as_deref(),
         Some("hello")
     );
+    assert_eq!(
+        span_attr(span, otel_keys::COMPONENT).as_deref(),
+        Some("host"),
+        "component is a span attr, never Resource"
+    );
+}
+
+#[test]
+fn operation_span_stamps_run_id_from_active_run() {
+    use jackin_core::JackinPaths;
+
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let export = export_after(false, "op-run-id", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _guard = run.activate();
+        let span = operation_span(otel_events::PROCESS_EXECUTE, &[]);
+        drop(span.enter());
+    });
+    let spans = export.spans.get_finished_spans().unwrap();
+    let span = spans
+        .iter()
+        .find(|s| s.name.as_ref() == otel_events::PROCESS_EXECUTE)
+        .expect("span");
+    assert!(
+        span_attr(span, otel_keys::RUN_ID).is_some(),
+        "parallax.run.id must be stamped from active run: {span:?}"
+    );
+    assert_eq!(
+        span_attr(span, otel_keys::COMPONENT).as_deref(),
+        Some("host")
+    );
 }
 
 #[test]
@@ -170,7 +227,7 @@ fn operation_log_console_mirror_carries_prefix() {
 
     operation_log(
         OperationLevel::Debug,
-        "container.inspected",
+        "process.execute",
         "docker",
         "container inspected",
         &[],
@@ -188,5 +245,104 @@ fn operation_log_console_mirror_carries_prefix() {
             .iter()
             .any(|line| line.contains("container inspected")),
         "console mirror must include the message body: {lines:?}"
+    );
+}
+
+#[test]
+fn operation_log_warn_outcome_is_not_success() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let export = export_after(false, "op-warn-run", || {
+        operation_log(
+            OperationLevel::Warn,
+            "process.execute",
+            "process",
+            "slow command",
+            &[],
+        );
+    });
+    let logs = export.logs.get_emitted_logs().unwrap();
+    let warn = logs
+        .iter()
+        .find(|log| log_body(&log.record).as_deref() == Some("slow command"))
+        .expect("warn log");
+    assert_ne!(
+        log_attr(&warn.record, "event.outcome").as_deref(),
+        Some("success")
+    );
+    assert_eq!(
+        log_attr(&warn.record, "event.outcome").as_deref(),
+        Some("cancelled")
+    );
+}
+
+#[test]
+fn operation_guard_drop_without_complete_records_cancelled() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let export = export_after(false, "op-cancel-run", || {
+        let guard = enter_operation(otel_events::PROCESS_EXECUTE, &[]);
+        drop(guard);
+    });
+    let spans = export.spans.get_finished_spans().unwrap();
+    let span = spans
+        .iter()
+        .find(|s| s.name.as_ref() == otel_events::PROCESS_EXECUTE)
+        .expect("span");
+    assert_eq!(
+        span_attr(span, otel_keys::EVENT_OUTCOME).as_deref(),
+        Some("cancelled")
+    );
+}
+
+#[test]
+fn operation_guard_complete_records_outcome() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let export = export_after(false, "op-complete-run", || {
+        let guard = enter_operation(otel_events::PROCESS_EXECUTE, &[]);
+        guard.complete(Outcome::Success, None);
+    });
+    let spans = export.spans.get_finished_spans().unwrap();
+    let span = spans
+        .iter()
+        .find(|s| s.name.as_ref() == otel_events::PROCESS_EXECUTE)
+        .expect("span");
+    assert_eq!(
+        span_attr(span, otel_keys::EVENT_OUTCOME).as_deref(),
+        Some("success")
+    );
+}
+
+#[test]
+fn operation_log_with_explicit_failure_outcome() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let export = export_after(false, "op-fail-out", || {
+        operation_log_with_outcome(
+            OperationLevel::Info,
+            "process.execute",
+            "process",
+            "failed step",
+            &[],
+            Some(Outcome::Failure),
+        );
+    });
+    let logs = export.logs.get_emitted_logs().unwrap();
+    let log = logs
+        .iter()
+        .find(|log| log_body(&log.record).as_deref() == Some("failed step"))
+        .expect("log");
+    assert_eq!(
+        log_attr(&log.record, "event.outcome").as_deref(),
+        Some("failure")
     );
 }

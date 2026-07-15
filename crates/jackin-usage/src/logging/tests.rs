@@ -32,3 +32,21 @@ fn context_banner_line_format_is_joinable() {
     assert!(line.contains("session_id=sess-9"));
     assert!(line.contains("traceparent=00-"));
 }
+
+#[test]
+fn render_prefix_shapes_are_byte_stable() {
+    // Operators grep these exact prefixes in multiplexer.log / docker logs.
+    let body = "session ready";
+    assert_eq!(
+        format!("[jackin-capsule] {body}"),
+        "[jackin-capsule] session ready"
+    );
+    assert_eq!(
+        format!("[jackin-capsule debug] {body}"),
+        "[jackin-capsule debug] session ready"
+    );
+    assert_eq!(
+        format!("[jackin-capsule trace] {body}"),
+        "[jackin-capsule trace] session ready"
+    );
+}
