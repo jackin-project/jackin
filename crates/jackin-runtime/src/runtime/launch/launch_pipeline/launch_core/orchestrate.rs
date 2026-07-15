@@ -1235,23 +1235,38 @@ where
         decision,
         crate::isolation::finalize::FinalizeDecision::Preserved
     );
-    match docker.inspect_container_state(&container_name).await {
-        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-            if is_preserved {
-                // Finalize saw sessions at check-time (detach). Re-check: sessions
-                // may have ended in the interval between finalize and this inspect.
-                let sessions =
-                    inspect_agent_sessions(docker, &container_name, &ContainerState::Running).await;
-                if let AgentSessionInventory::Unavailable(ref reason) = sessions {
-                    jackin_diagnostics::debug_log!(
-                        "instance",
-                        "inspect_agent_sessions unavailable for {container_name}: {reason}; \
+    let teardown_result: anyhow::Result<()> = async {
+        match docker.inspect_container_state(&container_name).await {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                if is_preserved {
+                    // Finalize saw sessions at check-time (detach). Re-check: sessions
+                    // may have ended in the interval between finalize and this inspect.
+                    let sessions =
+                        inspect_agent_sessions(docker, &container_name, &ContainerState::Running)
+                            .await;
+                    if let AgentSessionInventory::Unavailable(ref reason) = sessions {
+                        jackin_diagnostics::debug_log!(
+                            "instance",
+                            "inspect_agent_sessions unavailable for {container_name}: {reason}; \
                              treating conservatively as sessions-present (container preserved)",
-                    );
-                }
-                let no_sessions =
-                    matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
-                if no_sessions {
+                        );
+                    }
+                    let no_sessions =
+                        matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
+                    if no_sessions {
+                        super::super::super::write_instance_status(
+                            paths,
+                            &container_state,
+                            &mut instance_manifest,
+                            InstanceStatus::CleanExited,
+                        )?;
+                        cleanup.run(docker).await;
+                    } else {
+                        cleanup.disarm();
+                    }
+                } else {
+                    // Finalize already confirmed no sessions (Capsule still running after
+                    // clean exit). Skip the redundant re-query and tear down.
                     super::super::super::write_instance_status(
                         paths,
                         &container_state,
@@ -1259,88 +1274,82 @@ where
                         InstanceStatus::CleanExited,
                     )?;
                     cleanup.run(docker).await;
-                } else {
-                    cleanup.disarm();
                 }
-            } else {
-                // Finalize already confirmed no sessions (Capsule still running after
-                // clean exit). Skip the redundant re-query and tear down.
+            }
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } if is_preserved => {
+                cleanup.run(docker).await;
+            }
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } => {
+                cleanup.run(docker).await;
+                purge_or_mark_clean_exited(
+                    paths,
+                    &container_name,
+                    &container_state,
+                    &mut instance_manifest,
+                    docker,
+                    runner,
+                    "clean exit",
+                )
+                .await?;
+            }
+            ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead => {
                 super::super::super::write_instance_status(
                     paths,
                     &container_state,
                     &mut instance_manifest,
-                    InstanceStatus::CleanExited,
+                    InstanceStatus::Crashed,
                 )?;
                 cleanup.run(docker).await;
             }
-        }
-        ContainerState::Stopped {
-            exit_code: 0,
-            oom_killed: false,
-        } if is_preserved => {
-            cleanup.run(docker).await;
-        }
-        ContainerState::Stopped {
-            exit_code: 0,
-            oom_killed: false,
-        } => {
-            cleanup.run(docker).await;
-            purge_or_mark_clean_exited(
-                paths,
-                &container_name,
-                &container_state,
-                &mut instance_manifest,
-                docker,
-                runner,
-                "clean exit",
-            )
-            .await?;
-        }
-        ContainerState::Stopped { .. }
-        | ContainerState::Created
-        | ContainerState::Removing
-        | ContainerState::Dead => {
-            super::super::super::write_instance_status(
-                paths,
-                &container_state,
-                &mut instance_manifest,
-                InstanceStatus::Crashed,
-            )?;
-            cleanup.run(docker).await;
-        }
-        ContainerState::InspectUnavailable(reason) => {
-            cleanup.disarm();
-            anyhow::bail!(
-                "{}",
-                crate::runtime::attach::docker_unavailable_msg(
-                    &format!("inspect container `{container_name}` after the session"),
-                    &reason,
-                )
-            );
-        }
-        ContainerState::NotFound if is_preserved => {
-            jackin_diagnostics::debug_log!(
-                "instance",
-                "container {container_name} not found after session with Preserved decision; \
+            ContainerState::InspectUnavailable(reason) => {
+                cleanup.disarm();
+                anyhow::bail!(
+                    "{}",
+                    crate::runtime::attach::docker_unavailable_msg(
+                        &format!("inspect container `{container_name}` after the session"),
+                        &reason,
+                    )
+                );
+            }
+            ContainerState::NotFound if is_preserved => {
+                jackin_diagnostics::debug_log!(
+                    "instance",
+                    "container {container_name} not found after session with Preserved decision; \
                      removed externally during finalization — tearing down DinD/network, \
                      preserved status on disk stands",
-            );
-            cleanup.run(docker).await;
+                );
+                cleanup.run(docker).await;
+            }
+            ContainerState::NotFound => {
+                cleanup.run(docker).await;
+                // D9: container already gone — purge local state inline.
+                purge_or_mark_clean_exited(
+                    paths,
+                    &container_name,
+                    &container_state,
+                    &mut instance_manifest,
+                    docker,
+                    runner,
+                    "NotFound clean exit",
+                )
+                .await?;
+            }
         }
-        ContainerState::NotFound => {
-            cleanup.run(docker).await;
-            // D9: container already gone — purge local state inline.
-            purge_or_mark_clean_exited(
-                paths,
-                &container_name,
-                &container_state,
-                &mut instance_manifest,
-                docker,
-                runner,
-                "NotFound clean exit",
-            )
-            .await?;
-        }
+        Ok(())
+    }
+    .await;
+    if let Err(error) = teardown_result {
+        cleanup.run(docker).await;
+        return Err(error);
     }
 
     let classified: CleanupClassified = CleanupClassified {

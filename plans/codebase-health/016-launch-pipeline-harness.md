@@ -88,7 +88,7 @@ Steps 1–2 define the new suite; phase-extraction slices ride the existing 9k-l
 
 - [x] `LaunchCore` builder exists; boundary harness covers happy path, suite-A ordering, forced finalization/inspect error with cleanup-before-error proof
 - [ ] All 10 phases typed `#[must_use]`, consumed by value; monolith allows removed
-- [ ] Teardown `?`-path audit complete with coverage
+- [x] Teardown `?`-path audit complete with coverage
 - [x] Pipeline-spanning Criterion bench exists and builds
 - [ ] Spec citations updated; `cargo xtask ci --fast` exits 0; status row updated
 
@@ -104,3 +104,14 @@ Steps 1–2 define the new suite; phase-extraction slices ride the existing 9k-l
 - Plan 015 and this plan both shrink `jackin-runtime`'s largest files; the launch mega-test split (TEST-08) becomes natural follow-up after phases own their tests.
 
 **Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+
+## Teardown audit
+
+| Armed region | Error routing | Coverage |
+|---|---|---|
+| Adoption through grants/materialization/environment | Each fallible branch runs grant-only or failed-setup cleanup before returning | `run_launch_core_suite_a_grant_failure_cleans_up_before_return`, `mid_pipeline_failed_setup_still_runs_cleanup` |
+| Runtime launch | Failed status is best-effort, then cleanup runs before `launch_result?` | boundary happy/failure harness plus launch-suite run-failure tests |
+| Attach/finalization | One `finalize_result` boundary catches every nested status/inspect/finalizer `?` and runs cleanup | `run_launch_core_finalize_error_runs_cleanup_before_return` |
+| Final state classification/purge | One `teardown_result` boundary catches every nested `?` and runs cleanup; `InspectUnavailable` explicitly disarms first to preserve live resources | launch pipeline boundary suite and container-state matrix in the launch suite |
+
+There are no fallible operations after the teardown boundary. `LoadCleanup::run` is idempotent, so an error after an arm that already cleaned is routed through it again without changing behavior.
