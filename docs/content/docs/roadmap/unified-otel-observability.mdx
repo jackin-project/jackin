@@ -1,0 +1,73 @@
+---
+title: "Unified OpenTelemetry observability"
+---
+
+**Status**: Open — design proposal; consolidates the observability-format work previously scattered as fragments across other roadmap items into one cross-crate refactor
+
+## Problem
+
+jackin❯ has a real OpenTelemetry substrate — `RunDiagnostics` mints a run id per CLI invocation, writes JSONL run artifacts, and (behind the `otlp` feature) exports spans, logs, and metrics with an attribute-key registry, a screen taxonomy, and a redaction boundary in `jackin-diagnostics` — but most of the codebase does not emit through it. At least five logging conventions coexist today, and prefix-tagged printf strings are still the primary instrumentation interface:
+
+1. **Capsule macros** — `clog!`, `cdebug!`, `ctrace_payload!`, `cwarn!`, `cerror!` (defined in <RepoFile path="crates/jackin-usage/src/logging.rs" />) render timestamped lines prefixed `[jackin-capsule]` / `[jackin-capsule debug]` / `[jackin-capsule trace]` to stderr and the capsule log file, then separately bridge the already-formatted string body to OTLP via <RepoFile path="crates/jackin-usage/src/telemetry.rs" />. Roughly 300 call sites across the capsule tier.
+2. **Host debug macro** — `debug_log!` (port in <RepoFile path="crates/jackin-core/src/debug_log.rs" />, sink in <RepoFile path="crates/jackin-diagnostics/src/logging.rs" />) renders `[jackin debug {category}]` lines. Roughly 190 call sites across 13 crates.
+3. **Freeform `[jackin]` lines** — ad-hoc `eprintln!`/`println!` operator-facing output scattered through the CLI app, `jackin-instance`, `jackin-isolation`, `jackin-env`, `jackin-runtime`, `jackin-image`, and `jackin-host` (over 120 non-test raw `eprintln!` calls workspace-wide).
+4. **Subsystem prefixes** — `[jackin-exec]` in the exec wrapper and MCP server; test-only `[jackin-core]`.
+5. **Direct `tracing`** — only five `#[tracing::instrument]` sites exist in the entire workspace; span coverage is real for launch stages and console screens but absent from most subsystems, and spawned tokio tasks are not instrumented, so async work detaches from its parent span.
+
+The consequences compound:
+
+- **Message bodies carry the data.** Variable values are interpolated into the message string, so OTLP and log-system consumers cannot filter or aggregate without regex; the prefix duplicates what `target`/instrumentation scope and resource attributes should carry.
+- **Split-brain emission.** The same event is formatted twice — a prefix-tagged line for file/stderr and a prefix-free body for OTLP — with the structured-field version losing the fields because they were already flattened into the string.
+- **Inconsistent identity keys.** The run id is minted correctly but exported under the legacy `parallax.run.id` key with `PARALLAX_RUN_ID` env compatibility, while other attributes use `jackin.*` keys and the container boundary uses `JACKIN_RUN_ID`; session ids and traceparent propagation exist but not every signal is stamped with them.
+- **Screen/widget context is partial.** The `Screen` taxonomy in <RepoFile path="crates/jackin-diagnostics/src/screen.rs" /> covers six console screens and `jackin.screen.name` exists as a key, but the console, capsule, and launch TUIs each carry their own screen/focus/pane/dialog enums that never reach telemetry — so most events cannot answer "what screen was the operator on, which block did they activate".
+- **Levels and gating are per-convention.** `JACKIN_TELEMETRY_LEVEL`, per-sink level overrides, `--debug` fallback, and category filters apply differently depending on which of the five conventions a call site happens to use.
+
+## Why It Matters
+
+- **The run id is the debugging backbone.** One CLI invocation or console session should be one trace: <RepoFile path="TESTING.md">the testing guide</RepoFile> mandates `--debug` runs whose JSONL artifact is the triage evidence, the diagnostics viewer and redacted debug bundle ([jackin❯ join & Debug Export](/roadmap/jackin-join-and-debug-bundle/)) package that artifact, and [Launch Progress TUI](/roadmap/launch-progress-tui/) explicitly blocks further launch parallelization on trace-backed evidence. All of that only works if every crate emits into the same run-scoped, structured stream.
+- **OTLP output is currently hostile to its consumers.** A log body of `[jackin-capsule debug] adopting prewarmed dind c3f2…` defeats the point of exporting to an OpenTelemetry backend; the same information as a plain message plus `jackin.component`, `jackin.container.id`, and severity is queryable.
+- **Every new crate re-decides.** Without one mandated facade, each subsystem picks a convention arbitrarily, and the mess grows with the workspace (30 crates today).
+- **Screen-aligned observability is a product requirement.** Understanding operator behaviour — which screen, which block, which keypress, foreground vs background work — requires the observability layer to align with the model/crate structure the TUIs already have.
+- **Telemetry safety work needs one choke point.** The redaction gates and export conformance assertions tracked in [Sensitive-boundary code health](/roadmap/sensitive-boundary-code-health/) are only enforceable when there is a single emission path to gate.
+
+## Scope pulled from existing roadmap items
+
+There was no dedicated observability roadmap item before this one; the related work lived as fragments elsewhere. This item now owns the **cross-crate format and API unification**; the items below keep their feature surfaces and are expected to consume the unified layer:
+
+- [Launch Progress TUI](/roadmap/launch-progress-tui/) — diagnostics viewer polish (run listing, stage filters, trace/span navigation) and trace-evidence-driven launch parallelism.
+- [Console resource panel](/roadmap/console-resource-panel/) — operator-visible rendering of the process metrics the OTLP exporter already emits.
+- [jackin❯ join & Debug Export](/roadmap/jackin-join-and-debug-bundle/) — redacted shareable bundle built from the run artifact.
+- [Sensitive-boundary code health](/roadmap/sensitive-boundary-code-health/) — redaction before every sink, negative-assertion conformance for sensitive export, issue-fingerprint hygiene.
+
+## Research notes (input for the design phase)
+
+Verified against the OpenTelemetry specification, semantic-conventions registry, and the Rust ecosystem docs as of July 2026:
+
+- **Stack.** The opentelemetry-rust project recommends [`tracing`](https://github.com/open-telemetry/opentelemetry-rust) as the single instrumentation API; `tracing-opentelemetry` converts spans, [`opentelemetry-appender-tracing`](https://docs.rs/opentelemetry-appender-tracing/latest/opentelemetry_appender_tracing/) bridges events to OTel log records, `opentelemetry-otlp` exports all three signals. jackin❯ already depends on this exact stack — the refactor is about making it the *only* path, not adopting new crates. Logs and metrics API/SDK are stable upstream; traces are beta.
+- **Structured logging.** Message = plain human sentence (becomes the log Body); every variable becomes a typed field (becomes Attributes); `target` is the category and maps to the instrumentation scope; `tracing` levels map onto OTel severity numbers ([logs data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/)). Embedding data in the message string is the documented anti-pattern.
+- **One run = one trace.** The [CLI semantic conventions](https://opentelemetry.io/docs/specs/semconv/cli/cli-spans/) model each invocation as one root span named after the executable, with `process.exit.code` required and `process.command_args` withheld by default (secrets in argv). Resource attributes `service.name`, `service.version`, `service.instance.id` identify the emitter; the [session conventions](https://opentelemetry.io/docs/specs/semconv/general/session/) (`session.id`, `session.previous_id`) fit interactive console/capsule sessions.
+- **Spans.** Names must be low-cardinality classes of operation ([trace API spec](https://opentelemetry.io/docs/specs/otel/trace/api/)); ids/paths go in attributes. OpenTelemetry [deprecated the span-events API in 2026](https://opentelemetry.io/blog/2026/deprecating-span-events/) — events should be named log records correlated via context, and running the span layer and the log bridge together double-emits unless events are filtered out of one side.
+- **Async.** Spans do not cross `tokio::spawn` implicitly; futures must be attached with `Instrument::instrument`/`in_current_span`, and creation-time span links model related-but-not-parent work ([tokio guidance](https://github.com/tokio-rs/tokio/discussions/6008)).
+- **Screen/widget events.** No TUI semconv exists, but the client-side [app conventions](https://opentelemetry.io/docs/specs/semconv/app/app-events/) (`app.screen.click`, `app.widget.click`, `app.screen.id`/`app.screen.name`, `app.widget.id`/`app.widget.name`) adapt directly: stamp the current screen on every event, emit widget activation as named events, and treat screen transitions as their own span or event.
+- **Process hygiene.** Batch exporters must be flushed/shut down on every exit path or short-lived runs silently drop their tail; a TUI on the alternate screen must never receive a stdout `fmt` layer ([ratatui guidance](https://ratatui.rs/recipes/apps/log-with-tracing/)) — human-readable output belongs to a file sink or an in-app surface.
+
+## Design
+
+<!-- Filled in by brainstorming. -->
+
+## Tasks
+
+<!-- Filled in by planning. -->
+
+## Related Files
+
+- <RepoFile path="crates/jackin-usage/src/logging.rs" /> — capsule `clog!`/`cdebug!` macro definitions and file/stderr writer.
+- <RepoFile path="crates/jackin-usage/src/telemetry.rs" /> — capsule-to-OTLP log bridge.
+- <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> — subscriber stack, OTLP exporters, attribute-key and metric-name registries.
+- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — `RunDiagnostics`, run/session id minting, JSONL artifact.
+- <RepoFile path="crates/jackin-diagnostics/src/screen.rs" /> — screen taxonomy and per-screen traces.
+- <RepoFile path="crates/jackin-diagnostics/src/logging.rs" /> — host telemetry level and `debug_log!` sink.
+- <RepoFile path="crates/jackin-core/src/debug_log.rs" /> — host debug-log port.
+- <RepoFile path="ENGINEERING.md" /> — the current two-tier telemetry contract this item supersedes.
+
+Operator/contributor docs describing the current behaviour: [Run telemetry guide](/guides/run-telemetry/) and [Run Diagnostics reference](/reference/runtime/diagnostics/).

@@ -1,5 +1,7 @@
 {
   "title": "Codebase health",
   "defaultOpen": false,
-  "pages": []
+  "pages": [
+    "../unified-otel-observability"
+  ]
 }
