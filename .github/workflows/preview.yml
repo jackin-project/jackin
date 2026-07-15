@@ -203,7 +203,7 @@ jobs:
             # src/, docker/runtime/) MUST drift together with ci.yml
             # — when adding a new build input there, add it here too.
             case "$path" in
-              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
+              .github/actions/build-release-archive/**|.github/actions/configure-sccache/**|.github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
                 source=true
                 ;;
               mise.toml)
@@ -275,7 +275,6 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
@@ -311,6 +310,11 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Configure compiler cache
+        uses: ./.github/actions/configure-sccache
+        with:
+          scope: release-archive-jackin-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.target }}
+          write: "true"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -372,7 +376,6 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
@@ -406,6 +409,11 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Configure compiler cache
+        uses: ./.github/actions/configure-sccache
+        with:
+          scope: release-archive-capsule-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.target }}
+          write: "true"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
