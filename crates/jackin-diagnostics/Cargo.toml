@@ -18,6 +18,7 @@ name = "jackin_diagnostics"
 path = "src/lib.rs"
 
 [features]
+default = ["otlp"]
 # Enable the OpenTelemetry (OTLP) export layer.
 #
 # Gated twice:

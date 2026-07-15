@@ -15,6 +15,9 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
 
+mod health;
+pub use health::{TelemetryHealth, record_telemetry_rejection, telemetry_health_snapshot};
+
 const JSONL_TARGET: &str = "jackin_diagnostics::jsonl";
 
 /// OTLP/tracing attribute keys — the single source of truth for jackin❯'s
@@ -504,6 +507,7 @@ mod otlp {
 
     use super::JackinDiagnosticsLayer;
     use super::ServiceIdentity;
+    use super::health;
     use super::otel_keys as keys;
 
     mod retry;
@@ -532,6 +536,7 @@ mod otlp {
         /// errors stay quiet — by then the data is already flushed-or-lost and a
         /// second notice adds only noise.
         fn flush_and_shutdown(&self) {
+            health::record_export_attempt();
             let trace_flush = self.tracer.force_flush();
             drop(self.tracer.shutdown());
             let log_flush = self.logger.force_flush();
@@ -546,6 +551,7 @@ mod otlp {
                 .or_else(|| log_flush.err())
                 .or_else(|| metric_flush.and_then(Result::err));
             if let Some(error) = failed {
+                health::record_export_failure();
                 // Direct to stderr, not the deferred buffer: this fires at final
                 // teardown where the run guard may outlive the terminal session,
                 // so a buffered notice could never be drained. The TUI is already
@@ -553,7 +559,10 @@ mod otlp {
                 crate::logging::emit_teardown_notice(&format!(
                     "telemetry export failed to reach the backend (run telemetry may be incomplete): {error}"
                 ));
+            } else {
+                health::record_export_success();
             }
+            health::record_shutdown(true);
         }
     }
 
@@ -1019,11 +1028,13 @@ mod otlp {
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
+            let metrics_active = meter_provider.is_some();
             drop(PROVIDERS.set(OtlpProviders {
                 tracer: tracer_provider,
                 logger: logger_provider,
                 meter: meter_provider,
             }));
+            health::set_active_signals(metrics_active);
             if let Some(error) = metric_error {
                 // Subscriber is live now, so a `--debug` run captures this.
                 tracing::debug!("OTLP metric exporter unavailable: {error}");
