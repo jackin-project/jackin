@@ -93,3 +93,5 @@ Newtype unit tests (constructor validation, serde round-trip preserving schema â
 
 - The census doc is the standing decision record: new boundaries for these six concepts must pick a row (type or reasoned primitive) at review time.
 - `RoleRef`/`TokenCount`/`MountPath` adoption proceeds boundary-by-boundary using the same recipe when their census rows justify it.
+
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS â€” Done criteria not fully met; see implementer audit rollup.

@@ -105,3 +105,5 @@ Per-area failure-injection tests (attach socket, HTTP error status via existing 
 
 - Attach socket/decode/write failures emit operation_error with stable error.types; expected EOF detach stays non-failure.
 - Usage codex RPC + cleanup container teardown similarly typed; full provider HTTP census deferred if not on critical path.
+
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.

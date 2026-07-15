@@ -127,3 +127,5 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
   and `rerun`; a forced-error reporter fixture asserts all five keys.
 
 **Index deviation**: none remaining for 027 Done criteria (suite-time scheduled enforce when junit present).
+
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.

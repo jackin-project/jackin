@@ -14,29 +14,29 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 004 | Prefix-free, schema-complete capsule OTLP export | P1 | L | 001 | DONE |
 | 005 | Versioned JSONL adapter + prohibited-key negative tests | P1 | M | 001 | DONE |
 | 006 | `JACKIN_DEBUG` cutover: one reader + dated removal boundary | P1 | S | — | DONE |
-| 007 | Trace & dimension coverage: stage registry, screen.name, missing metrics | P1 | M | 001 | DONE |
-| 008 | Migrate failure-prone HTTP/Docker/attach/process paths to typed telemetry | P1 | L | 001, 004 | DONE |
-| 009 | Exporter-backed host-to-capsule conformance matrix + measured volume ratchet | P1 | L | 002, 003, 004, 005 | DONE |
+| 007 | Trace & dimension coverage: stage registry, screen.name, missing metrics | P1 | M | 001 | IN PROGRESS — free-string stages remain (no closed LaunchStage) |
+| 008 | Migrate failure-prone HTTP/Docker/attach/process paths to typed telemetry | P1 | L | 001, 004 | IN PROGRESS — census incomplete (usage HTTP / agent download classes) |
+| 009 | Exporter-backed host-to-capsule conformance matrix + measured volume ratchet | P1 | L | 002, 003, 004, 005 | IN PROGRESS — matrix points 1/2/5/6 partial in host↔capsule scenario |
 | 010 | Syntax-aware suppression parser; purge fake ratchet lint keys | P1 | M | — | DONE |
 | 011 | Lint policy completion: `allow_attributes`, full census, restriction decisions | P2 | M | 010 | DONE |
 | 012 | Advisory CI honesty: Miri per crate, hakari decision, Dylint pilot closure | P2 | S | — | DONE |
 | 013 | Executable boundary gates: Turso sole-owner + forbidden-root path audit | P2 | M | — | DONE |
 | 014 | Fix OSC 8 hyperlink identity repointing (bug) | P1 | M | — | DONE |
 | 015 | Split `runtime/image.rs` by ownership; drop its ratchet exception | P2 | L | — | DONE |
-| 016 | Launch pipeline phase contracts + `run_launch_core` harness + benchmark | P2 | L | — | DONE |
-| 017 | Capsule daemon decomposition + injectable boundary ports | P2 | L | — | DONE |
+| 016 | Launch pipeline phase contracts + `run_launch_core` harness + benchmark | P2 | L | — | IN PROGRESS — phases mostly typestate labels; monolith complexity remains |
+| 017 | Capsule daemon decomposition + injectable boundary ports | P2 | L | — | IN PROGRESS — field bags without subsystem methods/fake-port suite |
 | 018 | One shared command-transport model (xtask / capsule / runtime) | P3 | L | — | DONE |
 | 019 | Narrow foundational `pub mod` surfaces + public-surface growth ratchet | P2 | L | — | DONE |
-| 020 | Domain newtypes census + typed error taxonomy | P3 | L | — | DONE |
+| 020 | Domain newtypes census + typed error taxonomy | P3 | L | — | IN PROGRESS — SessionId/ContainerId not threaded; config APIs still anyhow |
 | 021 | TUI/console convergence: `drive_frame`, scroll classifier, editor cleanup | P3 | L | — | DONE |
 | 022 | Root CLI handler split + TTY fallback + `launch` deprecation warning | P2 | M | — | DONE |
-| 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | DONE |
+| 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | IN PROGRESS — env resolution-order property suite missing |
 | 024 | Spec gate: syntax-aware citations, close `MISSING` entries, snapshot review policy | P2 | L | — | DONE |
 | 025 | Deterministic time: wall-clock seam + first boundary conversions | P2 | M | — | DONE |
 | 026 | Measured performance completion: missing benches, allocation lane, first-frame harness | P3 | L | — | DONE |
-| 027 | Ratchet & health completion: suite-time/public-surface providers, trends, JSON diagnostics | P3 | M | 010 | DONE |
-| 028 | Docs integrity gates: codebase-map audit, README-freshness wiring, config-key drift | P2 | M | — | DONE |
-| 029 | Brand gate completion: bare-brand prose, `plans/` tree, exemption classes | P2 | M | — | DONE |
+| 027 | Ratchet & health completion: suite-time/public-surface providers, trends, JSON diagnostics | P3 | M | 010 | IN PROGRESS — fs sorted-dir enforcement incomplete; health series is single-run |
+| 028 | Docs integrity gates: codebase-map audit, README-freshness wiring, config-key drift | P2 | M | — | IN PROGRESS — map gate missing tier/README cross-check |
+| 029 | Brand gate completion: bare-brand prose, `plans/` tree, exemption classes | P2 | M | — | IN PROGRESS — roadmap audit table still claims bare-brand advisory |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 

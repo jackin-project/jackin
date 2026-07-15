@@ -112,3 +112,5 @@ Stage-enum compile coverage + span-name test; screen.name log/metric assertions;
 - Launch stages: registered span names via `launch_stage_span_name` (not full enum migration of all callers — free labels still accepted as `jackin.stage` attrs).
 - Provider/agent identity moved to `feature.decision` events; not stamped on generic spans.
 - Metrics: docker.inspect + db.statement counters; screen.name on interaction metric dims.
+
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.

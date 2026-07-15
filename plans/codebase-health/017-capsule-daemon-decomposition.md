@@ -100,3 +100,5 @@ Existing 321-test daemon suite is the characterization harness — it must stay 
 - New daemon state goes into a subsystem, never back onto the shell — reviewer rule.
 - Plan 009's host-to-capsule conformance scenario can later drive the fake ports for telemetry assertions.
 - The `session.rs` split (supervision vs PTY plumbing) becomes tractable after `SessionSupervisor` exists; treat as follow-up evidence-driven work.
+
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.

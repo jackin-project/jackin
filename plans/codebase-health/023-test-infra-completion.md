@@ -91,3 +91,5 @@ Steps 1–3 are all test work; the gates above are the verification. Total suite
 
 - New fakes go to test-support when ≥2 consumers exist (the roadmap's own bar).
 - Fuzz findings: minimize, commit to corpus, add regression test — the written rule from step 3d is the contract.
+
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.

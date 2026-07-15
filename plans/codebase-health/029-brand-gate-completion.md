@@ -116,3 +116,5 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 - Whole-tree `cargo xtask docs brand` exits 0 with all 204 original hits resolved.
 
 **Index deviation**: none remaining.
+
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.

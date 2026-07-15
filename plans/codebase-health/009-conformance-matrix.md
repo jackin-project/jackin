@@ -110,3 +110,5 @@ The matrix IS the test plan; model captures on existing `InMemoryLogExporter` us
 - `export_volume_measured` reads only `target/telemetry-volume.json` (`default_mode_{logs,spans,metrics}`); generates the artifact via `conformance_export_volume` when missing — **no** `MAX_*` constant fallback. Source constants remain in-test guardrails only.
 - Matrix point 4 invokes the production redaction helper and sweeps argv, URL-query, inspect-JSON, and terminal-byte canaries across the combined export.
 - Named CI job `telemetry-conformance` runs the filter explicitly.
+
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.

@@ -102,3 +102,5 @@ Steps 1–2 define the new suite; phase-extraction slices ride the existing 9k-l
 
 - New launch behavior must enter as a phase or a named step inside one — reviewers reject re-inlining.
 - Plan 015 and this plan both shrink `jackin-runtime`'s largest files; the launch mega-test split (TEST-08) becomes natural follow-up after phases own their tests.
+
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
