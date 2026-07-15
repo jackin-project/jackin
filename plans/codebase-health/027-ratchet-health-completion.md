@@ -113,6 +113,9 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 - Scheduled `health-trend` job in `hygiene.yml` (health JSON artifact + step summary).
 - Health report `trend` section + tightening proposals (agent-doc headroom vs ratchet bounds).
 - `fs_util::read_dir_sorted` + tests; brand gate and public-surface measure use it.
+- Source walks exclude nested `target`, `node_modules`, and `.git` trees, so
+  building an excluded first-party crate cannot change health or suppression
+  measurements; a fixture proves generated Rust files stay out of the census.
 - Problem matcher: `.github/problem-matchers/xtask.json` registered in `ci.yml` lint job and `docs.yml`.
 - Measured `rust-function-complexity` provider parses production Rust with
   `syn`, records each crate's current maximum control-flow decision count, and

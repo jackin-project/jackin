@@ -1,6 +1,18 @@
 use super::*;
 use std::fs;
 
+#[test]
+fn rust_source_walk_skips_nested_build_and_dependency_trees() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for rel in ["src/kept.rs", "target/generated.rs", "node_modules/pkg.rs"] {
+        let path = dir.path().join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        fs::write(path, "fn marker() {}\n").expect("write fixture");
+    }
+    let paths = walk_rs_paths(dir.path()).expect("walk sources");
+    assert_eq!(paths, vec![dir.path().join("src/kept.rs")]);
+}
+
 fn write(path: &Path, body: &str) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();

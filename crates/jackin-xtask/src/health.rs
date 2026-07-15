@@ -215,20 +215,27 @@ fn measure_rs_files(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
 }
 
 pub(crate) fn walk_rs_paths(dir: &Path) -> Result<Vec<PathBuf>> {
+    const SKIP_DIRS: &[&str] = &[".git", "node_modules", "target"];
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
-        for entry in
-            fs::read_dir(&current).with_context(|| format!("reading {}", current.display()))?
-        {
-            let path = entry?.path();
+        for entry in crate::fs_util::read_dir_sorted(&current)? {
+            let path = entry.path();
             if path.is_dir() {
+                let name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("");
+                if SKIP_DIRS.contains(&name) {
+                    continue;
+                }
                 stack.push(path);
             } else if path.extension().is_some_and(|ext| ext == "rs") {
                 out.push(path);
             }
         }
     }
+    out.sort();
     Ok(out)
 }
 
