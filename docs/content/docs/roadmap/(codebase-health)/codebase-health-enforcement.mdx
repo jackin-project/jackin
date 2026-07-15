@@ -187,9 +187,9 @@ For implementation work, choose the narrowest relevant Rust verification from <R
 
 | RULES.md invariant | Disposition |
 |---|---|
-| Brand spelling (`jackin❯` / bare-brand / possessives) | **Adopted:** `cargo xtask docs brand` (forbidden spellings fail; bare-brand advisory until `JACKIN_BRAND_BARE_ENFORCE=1` after mass-fix) |
-| Documentation location convention | **Deferred** — needs path-policy fixtures; trigger when doc moves re-break links |
-| Deprecations process | **Deferred** — process prose; `DEPRECATED.md` is the ledger |
-| TUI labels | **Deferred** — not deterministically checkable at low FP without lookbook snapshot expansion |
-| TUI keybindings (modifier-free) | **Deferred** — require keymap inventory gate |
-| TUI list-modal footer format | **Deferred** — lookbook/conformance expansion |
+| Brand spelling (`jackin❯` / bare-brand / possessives) | **Adopted:** `cargo xtask docs brand`; forbidden spellings and bare-brand prose fail unconditionally across every maintained prose tree, including `plans/`. Syntax-aware fixtures cover commands, identifiers, paths, URLs, labels, and plaintext fallbacks. |
+| Documentation location convention | **Deferred:** the existing repo-link and codebase-map gates validate destinations but cannot infer whether prose belongs in the canonical page without subjective classification. Adopt a path-policy gate when two reviewed doc moves expose a deterministic misplacement pattern and fixtures can express it without content heuristics. |
+| Deprecations process | **Deferred:** `DEPRECATED.md` is the reviewed ledger, but source-to-ledger completeness requires a stable annotation or AST marker that does not exist. Add a gate when the next deprecation introduces that machine-readable marker. |
+| TUI labels | **Deferred:** labels are context-sensitive and a token scan would produce false positives. Promote only after the lookbook exposes a complete semantic label inventory that can be snapshot-tested. |
+| TUI keybindings and contextual absorption | **Deferred:** modifier policy and absorption depend on active modal state. Add an executable inventory gate when all surfaces route through the shared keymap model. |
+| TUI list-modal footer format | **Deferred:** formatting depends on modal capabilities. Promote when every list modal is represented in the lookbook/conformance corpus and the shared footer renderer owns the complete surface. |

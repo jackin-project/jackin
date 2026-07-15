@@ -385,3 +385,51 @@ fn prop_non_reserved_names_accepted() {
         prop_assert!(validate_reserved_names(&config).is_ok());
     });
 }
+
+/// Property: later selected layers always override earlier layers.
+#[test]
+fn prop_operator_env_follows_declared_layer_precedence() {
+    use proptest::prelude::*;
+
+    proptest!(|(
+        global in "[a-zA-Z0-9_-]{0,24}",
+        role in "[a-zA-Z0-9_-]{0,24}",
+        workspace in "[a-zA-Z0-9_-]{0,24}",
+        workspace_role in "[a-zA-Z0-9_-]{0,24}",
+    )| {
+        let key = "LAYERED_VALUE";
+        let mut config = AppConfig::default();
+        config.env.insert(key.into(), EnvValue::Plain(global));
+        config.roles.insert(
+            "alpha".into(),
+            RoleSource {
+                git: "https://example.invalid/alpha.git".into(),
+                trusted: true,
+                env: BTreeMap::from([(key.into(), EnvValue::Plain(role))]),
+            },
+        );
+        config.workspaces.insert(
+            "work".into(),
+            WorkspaceConfig {
+                workdir: "/workspace".into(),
+                env: BTreeMap::from([(key.into(), EnvValue::Plain(workspace))]),
+                roles: BTreeMap::from([(
+                    "alpha".into(),
+                    WorkspaceRoleOverride {
+                        env: BTreeMap::from([(
+                            key.into(),
+                            EnvValue::Plain(workspace_role.clone()),
+                        )]),
+                        ..WorkspaceRoleOverride::default()
+                    },
+                )]),
+                ..WorkspaceConfig::default()
+            },
+        );
+
+        prop_assert_eq!(
+            lookup_operator_env_raw(&config, Some("alpha"), Some(&wn("work")), key),
+            Some(workspace_role),
+        );
+    });
+}

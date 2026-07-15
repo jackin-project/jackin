@@ -86,7 +86,7 @@ Fixture per exemption class + the four acceptance classes the roadmap names (bar
 - [x] `plans/` (and censused trees) scanned; include/exclude reasons recorded
 - [x] Classifier distinguishes commands/identifiers/paths/URLs/labels/plaintext fallbacks; ALLOWLIST entries all reasoned
 - [x] Whole tree passes `cargo xtask docs brand`
-- [ ] RULES.md prose-invariant audit table recorded with per-invariant disposition
+- [x] RULES.md prose-invariant audit table recorded with per-invariant disposition
 - [ ] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
