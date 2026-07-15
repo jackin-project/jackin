@@ -9,6 +9,7 @@
 
 pub mod event;
 pub mod health;
+pub mod identity;
 pub mod limits;
 pub mod metric;
 pub mod operation;
