@@ -25,16 +25,16 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 015 | Split `runtime/image.rs` by ownership; drop its ratchet exception | P2 | L | — | DONE |
 | 016 | Launch pipeline phase contracts + `run_launch_core` harness + benchmark | P2 | L | — | DONE |
 | 017 | Capsule daemon decomposition + injectable boundary ports | P2 | L | — | DONE |
-| 018 | One shared command-transport model (xtask / capsule / runtime) | P3 | L | — | IN PROGRESS |
-| 019 | Narrow foundational `pub mod` surfaces + public-surface growth ratchet | P2 | L | — | IN PROGRESS |
+| 018 | One shared command-transport model (xtask / capsule / runtime) | P3 | L | — | DONE |
+| 019 | Narrow foundational `pub mod` surfaces + public-surface growth ratchet | P2 | L | — | DONE |
 | 020 | Domain newtypes census + typed error taxonomy | P3 | L | — | DONE |
-| 021 | TUI/console convergence: `drive_frame`, scroll classifier, editor cleanup | P3 | L | — | IN PROGRESS |
-| 022 | Root CLI handler split + TTY fallback + `launch` deprecation warning | P2 | M | — | IN PROGRESS |
+| 021 | TUI/console convergence: `drive_frame`, scroll classifier, editor cleanup | P3 | L | — | DONE |
+| 022 | Root CLI handler split + TTY fallback + `launch` deprecation warning | P2 | M | — | DONE |
 | 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | DONE |
 | 024 | Spec gate: syntax-aware citations, close `MISSING` entries, snapshot review policy | P2 | L | — | DONE |
 | 025 | Deterministic time: wall-clock seam + first boundary conversions | P2 | M | — | DONE |
 | 026 | Measured performance completion: missing benches, allocation lane, first-frame harness | P3 | L | — | DONE |
-| 027 | Ratchet & health completion: suite-time/public-surface providers, trends, JSON diagnostics | P3 | M | 010 | IN PROGRESS |
+| 027 | Ratchet & health completion: suite-time/public-surface providers, trends, JSON diagnostics | P3 | M | 010 | DONE |
 | 028 | Docs integrity gates: codebase-map audit, README-freshness wiring, config-key drift | P2 | M | — | DONE |
 | 029 | Brand gate completion: bare-brand prose, `plans/` tree, exemption classes | P2 | M | — | DONE |
 
@@ -53,7 +53,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 
 | Plan | One-line deviation |
 |------|--------------------|
-| 009 | Dual-bootstrap host+capsule in-process (no Docker); measured export-volume sole ratchet input; sensitive-boundary canary sweep live. |
+| 009 | Dual-bootstrap host+capsule in-process (no Docker); measured export-volume sole ratchet input; point 4 structural prohibitions only. |
 | 018 | Three consumers on `jackin-process`; remaining `Command::new` sites enumerated (sensitive-boundary / PTY / tooling) — see plan Execution notes. |
 | 019 | jackin-config + jackin-core private impl modules; curated root re-exports; justified remainders `container_paths`/`debug_log`/`test_support`. |
 | 021 | Three `drive_frame` callers (console/launch/capsule); editor wildcards + shared modal scroll; dialog sub-loops documented out-of-scope. |
