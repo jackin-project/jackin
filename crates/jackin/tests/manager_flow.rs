@@ -117,7 +117,7 @@ fn seed_config_with_env(
     };
     let mut ce = ConfigEditor::open(paths)?;
     ce.create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), ws)?;
-    ce.save()
+    Ok(ce.save()?)
 }
 
 /// Helper to build a `ManagerState` already sitting on the Secrets tab
@@ -282,7 +282,7 @@ fn seed_config_with_agents(
     };
     let mut ce = ConfigEditor::open(paths)?;
     ce.create_workspace(&WorkspaceName::parse("multi-role-ws").unwrap(), ws)?;
-    ce.save()
+    Ok(ce.save()?)
 }
 
 /// `Enter` on a workspace row with two eligible roles and no default

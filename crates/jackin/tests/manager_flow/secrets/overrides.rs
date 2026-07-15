@@ -63,7 +63,7 @@ fn seed_override_picker_workspace(
     };
     let mut ce = ConfigEditor::open(paths)?;
     ce.create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), ws)?;
-    ce.save()
+    Ok(ce.save()?)
 }
 
 /// Press `Enter` on the workspace-level `+ Add environment variable`

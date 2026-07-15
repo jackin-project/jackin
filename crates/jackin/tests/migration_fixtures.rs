@@ -35,14 +35,14 @@ type MigrateFn = fn(&Path) -> anyhow::Result<()>;
 #[test]
 fn config_fixtures_round_trip_to_current() {
     walk_fixtures("config", |p| {
-        jackin_config::migrate_config_file_if_needed(p).map(|_| ())
+        Ok(jackin_config::migrate_config_file_if_needed(p).map(|_| ())?)
     });
 }
 
 #[test]
 fn workspace_fixtures_round_trip_to_current() {
     walk_fixtures("workspace", |p| {
-        jackin_config::migrate_workspace_file_if_needed(p).map(|_| ())
+        Ok(jackin_config::migrate_workspace_file_if_needed(p).map(|_| ())?)
     });
 }
 
@@ -57,7 +57,7 @@ fn manifest_fixtures_round_trip_to_current() {
 fn config_unknown_field_policy_is_preserve() {
     // AppConfig deliberately does NOT use deny_unknown_fields (forward-compat).
     assert_unknown_field_policy("config", UnknownFieldPolicy::Preserve, |p| {
-        jackin_config::migrate_config_file_if_needed(p).map(|_| ())
+        Ok(jackin_config::migrate_config_file_if_needed(p).map(|_| ())?)
     });
 }
 
@@ -65,7 +65,7 @@ fn config_unknown_field_policy_is_preserve() {
 fn workspace_unknown_field_policy_is_preserve() {
     // WorkspaceConfig deliberately does NOT use deny_unknown_fields (forward-compat).
     assert_unknown_field_policy("workspace", UnknownFieldPolicy::Preserve, |p| {
-        jackin_config::migrate_workspace_file_if_needed(p).map(|_| ())
+        Ok(jackin_config::migrate_workspace_file_if_needed(p).map(|_| ())?)
     });
 }
 
