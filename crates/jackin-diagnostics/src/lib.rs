@@ -39,10 +39,11 @@ pub use metrics::{
     incr_mouse_events, incr_terminal_bytes_received, record_frame, record_render,
 };
 pub use observability::{
-    ContainerOtlp, ServiceIdentity, TelemetryHealth, backend_query_hint, configured_endpoint,
-    configured_endpoint_summary, container_otlp, init_capsule_tracing, init_tracing,
-    init_tracing_for, otel_events, otel_keys, otel_metrics, record_telemetry_rejection,
-    shutdown_capsule_tracing, telemetry_health_snapshot, unsupported_otlp_protocol,
+    ContainerOtlp, ServiceIdentity, TelemetryHealth, TelemetrySignalHealth, backend_query_hint,
+    configured_endpoint, configured_endpoint_summary, container_otlp, init_capsule_tracing,
+    init_tracing, init_tracing_for, otel_events, otel_keys, otel_metrics,
+    record_telemetry_rejection, shutdown_capsule_tracing, telemetry_health_snapshot,
+    unsupported_otlp_protocol,
 };
 pub use operation::{
     OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,

@@ -7,8 +7,9 @@ use opentelemetry_sdk::trace::SpanData;
 
 use super::keys;
 use super::{
-    TestExport, build_resource, export_filter_directive_with_internal, grpc_endpoint,
-    parse_traceparent, resolve_endpoint, resolve_endpoints, test_layers, unsupported_protocol,
+    OtlpProviders, SHUTDOWN_ORDER, TestExport, build_resource,
+    export_filter_directive_with_internal, grpc_endpoint, parse_traceparent, resolve_endpoint,
+    resolve_endpoints, runtime_creation_count, shutdown, test_layers, unsupported_protocol,
 };
 
 fn attr(resource: &opentelemetry_sdk::Resource, key: &'static str) -> Option<String> {
@@ -103,6 +104,40 @@ fn endpoint_empty_filtering() {
     assert_eq!(resolve_endpoint(Some(String::new())), None);
     // Unset → None (no OTLP layer installed).
     assert_eq!(resolve_endpoint(None), None);
+}
+
+#[test]
+fn disabled_resolution_creates_no_runtime_and_shutdown_is_idempotent() {
+    let before = runtime_creation_count();
+    let env = |_key: &str| None;
+    assert_eq!(super::super::config::resolve_otlp_config(&env), Ok(None));
+    assert_eq!(runtime_creation_count(), before);
+    shutdown();
+    shutdown();
+    assert_eq!(runtime_creation_count(), before);
+}
+
+#[test]
+fn shutdown_order_is_tracer_logger_meter() {
+    let before = super::super::telemetry_health_snapshot();
+    SHUTDOWN_ORDER.lock().expect("shutdown order lock").clear();
+    let providers = OtlpProviders {
+        tracer: opentelemetry_sdk::trace::SdkTracerProvider::builder().build(),
+        logger: opentelemetry_sdk::logs::SdkLoggerProvider::builder().build(),
+        meter: Some(opentelemetry_sdk::metrics::SdkMeterProvider::builder().build()),
+    };
+    providers.flush_and_shutdown();
+    assert_eq!(
+        SHUTDOWN_ORDER
+            .lock()
+            .expect("shutdown order lock")
+            .as_slice(),
+        &["tracer", "logger", "meter"]
+    );
+    let after = super::super::telemetry_health_snapshot();
+    assert_eq!(after.traces.attempts, before.traces.attempts + 1);
+    assert_eq!(after.logs.attempts, before.logs.attempts + 1);
+    assert_eq!(after.metrics.attempts, before.metrics.attempts + 1);
 }
 
 #[test]

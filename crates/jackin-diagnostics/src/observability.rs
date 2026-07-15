@@ -17,7 +17,9 @@ use tracing_subscriber::prelude::*;
 
 mod config;
 mod health;
-pub use health::{TelemetryHealth, record_telemetry_rejection, telemetry_health_snapshot};
+pub use health::{
+    TelemetryHealth, TelemetrySignalHealth, record_telemetry_rejection, telemetry_health_snapshot,
+};
 
 const JSONL_TARGET: &str = "jackin_diagnostics::jsonl";
 
@@ -453,8 +455,6 @@ mod tests;
 /// so there is zero link-time cost. No `fmt` layer is attached: OTLP export is
 /// a separate sink from the operator's screen, which stays free of the firehose.
 mod otlp {
-    use std::sync::OnceLock;
-
     use opentelemetry::KeyValue;
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
@@ -505,12 +505,30 @@ mod otlp {
         /// second notice adds only noise.
         fn flush_and_shutdown(&self) {
             health::record_export_attempt();
+            #[cfg(test)]
+            SHUTDOWN_ORDER
+                .lock()
+                .expect("shutdown order lock")
+                .push("tracer");
             let trace_flush = self.tracer.force_flush();
+            health::record_signal_export(health::Signal::Traces, trace_flush.is_ok());
             drop(self.tracer.shutdown());
+            #[cfg(test)]
+            SHUTDOWN_ORDER
+                .lock()
+                .expect("shutdown order lock")
+                .push("logger");
             let log_flush = self.logger.force_flush();
+            health::record_signal_export(health::Signal::Logs, log_flush.is_ok());
             drop(self.logger.shutdown());
             let metric_flush = self.meter.as_ref().map(|meter| {
+                #[cfg(test)]
+                SHUTDOWN_ORDER
+                    .lock()
+                    .expect("shutdown order lock")
+                    .push("meter");
                 let flushed = meter.force_flush();
+                health::record_signal_export(health::Signal::Metrics, flushed.is_ok());
                 drop(meter.shutdown());
                 flushed
             });
@@ -534,7 +552,9 @@ mod otlp {
         }
     }
 
-    static PROVIDERS: OnceLock<OtlpProviders> = OnceLock::new();
+    static PROVIDERS: std::sync::Mutex<Option<OtlpProviders>> = std::sync::Mutex::new(None);
+    #[cfg(test)]
+    static SHUTDOWN_ORDER: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
 
     /// Dedicated multi-thread tokio runtime that drives OTLP export. Held for the
     /// process lifetime so the async-runtime batch processors (and tonic's h2
@@ -542,22 +562,33 @@ mod otlp {
     /// main: the `futures_executor::block_on` flush parks the main thread, and
     /// these worker threads keep exporting regardless. One worker is plenty for
     /// a single run's telemetry volume.
-    static OTEL_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    static OTEL_RUNTIME: std::sync::Mutex<Option<tokio::runtime::Runtime>> =
+        std::sync::Mutex::new(None);
+    #[cfg(test)]
+    static OTEL_RUNTIME_CREATIONS: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(0);
 
     /// Build-or-get the dedicated telemetry runtime. Providers must be built
     /// inside its [`tokio::runtime::Runtime::enter`] guard so their workers spawn
     /// onto it rather than the ambient (current-thread) app runtime.
-    fn otel_runtime() -> anyhow::Result<&'static tokio::runtime::Runtime> {
-        if let Some(runtime) = OTEL_RUNTIME.get() {
-            return Ok(runtime);
+    fn otel_runtime()
+    -> anyhow::Result<std::sync::MutexGuard<'static, Option<tokio::runtime::Runtime>>> {
+        let mut runtime = OTEL_RUNTIME
+            .lock()
+            .map_err(|_| anyhow::anyhow!("OTLP telemetry runtime lock poisoned"))?;
+        if runtime.is_none() {
+            *runtime = Some(
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(1)
+                    .enable_all()
+                    .thread_name("jackin-otel")
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("OTLP telemetry runtime init failed: {e}"))?,
+            );
+            #[cfg(test)]
+            OTEL_RUNTIME_CREATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_all()
-            .thread_name("jackin-otel")
-            .build()
-            .map_err(|e| anyhow::anyhow!("OTLP telemetry runtime init failed: {e}"))?;
-        Ok(OTEL_RUNTIME.get_or_init(|| runtime))
+        Ok(runtime)
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -841,7 +872,7 @@ mod otlp {
         // tonic spawns its h2 connection driver) onto whichever runtime is
         // entered here, and they must land on the multi-thread telemetry runtime
         // — not jackin❯'s current-thread main, where flush would deadlock.
-        let _runtime_guard = runtime.enter();
+        let _runtime_guard = runtime.as_ref().expect("runtime initialized").enter();
         let span_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
             .with_endpoint(traces_endpoint.to_owned())
@@ -1003,11 +1034,11 @@ mod otlp {
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
             let metrics_active = meter_provider.is_some();
-            drop(PROVIDERS.set(OtlpProviders {
+            *PROVIDERS.lock().expect("provider lock") = Some(OtlpProviders {
                 tracer: tracer_provider,
                 logger: logger_provider,
                 meter: meter_provider,
-            }));
+            });
             health::set_active_signals(metrics_active);
             if let Some(error) = metric_error {
                 // Subscriber is live now, so a `--debug` run captures this.
@@ -1084,11 +1115,11 @@ mod otlp {
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
-            drop(PROVIDERS.set(OtlpProviders {
+            *PROVIDERS.lock().expect("provider lock") = Some(OtlpProviders {
                 tracer: tracer_provider,
                 logger: logger_provider,
                 meter: meter_provider,
-            }));
+            });
             emit_session_start(session_id, run_id, traceparent);
         }
         installed
@@ -1506,9 +1537,18 @@ mod otlp {
     }
 
     pub(super) fn shutdown() {
-        if let Some(providers) = PROVIDERS.get() {
+        let providers = PROVIDERS.lock().ok().and_then(|mut slot| slot.take());
+        if let Some(providers) = providers {
             providers.flush_and_shutdown();
         }
+        if let Ok(mut runtime) = OTEL_RUNTIME.lock() {
+            drop(runtime.take());
+        }
+    }
+
+    #[cfg(test)]
+    fn runtime_creation_count() -> u64 {
+        OTEL_RUNTIME_CREATIONS.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Thin counter recorder for the operation facade. Plan 042 replaces this.
@@ -1520,10 +1560,13 @@ mod otlp {
         use opentelemetry::KeyValue;
         use opentelemetry::metrics::MeterProvider as _;
 
-        let Some(providers) = PROVIDERS.get() else {
+        let Ok(providers) = PROVIDERS.lock() else {
             return;
         };
-        let Some(meter_provider) = providers.meter.as_ref() else {
+        let Some(meter_provider) = providers
+            .as_ref()
+            .and_then(|providers| providers.meter.as_ref())
+        else {
             return;
         };
         let meter = meter_provider.meter("jackin");
