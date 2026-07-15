@@ -229,7 +229,7 @@ fn build_local(cfg: &Config) -> Result<()> {
         "construct-local",
     ]);
     cfg.apply_bake_env(&mut cmd);
-    run_checked(cmd)
+    run_buildkit(cmd)
 }
 
 fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
@@ -247,7 +247,7 @@ fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
     cmd.env("LOCAL_PLATFORM", platform.docker());
     apply_cache_args(&mut cmd, "construct-local");
     cmd.arg("construct-local");
-    run_checked(cmd)
+    run_buildkit(cmd)
 }
 
 fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
@@ -277,7 +277,7 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
     ));
     apply_cache_args(&mut cmd, "construct-publish");
     cmd.arg("construct-publish");
-    run_checked(cmd)?;
+    run_buildkit(cmd)?;
 
     let digest = read_digest_from_metadata(&metadata_file)?;
     drop(fs::remove_file(&metadata_file));
@@ -506,6 +506,11 @@ fn builder_exists(builder: &str) -> bool {
 
 fn run_checked(mut cmd: Command) -> Result<()> {
     crate::cmd::run(&mut cmd)
+}
+
+fn run_buildkit(mut cmd: Command) -> Result<()> {
+    cmd.arg("--progress").arg("plain");
+    crate::cmd::run_streaming(&mut cmd)
 }
 
 /// Env value if the variable is set, else the computed default. A set-but-empty
