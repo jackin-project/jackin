@@ -3,11 +3,10 @@
 
 //! Tests for `progress`.
 use super::*;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use jackin_diagnostics::RunDiagnostics;
-use jackin_tui::components::{StatusFooterHover, bottom_chrome_areas};
+use jackin_tui::components::StatusFooterHover;
 use ratatui::backend::TestBackend;
 
 fn test_diagnostics() -> Arc<RunDiagnostics> {
@@ -23,8 +22,6 @@ fn dummy_failure() -> LaunchFailure {
         detail: None,
         next_step: None,
         stage: LaunchStage::Network,
-        diagnostics_path: None,
-        command_output_path: None,
     }
 }
 
@@ -60,8 +57,6 @@ async fn stage_failed_writes_full_detail_to_diagnostics() {
                 ),
                 next_step: None,
                 stage: LaunchStage::DerivedImage,
-                diagnostics_path: None,
-                command_output_path: None,
             })
             .await;
 
@@ -683,8 +678,6 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
         detail: None,
         next_step: Some("Start Docker and run the command again.".to_owned()),
         stage: LaunchStage::Network,
-        diagnostics_path: None,
-        command_output_path: None,
     });
     terminal
         .draw(|frame| {
@@ -703,250 +696,4 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     assert!(rendered.contains("docker daemon is not responding"));
     // The dismiss hint shows in the footer (the popup draws none itself).
     assert!(rendered.contains("dismiss"));
-}
-
-fn failure_with_paths() -> LaunchFailure {
-    use std::path::PathBuf;
-    LaunchFailure {
-        title: "Docker build failed".to_owned(),
-        summary: "Building the Docker container failed.".to_owned(),
-        detail: None,
-        next_step: None,
-        stage: LaunchStage::DerivedImage,
-        diagnostics_path: Some(PathBuf::from("/jk/run/x.jsonl")),
-        command_output_path: Some(PathBuf::from("/jk/run/x.docker-build.log")),
-    }
-}
-
-#[test]
-fn failure_copy_target_at_hits_each_copyable_row_value() {
-    // The whole point of the copy-on-click feature: a click landing on a
-    // copyable value's drawn columns must register as that target. Render
-    // and hit-test share `failure_popup_body_rect`, so this also pins the
-    // "they cannot drift" invariant the helper's doc-comment claims.
-    let area = Rect::new(0, 0, 80, 24);
-    let failure = failure_with_paths();
-    let run_id = "jk-run-testid";
-    let rows = failure_popup_rows(&failure, run_id);
-    let body_area = bottom_chrome_areas(area).body;
-    let rect = failure_popup_rect_for_rows(body_area, &rows);
-
-    for target in [
-        FailureCopyTarget::RunId,
-        FailureCopyTarget::DiagnosticsPath,
-        FailureCopyTarget::CommandOutputPath,
-    ] {
-        let vr = failure_popup_value_rect(rect, &rows, target)
-            .expect("copyable target must have a value rect");
-        assert_eq!(
-            failure_copy_target_at(area, &failure, run_id, true, vr.x, vr.y, None),
-            Some(target),
-            "click at value-column start must hit {target:?}",
-        );
-        // One column left of the value column lands in the label area —
-        // must not register as a copy target.
-        assert_eq!(
-            failure_copy_target_at(
-                area,
-                &failure,
-                run_id,
-                true,
-                vr.x.saturating_sub(1),
-                vr.y,
-                None
-            ),
-            None,
-            "click in label area must not hit {target:?}",
-        );
-    }
-}
-
-#[test]
-fn launch_container_info_renders_from_footer_chip_state() {
-    jackin_diagnostics::set_debug_mode(true);
-    let backend = TestBackend::new(100, 28);
-    let mut terminal = ratatui::Terminal::new(backend).unwrap();
-    let mut view = initial_view();
-    view.identity = Some(LaunchIdentity {
-        role: "agent-smith".to_owned(),
-        agent: "codex".to_owned(),
-        target_kind: LaunchTargetKind::Workspace,
-        target_label: "big-monorepo".to_owned(),
-        mounts: Vec::new(),
-        image: None,
-        container: Some("jk-k7p9m2xq-bigmonorepo-agentsmith".to_owned()),
-    });
-    view.container_info_open = true;
-    terminal
-        .draw(|frame| {
-            render_launch_frame(
-                frame,
-                &view,
-                "jk-run-rendered",
-                "/tmp/jk-run-rendered.jsonl",
-                true,
-                None,
-            );
-        })
-        .unwrap();
-    jackin_diagnostics::set_debug_mode(false);
-
-    let rendered = format!("{:?}", terminal.backend().buffer());
-    for needle in [
-        "Debug info",
-        "jk-k7p9m2xq-bigmonorepo-agentsmith",
-        "jackin version",
-        "agent-smith",
-        "jk-run-rendered",
-        "/tmp/jk-run-rendered.jsonl",
-    ] {
-        assert!(
-            rendered.contains(needle),
-            "container info dialog must contain {needle:?}: {rendered}"
-        );
-    }
-}
-
-#[test]
-fn failure_copy_target_at_ignores_non_copyable_rows_and_absent_paths() {
-    // The message row is non-copyable; a click on its y at the value
-    // column must return None. An absent path produces no row, so its
-    // value-rect lookup must return None too.
-    let area = Rect::new(0, 0, 80, 24);
-    let failure = LaunchFailure {
-        command_output_path: None,
-        ..failure_with_paths()
-    };
-    let run_id = "jk-run-x";
-    let rows = failure_popup_rows(&failure, run_id);
-    let body_area = bottom_chrome_areas(area).body;
-    let rect = failure_popup_rect_for_rows(body_area, &rows);
-    let run_id_rect = failure_popup_value_rect(rect, &rows, FailureCopyTarget::RunId).unwrap();
-    // Rows: message=0, stage=1, run id=2. The message row sits two rows
-    // above the run-id row in the body.
-    let message_y = run_id_rect.y.saturating_sub(2);
-    assert_eq!(
-        failure_copy_target_at(area, &failure, run_id, true, run_id_rect.x, message_y, None),
-        None,
-        "click on the non-copyable message row must not hit any target",
-    );
-    assert!(
-        failure_popup_value_rect(rect, &rows, FailureCopyTarget::CommandOutputPath).is_none(),
-        "absent docker-output path must produce no value rect",
-    );
-}
-
-#[test]
-fn failure_copy_payload_sources_value_from_rows() {
-    // Single source of truth: the copied value must equal what the
-    // renderer would show, sourced from `failure_popup_rows`. Re-deriving
-    // here would drift if the row builder ever reformats paths.
-    let failure = failure_with_paths();
-    let run_id = "jk-run-payload";
-    assert_eq!(
-        failure_copy_payload(&failure, run_id, FailureCopyTarget::RunId).as_deref(),
-        Some(run_id),
-    );
-    assert_eq!(
-        failure_copy_payload(&failure, run_id, FailureCopyTarget::DiagnosticsPath).as_deref(),
-        Some("/jk/run/x.jsonl"),
-    );
-    assert_eq!(
-        failure_copy_payload(&failure, run_id, FailureCopyTarget::CommandOutputPath).as_deref(),
-        Some("/jk/run/x.docker-build.log"),
-    );
-    let no_paths = LaunchFailure {
-        diagnostics_path: None,
-        command_output_path: None,
-        ..failure_with_paths()
-    };
-    assert_eq!(
-        failure_copy_payload(&no_paths, run_id, FailureCopyTarget::DiagnosticsPath),
-        None,
-        "absent path yields no payload",
-    );
-}
-
-#[test]
-fn failure_popup_renders_copyable_rows_and_copied_badge() {
-    let backend = TestBackend::new(120, 28);
-    let mut terminal = ratatui::Terminal::new(backend).unwrap();
-    let mut view = initial_view();
-    view.failure = Some(failure_with_paths());
-    view.failure_copied = Some(FailureCopyTarget::RunId);
-    let run_id = "jk-run-rendered";
-    terminal
-        .draw(|frame| render_launch_frame(frame, &view, run_id, "/tmp/run.jsonl", true, None))
-        .unwrap();
-    let rendered = format!("{:?}", terminal.backend().buffer());
-
-    for needle in [
-        "run id",
-        run_id,
-        "run diagnostics",
-        "/jk/run/x.jsonl",
-        "docker output",
-        "/jk/run/x.docker-build.log",
-        "Copied!",    // badge next to the row whose target is `failure_copied`
-        "copy value", // footer hint
-    ] {
-        assert!(
-            rendered.contains(needle),
-            "rendered failure popup must contain {needle:?}; got {rendered}",
-        );
-    }
-}
-
-#[test]
-fn failure_popup_wraps_long_paths_without_dropping_tail() {
-    let backend = TestBackend::new(72, 28);
-    let mut terminal = ratatui::Terminal::new(backend).unwrap();
-    let long_path = "/jk/run/very/deep/path/with/a/long/docker-build-output-file.jsonl";
-    let mut view = initial_view();
-    view.failure = Some(LaunchFailure {
-        diagnostics_path: Some(PathBuf::from(long_path)),
-        ..failure_with_paths()
-    });
-    terminal
-        .draw(|frame| {
-            render_launch_frame(
-                frame,
-                &view,
-                "jk-run-rendered",
-                "/tmp/jk-run-rendered.jsonl",
-                true,
-                None,
-            );
-        })
-        .unwrap();
-    let rendered = format!("{:?}", terminal.backend().buffer());
-
-    for needle in ["/jk/run/very/deep/pa", "r-build-output-file.", "jsonl"] {
-        assert!(
-            rendered.contains(needle),
-            "long path segment must remain visible instead of being silently truncated: {rendered}"
-        );
-    }
-}
-
-#[test]
-fn failure_popup_path_overlay_emits_osc8_file_links() {
-    let area = Rect::new(0, 0, 120, 28);
-    let failure = failure_with_paths();
-    let overlay = failure_popup_hyperlink_overlay(
-        area,
-        &failure,
-        "jk-run-rendered",
-        true,
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
-    let text = String::from_utf8_lossy(&overlay);
-
-    assert!(text.contains("\x1b]8;;file:///jk/run/x.jsonl\x1b\\"));
-    assert!(text.contains("\x1b]8;;file:///jk/run/x.docker-build.log\x1b\\"));
-    assert!(text.contains("\x1b]8;;\x1b\\"));
 }

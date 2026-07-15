@@ -46,30 +46,12 @@ pub fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailureP
             href: None,
         },
     ];
-    if let Some(path) = &failure.diagnostics_path {
-        let value = path.display().to_string();
-        rows.push(FailurePopupRow {
-            label: "run diagnostics",
-            href: Some(format!("file://{value}")),
-            value,
-            copy_target: Some(FailureCopyTarget::DiagnosticsPath),
-        });
-    }
     if let Some(query) = jackin_diagnostics::backend_query_hint(run_id) {
         rows.push(FailurePopupRow {
             label: "backend query",
             value: query,
             copy_target: None,
             href: None,
-        });
-    }
-    if let Some(path) = &failure.command_output_path {
-        let value = path.display().to_string();
-        rows.push(FailurePopupRow {
-            label: "docker output",
-            href: Some(format!("file://{value}")),
-            value,
-            copy_target: Some(FailureCopyTarget::CommandOutputPath),
         });
     }
     if let Some(next) = &failure.next_step {
@@ -346,28 +328,11 @@ pub fn failure_copy_payload(
 
 #[must_use]
 pub fn failure_reveal_payload(
-    failure: &LaunchFailure,
-    run_id: &str,
-    preferred: Option<FailureCopyTarget>,
+    _failure: &LaunchFailure,
+    _run_id: &str,
+    _preferred: Option<FailureCopyTarget>,
 ) -> Option<(FailureCopyTarget, String)> {
-    let rows = failure_popup_rows(failure, run_id);
-    let revealable = |target: FailureCopyTarget| {
-        matches!(
-            target,
-            FailureCopyTarget::DiagnosticsPath | FailureCopyTarget::CommandOutputPath
-        )
-    };
-    if let Some(target) = preferred.filter(|target| revealable(*target))
-        && let Some(value) = rows
-            .iter()
-            .find(|row| row.copy_target == Some(target))
-            .map(|row| row.value.clone())
-    {
-        return Some((target, value));
-    }
-    rows.into_iter()
-        .filter_map(|row| row.copy_target.map(|target| (target, row.value)))
-        .find(|(target, _)| revealable(*target))
+    None
 }
 
 pub fn render_failure_popup(

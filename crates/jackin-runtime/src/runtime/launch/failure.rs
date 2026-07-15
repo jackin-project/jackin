@@ -16,9 +16,9 @@ use jackin_core::RoleSelector;
 pub(crate) fn launch_failure_title(
     stage: LaunchStage,
     error: &anyhow::Error,
-    run: Option<&jackin_diagnostics::RunDiagnostics>,
+    _run: Option<&jackin_diagnostics::RunDiagnostics>,
 ) -> String {
-    if stage == LaunchStage::DerivedImage && run.and_then(docker_build_output_artifact).is_some() {
+    if stage == LaunchStage::DerivedImage {
         return "Docker build failed".to_owned();
     }
     let text = error.to_string().to_ascii_lowercase();
@@ -34,22 +34,15 @@ pub(crate) fn launch_failure_title(
 pub(crate) fn short_launch_diagnosis(
     stage: LaunchStage,
     error: &anyhow::Error,
-    run: Option<&jackin_diagnostics::RunDiagnostics>,
+    _run: Option<&jackin_diagnostics::RunDiagnostics>,
 ) -> String {
-    if stage == LaunchStage::DerivedImage && run.and_then(docker_build_output_artifact).is_some() {
+    if stage == LaunchStage::DerivedImage {
         return "Building the Docker container failed.".to_owned();
     }
     error
         .chain()
         .next()
         .map_or_else(|| "launch did not complete".to_owned(), ToString::to_string)
-}
-
-pub(crate) fn docker_build_output_artifact(
-    run: &jackin_diagnostics::RunDiagnostics,
-) -> Option<std::path::PathBuf> {
-    let docker_output = run.command_output_path("docker-build");
-    docker_output.exists().then_some(docker_output)
 }
 
 pub(crate) fn launch_failure_cli_error(
@@ -60,33 +53,8 @@ pub(crate) fn launch_failure_cli_error(
     if stage != LaunchStage::DerivedImage {
         return anyhow::anyhow!("{error:#}");
     }
-    let Some(run) = run else {
-        return anyhow::anyhow!("{error:#}");
-    };
-    let Some(docker_output) = docker_build_output_artifact(run) else {
-        return anyhow::anyhow!("{error:#}");
-    };
-    let mut report = String::from("Docker build command failed");
-    let diagnostics_path = run.path().display().to_string();
-    let docker_output_path = docker_output.display().to_string();
-    let mut rows: Vec<[&str; 2]> = vec![
-        ["run id", run.run_id()],
-        ["run diagnostics", diagnostics_path.as_str()],
-    ];
-    let backend_query = jackin_diagnostics::backend_query_hint(run.run_id());
-    if let Some(ref query) = backend_query {
-        rows.push(["backend query", query.as_str()]);
-    }
-    rows.push(["docker output", docker_output_path.as_str()]);
-    let mut table = tabled::Table::builder(rows).build();
-    table
-        .with(tabled::settings::Style::modern())
-        .with(tabled::settings::Remove::row(
-            tabled::settings::object::Rows::first(),
-        ));
-    report.push_str("\n\n");
-    report.push_str(&table.to_string());
-    anyhow::anyhow!("{report}")
+    let _ = run;
+    anyhow::anyhow!("Docker build command failed: {error:#}")
 }
 
 pub(crate) fn resolve_launch_role_source(

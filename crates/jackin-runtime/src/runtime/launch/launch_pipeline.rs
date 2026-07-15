@@ -1281,8 +1281,6 @@ pub(crate) async fn load_role_with(
                         detail: Some(format!("{error:#}")),
                         next_step: None,
                         stage: failed_stage,
-                        diagnostics_path: None,
-                        command_output_path: None,
                     })
                     .await;
             }

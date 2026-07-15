@@ -57,9 +57,7 @@ impl LaunchProgress {
             rich,
             Arc::clone(&view),
             diagnostics.run_id().to_owned(),
-            diagnostics
-                .persists()
-                .then(|| diagnostics.path().display().to_string()),
+            None,
             host,
             jackin_version,
             cancel_token.clone(),
@@ -147,21 +145,11 @@ impl LaunchProgress {
         self.emit_stage(stage, StageStatus::Skipped, "stage_skipped", reason);
     }
 
-    pub async fn stage_failed(&mut self, mut failure: LaunchFailure) {
+    pub async fn stage_failed(&mut self, failure: LaunchFailure) {
         let stage = failure.stage;
         let summary = failure.summary.clone();
         let next_step = failure.next_step.clone();
         let detail = failure.detail.clone();
-        failure.diagnostics_path = self
-            .diagnostics
-            .persists()
-            .then(|| self.diagnostics.path().to_path_buf());
-        if failure.command_output_path.is_none() {
-            let docker_output = self.diagnostics.command_output_path("docker-build");
-            if docker_output.exists() {
-                failure.command_output_path = Some(docker_output);
-            }
-        }
         self.update_view(LaunchMessage::StageFailed(failure));
         self.diagnostics.stage(
             "stage_failed",

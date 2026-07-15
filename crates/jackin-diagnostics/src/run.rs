@@ -1465,18 +1465,6 @@ impl jackin_core::LaunchDiagnostics for RunDiagnostics {
         &self.run_id
     }
 
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn persists(&self) -> bool {
-        self.persists()
-    }
-
-    fn command_output_path(&self, name: &str) -> PathBuf {
-        self.command_output_path(name)
-    }
-
     fn compact(&self, kind: &str, message: &str) {
         self.compact(kind, message);
     }

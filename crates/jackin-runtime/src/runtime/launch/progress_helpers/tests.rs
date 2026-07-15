@@ -4,7 +4,6 @@
 use super::StepCounter;
 use crate::runtime::progress::LaunchProgress;
 use jackin_launch_tui::{LaunchCancelled, LaunchDiagnostics};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 struct TestDiagnostics;
@@ -12,15 +11,6 @@ struct TestDiagnostics;
 impl LaunchDiagnostics for TestDiagnostics {
     fn run_id(&self) -> &'static str {
         "test-run"
-    }
-    fn path(&self) -> &'static Path {
-        Path::new("/tmp/jackin-test-run.jsonl")
-    }
-    fn persists(&self) -> bool {
-        true
-    }
-    fn command_output_path(&self, name: &str) -> PathBuf {
-        PathBuf::from(format!("/tmp/jackin-test-{name}.log"))
     }
     fn compact(&self, _kind: &str, _message: &str) {}
     fn error(&self, _kind: &str, _message: &str, _error_type: Option<&str>) {}

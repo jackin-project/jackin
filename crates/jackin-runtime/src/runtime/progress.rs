@@ -23,16 +23,6 @@ use jackin_launch_tui::tui::components::build_log_dialog::{
     wrap_build_log_lines,
 };
 #[cfg(test)]
-use jackin_launch_tui::tui::components::failure_dialog::failure_popup_hyperlink_overlay;
-#[cfg(test)]
-use jackin_launch_tui::tui::components::failure_dialog::{
-    failure_copy_payload, failure_copy_target_at,
-};
-#[cfg(test)]
-use jackin_launch_tui::tui::components::failure_dialog::{
-    failure_popup_rect_for_rows, failure_popup_rows, failure_popup_value_rect,
-};
-#[cfg(test)]
 use jackin_launch_tui::tui::components::progress_rail::{
     LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
     display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::{LaunchProgress, failure_acknowledged};
@@ -12,15 +11,6 @@ struct TestDiagnostics;
 impl LaunchDiagnostics for TestDiagnostics {
     fn run_id(&self) -> &'static str {
         "test-run"
-    }
-    fn path(&self) -> &Path {
-        Path::new("/tmp")
-    }
-    fn persists(&self) -> bool {
-        true
-    }
-    fn command_output_path(&self, name: &str) -> PathBuf {
-        PathBuf::from("/tmp").join(name)
     }
     fn compact(&self, _kind: &str, _message: &str) {}
     fn error(&self, _kind: &str, _message: &str, _error_type: Option<&str>) {}

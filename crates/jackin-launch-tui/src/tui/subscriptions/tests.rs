@@ -199,8 +199,6 @@ fn failure_failure() -> LaunchFailure {
         detail: None,
         next_step: None,
         stage: LaunchStage::DerivedImage,
-        diagnostics_path: None,
-        command_output_path: None,
     }
 }
 

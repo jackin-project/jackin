@@ -7,7 +7,7 @@
 //! dependency on `ratatui` or `jackin-tui`.
 
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 // --- Stage types ---
 
@@ -147,10 +147,6 @@ pub struct LaunchFailure {
     pub next_step: Option<String>,
     /// Stage where the failure occurred.
     pub stage: LaunchStage,
-    /// Path to the diagnostics bundle when written.
-    pub diagnostics_path: Option<PathBuf>,
-    /// Path to captured command output when written.
-    pub command_output_path: Option<PathBuf>,
 }
 
 /// Kind of launch target shown in identity copy.
@@ -178,10 +174,6 @@ impl LaunchTargetKind {
 pub enum FailureCopyTarget {
     /// Copy the diagnostics run id.
     RunId,
-    /// Copy the diagnostics directory path.
-    DiagnosticsPath,
-    /// Copy the command-output file path.
-    CommandOutputPath,
 }
 
 // --- Prompt context ---
@@ -290,12 +282,6 @@ impl LaunchCancelled {
 pub trait LaunchDiagnostics: Send + Sync {
     /// Stable run identifier for this launch.
     fn run_id(&self) -> &str;
-    /// Root diagnostics directory for this run.
-    fn path(&self) -> &Path;
-    /// Whether diagnostics are being persisted to disk.
-    fn persists(&self) -> bool;
-    /// Path for a named command-output capture file.
-    fn command_output_path(&self, name: &str) -> PathBuf;
     /// Emit a compact always-on log line.
     fn compact(&self, kind: &str, message: &str);
     /// Emit an error line with optional structured error type.
