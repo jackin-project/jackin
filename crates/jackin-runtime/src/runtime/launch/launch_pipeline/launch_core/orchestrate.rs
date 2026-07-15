@@ -3,6 +3,8 @@
 
 //! Phase chain body for `run_launch_core` (typed `#[must_use]` handoffs).
 
+mod helpers;
+
 use super::super::launch_phases::{
     CleanupClassified, EnvironmentResolved, GrantsValidated, ImageMaterialized,
     ImagePhaseClassified, InstancePrepared, RuntimeLaunched, SessionFinalized, TrustSeeded,
@@ -10,6 +12,7 @@ use super::super::launch_phases::{
 };
 use super::super::{emit_auth_provision_launch_plan, purge_or_mark_clean_exited};
 use super::LaunchCore;
+use helpers::{emit_auth_breadcrumbs, reuse_sentinel, sidecar_replenish, workspace_launch_config};
 use jackin_core::{CommandRunner, ContainerId, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 
@@ -488,90 +491,6 @@ async fn handle_launch_failure<D: DockerApi>(
     cleanup.run(docker).await;
 }
 
-const fn sidecar_replenish(adopted: bool) -> super::super::super::SidecarPrewarmReplenish {
-    if adopted {
-        super::super::super::SidecarPrewarmReplenish::AfterAttach
-    } else {
-        super::super::super::SidecarPrewarmReplenish::None
-    }
-}
-
-fn reuse_sentinel<'a>(
-    selected_image_reused: bool,
-    paths: &jackin_core::JackinPaths,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    image: &'a str,
-    source: &'a jackin_config::RoleSource,
-    branch_override: Option<&'a str>,
-) -> Option<super::super::super::launch_runtime::ReuseStalenessSentinel<'a>> {
-    (selected_image_reused
-        && crate::runtime::image::reuse_needs_background_staleness_check(
-            paths,
-            validated_repo,
-            image,
-        ))
-    .then_some(
-        super::super::super::launch_runtime::ReuseStalenessSentinel {
-            role_git: &source.git,
-            branch_override,
-            image,
-        },
-    )
-}
-
-fn emit_auth_breadcrumbs(
-    paths: &jackin_core::JackinPaths,
-    agent: jackin_core::Agent,
-    auth_mode: jackin_config::AuthForwardMode,
-    workspace_opt: Option<&WorkspaceName>,
-    github_mode: jackin_config::GithubAuthMode,
-    github_env_decls: &std::collections::BTreeMap<String, jackin_config::EnvValue>,
-) {
-    if agent != jackin_core::Agent::Codex {
-        let _expiry_days = workspace_opt
-            .filter(|_| auth_mode == jackin_config::AuthForwardMode::OAuthToken)
-            .and_then(
-                |workspace| match jackin_env::expiry_days_for_launch(paths, workspace) {
-                    Ok(days) => days,
-                    Err(error) => {
-                        if let Some(run) = jackin_diagnostics::active_run() {
-                            run.compact(
-                                "auth",
-                                &format!(
-                                    "token expiry cache for workspace {workspace} is unreadable \
-                                 ({error}); re-run `jackin workspace claude-token setup \
-                                 {workspace}` to refresh"
-                                ),
-                            );
-                        }
-                        None
-                    }
-                },
-            );
-    }
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
-        let token_key = jackin_core::GH_TOKEN_ENV_NAME;
-        if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
-            run.compact("github_auth", "GitHub auth ignored by auth_forward=ignore");
-        } else {
-            let breadcrumb = github_env_decls.get(token_key).map_or_else(
-                || token_key.to_owned(),
-                |value| {
-                    super::super::super::auth_token_source_reference(
-                        token_key,
-                        Some(value.as_display_str()),
-                    )
-                },
-            );
-            run.compact(
-                "github_auth",
-                &format!("resolved GitHub auth from {breadcrumb}"),
-            );
-        }
-    }
-}
-
 struct MaterializeWorkspace<'a, D, R> {
     paths: &'a jackin_core::JackinPaths,
     config: &'a jackin_config::AppConfig,
@@ -591,33 +510,6 @@ struct MaterializeWorkspace<'a, D, R> {
     prepared: &'a mut InstancePrepared,
     cleanup: &'a super::super::super::LoadCleanup,
     trust: TrustSeeded,
-}
-
-fn workspace_launch_config(
-    selector: &jackin_core::RoleSelector,
-    workspace: &jackin_config::ResolvedWorkspace,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    opts: &super::super::super::LoadOptions,
-    materialized: &crate::isolation::materialize::MaterializedWorkspace,
-    dirty_exit_policy: &str,
-    exec_bindings: Vec<jackin_protocol::ExecBinding>,
-) -> jackin_protocol::CapsuleConfig {
-    let isolated_worktrees = materialized
-        .mounts
-        .iter()
-        .filter(|mount| !mount.isolation.is_shared())
-        .map(|mount| mount.dst.clone())
-        .collect();
-    let mut launch_config = super::super::super::capsule_config(
-        selector,
-        &workspace.workdir,
-        &validated_repo.manifest,
-        opts.initial_provider(),
-        dirty_exit_policy,
-        isolated_worktrees,
-    );
-    launch_config.exec_bindings = exec_bindings;
-    launch_config
 }
 
 struct EnvironmentConfigured {
@@ -1116,6 +1008,383 @@ where
     }
 }
 
+struct InitializeLaunch<'a, D> {
+    paths: &'a jackin_core::JackinPaths,
+    config: &'a jackin_config::AppConfig,
+    selector: &'a jackin_core::RoleSelector,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    docker: &'a D,
+    opts: &'a super::super::super::LoadOptions,
+    validated_repo: &'a jackin_manifest::repo::ValidatedRoleRepo,
+    image_decision: &'a crate::runtime::image::ImageDecision,
+    container_name: &'a str,
+}
+
+struct LaunchInitialized {
+    adopted_sidecar_was_used: bool,
+    network: String,
+    dind: String,
+    certs_volume: String,
+    cleanup: super::super::super::LoadCleanup,
+    effective_grants: EffectiveGrants,
+    resolved_profile: (DockerSecurityProfile, ProfileSource),
+    dind_started: bool,
+    image_phase: ImagePhaseClassified,
+}
+
+async fn initialize_launch<D: DockerApi>(
+    input: InitializeLaunch<'_, D>,
+) -> anyhow::Result<LaunchInitialized> {
+    let InitializeLaunch {
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        opts,
+        validated_repo,
+        image_decision,
+        container_name,
+    } = input;
+    let container_id = ContainerId::parse(container_name).context("validating container name")?;
+    let adopted = super::super::super::adopt_prewarmed_dind_sidecar(paths, docker).await;
+    let adopted_sidecar_was_used = adopted.is_some();
+    let resources = adopted.as_ref().map_or_else(
+        || DockerResources::from_container_id(&container_id),
+        |sidecar| DockerResources {
+            role_container: container_name.to_owned(),
+            dind_container: Some(sidecar.sidecar.dind.clone()),
+            network: sidecar.sidecar.network.clone(),
+            certs_volume: Some(sidecar.sidecar.certs_volume.clone()),
+        },
+    );
+    let network = resources.network;
+    let dind = resources
+        .dind_container
+        .unwrap_or_else(|| crate::instance::naming::dind_container_name(container_name));
+    let certs_volume = resources
+        .certs_volume
+        .unwrap_or_else(|| crate::instance::naming::dind_certs_volume(container_name));
+    let cleanup = super::super::super::LoadCleanup::new(
+        container_name.to_owned(),
+        dind.clone(),
+        certs_volume.clone(),
+        network.clone(),
+        paths.jackin_home.join("sockets").join(container_name),
+    );
+    let grants = super::super::launch_phases::validate_launch_grants(
+        super::super::launch_phases::GrantPhaseInput {
+            config,
+            workspace_label: workspace.label.as_str(),
+            workspace_docker: None,
+            opts_docker_profile: opts.docker_profile,
+            selector,
+            role_manifest: &validated_repo.manifest,
+        },
+    );
+    let GrantsValidated {
+        effective_grants,
+        resolved_profile,
+        profile_source,
+        dind_started,
+    } = match grants {
+        Ok(grants) => grants,
+        Err(error) => {
+            super::super::launch_phases::cleanup_after_grant_failure(&cleanup, docker).await;
+            return Err(error);
+        }
+    };
+    Ok(LaunchInitialized {
+        adopted_sidecar_was_used,
+        network,
+        dind,
+        certs_volume,
+        cleanup,
+        effective_grants,
+        resolved_profile: (resolved_profile, profile_source),
+        dind_started,
+        image_phase: super::super::launch_phases::classify_image_phase(image_decision),
+    })
+}
+
+struct FinishLaunch<'a, D, R> {
+    paths: &'a jackin_core::JackinPaths,
+    config: &'a jackin_config::AppConfig,
+    workspace_name: &'a Option<String>,
+    docker: &'a D,
+    runner: &'a mut R,
+    container_name: &'a str,
+    launched: RuntimeDispatch,
+}
+
+async fn finish_launch<D, R>(input: FinishLaunch<'_, D, R>) -> anyhow::Result<String>
+where
+    D: DockerApi,
+    R: CommandRunner,
+{
+    let FinishLaunch {
+        paths,
+        config,
+        workspace_name,
+        docker,
+        runner,
+        container_name,
+        launched,
+    } = input;
+    let RuntimeLaunched {
+        mut instance_manifest,
+        container_state,
+        mut cleanup,
+    } = match launched {
+        RuntimeDispatch::AppleContainer(container_name) => return Ok(container_name),
+        RuntimeDispatch::Docker(launched) => *launched,
+    };
+    let finalized = finalize_session(FinalizeSession {
+        paths,
+        config,
+        workspace_name,
+        docker,
+        runner,
+        container_name,
+        container_state: &container_state,
+        instance_manifest: &mut instance_manifest,
+        cleanup: &mut cleanup,
+    })
+    .await?;
+    let CleanupClassified { container_name } = classify_cleanup(ClassifyCleanup {
+        paths,
+        docker,
+        runner,
+        container_name,
+        container_state: &container_state,
+        instance_manifest: &mut instance_manifest,
+        cleanup: &mut cleanup,
+        finalized,
+    })
+    .await?;
+    Ok(container_name)
+}
+
+struct ActiveLaunch<'a, D, R> {
+    paths: &'a jackin_core::JackinPaths,
+    config: &'a jackin_config::AppConfig,
+    selector: &'a jackin_core::RoleSelector,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    docker: &'a D,
+    runner: &'a mut R,
+    opts: &'a super::super::super::LoadOptions,
+    git: crate::runtime::identity::GitIdentity,
+    workspace_name: Option<String>,
+    steps: &'a mut super::super::super::StepCounter,
+    role_key: String,
+    agent_display_name: String,
+    agent: jackin_core::Agent,
+    supported_agents: Vec<jackin_core::Agent>,
+    cached_repo: jackin_manifest::repo::CachedRepo,
+    validated_repo: jackin_manifest::repo::ValidatedRoleRepo,
+    source: jackin_config::RoleSource,
+    auth_mode: jackin_core::AuthForwardMode,
+    backend: super::super::super::Backend,
+    image_decision: Option<crate::runtime::image::ImageDecision>,
+    repo_lock: Option<std::fs::File>,
+    restoring: bool,
+    container_name: String,
+    exec_bindings: Vec<jackin_protocol::ExecBinding>,
+    recipe_role_git_sha: Option<String>,
+    recipe_base_image_ref: Option<String>,
+    selected_refresh_reason: Option<crate::runtime::image::ImageInvalidationReason>,
+    resolved_env: jackin_env::ResolvedEnv,
+    rebuild: bool,
+    operator_env: std::collections::BTreeMap<String, String>,
+    git_pull_join: Option<super::super::DeferredGitPull>,
+    initialized: LaunchInitialized,
+}
+
+async fn prepare_active_launch<D, R, S>(
+    launch: &mut ActiveLaunch<'_, D, R>,
+    mut sidecar: Pin<&mut S>,
+    early_sidecar_result: &mut Option<anyhow::Result<()>>,
+) -> anyhow::Result<(InstancePrepared, WorkspaceMaterialized)>
+where
+    D: DockerApi,
+    R: CommandRunner,
+    S: Future<Output = anyhow::Result<()>>,
+{
+    let Some(image_decision) = launch.image_decision.take() else {
+        launch.initialized.cleanup.run(launch.docker).await;
+        return Err(anyhow::anyhow!("image decision already consumed"));
+    };
+    let image = materialize_image_phase(
+        MaterializeImage {
+            paths: launch.paths,
+            selector: launch.selector,
+            cached_repo: &launch.cached_repo,
+            validated_repo: &launch.validated_repo,
+            agent: launch.agent,
+            supported_agents: &launch.supported_agents,
+            rebuild: launch.rebuild,
+            opts: launch.opts,
+            steps: launch.steps,
+            docker: launch.docker,
+            runner: launch.runner,
+            restoring: launch.restoring,
+            container_name: &launch.container_name,
+            repo_lock: &mut launch.repo_lock,
+            cleanup: &launch.initialized.cleanup,
+            classified: launch.initialized.image_phase,
+            decision: Some(image_decision),
+        },
+        sidecar.as_mut(),
+        early_sidecar_result,
+    )
+    .await?;
+    let mut prepared = prepare_instance(PrepareInstance {
+        paths: launch.paths,
+        workspace: launch.workspace,
+        workspace_name: &launch.workspace_name,
+        container_name: &launch.container_name,
+        role_key: &launch.role_key,
+        agent_display_name: &launch.agent_display_name,
+        agent: launch.agent,
+        source: &launch.source,
+        opts: launch.opts,
+        dind_started: launch.initialized.dind_started,
+        dind: &launch.initialized.dind,
+        network: &launch.initialized.network,
+        certs_volume: &launch.initialized.certs_volume,
+        recipe_role_git_sha: launch.recipe_role_git_sha.take(),
+        recipe_base_image_ref: launch.recipe_base_image_ref.take(),
+        supported_agents: &launch.supported_agents,
+        restoring: launch.restoring,
+        docker: launch.docker,
+        cleanup: &launch.initialized.cleanup,
+        image,
+    })
+    .await?;
+    let configured = resolve_environment(ResolveEnvironment {
+        config: launch.config,
+        agent: launch.agent,
+        auth_mode: launch.auth_mode,
+        operator_env: &launch.operator_env,
+        opts: launch.opts,
+        role_key: &launch.role_key,
+        workspace_name: &launch.workspace_name,
+        cleanup: &launch.initialized.cleanup,
+        docker: launch.docker,
+    })
+    .await?;
+    let trust = prepare_environment(
+        PrepareEnvironment {
+            paths: launch.paths,
+            config: launch.config,
+            agent: launch.agent,
+            container_name: &launch.container_name,
+            validated_repo: &launch.validated_repo,
+            role_key: &launch.role_key,
+            workspace: launch.workspace,
+            steps: launch.steps,
+            cleanup: &launch.initialized.cleanup,
+            docker: launch.docker,
+            configured,
+        },
+        sidecar.as_mut(),
+        early_sidecar_result,
+    )
+    .await?;
+    let workspace = materialize_workspace_phase(
+        MaterializeWorkspace {
+            paths: launch.paths,
+            config: launch.config,
+            selector: launch.selector,
+            workspace: launch.workspace,
+            docker: launch.docker,
+            runner: launch.runner,
+            opts: launch.opts,
+            steps: launch.steps,
+            container_name: &launch.container_name,
+            role_key: &launch.role_key,
+            agent: launch.agent,
+            auth_mode: launch.auth_mode,
+            validated_repo: &launch.validated_repo,
+            exec_bindings: std::mem::take(&mut launch.exec_bindings),
+            git_pull_join: launch.git_pull_join.take(),
+            prepared: &mut prepared,
+            cleanup: &launch.initialized.cleanup,
+            trust,
+        },
+        sidecar,
+        early_sidecar_result.take(),
+    )
+    .await?;
+    Ok((prepared, workspace))
+}
+
+async fn execute_active_launch<D, R>(
+    launch: ActiveLaunch<'_, D, R>,
+    prepared: InstancePrepared,
+    workspace_materialized: WorkspaceMaterialized,
+) -> anyhow::Result<String>
+where
+    D: DockerApi,
+    R: CommandRunner,
+{
+    let launched = launch_runtime(LaunchRuntime {
+        paths: launch.paths,
+        config: launch.config,
+        selector: launch.selector,
+        workspace: launch.workspace,
+        workspace_name: &launch.workspace_name,
+        docker: launch.docker,
+        runner: launch.runner,
+        opts: launch.opts,
+        steps: launch.steps,
+        container_name: &launch.container_name,
+        role_key: &launch.role_key,
+        agent_display_name: &launch.agent_display_name,
+        agent: launch.agent,
+        source: &launch.source,
+        backend: launch.backend,
+        validated_repo: &launch.validated_repo,
+        resolved_env: &launch.resolved_env,
+        selected_refresh_reason: launch.selected_refresh_reason,
+        git: &launch.git,
+        network: &launch.initialized.network,
+        dind: &launch.initialized.dind,
+        resolved_profile: launch.initialized.resolved_profile,
+        effective_grants: &launch.initialized.effective_grants,
+        adopted_sidecar_was_used: launch.initialized.adopted_sidecar_was_used,
+        prepared,
+        workspace_materialized,
+        cleanup: launch.initialized.cleanup,
+    })
+    .await?;
+    finish_launch(FinishLaunch {
+        paths: launch.paths,
+        config: launch.config,
+        workspace_name: &launch.workspace_name,
+        docker: launch.docker,
+        runner: launch.runner,
+        container_name: &launch.container_name,
+        launched,
+    })
+    .await
+}
+
+async fn run_active_launch<D, R, S>(
+    mut launch: ActiveLaunch<'_, D, R>,
+    sidecar: Pin<&mut S>,
+) -> anyhow::Result<String>
+where
+    D: DockerApi,
+    R: CommandRunner,
+    S: Future<Output = anyhow::Result<()>>,
+{
+    let mut early_sidecar_result = None;
+    let (prepared, workspace) =
+        prepare_active_launch(&mut launch, sidecar, &mut early_sidecar_result).await?;
+    execute_active_launch(launch, prepared, workspace).await
+}
+
 async fn materialize_workspace_phase<D, R, S>(
     input: MaterializeWorkspace<'_, D, R>,
     mut sidecar: Pin<&mut S>,
@@ -1426,10 +1695,6 @@ where
     })))
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "initialization extraction is the final codebase-health plan 016 slice"
-)]
 pub(super) async fn run_launch_phases<D, R>(ctx: LaunchCore<'_, D, R>) -> anyhow::Result<String>
 where
     D: DockerApi,
@@ -1457,7 +1722,7 @@ where
         auth_mode,
         backend,
         image_decision,
-        mut repo_lock,
+        repo_lock,
         restoring,
         container_name,
         exec_bindings,
@@ -1471,95 +1736,75 @@ where
         git_pull_join,
         ..
     } = ctx;
-    let container_id = ContainerId::parse(&container_name).context("validating container name")?;
-    let adopted_sidecar = super::super::super::adopt_prewarmed_dind_sidecar(paths, docker).await;
-    let adopted_sidecar_was_used = adopted_sidecar.is_some();
-    let resources = adopted_sidecar.as_ref().map_or_else(
-        || DockerResources::from_container_id(&container_id),
-        |sidecar| DockerResources {
-            role_container: container_name.clone(),
-            dind_container: Some(sidecar.sidecar.dind.clone()),
-            network: sidecar.sidecar.network.clone(),
-            certs_volume: Some(sidecar.sidecar.certs_volume.clone()),
-        },
-    );
-    let network = resources.network.clone();
-    // Adoption-aware: when a prewarmed sidecar was adopted, the role connects
-    // to (and teardown must remove) the adopted DinD container, not the
-    // role-default name. `resources.dind_container` is always `Some` — set
-    // from the adopted sidecar or `from_container_name`.
-    let dind = resources
-        .dind_container
-        .clone()
-        .unwrap_or_else(|| crate::instance::naming::dind_container_name(&container_name));
-    let certs_volume = resources
-        .certs_volume
-        .clone()
-        .unwrap_or_else(|| crate::instance::naming::dind_certs_volume(&container_name));
-    // Arm cleanup immediately after adoption, before grant validation.
-    // When a prewarmed DinD sidecar was adopted, its container, network,
-    // and certs volume are already *running* and the on-disk prewarm state
-    // was deleted (`adopt_prewarmed_dind_sidecar` calls
-    // `remove_prewarmed_dind_state`), so nothing re-adopts them. Any early
-    // `?`/`return Err` between here and the start of the launch proper
-    // would otherwise orphan a live privileged container with no record.
-    // `LoadCleanup::run` is best-effort: removing the not-yet-created role
-    // container is a no-op. For a fresh launch the sidecar is not started
-    // until later, so there is nothing to leak in the gap.
-    let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
-    let cleanup = super::super::super::LoadCleanup::new(
-        container_name.clone(),
-        dind.clone(),
-        certs_volume.clone(),
-        network.clone(),
-        socket_dir,
-    );
-    // Phase: grants validated (typestate). Failure → cleanup only (suite A).
-    let grants_validated: GrantsValidated =
-        match super::super::launch_phases::validate_launch_grants(
-            super::super::launch_phases::GrantPhaseInput {
-                config,
-                workspace_label: workspace.label.as_str(),
-                workspace_docker: None,
-                opts_docker_profile: opts.docker_profile,
-                selector,
-                role_manifest: &validated_repo.manifest,
-            },
-        ) {
-            Ok(validated) => validated,
-            Err(error) => {
-                super::super::launch_phases::cleanup_after_grant_failure(&cleanup, docker).await;
-                return Err(error);
-            }
-        };
-    let effective_grants = grants_validated.effective_grants;
-    let resolved_profile = (
-        grants_validated.resolved_profile,
-        grants_validated.profile_source,
-    );
-    let dind_started = grants_validated.dind_started;
-    // Phase: image decision classified (typestate; pure, no Docker I/O).
-    let image_phase: ImagePhaseClassified =
-        super::super::launch_phases::classify_image_phase(&image_decision);
+    let initialized = initialize_launch(InitializeLaunch {
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        opts,
+        validated_repo: &validated_repo,
+        image_decision: &image_decision,
+        container_name: &container_name,
+    })
+    .await?;
+    let launch = ActiveLaunch {
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        runner,
+        opts,
+        git,
+        workspace_name,
+        steps,
+        role_key,
+        agent_display_name,
+        agent,
+        supported_agents,
+        cached_repo,
+        validated_repo,
+        source,
+        auth_mode,
+        backend,
+        image_decision: Some(image_decision),
+        repo_lock,
+        restoring,
+        container_name,
+        exec_bindings,
+        recipe_role_git_sha,
+        recipe_base_image_ref,
+        selected_refresh_reason,
+        resolved_env,
+        rebuild,
+        operator_env,
+        git_pull_join,
+        initialized,
+    };
     // Start the sidecar future before image materialization so network/DinD
     // setup can make progress while runtime binaries and Docker build run.
-    if let Some(progress) = steps.progress_mut() {
+    if let Some(progress) = launch.steps.progress_mut() {
         progress.stage_started(
             crate::runtime::progress::LaunchStage::Network,
             "wiring private network",
         );
     }
-    let sidecar_container = container_name.clone();
-    let sidecar_network = network.clone();
-    let sidecar_dind = dind.clone();
-    let sidecar_certs_volume = certs_volume.clone();
-    let sidecar_dind_grant = effective_grants.dind;
+    let sidecar_container = launch.container_name.clone();
+    let sidecar_network = launch.initialized.network.clone();
+    let sidecar_dind = launch.initialized.dind.clone();
+    let sidecar_certs_volume = launch.initialized.certs_volume.clone();
+    let sidecar_dind_grant = launch.initialized.effective_grants.dind;
     let sidecar_network_disabled =
-        crate::runtime::docker_profile::network_disabled(&effective_grants);
-    let role_network_internal =
-        crate::runtime::docker_profile::role_network_internal(resolved_profile.0);
+        crate::runtime::docker_profile::network_disabled(&launch.initialized.effective_grants);
+    let role_network_internal = crate::runtime::docker_profile::role_network_internal(
+        launch.initialized.resolved_profile.0,
+    );
+    let adopted_sidecar_was_used = launch.initialized.adopted_sidecar_was_used;
+    let dind_started = launch.initialized.dind_started;
+    let docker = launch.docker;
     let sidecar = async move {
-        if adopted_sidecar.is_some() {
+        if adopted_sidecar_was_used {
             Ok(())
         } else if dind_started {
             super::super::super::run_dind_sidecar_headless(
@@ -1584,191 +1829,5 @@ where
         }
     };
     let mut sidecar = std::pin::pin!(sidecar);
-    let mut early_sidecar_result: Option<anyhow::Result<()>> = None;
-
-    let image_mat = materialize_image_phase(
-        MaterializeImage {
-            paths,
-            selector,
-            cached_repo: &cached_repo,
-            validated_repo: &validated_repo,
-            agent,
-            supported_agents: &supported_agents,
-            rebuild,
-            opts,
-            steps,
-            docker,
-            runner,
-            restoring,
-            container_name: &container_name,
-            repo_lock: &mut repo_lock,
-            cleanup: &cleanup,
-            classified: image_phase,
-            decision: Some(image_decision),
-        },
-        sidecar.as_mut(),
-        &mut early_sidecar_result,
-    )
-    .await?;
-    let prepared = prepare_instance(PrepareInstance {
-        paths,
-        workspace,
-        workspace_name: &workspace_name,
-        container_name: &container_name,
-        role_key: &role_key,
-        agent_display_name: &agent_display_name,
-        agent,
-        source: &source,
-        opts,
-        dind_started,
-        dind: &dind,
-        network: &network,
-        certs_volume: &certs_volume,
-        recipe_role_git_sha,
-        recipe_base_image_ref,
-        supported_agents: &supported_agents,
-        restoring,
-        docker,
-        cleanup: &cleanup,
-        image: image_mat,
-    })
-    .await?;
-    let InstancePrepared {
-        image,
-        selected_image_reused,
-        instance_manifest,
-        container_state,
-        host_workdir_fingerprint,
-    } = prepared;
-
-    let configured = resolve_environment(ResolveEnvironment {
-        config,
-        agent,
-        auth_mode,
-        operator_env: &operator_env,
-        opts,
-        role_key: &role_key,
-        workspace_name: &workspace_name,
-        cleanup: &cleanup,
-        docker,
-    })
-    .await?;
-
-    let trust = prepare_environment(
-        PrepareEnvironment {
-            paths,
-            config,
-            agent,
-            container_name: &container_name,
-            validated_repo: &validated_repo,
-            role_key: &role_key,
-            workspace,
-            steps,
-            cleanup: &cleanup,
-            docker,
-            configured,
-        },
-        sidecar.as_mut(),
-        &mut early_sidecar_result,
-    )
-    .await?;
-
-    let mut prepared = InstancePrepared {
-        image,
-        selected_image_reused,
-        instance_manifest,
-        container_state,
-        host_workdir_fingerprint,
-    };
-    let ws_mat = materialize_workspace_phase(
-        MaterializeWorkspace {
-            paths,
-            config,
-            selector,
-            workspace,
-            docker,
-            runner,
-            opts,
-            steps,
-            container_name: &container_name,
-            role_key: &role_key,
-            agent,
-            auth_mode,
-            validated_repo: &validated_repo,
-            exec_bindings,
-            git_pull_join,
-            prepared: &mut prepared,
-            cleanup: &cleanup,
-            trust,
-        },
-        sidecar.as_mut(),
-        early_sidecar_result,
-    )
-    .await?;
-    drop(sidecar);
-
-    let launched = launch_runtime(LaunchRuntime {
-        paths,
-        config,
-        selector,
-        workspace,
-        workspace_name: &workspace_name,
-        docker,
-        runner,
-        opts,
-        steps,
-        container_name: &container_name,
-        role_key: &role_key,
-        agent_display_name: &agent_display_name,
-        agent,
-        source: &source,
-        backend,
-        validated_repo: &validated_repo,
-        resolved_env: &resolved_env,
-        selected_refresh_reason,
-        git: &git,
-        network: &network,
-        dind: &dind,
-        resolved_profile,
-        effective_grants: &effective_grants,
-        adopted_sidecar_was_used,
-        prepared,
-        workspace_materialized: ws_mat,
-        cleanup,
-    })
-    .await?;
-    let RuntimeLaunched {
-        mut instance_manifest,
-        container_state,
-        mut cleanup,
-    } = match launched {
-        RuntimeDispatch::AppleContainer(container_name) => return Ok(container_name),
-        RuntimeDispatch::Docker(launched) => *launched,
-    };
-
-    let finalized = finalize_session(FinalizeSession {
-        paths,
-        config,
-        workspace_name: &workspace_name,
-        docker,
-        runner,
-        container_name: &container_name,
-        container_state: &container_state,
-        instance_manifest: &mut instance_manifest,
-        cleanup: &mut cleanup,
-    })
-    .await?;
-    let classified = classify_cleanup(ClassifyCleanup {
-        paths,
-        docker,
-        runner,
-        container_name: &container_name,
-        container_state: &container_state,
-        instance_manifest: &mut instance_manifest,
-        cleanup: &mut cleanup,
-        finalized,
-    })
-    .await?;
-    let CleanupClassified { container_name } = classified;
-    Ok(container_name)
+    run_active_launch(launch, sidecar.as_mut()).await
 }

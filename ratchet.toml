@@ -76,7 +76,7 @@ key = "clippy::cast_sign_loss@jackin-usage"
 bound = 12
 [[family.entry]]
 key = "clippy::cognitive_complexity@jackin-runtime"
-bound = 3
+bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
 bound = 11
@@ -232,9 +232,6 @@ key = "clippy::missing_const_for_fn@jackin-console"
 bound = 1
 [[family.entry]]
 key = "clippy::missing_const_for_fn@jackin-console-oppicker"
-bound = 1
-[[family.entry]]
-key = "clippy::needless_borrow@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "clippy::needless_collect@jackin"
@@ -406,7 +403,7 @@ key = "clippy::too_many_lines@jackin-protocol"
 bound = 2
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime"
-bound = 8
+bound = 7
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-term"
 bound = 1

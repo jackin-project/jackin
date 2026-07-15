@@ -22,7 +22,7 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 012 | Advisory CI honesty: Miri per crate, hakari decision, Dylint pilot closure | P2 | S | — | DONE |
 | 013 | Executable boundary gates: Turso sole-owner + forbidden-root path audit | P2 | M | — | DONE |
 | 015 | Split `runtime/image.rs` by ownership; drop its ratchet exception | P2 | L | — | DONE |
-| 016 | Launch pipeline phase contracts + `run_launch_core` harness + benchmark | P2 | L | — | IN PROGRESS — phases mostly typestate labels; monolith complexity remains |
+| 016 | Launch pipeline phase contracts + `run_launch_core` harness + benchmark | P2 | L | — | DONE |
 | 017 | Capsule daemon decomposition + injectable boundary ports | P2 | L | — | IN PROGRESS — field bags without subsystem methods/fake-port suite |
 | 018 | One shared command-transport model (xtask / capsule / runtime) | P3 | L | — | DONE |
 | 019 | Narrow foundational `pub mod` surfaces + public-surface growth ratchet | P2 | L | — | DONE |

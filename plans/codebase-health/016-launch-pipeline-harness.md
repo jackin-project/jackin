@@ -87,10 +87,10 @@ Steps 1–2 define the new suite; phase-extraction slices ride the existing 9k-l
 ## Done criteria
 
 - [x] `LaunchCore` builder exists; boundary harness covers happy path, suite-A ordering, forced finalization/inspect error with cleanup-before-error proof
-- [ ] All 10 phases typed `#[must_use]`, consumed by value; monolith allows removed
+- [x] All 10 phases typed `#[must_use]`, consumed by value; monolith allows removed
 - [x] Teardown `?`-path audit complete with coverage
 - [x] Pipeline-spanning Criterion bench exists and builds
-- [ ] Spec citations updated; `cargo xtask ci --fast` exits 0; status row updated
+- [x] Spec citations updated; `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -103,7 +103,7 @@ Steps 1–2 define the new suite; phase-extraction slices ride the existing 9k-l
 - New launch behavior must enter as a phase or a named step inside one — reviewers reject re-inlining.
 - Plan 015 and this plan both shrink `jackin-runtime`'s largest files; the launch mega-test split (TEST-08) becomes natural follow-up after phases own their tests.
 
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+**Completed 2026-07-15**: `run_launch_core` now delegates to a linear, typed phase chain with by-value `#[must_use]` handoffs. The launch-boundary harness covers the happy path, ordered grant failure, and finalization cleanup; the pipeline Criterion scenario drives the faked-Docker path end to end. The monolith lint allowances were removed, the runtime lint ratchet was tightened, and the runtime, benchmark, spec, and fast-CI gates pass.
 
 ## Teardown audit
 
