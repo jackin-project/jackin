@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [tools]
+"ubi:open-telemetry/weaver" = "0.24.2"
 actionlint = "1.7.12"
 bun = "1.3.14"
 cargo-binstall = "1.21.0"

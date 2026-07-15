@@ -1,0 +1,10 @@
+groups:
+  - { id: span.cli.command, type: span, brief: Bounded CLI command., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.app.startup, type: span, brief: Bounded application startup., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.app.shutdown, type: span, brief: Bounded application shutdown., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.ui.action, type: span, brief: Bounded semantic UI action., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.ui.screen.transition, type: span, brief: Bounded screen transition., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.ui.render, type: span, brief: Bounded action-triggered render., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.background.cycle, type: span, brief: One periodic cycle., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.connection.attempt, type: span, brief: One connection attempt., span_kind: client, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.process.command, type: span, brief: One subprocess command., span_kind: client, stability: development, attributes: [{ref: outcome}] }

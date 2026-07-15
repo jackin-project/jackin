@@ -25,6 +25,7 @@ mod release_verify;
 mod report;
 mod schema;
 mod suppressions;
+mod telemetry_registry;
 mod test_layout;
 
 use std::process::ExitCode;
@@ -88,6 +89,9 @@ enum Command {
     ///
     /// Use as `cargo xtask schema-check --base origin/main`.
     SchemaCheck(schema::SchemaCheckArgs),
+    /// Validate the closed OpenTelemetry semantic registry and generated Rust.
+    #[command(name = "telemetry-registry")]
+    TelemetryRegistry(telemetry_registry::TelemetryRegistryArgs),
     /// Workspace lint gates.
     ///
     /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
@@ -171,6 +175,7 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     agent_links::enforce()?;
     container_paths_gate::enforce()?;
     headers::enforce()?;
+    telemetry_registry::run(telemetry_registry::TelemetryRegistryArgs { generate: false })?;
     suppressions::enforce()?;
     ratchet::enforce()?;
     arch::check(strict)
@@ -189,6 +194,7 @@ fn main() -> ExitCode {
         Command::Research(cmd) => docs::run_research(cmd),
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),
+        Command::TelemetryRegistry(args) => telemetry_registry::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::ReleaseVerify(args) => release_verify::run(args),
         Command::Health(args) => health::run(args),

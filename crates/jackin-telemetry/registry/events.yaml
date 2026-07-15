@@ -1,0 +1,9 @@
+groups:
+  - { id: event.session.start, type: event, name: session.start, brief: Interactive session started., stability: development, attributes: [] }
+  - { id: event.session.end, type: event, name: session.end, brief: Interactive session ended., stability: development, attributes: [] }
+  - { id: event.ui.screen.entered, type: event, name: ui.screen.entered, brief: Screen visit entered., stability: development, attributes: [] }
+  - { id: event.ui.screen.exited, type: event, name: ui.screen.exited, brief: Screen visit exited., stability: development, attributes: [] }
+  - { id: event.ui.widget.focused, type: event, name: ui.widget.focused, brief: Widget gained focus., stability: development, attributes: [] }
+  - { id: event.ui.widget.unfocused, type: event, name: ui.widget.unfocused, brief: Widget lost focus., stability: development, attributes: [] }
+  - { id: event.app.jank, type: event, name: app.jank, brief: Render jank threshold crossed., stability: development, attributes: [] }
+  - { id: event.app.crash, type: event, name: app.crash, brief: Application crashed., stability: development, attributes: [] }

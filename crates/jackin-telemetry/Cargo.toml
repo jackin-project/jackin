@@ -1,0 +1,17 @@
+[package]
+name = "jackin-telemetry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Governed OpenTelemetry schema and instrumentation facade for jackin."
+readme = "README.md"
+publish = false
+
+[dependencies]
+opentelemetry-semantic-conventions = { workspace = true, features = ["semconv_experimental"] }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

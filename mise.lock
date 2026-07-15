@@ -463,6 +463,13 @@ checksum = "sha256:5c983db13533de02e5331aae88091116f25365840741f86234084a3016667
 url = "https://github.com/anchore/syft/releases/download/v1.46.0/syft_1.46.0_darwin_amd64.tar.gz"
 url_api = "https://api.github.com/repos/anchore/syft/releases/assets/458512854"
 
+[[tools."ubi:open-telemetry/weaver"]]
+version = "0.24.2"
+backend = "ubi:open-telemetry/weaver"
+
+[tools."ubi:open-telemetry/weaver"."platforms.linux-arm64-weaver"]
+checksum = "blake3:086431447dc81560bc0316115349453855593fb968b051c34c44550d17ba2ff7"
+
 [[tools.zig]]
 version = "0.16.0"
 backend = "core:zig"

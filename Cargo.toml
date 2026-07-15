@@ -23,6 +23,7 @@ members = [
     "crates/jackin-launch-tui",
     "crates/jackin-runtime",
     "crates/jackin-term",
+    "crates/jackin-telemetry",
     "crates/jackin-tui",
     "crates/jackin-tui-lookbook",
     "crates/jackin-xtask",
@@ -88,6 +89,7 @@ jackin-tui = { version = "0.6.0-dev", path = "crates/jackin-tui" }
 jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
 nix = "0.31"
 opentelemetry_sdk = "0.32"
+opentelemetry-semantic-conventions = { version = "0.32", default-features = false }
 owo-colors = "4"
 portable-pty = "0.9"
 predicates = "=3.1.4"
@@ -133,6 +135,7 @@ tui-widget-list = "0.15"
 turso = { version = "=0.7.0-pre.21", default-features = false }
 unicode-width = "0.2"
 url = "2"
+uuid = { version = "1", features = ["v4"] }
 vte = "0.15"
 x509-cert = { version = "0.3", default-features = false }
 

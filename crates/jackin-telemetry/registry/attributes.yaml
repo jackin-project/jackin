@@ -1,0 +1,42 @@
+groups:
+  - id: registry.jackin
+    type: attribute_group
+    brief: Closed neutral extensions used by jackin telemetry.
+    stability: development
+    attributes:
+      - { id: app.mode, type: { members: [{id: one_shot, value: one_shot, stability: development}, {id: interactive, value: interactive, stability: development}, {id: daemon, value: daemon, stability: development}, {id: capsule, value: capsule, stability: development}] }, brief: Application mode., stability: development }
+      - { id: cli.invocation.id, type: string, brief: Opaque top-level invocation identifier., stability: development }
+      - { id: cli.command.name, type: string, brief: Registry-backed command path., stability: development }
+      - { id: ui.action.name, type: string, brief: Completed semantic UI action., stability: development }
+      - { id: ui.screen.visit.id, type: string, brief: Opaque screen visit identifier., stability: development }
+      - { id: ui.navigation.sequence, type: int, brief: Monotonic navigation sequence., stability: development }
+      - { id: ui.transition.reason, type: string, brief: Screen transition reason., stability: development }
+      - { id: job.id, type: string, brief: Opaque detached job identifier., stability: development }
+      - { id: job.type, type: string, brief: Detached job class., stability: development }
+      - { id: outcome, type: string, brief: Bounded operation outcome., stability: development }
+      - { id: launch.stage.name, type: string, brief: Launch pipeline stage., stability: development }
+      - { id: launch.target.kind, type: string, brief: Launch target class., stability: development }
+      - { id: background.cycle.name, type: string, brief: Periodic cycle class., stability: development }
+      - { id: connection.peer.type, type: string, brief: Connection peer class., stability: development }
+      - { id: agent.state, type: string, brief: Effective coding-agent state., stability: development }
+      - { id: agent.status.source, type: string, brief: Agent status evidence class., stability: development }
+      - { id: agent.status.confidence, type: string, brief: Agent status confidence., stability: development }
+      - { id: agent.status.stuck, type: boolean, brief: Whether the status authority considers the agent stuck., stability: development }
+      - { id: auth.mode, type: string, brief: Authentication mode., stability: development }
+      - { id: credential.source.type, type: string, brief: Credential source class., stability: development }
+      - { id: workspace.isolation.mode, type: string, brief: Workspace isolation mode., stability: development }
+      - { id: network.mode, type: string, brief: Network policy mode., stability: development }
+      - { id: dind.mode, type: string, brief: Docker-in-Docker mode., stability: development }
+      - { id: config.scope, type: string, brief: Configuration scope., stability: development }
+      - { id: config.operation, type: string, brief: Configuration operation., stability: development }
+      - { id: config.schema.version.from, type: string, brief: Previous configuration schema version., stability: development }
+      - { id: config.schema.version.to, type: string, brief: New configuration schema version., stability: development }
+      - { id: config.migration.step_count, type: int, brief: Applied configuration migration count., stability: development }
+      - { id: trust.decision, type: string, brief: Trust decision., stability: development }
+      - { id: trust.source.type, type: string, brief: Trust source class., stability: development }
+      - { id: cache.name, type: string, brief: Product cache class., stability: development }
+      - { id: cache.result, type: string, brief: Cache operation result., stability: development }
+      - { id: pty.exit.reason, type: string, brief: PTY exit reason., stability: development }
+      - { id: stream.direction, type: string, brief: Byte stream direction., stability: development }
+      - { id: telemetry.signal, type: string, brief: OpenTelemetry signal., stability: development }
+      - { id: telemetry.rejection.reason, type: string, brief: Facade rejection reason., stability: development }

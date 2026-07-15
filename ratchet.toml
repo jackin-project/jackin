@@ -717,6 +717,9 @@ bound = 2
 key = "jackin-diagnostics"
 bound = 13
 [[family.entry]]
+key = "jackin-telemetry"
+bound = 1
+[[family.entry]]
 key = "jackin-docker"
 bound = 3
 [[family.entry]]
