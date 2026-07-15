@@ -24,7 +24,7 @@ pub use metric::{
     Counter, Histogram, InstrumentDef, InstrumentKind, UpDownCounter, counter, histogram, install,
     up_down_counter,
 };
-pub use operation::{OperationGuard, SpanDef, operation};
+pub use operation::{OperationGuard, SpanDef, operation, operation_with_remote_parent};
 
 /// The only tracing target accepted for governed product telemetry.
 pub const TELEMETRY_TARGET: &str = "jackin_telemetry";

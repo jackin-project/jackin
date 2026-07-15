@@ -45,6 +45,17 @@ pub enum DaemonRequestKind {
     Shutdown,
 }
 
+impl DaemonRequestKind {
+    const fn rpc_method(&self) -> &'static str {
+        match self {
+            Self::Hello => "jackin.host.Daemon/Hello",
+            Self::Status => "jackin.host.Daemon/Status",
+            Self::AttentionSnapshot { .. } => "jackin.host.Daemon/AttentionSnapshot",
+            Self::Shutdown => "jackin.host.Daemon/Shutdown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonResponse {
     pub id: String,
@@ -368,6 +379,20 @@ pub fn request(
     build_id: &str,
     kind: DaemonRequestKind,
 ) -> Result<DaemonResponse> {
+    let method = kind.rpc_method();
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(method),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
+    let _entered = operation.as_ref().map(|guard| guard.span().enter());
     let mut stream = UnixStream::connect(socket_path)
         .with_context(|| format!("connecting to daemon socket {}", socket_path.display()))?;
     let mut ctx = TelemetryContext::v1();
@@ -383,7 +408,19 @@ pub fn request(
     stream
         .write_all(b"\n")
         .context("terminating daemon request")?;
-    read_response(stream)
+    let response = read_response(stream);
+    drop(_entered);
+    if let Some(operation) = operation {
+        operation.complete(
+            if response.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            response.as_ref().err().map(|_| "rpc_error"),
+        );
+    }
+    response
 }
 
 pub fn render_unit_files(paths: &JackinPaths, executable: &Path) -> UnitFiles {
@@ -504,12 +541,36 @@ fn handle_request(
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
 ) -> DaemonResponse {
+    let extracted = jackin_telemetry::propagation::extract(&request.ctx);
     if matches!(
-        jackin_telemetry::propagation::extract(&request.ctx),
+        extracted,
         jackin_telemetry::propagation::ExtractOutcome::RejectRequest
     ) {
         return error_response(request.id, "invalid correlation");
     }
+    let method = request.kind.rpc_method();
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(method),
+        },
+    ];
+    let operation = match &extracted {
+        jackin_telemetry::propagation::ExtractOutcome::Parent(parent) => {
+            jackin_telemetry::operation_with_remote_parent(
+                &jackin_telemetry::operation::RPC_SERVER,
+                &attrs,
+                parent,
+            )
+        }
+        _ => jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs),
+    }
+    .ok();
+    let _entered = operation.as_ref().map(|guard| guard.span().enter());
     if request.protocol_version != DAEMON_PROTOCOL_VERSION {
         return error_response(
             request.id,
@@ -529,7 +590,7 @@ fn handle_request(
         );
     }
     let id = request.id;
-    match request.kind {
+    let response = match request.kind {
         DaemonRequestKind::Hello => DaemonResponse {
             id,
             kind: DaemonResponseKind::Hello {
@@ -571,7 +632,19 @@ fn handle_request(
             id,
             kind: DaemonResponseKind::Shutdown { accepted: true },
         },
+    };
+    drop(_entered);
+    if let Some(operation) = operation {
+        operation.complete(
+            if matches!(response.kind, DaemonResponseKind::Error { .. }) {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            },
+            None,
+        );
     }
+    response
 }
 
 pub trait AttentionNotifierAdapter {

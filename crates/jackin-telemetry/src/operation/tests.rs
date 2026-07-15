@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use opentelemetry::trace::{Status, TracerProvider as _};
+use opentelemetry::trace::{
+    SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState, TracerProvider as _,
+};
 use tracing_subscriber::prelude::*;
 
 use super::*;
@@ -63,4 +65,33 @@ fn drop_records_cancellation_without_error_status() {
 fn operation_guard_is_send() {
     fn assert_send<T: Send>() {}
     assert_send::<OperationGuard>();
+}
+
+#[test]
+fn rpc_server_honors_remote_parent_and_kind() {
+    let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+    let trace_id = TraceId::from_hex("4bf92f3577b34da6a3ce929d0e0e4736").unwrap();
+    let span_id = SpanId::from_hex("00f067aa0ba902b7").unwrap();
+    let parent = SpanContext::new(
+        trace_id,
+        span_id,
+        TraceFlags::SAMPLED,
+        true,
+        TraceState::default(),
+    );
+    tracing::subscriber::with_default(subscriber, || {
+        operation_with_remote_parent(&RPC_SERVER, &[], &parent)
+            .unwrap()
+            .complete(schema::enums::OutcomeValue::Success, None);
+    });
+    provider.force_flush().unwrap();
+    let span = exporter.get_finished_spans().unwrap().pop().unwrap();
+    assert_eq!(span.span_context.trace_id(), trace_id);
+    assert_eq!(span.parent_span_id, span_id);
+    assert_eq!(span.span_kind, SpanKind::Server);
 }

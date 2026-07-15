@@ -44,6 +44,12 @@ pub const CONNECTION_ATTEMPT: SpanDef = SpanDef {
 pub const PROCESS_COMMAND: SpanDef = SpanDef {
     name: schema::spans::PROCESS_COMMAND,
 };
+pub const RPC_CLIENT: SpanDef = SpanDef {
+    name: schema::spans::RPC_CLIENT,
+};
+pub const RPC_SERVER: SpanDef = SpanDef {
+    name: schema::spans::RPC_SERVER,
+};
 
 #[derive(Debug)]
 pub struct OperationGuard {
@@ -154,7 +160,13 @@ fn make_span(name: &str, root: bool) -> Option<Span> {
                 tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "connection.attempt")
             }
             schema::spans::PROCESS_COMMAND => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "process.command")
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "process.command", otel.kind = "client")
+            }
+            schema::spans::RPC_CLIENT => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "rpc.client", otel.kind = "client")
+            }
+            schema::spans::RPC_SERVER => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "rpc.server", otel.kind = "server")
             }
             _ => return None,
         });
@@ -182,10 +194,16 @@ fn make_span(name: &str, root: bool) -> Option<Span> {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "background.cycle")
         }
         schema::spans::CONNECTION_ATTEMPT => {
-            tracing::info_span!(target: crate::TELEMETRY_TARGET, "connection.attempt")
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "connection.attempt", otel.kind = "client")
         }
         schema::spans::PROCESS_COMMAND => {
-            tracing::info_span!(target: crate::TELEMETRY_TARGET, "process.command")
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "process.command", otel.kind = "client")
+        }
+        schema::spans::RPC_CLIENT => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "rpc.client", otel.kind = "client")
+        }
+        schema::spans::RPC_SERVER => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "rpc.server", otel.kind = "server")
         }
         _ => return None,
     })
@@ -198,6 +216,23 @@ pub fn operation(def: &'static SpanDef, attrs: &[Attr<'_>]) -> Result<OperationG
         return Err(Rejection::SizeLimit);
     }
     operation_inner(def, attrs, false)
+}
+
+/// Start an operation parented by an extracted remote W3C span context.
+pub fn operation_with_remote_parent(
+    def: &'static SpanDef,
+    attrs: &[Attr<'_>],
+    parent: &SpanContext,
+) -> Result<OperationGuard, Rejection> {
+    use opentelemetry::trace::TraceContextExt as _;
+
+    let guard = operation_inner(def, attrs, true)?;
+    drop(
+        guard
+            .span
+            .set_parent(opentelemetry::Context::new().with_remote_span_context(parent.clone())),
+    );
+    Ok(guard)
 }
 
 pub(crate) fn operation_root(

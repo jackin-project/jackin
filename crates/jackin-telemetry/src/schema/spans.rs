@@ -11,6 +11,8 @@ pub const UI_RENDER: &str = "ui.render";
 pub const BACKGROUND_CYCLE: &str = "background.cycle";
 pub const CONNECTION_ATTEMPT: &str = "connection.attempt";
 pub const PROCESS_COMMAND: &str = "process.command";
+pub const RPC_CLIENT: &str = "rpc.client";
+pub const RPC_SERVER: &str = "rpc.server";
 
 pub const ALL: &[&str] = &[
     CLI_COMMAND,
@@ -22,4 +24,6 @@ pub const ALL: &[&str] = &[
     BACKGROUND_CYCLE,
     CONNECTION_ATTEMPT,
     PROCESS_COMMAND,
+    RPC_CLIENT,
+    RPC_SERVER,
 ];

@@ -524,17 +524,43 @@ fn normalize_usage_provider_label(value: &str) -> String {
 /// Connect to the daemon control socket and send one length-prefixed request,
 /// returning the open stream so the caller can read (or ignore) the reply.
 async fn connect_and_send(request: &ClientMsg) -> Result<UnixStream> {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(request.rpc_method()),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
         .context("cannot connect to jackin-capsule daemon")?;
     let mut ctx = jackin_protocol::TelemetryContext::v1();
-    jackin_telemetry::propagation::inject(&mut ctx);
-    stream
+    {
+        let _entered = operation.as_ref().map(|guard| guard.span().enter());
+        jackin_telemetry::propagation::inject(&mut ctx);
+    }
+    let result = stream
         .write_all(&control_frame(&ControlRequest {
             ctx,
             msg: request.clone(),
         }))
-        .await?;
+        .await;
+    if let Some(operation) = operation {
+        operation.complete(
+            if result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            result.as_ref().err().map(|_| "rpc_error"),
+        );
+    }
+    result?;
     Ok(stream)
 }
 

@@ -1126,13 +1126,36 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             }
 
             Some(request) = control_rx.recv() => {
-                if matches!(
-                    jackin_telemetry::propagation::extract(&request.ctx),
-                    jackin_telemetry::propagation::ExtractOutcome::RejectRequest
-                ) {
+                let extracted = jackin_telemetry::propagation::extract(&request.ctx);
+                if matches!(extracted, jackin_telemetry::propagation::ExtractOutcome::RejectRequest) {
                     drop(request.reply_tx.send(ServerMsg::Unknown));
                     continue;
                 }
+                let attrs = [
+                    jackin_telemetry::Attr {
+                        key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+                        value: jackin_telemetry::Value::Str("jackin"),
+                    },
+                    jackin_telemetry::Attr {
+                        key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+                        value: jackin_telemetry::Value::Str(request.msg.rpc_method()),
+                    },
+                ];
+                let operation = match &extracted {
+                    jackin_telemetry::propagation::ExtractOutcome::Parent(parent) => {
+                        jackin_telemetry::operation_with_remote_parent(
+                            &jackin_telemetry::operation::RPC_SERVER,
+                            &attrs,
+                            parent,
+                        )
+                    }
+                    _ => jackin_telemetry::operation(
+                        &jackin_telemetry::operation::RPC_SERVER,
+                        &attrs,
+                    ),
+                }
+                .ok();
+                let entered = operation.as_ref().map(|guard| guard.span().enter());
                 // `jackin-exec` is the one control message with a deferred reply:
                 // it opens the operator credential picker and answers only after
                 // confirm/cancel resolves. Every other message replies inline.
@@ -1141,6 +1164,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 } else {
                     let reply = control_reply_for_request(&mut mux, request.msg);
                     drop(request.reply_tx.send(reply));
+                }
+                drop(entered);
+                if let Some(operation) = operation {
+                    operation.complete(
+                        jackin_telemetry::schema::enums::OutcomeValue::Success,
+                        None,
+                    );
                 }
             }
 

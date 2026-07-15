@@ -85,6 +85,26 @@ pub enum ClientMsg {
     Unknown,
 }
 
+impl ClientMsg {
+    /// Fully qualified, registry-bounded RPC method.
+    #[must_use]
+    pub const fn rpc_method(&self) -> &'static str {
+        match self {
+            Self::Status => "jackin.capsule.Control/Status",
+            Self::Snapshot => "jackin.capsule.Control/Snapshot",
+            Self::Agents => "jackin.capsule.Control/Agents",
+            Self::ReportRuntimeEvent { .. } => "jackin.capsule.Control/ReportRuntimeEvent",
+            Self::StatusCapture { .. } => "jackin.capsule.Control/StatusCapture",
+            Self::UsageFocused => "jackin.capsule.Control/UsageFocused",
+            Self::UsageRefreshFocused => "jackin.capsule.Control/UsageRefreshFocused",
+            Self::UsageAccountList => "jackin.capsule.Control/UsageAccountList",
+            Self::ExecCommand { .. } => "jackin.capsule.Control/ExecCommand",
+            Self::TokenUsage { .. } => "jackin.capsule.Control/TokenUsage",
+            Self::Unknown => "jackin.capsule.Control/Unknown",
+        }
+    }
+}
+
 impl ServerMsg {
     /// Variant name for diagnostics. Canonical home for the variant→label map so
     /// consumers across crates don't each re-spell it.
