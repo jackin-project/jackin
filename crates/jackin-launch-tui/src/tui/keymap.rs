@@ -7,22 +7,8 @@
 //! container info). The dispatch in `subscriptions.rs` uses these tables instead of
 //! ad-hoc `KeyCode` match arms so that handled keys and advertised keys are coupled.
 
-use jackin_tui::HintSpan;
+use termrock::HintSpan;
 use termrock::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility, glyph};
-
-pub(crate) fn donor_hints(spans: Vec<termrock::HintSpan<'static>>) -> Vec<HintSpan<'static>> {
-    spans
-        .into_iter()
-        .map(|span| match span {
-            termrock::HintSpan::Key(value) => HintSpan::Key(value),
-            termrock::HintSpan::DynKey(value) => HintSpan::DynKey(value),
-            termrock::HintSpan::Text(value) => HintSpan::Text(value),
-            termrock::HintSpan::Dyn(value) => HintSpan::Dyn(value),
-            termrock::HintSpan::Sep => HintSpan::Sep,
-            termrock::HintSpan::GroupSep => HintSpan::GroupSep,
-        })
-        .collect()
-}
 
 // ── Cockpit main ─────────────────────────────────────────────────────────────
 
@@ -61,7 +47,7 @@ pub static COCKPIT_KEYMAP: Keymap<CockpitAction> = Keymap::new(&[
 /// container info) appends this instead of hand-writing the two key spans.
 #[must_use]
 pub fn cockpit_global_hint_spans() -> Vec<HintSpan<'static>> {
-    donor_hints(COCKPIT_KEYMAP.hint_spans())
+    COCKPIT_KEYMAP.hint_spans()
 }
 
 // ── Build log overlay ─────────────────────────────────────────────────────────
@@ -144,14 +130,14 @@ pub fn build_log_hint_spans(vertical: bool) -> Vec<HintSpan<'static>> {
         horizontal: false,
     });
     if vertical {
-        spans.push(termrock::HintSpan::GroupSep);
+        spans.push(HintSpan::GroupSep);
         BUILD_LOG_KEYMAP.push_spans_for(BuildLogAction::PageUp, &mut spans);
-        spans.push(termrock::HintSpan::GroupSep);
+        spans.push(HintSpan::GroupSep);
     }
     BUILD_LOG_KEYMAP.push_spans_for(BuildLogAction::Close, &mut spans);
-    spans.push(termrock::HintSpan::GroupSep);
+    spans.push(HintSpan::GroupSep);
     spans.extend(COCKPIT_KEYMAP.hint_spans());
-    donor_hints(spans)
+    spans
 }
 
 // ── Failure popup ─────────────────────────────────────────────────────────────

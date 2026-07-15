@@ -52,7 +52,7 @@ fn cockpit_global_hint_spans_advertise_both_keys() {
     let text: String = super::cockpit_global_hint_spans()
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -122,7 +122,7 @@ fn build_log_hints_advertise_esc_and_scroll() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()

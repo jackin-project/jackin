@@ -664,9 +664,9 @@ impl RichRenderer {
         candidates: &[crate::LaunchCandidate],
     ) -> anyhow::Result<crate::LaunchDialogResult> {
         use crate::tui::components::dialog::dialog_backdrop;
-        use jackin_tui::HintSpan;
         use jackin_tui::components::{ConfirmState, render_confirm_dialog};
-        use jackin_tui::components::{ModalRectSpec, modal_rect, render_hint_bar};
+        use jackin_tui::components::{ModalRectSpec, modal_rect};
+        use termrock::HintSpan;
 
         // Item 0 = "Start new session"; items 1..=N = candidates.
         let mut labels = vec!["Start new session".to_owned()];
@@ -718,7 +718,7 @@ impl RichRenderer {
                         };
                         use jackin_tui::components::render_select_list;
                         render_select_list(frame, picker_rect, &picker, title, &[]);
-                        render_hint_bar(frame, hint_area, hint_normal);
+                        termrock::widgets::render_hint_bar(frame, hint_area, hint_normal);
                     })
                     .context("rendering launch dialog")?;
 
@@ -765,9 +765,8 @@ impl RichRenderer {
                     ));
                     termrock::runtime::drive_render(&mut self.terminal, |frame| {
                         let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-                        use jackin_tui::components::{
-                            confirm_hint_spans, confirm_required_height, confirm_width_pct,
-                        };
+                        use crate::tui::components::prompts::confirm_hint_spans;
+                        use jackin_tui::components::{confirm_required_height, confirm_width_pct};
                         let rect = modal_rect(
                             box_area,
                             ModalRectSpec::PercentClampWithMargin {
@@ -779,7 +778,7 @@ impl RichRenderer {
                             },
                         );
                         render_confirm_dialog(frame, rect, &confirm);
-                        render_hint_bar(frame, hint_area, &confirm_hint_spans());
+                        termrock::widgets::render_hint_bar(frame, hint_area, &confirm_hint_spans());
                     })
                     .context("rendering delete confirm")?;
                     let key = read_pressed_key(&self.input, "reading delete confirm input")?;
@@ -805,13 +804,12 @@ impl RichRenderer {
     )]
     fn inspect_surface_loop(&mut self, worktrees: &[crate::WorktreeInspect]) -> anyhow::Result<()> {
         use crate::tui::components::dialog::dialog_backdrop;
-        use jackin_tui::HintSpan;
         use jackin_tui::components::{
-            DiffViewState, SelectListState, SinglePaneKind, render_diff_view, render_hint_bar,
-            render_select_list,
+            DiffViewState, SelectListState, SinglePaneKind, render_diff_view, render_select_list,
         };
         use jackin_tui::keymap::glyph;
         use ratatui::layout::{Constraint, Direction, Layout};
+        use termrock::HintSpan;
 
         if worktrees.is_empty() {
             return Ok(());
@@ -882,7 +880,7 @@ impl RichRenderer {
 
             termrock::runtime::drive_render(&mut self.terminal, |frame| {
                 let (body, hint_area) = dialog_backdrop(frame, frame.area());
-                render_hint_bar(frame, hint_area, hint);
+                termrock::widgets::render_hint_bar(frame, hint_area, hint);
 
                 // Split body: repos (if >1) | files | diff
                 let constraints = if has_repos {

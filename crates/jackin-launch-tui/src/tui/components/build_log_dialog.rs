@@ -3,9 +3,8 @@
 
 //! Launch docker-build log overlay helpers.
 
-use jackin_tui::HintSpan;
 use jackin_tui::components::{
-    bottom_chrome_areas, is_scrollable, render_hint_bar, render_scrollable_block,
+    bottom_chrome_areas, is_scrollable, render_scrollable_block,
     scrollbar_offset_for_track_position, vertical_scrollbar_area, viewport_height, viewport_width,
 };
 use ratatui::Frame;
@@ -13,6 +12,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear};
+use termrock::HintSpan;
 use termrock::style::DIALOG_SURFACE;
 
 use crate::LaunchView;
@@ -217,7 +217,7 @@ pub fn render_build_log_dialog(
     if !debug_mode {
         frame.render_widget(Clear, chrome.hint);
     }
-    render_hint_bar(frame, chrome.hint, &build_log_hint(vertical));
+    termrock::widgets::render_hint_bar(frame, chrome.hint, &build_log_hint(vertical));
     if debug_mode {
         render_footer(frame, chrome.footer, view, run_id, true);
     }

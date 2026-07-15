@@ -3,18 +3,48 @@
 
 //! Launch container-info dialog helpers.
 
-use jackin_tui::HintSpan;
 use jackin_tui::components::ModalRectSpec;
 use jackin_tui::components::{
     ContainerInfoRow, ContainerInfoState, DebugInfo, ModalBackdrop, container_info_required_height,
-    debug_info_hint_spans, dialog_scroll_axes, modal_rect, render_container_info, render_hint_bar,
+    dialog_scroll_axes, modal_rect, render_container_info,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
+use termrock::HintSpan;
 
 use crate::LaunchView;
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
+
+fn debug_info_hint_spans(axes: jackin_tui::components::ScrollAxes) -> Vec<HintSpan<'static>> {
+    let mut spans = Vec::new();
+    if axes.vertical {
+        spans.extend([HintSpan::Key("↑↓/j/k"), HintSpan::Text("scroll")]);
+    }
+    if axes.horizontal {
+        if !spans.is_empty() {
+            spans.push(HintSpan::GroupSep);
+        }
+        spans.extend([HintSpan::Key("←→/h/l"), HintSpan::Text("scroll")]);
+    }
+    if axes.any() {
+        spans.push(HintSpan::GroupSep);
+    }
+    spans.extend([
+        HintSpan::Key("↵"),
+        HintSpan::Text("copy value"),
+        HintSpan::GroupSep,
+        HintSpan::Key("R/O"),
+        HintSpan::Text("reveal diagnostics"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text("dismiss"),
+        HintSpan::GroupSep,
+        HintSpan::Key("click"),
+        HintSpan::Text("copy value"),
+    ]);
+    spans
+}
 
 #[must_use]
 pub fn launch_container_info_state(
@@ -87,7 +117,7 @@ pub fn render_launch_container_info(
     if !debug_mode {
         frame.render_widget(Clear, chrome.hint);
     }
-    render_hint_bar(frame, chrome.hint, &hint_spans);
+    termrock::widgets::render_hint_bar(frame, chrome.hint, &hint_spans);
     if debug_mode {
         frame.render_widget(Clear, chrome.spacer);
         render_footer(frame, chrome.footer, view, run_id, true);

@@ -3,7 +3,7 @@
 
 //! Launch cockpit top-level frame composition.
 
-use jackin_tui::components::{BOTTOM_CHROME_ROWS, bottom_chrome_areas, render_hint_bar};
+use jackin_tui::components::{BOTTOM_CHROME_ROWS, bottom_chrome_areas};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::Clear;
@@ -80,7 +80,7 @@ pub fn render_launch_frame(
 
     render_cockpit_header(frame, rows[0], view, frozen);
     render_body(frame, rows[1], view, frozen, rain);
-    render_hint_bar(
+    termrock::widgets::render_hint_bar(
         frame,
         chrome.hint,
         &crate::tui::keymap::cockpit_global_hint_spans(),

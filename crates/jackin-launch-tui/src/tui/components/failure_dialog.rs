@@ -3,15 +3,15 @@
 
 //! Launch failure popup rendering and hit-testing.
 
-use jackin_tui::HintSpan;
 use jackin_tui::components::{
     ErrorPopupRow, ErrorPopupState, ModalBackdrop, ModalRectSpec, dialog_inner_chunks,
     error_popup_hyperlink_overlay, error_popup_row_value_rect_groups, modal_rect,
-    render_error_dialog_in, render_hint_bar, required_height,
+    render_error_dialog_in, required_height,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
+use termrock::HintSpan;
 
 use crate::tui::components::footer::launch_overlay_chrome_areas;
 use crate::{FailureCopyTarget, LaunchFailure, LaunchView};
@@ -390,7 +390,7 @@ pub fn render_failure_popup(
     if !debug_mode {
         frame.render_widget(Clear, chrome.hint);
     }
-    render_hint_bar(frame, chrome.hint, &failure_hint_spans());
+    termrock::widgets::render_hint_bar(frame, chrome.hint, &failure_hint_spans());
 }
 
 #[must_use]
@@ -432,9 +432,7 @@ fn failure_hint_spans() -> Vec<HintSpan<'static>> {
         HintSpan::Text("copy value"),
         HintSpan::GroupSep,
     ];
-    spans.extend(crate::tui::keymap::donor_hints(
-        crate::tui::keymap::FAILURE_KEYMAP.hint_spans(),
-    ));
+    spans.extend(crate::tui::keymap::FAILURE_KEYMAP.hint_spans());
     spans.push(HintSpan::GroupSep);
     spans.extend(crate::tui::keymap::cockpit_global_hint_spans());
     spans
