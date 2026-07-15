@@ -462,6 +462,7 @@ jobs:
           cp build-times.json target/build-times.json
           cargo run -p jackin-xtask --locked -- lint ratchet
       - name: Upload build-time artifact
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: build-time-measure
@@ -725,6 +726,7 @@ jobs:
         run: |
           echo "### hakari investigation" >> "$GITHUB_STEP_SUMMARY"
           cargo hakari --version >> "$GITHUB_STEP_SUMMARY" || true
+          cargo clean
           START=$(date +%s)
           cargo build --workspace --timings --locked
           END=$(date +%s)
@@ -745,15 +747,17 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          cargo hakari init target/hakari-workspace-hack --yes 2>&1 | tee hakari-run.txt
+          cargo hakari init .config/workspace-hack --yes 2>&1 | tee hakari-run.txt
           cargo hakari generate 2>&1 | tee -a hakari-run.txt
+          cargo hakari manage-deps --yes 2>&1 | tee -a hakari-run.txt
           echo "hakari_exit=0" >> "$GITHUB_OUTPUT"
       - name: workspace build after hakari (after)
         id: hakari-after
         if: always()
         run: |
+          cargo clean
           START=$(date +%s)
-          cargo build --workspace --timings --locked || true
+          cargo build --workspace --timings --locked
           END=$(date +%s)
           echo "after_secs=$((END - START))" >> "$GITHUB_OUTPUT"
           echo "after wall-clock: $((END - START))s" >> "$GITHUB_STEP_SUMMARY"
