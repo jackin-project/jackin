@@ -785,10 +785,9 @@ jobs:
 
   # Plan 048: hyperfine cold-start measurement (advisory).
   dylint-advisory:
-    name: dylint render purity (advisory)
+    name: dylint render purity
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    continue-on-error: true
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -807,7 +806,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "cargo-binstall rust cargo:cargo-dylint cargo:dylint-link"
+          install_args: "cargo-binstall rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -817,7 +816,11 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - name: cargo dylint (advisory)
+      - name: Install pinned Dylint tools from source
+        run: |
+          cargo install --locked --version 6.0.1 --root target/dylint-tools \
+            cargo-dylint dylint-link
+      - name: cargo dylint
         id: dylint-run
         run: |
           echo "### dylint render_thread_purity" >> "$GITHUB_STEP_SUMMARY"
@@ -825,8 +828,10 @@ jobs:
             echo "crates/jackin-lints missing — skip" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          set -o pipefail
           set +e
-          cargo dylint --all -- --workspace 2>&1 | tee dylint-findings.txt
+          PATH="$PWD/target/dylint-tools/bin:$PATH" \
+            cargo dylint --all -- --workspace 2>&1 | tee dylint-findings.txt
           status=${PIPESTATUS[0]}
           set -e
           tail -n 80 dylint-findings.txt >> "$GITHUB_STEP_SUMMARY" || true
@@ -835,8 +840,7 @@ jobs:
           else
             echo "dylint: FINDINGS_OR_TOOL_FAILURE (exit ${status})" >> "$GITHUB_STEP_SUMMARY"
           fi
-          # Advisory lane: surface real exit in summary; do not fail the job.
-          exit 0
+          exit "$status"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dylint-findings

@@ -101,3 +101,13 @@ CI-config plan: verification is actionlint + observed-run evidence + docs gates.
 
 - Any future advisory lane must follow the same pattern: real exit status captured, result visible in the step summary, tool failure ≠ clean.
 - If hakari is adopted, `cargo hakari verify` joins PR CI and the workspace-hack crate becomes checked in — that's a separate implementation PR.
+
+## Execution notes
+
+- The 2026-07-15 full-workspace Dylint run reported zero
+  `render_thread_purity` findings and zero false positives. Together with the
+  positive/negative/spawn-boundary UI corpus, that evidence promoted the
+  pinned 6.0.1 Hygiene lane to exit-status enforcement.
+- The upstream 6.0.1 prebuilt embeds its release-builder `dylint_driver` path;
+  the lane source-builds the same pinned version under `target/dylint-tools`
+  and invokes it explicitly.

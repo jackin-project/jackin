@@ -300,7 +300,10 @@ fn report_if_denied(
 }
 
 // Keep unused imports intentional for future trait-path matching.
-#[expect(dead_code, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[expect(
+    dead_code,
+    reason = "anchors rustc type imports for future trait-path matching"
+)]
 fn _keep(symbol: Symbol, id: HirId, kind: ItemKind<'_>, impl_kind: ImplItemKind<'_>) {
     let _ = (symbol, id, kind, impl_kind);
 }
