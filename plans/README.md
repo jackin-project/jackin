@@ -7,6 +7,7 @@ Plans hold **unfinished** multi-step work. Fully shipped plan bodies are removed
 | Path | Scope | Status |
 |------|--------|--------|
 | [agent-status/](agent-status/) | Product detection (live goldens, pack rewrite, live authority, remote packs) | Deferred / open residuals |
+| [unified-otel-observability/](unified-otel-observability/) | Full implementation of the [Unified OpenTelemetry observability](../docs/content/docs/roadmap/unified-otel-observability.mdx) roadmap item — 15 ordered plans (schema crate → OTLP runtime → facade → propagation → identities → boundaries → TUI/capsule → call-site migration → cutover → verification → docs) | Planned 2026-07-15 (operator-requested), TODO |
 
 ## Removed (shipped)
 
