@@ -79,7 +79,7 @@ key = "clippy::cognitive_complexity@jackin-runtime"
 bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
-bound = 16
+bound = 15
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-build-meta"
 bound = 1
@@ -181,7 +181,7 @@ key = "clippy::exit@jackin-capsule"
 bound = 1
 [[family.entry]]
 key = "clippy::expect_used@jackin"
-bound = 13
+bound = 12
 [[family.entry]]
 key = "clippy::expect_used@jackin-capsule"
 bound = 1
