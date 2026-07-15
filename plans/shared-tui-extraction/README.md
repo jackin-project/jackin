@@ -35,6 +35,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 003–005 all operate inside the dedicated TermRock extraction clone; nothing is pushed to the public repository until plan 005's final step.
 - 007–008 repeatedly repin TermRock revisions; each repin reruns the whole `jackin❯` workspace because Ratatui-type changes can surface failures outside direct importers ([ch. 08, migration slices](../../docs/content/docs/reference/research/shared-tui-extraction/08-migration-evidence-and-gates.mdx)).
 - At every stage boundary, compare the frozen donor revision `33896a504e19ef13adb8692550c1845cb86a9504` with current `origin/main`; merge-sync per [Decision 20](../../docs/content/docs/reference/research/shared-tui-extraction/05-decision-record.mdx) when upstream touched donor modules, consumers, fixtures, the dependency cell, or canonical TUI docs.
+- Recorded sequencing deviation: ch. 04 lists the Fumadocs *application* under Stage 2 repository engineering; these plans scaffold it at the start of plan 006 (Stage 3) so Stage 2 checkpoints stay Rust-focused. No Stage 2 exit-gate item involves the docs application, and `docs-required` carries a placeholder until plan 006 — see the note in plan 006 "Why this matters".
 
 ## Evidence directory
 

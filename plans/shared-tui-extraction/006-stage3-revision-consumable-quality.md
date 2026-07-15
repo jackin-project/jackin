@@ -17,6 +17,8 @@
 
 **Stage 3** of the [Shared TUI Extraction roadmap item](../../docs/content/docs/roadmap/(operator-surface)/shared-tui-extraction.mdx) per [ch. 04, "Stage 3: Establish revision-consumable quality"](../../docs/content/docs/reference/research/shared-tui-extraction/04-extraction-migration-plan.mdx): make one immutable TermRock revision independently buildable, documented, reproducible, and consumable. The exit gate is concrete: an external minimal consumer can pin one full commit SHA, build and render without any `jackin❯` code, open the Fumadocs catalog, and reproduce the committed previews. Without this, plan 007's migration would pin an unconsumable revision.
 
+Sequencing note (recorded deviation, not a silent one): ch. 04 lists "establish the … Fumadocs application" under Stage 2's repository-engineering bullet, while its catalog content is Stage 3 work. These plans scaffold the Fumadocs application at the start of this plan instead of inside plans 003–005 so the Stage 2 checkpoints stay Rust-focused. No Stage 2 exit-gate item references the docs application (its gate is neutrality + first buildable published head), and the docs-required aggregator carries a placeholder until here, so no gate weakens. If a reviewer prefers strict bullet placement, move Step 2.1 before plan 005's publish — everything else is order-independent.
+
 ## Current state
 
 - TermRock `main` (published, plan 005): workspace with `termrock` + `termrock-lookbook`, neutral stories, committed previews under `docs/public/component-previews/`, CI fast gates + `rust-required` aggregator, `docs-required` placeholder.
@@ -85,6 +87,7 @@ The typed story registry emits the machine-readable catalog (`termrock-lookbook 
 5. **PTY restoration tests**: partial-init failure restore, explicit `restore()`, drop-fallback, alternate-screen + inline modes, on Linux + macOS lanes.
 6. **Cache design** per [ch. 07, "Cache design"](../../docs/content/docs/reference/research/shared-tui-extraction/07-repository-engineering.mdx): warmed registry + `cargo fetch --locked` + `CARGO_NET_OFFLINE=true` compile jobs, purpose-scoped target caches, Bun/lychee caches, PR-cache cleanup; no `sccache` yet (Decision 11 — measure ≥20 runs first); never cache SVGs/API reports/packages/docs output.
 7. **Scheduled hygiene** workflow: advisories refresh, deployed-link check, cache report, Renovate lockfile maintenance ([ch. 07, "Scheduled hygiene"](../../docs/content/docs/reference/research/shared-tui-extraction/07-repository-engineering.mdx)); benchmarks/fuzzing only if trivially portable now — otherwise record as post-roadmap items in TermRock's TODO doc.
+8. **Release workflow, designed now, exercised in plan 009** ([ch. 07, "Release model"](../../docs/content/docs/reference/research/shared-tui-extraction/07-repository-engineering.mdx): "a release workflow is still designed early so packaging rules do not emerge accidentally"): serialized releases with concurrency cancellation disabled; requires a clean `main` revision + all required aggregators; asserts workspace version == tag; runs semver (post-first-tag), package, license, docs, standalone-example, and `jackin❯`-compatibility gates; creates annotated `v0.y.z` tag + GitHub release with migration notes; crates.io publish step gated on explicit operator decision; no cross-platform binary archive matrix.
 
 **Verify**: push checkpoint; both aggregators green on TermRock `main`; Pages deploy succeeds and the deployed catalog renders the committed SVGs.
 
@@ -99,9 +102,10 @@ Generate the public API report (`cargo public-api -p termrock`, tool pinned). Re
 1. Write the migration guide (donor path → TermRock path for every extracted item, from the extraction ledger; the `rev`-pin consumption recipe; the subscription closure-adapter pattern for Tokio consumers; what stayed in `jackin❯` and why).
 2. Push the final Stage-3 checkpoint; record the green TermRock `main` head SHA as **the immutable revision** for plan 007.
 3. External-consumer proof: in a scratch directory outside both repos, `cargo new termrock-smoke`; depend on `termrock = { git = "https://github.com/tailrocks/termrock.git", rev = "<full-sha>" }`; render one widget into a Ratatui `TestBackend` buffer; `cargo build && cargo run` → exit 0. Also verify `--no-default-features` builds. Record the transcript.
-4. `jackin❯`-side: append the Stage-3 revision + smoke transcript to `evidence/stage2-checkpoints.md` (or a new `stage3-revision.md`); tick roadmap Stage 3 checkbox; signed commit + push.
+4. Advisory performance re-measure ([ch. 08, "Performance gates"](../../docs/content/docs/reference/research/shared-tui-extraction/08-migration-evidence-and-gates.mdx): advisory during neutralization, budgeted after parity): repeat the plan-001 `performance-baseline.md` measurements against TermRock (compile times, first lookbook frame, list/tabs/Unicode/diff render timings, SVG generation time/size) with the same recorded method; append results + deltas to that file. Regressions are advisory here — record them, do not block, but flag anything egregious to the operator.
+5. `jackin❯`-side: append the Stage-3 revision + smoke transcript to `evidence/stage2-checkpoints.md` (or a new `stage3-revision.md`); tick roadmap Stage 3 checkbox; signed commit + push.
 
-**Verify**: smoke crate builds from the pinned SHA with no `jackin❯` code; deployed catalog reachable; evidence committed.
+**Verify**: smoke crate builds from the pinned SHA with no `jackin❯` code; deployed catalog reachable; perf deltas recorded; evidence committed.
 
 ## Test plan
 

@@ -65,7 +65,9 @@ Delete the temporary `--terminal`/`[out-dir]`/`--check <dir>` alias forms from `
 
 Update `compatibility.toml` (both repos' copies — TermRock's authoritative, `jackin❯` evidence mirror): exact TermRock revision (post-quality), exact `jackin❯` implementation-branch commit that passed the full suite against it, Rust/ratatui-core/ratatui-crossterm/crossterm cell, macOS+Linux, reproduction commands and results ([Decision 21](../../docs/content/docs/reference/research/shared-tui-extraction/05-decision-record.mdx): the record names the unmerged-but-tested `jackin❯` commit). Publish the supported-terminal baseline + compatibility matrix in the TermRock README/catalog (roadmap acceptance bullet).
 
-**Verify**: both files updated; TermRock docs deploy green.
+Also run the **budgeted** performance comparison ([ch. 08, "Performance gates"](../../docs/content/docs/reference/research/shared-tui-extraction/08-migration-evidence-and-gates.mdx): benchmarks become budgeted once `jackin❯` parity is established): repeat the `performance-baseline.md` measurements a final time against the tag candidate; append results. A regression against the plan-001 donor baseline now needs either a fix or an explicit recorded operator acceptance before tagging. A faster implementation is equally suspect: per ch. 08, speed gains that changed clipping, selection, focus, or key behavior are not accepted without a separate decision.
+
+**Verify**: both files updated; perf comparison recorded with verdicts; TermRock docs deploy green.
 
 ### Step 5: First annotated tag, then governance switch
 
