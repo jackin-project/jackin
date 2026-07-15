@@ -414,7 +414,7 @@ pub(crate) fn usage_overview_reset_columns(reset: &str) -> (&str, Option<&str>) 
     (reset, None)
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

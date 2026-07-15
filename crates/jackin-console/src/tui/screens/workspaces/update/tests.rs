@@ -220,7 +220,7 @@ fn apply_workspace_tree_disclosure_plan_routes_mutations() {
 /// Captures which inline-picker clears the test list-selection plan hit.
 /// Bundled so `TestListSelection` keeps the `struct_excessive_bools` clippy gate
 /// quiet while assertions can inspect the call set as a single group.
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Bundled 5 inline-picker clear flags carried by the test fixture — \
               each tracks one of role / agent / new_session / provider / \

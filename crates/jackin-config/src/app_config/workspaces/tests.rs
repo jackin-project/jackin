@@ -345,5 +345,5 @@ fn remove_workspace_errors_when_missing() {
 
     let err = config.remove_workspace(&wn("missing")).unwrap_err();
 
-    assert!(err.to_string().contains("unknown workspace missing"));
+    assert!(matches!(err, ConfigError::UnknownWorkspace(name) if name == "missing"));
 }

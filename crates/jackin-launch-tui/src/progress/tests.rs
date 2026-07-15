@@ -24,7 +24,14 @@ impl LaunchDiagnostics for TestDiagnostics {
     }
     fn compact(&self, _kind: &str, _message: &str) {}
     fn error(&self, _kind: &str, _message: &str, _error_type: Option<&str>) {}
-    fn stage(&self, _kind: &str, _stage: &str, _message: &str, _detail: Option<&str>) {}
+    fn stage(
+        &self,
+        _kind: &str,
+        _stage: jackin_core::LaunchStage,
+        _message: &str,
+        _detail: Option<&str>,
+    ) {
+    }
 }
 
 fn test_progress() -> LaunchProgress {
@@ -82,10 +89,6 @@ async fn cancel_after_while_waiting_started_interrupts_pending_future() {
 }
 
 #[test]
-#[allow(
-    clippy::panic,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 fn poisoned_failure_ack_lock_recovers_without_auto_acknowledging() {
     let progress = test_progress();
     let view = Arc::clone(progress.view_for_test());

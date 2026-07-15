@@ -26,7 +26,7 @@ use crate::{
 /// SGR text-attribute flags captured in a `SnapCell`. Bundled so `SnapCell`
 /// keeps the `struct_excessive_bools` clippy gate quiet while still letting
 /// `is_blank` test each named flag directly.
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Standard CSI SGR boolean attribute set (bold, italic, underline, \
               inverse, dim, strikethrough, slow_blink, rapid_blink, conceal, \

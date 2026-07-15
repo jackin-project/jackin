@@ -18,8 +18,8 @@ use super::prune_output;
 use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
 use fs4::FileExt;
 use jackin_core::CommandRunner;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_docker::docker_client::{ContainerState, DockerApi, RemoveImageOutcome};
 use owo_colors::OwoColorize;
 
@@ -37,12 +37,20 @@ struct CleanupTiming {
 
 impl Drop for CleanupTiming {
     fn drop(&mut self) {
-        jackin_diagnostics::active_timing_done("cleanup", self.name, None);
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Cleanup,
+            self.name,
+            None,
+        );
     }
 }
 
 fn cleanup_timing(name: &'static str) -> CleanupTiming {
-    jackin_diagnostics::active_timing_started("cleanup", name, None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Cleanup,
+        name,
+        None,
+    );
     CleanupTiming { name }
 }
 

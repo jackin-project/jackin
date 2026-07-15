@@ -6,7 +6,7 @@ title: "Multi-Runtime Support for Codex, Amp, Kimi, OpenCode, and Grok"
 
 ## Canonical Docs For Shipped Behavior
 
-- [jackin load](/commands/load/) — `--agent <claude|codex|amp|kimi|opencode>` launch behavior. Source already accepts `grok`; the command docs have not fully caught up.
+- [jackin❯ load](/commands/load/) — `--agent <claude|codex|amp|kimi|opencode>` launch behavior. Source already accepts `grok`; the command docs have not fully caught up.
 - [Workspaces](/guides/workspaces/) and [Configuration File](/reference/runtime/configuration/) — `default_agent`, last-used agent behavior, and persisted state for the documented runtime set. Source already carries Grok state paths and auth, but several reference pages still need Grok refresh.
 - [Role manifest](/developing/role-manifest/) and [Creating roles](/developing/creating-roles/) — role-author support for multi-agent manifests.
 - [Agent Authentication](/guides/authentication/agents/) — current auth modes for Claude Code, Codex, Amp, Kimi, OpenCode, and Grok.
@@ -37,4 +37,4 @@ With the [AgentRuntime registry](/reference/getting-oriented/architecture/#agent
 - Which Codex, Amp, Kimi, OpenCode, and Grok settings deserve first-class role-manifest fields rather than generated defaults?
 - Should runtime-native skills/MCP wiring live in each runtime adapter or in a shared extension model?
 - Do Codex, Amp, Kimi, OpenCode, and Grok need additional auth modes beyond `sync`, `api_key`, and `ignore`?
-- How much runtime update detection should jackin own for non-Claude CLIs?
+- How much runtime update detection should jackin❯ own for non-Claude CLIs?

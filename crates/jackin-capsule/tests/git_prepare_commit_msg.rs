@@ -1,4 +1,4 @@
-#![allow(
+#![expect(
     clippy::unwrap_used,
     reason = "integration test fixture setup should fail immediately with source location"
 )]

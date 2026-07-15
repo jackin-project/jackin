@@ -254,6 +254,45 @@ fn repo_links_reject_missing_repo_file_component_path() {
 }
 
 #[test]
+fn codebase_map_inventory_requires_members_tiers_and_links() {
+    let members = vec!["jackin-core".to_owned()];
+    let tiers = BTreeMap::from([("jackin-core", 0)]);
+    let valid = "| Crate | Tier | README |\n|---|---:|---|\n\
+        | [jackin-core](/reference/crates/jackin-core/) | 0 | <RepoFile path=\"crates/jackin-core/README.md\">README</RepoFile> |\n";
+    check_codebase_map_text(valid, &members, &tiers, "map.mdx").expect("valid inventory");
+
+    let invalid = [
+        ("jackin-core".to_owned(), "missing inventory row"),
+        (
+            valid.replace("| 0 |", "| 1 |"),
+            "missing architecture tier 0",
+        ),
+        (
+            valid.replace("crates/jackin-core/README.md", "missing.md"),
+            "missing README link",
+        ),
+    ];
+    for (body, expected) in invalid {
+        let err = check_codebase_map_text(&body, &members, &tiers, "map.mdx")
+            .expect_err("invalid inventory must fail")
+            .to_string();
+        assert!(err.contains(expected), "{err}");
+    }
+}
+
+#[test]
+fn codebase_map_inventory_rejects_non_members() {
+    let members = vec!["jackin-core".to_owned()];
+    let tiers = BTreeMap::from([("jackin-core", 0)]);
+    let map = "| [jackin-core](/reference/crates/jackin-core/) | 0 | <RepoFile path=\"crates/jackin-core/README.md\">README</RepoFile> |\n\
+        stale crate jackin-deleted\n";
+    let err = check_codebase_map_text(map, &members, &tiers, "map.mdx")
+        .expect_err("stale member must fail")
+        .to_string();
+    assert!(err.contains("jackin-deleted"), "{err}");
+}
+
+#[test]
 fn repo_links_reject_repo_file_component_traversal() {
     let repo = repo_link_fixture(
         "---\ntitle: Guide\n---\n\n\
@@ -359,17 +398,17 @@ fn line_references_slug_is_boundary_safe() {
     assert!(!line_references_slug("nothing here", "auth"));
 }
 
-/// Build a `docs/content/docs` shape with one roadmap item registered in a
-/// group, plus optional extra files. Returns the docs-root temp dir.
+/// Build a `docs/content/docs` shape with one roadmap item colocated with its
+/// group metadata, plus optional extra files. Returns the docs-root temp dir.
 fn roadmap_fixture(extra: &[(&str, &str)]) -> tempfile::TempDir {
     let docs = tempfile::tempdir().unwrap();
     let d = docs.path();
     write_meta_mk(
         &d.join("roadmap/(grp)/meta.json"),
-        &json!({ "pages": ["../shipme"] }),
+        &json!({ "pages": ["shipme"] }),
     );
     write(
-        &d.join("roadmap/shipme.mdx"),
+        &d.join("roadmap/(grp)/shipme.mdx"),
         "---\ntitle: Ship Me\n---\n\n**Status**: Open\n\n## Problem\n\nbody\n",
     );
     for (rel, body) in extra {
@@ -392,7 +431,7 @@ fn retire_apply_removes_entry_and_page_when_clean() {
         },
     )
     .expect("clean retire should succeed");
-    assert!(!d.join("roadmap/shipme.mdx").exists(), "page deleted");
+    assert!(!d.join("roadmap/(grp)/shipme.mdx").exists(), "page deleted");
     let meta = read_meta(&d.join("roadmap/(grp)/meta.json")).unwrap();
     assert!(
         meta["pages"].as_array().unwrap().is_empty(),
@@ -423,15 +462,18 @@ fn retire_apply_fails_on_dangling_inbound_link() {
     );
     // Fail-closed: nothing is mutated when the gate trips.
     let d = docs.path();
-    assert!(d.join("roadmap/shipme.mdx").exists(), "page must survive");
+    assert!(
+        d.join("roadmap/(grp)/shipme.mdx").exists(),
+        "page must survive"
+    );
     let meta = read_meta(&d.join("roadmap/(grp)/meta.json")).unwrap();
-    assert_eq!(meta["pages"][0], "../shipme", "sidebar entry must survive");
+    assert_eq!(meta["pages"][0], "shipme", "sidebar entry must survive");
 }
 
 #[test]
 fn retire_partial_sets_status_and_keeps_page() {
     let docs = roadmap_fixture(&[]);
-    let item = docs.path().join("roadmap/shipme.mdx");
+    let item = docs.path().join("roadmap/(grp)/shipme.mdx");
     roadmap_retire(
         docs.path(),
         RoadmapRetireArgs {

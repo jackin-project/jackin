@@ -1,21 +1,8 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 //! Documented-command drift gate: every fenced `jackin …` invocation in the
 //! docs tree must parse against the real clap command tree.
 //!
-//! Roadmap Phase 5 item 11 (command half). Config-key half is deferred.
+//! Roadmap Phase 5 item 11: command invocations parse against clap and the
+//! persisted config-field inventory matches the configuration reference.
 //!
 //! Research/speculative pages under paths containing `research` are excluded
 //! (operator ruling from the first reviewed implementation): those documents
@@ -23,12 +10,79 @@
 
 // Tests allow unwrap/expect/panic via clippy.toml valves; no module-level expect.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use clap::error::ErrorKind;
 use jackin::cli::Cli;
+use syn::{Fields, Item, Visibility};
+
+const CONFIG_KEY_MARKER: &str = "{/* config-key: ";
+
+fn schema_config_keys(source: &str) -> syn::Result<BTreeSet<String>> {
+    let mut keys = BTreeSet::new();
+    for item in syn::parse_file(source)?.items {
+        let Item::Struct(item) = item else { continue };
+        if !matches!(item.vis, Visibility::Public(_)) || !derives_serde(&item.attrs)? {
+            continue;
+        }
+        let Fields::Named(fields) = item.fields else {
+            continue;
+        };
+        let struct_name = item.ident;
+        for field in fields.named {
+            if matches!(field.vis, Visibility::Public(_))
+                && let Some(ident) = field.ident
+            {
+                keys.insert(format!("{struct_name}.{ident}"));
+            }
+        }
+    }
+    Ok(keys)
+}
+
+fn derives_serde(attrs: &[syn::Attribute]) -> syn::Result<bool> {
+    for attr in attrs {
+        if !attr.path().is_ident("derive") {
+            continue;
+        }
+        let mut found = false;
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("Serialize") || meta.path.is_ident("Deserialize") {
+                found = true;
+            }
+            Ok(())
+        })?;
+        if found {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn documented_config_keys(source: &str) -> BTreeSet<String> {
+    source
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix(CONFIG_KEY_MARKER)?
+                .strip_suffix(" */}")
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
+fn config_key_drift(
+    schema: &BTreeSet<String>,
+    documented: &BTreeSet<String>,
+) -> (Vec<String>, Vec<String>) {
+    (
+        documented.difference(schema).cloned().collect(),
+        schema.difference(documented).cloned().collect(),
+    )
+}
 
 /// Deliberately unparseable illustrative invocations. Shrink-only: every
 /// entry must still match a candidate at `(file, line)` or the test fails.
@@ -570,4 +624,55 @@ fn count_compound_skips(mdx: &str) -> usize {
         }
     }
     n
+}
+
+#[test]
+fn config_key_drift_reports_both_directions() {
+    let schema = BTreeSet::from([
+        "AppConfig.version".to_owned(),
+        "AppConfig.runtime".to_owned(),
+    ]);
+    let docs = BTreeSet::from([
+        "AppConfig.version".to_owned(),
+        "AppConfig.removed".to_owned(),
+    ]);
+    let (documented_but_gone, schema_but_undocumented) = config_key_drift(&schema, &docs);
+    assert_eq!(documented_but_gone, ["AppConfig.removed"]);
+    assert_eq!(schema_but_undocumented, ["AppConfig.runtime"]);
+}
+
+#[test]
+fn config_key_markers_use_valid_mdx_comments() {
+    let keys = documented_config_keys(
+        "{/* config-key: AppConfig.version */}\n{/* config-key: AppConfig.runtime */}\n",
+    );
+    assert_eq!(
+        keys,
+        BTreeSet::from([
+            "AppConfig.runtime".to_owned(),
+            "AppConfig.version".to_owned(),
+        ])
+    );
+}
+
+#[test]
+fn config_reference_matches_public_schema_fields() -> anyhow::Result<()> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let schema_paths = [
+        manifest.join("../jackin-config/src/schema.rs"),
+        manifest.join("../jackin-config/src/app_config.rs"),
+        manifest.join("../jackin-config/src/auth.rs"),
+    ];
+    let docs_path = manifest.join("../../docs/content/docs/reference/runtime/configuration.mdx");
+    let mut schema = BTreeSet::new();
+    for path in &schema_paths {
+        schema.extend(schema_config_keys(&fs::read_to_string(path)?)?);
+    }
+    let documented = documented_config_keys(&fs::read_to_string(&docs_path)?);
+    let (documented_but_gone, schema_but_undocumented) = config_key_drift(&schema, &documented);
+    assert!(
+        documented_but_gone.is_empty() && schema_but_undocumented.is_empty(),
+        "config-key drift:\n  documented but gone: {documented_but_gone:#?}\n  schema but undocumented: {schema_but_undocumented:#?}"
+    );
+    Ok(())
 }

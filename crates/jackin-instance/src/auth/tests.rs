@@ -5,7 +5,7 @@
 use super::{Agent, AuthProvisionOutcome, RoleState, validate_sync_source_dir};
 use crate::PrepareResolvers;
 use jackin_config::AuthForwardMode;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use tempfile::tempdir;
 
 /// The macOS Keychain service name Claude Code derives for a custom

@@ -279,7 +279,7 @@ impl CommandRunner for ShellRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
-        let _op_guard = enter_process_execute(program, args);
+        let op_guard = enter_process_execute(program, args);
         self.log_command(program, args, cwd);
 
         // `interactive` must own the real terminal, so the arms below resolve it
@@ -303,6 +303,7 @@ impl CommandRunner for ShellRunner {
             let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
             if !status.success() {
+                op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
                 return Err(cmd_failed(program, args).into());
             }
         } else if opts.quiet {
@@ -315,6 +316,7 @@ impl CommandRunner for ShellRunner {
             let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
             if !status.success() {
+                op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
                 return Err(cmd_failed(program, args).into());
             }
         } else if opts.capture_stderr || opts.capture_stdout {
@@ -339,9 +341,11 @@ impl CommandRunner for ShellRunner {
             let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
             if !status.success() {
+                op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
                 return Err(cmd_failed(program, args).into());
             }
         }
+        op_guard.complete(jackin_diagnostics::Outcome::Success, None);
         Ok(())
     }
 
@@ -378,7 +382,7 @@ impl ShellRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
-        let _op_guard = enter_process_execute(program, args);
+        let op_guard = enter_process_execute(program, args);
         let mut cmd = Self::build_command(program, args, cwd);
         Self::apply_run_opts(&mut cmd, opts);
         if opts.capture_stdout {
@@ -392,9 +396,14 @@ impl ShellRunner {
             Ok(child) => child,
             Err(error) => {
                 jackin_diagnostics::operation_error(
+                    jackin_diagnostics::otel_events::PROCESS_EXECUTE,
                     "process_spawn_error",
                     &format!("failed to spawn {program}: {error}"),
                     &[],
+                );
+                op_guard.complete(
+                    jackin_diagnostics::Outcome::Failure,
+                    Some("process_spawn_error"),
                 );
                 return Err(error.into());
             }
@@ -522,12 +531,14 @@ impl ShellRunner {
                 }
                 .into());
             }
+            op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
             return Err(DockerError::CommandFailedSeeStderr {
                 program: program.to_owned(),
                 args: args.join(" "),
             }
             .into());
         }
+        op_guard.complete(jackin_diagnostics::Outcome::Success, None);
         Ok(())
     }
 

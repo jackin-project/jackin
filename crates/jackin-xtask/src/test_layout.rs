@@ -1,4 +1,4 @@
-//! Test-file-layout gate (codebase-health-enforcement).
+//! Test-file-layout gate from the completed codebase-health track.
 //!
 //! Enforces the workspace hard rule (see `crates/AGENTS.md` → "Tests in own
 //! file"): every module's tests live in a single sibling `tests.rs`, declared
@@ -41,9 +41,12 @@ use syn::spanned::Spanned as _;
 use syn::{Attribute, Item, ItemMod, Meta, Token, Visibility};
 
 use crate::ratchet::{self, TEST_LAYOUT_FAMILIES};
+use crate::report::{self, FormatArgs};
 
 #[derive(Args, Debug)]
 pub(crate) struct LintTestsArgs {
+    #[command(flatten)]
+    output: FormatArgs,
     /// Emit regenerated `ratchet.toml` `test-layout` family keys on stdout.
     /// Prefer `cargo xtask lint ratchet --print test-layout` for the same data.
     #[arg(long)]
@@ -54,11 +57,24 @@ pub(crate) struct LintTestsArgs {
 /// entry point uses this.
 pub(crate) fn enforce() -> Result<()> {
     run(LintTestsArgs {
+        output: FormatArgs::default(),
         print_allowlist: false,
     })
 }
 
 pub(crate) fn run(args: LintTestsArgs) -> Result<()> {
+    let format = args.output.resolved();
+    report::run_gate(
+        format,
+        "test-layout",
+        "crates/",
+        "move tests into a single sibling tests.rs and update the ratchet row after shrink",
+        "cargo xtask lint tests",
+        || run_inner(args),
+    )
+}
+
+fn run_inner(args: LintTestsArgs) -> Result<()> {
     if args.print_allowlist {
         return ratchet::print_families(TEST_LAYOUT_FAMILIES);
     }
@@ -98,10 +114,8 @@ pub(crate) fn measure_violations(root: &Path) -> Result<BTreeMap<String, String>
         bail!("`crates/` not found under {}", root.display());
     }
     let mut out = BTreeMap::new();
-    for entry in
-        fs::read_dir(&crates_dir).with_context(|| format!("reading {}", crates_dir.display()))?
-    {
-        let src = entry?.path().join("src");
+    for entry in crate::fs_util::read_dir_sorted(&crates_dir)? {
+        let src = entry.path().join("src");
         if src.is_dir() {
             walk(&src, root, &mut out)?;
         }
@@ -110,8 +124,8 @@ pub(crate) fn measure_violations(root: &Path) -> Result<BTreeMap<String, String>
 }
 
 fn walk(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             if path.file_name().is_some_and(|n| n == "tests") {
                 // A `tests/` directory under src/ is the split-test anti-pattern.
@@ -150,8 +164,8 @@ fn collect_rs(
     out: &mut BTreeMap<String, String>,
     reason: &str,
 ) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             collect_rs(&path, root, out, reason)?;
         } else if path.extension().is_some_and(|ext| ext == "rs") {
@@ -407,7 +421,9 @@ fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> R
     reason = "jackin-xtask is a CLI; gate output is its user-facing result"
 )]
 fn emit(message: &str) {
-    println!("{message}");
+    if report::human_output() {
+        println!("{message}");
+    }
 }
 
 #[cfg(test)]

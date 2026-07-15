@@ -150,7 +150,9 @@ These verdicts are reasoned from ecosystem norms plus the verified facts below; 
 | `cargo-vet` / `cargo-crev` | **Defer** | Human-audit-trail tooling whose value scales with reviewer count or an imported trusted-audit set (Mozilla/Google). A solo maintainer cannot sustain a per-crate audit ledger; revisit if the project gains contributors. |
 | `cargo-geiger` | **Defer** | `unsafe`-usage census — a metric, not a pass/fail policy. Out of scope for a CI gate. |
 | `OpenSSF Scorecard` / GitHub `dependency-review-action` | **Defer** | Repo-health and PR-dependency-diff signals overlapping cargo-deny's coverage for a Rust project; reconsider only if a published security-posture score is wanted. |
-| `taplo`, `cocogitto` / `committed`, `cargo-hakari`, `cargo-chef`, `cargo-about`, `miri` | **Open** *(unverified)* | TOML lint, conventional-commit lint, workspace-hash, Docker build-cache, license-attribution generation, and `unsafe` UB checking respectively. None reached a verified recommendation in the research passes; evaluate individually if a concrete need appears (e.g. `cargo-chef` if Rust Docker-layer build times become a problem). |
+| `taplo`, `cocogitto` / `committed`, `cargo-chef`, `cargo-about` | **Open** *(unverified)* | TOML lint, conventional-commit lint, Docker build-cache, and license-attribution generation. Evaluate individually if a concrete need appears (e.g. `cargo-chef` if Rust Docker-layer build times become a problem). |
+| `cargo-hakari` | **No-adopt** | Hygiene run `29397057453` measured clean, locked workspace builds at **152s before** and **152s after** generating the workspace-hack and managing every workspace dependency: a 0s / 0% delta. That does not justify the generated crate and dependency-maintenance cost. The exit-checked lane remains as reproducible evidence; see plan 012. |
+| `miri` | **Adopt (advisory)** | Hygiene job `miri` runs four independent pure-crate invocations (`jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-term`) with per-crate PASS/FAIL summary lines — no `\|\|` fallback masking. Advisory; not a merge gate. |
 
 ## CI wiring
 

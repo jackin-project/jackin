@@ -66,7 +66,7 @@ Several adjacent systems validate the need for a tool-neutral memory surface, bu
 |---|---|---|
 | [OpenMemory / Mem0](https://mem0.ai/openmemory) | MCP-facing memory shared across AI apps, project-scoped memories, tags, dashboard review, and local or cloud deployment. | Strong external-memory reference and possible backend adapter. jackin❯ should still own workspace/run scope, policy, audit, and container delivery. |
 | [Mem0 state-of-agent-memory research](https://mem0.ai/blog/state-of-ai-agent-memory-2026) | Names the hard problems: cross-session identity, temporal abstraction, contradiction handling, stale memories, privacy, consent, and memory evaluation. | Use as design pressure. Avoid "append facts forever" without recency, provenance, and operator curation. |
-| [Letta shared memory blocks](https://docs.letta.com/guides/core-concepts/memory/shared-memory/) | A memory block can be attached to multiple agents; updates become visible to all attached agents; read-only blocks and concurrency caveats are explicit. | Best conceptual fit for policy memory and shared project facts. jackin❯ should borrow the scoped-block model, not necessarily the server. |
+| [Letta shared memory blocks](https://docs.letta.com/guides/core-concepts/memory/shared-memory) | A memory block can be attached to multiple agents; updates become visible to all attached agents; read-only blocks and concurrency caveats are explicit. | Best conceptual fit for policy memory and shared project facts. jackin❯ should borrow the scoped-block model, not necessarily the server. |
 | [Zep / Graphiti](https://arxiv.org/abs/2501.13956) | Temporal knowledge graph memory for evolving facts and multi-hop retrieval. | Possible future backend for rich semantic memory. V1 should stay SQLite-first and text/metadata-shaped until retrieval requirements are proven. |
 | Runtime-native memories | Claude project memory, Codex skills/goals, OpenCode skills, Kimi/OpenCode local config. | Useful adapter targets, not the source of truth. jackin❯ must be able to inject or mount selected memories into each runtime without copying one runtime's private format as the canonical model. |
 
@@ -322,7 +322,7 @@ CREATE TABLE account_usage_snapshots (
 Single writer (the running `jackin` process for that instance), many
 readers. Console subscribers may read concurrently. SQLite's WAL mode
 handles this; turn it on at DB creation time. No multi-writer scenarios
-exist in V1 because each instance has at most one running jackin
+exist in V1 because each instance has at most one running jackin❯
 process.
 
 Memory introduces a second concurrency question: multiple agents inside one Capsule-managed container may read the same memory brief and propose new memory during the same run. V1 should serialize writes through the workflow runner or daemon-owned storage handle, not let each in-container agent open the database directly. Agents submit proposals through the control/MCP surface; the host-side storage owner stamps provenance and writes the row. This keeps the database private to jackin❯ and prevents an agent from rewriting durable memory with ordinary filesystem access.
@@ -396,7 +396,7 @@ observing real footprint.
   policy checks, and runtime-neutral `MemoryBrief` construction
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — DB creation on first load
 - <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> — DB teardown on `purge`
-- Future control/MCP surface — agents query/propose memory through jackin,
+- Future control/MCP surface — agents query/propose memory through jackin❯,
   never by opening host-side storage directly
 - Future ADR file under `docs/content/docs/reference/developer-reference/adrs/` —
   Turso production posture plus physical home for workspace memory

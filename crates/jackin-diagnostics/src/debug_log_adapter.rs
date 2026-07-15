@@ -4,7 +4,7 @@
 //! Adapter wiring `jackin-diagnostics`' debug-log helpers to the
 //! `jackin-core::debug_log::DebugLogSink` port trait.
 
-use jackin_core::debug_log::DebugLogSink;
+use jackin_core::DebugLogSink;
 
 use crate::logging::{emit_debug_line, is_debug_mode};
 

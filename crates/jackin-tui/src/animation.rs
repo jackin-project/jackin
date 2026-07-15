@@ -343,13 +343,12 @@ fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
     }
 }
 
-#[allow(
-    clippy::too_many_lines,
+#[expect(
     clippy::suboptimal_flops,
     clippy::type_complexity,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-#[allow(
+#[expect(
     clippy::excessive_nesting,
     reason = "Star-warp rendering loop: per-frame, per-star, per-step nested \
               control flow over the cell grid + radials. Extracting per-star \

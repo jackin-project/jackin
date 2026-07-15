@@ -187,6 +187,5 @@ impl AgentStatePaths {
     }
 }
 
-// The five concrete adapters live as siblings in `agent/adapters.rs`
-// (re-exported here for callers that import through `agent::runtime::adapters`).
-pub use super::adapters;
+// Concrete adapters live as siblings in `agent/adapters.rs` (crate-private).
+pub(crate) use super::adapters;

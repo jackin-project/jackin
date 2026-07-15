@@ -4,23 +4,41 @@
 //! Per-modal scroll helpers: dispatch mouse wheel events into the
 //! currently-open modal's body (file browser, picker, settings env/auth
 //! tabs).
+//!
+//! Wheel classification uses [`jackin_tui::scroll`] so modal surfaces share
+//! the same axis/modifier rules as panels and capsule scroll regions.
+
+use jackin_tui::scroll::{ScrollAxes, ScrollAxis, ScrollDelta, mouse_scroll_delta};
 
 use super::{
     FileBrowserState, ListModalScrollTarget, MOUSE_VERTICAL_SCROLL_STEP, ManagerStage,
-    ManagerState, Modal, ModalRectMode, MouseEvent, MouseEventKind, Rect, SettingsModal,
-    SettingsModalScrollTarget, SharedModalScrollTarget, modal_rects, point_in_rect,
-    scroll_selection_at_position,
+    ManagerState, Modal, ModalRectMode, MouseEvent, Rect, SettingsModal, SettingsModalScrollTarget,
+    SharedModalScrollTarget, modal_rects, point_in_rect, scroll_selection_at_position,
 };
+
+/// Vertical modal wheel delta via the shared classifier (vertical-only axes).
+fn modal_vertical_scroll_delta(mouse: MouseEvent) -> Option<i16> {
+    let ScrollDelta { axis, amount } = mouse_scroll_delta(
+        mouse.kind,
+        mouse.modifiers,
+        ScrollAxes {
+            vertical: true,
+            horizontal: false,
+        },
+    )?;
+    if axis != ScrollAxis::Vertical {
+        return None;
+    }
+    Some(amount.saturating_mul(MOUSE_VERTICAL_SCROLL_STEP))
+}
 
 pub fn try_scroll_file_browser_modal(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
-    let delta = match mouse.kind {
-        MouseEventKind::ScrollUp => -MOUSE_VERTICAL_SCROLL_STEP,
-        MouseEventKind::ScrollDown => MOUSE_VERTICAL_SCROLL_STEP,
-        _ => return false,
+    let Some(delta) = modal_vertical_scroll_delta(mouse) else {
+        return false;
     };
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
@@ -75,10 +93,8 @@ pub fn try_scroll_picker_modal(
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
-    let delta = match mouse.kind {
-        MouseEventKind::ScrollUp => -MOUSE_VERTICAL_SCROLL_STEP,
-        MouseEventKind::ScrollDown => MOUSE_VERTICAL_SCROLL_STEP,
-        _ => return false,
+    let Some(delta) = modal_vertical_scroll_delta(mouse) else {
+        return false;
     };
 
     if let Some(modal) = state.list_modal.as_ref() {

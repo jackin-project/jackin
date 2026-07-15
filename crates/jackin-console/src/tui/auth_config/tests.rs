@@ -8,7 +8,10 @@ use jackin_config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, GithubAuthConfig, GithubAuthMode,
     RoleSource, WorkspaceConfig, WorkspaceRoleOverride,
 };
-use jackin_core::{Agent, env_model};
+use jackin_core::{
+    ANTHROPIC_API_KEY_ENV_NAME, Agent, KIMI_CODE_API_KEY_ENV_NAME, MINIMAX_API_KEY_ENV_NAME,
+    ZAI_API_KEY_ENV_NAME,
+};
 
 use super::*;
 use crate::tui::components::editor_rows::AuthSourceFolderKind;
@@ -165,11 +168,11 @@ fn clear_ignored_env_only_settings_auth_keys_removes_zai_and_minimax_only() {
     ];
     let mut env = BTreeMap::from([
         (
-            env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+            ZAI_API_KEY_ENV_NAME.to_owned(),
             EnvValue::Plain("zai".into()),
         ),
         (
-            env_model::MINIMAX_API_KEY_ENV_NAME.to_owned(),
+            MINIMAX_API_KEY_ENV_NAME.to_owned(),
             EnvValue::Plain("minimax".into()),
         ),
         (
@@ -183,8 +186,8 @@ fn clear_ignored_env_only_settings_auth_keys_removes_zai_and_minimax_only() {
 
     clear_ignored_env_only_settings_auth_keys(&rows, &mut env);
 
-    assert!(!env.contains_key(env_model::ZAI_API_KEY_ENV_NAME));
-    assert!(!env.contains_key(env_model::MINIMAX_API_KEY_ENV_NAME));
+    assert!(!env.contains_key(ZAI_API_KEY_ENV_NAME));
+    assert!(!env.contains_key(MINIMAX_API_KEY_ENV_NAME));
     assert!(
         env.contains_key(
             AuthKind::Claude
@@ -351,7 +354,7 @@ fn panel_auth_source_value_uses_github_env_layers() {
 fn resolve_panel_mode_reads_env_only_layers() {
     let mut cfg = AppConfig::default();
     cfg.env.insert(
-        env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        ZAI_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("global".into()),
     );
     assert_eq!(
@@ -361,7 +364,7 @@ fn resolve_panel_mode_reads_env_only_layers() {
 
     let mut workspace = WorkspaceConfig::default();
     workspace.env.insert(
-        env_model::MINIMAX_API_KEY_ENV_NAME.to_owned(),
+        MINIMAX_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("workspace".into()),
     );
     cfg.workspaces.insert("ws".into(), workspace);
@@ -501,13 +504,13 @@ fn apply_workspace_auth_commit_updates_mode_and_env_layer() {
 fn apply_role_auth_commit_updates_mode_and_zai_ignore_removes_key() {
     let mut role = WorkspaceRoleOverride::default();
     role.env.insert(
-        env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        ZAI_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("stale".into()),
     );
 
     apply_role_auth_commit(&mut role, AuthKind::Zai, AuthMode::Ignore, None, None);
 
-    assert!(!role.env.contains_key(env_model::ZAI_API_KEY_ENV_NAME));
+    assert!(!role.env.contains_key(ZAI_API_KEY_ENV_NAME));
 }
 
 #[test]
@@ -530,19 +533,19 @@ fn clear_workspace_auth_layer_removes_github_block() {
 fn clear_workspace_auth_layer_removes_env_only_keys() {
     let mut ws = WorkspaceConfig::default();
     ws.env.insert(
-        env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        ZAI_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("zai".into()),
     );
     ws.env.insert(
-        env_model::MINIMAX_API_KEY_ENV_NAME.to_owned(),
+        MINIMAX_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("minimax".into()),
     );
 
     clear_workspace_auth_layer(&mut ws, AuthKind::Zai);
     clear_workspace_auth_layer(&mut ws, AuthKind::Minimax);
 
-    assert!(!ws.env.contains_key(env_model::ZAI_API_KEY_ENV_NAME));
-    assert!(!ws.env.contains_key(env_model::MINIMAX_API_KEY_ENV_NAME));
+    assert!(!ws.env.contains_key(ZAI_API_KEY_ENV_NAME));
+    assert!(!ws.env.contains_key(MINIMAX_API_KEY_ENV_NAME));
 }
 
 #[test]
@@ -555,11 +558,11 @@ fn clear_role_auth_layer_removes_typed_and_env_only_keys() {
         ..WorkspaceRoleOverride::default()
     };
     role.env.insert(
-        env_model::KIMI_CODE_API_KEY_ENV_NAME.to_owned(),
+        KIMI_CODE_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("kimi".into()),
     );
     role.env.insert(
-        env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        ZAI_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("zai".into()),
     );
 
@@ -567,8 +570,8 @@ fn clear_role_auth_layer_removes_typed_and_env_only_keys() {
     clear_role_auth_layer(&mut role, AuthKind::Zai);
 
     assert!(role.kimi.is_none());
-    assert!(!role.env.contains_key(env_model::KIMI_CODE_API_KEY_ENV_NAME));
-    assert!(!role.env.contains_key(env_model::ZAI_API_KEY_ENV_NAME));
+    assert!(!role.env.contains_key(KIMI_CODE_API_KEY_ENV_NAME));
+    assert!(!role.env.contains_key(ZAI_API_KEY_ENV_NAME));
 }
 
 #[test]
@@ -585,7 +588,7 @@ fn apply_settings_auth_env_commit_routes_by_kind() {
     );
     apply_settings_auth_env_commit(
         AuthKind::Claude,
-        Some(env_model::ANTHROPIC_API_KEY_ENV_NAME),
+        Some(ANTHROPIC_API_KEY_ENV_NAME),
         Some(EnvValue::Plain("key".into())),
         &mut github_env,
         &mut agent_env,
@@ -596,7 +599,7 @@ fn apply_settings_auth_env_commit_routes_by_kind() {
         Some(&EnvValue::Plain("token".into()))
     );
     assert_eq!(
-        agent_env.get(env_model::ANTHROPIC_API_KEY_ENV_NAME),
+        agent_env.get(ANTHROPIC_API_KEY_ENV_NAME),
         Some(&EnvValue::Plain("key".into()))
     );
 }
@@ -607,14 +610,14 @@ fn clear_settings_auth_env_values_removes_kind_credentials() {
     let mut agent_env = BTreeMap::new();
     github_env.insert("GH_TOKEN".to_owned(), EnvValue::Plain("token".into()));
     agent_env.insert(
-        env_model::ANTHROPIC_API_KEY_ENV_NAME.to_owned(),
+        ANTHROPIC_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("key".into()),
     );
 
     clear_settings_auth_env_values(AuthKind::Github, &mut github_env, &mut agent_env);
 
     assert!(!github_env.contains_key("GH_TOKEN"));
-    assert!(agent_env.contains_key(env_model::ANTHROPIC_API_KEY_ENV_NAME));
+    assert!(agent_env.contains_key(ANTHROPIC_API_KEY_ENV_NAME));
 }
 
 #[test]
@@ -622,7 +625,7 @@ fn env_display_map_without_auth_credentials_hides_known_secret_keys() {
     let mut values = BTreeMap::new();
     values.insert("GH_TOKEN".to_owned(), EnvValue::Plain("token".into()));
     values.insert(
-        env_model::ANTHROPIC_API_KEY_ENV_NAME.to_owned(),
+        ANTHROPIC_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("secret".into()),
     );
     values.insert("PROJECT_ENV".to_owned(), EnvValue::Plain("visible".into()));
@@ -632,7 +635,7 @@ fn env_display_map_without_auth_credentials_hides_known_secret_keys() {
     assert_eq!(display.len(), 1);
     assert_eq!(display.get("PROJECT_ENV"), Some(&"visible".to_owned()));
     assert!(!display.contains_key("GH_TOKEN"));
-    assert!(!display.contains_key(env_model::ANTHROPIC_API_KEY_ENV_NAME));
+    assert!(!display.contains_key(ANTHROPIC_API_KEY_ENV_NAME));
 }
 
 #[test]
@@ -640,9 +643,9 @@ fn auth_credential_env_keys_includes_settings_mode_credentials() {
     let keys = auth_credential_env_keys();
 
     assert!(keys.contains("GH_TOKEN"));
-    assert!(keys.contains(env_model::ANTHROPIC_API_KEY_ENV_NAME));
-    assert!(keys.contains(env_model::ZAI_API_KEY_ENV_NAME));
-    assert!(keys.contains(env_model::MINIMAX_API_KEY_ENV_NAME));
+    assert!(keys.contains(ANTHROPIC_API_KEY_ENV_NAME));
+    assert!(keys.contains(ZAI_API_KEY_ENV_NAME));
+    assert!(keys.contains(MINIMAX_API_KEY_ENV_NAME));
 }
 
 #[test]
@@ -676,10 +679,8 @@ fn role_override_present_false_when_no_blocks_set() {
 fn role_override_present_zai_keys_off_env_var() {
     let mut ro = WorkspaceRoleOverride::default();
     assert!(!role_override_present(AuthKind::Zai, &ro));
-    ro.env.insert(
-        env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
-        EnvValue::Plain("k".into()),
-    );
+    ro.env
+        .insert(ZAI_API_KEY_ENV_NAME.to_owned(), EnvValue::Plain("k".into()));
     assert!(role_override_present(AuthKind::Zai, &ro));
     assert!(!role_override_present(AuthKind::Claude, &ro));
     assert!(!role_override_present(AuthKind::Github, &ro));
@@ -693,7 +694,7 @@ fn settings_auth_rows_from_app_config_reads_global_modes_and_sources() {
             sync_source_dir: Some(PathBuf::from("/global/claude")),
         }),
         env: BTreeMap::from([(
-            env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+            ZAI_API_KEY_ENV_NAME.to_owned(),
             EnvValue::Plain("zai".into()),
         )]),
         ..Default::default()
