@@ -108,11 +108,11 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 - Bare-brand prose detector (`contains_bare_brand_prose`) with classifier stripping fences/inline/URLs/identifier shapes (`jackin-…`, `JACKIN_…`, paths).
 - `plans/**/*.md` included in `collect_prose_files`; include/exclude table in module docs.
 - Fixtures for bare prose, identifiers, paths, URLs; forbidden `jackin'`/`Jackin`/`Jackin'` remain enforced.
-- First enable measured **204** bare-prose hits → STOP threshold (~50) triggered: mass-fix **held**; gate stays advisory via `JACKIN_BRAND_BARE_ENFORCE=1` opt-in until operator mass-fix PR.
+- First enable measured **204** bare-prose hits; all were reviewed and corrected in this PR.
 - RULES.md prose-invariant audit dispositions recorded on the codebase-health roadmap / brand module (brand = adopted gate).
 
-**STOP**
-- Mass-fix of 204 prose hits deferred for operator review of ambiguous classes (unbackticked command mentions vs product name).
-- Whole-tree `cargo xtask docs brand` exits 0 with bare hits as warnings (enforcing path ready).
+**Completion**
+- Bare-brand prose is unconditionally enforced by the normal gate; no environment opt-in remains.
+- Whole-tree `cargo xtask docs brand` exits 0 with all 204 original hits resolved.
 
-**Index deviation**: DONE for classifier + plans scan + fixtures; bare-brand enforce mass-fix STOP-held (advisory until JACKIN_BRAND_BARE_ENFORCE).
+**Index deviation**: none remaining.

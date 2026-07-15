@@ -57,7 +57,7 @@ Learn more: [Why jackin❯?](https://jackin.tailrocks.com/getting-started/why/) 
 
 | Repository | Description |
 |---|---|
-| [jackin](https://github.com/jackin-project/jackin) | CLI source code (this repo) |
+| [jackin❯](https://github.com/jackin-project/jackin❯) | CLI source code (this repo) |
 | [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose role |
 | [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) | Rust development role (used for jackin❯ development) |
 | [construct image source](docker/construct/README.md) | Shared base Docker image for all roles |

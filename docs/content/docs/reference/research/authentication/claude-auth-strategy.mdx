@@ -58,7 +58,7 @@ Keep the current convenience goal:
 1. If the operator is already authenticated locally, jackin❯ should be able to start an agent without requiring manual `/login` inside the container.
 2. The chosen auth mechanism should remain reliable across restarts and normal day-to-day usage.
 3. The operator should understand which mode they are using and what tradeoffs it carries.
-4. Multiple active jackin sessions should degrade gracefully rather than surprising the operator with intermittent 401s.
+4. Multiple active jackin❯ sessions should degrade gracefully rather than surprising the operator with intermittent 401s.
 
 ## Non-Goals
 
@@ -116,7 +116,7 @@ The output can be set as:
 export CLAUDE_CODE_OAUTH_TOKEN=...
 ```
 
-jackin could add a first-class auth mode that injects this token into the runtime instead of copying `/login` session files.
+jackin❯ could add a first-class auth mode that injects this token into the runtime instead of copying `/login` session files.
 
 Pros:
 
@@ -158,7 +158,7 @@ Delivered (three-PR series):
 
 1. `sync` is the default auth-forwarding mode.
 2. A workspace-scoped env resolver populates `CLAUDE_CODE_OAUTH_TOKEN` from `op://` references or host env vars.
-3. `token` mode uses that resolved env instead of bind-mounting `/login` session state. Token mode is now the recommended choice for long-lived or concurrent jackin sessions; `sync` remains a good default for ad-hoc single-session usage.
+3. `token` mode uses that resolved env instead of bind-mounting `/login` session state. Token mode is now the recommended choice for long-lived or concurrent jackin❯ sessions; `sync` remains a good default for ad-hoc single-session usage.
 
 ## Suggested Operator UX
 
@@ -264,12 +264,12 @@ copy-paste flow. A follow-up design proposal addresses that:
 
 ## Open Questions
 
-1. Where should jackin store a long-lived Claude token on macOS and Linux?
+1. Where should jackin❯ store a long-lived Claude token on macOS and Linux?
    *(Addressed by the [Workspace Claude Token Setup](/roadmap/workspace-claude-token-setup/) proposal:
    1Password by default, OS keychain as a follow-up source.)*
 2. Should token mode be an explicit opt-in only, or should it eventually replace `copy` as the default recommendation?
-3. Is a token-only mode sufficient, or should jackin also support an operator-provided `apiKeyHelper` path for terminal-only workflows?
-4. Should jackin proactively detect likely-auth-drift conditions and recommend `purge` or `sync` before the operator hits a 401?
+3. Is a token-only mode sufficient, or should jackin❯ also support an operator-provided `apiKeyHelper` path for terminal-only workflows?
+4. Should jackin❯ proactively detect likely-auth-drift conditions and recommend `purge` or `sync` before the operator hits a 401?
 
 ## Related work
 

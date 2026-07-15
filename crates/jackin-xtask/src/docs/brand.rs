@@ -22,10 +22,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-/// Allowlist of `path:substring` pairs that may carry forbidden spellings in
-/// prose (rule-example sentences). Empty at birth — fence/inline stripping
-/// covers RULES.md / AGENTS.md examples which only use backticks.
-const ALLOWLIST: &[(&str, &str)] = &[];
+/// Allowlist of `path:substring` pairs that may carry forbidden spellings.
+const ALLOWLIST: &[(&str, &str)] = &[
+    // Crate/package identifier heading, not the product brand in prose.
+    ("crates/jackin/README.md", "# jackin"),
+];
 
 /// Forbidden brand spellings (case-sensitive; `Jackin` is its own entry).
 const FORBIDDEN: &[&str] = &["jackin'", "Jackin'", "Jackin"];
@@ -36,8 +37,6 @@ pub(super) fn check_brand(root: &Path) -> Result<()> {
     files.sort();
 
     let mut problems = Vec::new();
-    let mut bare_warnings = Vec::new();
-    let bare_enforce = std::env::var_os("JACKIN_BRAND_BARE_ENFORCE").is_some();
     for path in &files {
         let rel = relative(root, path);
         let text =
@@ -66,26 +65,10 @@ pub(super) fn check_brand(root: &Path) -> Result<()> {
                     line_no + 1,
                     line.trim()
                 );
-                // Plan 029 STOP: >~50 bare hits on first enable — keep classifier
-                // live, fail only when JACKIN_BRAND_BARE_ENFORCE=1 after mass-fix.
-                if bare_enforce {
-                    problems.push(msg);
-                } else {
-                    bare_warnings.push(msg);
-                }
+                problems.push(msg);
             }
         }
     }
-    if !bare_warnings.is_empty() {
-        emit(&format!(
-            "warning: {} bare-brand prose hit(s) (advisory; set JACKIN_BRAND_BARE_ENFORCE=1 to fail). First 5:",
-            bare_warnings.len()
-        ));
-        for w in bare_warnings.iter().take(5) {
-            emit(&format!("warning: {w}"));
-        }
-    }
-
     if problems.is_empty() {
         emit(&format!("brand gate OK — {} files scanned", files.len()));
         return Ok(());

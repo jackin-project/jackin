@@ -23,7 +23,7 @@ The pack rule literals for kimi/amp/opencode (and Claude's idle caret) are **fab
 not match the real TUIs — so those agents can never fire blocked/idle even when identification and cadence work.
 Because the screen pack is the sole blocked authority for reporter-less agents (kimi, amp), a wrong blocked
 literal means that agent **can never show blocked**. Separately, the dominant working/idle signal the reference
-uses for claude/codex — the **agent's own OSC-title spinner** — is parsed by jackin (`osc_title` virtual region)
+uses for claude/codex — the **agent's own OSC-title spinner** — is parsed by jackin❯ (`osc_title` virtual region)
 but the claude pack keys working off body strings ("esc to interrupt") instead, leaving working detection
 dependent on version-fragile body chrome. This plan fixes the content against real goldens and adds the
 version-stable OSC-title rules.

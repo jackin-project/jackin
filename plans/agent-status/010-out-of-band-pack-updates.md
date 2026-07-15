@@ -21,12 +21,12 @@
 ## Why this matters
 
 Detection packs (the per-agent TOML rules that map screen text → blocked/working/idle) are `include_str!`-baked
-into the binary and copied into the derived image. So the **only** way to fix a rule is to rebuild jackin and
+into the binary and copied into the derived image. So the **only** way to fix a rule is to rebuild jackin❯ and
 cut a release. Coding-agent TUIs restyle frequently; the day Claude renames `"esc to interrupt"`, jackin❯
 baked rule stops matching and **every install's Claude tab goes dark until the project ships a new
 release**. Detection correctness is gated on jackin❯ release cadence. The reference (herdr) avoids this by
 keeping bundled manifests as a fallback and layering **remotely-updatable** manifests on top, so a restyle is
-fixed same-day by publishing data, not by shipping a binary. This plan gives jackin the same resilience —
+fixed same-day by publishing data, not by shipping a binary. This plan gives jackin❯ the same resilience —
 but within jackin❯ security model (container boundary, no surprise mutation, signed artifacts), so it is a
 **signed, verified, fallback-always** channel, not an arbitrary-URL fetch.
 
@@ -141,5 +141,5 @@ infra / a CI job, a separate deliverable); changing the rule *engine* or pack *c
 - The security review is the crux: a remote pack is untrusted input entering a security-boundary product. A
   reviewer must confirm verify-before-parse, floor-always, size bounds, and non-blocking fetch. Never relax
   verification for convenience.
-- This is the one herdr capability jackin structurally lacked (herdr updates manifests remotely). With it,
+- This is the one herdr capability jackin❯ structurally lacked (herdr updates manifests remotely). With it,
   detection tracks agent restyles as data; without it, plan 005 keeps drift graceful but still release-gated.

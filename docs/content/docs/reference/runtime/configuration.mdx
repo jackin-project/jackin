@@ -32,7 +32,7 @@ Three environment variables redirect these default storage roots without touchin
 | `JACKIN_HOME_DIR` | `~/.jackin` | jackin❯ home root — `data/`, `roles/`, `cache/` |
 | `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | Override the construct base image used at derived-build time. Role Dockerfiles always reference the canonical name; this substitutes it during `docker build`. Set to `jackin-local/construct:trixie` after `mise run construct-build-local` to test against a local construct build. See [The Construct Image](/developing/construct-image/) for the full workflow. |
 
-Setting `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` to fresh directories before running jackin means every command reads and writes only those directories, leaving the live operator state completely untouched. Unset behavior is identical to not setting the variables — jackin falls back to the defaults above.
+Setting `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` to fresh directories before running jackin❯ means every command reads and writes only those directories, leaving the live operator state completely untouched. Unset behavior is identical to not setting the variables — jackin❯ falls back to the defaults above.
 
 ### One file per workspace, by design
 
@@ -378,7 +378,7 @@ Global mounts are stored by name. Unscoped mounts live directly under `[docker.m
 
 ### Git co-author trailer
 
-When `coauthor_trailer` is `true`, jackin installs a shared `prepare-commit-msg` hook inside the role container the first time a session needs it. The hook is a symlink to `jackin-capsule`, so trailer normalization runs through the same Rust binary that owns deterministic runtime setup. It reads which agent is running and appends that agent's `Co-authored-by` trailer whenever Git asks the hook to prepare a commit message, including amended, reused, squash, and merge messages. Existing agent trailers are preserved, so a commit touched by multiple agents keeps each involved agent in the final trailer block.
+When `coauthor_trailer` is `true`, jackin❯ installs a shared `prepare-commit-msg` hook inside the role container the first time a session needs it. The hook is a symlink to `jackin-capsule`, so trailer normalization runs through the same Rust binary that owns deterministic runtime setup. It reads which agent is running and appends that agent's `Co-authored-by` trailer whenever Git asks the hook to prepare a commit message, including amended, reused, squash, and merge messages. Existing agent trailers are preserved, so a commit touched by multiple agents keeps each involved agent in the final trailer block.
 
 When `dco` is `true`, the same hook also appends a `Signed-off-by` DCO trailer read from `git config user.name` and `git config user.email` inside the container. Matching existing trailer lines are normalized into Git's final trailer block before commit creation. The two fields are independent: enable either or both.
 

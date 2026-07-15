@@ -16,7 +16,7 @@ The proposal: an opt-in, per-workspace, per-role notification channel that fires
 
 The end state, from the operator's seat:
 
-1. A passive notification, on the host, when an agent stops to wait. macOS Notification Center / Linux desktop notification / Windows toast. Title names the workspace, role, and (optionally) the question the agent is asking. No visible jackin window required — the operator can be anywhere on the host.
+1. A passive notification, on the host, when an agent stops to wait. macOS Notification Center / Linux desktop notification / Windows toast. Title names the workspace, role, and (optionally) the question the agent is asking. No visible jackin❯ window required — the operator can be anywhere on the host.
 2. Optional escalation: when the operator has set a per-workspace policy "if I don't respond in N seconds, start playing a sound", jackin❯ escalates from a silent toast to an audible cue. Configurable per workspace and per role; off by default.
 3. Click-to-focus: clicking the notification opens or focuses the terminal tab the agent is running in. The Desktop Agent Hub v1 should wire this for Ghostty first; kitty, iTerm2, WezTerm, gnome-terminal, and other adapters are later additions once the Ghostty contract is solid.
 4. Per-workspace mute: operators in deep-focus mode can mute notifications for a workspace temporarily without losing the launch-time policy.

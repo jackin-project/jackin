@@ -169,7 +169,7 @@ Ghostty / terminal on host
           -> Capsule pastes the container-readable path into the focused PTY
 ```
 
-This fixes the structural cause: the host component that can read the host clipboard does so, then uses an explicit jackin protocol message to cross the container boundary. It also preserves the container boundary: agents receive a file path inside the container, not arbitrary host clipboard access.
+This fixes the structural cause: the host component that can read the host clipboard does so, then uses an explicit jackin❯ protocol message to cross the container boundary. It also preserves the container boundary: agents receive a file path inside the container, not arbitrary host clipboard access.
 
 A daemon remains relevant for future desktop/global bridges, but it was not required for the first correct implementation. Image paste is synchronous with an attached terminal and an explicit paste gesture. A short-lived host attach client can perform the needed host-side read without a long-running process.
 

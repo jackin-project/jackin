@@ -4,7 +4,7 @@ Tracker for deprecated APIs, CLIs, config values, usage patterns still supported
 
 Deprecate something? Add here in **same commit** that introduces deprecation. See [RULES.md](RULES.md#deprecations) for rule.
 
-While jackin pre-release (see [PRERELEASE.md](PRERELEASE.md)), schema and CLI changes made as breaking changes, not deprecations, so this file usually empty.
+While jackin❯ pre-release (see [PRERELEASE.md](PRERELEASE.md)), schema and CLI changes made as breaking changes, not deprecations, so this file usually empty.
 
 ## How to read this file
 
