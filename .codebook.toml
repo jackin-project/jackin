@@ -839,6 +839,7 @@ words = [
   "toplevel",
   "tprintln",
   "traceparent",
+  "tracestate",
   "trackpad",
   "trackpads",
   "Tradeoff",
