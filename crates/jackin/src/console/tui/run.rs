@@ -289,11 +289,7 @@ where
         mouse_state.chrome_hover_tracker.clear();
         if let Some(bar_area) = debug_bar_area {
             let active_run = jackin_diagnostics::active_run();
-            let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
-            let run_id = debug_run_id_label(
-                active_run.as_ref().map(|r| r.run_id()),
-                env_run_id.as_deref(),
-            );
+            let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()), None);
             let chip_row = debug_chip_row(bar_area);
             if let Some(chip) =
                 jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id)

@@ -62,9 +62,7 @@ impl Multiplexer {
             self.launch_env.workdir.to_string_lossy().into_owned(),
             crate::tui::components::dialog::ContainerInfoDiagnostics {
                 host_version: diagnostics.host_version,
-                run_id: diagnostics.run_id,
-                run_log_display: diagnostics.run_log_display,
-                run_log_href: diagnostics.run_log_href,
+                invocation_id: diagnostics.invocation_id,
             },
         ));
     }

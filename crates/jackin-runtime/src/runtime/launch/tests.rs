@@ -7,9 +7,7 @@
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 use super::*;
-use crate::runtime::launch::launch_runtime::{
-    debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
-};
+use crate::runtime::launch::launch_runtime::{debug_runtime_envs, telemetry_runtime_envs_for};
 use jackin_config::AppConfig;
 use jackin_core::WorkspaceName;
 use jackin_test_support::FakeRunner;
@@ -1853,7 +1851,6 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
         ("JACKIN_DHAT_ALLOC_LOG".to_owned(), "1".to_owned()),
         ("JACKIN_CAPSULE_FORCE_PANIC".to_owned(), "true".to_owned()),
         ("TZ".to_owned(), "Asia/Ho_Chi_Minh".to_owned()),
-        ("JACKIN_RUN_ID".to_owned(), "operator-owned".to_owned()),
         ("PATH".to_owned(), "/bin".to_owned()),
     ]);
 
@@ -1869,38 +1866,9 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
 }
 
 #[test]
-fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
-    let _guard = run.activate();
-
-    let run_envs = run_runtime_envs();
+fn debug_runtime_envs_do_not_propagate_file_configuration() {
     let debug_envs = debug_runtime_envs(true);
-
-    assert_eq!(run_envs, vec![format!("JACKIN_RUN_ID={}", run.run_id())]);
-    assert!(!debug_envs.iter().any(|env| env == "JACKIN_DEBUG=1"));
-    assert!(
-        !debug_envs
-            .iter()
-            .any(|env| env.starts_with("JACKIN_RUN_ID="))
-    );
-    assert!(debug_envs.contains(&format!(
-        "JACKIN_RUN_DIAGNOSTICS_PATH={}",
-        run.path().display()
-    )));
-}
-
-#[test]
-fn debug_runtime_envs_omit_all_envs_without_persisted_diagnostics() {
-    let envs = debug_runtime_envs_for(true, None);
-
-    assert!(envs.is_empty());
-    assert_eq!(
-        run_runtime_envs_for(Some("jk-run-backend")),
-        vec!["JACKIN_RUN_ID=jk-run-backend".to_owned()]
-    );
+    assert!(debug_envs.is_empty());
 }
 
 #[test]

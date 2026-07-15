@@ -413,7 +413,7 @@ impl Multiplexer {
         );
         let debug_run_id_owned: Option<String> = if crate::logging::debug_enabled() {
             let diag = crate::container_context::resolve_container_diagnostics();
-            (!diag.run_id.is_empty()).then_some(diag.run_id)
+            (!diag.invocation_id.is_empty()).then_some(diag.invocation_id)
         } else {
             None
         };

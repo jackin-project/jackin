@@ -605,13 +605,6 @@ impl Dialog {
                         .map_or(DialogAction::Redraw, |pr| {
                             DialogAction::OpenHostUrl(pr.url.clone())
                         }),
-                    Self::ContainerInfo { diagnostics, .. } => diagnostics
-                        .run_log_href
-                        .as_deref()
-                        .and_then(file_url_path)
-                        .map_or(DialogAction::Redraw, |path| {
-                            DialogAction::RevealHostPath(path.to_owned())
-                        }),
                     _ => DialogAction::Redraw,
                 },
                 b"c" | b"C" => {
@@ -626,15 +619,7 @@ impl Dialog {
                             DialogAction::OpenHostUrl(url.to_owned())
                         })
                 }
-                b"r" | b"R" => {
-                    if let Self::ContainerInfo { diagnostics, .. } = self
-                        && let Some(path) =
-                            diagnostics.run_log_href.as_deref().and_then(file_url_path)
-                    {
-                        return DialogAction::RevealHostPath(path.to_owned());
-                    }
-                    DialogAction::Redraw
-                }
+                b"r" | b"R" => DialogAction::Redraw,
                 _ => DialogAction::Redraw,
             };
         }

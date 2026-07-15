@@ -1191,24 +1191,8 @@ pub(crate) fn host_runtime_passthrough_env(
         .collect()
 }
 
-pub(crate) fn debug_runtime_envs_for(
-    debug: bool,
-    diagnostics_path: Option<&std::path::Path>,
-) -> Vec<String> {
-    if !debug {
-        return Vec::new();
-    }
-    let mut envs = Vec::new();
-    if let Some(path) = diagnostics_path {
-        envs.push(format!("JACKIN_RUN_DIAGNOSTICS_PATH={}", path.display()));
-    }
-    envs
-}
-
-pub(crate) fn debug_runtime_envs(debug: bool) -> Vec<String> {
-    let diagnostics_path = jackin_diagnostics::active_run()
-        .and_then(|run| run.persists().then(|| run.path().to_path_buf()));
-    debug_runtime_envs_for(debug, diagnostics_path.as_deref())
+pub(crate) fn debug_runtime_envs(_debug: bool) -> Vec<String> {
+    Vec::new()
 }
 
 pub(crate) fn telemetry_runtime_envs_for(level: jackin_diagnostics::TelemetryLevel) -> Vec<String> {
@@ -1224,17 +1208,8 @@ pub(crate) fn telemetry_runtime_envs(debug: bool) -> Vec<String> {
     telemetry_runtime_envs_for(jackin_diagnostics::telemetry_level(debug))
 }
 
-#[cfg(test)]
-pub(crate) fn run_runtime_envs_for(run_id: Option<&str>) -> Vec<String> {
-    run_id.map_or_else(Vec::new, |run_id| vec![format!("JACKIN_RUN_ID={run_id}")])
-}
-
 pub(crate) fn run_runtime_envs() -> Vec<String> {
-    let mut env = jackin_diagnostics::active_run().map_or_else(Vec::new, |run| {
-        vec![format!("JACKIN_RUN_ID={}", run.run_id())]
-    });
-    if let Some(invocation) = jackin_telemetry::identity::current_invocation() {
-        env.push(format!("JACKIN_INVOCATION_ID={invocation}"));
-    }
-    env
+    jackin_telemetry::identity::current_invocation().map_or_else(Vec::new, |invocation| {
+        vec![format!("JACKIN_INVOCATION_ID={invocation}")]
+    })
 }

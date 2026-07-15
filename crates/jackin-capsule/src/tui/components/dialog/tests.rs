@@ -446,13 +446,7 @@ fn container_info_with_diagnostics_fixture() -> Dialog {
         workdir: "/workspace/jackin".to_owned(),
         diagnostics: ContainerInfoDiagnostics {
             host_version: "0.6.0-test".to_owned(),
-            run_id: "jk-run-b93735".to_owned(),
-            run_log_display: "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-                .to_owned(),
-            run_log_href: Some(
-                "file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-                    .to_owned(),
-            ),
+            invocation_id: "b93735b9-3735-4735-8735-b93735b93735".to_owned(),
         },
         copied_row: None,
         hovered_row: None,
@@ -513,7 +507,7 @@ fn pull_request_fixture() -> PullRequestInfo {
 }
 
 #[test]
-fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
+fn container_info_state_exposes_copyable_invocation_id_without_file_rows() {
     let d = container_info_with_diagnostics_fixture();
     let state = d
         .container_info_state_with_debug(true)
@@ -522,41 +516,20 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
     assert_eq!(
         rows.first()
             .map(jackin_tui::components::ContainerInfoRow::value),
-        Some("jk-run-b93735"),
-        "Run ID must stay the first Debug info row even when capsule knows container/session facts"
+        Some("b93735b9-3735-4735-8735-b93735b93735"),
+        "invocation id must be the first Debug info row"
     );
 
     let run_row = rows
         .iter()
-        .find(|row| row.value() == "jk-run-b93735")
-        .expect("bare run id row present");
+        .find(|row| row.value() == "b93735b9-3735-4735-8735-b93735b93735")
+        .expect("invocation id row present");
     assert!(run_row.is_copyable());
-    assert!(
-        !run_row.value().contains(".jsonl"),
-        "Run ID row must not contain diagnostics path"
-    );
-
-    let log_row = rows
-        .iter()
-        .find(|row| row.value().contains("jk-run-b93735.jsonl"))
-        .expect("diagnostics log row present");
-    assert!(log_row.is_copyable());
-    assert_eq!(
-        log_row.href(),
-        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
-    );
-    let reveal_row = rows
-        .iter()
-        .find(|row| row.href().is_some() && !row.is_copyable())
-        .expect("diagnostics reveal row present");
-    assert_eq!(
-        reveal_row.href(),
-        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
-    );
+    assert!(rows.iter().all(|row| row.href().is_none()));
 }
 
 #[test]
-fn container_info_state_backend_only_shows_telemetry_without_reveal() {
+fn container_info_state_has_no_local_telemetry_affordance() {
     let d = Dialog::ContainerInfo {
         container_name: "jk-abc123-thearchitect".to_owned(),
         role: "the-architect".to_owned(),
@@ -564,9 +537,7 @@ fn container_info_state_backend_only_shows_telemetry_without_reveal() {
         workdir: "/workspace/jackin".to_owned(),
         diagnostics: ContainerInfoDiagnostics {
             host_version: "0.6.0-test".to_owned(),
-            run_id: "jk-run-b93735".to_owned(),
-            run_log_display: "(backend only - no local file)".to_owned(),
-            run_log_href: None,
+            invocation_id: "b93735b9-3735-4735-8735-b93735b93735".to_owned(),
         },
         copied_row: None,
         hovered_row: None,
@@ -577,12 +548,6 @@ fn container_info_state_backend_only_shows_telemetry_without_reveal() {
         .expect("container info state should be available");
     let rows = state.rows();
 
-    assert!(
-        rows.iter().any(
-            |row| row.label() == "Telemetry" && row.value() == "(backend only - no local file)"
-        ),
-        "backend-only runs should show a telemetry row"
-    );
     assert!(
         rows.iter().all(|row| row.label() != "Diagnostics log"
             && row.label() != "Reveal diagnostics"
@@ -663,12 +628,11 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
         height,
     };
     let cases = [
-        ("jk-run-b93735", "jk-run-b93735"),
-        ("jk-abc123-thearchitect", "jk-abc123-thearchitect"),
         (
-            "/Users/operator",
-            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl",
+            "b93735b9-3735-4735-8735-b93735b93735",
+            "b93735b9-3735-4735-8735-b93735b93735",
         ),
+        ("jk-abc123-thearchitect", "jk-abc123-thearchitect"),
     ];
 
     for (visible_text, expected_payload) in cases {
@@ -692,29 +656,13 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
 #[test]
 fn container_info_r_reveals_host_diagnostics_log_path() {
     let mut d = container_info_with_diagnostics_fixture();
-    match d.handle_key(b"r", None) {
-        DialogAction::RevealHostPath(path) => {
-            assert_eq!(
-                path,
-                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-            );
-        }
-        other => panic!("R must request host diagnostics reveal, got {other:?}"),
-    }
+    assert_eq!(d.handle_key(b"r", None), DialogAction::Redraw);
 }
 
 #[test]
 fn container_info_o_reveals_host_diagnostics_log_path() {
     let mut d = container_info_with_diagnostics_fixture();
-    match d.handle_key(b"o", None) {
-        DialogAction::RevealHostPath(path) => {
-            assert_eq!(
-                path,
-                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-            );
-        }
-        other => panic!("O must request host diagnostics reveal, got {other:?}"),
-    }
+    assert_eq!(d.handle_key(b"o", None), DialogAction::Redraw);
 }
 
 #[test]
@@ -722,15 +670,7 @@ fn container_info_o_does_not_open_github_context_url() {
     let pr = pull_request_fixture();
     let view = github_view_for_fixture(&pr);
     let mut d = container_info_with_diagnostics_fixture();
-    match d.handle_key(b"o", Some(&view)) {
-        DialogAction::RevealHostPath(path) => {
-            assert_eq!(
-                path,
-                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-            );
-        }
-        other => panic!("ContainerInfo O must stay diagnostics reveal, got {other:?}"),
-    }
+    assert_eq!(d.handle_key(b"o", Some(&view)), DialogAction::Redraw);
 }
 
 #[test]

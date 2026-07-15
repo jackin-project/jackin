@@ -253,7 +253,7 @@ mod launch_runtime;
 )]
 pub(crate) use launch_runtime::{
     LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,
-    SidecarPrewarmReplenish, debug_runtime_envs, host_runtime_passthrough_env, launch_role_runtime,
+    SidecarPrewarmReplenish, host_runtime_passthrough_env, launch_role_runtime,
     spawn_sibling_auth_prewarm,
 };
 
