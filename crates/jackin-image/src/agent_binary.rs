@@ -141,6 +141,12 @@ async fn ensure_available_impl(
                 "agent_binary_failed",
                 &format!("{} resolve failed: {error:#}", agent.slug()),
             );
+            jackin_diagnostics::operation_error(
+                "launch.prepare",
+                "agent_binary_resolve_failed",
+                "agent binary release resolution failed",
+                &[],
+            );
             return Err(error).with_context(|| format!("resolving latest {} binary", agent.slug()));
         }
     };
@@ -304,6 +310,12 @@ async fn ensure_binary_for_release(
             record(
                 "agent_binary_failed",
                 &format!("{} download failed: {error:#}", agent.slug()),
+            );
+            jackin_diagnostics::operation_error(
+                "launch.prepare",
+                "agent_binary_download_failed",
+                "agent binary download failed",
+                &[],
             );
         })?;
     record(

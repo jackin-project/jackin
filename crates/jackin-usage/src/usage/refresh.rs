@@ -66,6 +66,21 @@ where
             }));
             match result {
                 Ok(result) => {
+                    if let Some(error) = result.view.last_error.as_deref() {
+                        let error_type = if usage_error_is_rate_limited(error) {
+                            "usage_http_rate_limited"
+                        } else if error.to_ascii_lowercase().contains("http") {
+                            "usage_http_failed"
+                        } else {
+                            "usage_provider_failed"
+                        };
+                        jackin_diagnostics::operation_error(
+                            "usage.refresh",
+                            error_type,
+                            "usage provider refresh failed",
+                            &[],
+                        );
+                    }
                     drop(tx.send(result));
                 }
                 Err(_) => {
@@ -104,6 +119,15 @@ where
                 "usage-refresh: provider probe timed out for {}",
                 target.cache_key()
             );
+            let span = jackin_diagnostics::operation_span("usage.refresh", &[]);
+            span.in_scope(|| {
+                jackin_diagnostics::operation_error(
+                    "usage.refresh",
+                    "usage_provider_timeout",
+                    "usage provider refresh timed out",
+                    &[],
+                );
+            });
             let mut view = cached_unavailable_view(&target.agent, target.provider.as_deref(), now);
             view.last_error = Some("usage provider probe timed out".to_owned());
             results.push(UsageRefreshResult {

@@ -631,6 +631,50 @@ fn fatal_error_carries_error_type() {
 }
 
 #[test]
+fn volatile_failure_evidence_does_not_split_fingerprint() {
+    let export = export_after(false, "fingerprint-run", || {
+        for body in [
+            "container jk-random-a failed under /workspace/one",
+            "container jk-random-b failed under /workspace/two",
+        ] {
+            let span = crate::operation_span("launch.prepare", &[]);
+            span.in_scope(|| {
+                crate::operation_error("launch.prepare", "agent_binary_download_failed", body, &[]);
+            });
+        }
+    });
+    let logs = export.logs.get_emitted_logs().unwrap();
+    let fingerprints: Vec<_> = logs
+        .iter()
+        .filter_map(|log| {
+            let event = log_attr(&log.record, "event.name")?;
+            let error_type = log_attr(&log.record, "error.type")?;
+            Some((event, error_type))
+        })
+        .collect();
+    assert_eq!(
+        fingerprints,
+        vec![
+            (
+                "launch.prepare".into(),
+                "agent_binary_download_failed".into()
+            ),
+            (
+                "launch.prepare".into(),
+                "agent_binary_download_failed".into()
+            ),
+        ]
+    );
+    let spans = export.spans.get_finished_spans().unwrap();
+    assert_eq!(spans.len(), 2);
+    assert!(
+        spans
+            .iter()
+            .all(|span| matches!(span.status, Status::Error { .. }))
+    );
+}
+
+#[test]
 fn direct_diagnostics_events_reach_otlp() {
     let logs = exported_logs!(false, "run1", || {
         let tmp = tempfile::tempdir().unwrap();
