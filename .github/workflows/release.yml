@@ -160,10 +160,10 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # Only main saves, preserving limited cache quota for reusable entries.
       - run: rustup target add ${{ matrix.target.triple }}
       - name: Cache macOS SDK
         if: contains(matrix.target.triple, 'apple')
@@ -248,10 +248,10 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # Only main saves, preserving limited cache quota for reusable entries.
       - run: rustup target add ${{ matrix.target.triple }}
       - name: Build signed capsule archive
         uses: ./.github/actions/build-release-archive
