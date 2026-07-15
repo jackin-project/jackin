@@ -563,6 +563,7 @@ impl Session {
                         break;
                     }
                     Ok(n) => {
+                        capture_pty_fixture_bytes(&buf[..n]);
                         let data = buf[..n].to_vec();
                         if event_tx_output
                             .send(SessionEvent::Output {
@@ -1465,6 +1466,29 @@ impl Session {
         // Re-clamp through the grid: set_size may have shrunk the filled
         // scrollback the offset was clamped against.
         self.shadow_grid.set_scrollback(self.scrollback_offset());
+    }
+}
+
+fn capture_pty_fixture_bytes(bytes: &[u8]) {
+    use std::io::Write as _;
+    use std::sync::OnceLock;
+
+    static CAPTURE: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
+    let capture = CAPTURE.get_or_init(|| {
+        let path = std::env::var_os("JACKIN_PTY_FIXTURE_CAPTURE")?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(path)
+            .ok()?;
+        Some(Mutex::new(file))
+    });
+    if let Some(capture) = capture
+        && let Ok(mut file) = capture.lock()
+    {
+        drop(file.write_all(bytes));
+        drop(file.flush());
     }
 }
 
