@@ -619,7 +619,10 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
 
 fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
-    let candidates = ["AGENTS.md", "crates/AGENTS.md", "Claude.md", "CLAUDE.md"];
+    // CLAUDE.md only (not Claude.md): on case-sensitive CI Claude.md is absent;
+    // on case-insensitive checkouts Claude.md is the same inode as CLAUDE.md and
+    // would double-count / thrash unlisted keys.
+    let candidates = ["AGENTS.md", "crates/AGENTS.md", "CLAUDE.md"];
     for rel in candidates {
         let path = root.join(rel);
         if path.is_file() {

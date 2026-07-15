@@ -562,9 +562,6 @@ bound = 6102
 key = "CLAUDE.md"
 bound = 6102
 [[family.entry]]
-key = "Claude.md"
-bound = 6102
-[[family.entry]]
 key = "crates/AGENTS.md"
 bound = 14742
 [[family.entry]]
@@ -584,7 +581,7 @@ key = "crates/jackin-console-oppicker/README.md"
 bound = 1395
 [[family.entry]]
 key = "crates/jackin-console/README.md"
-bound = 2217
+bound = 2512
 [[family.entry]]
 key = "crates/jackin-core/README.md"
 bound = 5467
@@ -650,7 +647,7 @@ key = "crates/jackin-usage/README.md"
 bound = 2272
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
-bound = 4878
+bound = 5038
 [[family.entry]]
 key = "crates/jackin/README.md"
 bound = 2791

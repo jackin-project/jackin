@@ -2899,7 +2899,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "anyhow",
  "clap",
