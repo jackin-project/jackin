@@ -165,7 +165,7 @@ pub struct EnvCycleError;
 
 /// # Errors
 /// Returns [`EnvCycleError`] if a dependency cycle is detected.
-#[allow(
+#[expect(
     clippy::excessive_nesting,
     reason = "Kahn's algorithm topological-sort body: the read-side / \
               decrement-degree / enqueue-ready nesting is the canonical \

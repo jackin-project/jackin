@@ -87,7 +87,7 @@ impl DialogBodyScroll {
 }
 
 /// Status-footer hover state.
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal status-footer hover flags (left, usage, right, \
               right_debug) — the L2 bit-field mirror of the L3 \

@@ -1,4 +1,4 @@
-use jackin_core::debug_log::DebugLogSink;
+use jackin_core::DebugLogSink;
 
 use super::DiagnosticsDebugLog;
 use crate::{

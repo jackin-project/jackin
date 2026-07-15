@@ -2,7 +2,7 @@
 title: "runtime/launch.rs — Behavioral Spec"
 ---
 
-Behavioral invariant contract for <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — the `jackin load` critical-path pipeline. This spec is the verification oracle for decomposition of `launch.rs` (the Phase 2 split shipped; further decomposition is tracked under [Codebase health: enforce reviewability](/roadmap/codebase-health-enforcement/)): any split must preserve every INV below.
+Behavioral invariant contract for <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — the `jackin load` critical-path pipeline. This spec is the verification oracle for the shipped launch decomposition: any future split must preserve every INV below.
 
 ## Purpose
 
@@ -34,6 +34,9 @@ load_role (public API)
 | INV-5 | Cleanup classification preserves restartable sessions and tears down clean exits | `Running` / crash paths disarm cleanup; clean-exit path runs cleanup | `jackin_runtime::runtime::launch::tests::load_agent_cleans_up_sidecar_when_derived_build_fails` `jackin_runtime::runtime::launch::tests::load_agent_cleans_up_when_parallel_sidecar_start_fails` |
 | INV-6 | `render_exit` runs on both success and error exits from `load_role_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` | `jackin_runtime::runtime::launch::tests::render_exit_clears_universe_marker_only_when_no_instances_remain` `jackin_runtime::runtime::launch::tests::render_exit_preserves_universe_marker_when_instances_remain` |
 | INV-7 | Operator `op://` env refs resolve concurrently with a bounded launch budget — 1Password app/daemon wakeups must not serialize the foreground path, and a wedged `op` must still fail instead of blocking forever | `resolve_operator_env` uses the launch-env `OpCli` budget and `resolve_operator_env_with_matching` spawns one resolver worker per included key | `jackin_runtime::runtime::launch::tests::load_agent_skips_non_required_operator_credential_refs` `jackin_runtime::runtime::launch::tests::load_agent_injects_host_ref_operator_env` |
+| INV-8 | Suite-A grant validation failure at the `run_launch_core` boundary runs armed `LoadCleanup` before the error returns (DinD/network reclaim) | bad grants → `validate_launch_grants` Err → `cleanup_after_grant_failure` before return | `jackin_runtime::runtime::launch::launch_pipeline::tests::run_launch_core_suite_a_grant_failure_cleans_up_before_return` |
+| INV-9 | Post-success finalization/inspect error at the `run_launch_core` boundary runs armed `LoadCleanup` before the error returns | corrupt isolation state → finalize Err → `cleanup.run` before return | `jackin_runtime::runtime::launch::launch_pipeline::tests::run_launch_core_finalize_error_runs_cleanup_before_return` |
+| INV-10 | Happy-path `run_launch_core` over `LaunchCore` fixture builder returns the claimed container name | `LaunchCore` builder + `FakeDockerClient` / `FakeRunner` | `jackin_runtime::runtime::launch::launch_pipeline::tests::run_launch_core_happy_path_returns_container_name` |
 
 ## Test seams
 

@@ -229,18 +229,16 @@ async fn check_docker_daemon() -> CheckResult {
 async fn report_docker_version() -> CheckResult {
     // Use `docker version --format '{{.Server.Version}}'` via subprocess since
     // we don't expose a version endpoint on the DockerApi trait.
-    let output = tokio::process::Command::new("docker")
-        .args(["version", "--format", "{{.Server.Version}}"])
-        .output()
-        .await;
-    match output {
-        Ok(out) if out.status.success() => {
+    let request =
+        jackin_process::ExecRequest::new("docker", ["version", "--format", "{{.Server.Version}}"]);
+    match jackin_process::exec_async(&request).await {
+        Ok(out) if out.success => {
             let version = String::from_utf8_lossy(&out.stdout);
             docker_version_report_result(&version)
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            docker_version_command_failure_result(out.status.code(), &stderr)
+            docker_version_command_failure_result(out.code, &stderr)
         }
         Err(e) => CheckResult::skip(
             "docker_version",
@@ -359,14 +357,9 @@ fn check_capsule_cache(paths: &jackin_core::JackinPaths) -> CheckResult {
 }
 
 fn check_gh_auth() -> CheckResult {
-    let mut command = std::process::Command::new("gh");
-    command.args(["auth", "status"]);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "preflight probes run before TUI render/runtime work begins"
-    )]
-    match command.output() {
-        Ok(out) if out.status.success() => CheckResult::ok("gh_auth", "gh CLI authenticated"),
+    let request = jackin_process::ExecRequest::new("gh", ["auth", "status"]);
+    match jackin_process::exec_sync(&request) {
+        Ok(out) if out.success => CheckResult::ok("gh_auth", "gh CLI authenticated"),
         Ok(_) => CheckResult::warn(
             "gh_auth",
             "gh CLI not authenticated",
@@ -377,14 +370,9 @@ fn check_gh_auth() -> CheckResult {
 }
 
 fn check_op_cli() -> CheckResult {
-    let mut command = std::process::Command::new("op");
-    command.args(["account", "list", "--format=json"]);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "preflight probes run before TUI render/runtime work begins"
-    )]
-    match command.output() {
-        Ok(out) if out.status.success() => CheckResult::ok("op_cli", "1Password CLI signed in"),
+    let request = jackin_process::ExecRequest::new("op", ["account", "list", "--format=json"]);
+    match jackin_process::exec_sync(&request) {
+        Ok(out) if out.success => CheckResult::ok("op_cli", "1Password CLI signed in"),
         Ok(_) => CheckResult::skip(
             "op_cli",
             "op CLI not signed in (only needed if workspaces reference op:// secrets)",
@@ -402,14 +390,9 @@ fn check_mise() -> CheckResult {
     if !in_checkout {
         return CheckResult::skip("mise", "Not in a source checkout — mise not required");
     }
-    let mut command = std::process::Command::new("mise");
-    command.arg("--version");
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "preflight probes run before TUI render/runtime work begins"
-    )]
-    match command.output() {
-        Ok(out) if out.status.success() => {
+    let request = jackin_process::ExecRequest::new("mise", ["--version"]);
+    match jackin_process::exec_sync(&request) {
+        Ok(out) if out.success => {
             let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
             CheckResult::ok("mise", format!("mise {version}"))
         }

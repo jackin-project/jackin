@@ -322,7 +322,7 @@ CREATE TABLE account_usage_snapshots (
 Single writer (the running `jackin` process for that instance), many
 readers. Console subscribers may read concurrently. SQLite's WAL mode
 handles this; turn it on at DB creation time. No multi-writer scenarios
-exist in V1 because each instance has at most one running jackin
+exist in V1 because each instance has at most one running jackin❯
 process.
 
 Memory introduces a second concurrency question: multiple agents inside one Capsule-managed container may read the same memory brief and propose new memory during the same run. V1 should serialize writes through the workflow runner or daemon-owned storage handle, not let each in-container agent open the database directly. Agents submit proposals through the control/MCP surface; the host-side storage owner stamps provenance and writes the row. This keeps the database private to jackin❯ and prevents an agent from rewriting durable memory with ordinary filesystem access.
@@ -396,7 +396,7 @@ observing real footprint.
   policy checks, and runtime-neutral `MemoryBrief` construction
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — DB creation on first load
 - <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> — DB teardown on `purge`
-- Future control/MCP surface — agents query/propose memory through jackin,
+- Future control/MCP surface — agents query/propose memory through jackin❯,
   never by opening host-side storage directly
 - Future ADR file under `docs/content/docs/reference/developer-reference/adrs/` —
   Turso production posture plus physical home for workspace memory

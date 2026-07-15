@@ -1,6 +1,6 @@
 # jackin-diagnostics
 
-Host observability substrate: structured JSONL run diagnostics, the debug-mode flag, the `debug_log!` macro, redaction/secret-scrubbing, build-log capture, and the run/summary/screen/terminal reporting helpers. The two-tier telemetry (`clog!` compact always-on, `cdebug!` firehose on `JACKIN_DEBUG=1`) is rooted here.
+Host observability substrate: structured JSONL run diagnostics, the debug-mode flag, the `debug_log!` macro, redaction/secret-scrubbing, build-log capture, and the run/summary/screen/terminal reporting helpers. Its two tiers are `clog!` compact always-on and `cdebug!` firehose at telemetry debug.
 
 Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 
@@ -24,6 +24,7 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 | [`operation.rs`](src/operation.rs) · [`operation/`](src/operation) | typed operation facade | [`tests.rs`](src/operation/tests.rs) |
 | [`metrics.rs`](src/metrics.rs) · [`metrics/`](src/metrics) | hot-path metric instruments | [`tests.rs`](src/metrics/tests.rs) |
 | [`observability.rs`](src/observability.rs) · [`observability/`](src/observability) | OTLP tier | [`tests.rs`](src/observability/tests.rs) |
+| [`registry.rs`](src/registry.rs) · [`registry/`](src/registry) | fail-closed event registry + attribute schema | [`tests.rs`](src/registry/tests.rs) |
 | [`debug_log_adapter.rs`](src/debug_log_adapter.rs) | host sink install for `jackin-core::debug_log!` | — |
 | [`logging.rs`](src/logging.rs) | logging init | — |
 | [`secret_scrub.rs`](src/secret_scrub.rs) · [`secret_scrub/`](src/secret_scrub) | secret scrubbing | [`tests.rs`](src/secret_scrub/tests.rs) |

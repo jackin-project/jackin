@@ -19,7 +19,7 @@ use crate::persist::atomic_write;
 use crate::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, LEGACY_VERSION};
 
 /// Transform applied to a TOML document for one version step.
-pub type Migration = fn(&mut DocumentMut) -> anyhow::Result<()>;
+pub type Migration = fn(&mut DocumentMut) -> crate::ConfigResult<()>;
 
 /// One edge in a config or workspace migration registry.
 #[expect(
@@ -156,7 +156,7 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
 /// `persist.rs` can reuse this exact transform: the typed-struct round-trip
 /// there drops the legacy `op_account` before the version-driven migration
 /// would see it, so the split re-injects it and calls this directly.
-pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Result<()> {
+pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     // Absent op_account is a legitimate no-op (single-account / never-set
     // workspace). A present-but-non-string value is operator data we must
     // not silently drop: bail loudly so the standard startup parser error
@@ -170,8 +170,7 @@ pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Re
                 return Err(ConfigError::msg(format!(
                     "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
                      found {item:?}"
-                ))
-                .into());
+                )));
             }
         },
     };
@@ -279,7 +278,7 @@ impl std::fmt::Display for KubernetesVersion {
 }
 
 /// Migrate a global `config.toml` to the current schema if needed.
-pub fn migrate_config_file_if_needed(path: &Path) -> anyhow::Result<bool> {
+pub fn migrate_config_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
     Ok(
         migrate_file_if_needed(path, "config", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS)?
             .is_some(),
@@ -287,7 +286,7 @@ pub fn migrate_config_file_if_needed(path: &Path) -> anyhow::Result<bool> {
 }
 
 /// Migrate a split workspace file to the current schema if needed.
-pub fn migrate_workspace_file_if_needed(path: &Path) -> anyhow::Result<bool> {
+pub fn migrate_workspace_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
     Ok(migrate_file_if_needed(
         path,
         "workspace config",
@@ -311,7 +310,7 @@ pub fn migrate_file_if_needed(
     label: &str,
     current_raw: &str,
     migrations: &[MigrationStep],
-) -> anyhow::Result<Option<SchemaVersion>> {
+) -> crate::ConfigResult<Option<SchemaVersion>> {
     let raw =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let mut doc: DocumentMut = raw
@@ -321,7 +320,9 @@ pub fn migrate_file_if_needed(
     let current = parse_version(current_raw)?;
 
     if old_version > current {
-        return Err(ConfigError::msg(format!("{label} is at {old_version}, this binary only understands up to {current_raw}; upgrade jackin")).into());
+        return Err(ConfigError::msg(format!(
+            "{label} is at {old_version}, this binary only understands up to {current_raw}; upgrade jackin"
+        )));
     }
     if old_version == current {
         return Ok(None);
@@ -347,19 +348,20 @@ pub fn apply_migrations(
     current_version: &SchemaVersion,
     migrations: &[MigrationStep],
     label: &str,
-) -> anyhow::Result<()> {
+) -> crate::ConfigResult<()> {
     let mut cursor = old_version.clone();
     while &cursor < current_version {
         let Some(step) = find_step(&cursor, migrations)? else {
-            return Err(ConfigError::msg(format!("{label} is at {old_version}, but this binary no longer includes a migration path to {current_version}; upgrade through an older jackin first")).into());
+            return Err(ConfigError::msg(format!(
+                "{label} is at {old_version}, but this binary no longer includes a migration path to {current_version}; upgrade through an older jackin first"
+            )));
         };
         let next = parse_registry_version(step.to)?;
         if next <= cursor {
             return Err(ConfigError::msg(format!(
                 "{label} migration registry is invalid: step {} -> {} does not move forward",
                 step.from, step.to
-            ))
-            .into());
+            )));
         }
         (step.migrate)(doc)
             .with_context(|| format!("running {label} migration {} -> {}", step.from, step.to))?;
@@ -369,8 +371,7 @@ pub fn apply_migrations(
     if &cursor != current_version {
         return Err(ConfigError::msg(format!(
             "{label} migration registry stopped at {cursor}, expected {current_version}"
-        ))
-        .into());
+        )));
     }
     Ok(())
 }
@@ -388,7 +389,7 @@ fn find_step<'a>(
 }
 
 /// Parse a registry `from`/`to` string (`legacy` or Kubernetes-style).
-pub fn parse_registry_version(version: &str) -> anyhow::Result<SchemaVersion> {
+pub fn parse_registry_version(version: &str) -> crate::ConfigResult<SchemaVersion> {
     if version == LEGACY_VERSION {
         return Ok(SchemaVersion::Legacy);
     }
@@ -396,14 +397,16 @@ pub fn parse_registry_version(version: &str) -> anyhow::Result<SchemaVersion> {
 }
 
 /// Read and parse the document's `version` field (`Legacy` when absent).
-pub fn doc_version(doc: &DocumentMut, label: &str) -> anyhow::Result<SchemaVersion> {
+pub fn doc_version(doc: &DocumentMut, label: &str) -> crate::ConfigResult<SchemaVersion> {
     let Some(item) = doc.get("version") else {
         return Ok(SchemaVersion::Legacy);
     };
     let Some(version) = item.as_str() else {
-        return Err(ConfigError::msg(format!("{label} version must be a string")).into());
+        return Err(ConfigError::msg(format!(
+            "{label} version must be a string"
+        )));
     };
-    parse_version(version).with_context(|| format!("{label} version is invalid"))
+    Ok(parse_version(version).with_context(|| format!("{label} version is invalid"))?)
 }
 
 // Hand-rolled parser for Kubernetes-style versions (`v1`, `v1betaN`,
@@ -412,7 +415,7 @@ pub fn doc_version(doc: &DocumentMut, label: &str) -> anyhow::Result<SchemaVersi
 // small enough that adding a dependency is overkill (per AGENTS.md
 // "Prefer libraries over hand-rolled parsers" carve-out).
 /// Parse a Kubernetes-style schema version string (`v1`, `v1alpha2`, …).
-pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
+pub fn parse_version(version: &str) -> crate::ConfigResult<SchemaVersion> {
     let rest = version
         .strip_prefix('v')
         .ok_or_else(|| anyhow::Error::from(ConfigError::msg("version must start with `v`")))?;
@@ -430,7 +433,9 @@ pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
     } else if let Some(seq_raw) = suffix.strip_prefix("beta") {
         Channel::Beta(parse_sequence("beta", seq_raw)?)
     } else {
-        return Err(ConfigError::msg("version must look like v1, v1beta1, or v1alpha1").into());
+        return Err(ConfigError::msg(
+            "version must look like v1, v1beta1, or v1alpha1",
+        ));
     };
 
     Ok(SchemaVersion::Kubernetes(KubernetesVersion {
@@ -488,12 +493,8 @@ pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
 // `apply_migrations` writes `step.to` to the document after each step, so
 // these migrations are pure no-ops; content-changing migrations replace
 // this with their own fn.
-#[allow(
-    clippy::unnecessary_wraps,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 /// No-op content transform; the framework still stamps `step.to` as `version`.
-pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
+pub const fn noop_migration(_doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     Ok(())
 }
 

@@ -780,7 +780,7 @@ pub fn selected_index(selected: usize, row_count: usize) -> usize {
     crate::tui::focus::selected_index(selected, row_count)
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal inline-picker clear flags on the list-selection \
               plan (role / agent / new_session / provider / launch_provider) — \
@@ -984,7 +984,7 @@ pub fn workspace_list_clickable_at_position(
         .is_some()
 }
 
-#[allow(
+#[expect(
     clippy::fn_params_excessive_bools,
     reason = "Six orthogonal workspace-list scroll-focus inputs (in_left_pane, \
               has_scroll_areas, ...) — each is an independent UI signal the \

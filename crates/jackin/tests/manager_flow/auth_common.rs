@@ -1,17 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 //! Auth-kind and role-override integration tests for the manager TUI.
 //!
 //! Extracted from `manager_flow.rs` to keep each test binary under the
@@ -19,12 +5,15 @@
 //! role-header / role-agent / workspace-source edit flows that are
 //! shared across both Claude and GitHub auth kinds.
 
+#![expect(
+    clippy::expect_used,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 use anyhow::Result;
 use jackin::console::tui::state::AuthRow;
 use jackin_config::AppConfig;
 use jackin_console::tui::auth::AuthKind;
-use jackin_core::JackinPaths;
-use jackin_core::env_model;
+use jackin_core::{ANTHROPIC_API_KEY_ENV_NAME, JackinPaths};
 use tempfile::tempdir;
 
 use super::*;
@@ -357,7 +346,7 @@ fn auth_workspace_source_d_is_noop() -> Result<()> {
         ..Default::default()
     });
     ws.env.insert(
-        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
+        ANTHROPIC_API_KEY_ENV_NAME.into(),
         jackin_core::EnvValue::Plain("k".into()),
     );
 

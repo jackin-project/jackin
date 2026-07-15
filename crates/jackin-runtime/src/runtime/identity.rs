@@ -79,6 +79,17 @@ pub(super) struct GitIdentity {
     pub(super) user_email: String,
 }
 
+#[cfg(test)]
+impl GitIdentity {
+    /// Test fixture constructor for `LaunchCore` boundary harnesses.
+    pub(crate) fn for_tests(user_name: &str, user_email: &str) -> Self {
+        Self {
+            user_name: user_name.to_owned(),
+            user_email: user_email.to_owned(),
+        }
+    }
+}
+
 pub(super) async fn try_capture(
     runner: &mut impl CommandRunner,
     program: &str,
@@ -92,7 +103,11 @@ pub(super) async fn try_capture(
 }
 
 pub(super) async fn load_git_identity(runner: &mut impl CommandRunner) -> GitIdentity {
-    jackin_diagnostics::active_timing_started("identity", "git_identity", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Identity,
+        "git_identity",
+        None,
+    );
     let output = try_capture(
         runner,
         "git",
@@ -102,7 +117,7 @@ pub(super) async fn load_git_identity(runner: &mut impl CommandRunner) -> GitIde
     .unwrap_or_default();
     let identity = parse_git_identity_config(&output);
     jackin_diagnostics::active_timing_done(
-        "identity",
+        jackin_diagnostics::DiagnosticStage::Identity,
         "git_identity",
         Some(
             match (

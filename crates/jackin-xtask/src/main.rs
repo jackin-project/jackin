@@ -1,6 +1,6 @@
 //! jackin-xtask: workspace automation (cargo xtask) for CI, lints, and docs gates.
 //!
-//! **Architecture Invariant:** T0.
+//! **Architecture Invariant:** T1.
 //! Entry point: [`main`] — cargo xtask command dispatcher.
 
 mod agent_files;
@@ -11,6 +11,8 @@ mod cmd;
 mod construct;
 mod container_paths_gate;
 mod docs;
+mod frame_timing;
+mod fs_util;
 mod headers;
 mod health;
 mod lint;
@@ -60,6 +62,8 @@ enum Command {
     /// Extract a PTY byte-stream fixture from a `--debug` run log for the
     /// capsule render-conformance harness.
     PtyFixture(pty_fixture::PtyFixtureArgs),
+    /// Measure console first-frame and input-to-frame latency through a PTY.
+    FrameTiming(frame_timing::FrameTimingArgs),
     /// Scaffold a new roadmap item and register it in the sidebar.
     ///
     /// Use as `cargo xtask change new <slug> --group <group>`.
@@ -84,7 +88,7 @@ enum Command {
     ///
     /// Use as `cargo xtask schema-check --base origin/main`.
     SchemaCheck(schema::SchemaCheckArgs),
-    /// Codebase-health lint gates (codebase-health-enforcement W3 + W4).
+    /// Codebase-health lint gates (completed codebase-health W3 + W4).
     ///
     /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
     /// ratchet, the test-file-layout rule, the AGENTS/CLAUDE symlink rule, and
@@ -117,7 +121,7 @@ enum Command {
     /// Use as `cargo xtask release-verify <archive>.tar.gz`.
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
-    /// Report-only code-health dashboard (codebase-health-enforcement Phase 0).
+    /// Report-only code-health dashboard (completed codebase-health Phase 0).
     ///
     /// Use as `cargo xtask health`, `cargo xtask health --format json`, or
     /// `cargo xtask health --write-baseline`.
@@ -160,6 +164,7 @@ enum LintCommand {
 /// direction gate fails only in `strict` mode (informational otherwise, while
 /// the P2 inversions are still being cleaned up).
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
+    fs_util::enforce_sorted_iteration(&docs::repo_root()?)?;
     lint::enforce()?;
     test_layout::enforce()?;
     agent_files::enforce()?;
@@ -178,6 +183,7 @@ fn main() -> ExitCode {
         Command::Ci(args) => ci::run(args),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
+        Command::FrameTiming(args) => frame_timing::run(args),
         Command::Change(cmd) => docs::run_change(cmd),
         Command::Docs(cmd) => docs::run_docs(cmd),
         Command::Research(cmd) => docs::run_research(cmd),

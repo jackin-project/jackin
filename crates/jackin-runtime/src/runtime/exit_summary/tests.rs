@@ -5,10 +5,6 @@
 use super::*;
 use crate::instance::{InstanceIndexEntry, InstanceStatus};
 
-#[allow(
-    clippy::ref_option,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 fn entry(
     id: &str,
     base: &str,

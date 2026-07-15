@@ -27,6 +27,7 @@ jackin-image = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-launch-tui = { workspace = true }
 jackin-host = { workspace = true }
+jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-isolation = { workspace = true }
 jackin-instance = { workspace = true }
@@ -57,6 +58,8 @@ nix = { workspace = true, features = ["user"] }
 [dev-dependencies]
 jackin-test-support = { workspace = true }
 jackin-tui = { workspace = true }
+jackin-image = { workspace = true }
+jackin-manifest = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 tokio = { workspace = true, features = ["test-util"] }
 

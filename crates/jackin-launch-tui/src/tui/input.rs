@@ -23,7 +23,7 @@ pub struct LaunchInput {
 }
 
 impl LaunchInput {
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "LaunchInput spawn wires the event-polling thread, double- \
                   Ctrl-C tracker, and IPC channels together. The nested `while` \

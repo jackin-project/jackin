@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 pub use crate::MountIsolation;
 
 // Pure data types — now in jackin-core.
-pub use jackin_core::isolation_record::{CleanupStatus, IsolationRecord};
+pub use jackin_core::{CleanupStatus, IsolationRecord};
 
 const ISOLATION_FILE: &str = "isolation.json";
 const STATE_DIR: &str = ".jackin";
@@ -241,7 +241,7 @@ pub fn list_records_for_workspace(
         let Some(name_str) = name.to_str() else {
             continue;
         };
-        if !name_str.starts_with(jackin_core::constants::CONTAINER_PREFIX_DASH) {
+        if !name_str.starts_with(jackin_core::CONTAINER_PREFIX_DASH) {
             continue;
         }
         let records = read_records(&entry.path())?;

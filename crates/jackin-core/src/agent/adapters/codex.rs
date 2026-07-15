@@ -17,7 +17,7 @@ const FALLBACK_INSTALL_COMMAND: &str = bounded_fallback_curl!(
 
 /// [`crate::agent::runtime::AgentRuntime`] adapter for Codex.
 #[derive(Debug)]
-pub struct CodexRuntime;
+pub(crate) struct CodexRuntime;
 
 impl crate::agent::runtime::private::Sealed for CodexRuntime {}
 

@@ -10,10 +10,9 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
-use jackin_core::JackinPaths;
+use jackin_core::{ContainerId, JackinPaths};
 use jackin_protocol::InstanceSnapshot;
 use jackin_protocol::control::AgentState;
 use serde::{Deserialize, Serialize};
@@ -122,14 +121,20 @@ pub struct StdNotificationDispatcher;
 
 impl NotificationDispatcher for StdNotificationDispatcher {
     fn dispatch(&mut self, command: &NotificationCommand) -> Result<()> {
-        let status = Command::new(&command.program)
-            .args(&command.args)
-            .status()
+        let request = jackin_process::ExecRequest::new(&command.program, &command.args)
+            .stdin_mode(jackin_process::StdioMode::Inherit)
+            .stdout_mode(jackin_process::StdioMode::Inherit)
+            .stderr_mode(jackin_process::StdioMode::Inherit);
+        let status = jackin_process::exec_sync(&request)
             .with_context(|| format!("dispatching notification via {}", command.program))?;
-        if status.success() {
+        if status.success {
             Ok(())
         } else {
-            bail!("notification command {} exited {status}", command.program)
+            bail!(
+                "notification command {} exited with code {:?}",
+                command.program,
+                status.code
+            )
         }
     }
 }
@@ -187,7 +192,7 @@ impl<D: NotificationDispatcher> AttentionNotifier for HostAttentionNotifier<D> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SessionKey {
-    container_name: String,
+    container_name: ContainerId,
     session_id: u64,
 }
 
@@ -229,10 +234,12 @@ impl<N: AttentionNotifier> AttentionAdapter<N> {
         container_name: &str,
         panes: &[AttentionPaneStatus],
     ) -> Result<usize> {
+        let container_id = ContainerId::parse(container_name)
+            .context("validating attention snapshot container name")?;
         let mut sent = 0;
         for pane in panes {
             let key = SessionKey {
-                container_name: container_name.to_owned(),
+                container_name: container_id.clone(),
                 session_id: pane.session_id,
             };
             let previous = self.last_seen.insert(key, pane.state);

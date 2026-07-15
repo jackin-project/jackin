@@ -748,7 +748,7 @@ fn derived_image_snapshots_only_selected_agent_home_defaults() {
 fn claude_plugins_render_one_readable_run_layer() {
     let claude = ClaudeConfig {
         model: None,
-        marketplaces: vec![jackin_core::manifest::ClaudeMarketplaceConfig {
+        marketplaces: vec![jackin_core::ClaudeMarketplaceConfig {
             source: "myorg/marketplace".to_owned(),
             sparse: vec!["pkg/a".to_owned()],
         }],
@@ -890,7 +890,7 @@ fn entrypoint_source_hook_block_clears_trap_and_restores_pwd_and_xtrace() {
     // The source block must:
     //   - save PWD before sourcing
     //   - suspend xtrace via `case $- in *x*)` to avoid leaking
-    //     expanded secrets under JACKIN_DEBUG=1
+    //     expanded secrets when the shell was started with tracing
     //   - capture rc BEFORE testing (same `$?`-after-`!cmd` trap as run_hook)
     //   - restore xtrace
     //   - clear the ERR trap before the cd so a vanished pwd

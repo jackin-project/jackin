@@ -20,7 +20,7 @@ pub(crate) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> S
 }
 
 pub(crate) fn capsule_config(
-    selector: &jackin_core::selector::RoleSelector,
+    selector: &jackin_core::RoleSelector,
     workdir: &str,
     manifest: &jackin_manifest::RoleManifest,
     initial_provider: Option<jackin_protocol::InitialProvider>,
