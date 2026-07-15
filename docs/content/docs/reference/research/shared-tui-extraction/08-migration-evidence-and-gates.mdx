@@ -167,6 +167,7 @@ Each slice pins a tested `termrock` revision and runs the whole workspace becaus
 | terminal cleanup | mode/guard tests | partial-init, explicit restore, drop fallback, PTY tests |
 | process policy | rich-surface/diagnostics tests | remains entirely in `jackin❯` |
 | dependency graph | donor Cargo tree | no product, Tokio, or Crossterm in base graph |
+| feature additivity | no equivalent donor boundary | same component inventory and buffer hashes with/without `crossterm`; only integration API is added |
 | docs | jackin❯ generic lookbook pages | external catalog paths and component coverage |
 
 Every render fixture needs a stated purpose. Byte-identical parity is expected during the `jackin❯` migration. Intended visual changes occur only in later product PRs, never hidden inside the ownership move.
@@ -189,6 +190,7 @@ The new public component API should allow visible-window projection rather than 
 
 - [ ] Provenance and REUSE checks pass for every extracted and generated file.
 - [ ] Base `termrock` builds with no product, Tokio, or Crossterm dependency.
+- [ ] Every component and logical interaction API builds without features; enabling `crossterm` adds only event/backend/session convenience and preserves canonical renders.
 - [ ] Every public item is documented and present in the reviewed API report.
 - [ ] Every public component has neutral unit, buffer, story, SVG, docs, and edge-state coverage.
 - [ ] Render generation is byte-deterministic.

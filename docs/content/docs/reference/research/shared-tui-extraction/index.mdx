@@ -24,7 +24,7 @@ All measurements were taken from the active jackin❯ branch on 2026-07-15. File
 - **Repository:** `tailrocks/termrock`.
 - **Initial packages:** `termrock` for reusable components and `termrock-lookbook` for the story/render library plus preview CLI.
 - **Renderer:** Ratatui only. Do not design a renderer-neutral abstraction or support competing TUI frameworks.
-- **Base dependency:** `ratatui-core`; Crossterm integration is an optional adapter and Tokio is absent from the initial shared crate.
+- **Base dependency:** `ratatui-core`; every component works without features, while additive Crossterm event/backend/session convenience is optional and Tokio is absent from the initial shared crate.
 - **License:** Apache-2.0, preserving donor history, authorship, SPDX headers, copyright, and attribution.
 - **Documentation:** a Fumadocs component catalog in the same repository, backed by committed CLI-generated SVG previews.
 - **First consumer:** `jackin❯`, migrated without visible redesign.

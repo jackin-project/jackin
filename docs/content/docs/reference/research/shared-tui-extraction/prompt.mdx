@@ -34,10 +34,11 @@ In scope:
 - semantic themes and a default Tailrocks phosphor preset;
 - Ratatui as the only rendering framework, with no framework-neutral renderer layer;
 - `ratatui-core` as the base widget dependency, optional Crossterm integration, and no initial Tokio dependency;
+- an additive `crossterm` feature that adds event/backend/session convenience without gating or changing any component;
 - display-width-aware text/layout, key input, focus, hover, scroll, modal, terminal ownership, and restoration primitives;
 - neutral panels, tabs, action strips, dialogs, lists, inputs, hints, status, toasts, and diff components;
 - component-local logical actions, pure interaction-state updates, and typed outcomes that work inside consumer-owned TEA or component-oriented applications;
-- compile-checked direct, TEA, component-oriented, Flux, and buffer-only examples using the same public components without a required TermRock runtime;
+- compile-checked direct, TEA, component-oriented, Flux, buffer-only, manual Crossterm, and managed Crossterm examples using the same public components without a required TermRock runtime;
 - interactive lookbook CLI, deterministic render artifacts, and terminal-size conformance;
 - a same-repository Fumadocs component catalog backed by generated SVG states and a coverage manifest;
 - Git branch/fork iteration with exact revision pins for durable consumer builds; crates.io publication is optional;

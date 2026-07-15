@@ -59,7 +59,7 @@ Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock
 
 **Question:** keep Tokio in the base crate?
 
-**Recommended default:** no. Build the base library on `ratatui-core`; put Crossterm event/session integration behind one optional feature, and ship no Tokio feature initially. Pure widgets, state, input, focus, layout, and terminal guards do not require an async executor. Reconsider a runtime adapter only after two consumers prove the same executor-neutral contract.
+**Recommended default:** no. Build the base library on `ratatui-core`; every component, state, logical input, focus, layout, and outcome remains available without features. The additive `crossterm` feature supplies event conversion, backend construction, and optional managed-session convenience without changing those base APIs. Ship no Tokio feature initially. Reconsider a runtime adapter only after two consumers prove the same executor-neutral contract.
 
 **Deadline:** first public manifest review.
 

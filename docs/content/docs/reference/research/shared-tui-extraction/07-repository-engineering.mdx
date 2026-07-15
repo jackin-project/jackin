@@ -22,7 +22,7 @@ tailrocks/termrock/
 |- nextest.toml
 |- crates/
 |  |- termrock/
-|  |  `- src/{input,interaction,layout,scroll,style,terminal,text,widgets}/
+|  |  `- src/{crossterm,input,interaction,layout,scroll,style,text,widgets}/
 |  `- termrock-lookbook/
 |     |- src/lib.rs
 |     `- src/bin/termrock-lookbook.rs
@@ -31,7 +31,9 @@ tailrocks/termrock/
 |  |- tea.rs
 |  |- component.rs
 |  |- flux.rs
-|  `- buffer_only.rs
+|  |- buffer_only.rs
+|  |- crossterm_manual.rs
+|  `- crossterm_managed.rs
 |- catalog/
 |  `- catalog.toml
 |- fixtures/renders/
@@ -85,9 +87,9 @@ Use path classification and two required aggregators, `rust-required` and `docs-
 | `feature-powerset` | `cargo hack check --workspace --feature-powerset --all-targets --locked` | optional adapter remains additive |
 | `msrv` | `cargo check --workspace --all-targets --all-features --locked` on declared MSRV | compatibility floor |
 | `rustdoc` | `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --all-features --no-deps --locked` | public docs and links |
-| `examples` | check direct, TEA, component, Flux, and buffer-only examples through public APIs | application-pattern neutrality |
+| `examples` | check direct, TEA, component, Flux, buffer-only, and both Crossterm integration examples through public APIs | application-pattern and feature-layer neutrality |
 
-The base crate must also pass `cargo check -p termrock --no-default-features` and a dependency assertion that finds no Tokio/Crossterm package in that graph. `buffer_only` is checked with no default features; terminal examples are checked with the declared Crossterm feature. The Crossterm feature receives a separate all-target check on Linux, macOS, and Windows if the project claims those platforms.
+The base crate must also pass `cargo check -p termrock --no-default-features` and a dependency assertion that finds no Tokio/Crossterm package in that graph. All component modules and architecture/buffer examples are checked with no features. The two Crossterm examples declare `required-features = ["crossterm"]` in the manifest and are checked with `--features crossterm`, so the no-feature example lane skips only those integration examples rather than weakening the component build. CI compares public component inventories and canonical buffer fixtures across both builds: enabling the feature may add only the optional integration module and adapter implementations, never hide or change a component. The Crossterm feature receives a separate all-target check on Linux, macOS, and Windows if the project claims those platforms.
 
 ### API and package gates
 
@@ -156,9 +158,10 @@ The same pull request that changes a public component changes its story, SVG, an
 - deploy Pages only from `main` after source, render, and docs aggregators pass.
 
 The catalog also contains an application-pattern section with compile-checked
-direct, TEA, component-oriented, Flux, and buffer-only integrations. These are
-different consumer compositions over the same public components, not separate
-TermRock runtime APIs.
+direct, TEA, component-oriented, Flux, buffer-only, manually managed Crossterm,
+and TermRock-managed Crossterm integrations. These are different consumer
+compositions over the same public components, not separate widget or runtime
+frameworks.
 
 The current jackin❯ docs workflow in <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile> is the reference for source-path checks, frozen Bun installs, static link validation, Pages artifacts, deployment retries, and post-deploy verification. `termrock` should replace the product-specific brand/roadmap/research checks with catalog completeness and Rust-path checks.
 

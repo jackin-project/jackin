@@ -103,7 +103,7 @@ Exit gate: the shared API supports a distinct application without `jackin❯` vo
 - [ ] The standalone Fumadocs site renders generated SVG states and fails verification when component docs, stories, or previews drift.
 - [ ] Keyboard, focus, non-color, Unicode, and terminal-size contracts pass.
 - [ ] Terminal mode restoration passes supported failure paths.
-- [ ] Base `termrock` builds without Tokio or Crossterm; the optional Crossterm adapter passes partial-initialization and PTY restoration tests.
+- [ ] Base `termrock` builds without Tokio or Crossterm; every component remains available there, while the optional Crossterm integration passes additivity, partial-initialization, and PTY restoration tests.
 - [ ] Public API and package diffs pass the documented semver/package policy.
 - [ ] `jackin❯` parity passes before local donor deletion.
 - [ ] Holla proves second-consumer reuse.

@@ -99,10 +99,12 @@ examples/
 |- tea.rs
 |- component.rs
 |- flux.rs
-`- buffer_only.rs
+|- buffer_only.rs
+|- crossterm_manual.rs
+`- crossterm_managed.rs
 ```
 
-All five examples should present the same small neutral screen using the same
+All examples should present the same small neutral screen using the same
 public tabs, list, input, action, outcome, and theme types. Only application
 state ownership and message routing differ:
 
@@ -113,10 +115,12 @@ state ownership and message routing differ:
 | `component.rs` | consumer-defined component holding local state and routing events | TermRock's internal trait is mandatory |
 | `flux.rs` | consumer actions/store/dispatcher projecting into widgets | TermRock supplies a global store |
 | `buffer_only.rs` | no Crossterm/default features; render directly to a Ratatui buffer | a real terminal backend is required |
+| `crossterm_manual.rs` | same components with application-owned Crossterm backend/session setup | the convenience layer is mandatory |
+| `crossterm_managed.rs` | event adapters and managed-session convenience from the optional feature | TermRock owns the application loop or panic policy |
 
 Examples depend only on public API and contain no `#[cfg(test)]` access to
-internals. CI runs `cargo check --examples --no-default-features` for buffer
-examples and the declared feature set for terminal examples. The Fumadocs site
+internals. CI checks the architecture/buffer examples without features and the
+two Crossterm examples with the declared feature. The Fumadocs site
 adds an "Application patterns" section that explains these integrations and
 links each component page to small direct/TEA snippets where interaction is
 relevant. Examples are compatibility tests, not a third TermRock runtime crate.
@@ -150,7 +154,7 @@ The contracts follow these rules:
    clipboard, open URLs, log, spawn, poll, sleep, or mutate domain state.
 6. The function that calculates layout also returns the interactive regions.
    Mouse routing never reconstructs geometry independently from rendering.
-7. Raw Crossterm events appear only in the optional adapter module. Components
+7. Raw Crossterm events appear only in the optional integration module. Components
    accept logical actions so byte-decoded and test inputs use the same path.
 8. Visible hints are consumer-provided or derived from the same keymap that
    dispatches actions. A widget does not hardcode `save`, `agent`, `run`, or
@@ -159,6 +163,8 @@ The contracts follow these rules:
    clipped by display width, not byte length or scalar-value count.
 10. Public components are useful independently. Rendering `Tabs` must not
     require a TermRock status bar, terminal session, or root runtime.
+11. Enabling `crossterm` adds adapters and convenience only. It does not select
+    different component implementations or change base rendering behavior.
 
 ## Target module tree
 
@@ -202,8 +208,9 @@ termrock/src/
 |  |- tabs.rs
 |  |- text_input.rs
 |  `- toast.rs
-`- terminal/                 # optional `crossterm` feature
+`- crossterm/                # optional `crossterm` feature
    |- event.rs
+   |- backend.rs
    `- session.rs
 ```
 
@@ -367,7 +374,9 @@ any public TermRock signature or documentation contains:
   consumer crate;
 - `tokio`, `tracing`, filesystem, networking, process, clipboard, secrets, or
   application configuration in the base crate;
-- Crossterm types outside the optional adapter;
+- Crossterm types outside the optional integration module;
+- any component, state, theme, layout, action, or outcome hidden when the
+  `crossterm` feature is disabled;
 - public collection indices as durable selection/activation identity;
 - raw terminal escape bytes as a widget outcome;
 - hardcoded product action labels or key policy;
@@ -396,11 +405,13 @@ Every extracted public component needs:
 - Unicode/display-width cases appropriate to its content;
 - a non-color focus/selection/error cue;
 - a neutral lookbook story and deterministic SVG;
-- rustdoc showing standalone use without the terminal adapter or root runtime;
+- rustdoc showing standalone use without the Crossterm integration or root runtime;
 - at least one compile-only example using a non-Tailrocks domain ID type.
 
-The repository-level direct, TEA, component, Flux, and buffer-only examples
-must also compile against every advertised Ratatui/MSRV compatibility cell.
+The repository-level direct, TEA, component, Flux, buffer-only, manual
+Crossterm, and managed Crossterm examples must also compile against every
+advertised Ratatui/MSRV compatibility cell. Canonical component buffers must be
+identical with and without the feature.
 
 Composite consumer screens remain covered in their own repositories. TermRock
 proves that primitives are neutral and correct; jackin❯, Holla, Velnor, and

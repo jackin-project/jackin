@@ -17,7 +17,7 @@ tailrocks/termrock
 |  |     |- layout/
 |  |     |- scroll/
 |  |     |- style/
-|  |     |- terminal/
+|  |     |- crossterm/       # optional feature
 |  |     |- text/
 |  |     `- widgets/
 |  `- termrock-lookbook/
@@ -27,7 +27,7 @@ tailrocks/termrock
 |  |- content/docs/components/
 |  `- public/component-previews/
 |- fixtures/renders/
-|- examples/{direct,tea,component,flux,buffer_only}.rs
+|- examples/{direct,tea,component,flux,buffer_only,crossterm_managed,crossterm_manual}.rs
 `- xtask or scripts for docs and render conformance
 ```
 
@@ -78,11 +78,12 @@ event -> Message -> pure update -> state + typed effects
 The shared project may expose small executor-neutral contracts such as modal outcomes, focus ownership, and dirty/redraw state. It does not expose effect envelopes that can execute themselves, and it must not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree. Standard Ratatui `Widget`/`StatefulWidget` rendering remains usable without the optional component/update layer.
 
 The repository includes compile-checked direct, TEA, component-oriented, Flux,
-and buffer-only examples. Every example uses the same public widgets and
-interaction types while defining its own root state and routing, proving that
-TermRock supports application patterns instead of prescribing one.
+buffer-only, manually managed Crossterm, and TermRock-managed Crossterm
+examples. Every example uses the same public widgets and interaction types
+while defining its own root state and routing, proving that TermRock supports
+application patterns and optional convenience instead of prescribing either.
 
-The base `termrock` crate depends on `ratatui-core`, following Ratatui's guidance for widget-library authors. Crossterm raw mode, alternate screen, mouse capture, event conversion, and restoration live behind an optional `crossterm` feature. The lookbook enables that feature; a buffer-only consumer does not compile a terminal backend. The initial library has no Tokio feature.
+The base `termrock` crate depends on `ratatui-core`, following Ratatui's guidance for widget-library authors. Every component, state, logical action, outcome, theme, and buffer-rendering contract works with `default-features = false`. The optional `crossterm` feature adds event conversion, `CrosstermBackend` integration, and a managed terminal-session builder for raw mode, alternate screen, mouse capture, cursor, and restoration. It does not add alternative components or change base behavior. The lookbook enables that feature; a buffer-only consumer does not compile a terminal backend. The initial library has no Tokio feature.
 
 See [06 - Public API and refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/) for the module graph, widget conventions, theme structure, terminal-session contract, and module-by-module refactoring ledger.
 See [09 - Component redesign catalog](/reference/research/shared-tui-extraction/09-component-redesign-catalog/) for the Ratatui TEA/component boundary and the replacement contract for every donor component file.
