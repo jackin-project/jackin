@@ -89,7 +89,9 @@ impl AppConfig {
             let original_len = workspace.mounts.len();
             workspace.mounts.retain(|mount| mount.dst != dst);
             if workspace.mounts.len() == original_len {
-                return Err(ConfigError::msg("unknown workspace mount destination: {dst}"));
+                return Err(ConfigError::msg(
+                    "unknown workspace mount destination: {dst}",
+                ));
             }
         }
 

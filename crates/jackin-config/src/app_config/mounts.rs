@@ -245,10 +245,10 @@ impl AppConfig {
         for row in rows {
             if !seen.insert(row.mount.dst.as_str()) {
                 let scope = row.scope.as_deref().unwrap_or("global");
-                return Err(ConfigError::msg(format!("global mount destination conflicts with workspace destination: {} (from global mount {} [{}])",
-                    row.mount.dst,
-                    row.name,
-                    scope)));
+                return Err(ConfigError::msg(format!(
+                    "global mount destination conflicts with workspace destination: {} (from global mount {} [{}])",
+                    row.mount.dst, row.name, scope
+                )));
             }
         }
         Ok(())
