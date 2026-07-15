@@ -121,3 +121,6 @@ CI-config plan: verification is actionlint + observed-run evidence + docs gates.
   could consume most of the shared 60-minute job timeout before `jackin-term`.
   The final lane uses a fail-fast-disabled four-crate matrix, preserving each
   exit status and summary while preventing a slow crate from starving another.
+  Run `29401172187` then showed the full 118-test `jackin-term` invocation
+  exceeds 60 minutes under Miri, so each isolated matrix job has a 180-minute
+  ceiling rather than weakening the crate invocation to a smoke subset.
