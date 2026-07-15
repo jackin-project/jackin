@@ -24,7 +24,7 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
 
 /// Run a long-lived command with live stdout and stderr.
 ///
-/// BuildKit reports cache resolution and layer progress on stderr. Capturing
+/// `BuildKit` reports cache resolution and layer progress on stderr. Capturing
 /// that stream leaves GitHub Actions silent until the build exits, which makes
 /// an otherwise healthy image build indistinguishable from a stalled job.
 pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
