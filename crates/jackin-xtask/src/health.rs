@@ -651,12 +651,12 @@ fn build_verification_map(root: &Path) -> Result<BTreeMap<String, String>> {
         id: String,
     }
 
-    let mut meta_cmd = Command::new("cargo");
+    let mut meta_cmd = crate::cmd::command("cargo");
     meta_cmd
         .args(["metadata", "--format-version=1", "--no-deps"])
         .current_dir(root);
     let output = crate::cmd::output_raw(&mut meta_cmd).context("running cargo metadata")?;
-    if !output.status.success() {
+    if !output.success {
         bail!(
             "cargo metadata failed: {}",
             String::from_utf8_lossy(&output.stderr)

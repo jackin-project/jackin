@@ -148,7 +148,7 @@ fn body(args: BodyArgs) -> Result<()> {
 }
 
 fn changed_files(root: &Path, base: &str) -> Result<Vec<String>> {
-    let mut cmd = Command::new("git");
+    let mut cmd = crate::cmd::command("git");
     cmd.arg("-C")
         .arg(root)
         .args(["diff", "--name-only", &format!("{base}...HEAD")]);

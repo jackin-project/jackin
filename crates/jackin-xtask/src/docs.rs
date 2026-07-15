@@ -234,7 +234,7 @@ fn check_codebase_map(root: &Path) -> Result<()> {
 }
 
 fn workspace_package_names(root: &Path) -> Result<Vec<String>> {
-    let mut meta = std::process::Command::new("cargo");
+    let mut meta = crate::cmd::command("cargo");
     meta.args([
         "metadata",
         "--format-version",
@@ -245,7 +245,7 @@ fn workspace_package_names(root: &Path) -> Result<Vec<String>> {
     .arg(root.join("Cargo.toml"));
     let output =
         crate::cmd::output_raw(&mut meta).context("running cargo metadata for docs map-check")?;
-    if !output.status.success() {
+    if !output.success {
         bail!(
             "cargo metadata failed: {}",
             String::from_utf8_lossy(&output.stderr)

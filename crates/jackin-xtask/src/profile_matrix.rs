@@ -190,7 +190,7 @@ impl CommandResult {
             .stderr(Stdio::piped());
         let output = crate::cmd::output_raw(&mut self.command)
             .with_context(|| format!("spawning {:?}", self.command))?;
-        if output.status.success() {
+        if output.success {
             Ok(())
         } else {
             bail!("{}", String::from_utf8_lossy(&output.stderr).trim())

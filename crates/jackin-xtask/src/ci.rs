@@ -379,14 +379,14 @@ fn parse_capsule_export(output: &str) -> Result<PathBuf> {
 
 fn run_step(root: &Path, step: &Step) -> Result<()> {
     emit(&format!("==> {}", display_step(step)));
-    let mut cmd = Command::new(&step.program);
+    let mut cmd = crate::cmd::command(&step.program);
     cmd.args(&step.args).current_dir(root).envs(&step.env);
     crate::cmd::run(&mut cmd).with_context(|| format!("step {}", step.name))
 }
 
 fn output_step(root: &Path, step: &Step) -> Result<String> {
     emit(&format!("==> {}", display_step(step)));
-    let mut cmd = Command::new(&step.program);
+    let mut cmd = crate::cmd::command(&step.program);
     cmd.args(&step.args).current_dir(root).envs(&step.env);
     crate::cmd::output_string(&mut cmd).with_context(|| format!("step {}", step.name))
 }

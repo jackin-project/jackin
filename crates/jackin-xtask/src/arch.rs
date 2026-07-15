@@ -401,11 +401,11 @@ struct Dep {
 }
 
 fn read_metadata(root: &std::path::Path) -> Result<Metadata> {
-    let mut meta = Command::new("cargo");
+    let mut meta = crate::cmd::command("cargo");
     meta.args(["metadata", "--format-version=1"])
         .current_dir(root);
     let output = crate::cmd::output_raw(&mut meta).context("running cargo metadata")?;
-    if !output.status.success() {
+    if !output.success {
         bail!(
             "cargo metadata failed: {}",
             String::from_utf8_lossy(&output.stderr)

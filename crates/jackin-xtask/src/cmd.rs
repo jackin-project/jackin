@@ -5,20 +5,20 @@
 //! share one shape.
 
 use std::ffi::OsStr;
-use std::process::{Command, Output};
+use std::process::Command;
 
 use anyhow::{Context, Result, anyhow};
 
 /// Run `cmd` for status only. Errors name the command display string.
 pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     let display = display_command(cmd);
-    // `Command::status` is not in the disallowed set; keep the spawn surface
-    // centralized here with `output`/`spawn` below.
-    let status = cmd.status().with_context(|| format!("running {display}"))?;
-    if status.success() {
+    let request = exec_request(cmd);
+    let result =
+        jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
+    if result.success {
         Ok(())
     } else {
-        Err(anyhow!("{display} failed with {status}"))
+        Err(anyhow!("{display} failed with code {:?}", result.code))
     }
 }
 
@@ -29,40 +29,41 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
 /// commands (env/cwd/stdio already set on the builder).
 pub(crate) fn output(cmd: &mut Command) -> Result<Vec<u8>> {
     let display = display_command(cmd);
-    // Prefer shared transport for plain captures (no pre-configured stdio).
-    if let Some(request) = try_exec_request(cmd) {
-        return jackin_process::capture_stdout_sync(&request)
-            .with_context(|| format!("running {display}"));
-    }
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "xtask automation shells out to git, gh, cargo, and mise; centralized here"
-    )]
-    let output = cmd.output().with_context(|| format!("running {display}"))?;
-    if output.status.success() {
+    let output = jackin_process::exec_sync(&exec_request(cmd))
+        .with_context(|| format!("running {display}"))?;
+    if output.success {
         Ok(output.stdout)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(anyhow!(
             "{display} failed with {}\n{}",
-            output.status,
+            output
+                .code
+                .map_or_else(|| "signal".to_owned(), |code| code.to_string()),
             stderr.trim()
         ))
     }
 }
 
 /// Build a transport request when `cmd` is a plain program+args capture.
-fn try_exec_request(cmd: &Command) -> Option<jackin_process::ExecRequest> {
+fn exec_request(cmd: &Command) -> jackin_process::ExecRequest {
     let program = cmd.get_program();
     if program.is_empty() {
-        return None;
+        return jackin_process::ExecRequest::new(program, None::<&str>);
     }
     let args: Vec<_> = cmd.get_args().collect();
     let mut request = jackin_process::ExecRequest::new(program, args);
     if let Some(cwd) = cmd.get_current_dir() {
         request = request.cwd(cwd);
     }
-    Some(request)
+    for (key, value) in cmd.get_envs() {
+        if let Some(value) = value {
+            request.env.push((key.to_os_string(), value.to_os_string()));
+        } else {
+            request.env_remove.push(key.to_os_string());
+        }
+    }
+    request
 }
 
 /// Capture stdout as a lossy UTF-8 owned string.
@@ -71,13 +72,9 @@ pub(crate) fn output_string(cmd: &mut Command) -> Result<String> {
 }
 
 /// Full process `Output` (stdout+stderr+status) for callers that inspect all three.
-pub(crate) fn output_raw(cmd: &mut Command) -> Result<Output> {
+pub(crate) fn output_raw(cmd: &mut Command) -> Result<jackin_process::ExecResult> {
     let display = display_command(cmd);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "xtask automation shells out to git, gh, cargo, and mise; centralized here"
-    )]
-    cmd.output().with_context(|| format!("running {display}"))
+    jackin_process::exec_sync(&exec_request(cmd)).with_context(|| format!("running {display}"))
 }
 
 pub(crate) fn display_command(cmd: &Command) -> String {

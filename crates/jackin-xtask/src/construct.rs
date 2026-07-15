@@ -338,7 +338,7 @@ fn version_published(cfg: &Config) -> Result<bool> {
     let output = crate::cmd::output_raw(&mut inspect)
         .with_context(|| format!("running docker buildx imagetools inspect {reference}"))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
-    match classify_inspect(output.status.success(), &stderr) {
+    match classify_inspect(output.success, &stderr) {
         VersionStatus::AlreadyPublished => Ok(true),
         VersionStatus::Unpublished => Ok(false),
         VersionStatus::UnknownError => Err(anyhow!(
@@ -496,7 +496,7 @@ fn find_digest(value: &serde_json::Value) -> Option<String> {
 }
 
 fn docker<const N: usize>(args: [&str; N]) -> Command {
-    let mut cmd = Command::new("docker");
+    let mut cmd = crate::cmd::command("docker");
     cmd.args(args);
     cmd
 }
@@ -525,7 +525,7 @@ fn env_present(key: &str) -> Option<String> {
 }
 
 fn git_sha() -> Option<String> {
-    let mut cmd = Command::new("git");
+    let mut cmd = crate::cmd::command("git");
     cmd.args(["rev-parse", "--short=12", "HEAD"]);
     let stdout = crate::cmd::output_string(&mut cmd).ok()?;
     let sha = stdout.trim().to_owned();

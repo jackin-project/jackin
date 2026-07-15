@@ -380,12 +380,12 @@ fn load_nextest_tests(
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for crate_name in crates {
         let pkg = crate_name.replace('_', "-");
-        let mut cmd = Command::new("cargo");
+        let mut cmd = crate::cmd::command("cargo");
         cmd.current_dir(root)
             .args(["nextest", "list", "-p", &pkg, "--message-format", "json"]);
         let output = crate::cmd::output_raw(&mut cmd)
             .map_err(|e| format!("spawn cargo nextest list -p {pkg}: {e}"))?;
-        if !output.status.success() {
+        if !output.success {
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.contains("no such command") || stderr.contains("is not installed") {
                 return Err("cargo-nextest not installed".into());

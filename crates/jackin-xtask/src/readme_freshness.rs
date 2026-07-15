@@ -169,13 +169,13 @@ fn crate_from_readme_path(path: &str) -> Option<&str> {
 
 fn git_name_status(root: &Path, base: &str) -> Result<Vec<NameStatusEntry>> {
     let merge_base = {
-        let mut cmd = Command::new("git");
+        let mut cmd = crate::cmd::command("git");
         cmd.args(["merge-base", base, "HEAD"]).current_dir(root);
         let out = crate::cmd::output_string(&mut cmd)
             .with_context(|| format!("git merge-base {base} HEAD"))?;
         out.trim().to_owned()
     };
-    let mut cmd = Command::new("git");
+    let mut cmd = crate::cmd::command("git");
     // -M enables rename detection explicitly (plan note).
     cmd.args(["diff", "--name-status", "-M", &merge_base, "HEAD"])
         .current_dir(root);
