@@ -161,7 +161,7 @@ fn debug_location_includes_stage_and_modal_without_values() {
 fn quit_confirm_handle_key_y_commits_exit() {
     let mut state = ConfirmState::new("Exit jackin❯?");
     assert!(matches!(
-        state.handle_key(key(crossterm::event::KeyCode::Char('y'))),
+        state.handle_key(key(crossterm::event::KeyCode::Char('y')).into()),
         ModalOutcome::Commit(true)
     ));
 }
@@ -170,7 +170,7 @@ fn quit_confirm_handle_key_y_commits_exit() {
 fn quit_confirm_handle_key_n_returns_commit_false() {
     let mut state = ConfirmState::new("Exit jackin❯?");
     assert!(matches!(
-        state.handle_key(key(crossterm::event::KeyCode::Char('n'))),
+        state.handle_key(key(crossterm::event::KeyCode::Char('n')).into()),
         ModalOutcome::Commit(false)
     ));
 }
@@ -179,7 +179,7 @@ fn quit_confirm_handle_key_n_returns_commit_false() {
 fn quit_confirm_handle_key_esc_cancels() {
     let mut state = ConfirmState::new("Exit jackin❯?");
     assert!(matches!(
-        state.handle_key(key(crossterm::event::KeyCode::Esc)),
+        state.handle_key(key(crossterm::event::KeyCode::Esc).into()),
         ModalOutcome::Cancel
     ));
 }

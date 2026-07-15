@@ -1223,10 +1223,16 @@ fn container_info_enter_copies_default_value_without_dismissing() {
         state: crate::tui::components::container_info_surface::ContainerInfoState::new(
             "Debug info",
             vec![
-                termrock::components::ContainerInfoRow::new("jackin version", "0.6.0-dev"),
-                termrock::components::ContainerInfoRow::new("Run ID", "jk-run-123")
-                    .copyable()
-                    .emphasised(),
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "jackin version",
+                    "0.6.0-dev",
+                ),
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Run ID",
+                    "jk-run-123",
+                )
+                .copyable()
+                .emphasised(),
             ],
         ),
     });

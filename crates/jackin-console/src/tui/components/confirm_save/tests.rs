@@ -153,7 +153,8 @@ fn confirm_save_keymap_dispatches_legacy_bindings() {
 
     for (code, expected) in cases {
         assert_eq!(
-            CONFIRM_SAVE_KEYMAP.dispatch(KeyChord::from(key(code))),
+            CONFIRM_SAVE_KEYMAP
+                .dispatch(KeyChord::from(termrock::input::KeyEvent::from(key(code)))),
             Some(expected),
             "legacy binding {code:?} dispatches"
         );

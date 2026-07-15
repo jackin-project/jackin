@@ -118,9 +118,11 @@ fn apply_list_modal_plan_routes_modal_storage() {
         open_container_info_modal_plan(
             crate::tui::components::container_info_surface::ContainerInfoState::new(
                 "title",
-                vec![termrock::components::ContainerInfoRow::new(
-                    "label", "value",
-                )],
+                vec![
+                    crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                        "label", "value",
+                    ),
+                ],
             ),
         ),
     );

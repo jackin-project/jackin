@@ -450,7 +450,7 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
         jackin_diagnostics::is_debug_mode(),
     )
     .await;
-    let (_tx, rx) = tokio::sync::oneshot::channel();
+    let rx = jackin_console::tui::runtime::ready_blocking_subscription(Ok(()));
     apply_role_load_completion_for_tests(
         editor,
         config,

@@ -12,7 +12,7 @@ use super::{
     SettingsEnvTabAction, SettingsGeneralTabAction, SettingsGlobalMountsTabAction,
     SettingsTabBarAction, SettingsTrustTabAction, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
 };
-use termrock::components::{KeyChord, LogicalKey};
+use termrock::keymap::{KeyChord, LogicalKey};
 
 // ── Workspace list ────────────────────────────────────────────────────────────
 

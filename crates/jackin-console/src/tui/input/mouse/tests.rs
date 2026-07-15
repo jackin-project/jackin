@@ -421,9 +421,11 @@ fn container_info_copy_click_queues_typed_effect() {
         state: crate::tui::components::container_info_surface::ContainerInfoState::new(
             "Debug info",
             vec![
-                termrock::components::ContainerInfoRow::new("Run ID", "run-123")
-                    .copyable()
-                    .emphasised(),
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Run ID", "run-123",
+                )
+                .copyable()
+                .emphasised(),
             ],
         ),
     });

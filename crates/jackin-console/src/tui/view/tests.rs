@@ -1322,7 +1322,11 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     editor.modal = Some(Modal::ContainerInfo {
         state: crate::tui::components::container_info_surface::ContainerInfoState::new(
             "Container",
-            vec![termrock::components::ContainerInfoRow::new("Run ID", "abc")],
+            vec![
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Run ID", "abc",
+                ),
+            ],
         ),
     });
     editor_state.stage = ManagerStage::Editor(editor);

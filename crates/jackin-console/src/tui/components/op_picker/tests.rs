@@ -294,17 +294,17 @@ fn naming_stage_input_routes_by_naming_stage() {
 
     assert_eq!(
         naming_stage_input_for_stage(OpPickerStage::NewItemName, &item, &field, &section)
-            .map(|input| input.label.as_str()),
+            .map(|input| input.label()),
         Some("Item name")
     );
     assert_eq!(
         naming_stage_input_for_stage(OpPickerStage::FieldLabel, &item, &field, &section)
-            .map(|input| input.label.as_str()),
+            .map(|input| input.label()),
         Some("Field label")
     );
     assert_eq!(
         naming_stage_input_for_stage(OpPickerStage::NewSectionName, &item, &field, &section)
-            .map(|input| input.label.as_str()),
+            .map(|input| input.label()),
         Some("Section name")
     );
     assert!(naming_stage_input_for_stage(OpPickerStage::Field, &item, &field, &section).is_none());

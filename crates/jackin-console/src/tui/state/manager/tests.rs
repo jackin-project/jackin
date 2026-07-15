@@ -7,8 +7,9 @@
 
 use jackin_config::AppConfig;
 use tempfile::tempdir;
-use termrock::components::{ContainerInfoState, ErrorPopupState};
+use termrock::components::ErrorPopupState;
 
+use crate::tui::components::container_info_surface::ContainerInfoState;
 use crate::tui::model::ConsoleManagerStageState;
 use crate::tui::screens::workspaces::update::{
     PreviewFocusState, PreviewPaneCursorState, WorkspaceListSelectionState,
