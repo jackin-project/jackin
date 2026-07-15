@@ -1,7 +1,7 @@
 //! jackin-tui: shared TUI widgets, theme, and render helpers.
 //!
 //! **Architecture Invariant:** T1.
-//! Entry point: [`Theme`] — shared TUI theme tokens.
+//! Entry point: [`theme`] — shared TUI palette constants and style helpers.
 
 pub mod animation;
 pub mod ansi_text;

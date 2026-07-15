@@ -330,7 +330,7 @@ pub fn dialog_scroll_axes(
 /// scrollable dialog/overlay composes its full hint from this primitive plus
 /// its own dismiss/copy keys.
 #[must_use]
-/// Produce axis-gated scroll key [`HintSpan`]s.
+/// Produce axis-gated scroll key [`crate::HintSpan`]s.
 ///
 /// Delegates to [`crate::keymap::SCROLL_HINT_KEYMAP`] so the gating logic
 /// lives in one place (the registry's `axis_gate_passes`) rather than being

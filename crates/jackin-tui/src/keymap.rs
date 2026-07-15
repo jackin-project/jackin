@@ -279,7 +279,7 @@ impl<A: Copy + 'static> Keymap<A> {
         self.hint_spans_filtered(|_| true)
     }
 
-    /// Like [`hint_spans`] but omits scroll-axis arrow bindings when the
+    /// Like [`Self::hint_spans`] but omits scroll-axis arrow bindings when the
     /// corresponding scroll axis is unavailable (matching the behaviour of
     /// [`crate::components::scroll_hint_spans`]).
     #[must_use]
@@ -537,7 +537,7 @@ pub enum ScrollHintAxis {
 ///
 /// Each binding carries a pre-composed combined glyph (`"↑↓/j/k"`,
 /// `"←→/h/l"`). The chords drive axis-gating in
-/// [`Keymap::axis_gate_passes`]: a binding whose chords are all `Up`/`Down`
+/// `Keymap::axis_gate_passes`: a binding whose chords are all `Up`/`Down`
 /// is suppressed when `axes.vertical` is false; one whose chords are all
 /// `Left`/`Right` is suppressed when `axes.horizontal` is false.
 ///
