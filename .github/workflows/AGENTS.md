@@ -13,7 +13,7 @@ Apply these rules to every workflow under this directory. They define the reposi
 - Add or widen a cache only after measuring cache usage and workflow timing. Specify its owner, invalidation inputs, restore source, and write policy.
 - `main` owns durable cache state. PRs may restore default-branch state but should not write duplicate caches without a measured repeated-PR benefit.
 - Every `jdx/mise-action` reachable from `pull_request` sets `cache_save: ${{ github.event_name != 'pull_request' }}`.
-- The shared Cargo registry cache verifies restored fallback content with `cargo fetch --locked --offline` for the workspace and fuzz manifests; fetch and save only when that verification fails.
+- The shared Cargo registry cache verifies restored fallback content with `cargo fetch --locked --offline` for the workspace and fuzz manifests. A PR fetches only when verification fails and never saves; non-PR runs save only after such a miss.
 - `main` writes the Construct registry BuildKit cache with `mode=max`; PR-scoped GHA BuildKit caches use `mode=min`.
 - BuildKit commands must stream inherited stdout and stderr with `--progress=plain`; GitHub Actions logs must show cache resolution and layer progress while an image build is running.
 
