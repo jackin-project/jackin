@@ -17,10 +17,10 @@ use crate::tui::layout::list::list_names_content_width;
 use crate::tui::state::{ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag};
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
-use jackin_tui::components::scrollable_panel::max_offset;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
+use termrock::components::scrollable_panel::max_offset;
 use termrock::style::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
 
 fn config_with_long_workspace_name() -> AppConfig {
@@ -245,7 +245,7 @@ fn background_list_names_under_modal_hide_selected_cursor() {
             scope: SecretsScopeTag::Workspace,
             key: "TOKEN".into(),
         },
-        state: jackin_tui::components::ConfirmState::new("Delete TOKEN?"),
+        state: termrock::components::ConfirmState::new("Delete TOKEN?"),
     });
 
     let backend = TestBackend::new(70, 24);

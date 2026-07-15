@@ -5,8 +5,10 @@
 
 pub mod agent_choice;
 pub mod auth_panel;
+pub mod brand_header;
 pub mod confirm_save;
 pub mod container_info;
+pub mod container_info_surface;
 pub mod editor_rows;
 pub mod env_value;
 pub mod error_popup;

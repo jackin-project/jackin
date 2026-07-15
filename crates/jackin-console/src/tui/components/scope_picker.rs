@@ -5,7 +5,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use jackin_tui::ModalOutcome;
+use termrock::ModalOutcome;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeChoice {
@@ -71,7 +71,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
-use jackin_tui::components::{DialogBorder, render_dialog_shell};
+use termrock::components::{DialogBorder, render_dialog_shell};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
     let inner = render_dialog_shell(frame, area, Some(state.title), DialogBorder::Default);
@@ -86,15 +86,15 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
         ])
         .split(inner);
     let items = [
-        jackin_tui::components::ButtonStripItem::new("All roles"),
-        jackin_tui::components::ButtonStripItem::new("Specific role"),
+        termrock::components::ButtonStripItem::new("All roles"),
+        termrock::components::ButtonStripItem::new("Specific role"),
     ];
     let focused = match state.focused {
         ScopeChoice::AllAgents => 0,
         ScopeChoice::SpecificAgent => 1,
     };
     frame.render_widget(
-        jackin_tui::components::ButtonStrip::new(&items).focused(focused),
+        termrock::components::ButtonStrip::new(&items).focused(focused),
         chunks[1],
     );
 }

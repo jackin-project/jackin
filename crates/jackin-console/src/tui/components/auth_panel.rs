@@ -24,7 +24,7 @@ use crate::tui::components::editor_rows::{
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
-use jackin_tui::components::TextInputState;
+use termrock::components::TextInputState;
 use termrock::style::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 // Structural exception: auth panels are multi-field credential forms with
@@ -372,11 +372,11 @@ pub fn render_form<V: AuthCredential>(
     form: &AuthForm<V>,
     focus: AuthFormFocus,
 ) {
-    let inner = jackin_tui::components::render_dialog_shell(
+    let inner = termrock::components::render_dialog_shell(
         frame,
         area,
         Some("Edit auth"),
-        jackin_tui::components::DialogBorder::Default,
+        termrock::components::DialogBorder::Default,
     );
 
     for (idx, row) in build_form_lines(form, focus).into_iter().enumerate() {

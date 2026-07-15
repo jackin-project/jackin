@@ -43,8 +43,8 @@ use crate::tui::state::{
 };
 use jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_core::{Agent, RoleSelector};
-use jackin_tui::ModalOutcome;
-use jackin_tui::components::{ConfirmState, TextInputState};
+use termrock::ModalOutcome;
+use termrock::components::{ConfirmState, TextInputState};
 
 fn fresh_state() -> ConsoleState {
     let cwd = std::env::temp_dir();

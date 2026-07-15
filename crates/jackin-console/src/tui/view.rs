@@ -338,9 +338,9 @@ pub const fn workspace_header_title() -> &'static str {
 /// How many rows the footer needs to display all `items` within `width`
 /// columns. Includes one leading blank spacer row above the hints.
 #[must_use]
-pub fn footer_height(items: &[jackin_tui::HintSpan<'_>], width: u16) -> u16 {
+pub fn footer_height(items: &[termrock::HintSpan<'_>], width: u16) -> u16 {
     // +1 for the mandatory leading spacer row above the hints on every screen.
-    jackin_tui::components::wrapped_height(items, width).saturating_add(1)
+    termrock::components::wrapped_height(items, width).saturating_add(1)
 }
 
 #[must_use]
@@ -349,11 +349,11 @@ pub const fn effective_footer_height(height: u16) -> u16 {
 }
 
 #[must_use]
-pub fn measured_footer_height(items: &[jackin_tui::HintSpan<'_>], width: u16) -> u16 {
+pub fn measured_footer_height(items: &[termrock::HintSpan<'_>], width: u16) -> u16 {
     effective_footer_height(footer_height(items, width))
 }
 
-pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[jackin_tui::HintSpan<'_>]) {
+pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[termrock::HintSpan<'_>]) {
     if area.height == 0 {
         return;
     }
@@ -365,15 +365,15 @@ pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[jackin_tui::Hin
         width: area.width,
         height: hint_rows,
     };
-    jackin_tui::components::render_wrapped_hint_bar(frame, hint_area, items);
+    termrock::components::render_wrapped_hint_bar(frame, hint_area, items);
 }
 
 pub fn render_header(frame: &mut Frame<'_>, area: Rect, title: &str) {
-    jackin_tui::components::render_brand_header(frame, area, title);
+    crate::tui::components::brand_header::render_brand_header(frame, area, title);
 }
 
 pub fn render_modal_backdrop(frame: &mut Frame<'_>, area: Rect) {
-    frame.render_widget(jackin_tui::components::ModalBackdrop, area);
+    frame.render_widget(termrock::components::ModalBackdrop, area);
 }
 
 #[must_use]
@@ -411,7 +411,7 @@ pub fn render_modal(frame: &mut Frame<'_>, modal: &crate::tui::state::Modal<'_>)
     let modal_area = modal.rect(area);
     match modal {
         Modal::TextInput { state, .. } => {
-            jackin_tui::components::render_text_input(frame, modal_area, state);
+            termrock::components::render_text_input(frame, modal_area, state);
         }
         Modal::FileBrowser { state, .. } => {
             crate::tui::components::file_browser::render(frame, modal_area, state);
@@ -420,10 +420,10 @@ pub fn render_modal(frame: &mut Frame<'_>, modal: &crate::tui::state::Modal<'_>)
             crate::tui::components::workdir_pick::render(frame, modal_area, state);
         }
         Modal::Confirm { state, .. } => {
-            jackin_tui::components::render_confirm_dialog(frame, modal_area, state);
+            termrock::components::render_confirm_dialog(frame, modal_area, state);
         }
         Modal::SaveDiscardCancel { state } => {
-            jackin_tui::components::render_save_discard_dialog(frame, modal_area, state);
+            termrock::components::render_save_discard_dialog(frame, modal_area, state);
         }
         Modal::MountDstChoice { state, .. } => {
             crate::tui::components::mount_dst_choice::render(frame, modal_area, state);
@@ -435,13 +435,15 @@ pub fn render_modal(frame: &mut Frame<'_>, modal: &crate::tui::state::Modal<'_>)
             crate::tui::components::confirm_save::render(frame, modal_area, state);
         }
         Modal::ErrorPopup { state } => {
-            jackin_tui::components::render_error_dialog(frame, modal_area, state);
+            termrock::components::render_error_dialog(frame, modal_area, state);
         }
         Modal::ContainerInfo { state } => {
-            jackin_tui::components::render_container_info(frame, modal_area, state);
+            crate::tui::components::container_info_surface::render_container_info(
+                frame, modal_area, state,
+            );
         }
         Modal::StatusPopup { state } => {
-            jackin_tui::components::render_status_popup(frame, modal_area, state);
+            termrock::components::render_status_popup(frame, modal_area, state);
         }
         Modal::OpPicker { state, .. } => {
             crate::tui::components::op_picker::render_picker(frame, modal_area, state.as_ref());
@@ -640,7 +642,7 @@ pub fn render(
                 // ConfirmState is a top-level field on the variant, not wrapped
                 // in Modal::Confirm, so render it directly.
                 let modal_area = delete_confirm_area(area);
-                jackin_tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
+                termrock::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
         }
         ConsoleModalRenderPlan::ConfirmInstancePurge => {
@@ -652,7 +654,7 @@ pub fn render(
                 // The two-line prompt is taller than ConfirmDelete's
                 // single line, so allocate more rows for the modal.
                 let modal_area = purge_confirm_area(area);
-                jackin_tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
+                termrock::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
         }
         ConsoleModalRenderPlan::Settings => {
@@ -671,13 +673,13 @@ pub fn render(
                         if let Some(popup) = &settings.error_popup {
                             let inner_width = (area.width * 60 / 100).saturating_sub(4);
                             let max_rows = area.height.saturating_sub(2);
-                            let h = jackin_tui::components::error_dialog::required_height(
+                            let h = termrock::components::error_dialog::required_height(
                                 popup,
                                 inner_width,
                                 max_rows,
                             );
                             let popup_area = settings_error_area(area, h);
-                            jackin_tui::components::render_error_dialog(frame, popup_area, popup);
+                            termrock::components::render_error_dialog(frame, popup_area, popup);
                         }
                     }
                     SettingsModalRenderPlan::Mounts => {
@@ -703,7 +705,7 @@ pub fn render(
 
     if let Some(overlay) = &state.status_overlay {
         let overlay_area = status_overlay_area(area);
-        jackin_tui::components::render_status_popup(frame, overlay_area, overlay);
+        termrock::components::render_status_popup(frame, overlay_area, overlay);
     }
 }
 

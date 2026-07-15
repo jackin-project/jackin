@@ -6,8 +6,8 @@
 //! Reads `ManagerState` fields and assembles the facts structs needed by
 //! `footer_hints` so callers do not have to build them by hand.
 use jackin_config::AppConfig;
-use jackin_tui::{HintSpan, components::ScrollAxes};
 use ratatui::layout::Rect;
+use termrock::{HintSpan, components::ScrollAxes};
 
 use crate::tui::components::footer_hints::{
     WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterInputFacts,

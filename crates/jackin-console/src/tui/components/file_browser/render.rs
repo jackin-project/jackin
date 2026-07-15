@@ -14,7 +14,7 @@ use ratatui::{
 use super::git_prompt::render_git_prompt;
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_GREEN, WHITE};
-use jackin_tui::components::{
+use termrock::components::{
     Panel, PanelFocus, ScrollableList, cursor_follow_offset, viewport_height,
 };
 
@@ -94,7 +94,7 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     // a background modal and must use the inactive border so exactly one bright
     // border is visible (Defect 9 — one-bright-border rule).
     let block = if state.pending_git_prompt.is_some() {
-        jackin_tui::components::unfocused_block()
+        termrock::components::unfocused_block()
             .title(Span::styled(title.clone(), termrock::style::BOLD_WHITE))
     } else {
         Panel::new()

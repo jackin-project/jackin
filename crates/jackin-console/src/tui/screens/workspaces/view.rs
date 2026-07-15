@@ -402,14 +402,14 @@ pub fn list_name_lines(
         }
     }
 
-    let content_w = jackin_tui::components::scrollable_panel::max_line_width(&lines).max(max_w);
+    let content_w = termrock::components::scrollable_panel::max_line_width(&lines).max(max_w);
 
     if let Some(selected_idx) = visual_rows
         .iter()
         .position(|row| row.as_ref().is_some_and(|row| row.selected))
         && let Some(line) = lines.get_mut(selected_idx)
     {
-        let current_w = jackin_tui::components::scrollable_panel::line_width(line);
+        let current_w = termrock::components::scrollable_panel::line_width(line);
         if current_w < content_w {
             let bg = match visual_rows[selected_idx].as_ref().map(|row| row.tone) {
                 Some(WorkspaceListRowTone::Instance) => termrock::style::CYAN,
@@ -430,7 +430,7 @@ pub fn list_name_lines(
         for span in &mut line.spans {
             span.style = span.style.bg(termrock::style::TAB_BG_INACTIVE_HOVER);
         }
-        let current_w = jackin_tui::components::scrollable_panel::line_width(line);
+        let current_w = termrock::components::scrollable_panel::line_width(line);
         if current_w < content_w {
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
@@ -448,8 +448,8 @@ pub fn workspace_list_names_render_plan(
 ) -> WorkspaceListNamesRenderPlan {
     let viewport_h = usize::from(facts.area.height.saturating_sub(2));
     WorkspaceListNamesRenderPlan {
-        viewport_width: jackin_tui::components::scrollable_panel::viewport_width(facts.area),
-        follow_scroll_y: jackin_tui::components::scrollable_panel::cursor_follow_offset(
+        viewport_width: termrock::components::scrollable_panel::viewport_width(facts.area),
+        follow_scroll_y: termrock::components::scrollable_panel::cursor_follow_offset(
             facts.selected_index,
             facts.row_count,
             viewport_h,
@@ -468,17 +468,17 @@ pub fn render_list_names_block(
     scroll_y: u16,
 ) {
     let content_height = lines.len();
-    let viewport_w = jackin_tui::components::scrollable_panel::viewport_width(area);
-    let viewport_h = jackin_tui::components::scrollable_panel::viewport_height(area);
+    let viewport_w = termrock::components::scrollable_panel::viewport_width(area);
+    let viewport_h = termrock::components::scrollable_panel::viewport_height(area);
     let h_scrollable =
-        jackin_tui::components::scrollable_panel::is_scrollable(content_width, viewport_w);
+        termrock::components::scrollable_panel::is_scrollable(content_width, viewport_w);
     let v_scrollable =
-        jackin_tui::components::scrollable_panel::is_scrollable(content_height, viewport_h);
-    let block = jackin_tui::components::Panel::new()
+        termrock::components::scrollable_panel::is_scrollable(content_height, viewport_h);
+    let block = termrock::components::Panel::new()
         .focus(if focused {
-            jackin_tui::components::PanelFocus::Focused
+            termrock::components::PanelFocus::Focused
         } else {
-            jackin_tui::components::PanelFocus::Unfocused
+            termrock::components::PanelFocus::Unfocused
         })
         .block();
     let inner = block.inner(area);
@@ -495,7 +495,7 @@ pub fn render_list_names_block(
         render_list_name_line(frame, inner, row_idx as u16, line, usize::from(scroll_x));
     }
     if h_scrollable {
-        jackin_tui::components::scrollable_panel::render_horizontal_scrollbar(
+        termrock::components::scrollable_panel::render_horizontal_scrollbar(
             frame,
             area,
             content_width,
@@ -503,7 +503,7 @@ pub fn render_list_names_block(
         );
     }
     if v_scrollable {
-        jackin_tui::components::scrollable_panel::render_vertical_scrollbar(
+        termrock::components::scrollable_panel::render_vertical_scrollbar(
             frame,
             area,
             content_height,
@@ -520,7 +520,7 @@ fn render_list_name_line(
     scroll_x: usize,
 ) {
     const PREFIX_COLS: usize = 3;
-    jackin_tui::components::scrollable_panel::render_line_with_fixed_prefix_scroll(
+    termrock::components::scrollable_panel::render_line_with_fixed_prefix_scroll(
         frame,
         area,
         row,
@@ -656,8 +656,8 @@ fn push_tree_instance_line(
 #[must_use]
 pub fn create_prelude_mount_destination_input_state<'a>(
     current: impl Into<String>,
-) -> jackin_tui::components::TextInputState<'a> {
-    jackin_tui::components::TextInputState::new("Destination", current)
+) -> termrock::components::TextInputState<'a> {
+    termrock::components::TextInputState::new("Destination", current)
 }
 
 #[must_use]
@@ -668,8 +668,8 @@ pub fn create_prelude_mount_destination_default(src_display: Option<&str>) -> St
 #[must_use]
 pub fn create_prelude_workspace_name_input_state<'a>(
     current: impl Into<String>,
-) -> jackin_tui::components::TextInputState<'a> {
-    jackin_tui::components::TextInputState::new("Name this workspace", current)
+) -> termrock::components::TextInputState<'a> {
+    termrock::components::TextInputState::new("Name this workspace", current)
 }
 
 #[must_use]
@@ -745,9 +745,9 @@ pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
         .constraints([Constraint::Length(5), Constraint::Min(9)])
         .split(area);
 
-    let intro_block = jackin_tui::components::Panel::new()
+    let intro_block = termrock::components::Panel::new()
         .title(" What is a workspace? ")
-        .focus(jackin_tui::components::PanelFocus::Unfocused)
+        .focus(termrock::components::PanelFocus::Unfocused)
         .block();
     let intro_lines = vec![
         Line::from(Span::styled(
@@ -765,9 +765,9 @@ pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
     ];
     frame.render_widget(Paragraph::new(intro_lines).block(intro_block), rows[0]);
 
-    let why_block = jackin_tui::components::Panel::new()
+    let why_block = termrock::components::Panel::new()
         .title(" Why create one? ")
-        .focus(jackin_tui::components::PanelFocus::Unfocused)
+        .focus(termrock::components::PanelFocus::Unfocused)
         .block();
     let bullet_style = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
     let bullets = [
@@ -800,12 +800,12 @@ pub fn render_picker_sidebar(
     selected: Option<usize>,
     focused: bool,
 ) {
-    let block = jackin_tui::components::Panel::new()
+    let block = termrock::components::Panel::new()
         .title(title)
         .focus(if focused {
-            jackin_tui::components::PanelFocus::Focused
+            termrock::components::PanelFocus::Focused
         } else {
-            jackin_tui::components::PanelFocus::Unfocused
+            termrock::components::PanelFocus::Unfocused
         })
         .block();
     let inner = block.inner(area);
@@ -814,7 +814,7 @@ pub fn render_picker_sidebar(
         .into_iter()
         .map(|label| ListItem::new(Line::from(label)))
         .collect();
-    let mut list = jackin_tui::components::ScrollableList::new(items)
+    let mut list = termrock::components::ScrollableList::new(items)
         .style(Style::default().fg(termrock::style::PHOSPHOR_GREEN))
         .highlight_style(
             Style::default()
@@ -883,9 +883,9 @@ pub fn render_agent_picker_sidebar<A: crate::tui::components::agent_choice::Agen
 }
 
 pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_display: &str) {
-    let block = jackin_tui::components::Panel::new()
+    let block = termrock::components::Panel::new()
         .title(" General ")
-        .focus(jackin_tui::components::PanelFocus::Unfocused)
+        .focus(termrock::components::PanelFocus::Unfocused)
         .block();
     let lines = vec![Line::from(vec![
         Span::raw("  "),
@@ -936,9 +936,9 @@ pub fn render_environments_subpanel(
     area: Rect,
     mut rows: Vec<WorkspaceEnvRow>,
 ) {
-    let block = jackin_tui::components::Panel::new()
+    let block = termrock::components::Panel::new()
         .title(" Environments ")
-        .focus(jackin_tui::components::PanelFocus::Unfocused)
+        .focus(termrock::components::PanelFocus::Unfocused)
         .block();
 
     rows.sort_by(|a, b| {
@@ -952,7 +952,7 @@ pub fn render_environments_subpanel(
             })
     });
 
-    let inner_width = jackin_tui::components::scrollable_panel::viewport_width(area);
+    let inner_width = termrock::components::scrollable_panel::viewport_width(area);
     let lines: Vec<Line<'_>> = rows
         .iter()
         .map(|row| env_row_line(row, inner_width))
@@ -972,7 +972,7 @@ pub fn render_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         crate::tui::mount_display::workspace_mount_block_lines(rows),
@@ -1005,7 +1005,7 @@ pub fn render_global_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         crate::tui::mount_display::global_mount_block_lines(rows),
@@ -1106,7 +1106,7 @@ pub fn render_roles_subpanel(
         lines.push(Line::from(spans));
     }
 
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -1279,12 +1279,12 @@ pub fn render_instance_details_pane(
     pane: &WorkspaceInstancePane,
 ) {
     let instance_title = format!(" Instance: {} ", pane.instance_id);
-    let block = jackin_tui::components::Panel::new()
+    let block = termrock::components::Panel::new()
         .title(&instance_title)
         .focus(if pane.focused {
-            jackin_tui::components::PanelFocus::Focused
+            termrock::components::PanelFocus::Focused
         } else {
-            jackin_tui::components::PanelFocus::Unfocused
+            termrock::components::PanelFocus::Unfocused
         })
         .block();
     let lines = instance_detail_lines(&pane.content);

@@ -8,7 +8,7 @@ use super::{
     SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved,
     SettingsPanelTakeError, SettingsState,
 };
-use jackin_tui::components::ModalStack;
+use termrock::components::ModalStack;
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]

@@ -189,7 +189,7 @@ pub fn env_key_input_state<'a>(
     scope: &SecretsScopeTag,
     label: impl Into<String>,
     initial: impl Into<String>,
-) -> jackin_tui::components::TextInputState<'a> {
+) -> termrock::components::TextInputState<'a> {
     secret_key_input_state_from_pending(
         &editor.pending.env,
         &editor.pending.roles,

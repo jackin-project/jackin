@@ -13,7 +13,7 @@ use tui_widget_list::ListState;
 
 use crate::github_mounts::GithubChoice;
 use jackin_core::shorten_home;
-use jackin_tui::ModalOutcome;
+use termrock::ModalOutcome;
 
 #[derive(Debug)]
 pub struct GithubPickerState {
@@ -94,8 +94,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::components::render_picker_lines;
-use jackin_tui::components::{DialogBorder, render_dialog_shell};
+use termrock::components::render_picker_lines;
+use termrock::components::{DialogBorder, render_dialog_shell};
 use termrock::style::{PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {

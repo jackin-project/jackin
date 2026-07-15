@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::marker::PhantomData;
 
 use jackin_config::WorkspaceConfig;
-use jackin_tui::components::FocusOwner;
+use termrock::components::FocusOwner;
 
 mod state_impl;
 

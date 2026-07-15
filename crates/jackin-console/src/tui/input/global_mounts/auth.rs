@@ -194,7 +194,7 @@ pub fn handle_settings_auth_modal(
             auth.set_modal(modal);
         }
         SettingsModal::AuthSourcePicker { state } => {
-            let outcome = state.handle_key(key);
+            let outcome = state.handle_key(key.into());
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token` (and stashes the form into
             // the modal parent stack for the post-mint re-mount), so
@@ -268,11 +268,15 @@ pub fn handle_settings_auth_modal(
                 SourcePickerPlan::Continue => auth.set_modal(modal),
             }
         }
-        SettingsModal::AuthTextInput { state } => match inline_picker_plan(state.handle_key(key)) {
-            InlinePickerPlan::Commit(value) => apply_plain_text_to_settings_auth_form(auth, &value),
-            InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
-            InlinePickerPlan::Continue => auth.set_modal(modal),
-        },
+        SettingsModal::AuthTextInput { state } => {
+            match inline_picker_plan(state.handle_key(key.into())) {
+                InlinePickerPlan::Commit(value) => {
+                    apply_plain_text_to_settings_auth_form(auth, &value)
+                }
+                InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
+                InlinePickerPlan::Continue => auth.set_modal(modal),
+            }
+        }
         SettingsModal::AuthSourceFolderPicker { state } => {
             let page_rows = page_rows_for_modal(term_size, state);
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
@@ -308,7 +312,7 @@ pub fn handle_settings_auth_modal(
             }
         }
         SettingsModal::AuthOpPicker { state } => {
-            let outcome = state.handle_key(key);
+            let outcome = state.handle_key(key.into());
             // Token-generate wins over the browse/provide dispatch:
             // `generating_token` is set exactly when the picker was opened
             // by the auth-form `g`/`G` trigger (Create mode), so the create

@@ -6,13 +6,13 @@
 //! Arrow keys move focus, Enter commits, Esc cancels.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_tui::{ModalOutcome, components::render_picker_lines};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+use termrock::{ModalOutcome, components::render_picker_lines};
 
-use jackin_tui::components::{DialogBorder, render_dialog_shell};
+use termrock::components::{DialogBorder, render_dialog_shell};
 
 pub trait AgentChoice: Copy + Eq + 'static {
     const ALL: &'static [Self];

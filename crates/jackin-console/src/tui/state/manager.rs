@@ -8,8 +8,8 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use jackin_config::AppConfig;
-use jackin_tui::components::FocusOwner;
 use jackin_tui::runtime::BlockingSubscription;
+use termrock::components::FocusOwner;
 use termrock::runtime::{Subscription, SubscriptionPoll};
 
 use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
@@ -1027,17 +1027,20 @@ impl WorkspaceListHoverState for ManagerState<'_> {
 }
 
 impl StatusOverlayState for ManagerState<'_> {
-    fn set_status_overlay(&mut self, overlay: Option<jackin_tui::components::StatusPopupState>) {
+    fn set_status_overlay(&mut self, overlay: Option<termrock::components::StatusPopupState>) {
         self.status_overlay = overlay;
     }
 }
 
 impl ListModalState for ManagerState<'_> {
-    fn open_container_info_modal(&mut self, state: jackin_tui::components::ContainerInfoState) {
+    fn open_container_info_modal(
+        &mut self,
+        state: crate::tui::components::container_info_surface::ContainerInfoState,
+    ) {
         self.list_modal = Some(Modal::ContainerInfo { state });
     }
 
-    fn open_error_popup_modal(&mut self, state: jackin_tui::components::ErrorPopupState) {
+    fn open_error_popup_modal(&mut self, state: termrock::components::ErrorPopupState) {
         self.list_modal = Some(Modal::ErrorPopup { state });
     }
 

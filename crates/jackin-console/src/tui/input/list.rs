@@ -530,7 +530,7 @@ pub fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOu
     let target = modal.list_key_target();
     match (target, modal) {
         (ListModalKeyTarget::GithubPicker, Modal::GithubPicker { state: picker }) => {
-            match list_github_picker_plan(picker.handle_key(key)) {
+            match list_github_picker_plan(picker.handle_key(key.into())) {
                 ListGithubPickerPlan::OpenUrl(url) => {
                     dispatch_manager(state, ManagerMessage::DismissListModal);
                     state.request_effect(ManagerEffect::OpenUrl(url));
@@ -544,7 +544,7 @@ pub fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOu
             }
         }
         (ListModalKeyTarget::RolePicker, Modal::RolePicker { state: picker }) => {
-            match list_role_picker_plan(picker.handle_key(key)) {
+            match list_role_picker_plan(picker.handle_key(key.into())) {
                 ListRolePickerPlan::Launch(role) => {
                     dispatch_manager(state, ManagerMessage::DismissListModal);
                     InputOutcome::LaunchWithAgent(role)
@@ -557,7 +557,7 @@ pub fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOu
             }
         }
         (ListModalKeyTarget::ErrorPopup, Modal::ErrorPopup { state: popup }) => {
-            match dismissible_modal_plan(popup.handle_key(key)) {
+            match dismissible_modal_plan(popup.handle_key(key.into())) {
                 DismissibleModalPlan::Dismiss => {
                     dispatch_manager(state, ManagerMessage::DismissListModal);
                     InputOutcome::Continue
@@ -574,9 +574,9 @@ pub fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOu
             }
             let outcome = if let Some(rect) = container_info_rect {
                 info.set_viewport(rect);
-                info.handle_key(key)
+                info.handle_key(key.into())
             } else {
-                info.handle_key(key)
+                info.handle_key(key.into())
             };
             if let Some(rect) = container_info_rect {
                 info.clamp_scroll(rect);
@@ -607,17 +607,19 @@ pub fn handle_inline_role_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
             InputOutcome::Continue
         }
         InlinePickerShellPlan::Exit => InputOutcome::ExitJackin,
-        InlinePickerShellPlan::Delegate => match inline_picker_plan(picker.handle_key(key)) {
-            InlinePickerPlan::Commit(role) => {
-                dispatch_manager(state, ManagerMessage::DismissInlineRolePicker);
-                InputOutcome::LaunchWithAgent(role)
+        InlinePickerShellPlan::Delegate => {
+            match inline_picker_plan(picker.handle_key(key.into())) {
+                InlinePickerPlan::Commit(role) => {
+                    dispatch_manager(state, ManagerMessage::DismissInlineRolePicker);
+                    InputOutcome::LaunchWithAgent(role)
+                }
+                InlinePickerPlan::Dismiss => {
+                    dispatch_manager(state, ManagerMessage::DismissInlineRolePicker);
+                    InputOutcome::Continue
+                }
+                InlinePickerPlan::Continue => InputOutcome::Continue,
             }
-            InlinePickerPlan::Dismiss => {
-                dispatch_manager(state, ManagerMessage::DismissInlineRolePicker);
-                InputOutcome::Continue
-            }
-            InlinePickerPlan::Continue => InputOutcome::Continue,
-        },
+        }
     }
 }
 
@@ -631,17 +633,19 @@ pub fn handle_inline_agent_picker(state: &mut ManagerState<'_>, key: KeyEvent) -
             InputOutcome::Continue
         }
         InlinePickerShellPlan::Exit => InputOutcome::ExitJackin,
-        InlinePickerShellPlan::Delegate => match inline_picker_plan(picker.handle_key(key)) {
-            InlinePickerPlan::Commit(agent) => {
-                dispatch_manager(state, ManagerMessage::DismissInlineAgentPicker);
-                InputOutcome::LaunchWithRuntimeAgent(agent)
+        InlinePickerShellPlan::Delegate => {
+            match inline_picker_plan(picker.handle_key(key.into())) {
+                InlinePickerPlan::Commit(agent) => {
+                    dispatch_manager(state, ManagerMessage::DismissInlineAgentPicker);
+                    InputOutcome::LaunchWithRuntimeAgent(agent)
+                }
+                InlinePickerPlan::Dismiss => {
+                    dispatch_manager(state, ManagerMessage::DismissInlineAgentPicker);
+                    InputOutcome::Continue
+                }
+                InlinePickerPlan::Continue => InputOutcome::Continue,
             }
-            InlinePickerPlan::Dismiss => {
-                dispatch_manager(state, ManagerMessage::DismissInlineAgentPicker);
-                InputOutcome::Continue
-            }
-            InlinePickerPlan::Continue => InputOutcome::Continue,
-        },
+        }
     }
 }
 
@@ -654,7 +658,7 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
     let Some((container, picker, providers)) = state.inline_new_session_picker.as_mut() else {
         return InputOutcome::Continue;
     };
-    match inline_picker_plan(picker.handle_key(key)) {
+    match inline_picker_plan(picker.handle_key(key.into())) {
         InlinePickerPlan::Commit(agent) => {
             let container = container.clone();
             // Running-container path passes an empty list → no provider picker.

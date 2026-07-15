@@ -182,8 +182,8 @@ struct ConsoleLoopInputs<'a, H, R> {
 
 struct ConsoleMouseState {
     last_event_at: Option<std::time::Instant>,
-    pointer_shape: jackin_tui::PointerShape,
-    chrome_hover_tracker: jackin_tui::components::HoverTracker<ConsoleChromeHover>,
+    pointer_shape: termrock::PointerShape,
+    chrome_hover_tracker: termrock::components::HoverTracker<ConsoleChromeHover>,
     chrome_hover: Option<ConsoleChromeHover>,
 }
 
@@ -191,8 +191,8 @@ impl ConsoleMouseState {
     fn new() -> Self {
         Self {
             last_event_at: None,
-            pointer_shape: jackin_tui::PointerShape::Default,
-            chrome_hover_tracker: jackin_tui::components::HoverTracker::new(),
+            pointer_shape: termrock::PointerShape::Default,
+            chrome_hover_tracker: termrock::components::HoverTracker::new(),
             chrome_hover: None,
         }
     }
@@ -283,11 +283,11 @@ where
             };
             jackin_console::tui::view::render_modal_backdrop(frame, body);
             let area = quit_confirm_area(body, confirm);
-            jackin_tui::components::render_confirm_dialog(frame, area, confirm);
-            jackin_tui::components::render_hint_bar(
+            termrock::components::render_confirm_dialog(frame, area, confirm);
+            termrock::components::render_hint_bar(
                 frame,
                 hint_row,
-                &jackin_tui::components::confirm_hint_spans(),
+                &termrock::components::confirm_hint_spans(),
             );
         }
         mouse_state.chrome_hover_tracker.clear();
@@ -300,23 +300,23 @@ where
             );
             let chip_row = debug_chip_row(bar_area);
             if let Some(chip) =
-                jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id)
+                termrock::components::status_footer_debug_chip_rect(chip_row, &run_id)
             {
                 mouse_state
                     .chrome_hover_tracker
                     .register(chip, ConsoleChromeHover::DebugChip);
             }
-            jackin_tui::components::render_status_footer_right_group(
+            termrock::components::render_status_footer_right_group(
                 frame,
                 chip_row,
                 "",
-                jackin_tui::components::StatusRightGroup {
+                termrock::components::StatusRightGroup {
                     usage: None,
                     container: "",
                     run_id: Some(&run_id),
                 },
                 1.0,
-                jackin_tui::components::StatusFooterHover {
+                termrock::components::StatusFooterHover {
                     left: false,
                     usage: false,
                     right: false,
@@ -331,7 +331,7 @@ where
         ms.list_modal.as_ref()
     {
         let rect = modal.rect(main_area);
-        let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
+        let overlay = termrock::components::container_info_hyperlink_overlay(rect, info);
         if !overlay.is_empty() {
             let mut out = std::io::stdout();
             drop(std::io::Write::write_all(&mut out, &overlay));
@@ -638,10 +638,10 @@ fn reset_modal_mouse_state(mouse_state: &mut ConsoleMouseState, needs_redraw: &m
         mouse_state.chrome_hover = None;
         *needs_redraw = true;
     }
-    if mouse_state.pointer_shape != jackin_tui::PointerShape::Default {
-        mouse_state.pointer_shape = jackin_tui::PointerShape::Default;
+    if mouse_state.pointer_shape != termrock::PointerShape::Default {
+        mouse_state.pointer_shape = termrock::PointerShape::Default;
         let mut out = std::io::stdout();
-        let seq = jackin_tui::osc22_pointer_shape(mouse_state.pointer_shape);
+        let seq = termrock::osc22_pointer_shape(mouse_state.pointer_shape);
         let _unused = std::io::Write::write_all(&mut out, seq.as_bytes());
         drop(std::io::Write::flush(&mut out));
     }
@@ -674,7 +674,7 @@ fn update_console_pointer_shape(
     );
     if next_pointer_shape != mouse_state.pointer_shape {
         mouse_state.pointer_shape = next_pointer_shape;
-        let seq = jackin_tui::osc22_pointer_shape(mouse_state.pointer_shape);
+        let seq = termrock::osc22_pointer_shape(mouse_state.pointer_shape);
         let mut out = std::io::stdout();
         drop(std::io::Write::write_all(&mut out, seq.as_bytes()));
         drop(std::io::Write::flush(&mut out));

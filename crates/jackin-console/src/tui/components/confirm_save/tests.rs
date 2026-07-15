@@ -4,7 +4,7 @@
 //! Tests for `confirm_save`.
 use super::*;
 use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
-use jackin_tui::{
+use termrock::{
     HintSpan,
     components::ButtonFocus,
     keymap::{KeyChord, LogicalKey},

@@ -13,7 +13,7 @@
 //! save commit path (`console/tui/input/save.rs`).
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use jackin_tui::components::KeyChord;
+use termrock::keymap::KeyChord;
 
 use crate::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
@@ -77,7 +77,7 @@ pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEv
         return;
     };
 
-    let chord = KeyChord::from(key);
+    let chord = KeyChord::from(termrock::crossterm::key(key));
     let tab_bar_focused = settings.tab_bar_focused();
     let auth_kind_selected = settings.auth.has_selected_kind();
     let active_tab = settings.active_tab;
@@ -190,7 +190,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         &settings.mounts.mount_info_cache,
     );
     let footer_h = settings.cached_footer_h;
-    let chord = KeyChord::from(key);
+    let chord = KeyChord::from(termrock::crossterm::key(key));
     match SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(chord) {
         Some(SettingsGlobalMountsTabAction::Save) => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
@@ -334,7 +334,7 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         &settings.env.expanded,
         settings.env.selected,
     );
-    let chord = KeyChord::from(key);
+    let chord = KeyChord::from(termrock::crossterm::key(key));
     match SETTINGS_ENV_TAB_KEYMAP.dispatch(chord) {
         Some(SettingsEnvTabAction::MoveUp) => {
             dispatch_manager(
@@ -429,7 +429,7 @@ fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let is_dirty = settings.is_dirty();
-    let chord = KeyChord::from(key);
+    let chord = KeyChord::from(termrock::crossterm::key(key));
     match SETTINGS_GENERAL_TAB_KEYMAP.dispatch(chord) {
         Some(SettingsGeneralTabAction::MoveUp) => {
             dispatch_manager(
@@ -475,7 +475,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let footer_h = settings.cached_footer_h;
     let is_dirty = settings.is_dirty();
     let content_width = settings_update::trust_content_width(&settings.trust);
-    let chord = KeyChord::from(key);
+    let chord = KeyChord::from(termrock::crossterm::key(key));
     match SETTINGS_TRUST_TAB_KEYMAP.dispatch(chord) {
         Some(SettingsTrustTabAction::MoveUp) => {
             dispatch_manager(
@@ -551,7 +551,7 @@ pub fn handle_settings_confirm_modal(
     let mut outcome = SettingsModalOutcome::Continue;
     match modal {
         SettingsModal::MountText { target, mut state } => {
-            match inline_picker_plan(state.handle_key(key)) {
+            match inline_picker_plan(state.handle_key(key.into())) {
                 InlinePickerPlan::Commit(value) => {
                     let committed_target = target.clone();
                     settings.mounts.modal = Some(SettingsModal::MountText { target, state });
@@ -595,7 +595,7 @@ pub fn handle_settings_confirm_modal(
         }
         SettingsModal::MountDstChoice { mut state } => {
             let src = state.src.clone();
-            match mount_dst_choice_plan(state.handle_key(key)) {
+            match mount_dst_choice_plan(state.handle_key(key.into())) {
                 MountDstChoicePlan::CommitSamePath => {
                     settings_update::set_global_mount_add_draft_destination(
                         &mut settings.mounts.add_draft,
@@ -625,7 +625,7 @@ pub fn handle_settings_confirm_modal(
             }
         }
         SettingsModal::MountScopePicker { mut state } => {
-            match scope_picker_plan(state.handle_key(key)) {
+            match scope_picker_plan(state.handle_key(key.into())) {
                 ScopePickerPlan::AllAgents | ScopePickerPlan::SpecificAgent => {
                     // Drop the picker before dispatching: commit_text
                     // (AllAgents path) calls clear_modal_chain anyway, and
@@ -647,7 +647,7 @@ pub fn handle_settings_confirm_modal(
             }
         }
         SettingsModal::MountRolePicker { state: mut picker } => {
-            match inline_picker_plan(picker.handle_key(key)) {
+            match inline_picker_plan(picker.handle_key(key.into())) {
                 InlinePickerPlan::Commit(role) => {
                     match settings_update::global_mount_role_picker_commit_plan(
                         &mut settings.mounts.add_draft,
@@ -676,7 +676,7 @@ pub fn handle_settings_confirm_modal(
             }
         }
         SettingsModal::MountConfirm { action, mut state } => {
-            match settings_update::settings_confirm_plan(action, state.handle_key(key)) {
+            match settings_update::settings_confirm_plan(action, state.handle_key(key.into())) {
                 settings_update::SettingsConfirmPlan::Commit => {
                     outcome = commit_settings_confirm(settings, action);
                 }
@@ -694,7 +694,7 @@ pub fn handle_settings_confirm_modal(
             }
         }
         SettingsModal::MountPreviewSave { mut state } => {
-            match confirm_save_modal_plan(state.handle_key(key)) {
+            match confirm_save_modal_plan(state.handle_key(key.into())) {
                 ConfirmSaveModalPlan::Commit => {
                     outcome = request_settings_save(settings);
                 }
@@ -722,7 +722,7 @@ pub fn handle_settings_env_modal(
             target,
             pending_value,
             mut state,
-        } => match inline_picker_plan(state.handle_key(key)) {
+        } => match inline_picker_plan(state.handle_key(key.into())) {
             InlinePickerPlan::Commit(value) => {
                 let committed_target = target.clone();
                 env.modal = Some(SettingsModal::EnvText {
@@ -746,7 +746,7 @@ pub fn handle_settings_env_modal(
         SettingsModal::EnvSourcePicker {
             key: env_key,
             state: mut source,
-        } => match source_picker_plan(source.handle_key(key)) {
+        } => match source_picker_plan(source.handle_key(key.into())) {
             SourcePickerPlan::Plain => {
                 commit_settings_env_source_picker(
                     env,
@@ -779,7 +779,7 @@ pub fn handle_settings_env_modal(
             target,
             state: mut picker,
         } => {
-            match crate::tui::update::op_picker_inline_plan(picker.handle_key(key)) {
+            match crate::tui::update::op_picker_inline_plan(picker.handle_key(key.into())) {
                 // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }
@@ -826,7 +826,7 @@ pub fn handle_settings_env_modal(
             }
         }
         SettingsModal::EnvRolePicker { state: mut picker } => {
-            match inline_picker_plan(picker.handle_key(key)) {
+            match inline_picker_plan(picker.handle_key(key.into())) {
                 InlinePickerPlan::Commit(role) => {
                     let plan = settings_update::settings_env_role_picker_commit_plan(&role);
                     let text_plan = settings_env_new_key_text_plan(plan.scope);
@@ -852,7 +852,7 @@ pub fn handle_settings_env_modal(
             }
         }
         SettingsModal::EnvScopePicker { mut state } => {
-            match scope_picker_plan(state.handle_key(key)) {
+            match scope_picker_plan(state.handle_key(key.into())) {
                 ScopePickerPlan::AllAgents => {
                     commit_settings_env_scope_picker(
                         env,
@@ -874,7 +874,7 @@ pub fn handle_settings_env_modal(
             }
         }
         SettingsModal::EnvConfirm { action, mut state } => {
-            match bool_confirm_modal_plan(state.handle_key(key)) {
+            match bool_confirm_modal_plan(state.handle_key(key.into())) {
                 BoolConfirmModalPlan::Confirm => match action {
                     SettingsEnvConfirm::Delete => {
                         delete_selected_settings_env(env);

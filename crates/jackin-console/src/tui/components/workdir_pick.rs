@@ -9,7 +9,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
 use jackin_core::shorten_home;
-use jackin_tui::ModalOutcome;
+use termrock::ModalOutcome;
 
 #[derive(Debug, Clone)]
 pub struct WorkdirChoice {
@@ -142,8 +142,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::components::render_picker_lines;
-use jackin_tui::components::{DialogBorder, render_dialog_shell};
+use termrock::components::render_picker_lines;
+use termrock::components::{DialogBorder, render_dialog_shell};
 use termrock::style::{PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {

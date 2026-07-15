@@ -10,8 +10,8 @@
 use std::collections::BTreeSet;
 
 use crossterm::event::{KeyCode, MouseEvent};
-use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
+use termrock::ModalOutcome;
 
 use super::model::{ManagerHoverTarget, ManagerListRow};
 use crate::mount_info_cache::MountInfoCache;
@@ -140,14 +140,14 @@ pub enum SelectedInstancePurgeConfirmPlan {
 #[derive(Debug, Clone)]
 pub struct WorkspaceDeleteConfirmPlan {
     pub name: String,
-    pub state: jackin_tui::components::ConfirmState,
+    pub state: termrock::components::ConfirmState,
 }
 
 #[derive(Debug, Clone)]
 pub struct InstancePurgeConfirmPlan {
     pub container: String,
     pub label: String,
-    pub state: jackin_tui::components::ConfirmState,
+    pub state: termrock::components::ConfirmState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -320,9 +320,11 @@ pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnte
 #[must_use]
 pub fn workspace_list_key_plan(key: KeyCode, list_scroll_focused: bool) -> WorkspaceListKeyPlan {
     use crate::tui::keymap::{WORKSPACE_LIST_KEYMAP, WorkspaceListAction as A};
-    use jackin_tui::components::KeyChord;
+    use termrock::keymap::KeyChord;
 
-    let Some(action) = WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::from(key)) else {
+    let Some(action) =
+        WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::from(termrock::input::KeyCode::from(key)))
+    else {
         return WorkspaceListKeyPlan::Continue;
     };
     match action {
@@ -742,7 +744,7 @@ pub fn workspace_list_hover_row_at_position(
         return None;
     }
 
-    let mut tracker = jackin_tui::components::HoverTracker::new();
+    let mut tracker = termrock::components::HoverTracker::new();
     for (visual_idx, row_value) in visual_rows.iter().enumerate() {
         let Some(row_value) = row_value else {
             continue;
@@ -1088,13 +1090,13 @@ pub fn workspace_list_select_row_plan(
 }
 
 #[must_use]
-pub fn workspace_delete_confirm_state(name: &str) -> jackin_tui::components::ConfirmState {
-    jackin_tui::components::ConfirmState::new(format!("Delete \"{name}\"?"))
+pub fn workspace_delete_confirm_state(name: &str) -> termrock::components::ConfirmState {
+    termrock::components::ConfirmState::new(format!("Delete \"{name}\"?"))
 }
 
 #[must_use]
-pub fn instance_purge_confirm_state(label: &str) -> jackin_tui::components::ConfirmState {
-    jackin_tui::components::ConfirmState::new(format!(
+pub fn instance_purge_confirm_state(label: &str) -> termrock::components::ConfirmState {
+    termrock::components::ConfirmState::new(format!(
         "Purge \"{label}\"?\nRemoves the role container, DinD sidecar, volume, network, and local recovery state."
     ))
 }
@@ -1266,12 +1268,12 @@ pub const fn exit_preview_focus_plan() -> PreviewFocusPlan {
 #[must_use]
 pub fn preview_pane_key_plan(key: KeyCode, pane_count: usize) -> PreviewPaneKeyPlan {
     use crate::tui::keymap::{PREVIEW_PANE_KEYMAP, PreviewPaneAction as A};
-    use jackin_tui::components::KeyChord;
+    use termrock::keymap::KeyChord;
 
     if pane_count == 0 {
         return PreviewPaneKeyPlan::ExitPreview;
     }
-    match PREVIEW_PANE_KEYMAP.dispatch(KeyChord::from(key)) {
+    match PREVIEW_PANE_KEYMAP.dispatch(KeyChord::from(termrock::input::KeyCode::from(key))) {
         Some(A::Back) => PreviewPaneKeyPlan::ExitPreview,
         Some(A::NavigateUp) => PreviewPaneKeyPlan::Move { delta: -1 },
         Some(A::NavigateDown) => PreviewPaneKeyPlan::Move { delta: 1 },

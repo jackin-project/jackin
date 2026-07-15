@@ -140,8 +140,8 @@ pub(crate) use frame::{
 #[must_use]
 pub fn editor_name_input_state<'a>(
     current: impl Into<String>,
-) -> jackin_tui::components::TextInputState<'a> {
-    jackin_tui::components::TextInputState::new("Rename workspace", current)
+) -> termrock::components::TextInputState<'a> {
+    termrock::components::TextInputState::new("Rename workspace", current)
 }
 
 #[must_use]
@@ -154,9 +154,9 @@ pub fn editor_workdir_pick_state<M: crate::tui::components::workdir_pick::Workdi
 #[must_use]
 pub fn role_load_input_state<'a>(
     trusted_roles: Vec<String>,
-) -> jackin_tui::components::TextInputState<'a> {
+) -> termrock::components::TextInputState<'a> {
     let mut state =
-        jackin_tui::components::TextInputState::new_with_forbidden("Load role", "", trusted_roles);
+        termrock::components::TextInputState::new_with_forbidden("Load role", "", trusted_roles);
     state.forbidden_label = "trusted role registry".into();
     state
 }
@@ -164,8 +164,8 @@ pub fn role_load_input_state<'a>(
 #[must_use]
 pub fn mount_destination_input_state<'a>(
     current: impl Into<String>,
-) -> jackin_tui::components::TextInputState<'a> {
-    jackin_tui::components::TextInputState::new("Destination", current)
+) -> termrock::components::TextInputState<'a> {
+    termrock::components::TextInputState::new("Destination", current)
 }
 
 #[must_use]

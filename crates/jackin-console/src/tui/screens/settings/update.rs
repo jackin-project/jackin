@@ -18,8 +18,8 @@ use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use crate::tui::components::scope_picker::ScopeChoice;
 use crossterm::event::KeyCode;
 use jackin_core::{EnvValue, RoleSelector};
-use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
+use termrock::ModalOutcome;
 
 #[must_use]
 pub const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {

@@ -191,7 +191,7 @@ pub fn render_tab_strip(
     hovered: Option<usize>,
 ) {
     frame.render_widget(
-        jackin_tui::components::TabStrip::new(labels)
+        termrock::components::TabStrip::new(labels)
             .focused(tab_bar_focused)
             .hovered(hovered),
         area,

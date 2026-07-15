@@ -493,7 +493,7 @@ fn console_manager_stage_routes_by_variant() {
     assert_eq!(
         ConsoleManagerStage::<(), (), ()>::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Delete?"),
+            state: termrock::components::ConfirmState::new("Delete?"),
         }
         .route(),
         ConsoleManagerStageRoute::ConfirmDelete
@@ -502,7 +502,7 @@ fn console_manager_stage_routes_by_variant() {
         ConsoleManagerStage::<(), (), ()>::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Purge?"),
+            state: termrock::components::ConfirmState::new("Purge?"),
         }
         .route(),
         ConsoleManagerStageRoute::ConfirmInstancePurge
@@ -585,7 +585,7 @@ fn console_manager_stage_reports_modal_facts() {
     assert_eq!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Delete?"),
+            state: termrock::components::ConfirmState::new("Delete?"),
         }
         .modal_facts(),
         ConsoleStageModalFacts {
@@ -656,14 +656,14 @@ fn console_manager_stage_takes_pending_token_generate_from_editor_or_settings() 
 
     let mut delete = Stage::ConfirmDelete {
         name: "workspace".to_owned(),
-        state: jackin_tui::components::ConfirmState::new("Delete?"),
+        state: termrock::components::ConfirmState::new("Delete?"),
     };
     assert_eq!(delete.take_pending_token_generate(), None);
 
     let mut purge = Stage::ConfirmInstancePurge {
         container: "container".to_owned(),
         label: "label".to_owned(),
-        state: jackin_tui::components::ConfirmState::new("Purge?"),
+        state: termrock::components::ConfirmState::new("Purge?"),
     };
     assert_eq!(purge.take_pending_token_generate(), None);
 }
@@ -686,7 +686,7 @@ fn console_manager_stage_polls_pending_role_load_from_editor_only() {
     assert!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Delete?"),
+            state: termrock::components::ConfirmState::new("Delete?"),
         }
         .poll_pending_role_load()
         .is_none()
@@ -695,7 +695,7 @@ fn console_manager_stage_polls_pending_role_load_from_editor_only() {
         Stage::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Purge?"),
+            state: termrock::components::ConfirmState::new("Purge?"),
         }
         .poll_pending_role_load()
         .is_none()
@@ -726,7 +726,7 @@ fn console_manager_stage_polls_pending_drift_check_from_editor_only() {
     assert!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Delete?"),
+            state: termrock::components::ConfirmState::new("Delete?"),
         }
         .poll_pending_drift_check()
         .is_none()
@@ -735,7 +735,7 @@ fn console_manager_stage_polls_pending_drift_check_from_editor_only() {
         Stage::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Purge?"),
+            state: termrock::components::ConfirmState::new("Purge?"),
         }
         .poll_pending_drift_check()
         .is_none()
@@ -768,7 +768,7 @@ fn console_manager_stage_polls_pending_isolation_cleanup_from_editor_only() {
     assert!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Delete?"),
+            state: termrock::components::ConfirmState::new("Delete?"),
         }
         .poll_pending_isolation_cleanup()
         .is_none()
@@ -777,7 +777,7 @@ fn console_manager_stage_polls_pending_isolation_cleanup_from_editor_only() {
         Stage::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Purge?"),
+            state: termrock::components::ConfirmState::new("Purge?"),
         }
         .poll_pending_isolation_cleanup()
         .is_none()
@@ -821,7 +821,7 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
     assert!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Delete?"),
+            state: termrock::components::ConfirmState::new("Delete?"),
         }
         .poll_pending_op_commit()
         .is_none()
@@ -830,7 +830,7 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
         Stage::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: jackin_tui::components::ConfirmState::new("Purge?"),
+            state: termrock::components::ConfirmState::new("Purge?"),
         }
         .poll_pending_op_commit()
         .is_none()
@@ -1131,23 +1131,21 @@ fn create_prelude_mount_dst_choice_plan_routes_choice_outcomes() {
     use crate::tui::components::mount_dst_choice::MountDstChoice;
 
     assert_eq!(
-        create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Commit(
+        create_prelude_mount_dst_choice_plan(termrock::ModalOutcome::Commit(
             MountDstChoice::SamePath
         )),
         CreatePreludeMountDstChoicePlan::CommitSamePath
     );
     assert_eq!(
-        create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Commit(
-            MountDstChoice::Edit
-        )),
+        create_prelude_mount_dst_choice_plan(termrock::ModalOutcome::Commit(MountDstChoice::Edit)),
         CreatePreludeMountDstChoicePlan::OpenEditInput
     );
     assert_eq!(
-        create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Cancel),
+        create_prelude_mount_dst_choice_plan(termrock::ModalOutcome::Cancel),
         CreatePreludeMountDstChoicePlan::ReopenFileBrowserAtLastCwd
     );
     assert_eq!(
-        create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Continue),
+        create_prelude_mount_dst_choice_plan(termrock::ModalOutcome::Continue),
         CreatePreludeMountDstChoicePlan::Continue
     );
 }
@@ -1155,17 +1153,15 @@ fn create_prelude_mount_dst_choice_plan_routes_choice_outcomes() {
 #[test]
 fn create_prelude_text_input_dst_plan_routes_input_outcomes() {
     assert_eq!(
-        create_prelude_text_input_dst_plan(jackin_tui::ModalOutcome::Commit(
-            "/workspace".to_owned()
-        )),
+        create_prelude_text_input_dst_plan(termrock::ModalOutcome::Commit("/workspace".to_owned())),
         CreatePreludeTextInputDstPlan::Commit("/workspace".to_owned())
     );
     assert_eq!(
-        create_prelude_text_input_dst_plan::<String>(jackin_tui::ModalOutcome::Cancel),
+        create_prelude_text_input_dst_plan::<String>(termrock::ModalOutcome::Cancel),
         CreatePreludeTextInputDstPlan::ReopenMountDstChoice
     );
     assert_eq!(
-        create_prelude_text_input_dst_plan::<String>(jackin_tui::ModalOutcome::Continue),
+        create_prelude_text_input_dst_plan::<String>(termrock::ModalOutcome::Continue),
         CreatePreludeTextInputDstPlan::Continue
     );
 }
@@ -1173,17 +1169,15 @@ fn create_prelude_text_input_dst_plan_routes_input_outcomes() {
 #[test]
 fn create_prelude_text_input_name_plan_routes_input_outcomes() {
     assert_eq!(
-        create_prelude_text_input_name_plan(jackin_tui::ModalOutcome::Commit(
-            "workspace".to_owned()
-        )),
+        create_prelude_text_input_name_plan(termrock::ModalOutcome::Commit("workspace".to_owned())),
         CreatePreludeTextInputNamePlan::Commit("workspace".to_owned())
     );
     assert_eq!(
-        create_prelude_text_input_name_plan::<String>(jackin_tui::ModalOutcome::Cancel),
+        create_prelude_text_input_name_plan::<String>(termrock::ModalOutcome::Cancel),
         CreatePreludeTextInputNamePlan::ReopenWorkdirPick
     );
     assert_eq!(
-        create_prelude_text_input_name_plan::<String>(jackin_tui::ModalOutcome::Continue),
+        create_prelude_text_input_name_plan::<String>(termrock::ModalOutcome::Continue),
         CreatePreludeTextInputNamePlan::Continue
     );
 }
@@ -1191,19 +1185,19 @@ fn create_prelude_text_input_name_plan_routes_input_outcomes() {
 #[test]
 fn create_prelude_workdir_pick_plan_routes_input_outcomes() {
     assert_eq!(
-        create_prelude_workdir_pick_plan(jackin_tui::ModalOutcome::Commit("src".to_owned()), true),
+        create_prelude_workdir_pick_plan(termrock::ModalOutcome::Commit("src".to_owned()), true),
         CreatePreludeWorkdirPickPlan::Commit("src".to_owned())
     );
     assert_eq!(
-        create_prelude_workdir_pick_plan::<String>(jackin_tui::ModalOutcome::Cancel, true),
+        create_prelude_workdir_pick_plan::<String>(termrock::ModalOutcome::Cancel, true),
         CreatePreludeWorkdirPickPlan::ReopenTextInputDst
     );
     assert_eq!(
-        create_prelude_workdir_pick_plan::<String>(jackin_tui::ModalOutcome::Cancel, false),
+        create_prelude_workdir_pick_plan::<String>(termrock::ModalOutcome::Cancel, false),
         CreatePreludeWorkdirPickPlan::ReopenMountDstChoice
     );
     assert_eq!(
-        create_prelude_workdir_pick_plan::<String>(jackin_tui::ModalOutcome::Continue, true),
+        create_prelude_workdir_pick_plan::<String>(termrock::ModalOutcome::Continue, true),
         CreatePreludeWorkdirPickPlan::Continue
     );
 }
@@ -1227,7 +1221,7 @@ impl ModalConfirmSaveState for TestConfirmSave {
 impl ModalConfirmSaveFooterState for TestConfirmSave {
     fn footer_mode(&self) -> ModalFooterMode {
         ModalFooterMode::ConfirmSave {
-            scroll_axes: jackin_tui::components::ScrollAxes::none(),
+            scroll_axes: termrock::components::ScrollAxes::none(),
         }
     }
 }
@@ -1311,8 +1305,8 @@ impl ModalAuthFormFooterState<()> for TestAuthForm {
 struct TestFileBrowser;
 
 impl ModalFileBrowserFooterState for TestFileBrowser {
-    fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>> {
-        vec![jackin_tui::HintSpan::Text("file")]
+    fn footer_items(&self) -> Vec<termrock::HintSpan<'static>> {
+        vec![termrock::HintSpan::Text("file")]
     }
 }
 
@@ -1598,7 +1592,7 @@ fn console_manager_stage_ticks_editor_and_settings_only() {
 
     let mut delete = Stage::ConfirmDelete {
         name: "workspace".to_owned(),
-        state: jackin_tui::components::ConfirmState::new("Delete?"),
+        state: termrock::components::ConfirmState::new("Delete?"),
     };
     assert!(!delete.tick_active_animation());
 }
@@ -2277,7 +2271,7 @@ fn console_modal_reports_footer_items() {
     assert!(
         modal
             .footer_items(false)
-            .contains(&jackin_tui::HintSpan::Text("filter"))
+            .contains(&termrock::HintSpan::Text("filter"))
     );
 }
 
@@ -2290,6 +2284,6 @@ fn console_modal_footer_items_for_area_reflects_container_info_overflow() {
     assert!(
         modal
             .footer_items_for_area(false, Rect::new(0, 0, 100, 20))
-            .contains(&jackin_tui::HintSpan::Text("scroll"))
+            .contains(&termrock::HintSpan::Text("scroll"))
     );
 }
