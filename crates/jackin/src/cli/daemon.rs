@@ -16,6 +16,4 @@ pub enum DaemonCommand {
     Restart,
     /// Show daemon protocol and lifecycle status
     Status,
-    /// Print the daemon log file
-    Logs,
 }

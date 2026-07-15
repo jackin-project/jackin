@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use jackin_core::JackinPaths;
 #[cfg(unix)]
 use jackin_runtime::host_daemon::{
-    CoredumpPolicy, DaemonLayout, DaemonRequestKind, DaemonResponseKind, install_units, read_log,
-    request, serve, uninstall_units,
+    CoredumpPolicy, DaemonLayout, DaemonRequestKind, DaemonResponseKind, install_units, request,
+    serve, uninstall_units,
 };
 
 #[cfg(unix)]
@@ -28,7 +28,6 @@ pub(super) async fn handle(command: DaemonCommand, paths: &JackinPaths) -> Resul
             start(&layout).await
         }
         DaemonCommand::Status => status(&layout),
-        DaemonCommand::Logs => logs(&layout),
     }
 }
 
@@ -74,17 +73,12 @@ async fn start(layout: &DaemonLayout) -> Result<()> {
         return Ok(());
     }
     jackin_runtime::host_daemon::ensure_run_dir(layout)?;
-    let log = std::fs::File::create(&layout.log_path)
-        .with_context(|| format!("creating daemon log {}", layout.log_path.display()))?;
-    let err = log
-        .try_clone()
-        .with_context(|| format!("cloning daemon log {}", layout.log_path.display()))?;
     let exe = std::env::current_exe().context("resolving current jackin executable")?;
     let child = tokio::process::Command::new(exe)
         .args(["daemon", "serve"])
         .stdin(std::process::Stdio::null())
-        .stdout(log)
-        .stderr(err)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()
         .context("starting jackin daemon")?;
     println!(
@@ -146,7 +140,6 @@ fn status(layout: &DaemonLayout) -> Result<()> {
             println!("protocol: {}", status.protocol_version);
             println!("build: {}", status.build_id);
             println!("socket: {}", status.socket_path.display());
-            println!("log: {}", status.log_path.display());
             if status.adapters_enabled.is_empty() {
                 println!("adapters: none");
             } else {
@@ -163,11 +156,4 @@ fn status(layout: &DaemonLayout) -> Result<()> {
         DaemonResponseKind::Error { message } => anyhow::bail!("{message}"),
         other => anyhow::bail!("unexpected daemon response: {other:?}"),
     }
-}
-
-#[cfg(unix)]
-fn logs(layout: &DaemonLayout) -> Result<()> {
-    let contents = read_log(layout)?;
-    print!("{contents}");
-    Ok(())
 }

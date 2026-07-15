@@ -286,7 +286,7 @@ fn pane(state: AgentState) -> AttentionPaneStatus {
 
 #[test]
 fn unit_files_target_explicit_daemon_serve() {
-    let (_temp, paths, layout) = layout();
+    let (_temp, paths, _layout) = layout();
     let units = render_unit_files(&paths, Path::new("/bin/jackin"));
 
     assert!(units.launchd_plist.contains("<string>daemon</string>"));
@@ -296,9 +296,6 @@ fn unit_files_target_explicit_daemon_serve() {
             .systemd_unit
             .contains("ExecStart=/bin/jackin daemon serve")
     );
-    assert!(
-        units
-            .systemd_unit
-            .contains(&layout.log_path.display().to_string())
-    );
+    assert!(units.systemd_unit.contains("StandardOutput=null"));
+    assert!(!units.systemd_unit.contains("jackin-daemon.log"));
 }

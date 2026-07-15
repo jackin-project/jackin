@@ -20,7 +20,6 @@ use serde::{Deserialize, Serialize};
 pub const DAEMON_PROTOCOL_VERSION: u16 = 2;
 pub const MAX_REQUEST_BYTES: u64 = 16 * 1024;
 pub const SOCKET_FILE_NAME: &str = "jackin-daemon.sock";
-pub const LOG_FILE_NAME: &str = "jackin-daemon.log";
 pub const PID_FILE_NAME: &str = "jackin-daemon.pid";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -90,7 +89,6 @@ pub struct DaemonStatus {
     pub build_id: String,
     pub pid: u32,
     pub socket_path: PathBuf,
-    pub log_path: PathBuf,
     pub coredump_policy: CoredumpPolicy,
     pub adapters_enabled: Vec<String>,
 }
@@ -298,7 +296,6 @@ pub enum ServeOutcome {
 pub struct DaemonLayout {
     pub run_dir: PathBuf,
     pub socket_path: PathBuf,
-    pub log_path: PathBuf,
     pub pid_path: PathBuf,
 }
 
@@ -308,7 +305,6 @@ impl DaemonLayout {
         let run_dir = paths.jackin_home.join("run");
         Self {
             socket_path: run_dir.join(SOCKET_FILE_NAME),
-            log_path: run_dir.join(LOG_FILE_NAME),
             pid_path: run_dir.join(PID_FILE_NAME),
             run_dir,
         }
@@ -347,7 +343,6 @@ pub fn bind_control_socket(layout: &DaemonLayout) -> Result<UnixListener> {
 pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
     let listener = bind_control_socket(layout)?;
     write_pid(layout)?;
-    write_log(layout, "daemon started")?;
     let coredump_policy = disable_coredumps();
     let attention_enabled = std::env::var_os("JACKIN_ATTENTION").is_some_and(|value| value == "1");
     let mut attention = AttentionAdapter::new(HostAttentionNotifier::new(
@@ -424,7 +419,6 @@ pub fn request(
 }
 
 pub fn render_unit_files(paths: &JackinPaths, executable: &Path) -> UnitFiles {
-    let layout = DaemonLayout::new(paths);
     let launchd_label = "com.jackin.daemon".to_owned();
     let launchd_path = paths
         .home_dir
@@ -435,7 +429,6 @@ pub fn render_unit_files(paths: &JackinPaths, executable: &Path) -> UnitFiles {
         .join("systemd/user")
         .join("jackin-daemon.service");
     let exe = executable.display();
-    let log = layout.log_path.display();
     let launchd_plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -445,14 +438,12 @@ pub fn render_unit_files(paths: &JackinPaths, executable: &Path) -> UnitFiles {
   <key>ProgramArguments</key>
   <array><string>{exe}</string><string>daemon</string><string>serve</string></array>
   <key>RunAtLoad</key><true/>
-  <key>StandardOutPath</key><string>{log}</string>
-  <key>StandardErrorPath</key><string>{log}</string>
 </dict>
 </plist>
 "#
     );
     let systemd_unit = format!(
-        "[Unit]\nDescription=jackin daemon\n\n[Service]\nExecStart={exe} daemon serve\nRestart=on-failure\nStandardOutput=append:{log}\nStandardError=append:{log}\n\n[Install]\nWantedBy=default.target\n"
+        "[Unit]\nDescription=jackin daemon\n\n[Service]\nExecStart={exe} daemon serve\nRestart=on-failure\nStandardOutput=null\nStandardError=null\n\n[Install]\nWantedBy=default.target\n"
     );
     UnitFiles {
         launchd_label,
@@ -478,14 +469,6 @@ pub fn uninstall_units(paths: &JackinPaths, executable: &Path) -> Result<UnitFil
     remove_if_exists(&units.launchd_path)?;
     remove_if_exists(&units.systemd_path)?;
     Ok(units)
-}
-
-pub fn read_log(layout: &DaemonLayout) -> Result<String> {
-    match fs::read_to_string(&layout.log_path) {
-        Ok(contents) => Ok(jackin_diagnostics::scrub_secrets(&contents).into_owned()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(error) => Err(error).with_context(|| format!("reading {}", layout.log_path.display())),
-    }
 }
 
 fn handle_stream(
@@ -606,7 +589,6 @@ fn handle_request(
                 build_id: build_id.to_owned(),
                 pid: std::process::id(),
                 socket_path: layout.socket_path.clone(),
-                log_path: layout.log_path.clone(),
                 coredump_policy: coredump_policy.clone(),
                 adapters_enabled: if attention.muted() {
                     Vec::new()
@@ -695,13 +677,6 @@ fn write_pid(layout: &DaemonLayout) -> Result<()> {
     ensure_run_dir(layout)?;
     fs::write(&layout.pid_path, format!("{}\n", std::process::id()))
         .with_context(|| format!("writing {}", layout.pid_path.display()))
-}
-
-fn write_log(layout: &DaemonLayout, line: &str) -> Result<()> {
-    ensure_run_dir(layout)?;
-    let line = jackin_diagnostics::scrub_secrets(line);
-    fs::write(&layout.log_path, format!("{line}\n"))
-        .with_context(|| format!("writing {}", layout.log_path.display()))
 }
 
 fn cleanup_runtime_files(layout: &DaemonLayout) {
