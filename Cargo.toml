@@ -90,6 +90,9 @@ jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
 nix = "0.31"
 opentelemetry_sdk = "0.32"
 opentelemetry-semantic-conventions = { version = "0.32", default-features = false }
+opentelemetry = "0.32"
+opentelemetry-appender-tracing = "0.32"
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "logs", "metrics", "grpc-tonic", "gzip-tonic", "tls-roots", "experimental-grpc-retry"] }
 owo-colors = "4"
 portable-pty = "0.9"
 predicates = "=3.1.4"
@@ -127,6 +130,7 @@ tokio-util = "0.7"
 toml = "=1.1.2"
 toml_edit = "0.25"
 tracing = "0.1"
+tracing-opentelemetry = "0.33"
 tracing-subscriber = "0.3"
 tui-scrollbar = "0.2.4"
 tui-widget-list = "0.15"

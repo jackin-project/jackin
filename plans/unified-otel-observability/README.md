@@ -11,7 +11,7 @@ Execute in the order below unless the dependency graph says otherwise. Each exec
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | [001](001-telemetry-schema-crate.md) | `jackin-telemetry` schema crate, Weaver registry, generated constants | P1 | L | — | DONE |
-| [002](002-otlp-composition-root.md) | OTLP composition root: baseline deps, runtime contract, Resource | P1 | L | 001 | TODO |
+| [002](002-otlp-composition-root.md) | OTLP composition root: baseline deps, runtime contract, Resource | P1 | L | 001 | IN PROGRESS |
 | [003](003-tracing-bridge-layering.md) | Bridge layering: one event → one log, native EventName, no inference | P1 | M | 002 | TODO |
 | [004](004-telemetry-facade-api.md) | Governed facade: events, operation guard, metrics, limits, lint gates | P1 | L | 001–003 | TODO |
 | [005](005-async-spawn-helpers.md) | Spawn ownership helpers (joined/detached/cycle/stream) + spawn lint | P1 | M | 004 | TODO |

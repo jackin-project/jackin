@@ -229,16 +229,22 @@ impl RunDiagnostics {
         // `init_tracing` returns whether OTLP export was actually installed. That
         // drives the file gate: the file is the fallback sink, written whenever
         // the backend is NOT receiving (or forced on with JACKIN_DIAGNOSTICS_FILE).
-        let (otlp_active, otlp_error) = match crate::observability::init_tracing(debug, &run_id) {
-            Ok(active) => (active, None),
-            // "already installed" is benign (a test harness set its own
-            // subscriber); treat as inactive with no operator-facing error.
-            Err(error) if error.to_string().contains("already installed") => (false, None),
-            // A configured endpoint whose exporter fails / unsupported protocol
-            // is a real loss of telemetry the operator asked for: fall back to
-            // the file and surface one compact breadcrumb.
-            Err(error) => (false, Some(error.to_string())),
+        let identity = if command == "console" {
+            crate::observability::ServiceIdentity::HOST_INTERACTIVE
+        } else {
+            crate::observability::ServiceIdentity::HOST_ONE_SHOT
         };
+        let (otlp_active, otlp_error) =
+            match crate::observability::init_tracing_for(debug, &run_id, identity) {
+                Ok(active) => (active, None),
+                // "already installed" is benign (a test harness set its own
+                // subscriber); treat as inactive with no operator-facing error.
+                Err(error) if error.to_string().contains("already installed") => (false, None),
+                // A configured endpoint whose exporter fails / unsupported protocol
+                // is a real loss of telemetry the operator asked for: fall back to
+                // the file and surface one compact breadcrumb.
+                Err(error) => (false, Some(error.to_string())),
+            };
         // Export not installed, no build error, yet endpoint vars ARE set: the
         // config is incomplete (e.g. a metrics endpoint with no traces/logs base,
         // which can't satisfy the mandatory traces+logs signals). Surface it as a

@@ -218,11 +218,40 @@ impl Visit for OtelInternalVisitor {
 // `allow`, not `expect`: the body is trivially const only in the default
 // (no-otlp) build; the otlp build does non-const setup, so the lint fires in one
 // cfg and not the other and a single non-const signature is required.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServiceIdentity {
+    pub service_name: &'static str,
+    pub app_mode: jackin_telemetry::schema::enums::AppMode,
+}
+
+impl ServiceIdentity {
+    pub const HOST_ONE_SHOT: Self = Self {
+        service_name: "jackin",
+        app_mode: jackin_telemetry::schema::enums::AppMode::OneShot,
+    };
+    pub const HOST_INTERACTIVE: Self = Self {
+        service_name: "jackin",
+        app_mode: jackin_telemetry::schema::enums::AppMode::Interactive,
+    };
+    pub const CAPSULE: Self = Self {
+        service_name: "jackin-capsule",
+        app_mode: jackin_telemetry::schema::enums::AppMode::Capsule,
+    };
+}
+
 pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<bool> {
+    init_tracing_for(debug, run_id, ServiceIdentity::HOST_ONE_SHOT)
+}
+
+pub fn init_tracing_for(
+    debug: bool,
+    run_id: &str,
+    identity: ServiceIdentity,
+) -> anyhow::Result<bool> {
     #[cfg(feature = "otlp")]
     {
         if let Some(endpoints) = otlp::endpoints() {
-            return match otlp::init(debug, run_id, &endpoints) {
+            return match otlp::init(debug, run_id, identity, &endpoints) {
                 Ok(()) => Ok(true),
                 Err(error) => {
                     // OTLP requested but unavailable: install the JSONL-only
@@ -236,7 +265,7 @@ pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<bool> {
     }
 
     // No fmt layer: the operator's terminal must never receive the firehose.
-    let _ = (debug, run_id);
+    let _ = (debug, run_id, identity);
     tracing_subscriber::registry()
         .with(JackinDiagnosticsLayer)
         .try_init()
@@ -458,20 +487,26 @@ mod otlp {
     use opentelemetry::KeyValue;
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-    use opentelemetry_otlp::WithExportConfig;
+    use opentelemetry_otlp::{Compression, WithExportConfig, WithTonicConfig};
     use opentelemetry_sdk::Resource;
+    use opentelemetry_sdk::logs::BatchConfigBuilder as LogBatchConfigBuilder;
     use opentelemetry_sdk::logs::SdkLoggerProvider;
     use opentelemetry_sdk::logs::log_processor_with_async_runtime::BatchLogProcessor;
     use opentelemetry_sdk::metrics::SdkMeterProvider;
     use opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader;
     use opentelemetry_sdk::runtime::Tokio;
-    use opentelemetry_sdk::trace::SdkTracerProvider;
     use opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor;
+    use opentelemetry_sdk::trace::{
+        BatchConfigBuilder as SpanBatchConfigBuilder, Sampler, SdkTracerProvider,
+    };
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::prelude::*;
 
     use super::JackinDiagnosticsLayer;
+    use super::ServiceIdentity;
     use super::otel_keys as keys;
+
+    mod retry;
 
     /// The three SDK providers for one run, flushed together at shutdown.
     /// Named (not a positional tuple) so the flush sequence can't transpose
@@ -581,12 +616,59 @@ mod otlp {
     /// `OTEL_EXPORTER_OTLP_ENDPOINT` provides a base for every signal; the
     /// per-signal endpoint vars wrappers commonly inject override it per signal.
     pub(super) fn endpoints() -> Option<OtlpEndpoints> {
+        if sdk_disabled() {
+            return None;
+        }
         resolve_endpoints(
             std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
             std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").ok(),
             std::env::var("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").ok(),
             std::env::var("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT").ok(),
         )
+    }
+
+    fn sdk_disabled() -> bool {
+        std::env::var("OTEL_SDK_DISABLED")
+            .is_ok_and(|value| value.trim().eq_ignore_ascii_case("true"))
+    }
+
+    fn validate_standard_env() -> anyhow::Result<()> {
+        if let Ok(sampler) = std::env::var("OTEL_TRACES_SAMPLER")
+            && !sampler.trim().is_empty()
+            && sampler.trim() != "parentbased_always_on"
+        {
+            anyhow::bail!(
+                "OTEL_TRACES_SAMPLER={} conflicts with required parentbased_always_on",
+                sampler.trim()
+            );
+        }
+        for var in [
+            "OTEL_EXPORTER_OTLP_COMPRESSION",
+            "OTEL_EXPORTER_OTLP_TRACES_COMPRESSION",
+            "OTEL_EXPORTER_OTLP_LOGS_COMPRESSION",
+            "OTEL_EXPORTER_OTLP_METRICS_COMPRESSION",
+        ] {
+            if let Ok(value) = std::env::var(var)
+                && !value.trim().is_empty()
+                && value.trim() != "gzip"
+            {
+                anyhow::bail!("{var}={} is unsupported; expected gzip", value.trim());
+            }
+        }
+        for var in [
+            "OTEL_EXPORTER_OTLP_TIMEOUT",
+            "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT",
+            "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT",
+            "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT",
+        ] {
+            if let Ok(value) = std::env::var(var) {
+                let _: u64 = value
+                    .trim()
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("{var} must be an integer millisecond timeout"))?;
+            }
+        }
+        Ok(())
     }
 
     /// The standard OTLP endpoint env vars (generic base + per-signal). Used to
@@ -729,14 +811,38 @@ mod otlp {
     /// Stable source identity only. Run/session/component live on records and
     /// spans (`parallax.run.id`, `session.id`, `jackin.component`) so two runs
     /// of the same build share Resource identity.
-    fn resource(_run_id: &str) -> Resource {
-        build_resource()
+    fn resource(_run_id: &str, identity: ServiceIdentity) -> Resource {
+        build_resource_for(identity)
     }
 
+    #[cfg(test)]
     fn build_resource() -> Resource {
+        build_resource_for(ServiceIdentity::HOST_ONE_SHOT)
+    }
+
+    fn build_resource_for(identity: ServiceIdentity) -> Resource {
+        use jackin_telemetry::schema::attrs::{self, std_attrs};
+
+        let executable_name = std::env::current_exe()
+            .ok()
+            .and_then(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| identity.service_name.to_owned());
         let attributes = vec![
-            KeyValue::new(keys::SERVICE_NAME, "jackin"),
-            KeyValue::new(keys::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+            KeyValue::new(std_attrs::SERVICE_NAMESPACE, "jackin"),
+            KeyValue::new(std_attrs::SERVICE_NAME, identity.service_name),
+            KeyValue::new(std_attrs::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+            KeyValue::new(
+                std_attrs::SERVICE_INSTANCE_ID,
+                uuid::Uuid::new_v4().to_string(),
+            ),
+            KeyValue::new(std_attrs::PROCESS_PID, i64::from(std::process::id())),
+            KeyValue::new(std_attrs::PROCESS_EXECUTABLE_NAME, executable_name),
+            KeyValue::new(attrs::APP_MODE, identity.app_mode.as_str()),
+            KeyValue::new("os.type", std::env::consts::OS),
+            KeyValue::new("process.runtime.name", "rust"),
         ];
         Resource::builder().with_attributes(attributes).build()
     }
@@ -758,6 +864,7 @@ mod otlp {
         Option<tokio::runtime::Handle>,
     )> {
         ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
+        validate_standard_env()?;
         let runtime = otel_runtime()?;
         // The tokio runtime gauges must report jackin❯'s app runtime, not the
         // dedicated telemetry runtime — capture its handle before entering ours.
@@ -771,25 +878,50 @@ mod otlp {
         let span_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
             .with_endpoint(traces_endpoint.to_owned())
+            .with_compression(Compression::Gzip)
+            .with_retry_policy(retry::policy())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP span exporter init failed: {e}"))?;
         let log_exporter = opentelemetry_otlp::LogExporter::builder()
             .with_tonic()
             .with_endpoint(logs_endpoint.to_owned())
+            .with_compression(Compression::Gzip)
+            .with_retry_policy(retry::policy())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP log exporter init failed: {e}"))?;
 
         // Attribute limits: generous but finite (observed max attrs + headroom).
         // Prevents unbounded dimension growth; DroppedAttributesCount must stay 0.
+        let span_batch = SpanBatchConfigBuilder::default()
+            .with_max_queue_size(2_048)
+            .with_max_export_batch_size(512)
+            .with_scheduled_delay(std::time::Duration::from_secs(1))
+            .with_max_export_timeout(std::time::Duration::from_secs(5))
+            .build();
+        let log_batch = LogBatchConfigBuilder::default()
+            .with_max_queue_size(4_096)
+            .with_max_export_batch_size(512)
+            .with_scheduled_delay(std::time::Duration::from_secs(1))
+            .with_max_export_timeout(std::time::Duration::from_secs(5))
+            .build();
         let tracer_provider = SdkTracerProvider::builder()
+            .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOn)))
             .with_max_attributes_per_span(64)
             .with_max_attributes_per_event(32)
-            .with_span_processor(BatchSpanProcessor::builder(span_exporter, Tokio).build())
+            .with_span_processor(
+                BatchSpanProcessor::builder(span_exporter, Tokio)
+                    .with_batch_config(span_batch)
+                    .build(),
+            )
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
             .with_log_processor(PromoteEventNameProcessor)
-            .with_log_processor(BatchLogProcessor::builder(log_exporter, Tokio).build())
+            .with_log_processor(
+                BatchLogProcessor::builder(log_exporter, Tokio)
+                    .with_batch_config(log_batch)
+                    .build(),
+            )
             .with_resource(resource)
             .build();
         Ok((tracer_provider, logger_provider, app_handle))
@@ -845,8 +977,13 @@ mod otlp {
         }
     }
 
-    pub(super) fn init(debug: bool, run_id: &str, endpoints: &OtlpEndpoints) -> anyhow::Result<()> {
-        let resource = resource(run_id);
+    pub(super) fn init(
+        debug: bool,
+        run_id: &str,
+        identity: ServiceIdentity,
+        endpoints: &OtlpEndpoints,
+    ) -> anyhow::Result<()> {
+        let resource = resource(run_id, identity);
         let (tracer_provider, logger_provider, app_handle) =
             build_otlp_providers(resource.clone(), &endpoints.traces, &endpoints.logs)?;
         // Metrics are best-effort: a failed exporter build must never block
@@ -898,7 +1035,7 @@ mod otlp {
     /// Capsule Resource is stable source identity only (same as host).
     /// `session.id` / `parallax.run.id` / `jackin.component` are record/span attrs.
     fn capsule_resource() -> Resource {
-        build_resource()
+        build_resource_for(ServiceIdentity::CAPSULE)
     }
 
     /// Install OTLP export for the capsule. Mirrors `init` but composes no
@@ -1042,7 +1179,7 @@ mod otlp {
 
         let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
         let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
-        let resource = resource(run_id);
+        let resource = resource(run_id, ServiceIdentity::HOST_ONE_SHOT);
         let tracer_provider = SdkTracerProvider::builder()
             .with_max_attributes_per_span(64)
             .with_max_attributes_per_event(32)
@@ -1231,10 +1368,12 @@ mod otlp {
         let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
             .with_tonic()
             .with_endpoint(metrics_endpoint.to_owned())
+            .with_compression(Compression::Gzip)
+            .with_retry_policy(retry::policy())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP metric exporter init failed: {e}"))?;
         let reader = PeriodicReader::builder(metric_exporter, Tokio)
-            .with_interval(std::time::Duration::from_secs(5))
+            .with_interval(std::time::Duration::from_secs(30))
             .build();
         let provider = SdkMeterProvider::builder()
             .with_reader(reader)
