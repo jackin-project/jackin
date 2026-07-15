@@ -299,5 +299,35 @@ where
     })
 }
 
+struct ClosureView<F>(std::cell::RefCell<Option<F>>);
+
+impl<F> View<()> for ClosureView<F>
+where
+    F: FnOnce(&mut ratatui::Frame<'_>),
+{
+    fn render(&self, _model: &(), frame: &mut ratatui::Frame<'_>, _area: ratatui::layout::Rect) {
+        if let Some(render) = self.0.borrow_mut().take() {
+            render(frame);
+        }
+    }
+}
+
+/// Drive one frame for an existing frame-scoped widget renderer.
+///
+/// This adapter lets modal and prompt loops converge on [`drive_frame`]
+/// without inventing a persistent model/view type for a short-lived widget.
+pub fn drive_render<'a, B, F>(
+    terminal: &'a mut ratatui::Terminal<B>,
+    render: F,
+) -> Result<ratatui::CompletedFrame<'a>, B::Error>
+where
+    B: ratatui::backend::Backend,
+    F: FnOnce(&mut ratatui::Frame<'_>),
+{
+    let area = terminal.size()?;
+    let view = ClosureView(std::cell::RefCell::new(Some(render)));
+    drive_frame(terminal, &view, &(), area, |_| {})
+}
+
 #[cfg(test)]
 mod tests;
