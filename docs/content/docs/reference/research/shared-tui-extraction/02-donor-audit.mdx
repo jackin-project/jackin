@@ -24,17 +24,18 @@ The shared-looking crate imports or re-exports from `jackin-core`:
 
 Some of these neutral TUI types also exist as compatibility copies or lower-layer definitions, creating the wrong direction for an external component library. Move neutral TUI ownership to the external component crate, migrate callers, then remove duplicates. `shorten_home` is explicitly not part of that move: it reads process environment, is used by non-TUI commands, and remains a `jackin-core` path-display helper; remove only the `jackin-tui` re-export. Product configuration and agent/container types remain outside.
 
-## Extract unchanged or with naming cleanup
+## Extract into the shared project
+
+Chapter [09 - Component redesign catalog](/reference/research/shared-tui-extraction/09-component-redesign-catalog/) fixes the redesign tier per item: some of these move with naming cleanup only, others are reimplemented behind the same contract before publication. This list states what TermRock ends up owning, not that every item moves verbatim.
 
 - display-column measurement, terminal text sanitization, and bounded text helpers;
 - key/input normalization and focus ownership;
 - hover tracking and scroll state/math, retaining the maintained `tui-scrollbar` dependency that owns the proportional thumb metrics;
-- terminal ownership/mode guards;
+- the terminal mode session, reimplemented partial-initialization-safe under the optional `crossterm` feature;
 - ANSI text parsing;
 - pure OSC 8/22/52 escape encoding and pointer-shape naming (`PointerShape`), extracted as typed request/encoder data with no emission;
 - executor-neutral runtime contracts and the `drive_frame` frame driver in a base module that is optional by use and required by no widget;
-- output pruning and bounded output projection;
-- `Panel`, `TabStrip`, `ButtonStrip`, confirmation/error dialogs, filter input, hints, scrollable panel/list, selection list, text input, toast, status popup, and diff view;
+- `Panel`, `TabStrip`, `ButtonStrip`, confirmation/error dialogs, filter input, hints, scrollable panel/list, selection list, text input, toast, and diff view — status-popup behavior folds into the generic message/toast surface without a dedicated public type;
 - modal backdrop/lifecycle and generic dialog layout;
 - lookbook registry, interactive driver, SVG/golden renderer, and fixture runner;
 - neutral component catalog pages and the generated-preview workflow that feeds them.
@@ -59,6 +60,8 @@ Some of these neutral TUI types also exist as compatibility copies or lower-laye
 - OnePassword, role, scope, mount, and project-specific pickers;
 - file browser and application editors;
 - `jackin❯` brand composition and status policies;
+- terminal-ownership process globals (rich-surface/host-screen atomics) and title/alternate-screen policy;
+- direct CLI output and output-pruning helpers; a pure bounded-lines projection may graduate later under the two-consumer rule;
 - Tokio subscription implementations, spawn helpers, and the fallback runtime in `jackin-console`;
 - `shorten_home` and other environment-aware path-display policy in `jackin-core`;
 - product palette tokens (`CAPSULE_MENU_*`, `BRAND_BLOCK`, `DEBUG_AMBER`, `TAB_BG_*`, rain colors) as local constants layered on top of the semantic theme;

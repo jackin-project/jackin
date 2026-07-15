@@ -56,7 +56,7 @@ The donor is not publishable unchanged:
 Shared:
 
 - semantic theme tokens and the default phosphor preset;
-- terminal lifecycle/ownership, text geometry, input, focus, hover, scrolling, layout;
+- the scoped terminal session (optional `crossterm` feature), text geometry, input, focus, hover, scrolling, layout;
 - neutral components and the executor-neutral base `runtime` module, optional by use (update/view/subscription contracts and the frame driver);
 - typed OSC hyperlink/pointer/clipboard requests with pure encoders;
 - lookbook registry/harness, deterministic rendering, and conformance utilities.
@@ -66,6 +66,7 @@ Consumer-local:
 
 - brand composition and product wording;
 - agent/container/job/trace/database/credential state;
+- terminal-ownership process globals and title policy;
 - filesystem, process, network, secret, persistence, and telemetry effects;
 - application layouts and stories using domain fixtures.
 
