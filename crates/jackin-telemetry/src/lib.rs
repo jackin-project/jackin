@@ -19,7 +19,7 @@ pub mod schema;
 pub mod spawn;
 
 pub use event::{Attr, EventDef, FieldSet, Rejection, Severity, Value, emit_event};
-pub use health::{FacadeHealth, facade_health};
+pub use health::{FacadeHealth, facade_health, record_export_rejection};
 pub use metric::{
     Counter, Histogram, InstrumentDef, InstrumentKind, UpDownCounter, counter, histogram, install,
     up_down_counter,

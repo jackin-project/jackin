@@ -141,6 +141,25 @@ fn shutdown_order_is_tracer_logger_meter() {
 }
 
 #[test]
+fn governed_export_validator_drops_unknown_log_attribute() {
+    let before = jackin_telemetry::facade_health().unknown_attribute;
+    let export = export_after(false, "validator", || {
+        tracing::event!(
+            name: "session.start",
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            tracing::Level::INFO,
+            "bogus.secret" = "must-not-export",
+            "invalid governed event"
+        );
+    });
+    assert!(export.logs.get_emitted_logs().unwrap().is_empty());
+    assert_eq!(
+        jackin_telemetry::facade_health().unknown_attribute,
+        before + 1
+    );
+}
+
+#[test]
 fn generic_endpoint_resolves_all_signals() {
     // One base drives every signal verbatim — gRPC appends no path.
     let endpoints = resolve_endpoints(Some("http://otel:4317/".into()), None, None, None).unwrap();

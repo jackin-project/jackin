@@ -908,20 +908,20 @@ mod otlp {
             .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOn)))
             .with_max_attributes_per_span(64)
             .with_max_attributes_per_event(32)
-            .with_span_processor(
+            .with_span_processor(GovernedSpanProcessor(
                 BatchSpanProcessor::builder(span_exporter, Tokio)
                     .with_batch_config(span_batch)
                     .build(),
-            )
+            ))
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
             .with_log_processor(PromoteEventNameProcessor)
-            .with_log_processor(
+            .with_log_processor(GovernedLogProcessor(
                 BatchLogProcessor::builder(log_exporter, Tokio)
                     .with_batch_config(log_batch)
                     .build(),
-            )
+            ))
             .with_resource(resource)
             .build();
         Ok((tracer_provider, logger_provider, app_handle))
@@ -933,6 +933,94 @@ mod otlp {
     /// dotted name so backends can key on the standard field.
     #[derive(Debug)]
     struct PromoteEventNameProcessor;
+
+    #[derive(Debug)]
+    struct GovernedLogProcessor<P>(P);
+
+    impl<P: opentelemetry_sdk::logs::LogProcessor> opentelemetry_sdk::logs::LogProcessor
+        for GovernedLogProcessor<P>
+    {
+        fn emit(
+            &self,
+            record: &mut opentelemetry_sdk::logs::SdkLogRecord,
+            instrumentation: &opentelemetry::InstrumentationScope,
+        ) {
+            let governed = instrumentation.name() == jackin_telemetry::TELEMETRY_TARGET
+                || record
+                    .event_name()
+                    .is_some_and(|name| jackin_telemetry::schema::events::ALL.contains(&name));
+            if governed
+                && record
+                    .attributes_iter()
+                    .any(|(key, _)| jackin_telemetry::privacy::validate_key(key.as_str()).is_err())
+            {
+                jackin_telemetry::record_export_rejection(
+                    jackin_telemetry::Rejection::UnknownAttribute,
+                );
+                return;
+            }
+            self.0.emit(record, instrumentation);
+        }
+
+        fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.force_flush()
+        }
+
+        fn shutdown_with_timeout(
+            &self,
+            timeout: std::time::Duration,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.shutdown_with_timeout(timeout)
+        }
+
+        fn set_resource(&mut self, resource: &Resource) {
+            self.0.set_resource(resource);
+        }
+    }
+
+    #[derive(Debug)]
+    struct GovernedSpanProcessor<P>(P);
+
+    impl<P: opentelemetry_sdk::trace::SpanProcessor> opentelemetry_sdk::trace::SpanProcessor
+        for GovernedSpanProcessor<P>
+    {
+        fn on_start(
+            &self,
+            span: &mut opentelemetry_sdk::trace::Span,
+            context: &opentelemetry::Context,
+        ) {
+            self.0.on_start(span, context);
+        }
+
+        fn on_end(&self, span: opentelemetry_sdk::trace::SpanData) {
+            if jackin_telemetry::schema::spans::ALL.contains(&span.name.as_ref())
+                && span.attributes.iter().any(|attribute| {
+                    jackin_telemetry::privacy::validate_key(attribute.key.as_str()).is_err()
+                })
+            {
+                jackin_telemetry::record_export_rejection(
+                    jackin_telemetry::Rejection::UnknownAttribute,
+                );
+                return;
+            }
+            self.0.on_end(span);
+        }
+
+        fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.force_flush()
+        }
+
+        fn shutdown_with_timeout(
+            &self,
+            timeout: std::time::Duration,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.shutdown_with_timeout(timeout)
+        }
+
+        fn set_resource(&mut self, resource: &Resource) {
+            self.0.set_resource(resource);
+        }
+    }
 
     impl opentelemetry_sdk::logs::LogProcessor for PromoteEventNameProcessor {
         fn emit(
@@ -1160,6 +1248,7 @@ mod otlp {
         "jackin_protocol",
         "jackin_runtime",
         "jackin_term",
+        jackin_telemetry::TELEMETRY_TARGET,
         "jackin_tui",
         "jackin_tui_lookbook",
         "jackin_usage",
@@ -1212,12 +1301,16 @@ mod otlp {
         let tracer_provider = SdkTracerProvider::builder()
             .with_max_attributes_per_span(64)
             .with_max_attributes_per_event(32)
-            .with_simple_exporter(spans.clone())
+            .with_span_processor(GovernedSpanProcessor(
+                opentelemetry_sdk::trace::SimpleSpanProcessor::new(spans.clone()),
+            ))
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
             .with_log_processor(PromoteEventNameProcessor)
-            .with_simple_exporter(logs.clone())
+            .with_log_processor(GovernedLogProcessor(
+                opentelemetry_sdk::logs::SimpleLogProcessor::new(logs.clone()),
+            ))
             .with_resource(resource)
             .build();
         let tracer = tracer_provider.tracer("jackin");
@@ -1264,12 +1357,16 @@ mod otlp {
         let tracer_provider = SdkTracerProvider::builder()
             .with_max_attributes_per_span(64)
             .with_max_attributes_per_event(32)
-            .with_simple_exporter(spans.clone())
+            .with_span_processor(GovernedSpanProcessor(
+                opentelemetry_sdk::trace::SimpleSpanProcessor::new(spans.clone()),
+            ))
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
             .with_log_processor(PromoteEventNameProcessor)
-            .with_simple_exporter(logs.clone())
+            .with_log_processor(GovernedLogProcessor(
+                opentelemetry_sdk::logs::SimpleLogProcessor::new(logs.clone()),
+            ))
             .with_resource(resource)
             .build();
         let tracer = tracer_provider.tracer("jackin");
@@ -1416,6 +1513,7 @@ mod otlp {
 
         let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
             .with_tonic()
+            .with_temporality(opentelemetry_sdk::metrics::Temporality::Cumulative)
             .with_endpoint(metrics_endpoint.to_owned())
             .with_compression(Compression::Gzip)
             .with_retry_policy(retry::policy())
@@ -1424,8 +1522,28 @@ mod otlp {
         let reader = PeriodicReader::builder(metric_exporter, Tokio)
             .with_interval(std::time::Duration::from_secs(30))
             .build();
+        let governed_view = |instrument: &opentelemetry_sdk::metrics::Instrument| {
+            if !jackin_telemetry::schema::metrics::ALL.contains(&instrument.name()) {
+                return None;
+            }
+            let mut stream = opentelemetry_sdk::metrics::Stream::builder()
+                .with_cardinality_limit(jackin_telemetry::limits::MAX_CARDINALITY);
+            if instrument.kind() == opentelemetry_sdk::metrics::InstrumentKind::Histogram {
+                stream = stream.with_aggregation(
+                    opentelemetry_sdk::metrics::Aggregation::ExplicitBucketHistogram {
+                        boundaries: vec![
+                            0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0,
+                            10.0, 30.0, 60.0,
+                        ],
+                        record_min_max: false,
+                    },
+                );
+            }
+            stream.build().ok()
+        };
         let provider = SdkMeterProvider::builder()
             .with_reader(reader)
+            .with_view(governed_view)
             .with_resource(resource.clone())
             .build();
         let meter = provider.meter("jackin");

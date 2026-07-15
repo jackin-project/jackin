@@ -21,6 +21,11 @@ pub(crate) fn reject(reason: Rejection) {
     REJECTIONS[reason as usize].fetch_add(1, Ordering::Relaxed);
 }
 
+#[doc(hidden)]
+pub fn record_export_rejection(reason: Rejection) {
+    reject(reason);
+}
+
 #[must_use]
 pub fn facade_health() -> FacadeHealth {
     let load = |index: usize| REJECTIONS[index].load(Ordering::Relaxed);

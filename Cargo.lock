@@ -3190,9 +3190,11 @@ dependencies = [
  "criterion",
  "opentelemetry",
  "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
  "tokio",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-subscriber",
  "uuid",
 ]
 

@@ -237,3 +237,6 @@ fn operation_inner(
     }
     Ok(guard)
 }
+
+#[cfg(test)]
+mod tests;
