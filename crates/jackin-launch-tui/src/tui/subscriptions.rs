@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
-use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
+use termrock::ModalOutcome;
 use termrock::keymap::KeyChord;
 use termrock::scroll::ScrollAxes;
 use tokio_util::sync::CancellationToken;
@@ -74,7 +74,7 @@ fn apply_quit_confirm_key(view: &mut LaunchView, key: event::KeyEvent) -> QuitCo
     let Some(confirm) = view.quit_confirm.as_mut() else {
         return QuitConfirmOutcome::Pending;
     };
-    match confirm.handle_key(key) {
+    match confirm.handle_key(key.into()) {
         ModalOutcome::Commit(true) => {
             view.quit_confirm = None;
             QuitConfirmOutcome::Confirmed
@@ -581,7 +581,8 @@ pub fn handle_cockpit_input(
                         .dispatch(KeyChord::from(termrock::crossterm::key(k)))
                         == Some(crate::tui::keymap::CockpitAction::OpenQuitConfirm) =>
             {
-                v.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
+                v.quit_confirm =
+                    Some(termrock::components::ConfirmState::new("Exit jackin❯?").with_focus_yes());
                 return CockpitOutcome::Continue;
             }
             Event::Mouse(m) => {

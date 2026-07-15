@@ -3,15 +3,15 @@
 
 //! Launch prompt dialog rendering and geometry.
 
-use jackin_tui::components::{
-    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
-    confirm_width_pct, render_confirm_dialog, render_error_dialog_in, render_select_list,
-    render_text_input, required_height as error_dialog_required_height, text_input_prompt_rect,
-};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 use termrock::HintSpan;
+use termrock::components::{
+    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
+    confirm_width_pct, render_confirm_dialog, render_error_dialog_in, render_select_list,
+    render_text_input, required_height as error_dialog_required_height, text_input_prompt_rect,
+};
 
 use crate::tui::components::dialog::dialog_backdrop;
 use crate::tui::components::dialog::{exact_dialog_rect, percent_dialog_rect};

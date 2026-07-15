@@ -10,12 +10,12 @@ use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-use jackin_tui::ModalOutcome;
-use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
 use ratatui::backend::Backend as _;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+use termrock::ModalOutcome;
+use termrock::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
 use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::prompts::{
@@ -229,7 +229,7 @@ fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) ->
     match msg {
         SelectLoopMessage::Key(key) => {
             // Esc reports Cancel; ignored here so the choice is forced.
-            if let ModalOutcome::Commit(index) = picker.handle_key(key) {
+            if let ModalOutcome::Commit(index) = picker.handle_key(key.into()) {
                 Some(index)
             } else {
                 None
@@ -240,7 +240,7 @@ fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) ->
 
 fn update_error_prompt(state: &mut ErrorPopupState, msg: ErrorPromptMessage) -> Option<()> {
     match msg {
-        ErrorPromptMessage::Key(key) => match state.handle_key(key) {
+        ErrorPromptMessage::Key(key) => match state.handle_key(key.into()) {
             ModalOutcome::Cancel => Some(()),
             ModalOutcome::Continue => None,
             ModalOutcome::Commit(()) => unreachable!("error popup never commits"),
@@ -250,7 +250,7 @@ fn update_error_prompt(state: &mut ErrorPopupState, msg: ErrorPromptMessage) -> 
 
 fn update_confirm_prompt(state: &mut ConfirmState, msg: ConfirmPromptMessage) -> Option<bool> {
     match msg {
-        ConfirmPromptMessage::Key(key) => match state.handle_key(key) {
+        ConfirmPromptMessage::Key(key) => match state.handle_key(key.into()) {
             ModalOutcome::Commit(confirmed) => Some(confirmed),
             ModalOutcome::Cancel => Some(false),
             ModalOutcome::Continue => None,
@@ -264,7 +264,7 @@ fn update_text_prompt(
     msg: TextPromptMessage,
 ) -> Option<anyhow::Result<PromptResult>> {
     match msg {
-        TextPromptMessage::Key(key) => match input.handle_key(key) {
+        TextPromptMessage::Key(key) => match input.handle_key(key.into()) {
             ModalOutcome::Commit(value) if value.is_empty() && skippable => {
                 Some(Ok(PromptResult::Skipped))
             }
@@ -282,7 +282,7 @@ fn update_select_prompt(
     msg: SelectPromptMessage,
 ) -> Option<anyhow::Result<PromptResult>> {
     match msg {
-        SelectPromptMessage::Key(key) => match picker.handle_key(key) {
+        SelectPromptMessage::Key(key) => match picker.handle_key(key.into()) {
             ModalOutcome::Commit(index) if skippable && index == options.len() => {
                 Some(Ok(PromptResult::Skipped))
             }
@@ -664,8 +664,8 @@ impl RichRenderer {
         candidates: &[crate::LaunchCandidate],
     ) -> anyhow::Result<crate::LaunchDialogResult> {
         use crate::tui::components::dialog::{dialog_backdrop, percent_dialog_rect};
-        use jackin_tui::components::{ConfirmState, render_confirm_dialog};
         use termrock::HintSpan;
+        use termrock::components::{ConfirmState, render_confirm_dialog};
 
         // Item 0 = "Start new session"; items 1..=N = candidates.
         let mut labels = vec!["Start new session".to_owned()];
@@ -706,7 +706,7 @@ impl RichRenderer {
                             let height = rows.clamp(6, box_area.height.saturating_sub(2).max(6));
                             percent_dialog_rect(box_area, 80, 40.min(box_area.width), 2, 2, height)
                         };
-                        use jackin_tui::components::render_select_list;
+                        use termrock::components::render_select_list;
                         render_select_list(frame, picker_rect, &picker, title, &[]);
                         termrock::widgets::render_hint_bar(frame, hint_area, hint_normal);
                     })
@@ -739,7 +739,7 @@ impl RichRenderer {
                         }
                         continue;
                     }
-                    if let ModalOutcome::Commit(index) = picker.handle_key(key) {
+                    if let ModalOutcome::Commit(index) = picker.handle_key(key.into()) {
                         return Ok(if index == 0 {
                             crate::LaunchDialogResult::StartFresh
                         } else {
@@ -756,7 +756,7 @@ impl RichRenderer {
                     termrock::runtime::drive_render(&mut self.terminal, |frame| {
                         let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
                         use crate::tui::components::prompts::confirm_hint_spans;
-                        use jackin_tui::components::{confirm_required_height, confirm_width_pct};
+                        use termrock::components::{confirm_required_height, confirm_width_pct};
                         let rect = percent_dialog_rect(
                             box_area,
                             confirm_width_pct(&confirm),
@@ -792,12 +792,12 @@ impl RichRenderer {
     )]
     fn inspect_surface_loop(&mut self, worktrees: &[crate::WorktreeInspect]) -> anyhow::Result<()> {
         use crate::tui::components::dialog::dialog_backdrop;
-        use jackin_tui::components::{
-            DiffViewState, SelectListState, SinglePaneKind, render_diff_view, render_select_list,
-        };
-        use jackin_tui::keymap::glyph;
         use ratatui::layout::{Constraint, Direction, Layout};
         use termrock::HintSpan;
+        use termrock::components::{
+            DiffViewState, SelectListState, SinglePaneKind, render_diff_view, render_select_list,
+        };
+        use termrock::keymap::glyph;
 
         if worktrees.is_empty() {
             return Ok(());
@@ -951,7 +951,7 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            let _outcome = d.handle_key(key);
+                            let _outcome = d.handle_key(key.into());
                             diff_scroll_y = d.scroll_y();
                         }
                     }
@@ -975,14 +975,14 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            let _outcome = d.handle_key(key);
+                            let _outcome = d.handle_key(key.into());
                             diff_scroll_y = d.scroll_y();
                         }
                     }
                 },
                 KeyCode::PageUp | KeyCode::PageDown => {
                     if let Some(d) = diff_state.as_mut() {
-                        let _outcome = d.handle_key(key);
+                        let _outcome = d.handle_key(key.into());
                         diff_scroll_y = d.scroll_y();
                     }
                 }
@@ -1042,7 +1042,7 @@ impl RichRenderer {
                 continue;
             }
 
-            if let ModalOutcome::Commit(index) = picker.handle_key(key) {
+            if let ModalOutcome::Commit(index) = picker.handle_key(key.into()) {
                 return Ok(index);
             }
         }

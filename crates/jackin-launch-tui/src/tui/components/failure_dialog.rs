@@ -3,18 +3,16 @@
 
 //! Launch failure popup rendering and hit-testing.
 
-use jackin_tui::components::{
-    ErrorPopupRow, ErrorPopupState, dialog_inner_chunks, error_popup_hyperlink_overlay,
-    error_popup_row_value_rect_groups, render_error_dialog_in, required_height,
-};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
 use termrock::HintSpan;
-
-use crate::tui::components::dialog::{
-    donor_dialog_scroll, exact_dialog_rect, render_dialog_backdrop,
+use termrock::components::{
+    ErrorPopupRow, ErrorPopupState, dialog_inner_chunks, error_popup_hyperlink_overlay,
+    error_popup_row_value_rect_groups, render_error_dialog_in, required_height,
 };
+
+use crate::tui::components::dialog::{exact_dialog_rect, render_dialog_backdrop};
 use crate::tui::components::footer::launch_overlay_chrome_areas;
 use crate::{FailureCopyTarget, LaunchFailure, LaunchView};
 
@@ -137,7 +135,10 @@ fn failure_error_state_with_feedback(
     let mut state =
         ErrorPopupState::new(failure.title.clone(), failure.summary.clone()).with_rows(rows);
     if let Some(scroll) = scroll {
-        state.scroll = donor_dialog_scroll(&scroll);
+        state.scroll = termrock::components::DialogBodyScroll {
+            scroll_x: scroll.scroll_x,
+            scroll_y: scroll.scroll_y,
+        };
     }
     state
 }
@@ -183,7 +184,7 @@ fn failure_popup_body_rect(rect: Rect, state: &ErrorPopupState) -> Rect {
         horizontal: 1,
         vertical: 1,
     });
-    let content_rows = jackin_tui::components::estimated_message_rows(state, inner.width)
+    let content_rows = termrock::components::estimated_message_rows(state, inner.width)
         .min(inner.height.saturating_sub(4));
     let chunks = dialog_inner_chunks(inner, Some(content_rows));
     chunks[1]
@@ -236,7 +237,10 @@ fn failure_popup_value_rects(
         .map_or("", |row| row.value.as_str());
     let mut state = ErrorPopupState::new("Build failed", message).with_rows(display_rows);
     if let Some(scroll) = scroll {
-        state.scroll = donor_dialog_scroll(&scroll);
+        state.scroll = termrock::components::DialogBodyScroll {
+            scroll_x: scroll.scroll_x,
+            scroll_y: scroll.scroll_y,
+        };
     }
     let inner = rect.inner(ratatui::layout::Margin {
         horizontal: 1,
@@ -318,7 +322,7 @@ pub fn failure_popup_body_metrics(
     let state = failure_error_state(failure, run_id, None);
     let rect = failure_popup_rect(body_area, &state);
     let body = failure_popup_body_rect(rect, &state);
-    let content_height = usize::from(jackin_tui::components::estimated_message_rows(
+    let content_height = usize::from(termrock::components::estimated_message_rows(
         &state, body.width,
     ));
     (body, content_height)

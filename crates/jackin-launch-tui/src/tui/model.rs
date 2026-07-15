@@ -80,7 +80,7 @@ pub struct LaunchView {
     /// Operator pressed Ctrl+Q: the "Exit jackin❯?" confirmation overlays the
     /// cockpit and owns input until answered. `None` = not confirming. Ctrl+C
     /// bypasses this entirely (immediate hard cancel).
-    pub quit_confirm: Option<jackin_tui::components::ConfirmState>,
+    pub quit_confirm: Option<termrock::components::ConfirmState>,
 }
 
 // Re-exported from `jackin_core` (Workstream 1 — architecture/boundaries:
