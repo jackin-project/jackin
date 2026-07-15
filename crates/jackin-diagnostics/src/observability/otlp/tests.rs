@@ -146,23 +146,31 @@ fn per_signal_endpoints_do_not_require_metrics() {
 }
 
 #[test]
-fn resource_carries_service_name_run_id_and_component() {
-    let resource = build_resource("0a1b2c");
+fn resource_carries_service_identity_only() {
+    let resource = build_resource();
     assert_eq!(attr(&resource, keys::SERVICE_NAME), Some("jackin".into()));
-    assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
-    // The single dotted run-id key is parallax.run.id (no jackin.run.id).
+    assert_eq!(
+        attr(&resource, keys::SERVICE_VERSION),
+        Some(env!("CARGO_PKG_VERSION").into())
+    );
+    // Run/session/component identity must never live on the Resource.
     assert_eq!(keys::RUN_ID, "parallax.run.id");
-    assert_eq!(attr(&resource, keys::RUN_ID), Some("0a1b2c".into()));
+    assert_eq!(attr(&resource, keys::RUN_ID), None);
+    assert_eq!(attr(&resource, keys::SESSION_ID), None);
+    assert_eq!(attr(&resource, keys::COMPONENT), None);
 }
 
 #[test]
-fn adopted_wrapper_run_id_is_stamped_on_resource() {
-    let resource = build_resource("18b946258b86fe20");
+fn two_resources_share_stable_build_identity() {
+    let a = build_resource();
+    let b = build_resource();
+    assert_eq!(attr(&a, keys::SERVICE_NAME), attr(&b, keys::SERVICE_NAME));
     assert_eq!(
-        attr(&resource, keys::RUN_ID),
-        Some("18b946258b86fe20".into())
+        attr(&a, keys::SERVICE_VERSION),
+        attr(&b, keys::SERVICE_VERSION)
     );
-    assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
+    assert_eq!(attr(&a, keys::RUN_ID), None);
+    assert_eq!(attr(&b, keys::RUN_ID), None);
 }
 
 #[test]
@@ -216,16 +224,24 @@ fn exported_log_carries_body_and_attributes() {
     let log = &logs[0];
     assert_eq!(log.record.severity_number(), Some(Severity::Info));
     assert_eq!(log_body(&log.record).as_deref(), Some("hello world"));
-    assert_eq!(
-        log_attr(&log.record, "kind").as_deref(),
-        Some("compact_kind")
-    );
-    assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("plan"));
-    assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("d"));
-    assert_eq!(log_attr(&log.record, "run_id").as_deref(), Some("run1"));
+    assert_eq!(log_attr(&log.record, "kind"), None);
     assert_eq!(
         log_attr(&log.record, "event.name").as_deref(),
-        Some("compact.kind")
+        Some("compact_kind")
+    );
+    assert_eq!(log_attr(&log.record, "jackin.detail").as_deref(), Some("d"));
+    assert_eq!(
+        log_attr(&log.record, "parallax.run.id").as_deref(),
+        Some("run1")
+    );
+    assert_eq!(log_attr(&log.record, "run_id"), None);
+    assert_eq!(
+        log_attr(&log.record, "jackin.component").as_deref(),
+        Some("host")
+    );
+    assert_eq!(
+        log_attr(&log.record, "event.name").as_deref(),
+        Some("compact_kind")
     );
     assert_eq!(
         log_attr(&log.record, "event.outcome").as_deref(),
@@ -237,12 +253,17 @@ fn exported_log_carries_body_and_attributes() {
     );
     assert_eq!(
         log_attr(&log.record, "jackin.operation").as_deref(),
-        Some("compact.kind")
+        Some("compact_kind")
     );
     assert_eq!(
         log_attr(&log.record, "jackin.category").as_deref(),
         Some("compact")
     );
+    assert_eq!(
+        log_attr(&log.record, "jackin.stage").as_deref(),
+        Some("plan")
+    );
+    assert_eq!(log_attr(&log.record, "stage"), None);
     assert_eq!(log_attr(&log.record, "diagnostics_message"), None);
     assert_eq!(log_attr(&log.record, "jackin_jsonl"), None);
 }
@@ -262,7 +283,7 @@ fn exported_log_body_and_detail_are_redacted() {
     assert_eq!(logs.len(), 1);
     assert_eq!(log_body(&logs[0].record).as_deref(), Some("<redacted>"));
     assert_eq!(
-        log_attr(&logs[0].record, "detail").as_deref(),
+        log_attr(&logs[0].record, "jackin.detail").as_deref(),
         Some("<redacted>")
     );
 }
@@ -291,7 +312,10 @@ fn debug_kind_is_debug_severity_and_filtered_at_info() {
     let log = &debug_logs[0];
     assert_eq!(log.record.severity_number(), Some(Severity::Debug));
     assert_eq!(log_attr(&log.record, "stage"), None);
-    assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("docker"));
+    assert_eq!(
+        log_attr(&log.record, "jackin.detail").as_deref(),
+        Some("docker")
+    );
 }
 
 #[test]
@@ -302,7 +326,7 @@ fn absent_stage_and_detail_are_not_exported_as_sentinels() {
 
     assert_eq!(logs.len(), 1);
     assert_eq!(log_attr(&logs[0].record, "stage"), None);
-    assert_eq!(log_attr(&logs[0].record, "detail"), None);
+    assert_eq!(log_attr(&logs[0].record, "jackin.detail"), None);
     assert_eq!(log_attr(&logs[0].record, "diagnostics_message"), None);
     assert_eq!(log_attr(&logs[0].record, "jackin_jsonl"), None);
 }
@@ -310,14 +334,17 @@ fn absent_stage_and_detail_are_not_exported_as_sentinels() {
 #[test]
 fn manual_launch_stage_span_name_stays_constant_without_otel_name() {
     let spans = exported_spans(false, "run1", || {
-        let span = tracing::info_span!("launch_stage", stage = "derived image");
+        let span = tracing::info_span!("launch_stage", "jackin.stage" = "derived image");
         drop(span.enter());
     });
 
     assert_eq!(spans.len(), 1);
     let span = &spans[0];
     assert_eq!(span.name.as_ref(), "launch_stage");
-    assert_eq!(span_attr(span, "stage").as_deref(), Some("derived image"));
+    assert_eq!(
+        span_attr(span, "jackin.stage").as_deref(),
+        Some("derived image")
+    );
 }
 
 #[test]
@@ -326,18 +353,28 @@ fn stage_span_duration_covers_stage() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_started", "derived image", "building", None);
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::DerivedImage,
+            "building",
+            None,
+        );
         #[expect(
             clippy::disallowed_methods,
             reason = "test needs wall time between stage start and end to assert exported duration"
         )]
         std::thread::sleep(std::time::Duration::from_millis(50));
-        run.stage("stage_done", "derived image", "built", None);
+        run.stage(
+            "stage_done",
+            crate::DiagnosticStage::DerivedImage,
+            "built",
+            None,
+        );
     });
 
     let span = spans
         .iter()
-        .find(|span| span_attr(span, "stage").as_deref() == Some("derived image"))
+        .find(|span| span_attr(span, "jackin.stage").as_deref() == Some("derived image"))
         .expect("derived image stage span exported");
     let duration = span.end_time.duration_since(span.start_time).unwrap();
     assert!(
@@ -352,8 +389,18 @@ fn stage_span_exported_name_is_stage_specific() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_started", "derived image", "building", None);
-        run.stage("stage_done", "derived image", "built", None);
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::DerivedImage,
+            "building",
+            None,
+        );
+        run.stage(
+            "stage_done",
+            crate::DiagnosticStage::DerivedImage,
+            "built",
+            None,
+        );
     });
 
     assert!(
@@ -370,8 +417,18 @@ fn failed_stage_span_has_error_status() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_started", "derived image", "building", None);
-        run.stage("stage_failed", "derived image", "build failed", None);
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::DerivedImage,
+            "building",
+            None,
+        );
+        run.stage(
+            "stage_failed",
+            crate::DiagnosticStage::DerivedImage,
+            "build failed",
+            None,
+        );
     });
 
     let span = spans
@@ -392,10 +449,20 @@ fn timing_event_inherits_stage_span_context() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_started", "derived image", "building", None);
-        run.timing_started("derived image", "docker_build", None);
-        run.timing_done("derived image", "docker_build", None);
-        run.stage("stage_done", "derived image", "built", None);
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::DerivedImage,
+            "building",
+            None,
+        );
+        run.timing_started(crate::DiagnosticStage::DerivedImage, "docker_build", None);
+        run.timing_done(crate::DiagnosticStage::DerivedImage, "docker_build", None);
+        run.stage(
+            "stage_done",
+            crate::DiagnosticStage::DerivedImage,
+            "built",
+            None,
+        );
     });
     let spans = export.spans.get_finished_spans().unwrap();
     let logs = export.logs.get_emitted_logs().unwrap();
@@ -406,7 +473,7 @@ fn timing_event_inherits_stage_span_context() {
         .expect("stage span exported");
     let timing = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("timing_done"))
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("timing.done"))
         .expect("timing_done log exported");
     let context = timing
         .record
@@ -431,7 +498,18 @@ fn dependency_targets_are_filtered_out() {
 fn jackin_targets_still_export() {
     let logs = exported_logs!(false, "run1", || {
         crate::observability::emit_jsonl_event("run1", "compact_kind", "hello", None, None);
-        tracing::info!(target: "jackin_capsule", "capsule line");
+        // Prefix-free capsule body with schema fields (plan 004 bridge shape).
+        tracing::event!(
+            target: "jackin_capsule",
+            tracing::Level::INFO,
+            "event.name" = "capsule.log",
+            "jackin.category" = "capsule",
+            "jackin.component" = "capsule",
+            "event.outcome" = "success",
+            "session.id" = "sess-test",
+            "parallax.run.id" = "run1",
+            "capsule line"
+        );
     });
 
     assert_eq!(logs.len(), 2);
@@ -441,6 +519,34 @@ fn jackin_targets_still_export() {
         .collect::<Vec<_>>();
     assert!(bodies.iter().any(|body| body == "hello"));
     assert!(bodies.iter().any(|body| body == "capsule line"));
+    for log in &logs {
+        if let Some(body) = log_body(&log.record) {
+            assert!(
+                !body.starts_with('['),
+                "exported body must be prefix-free: {body}"
+            );
+        }
+    }
+    let capsule = logs
+        .iter()
+        .find(|log| log_body(&log.record).as_deref() == Some("capsule line"))
+        .expect("capsule log");
+    assert_eq!(
+        log_attr(&capsule.record, "event.name").as_deref(),
+        Some("capsule.log")
+    );
+    assert_eq!(
+        log_attr(&capsule.record, "jackin.component").as_deref(),
+        Some("capsule")
+    );
+    assert_eq!(
+        log_attr(&capsule.record, "jackin.category").as_deref(),
+        Some("capsule")
+    );
+    assert_eq!(
+        log_attr(&capsule.record, "session.id").as_deref(),
+        Some("sess-test")
+    );
 }
 
 #[test]
@@ -465,10 +571,16 @@ fn subprocess_done_carries_duration_and_exit() {
 
     let log = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("subprocess_done"))
+        .find(|log| {
+            log_attr(&log.record, "event.name").as_deref() == Some("process.subprocess.done")
+        })
         .expect("subprocess_done log exported");
-    assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("git"));
-    let detail = log_attr(&log.record, "detail").expect("subprocess detail");
+    assert_eq!(
+        log_attr(&log.record, "jackin.stage").as_deref(),
+        Some("git")
+    );
+    assert_eq!(log_attr(&log.record, "stage"), None);
+    let detail = log_attr(&log.record, "jackin.detail").expect("subprocess detail");
     assert!(detail.contains("\"program\":\"git\""), "{detail}");
     assert!(detail.contains("\"elapsed_ms\":42"), "{detail}");
     assert!(detail.contains("\"exit_code\":0"), "{detail}");
@@ -496,15 +608,29 @@ fn export_filter_directive_internal_flag_restores_global_level() {
 }
 
 #[test]
-fn wire_log_resource_carries_run_id_service_and_component() {
+fn wire_log_resource_excludes_run_and_component() {
     let logs = exported_logs!(false, "wire-run", || {
         crate::observability::emit_jsonl_event("wire-run", "compact_kind", "hello", None, None);
     });
     assert_eq!(logs.len(), 1);
     let resource = &logs[0].resource;
     assert_eq!(attr(resource, keys::SERVICE_NAME), Some("jackin".into()));
-    assert_eq!(attr(resource, keys::COMPONENT), Some("host".into()));
-    assert_eq!(attr(resource, keys::RUN_ID), Some("wire-run".into()));
+    assert_eq!(
+        attr(resource, keys::SERVICE_VERSION),
+        Some(env!("CARGO_PKG_VERSION").into())
+    );
+    assert_eq!(attr(resource, keys::COMPONENT), None);
+    assert_eq!(attr(resource, keys::RUN_ID), None);
+    assert_eq!(attr(resource, keys::SESSION_ID), None);
+    // Identity lives on the record attributes.
+    assert_eq!(
+        log_attr(&logs[0].record, keys::RUN_ID).as_deref(),
+        Some("wire-run")
+    );
+    assert_eq!(
+        log_attr(&logs[0].record, keys::COMPONENT).as_deref(),
+        Some("host")
+    );
 }
 
 #[test]
@@ -513,12 +639,17 @@ fn stage_failed_exports_as_error() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_failed", "derived image", "boom", None);
+        run.stage(
+            "stage_failed",
+            crate::DiagnosticStage::DerivedImage,
+            "boom",
+            None,
+        );
     });
 
     let failed = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("stage_failed"))
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("launch.stage.failed"))
         .expect("stage_failed log exported");
     assert_eq!(failed.record.severity_number(), Some(Severity::Error));
 }
@@ -534,12 +665,100 @@ fn fatal_error_carries_error_type() {
 
     let error = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("E014"))
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("E014"))
         .expect("typed error log exported");
     assert_eq!(error.record.severity_number(), Some(Severity::Error));
     assert_eq!(
-        log_attr(&error.record, "error_type").as_deref(),
+        log_attr(&error.record, "error.type").as_deref(),
         Some("E014")
+    );
+    assert_eq!(log_attr(&error.record, "error_type"), None);
+}
+
+#[test]
+fn volatile_failure_evidence_does_not_split_fingerprint() {
+    let export = export_after(false, "fingerprint-run", || {
+        for body in [
+            "container jk-random-a failed under /workspace/one",
+            "container jk-random-b failed under /workspace/two",
+        ] {
+            let span = crate::operation_span("launch.prepare", &[]);
+            span.in_scope(|| {
+                crate::operation_error("launch.prepare", "agent_binary_download_failed", body, &[]);
+            });
+        }
+    });
+    let logs = export.logs.get_emitted_logs().unwrap();
+    let fingerprints: Vec<_> = logs
+        .iter()
+        .filter_map(|log| {
+            let event = log_attr(&log.record, "event.name")?;
+            let error_type = log_attr(&log.record, "error.type")?;
+            Some((event, error_type))
+        })
+        .collect();
+    assert_eq!(
+        fingerprints,
+        vec![
+            (
+                "launch.prepare".into(),
+                "agent_binary_download_failed".into()
+            ),
+            (
+                "launch.prepare".into(),
+                "agent_binary_download_failed".into()
+            ),
+        ]
+    );
+    let spans = export.spans.get_finished_spans().unwrap();
+    assert_eq!(spans.len(), 2);
+    assert!(
+        spans
+            .iter()
+            .all(|span| matches!(span.status, Status::Error { .. }))
+    );
+}
+
+#[test]
+fn failure_path_census_exports_typed_error_logs_and_error_spans() {
+    let cases = [
+        ("capsule.attach", "attach_socket_eof"),
+        ("capsule.attach", "attach_socket_read_failed"),
+        ("capsule.attach", "attach_socket_write_failed"),
+        ("usage.refresh", "usage_http_request_failed"),
+        ("usage.refresh", "usage_http_status"),
+        ("usage.refresh", "usage_rpc_failed"),
+        ("launch.prepare", "agent_binary_download_failed"),
+        ("launch.prepare", "agent_binary_checksum_mismatch"),
+        ("launch.prepare", "docker_run_failed"),
+        ("launch.prepare", "docker_inspect_failed"),
+        ("launch.prepare", "docker_wait_failed"),
+        ("launch.cleanup", "cleanup_teardown_failed"),
+        (crate::otel_events::PROCESS_EXECUTE, "process_spawn_error"),
+    ];
+    let export = export_after(false, "failure-census", || {
+        for (operation, error_type) in cases {
+            let span = crate::operation_span(operation, &[]);
+            span.in_scope(|| {
+                crate::operation_error(operation, error_type, "operation failed", &[]);
+            });
+        }
+    });
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    for (operation, error_type) in cases {
+        assert!(logs.iter().any(|log| {
+            log_attr(&log.record, "event.name").as_deref() == Some(operation)
+                && log_attr(&log.record, "event.outcome").as_deref() == Some("failure")
+                && log_attr(&log.record, "error.type").as_deref() == Some(error_type)
+        }));
+    }
+    let spans = export.spans.get_finished_spans().unwrap();
+    assert_eq!(spans.len(), cases.len());
+    assert!(
+        spans
+            .iter()
+            .all(|span| matches!(span.status, Status::Error { .. }))
     );
 }
 
@@ -550,17 +769,29 @@ fn direct_diagnostics_events_reach_otlp() {
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
 
-        run.timing_started("credentials", "operator_env", Some("layers"));
-        run.timing_done("credentials", "operator_env", Some("2 vars"));
+        run.timing_started(
+            crate::DiagnosticStage::Credentials,
+            "operator_env",
+            Some("layers"),
+        );
+        run.timing_done(
+            crate::DiagnosticStage::Credentials,
+            "operator_env",
+            Some("2 vars"),
+        );
         run.docker_build_step("12", "DONE", Some(76_500), false);
         run.container_started("jk-test", "/capsule.log");
         run.container_exited("jk-test", 137, true, "/capsule.log", Some("crash tail"));
     });
 
     let by_kind = |kind: &str| {
+        let event_name = crate::registry::lookup(kind).map_or(kind, |d| d.name);
         logs.iter()
-            .find(|log| log_attr(&log.record, "kind").as_deref() == Some(kind))
-            .unwrap_or_else(|| panic!("{kind} log exported"))
+            .find(|log| {
+                let name = log_attr(&log.record, "event.name");
+                name.as_deref() == Some(event_name) || name.as_deref() == Some(kind)
+            })
+            .unwrap_or_else(|| panic!("{kind} / {event_name} log exported"))
     };
 
     assert_eq!(
@@ -582,9 +813,72 @@ fn direct_diagnostics_events_reach_otlp() {
     let crash_log = by_kind("container_crash_log");
     assert_eq!(crash_log.record.severity_number(), Some(Severity::Error));
     assert_eq!(
-        log_attr(&crash_log.record, "detail").as_deref(),
+        log_attr(&crash_log.record, "jackin.detail").as_deref(),
         Some("crash tail")
     );
+}
+
+#[test]
+fn screen_context_is_exported_on_log_records() {
+    let logs = exported_logs!(false, "screen-log-run", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "screen-log").unwrap();
+        let _active = run.activate();
+        let screen = crate::enter_screen(crate::Screen::List);
+        screen.in_scope(|| run.container_started("jk-screen-test", "/capsule.log"));
+    });
+
+    let record = logs
+        .iter()
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("container_started"))
+        .expect("screen-scoped log exported");
+    assert_eq!(
+        log_attr(&record.record, keys::SCREEN_NAME).as_deref(),
+        Some("list")
+    );
+}
+
+#[test]
+fn identity_is_exported_only_by_feature_decisions() {
+    let export = export_after(false, "identity-run", || {
+        let screen = crate::enter_screen(crate::Screen::Launch);
+        screen.in_scope(|| {
+            crate::set_provider("anthropic");
+            crate::set_agent_selected("claude");
+            crate::set_agents_active(&["claude", "codex"]);
+            tracing::info!(target: "jackin_diagnostics", "generic launch record");
+        });
+    });
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    let decisions: Vec<_> = logs
+        .iter()
+        .filter(|log| log_attr(&log.record, "event.name").as_deref() == Some("feature.decision"))
+        .collect();
+    assert_eq!(decisions.len(), 3);
+    assert!(decisions.iter().all(|log| {
+        log_attr(&log.record, "feature.key").is_some()
+            && log_attr(&log.record, "feature.provider").is_some()
+            && log_attr(&log.record, "feature.variant").is_some()
+    }));
+
+    const GENERIC_IDENTITY_KEYS: [&str; 3] =
+        [keys::PROVIDER, keys::AGENT_SELECTED, keys::AGENTS_ACTIVE];
+    for log in &logs {
+        assert!(
+            GENERIC_IDENTITY_KEYS
+                .iter()
+                .all(|key| log_attr(&log.record, key).is_none())
+        );
+    }
+    for span in export.spans.get_finished_spans().unwrap() {
+        assert!(
+            GENERIC_IDENTITY_KEYS
+                .iter()
+                .all(|key| span_attr(&span, key).is_none())
+        );
+    }
 }
 
 #[test]
@@ -604,9 +898,9 @@ fn crash_evidence_is_redacted_and_capped() {
 
     let crash_log = logs
         .iter()
-        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("container_crash_log"))
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("container_crash_log"))
         .expect("container_crash_log exported");
-    let detail = log_attr(&crash_log.record, "detail").expect("capped evidence detail");
+    let detail = log_attr(&crash_log.record, "jackin.detail").expect("capped evidence detail");
 
     assert!(detail.starts_with("(truncated to last 4096 bytes)\n"));
     assert!(!detail.contains("ghp_"));
@@ -684,5 +978,86 @@ fn jsonl_trace_id_matches_in_memory_exporter() {
     assert!(
         jsonl_trace.chars().all(|c| c.is_ascii_hexdigit()),
         "trace_id must be hex: {jsonl_trace}"
+    );
+}
+
+#[test]
+fn bridge_populates_top_level_event_name_from_attribute() {
+    let logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "session_detach",
+            "operator detached",
+            None,
+            None,
+        );
+    });
+    let log = logs
+        .iter()
+        .find(|log| {
+            log_attr(&log.record, "event.name").as_deref() == Some("capsule.session.detach")
+        })
+        .expect("session detach log");
+    assert_eq!(
+        log.record.event_name(),
+        Some("capsule.session.detach"),
+        "top-level EventName must equal the registered dotted name"
+    );
+    assert_eq!(
+        log_attr(&log.record, "event.name").as_deref(),
+        log.record.event_name(),
+        "attribute mirror must equal top-level EventName"
+    );
+}
+
+#[test]
+fn top_level_event_name_matches_attribute_and_registry() {
+    let logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "stage_started",
+            "building",
+            Some("image"),
+            None,
+        );
+        crate::observability::emit_jsonl_event("run1", "stage_done", "built", Some("image"), None);
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "session_detach",
+            "operator detached",
+            None,
+            None,
+        );
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "process.execute",
+            "host process execute",
+            None,
+            None,
+        );
+    });
+    let mut checked = 0usize;
+    for log in &logs {
+        let Some(attr) = log_attr(&log.record, "event.name") else {
+            continue;
+        };
+        let top = log
+            .record
+            .event_name()
+            .expect("top-level EventName must be populated when event.name attr is present");
+        assert!(!top.is_empty(), "EventName must be non-empty");
+        assert_eq!(
+            top,
+            attr.as_str(),
+            "EventName must equal event.name attribute"
+        );
+        if let Some(def) = crate::registry::lookup(top) {
+            assert_eq!(def.name, top);
+            checked += 1;
+        }
+    }
+    assert!(
+        checked >= 3,
+        "expected at least three registry-validated EventName values, got {checked}"
     );
 }

@@ -2,9 +2,9 @@
 use super::*;
 use crate::instance::{DockerResources, InstanceManifest, NewInstanceManifest};
 use jackin_config::AppConfig;
-use jackin_core::agent::Agent;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::Agent;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_test_support::FakeDockerClient;
 use std::collections::VecDeque;
 use tempfile::tempdir;

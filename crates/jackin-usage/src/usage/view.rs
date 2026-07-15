@@ -3,13 +3,13 @@
 
 //! View-building and rendering helpers shared by all providers.
 //!
-//! Carved out of `usage.rs` during codebase-health-enforcement Workstream W5
+//! Carved out of `usage.rs` during the completed codebase-health Workstream W5
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(clippy::wildcard_imports, reason = "target-dependent")
 )]
 use super::*;
 
@@ -605,7 +605,7 @@ pub(crate) fn with_status_slot(
 /// Build a window bucket carrying both the formatted reset label and the raw
 /// reset epoch (RC2), so the CLI report can emit `resets_at`. `reset_at` is the
 /// authoritative timestamp; `reset_label` is derived from it.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

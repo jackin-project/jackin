@@ -1,8 +1,14 @@
-#[allow(
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-use super::super::*;
+use std::collections::BTreeSet;
+use std::marker::PhantomData;
+
+use jackin_config::WorkspaceConfig;
+use jackin_tui::components::FocusOwner;
+
+use super::super::{
+    EditorErrorPopupModal, EditorFocusTarget, EditorHoverTarget, EditorMode,
+    EditorNavigationKeyPlan, EditorRoleOverridePickerModal, EditorSaveDiscardModal, EditorState,
+    EditorStatusPopupModal, EditorTab, FieldFocus,
+};
 
 impl<
     MountInfoCache,

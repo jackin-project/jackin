@@ -16,7 +16,7 @@ use crate::tui::screens::editor::model::{FieldFocus, SecretsRow, SecretsScopeTag
 use super::WorkspaceEditorState;
 
 #[must_use]
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -239,10 +239,6 @@ pub(crate) fn editor_secret_line_width<'a>(
     }
 }
 
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_key_line_width(
     key: &str,
     value: SecretValueDisplay<'_>,

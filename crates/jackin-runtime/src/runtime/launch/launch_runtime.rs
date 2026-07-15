@@ -5,15 +5,15 @@
 //! (+ host passthrough + debug env helpers) extracted from launch coordinator (File1).
 //! All items `pub(crate)` re-exported from the coordinator to preserve `super::` / `use super::*` .
 
-#![allow(
+#![expect(
     private_interfaces,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 
 use anyhow::Context;
 use jackin_config::AppConfig;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 
@@ -46,7 +46,7 @@ pub(crate) struct LaunchContext<'a> {
     pub(crate) debug: bool,
     pub(crate) git_coauthor_trailer: bool,
     pub(crate) git_dco: bool,
-    pub(crate) agent: jackin_core::agent::Agent,
+    pub(crate) agent: jackin_core::Agent,
     pub(crate) capsule_config: &'a jackin_protocol::CapsuleConfig,
     pub(crate) resolved_env: &'a jackin_env::ResolvedEnv,
     pub(crate) profile: crate::runtime::docker_profile::DockerSecurityProfile,
@@ -108,7 +108,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     paths: &JackinPaths,
     container_name: &str,
     prewarm: &SiblingAuthPrewarm<'_>,
-    selected_agent: jackin_core::agent::Agent,
+    selected_agent: jackin_core::Agent,
 ) -> Option<tokio::task::JoinHandle<()>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
     let sibling_agents = prewarm
@@ -159,19 +159,23 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         .to_string();
         run.stage(
             "launch_plan",
-            "restore",
+            jackin_diagnostics::DiagnosticStage::Restore,
             "selected launch plan PrewarmOnly",
             Some(&detail),
         );
-        run.timing_started("credentials", "sibling_auth_prewarm", Some(&timing_detail));
+        run.timing_started(
+            jackin_diagnostics::DiagnosticStage::Credentials,
+            "sibling_auth_prewarm",
+            Some(&timing_detail),
+        );
     }
 
     Some(tokio::task::spawn_blocking(move || {
-        let resolve_mode = |a: jackin_core::agent::Agent| {
+        let resolve_mode = |a: jackin_core::Agent| {
             let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
             jackin_config::resolve_mode(&config, a, ws.as_ref(), &role_key)
         };
-        let resolve_sync_src = |a: jackin_core::agent::Agent| {
+        let resolve_sync_src = |a: jackin_core::Agent| {
             let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
             jackin_config::resolve_sync_source_dir(&config, a, ws.as_ref(), &role_key)
         };
@@ -191,7 +195,11 @@ pub(crate) fn spawn_sibling_auth_prewarm(
             Err(error) => format!("failed: {error}"),
         };
         if let Some(run) = &active_run {
-            run.timing_done("credentials", "sibling_auth_prewarm", Some(&timing_done));
+            run.timing_done(
+                jackin_diagnostics::DiagnosticStage::Credentials,
+                "sibling_auth_prewarm",
+                Some(&timing_done),
+            );
         }
 
         if let Some(run) = active_run {
@@ -215,7 +223,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
 
 /// Launch the role container after the caller has prepared the private network
 /// and `DinD` sidecar.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Launch pipeline coordinator with three distinct phases (profile \
               validation + apparmor probe + run/launch/teardown sequence). \
@@ -227,7 +235,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
               burn-down strategy: while this `#[allow]` is recorded, the \
               deferred body-extraction slice remains tracked as a roadmap item."
 )]
-#[allow(
+#[expect(
     clippy::cognitive_complexity,
     reason = "Same justification as the too_many_lines allow: launch pipeline \
               branching depth tracks the bring-up / phase / teardown sequence \
@@ -338,13 +346,10 @@ pub(crate) async fn launch_role_runtime(
     let display_label = format!("jackin.display.name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
     let docker_cert_path = "DOCKER_CERT_PATH=/jackin/run/dind-certs/client";
-    let dind_hostname = format!(
-        "{}={dind}",
-        jackin_core::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME
-    );
+    let dind_hostname = format!("{}={dind}", jackin_core::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let role_container_name_env = format!(
         "{}={container_name}",
-        jackin_core::env_model::JACKIN_CONTAINER_NAME_ENV_NAME
+        jackin_core::JACKIN_CONTAINER_NAME_ENV_NAME
     );
     let instance_id = if let Some(id) =
         crate::instance::naming::instance_id_from_container_base(container_name)
@@ -359,13 +364,10 @@ pub(crate) async fn launch_role_runtime(
         );
         container_name
     };
-    let instance_id_env = format!(
-        "{}={instance_id}",
-        jackin_core::env_model::JACKIN_INSTANCE_ID_ENV_NAME
-    );
+    let instance_id_env = format!("{}={instance_id}", jackin_core::JACKIN_INSTANCE_ID_ENV_NAME);
     let testcontainers_host_override = format!(
         "{}={dind}",
-        jackin_core::env_model::TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME
+        jackin_core::TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME
     );
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
@@ -550,17 +552,12 @@ pub(crate) async fn launch_role_runtime(
     let host_version_env = format!("JACKIN_HOST_VERSION={}", env!("JACKIN_VERSION"));
     run_args.extend_from_slice(&["-e", host_version_env.as_str()]);
 
-    let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {
-        format!(
-            "{}=1",
-            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
-        )
-    });
+    let git_coauthor_trailer_env = git_coauthor_trailer
+        .then(|| format!("{}=1", jackin_core::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME));
     if let Some(ref env) = git_coauthor_trailer_env {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
-    let git_dco_env =
-        git_dco.then(|| format!("{}=1", jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME));
+    let git_dco_env = git_dco.then(|| format!("{}=1", jackin_core::JACKIN_GIT_DCO_ENV_NAME));
     if let Some(ref env) = git_dco_env {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
@@ -573,8 +570,8 @@ pub(crate) async fn launch_role_runtime(
     let mut env_strings: Vec<String> = Vec::new();
     env_strings.push(format!(
         "{}={}",
-        jackin_core::env_model::JACKIN_ENV_NAME,
-        jackin_core::env_model::JACKIN_ENV_VALUE
+        jackin_core::JACKIN_ENV_NAME,
+        jackin_core::JACKIN_ENV_VALUE
     ));
     // DinD reachable only via Docker network; route past HTTP_PROXY by adding
     // hostname to NO_PROXY in both casings — Go reads upper, curl/Python
@@ -591,7 +588,7 @@ pub(crate) async fn launch_role_runtime(
         .iter()
         .find_map(|(k, v)| (k == NO_PROXY_LOWER).then_some(v.as_str()));
     for (key, value) in &resolved_env.vars {
-        if jackin_core::env_model::is_reserved(key) {
+        if jackin_core::is_reserved(key) {
             continue;
         }
         if key == NO_PROXY_UPPER || key == NO_PROXY_LOWER {
@@ -608,7 +605,7 @@ pub(crate) async fn launch_role_runtime(
     // it under GROK_DEPLOYMENT_KEY so the in-container `grok` sees the
     // credential under the name it prefers. Explicit GROK_DEPLOYMENT_KEY
     // in the layers takes precedence.
-    if *agent == jackin_core::agent::Agent::Grok
+    if *agent == jackin_core::Agent::Grok
         && let Some((_, value)) = resolved_env.vars.iter().find(|(k, _)| k == "XAI_API_KEY")
         && !resolved_env
             .vars
@@ -639,24 +636,17 @@ pub(crate) async fn launch_role_runtime(
     // GH_ENTERPRISE_TOKEN are passed through as-is when declared by
     // the operator so GHE workspaces work end to end.
     let gh_token = state.gh_provision_outcome.token();
-    push_env_if_present(
-        &mut env_strings,
-        jackin_core::env_model::GH_TOKEN_ENV_NAME,
-        gh_token,
-    );
+    push_env_if_present(&mut env_strings, jackin_core::GH_TOKEN_ENV_NAME, gh_token);
 
     env_strings.push(format!(
         "{}={}",
-        jackin_core::env_model::JACKIN_NETWORK_MODE_ENV_NAME,
+        jackin_core::JACKIN_NETWORK_MODE_ENV_NAME,
         crate::runtime::docker_profile::network_grant_label(grants.network)
     ));
     // WP-SUDO: the container provisions sudo at runtime from this signal (the
     // base image bakes no sudoers). Reserved so role manifests can't set it.
     if grants.sudo {
-        env_strings.push(format!(
-            "{}=1",
-            jackin_core::env_model::JACKIN_SUDO_ENV_NAME
-        ));
+        env_strings.push(format!("{}=1", jackin_core::JACKIN_SUDO_ENV_NAME));
     }
     // Read-only-root profiles need writable-home env redirects (e.g. git's
     // global config) — see `readonly_home_env`, the companion to `tmpfs_paths`.
@@ -673,7 +663,7 @@ pub(crate) async fn launch_role_runtime(
         let github_hosts = if gh_token.is_some() {
             crate::runtime::docker_profile::github_allowlist_hosts(
                 github_env
-                    .get(jackin_core::env_model::GH_HOST_ENV_NAME)
+                    .get(jackin_core::GH_HOST_ENV_NAME)
                     .map(String::as_str),
             )
         } else {
@@ -688,12 +678,12 @@ pub(crate) async fn launch_role_runtime(
         );
         env_strings.push(format!(
             "{}={}",
-            jackin_core::env_model::JACKIN_ALLOWED_HOSTS_ENV_NAME,
+            jackin_core::JACKIN_ALLOWED_HOSTS_ENV_NAME,
             allowlist.join(",")
         ));
         env_strings.push(format!(
             "{}={}",
-            jackin_core::env_model::JACKIN_NETWORK_ENFORCEMENT_ENV_NAME,
+            jackin_core::JACKIN_NETWORK_ENFORCEMENT_ENV_NAME,
             crate::runtime::docker_profile::network_enforcement_label(grants)
         ));
     }
@@ -728,21 +718,21 @@ pub(crate) async fn launch_role_runtime(
     }
     push_env_if_present(
         &mut env_strings,
-        jackin_core::env_model::GITHUB_TOKEN_ENV_NAME,
+        jackin_core::GITHUB_TOKEN_ENV_NAME,
         gh_token,
     );
     push_env_if_present(
         &mut env_strings,
-        jackin_core::env_model::GH_HOST_ENV_NAME,
+        jackin_core::GH_HOST_ENV_NAME,
         github_env
-            .get(jackin_core::env_model::GH_HOST_ENV_NAME)
+            .get(jackin_core::GH_HOST_ENV_NAME)
             .map(String::as_str),
     );
     push_env_if_present(
         &mut env_strings,
-        jackin_core::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME,
+        jackin_core::GH_ENTERPRISE_TOKEN_ENV_NAME,
         github_env
-            .get(jackin_core::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME)
+            .get(jackin_core::GH_ENTERPRISE_TOKEN_ENV_NAME)
             .map(String::as_str),
     );
 
@@ -843,7 +833,7 @@ pub(crate) async fn launch_role_runtime(
     let extrausers_group_for_write = extrausers_group.clone();
     let extrausers_entries_for_write = extrausers_entries.clone();
     jackin_diagnostics::active_timing_started(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "prepare_socket_dir",
         Some(container_name),
     );
@@ -882,7 +872,7 @@ pub(crate) async fn launch_role_runtime(
         })
     });
     jackin_diagnostics::active_timing_done(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "prepare_socket_dir",
         if prepare_socket_dir_result.is_ok() {
             Some("prepared")
@@ -960,7 +950,11 @@ pub(crate) async fn launch_role_runtime(
     // daemon uses it only to choose the first tab; per-session
     // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
     run_args.push(agent.slug());
-    jackin_diagnostics::active_timing_started("capsule", "docker_run_role", Some(container_name));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Capsule,
+        "docker_run_role",
+        Some(container_name),
+    );
     let run_role = runner.run("docker", &run_args, None, &docker_run_opts);
     let run_role_result = if let Some(progress) = steps.progress_mut() {
         progress.while_waiting(run_role).await
@@ -968,7 +962,7 @@ pub(crate) async fn launch_role_runtime(
         run_role.await
     };
     jackin_diagnostics::active_timing_done(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "docker_run_role",
         if run_role_result.is_ok() {
             Some("started")
@@ -976,6 +970,17 @@ pub(crate) async fn launch_role_runtime(
             Some("error")
         },
     );
+    if run_role_result.is_err() {
+        let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
+        span.in_scope(|| {
+            jackin_diagnostics::operation_error(
+                "launch.prepare",
+                "docker_run_failed",
+                "role container start failed",
+                &[],
+            );
+        });
+    }
     run_role_result?;
 
     // Privileged post-run capsule steps, each run as root via `docker exec`
@@ -1047,7 +1052,7 @@ pub(crate) async fn launch_role_runtime(
     // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
     jackin_diagnostics::active_timing_started(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "pre_attach_exit_check",
         Some(container_name),
     );
@@ -1060,10 +1065,18 @@ pub(crate) async fn launch_role_runtime(
     )
     .await
     {
-        jackin_diagnostics::active_timing_done("capsule", "pre_attach_exit_check", Some("exited"));
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Capsule,
+            "pre_attach_exit_check",
+            Some("exited"),
+        );
         return Err(err);
     }
-    jackin_diagnostics::active_timing_done("capsule", "pre_attach_exit_check", Some("running"));
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Capsule,
+        "pre_attach_exit_check",
+        Some("running"),
+    );
 
     // Connect the operator's terminal to the running jackin-capsule multiplexer.
     // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
@@ -1206,11 +1219,7 @@ pub(crate) fn debug_runtime_envs_for(
     if !debug {
         return Vec::new();
     }
-    let mut envs = vec![
-        "JACKIN_DEBUG=1".to_owned(),
-        // Temporary dual-inject for capsule-image skew (plan 043 / DEPRECATED.md).
-        "JACKIN_TELEMETRY_LEVEL=debug".to_owned(),
-    ];
+    let mut envs = Vec::new();
     if let Some(path) = diagnostics_path {
         envs.push(format!("JACKIN_RUN_DIAGNOSTICS_PATH={}", path.display()));
     }

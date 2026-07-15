@@ -37,7 +37,7 @@ Layout (current and going forward):
 
 What rule blocks:
 
-- New container paths under `/run/`, `/var/`, `/opt/`, `/srv/`, `/etc/`, or any other FHS root — even when "natural" for asset type (Unix socket under `/run/` is most common drift). Container is single-purpose jackin runtime; FHS layout not what makes in-container experience legible.
+- New container paths under `/run/`, `/var/`, `/opt/`, `/srv/`, `/etc/`, or any other FHS root — even when "natural" for asset type (Unix socket under `/run/` is most common drift). Container is single-purpose jackin❯ runtime; FHS layout not what makes in-container experience legible.
 - Per-container scratch paths under `/tmp/jackin*` or `/var/run/jackin*`. jackin-owned and ephemeral goes under `/jackin/run/`.
 - Hard-coded paths in role-specific scripts bypassing convention because "just for one role." Roles author files under `/home/agent/` or in workspace; jackin-owned content stays under `/jackin/`.
 
@@ -45,4 +45,4 @@ What rule blocks:
 
 Wanting new container-side path — place under `/jackin/` first, then justify in PR description if real constraint forces exception (e.g. third-party tool hard-coding `/run/<thing>` that can't be relocated). PRs introducing top-level jackin-owned path outside `/jackin/` without exception note rejected at review and path moved.
 
-Reason: flat single-root convention makes in-container surface debuggable. "What does jackin do to my container?" → `ls /jackin/`. Also makes cleanup straightforward — `rm -rf /jackin` removes every jackin-owned artifact, leaving base image intact for whatever rebuild operator wants.
+Reason: flat single-root convention makes in-container surface debuggable. "What does jackin❯ do to my container?" → `ls /jackin/`. Also makes cleanup straightforward — `rm -rf /jackin❯` removes every jackin-owned artifact, leaving base image intact for whatever rebuild operator wants.

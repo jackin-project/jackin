@@ -76,11 +76,11 @@ Open `jackin console`, select the workspace, switch to the **Auth** tab. The tab
 
 ## Multi-agent roles
 
-For roles that support more than one agent, jackin provisions credentials for every supported agent at launch time — not just the one you selected for the initial session. You can start a second agent inside the same running container with `jackin hardline --new --agent codex` and it will not ask you to log in.
+For roles that support more than one agent, jackin❯ provisions credentials for every supported agent at launch time — not just the one you selected for the initial session. You can start a second agent inside the same running container with `jackin❯ hardline --new --agent codex` and it will not ask you to log in.
 
 The secondary agent's credentials were already placed in the container when any of the supported agents (Claude Code, Codex, Amp, Kimi, OpenCode, or Grok) launched the first session. For the full workflow, see [Parallel Agents](/guides/parallel-agents/).
 
-Each agent's auth mode is evaluated independently. A role can use `sync` for Claude and `ignore` for Codex in the same workspace — jackin provisions each agent's credential directory according to that agent's resolved mode.
+Each agent's auth mode is evaluated independently. A role can use `sync` for Claude and `ignore` for Codex in the same workspace — jackin❯ provisions each agent's credential directory according to that agent's resolved mode.
 
 ## Launch-time validation
 

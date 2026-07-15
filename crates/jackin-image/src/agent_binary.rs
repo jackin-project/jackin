@@ -13,7 +13,7 @@ use crate::binary_artifact::{
     parse_sha256_hex, repair_executable_file,
 };
 use anyhow::{Context, Result};
-use jackin_core::{Agent, JackinPaths};
+use jackin_core::{Agent, Clock, JackinPaths, SystemClock};
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -28,6 +28,13 @@ const GROK_BASE_PRIMARY: &str = "https://x.ai/cli";
 const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-public-artifacts/cli";
 
 static GITHUB_AUTH_TOKEN: OnceCell<Option<String>> = OnceCell::const_new();
+
+fn record_agent_binary_failure(error_type: &'static str, body: &'static str) {
+    let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
+    span.in_scope(|| {
+        jackin_diagnostics::operation_error("launch.prepare", error_type, body, &[]);
+    });
+}
 
 #[derive(Debug, Clone)]
 pub struct AgentBinary {
@@ -140,6 +147,10 @@ async fn ensure_available_impl(
             record(
                 "agent_binary_failed",
                 &format!("{} resolve failed: {error:#}", agent.slug()),
+            );
+            record_agent_binary_failure(
+                "agent_binary_resolve_failed",
+                "agent binary release resolution failed",
             );
             return Err(error).with_context(|| format!("resolving latest {} binary", agent.slug()));
         }
@@ -305,6 +316,15 @@ async fn ensure_binary_for_release(
                 "agent_binary_failed",
                 &format!("{} download failed: {error:#}", agent.slug()),
             );
+            let error_type = if error
+                .chain()
+                .any(|cause| cause.to_string().contains("checksum mismatch"))
+            {
+                "agent_binary_checksum_mismatch"
+            } else {
+                "agent_binary_download_failed"
+            };
+            record_agent_binary_failure(error_type, "agent binary download failed");
         })?;
     record(
         "agent_binary_ready",
@@ -855,10 +875,27 @@ fn read_release_file(path: &Path) -> Option<AgentRelease> {
 }
 
 fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
+    read_cached_release_with_clock(paths, agent, &SystemClock)
+}
+
+fn read_cached_release_with_clock(
+    paths: &JackinPaths,
+    agent: Agent,
+    clock: &dyn Clock,
+) -> Option<AgentRelease> {
+    read_cached_release_at(paths, agent, clock.now_system())
+}
+
+/// TTL check against an injected wall-clock instant (plan 025).
+fn read_cached_release_at(
+    paths: &JackinPaths,
+    agent: Agent,
+    now: SystemTime,
+) -> Option<AgentRelease> {
     let path = metadata_cache_path(paths, agent);
     let metadata = std::fs::metadata(&path).ok()?;
     let modified = metadata.modified().ok()?;
-    if SystemTime::now().duration_since(modified).ok()? >= CACHE_TTL {
+    if now.duration_since(modified).ok()? >= CACHE_TTL {
         return None;
     }
     read_release_file(&path)

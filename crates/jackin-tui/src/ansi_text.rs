@@ -39,14 +39,6 @@ impl Perform for PlainPerformer {
     }
 }
 
-#[allow(
-    clippy::excessive_nesting,
-    reason = "ANSI parser dispatch: per-event track (C0 / CSI / OSC / DCS / text / \
-              ESC) with terminal-state branches (utf8 pending, esc buffered, dp \
-              pending) nested through the perform-trait shape. Extracting per-state \
-              sub-helpers would require re-passing the parser + performer mutable \
-              borrows across fn boundaries."
-)]
 pub fn styled_spans(input: &str, default_style: Style) -> Vec<Span<'static>> {
     let mut parser = Parser::<DefaultCharAccumulator>::default();
     let mut performer = StyledPerformer {
@@ -97,7 +89,7 @@ impl Perform for StyledPerformer {
         }
     }
 
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "vte::Perform trait dispatcher (`csi_dispatch`) for the styled- \
                   spans parser requires a single exhaustive match on the SGR \

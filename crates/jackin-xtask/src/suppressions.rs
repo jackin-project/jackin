@@ -21,12 +21,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::health::{crate_name_from_path, parse_suppression_attrs, walk_rs_paths};
 use crate::ratchet::{self, SUPPRESSION_FAMILIES};
+use crate::report::{self, FormatArgs};
 
 const CRATES_GLOB: &str = "crates";
 const RERUN: &str = "cargo xtask lint suppressions";
 
 #[derive(Args, Debug)]
 pub(crate) struct LintSuppressionsArgs {
+    #[command(flatten)]
+    output: FormatArgs,
     /// Emit regenerated `ratchet.toml` entries for the suppression families on
     /// stdout. Prefer `cargo xtask lint ratchet --print <family>` for one family.
     #[arg(long)]
@@ -73,16 +76,31 @@ pub(crate) struct Measured {
     reason = "jackin-xtask is a CLI; the gate report is its output"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 pub(crate) fn enforce() -> Result<()> {
     run(LintSuppressionsArgs {
+        output: FormatArgs::default(),
         print_budget: false,
     })
 }
 
 pub(crate) fn run(args: LintSuppressionsArgs) -> Result<()> {
+    let format = args.output.resolved();
+    report::run_gate(
+        format,
+        "suppressions",
+        "crates/",
+        "add a reason or shrink the matching suppression budget row",
+        RERUN,
+        || run_inner(args),
+    )
+}
+
+fn run_inner(args: LintSuppressionsArgs) -> Result<()> {
     if args.print_budget {
         return ratchet::print_families(SUPPRESSION_FAMILIES);
     }

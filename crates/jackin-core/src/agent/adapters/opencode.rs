@@ -15,7 +15,7 @@ const FALLBACK_INSTALL_COMMAND: &str =
 
 /// [`crate::agent::runtime::AgentRuntime`] adapter for `OpenCode`.
 #[derive(Debug)]
-pub struct OpencodeRuntime;
+pub(crate) struct OpencodeRuntime;
 
 impl crate::agent::runtime::private::Sealed for OpencodeRuntime {}
 

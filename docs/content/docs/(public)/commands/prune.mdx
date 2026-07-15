@@ -1,6 +1,6 @@
 ---
-title: jackin prune
-description: "Delete cached or stale jackin data in bulk"
+title: jackin❯ prune
+description: "Delete cached or stale jackin❯ data in bulk"
 ---
 
 ## Synopsis
@@ -37,7 +37,7 @@ Removes the local role-repo cache. Role repos are re-cloned automatically the ne
 jackin prune cache
 ```
 
-Removes the shared cache directory, including version-check results and other rebuildable data. All caches regenerate automatically on the next jackin invocation that needs them.
+Removes the shared cache directory, including version-check results and other rebuildable data. All caches regenerate automatically on the next jackin❯ invocation that needs them.
 
 ## `jackin prune images`
 
@@ -83,7 +83,7 @@ jackin prune system [--yes] [--all]
 
 Runs all four subcommands in order: `instances` → `images` → `roles` → `cache`. Prompts for confirmation before proceeding unless `--yes` is passed. By default skips running instances; pass `--all` to stop and remove them too.
 
-When `--all` is passed and all steps succeed, jackin removes its runtime home directory entirely, leaving no managed state on disk.
+When `--all` is passed and all steps succeed, jackin❯ removes its runtime home directory entirely, leaving no managed state on disk.
 
 ### Options
 

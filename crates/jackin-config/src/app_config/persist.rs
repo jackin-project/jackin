@@ -26,7 +26,7 @@ pub(crate) fn workspace_file_path(paths: &JackinPaths, name: &str) -> PathBuf {
 pub fn load_split_config(
     paths: &JackinPaths,
     contents_opt: Option<String>,
-) -> anyhow::Result<AppConfig> {
+) -> crate::ConfigResult<AppConfig> {
     // Capture legacy per-workspace `op_account` from the raw TOML before
     // the typed parse below drops it: `WorkspaceConfig` no longer has that
     // field (it moved onto each op ref in v1alpha5), so a typed round-trip
@@ -60,15 +60,18 @@ pub fn load_split_config(
 /// Read and migrate every `*.toml` workspace file under `workspaces_dir`.
 pub fn load_workspace_files(
     workspaces_dir: &Path,
-) -> anyhow::Result<BTreeMap<String, WorkspaceConfig>> {
+) -> crate::ConfigResult<BTreeMap<String, WorkspaceConfig>> {
     let mut workspaces = BTreeMap::new();
     let entries = match std::fs::read_dir(workspaces_dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(workspaces),
         Err(e) => {
-            return Err(e).with_context(|| {
-                format!("reading workspaces directory {}", workspaces_dir.display())
-            });
+            return Err(anyhow::Error::new(e)
+                .context(format!(
+                    "reading workspaces directory {}",
+                    workspaces_dir.display()
+                ))
+                .into());
         }
     };
 
@@ -211,11 +214,11 @@ fn migrate_legacy_workspaces(
 }
 
 /// Reject operator env maps that declare any reserved runtime name.
-pub fn validate_reserved_env_names(config: &AppConfig) -> anyhow::Result<()> {
+pub fn validate_reserved_env_names(config: &AppConfig) -> crate::ConfigResult<()> {
     let mut offenses: Vec<String> = Vec::new();
     let mut check = |layer: &str, env: &BTreeMap<String, jackin_core::EnvValue>| {
         for key in env.keys() {
-            if jackin_core::env_model::is_reserved(key) {
+            if jackin_core::is_reserved(key) {
                 offenses.push(format!(
                     "  - {key:?} is reserved by the jackin runtime; declared in {layer}"
                 ));
@@ -243,12 +246,11 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> anyhow::Result<()> {
     Err(ConfigError::msg(format!(
         "config contains reserved jackin runtime env vars:\n{}",
         offenses.join("\n")
-    ))
-    .into())
+    )))
 }
 
 /// `true` when `raw` is legacy-versioned and still embeds non-empty `[workspaces]`.
-pub fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {
+pub fn config_needs_split_migration(raw: &str) -> crate::ConfigResult<bool> {
     let doc: DocumentMut = raw.parse().context("parsing config.toml")?;
     let version = migrations::doc_version(&doc, "config")?;
     let has_legacy_workspaces = doc
@@ -260,7 +262,7 @@ pub fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {
 
 impl AppConfig {
     /// Load `config.toml` (migrate as needed), split workspaces, sync builtins, validate.
-    pub fn load_or_init(paths: &JackinPaths) -> anyhow::Result<Self> {
+    pub fn load_or_init(paths: &JackinPaths) -> crate::ConfigResult<Self> {
         paths.ensure_base_dirs()?;
 
         let contents_opt = match std::fs::read_to_string(&paths.config_file) {
@@ -278,7 +280,9 @@ impl AppConfig {
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => {
-                return Err(e).with_context(|| format!("reading {}", paths.config_file.display()));
+                return Err(anyhow::Error::new(e)
+                    .context(format!("reading {}", paths.config_file.display()))
+                    .into());
             }
         };
 

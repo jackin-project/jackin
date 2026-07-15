@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{Context, Result};
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_image::binary_artifact::{chmod_executable, container_arch};
 use jackin_image::capsule_binary::REQUIRED_VERSION;
 
