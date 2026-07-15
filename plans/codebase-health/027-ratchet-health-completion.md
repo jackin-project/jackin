@@ -89,7 +89,7 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 - [x] `suite-time` family live (scheduled enforcement); `agent-doc-bytes` enforcing with seeded maxima
 - [ ] Per-main health series + trend section + tightening proposal exist with an observed run
 - [x] All first-party gates emit structured JSON; problem matcher registered
-- [ ] Gate code uses sorted directory iteration with an enforcement mechanism
+- [x] Gate code uses sorted directory iteration with an enforcement mechanism
 - [ ] `cargo xtask ci --fast` exits 0; status row updated; measured-complexity family enforced
 
 ## STOP conditions

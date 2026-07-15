@@ -548,8 +548,7 @@ fn scan_agent_docs(root: &Path) -> Result<Vec<DocBytes>> {
     if !crates_dir.is_dir() {
         return Ok(out);
     }
-    for entry in fs::read_dir(&crates_dir)? {
-        let entry = entry?;
+    for entry in crate::fs_util::read_dir_sorted(&crates_dir)? {
         if !entry.file_type()?.is_dir() {
             continue;
         }

@@ -114,10 +114,8 @@ pub(crate) fn measure_violations(root: &Path) -> Result<BTreeMap<String, String>
         bail!("`crates/` not found under {}", root.display());
     }
     let mut out = BTreeMap::new();
-    for entry in
-        fs::read_dir(&crates_dir).with_context(|| format!("reading {}", crates_dir.display()))?
-    {
-        let src = entry?.path().join("src");
+    for entry in crate::fs_util::read_dir_sorted(&crates_dir)? {
+        let src = entry.path().join("src");
         if src.is_dir() {
             walk(&src, root, &mut out)?;
         }
@@ -126,8 +124,8 @@ pub(crate) fn measure_violations(root: &Path) -> Result<BTreeMap<String, String>
 }
 
 fn walk(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             if path.file_name().is_some_and(|n| n == "tests") {
                 // A `tests/` directory under src/ is the split-test anti-pattern.
@@ -166,8 +164,8 @@ fn collect_rs(
     out: &mut BTreeMap<String, String>,
     reason: &str,
 ) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             collect_rs(&path, root, out, reason)?;
         } else if path.extension().is_some_and(|ext| ext == "rs") {

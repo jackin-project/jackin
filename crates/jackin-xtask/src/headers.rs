@@ -95,8 +95,7 @@ fn run_inner() -> Result<()> {
 fn collect_roots(root: &Path) -> Result<Vec<(String, PathBuf)>> {
     let crates = root.join("crates");
     let mut out = Vec::new();
-    for entry in fs::read_dir(&crates).with_context(|| format!("reading {}", crates.display()))? {
-        let entry = entry?;
+    for entry in crate::fs_util::read_dir_sorted(&crates)? {
         if !entry.file_type()?.is_dir() {
             continue;
         }

@@ -29,10 +29,8 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
     let mut crates_for_reconcile: BTreeSet<String> = BTreeSet::new();
     let mut citations: Vec<(String, String, String)> = Vec::new();
 
-    for entry in
-        fs::read_dir(&specs_dir).with_context(|| format!("reading {}", specs_dir.display()))?
-    {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(&specs_dir)? {
+        let path = entry.path();
         if path.extension().is_none_or(|ext| ext != "mdx") {
             continue;
         }

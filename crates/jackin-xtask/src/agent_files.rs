@@ -67,11 +67,9 @@ pub(crate) fn run(args: LintAgentFilesArgs) -> Result<()> {
 /// `crates/AGENTS.md`.
 fn crate_member_dirs(root: &Path) -> Result<Vec<String>> {
     let crates_root = root.join("crates");
-    let entries =
-        fs::read_dir(&crates_root).with_context(|| format!("reading {}", crates_root.display()))?;
     let mut dirs = Vec::new();
-    for entry in entries {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(&crates_root)? {
+        let path = entry.path();
         if path.is_dir() && path.join("Cargo.toml").is_file() {
             let rel = path.strip_prefix(root).map_or_else(
                 |_| path.to_string_lossy().into_owned(),

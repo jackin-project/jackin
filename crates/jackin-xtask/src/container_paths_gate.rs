@@ -393,8 +393,7 @@ fn walkdir_rs_files(dir: &Path) -> Result<Vec<PathBuf>> {
         if !dir.is_dir() {
             return Ok(());
         }
-        for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-            let entry = entry?;
+        for entry in crate::fs_util::read_dir_sorted(dir)? {
             let path = entry.path();
             if path.is_dir() {
                 walk(&path, out)?;
@@ -424,10 +423,7 @@ fn read_allowlist(root: &Path) -> Result<Allowlist> {
 pub(crate) fn check_turso_sole_owner(root: &Path) -> Result<()> {
     let mut problems = Vec::new();
     let crates_dir = root.join("crates");
-    for entry in
-        fs::read_dir(&crates_dir).with_context(|| format!("reading {}", crates_dir.display()))?
-    {
-        let entry = entry?;
+    for entry in crate::fs_util::read_dir_sorted(&crates_dir)? {
         let path = entry.path();
         if !path.is_dir() {
             continue;

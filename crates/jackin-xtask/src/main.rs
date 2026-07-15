@@ -164,6 +164,7 @@ enum LintCommand {
 /// direction gate fails only in `strict` mode (informational otherwise, while
 /// the P2 inversions are still being cleaned up).
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
+    fs_util::enforce_sorted_iteration(&docs::repo_root()?)?;
     lint::enforce()?;
     test_layout::enforce()?;
     agent_files::enforce()?;

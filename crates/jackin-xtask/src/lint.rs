@@ -134,8 +134,8 @@ pub(crate) fn measure_lines(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
 }
 
 fn walk(dir: &Path, out: &mut BTreeMap<PathBuf, usize>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             walk(&path, out)?;
             continue;

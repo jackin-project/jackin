@@ -292,10 +292,8 @@ fn actionlint_args(root: &Path) -> Result<Vec<OsString>> {
         bail!("{} does not exist", workflows.display());
     }
     let mut files = Vec::new();
-    for entry in
-        std::fs::read_dir(&workflows).with_context(|| format!("reading {}", workflows.display()))?
-    {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(&workflows)? {
+        let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "yml") {
             files.push(
                 path.strip_prefix(root)

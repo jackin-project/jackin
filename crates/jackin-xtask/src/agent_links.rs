@@ -97,8 +97,8 @@ fn run_inner() -> Result<()> {
 /// Recursively collect every `README.md` and `AGENTS.md`, skipping build/VCS
 /// dirs.
 fn collect(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(root)? {
+        let path = entry.path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if path.is_dir() {
             if SKIP_DIRS.contains(&name) {

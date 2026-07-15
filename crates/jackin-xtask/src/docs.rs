@@ -910,8 +910,8 @@ fn remove_page(meta_path: &Path, entry: &str) -> Result<()> {
 /// Find the `(group)/meta.json` whose `pages` registers `../<slug>`.
 fn find_group_meta(roadmap: &Path, slug: &str) -> Result<Option<PathBuf>> {
     let entry = format!("../{slug}");
-    for dir in fs::read_dir(roadmap).with_context(|| format!("reading {}", roadmap.display()))? {
-        let path = dir?.path();
+    for dir in crate::fs_util::read_dir_sorted(roadmap)? {
+        let path = dir.path();
         let meta = path.join("meta.json");
         if !meta.is_file() {
             continue;
@@ -976,8 +976,8 @@ fn inbound_links(
 
 /// Recursively collect `.mdx` and `.json` files under `dir`.
 fn collect_text_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             collect_text_files(&path, out)?;
         } else if path
@@ -1203,8 +1203,8 @@ fn collect_meta_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     if meta.is_file() {
         out.push(meta);
     }
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             collect_meta_files(&path, out)?;
         }
@@ -1214,8 +1214,8 @@ fn collect_meta_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 
 /// Recursively collect every `.mdx` file under `root`.
 fn collect_mdx_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             collect_mdx_files(&path, out)?;
         } else if path.extension().is_some_and(|ext| ext == "mdx") {
@@ -1230,8 +1230,8 @@ fn collect_markdown_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
     }
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             if path.file_name().is_some_and(skip_docs_vendor_dir) {
                 continue;
