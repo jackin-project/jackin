@@ -157,8 +157,7 @@ pub fn resolve_load_workspace(
                 return Err(ConfigError::msg(format!(
                     "role {} is not allowed by workspace {name}",
                     selector.key()
-                ))
-                .into());
+                )));
             }
             (workspace, name)
         }
@@ -174,8 +173,7 @@ pub fn resolve_load_workspace(
             return Err(ConfigError::msg(format!(
                 "ad-hoc mount destination conflicts with workspace mount destination: {}",
                 ad_hoc.dst
-            ))
-            .into());
+            )));
         }
         workspace.mounts.push(ad_hoc.clone());
     }
@@ -200,8 +198,7 @@ pub fn resolve_load_workspace(
             return Err(ConfigError::msg(format!(
                 "global mount destination conflicts with workspace destination: {}",
                 mount.dst
-            ))
-            .into());
+            )));
         }
         mounts.push(mount);
     }

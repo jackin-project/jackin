@@ -327,7 +327,7 @@ impl ConfigEditor {
         key: &str,
         value: EnvValue,
     ) -> crate::ConfigResult<()> {
-        Ok(self.set_env_var(&EnvScope::GlobalGithub, key, value)?)
+        self.set_env_var(&EnvScope::GlobalGithub, key, value)
     }
 
     /// Remove a key from global `[github.env]`; returns whether it existed.
@@ -554,14 +554,14 @@ impl ConfigEditor {
             return Ok(());
         }
         if !self.workspace_docs.contains_key(old.as_str()) {
-            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()).into());
+            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()));
         }
         if self.workspace_docs.contains_key(new.as_str()) {
-            return Err(ConfigError::WorkspaceAlreadyExists(new.as_str().to_owned()).into());
+            return Err(ConfigError::WorkspaceAlreadyExists(new.as_str().to_owned()));
         }
 
         let Some(value) = self.workspace_docs.remove(old.as_str()) else {
-            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()).into());
+            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()));
         };
         self.workspace_docs.insert(new.as_str().to_owned(), value);
         self.removed_workspaces.insert(old.as_str().to_owned());
@@ -571,7 +571,7 @@ impl ConfigEditor {
     /// Mark a workspace for deletion on the next [`Self::save`].
     pub fn remove_workspace(&mut self, name: &WorkspaceName) -> crate::ConfigResult<()> {
         if self.workspace_docs.remove(name.as_str()).is_none() {
-            return Err(ConfigError::WorkspaceNotFound(name.as_str().to_owned()).into());
+            return Err(ConfigError::WorkspaceNotFound(name.as_str().to_owned()));
         }
         self.removed_workspaces.insert(name.as_str().to_owned());
         Ok(())

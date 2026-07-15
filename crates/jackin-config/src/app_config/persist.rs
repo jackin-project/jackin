@@ -246,8 +246,7 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> crate::ConfigResult<()
     Err(ConfigError::msg(format!(
         "config contains reserved jackin runtime env vars:\n{}",
         offenses.join("\n")
-    ))
-    .into())
+    )))
 }
 
 /// `true` when `raw` is legacy-versioned and still embeds non-empty `[workspaces]`.

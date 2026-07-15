@@ -34,8 +34,7 @@ impl AppConfig {
         if self.workspaces.contains_key(name.as_str()) {
             return Err(ConfigError::msg(
                 "workspace {name:?} already exists; use `workspace edit`",
-            )
-            .into());
+            ));
         }
         validate_workspace_config(name, &workspace)?;
 
@@ -53,8 +52,7 @@ impl AppConfig {
                 return Err(ConfigError::msg(format!(
                     "workspace {name:?} initial mounts contain redundant entries:\n  - {}",
                     details.join("\n  - ")
-                ))
-                .into());
+                )));
             }
             Err(e) => return Err(e.into()),
         }
@@ -77,8 +75,7 @@ impl AppConfig {
                 return Err(ConfigError::msg(format!(
                     "duplicate workspace edit mount destination: {}",
                     mount.dst
-                ))
-                .into());
+                )));
             }
         }
 
@@ -92,7 +89,7 @@ impl AppConfig {
             let original_len = workspace.mounts.len();
             workspace.mounts.retain(|mount| mount.dst != dst);
             if workspace.mounts.len() == original_len {
-                return Err(ConfigError::msg("unknown workspace mount destination: {dst}").into());
+                return Err(ConfigError::msg("unknown workspace mount destination: {dst}"));
             }
         }
 
@@ -105,8 +102,7 @@ impl AppConfig {
             if workspace.mounts.len() == original_len {
                 return Err(ConfigError::msg(
                     "no auto-mounted workdir found (mount where src = dst = {workdir})",
-                )
-                .into());
+                ));
             }
         }
 
@@ -178,8 +174,7 @@ impl AppConfig {
                     "workspace {name} would contain redundant mounts after this edit:\n  - {}\n\
                      use `jackin workspace prune {name}` or pass `--prune` to clean up",
                     details.join("\n  - ")
-                ))
-                .into());
+                )));
             }
             Err(e) => return Err(e.into()),
         }

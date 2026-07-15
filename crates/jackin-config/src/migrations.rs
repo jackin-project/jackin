@@ -170,8 +170,7 @@ pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> crate::Con
                 return Err(ConfigError::msg(format!(
                     "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
                      found {item:?}"
-                ))
-                .into());
+                )));
             }
         },
     };
@@ -321,7 +320,7 @@ pub fn migrate_file_if_needed(
     let current = parse_version(current_raw)?;
 
     if old_version > current {
-        return Err(ConfigError::msg(format!("{label} is at {old_version}, this binary only understands up to {current_raw}; upgrade jackin")).into());
+        return Err(ConfigError::msg(format!("{label} is at {old_version}, this binary only understands up to {current_raw}; upgrade jackin")));
     }
     if old_version == current {
         return Ok(None);
@@ -351,15 +350,14 @@ pub fn apply_migrations(
     let mut cursor = old_version.clone();
     while &cursor < current_version {
         let Some(step) = find_step(&cursor, migrations)? else {
-            return Err(ConfigError::msg(format!("{label} is at {old_version}, but this binary no longer includes a migration path to {current_version}; upgrade through an older jackin first")).into());
+            return Err(ConfigError::msg(format!("{label} is at {old_version}, but this binary no longer includes a migration path to {current_version}; upgrade through an older jackin first")));
         };
         let next = parse_registry_version(step.to)?;
         if next <= cursor {
             return Err(ConfigError::msg(format!(
                 "{label} migration registry is invalid: step {} -> {} does not move forward",
                 step.from, step.to
-            ))
-            .into());
+            )));
         }
         (step.migrate)(doc)
             .with_context(|| format!("running {label} migration {} -> {}", step.from, step.to))?;
@@ -369,8 +367,7 @@ pub fn apply_migrations(
     if &cursor != current_version {
         return Err(ConfigError::msg(format!(
             "{label} migration registry stopped at {cursor}, expected {current_version}"
-        ))
-        .into());
+        )));
     }
     Ok(())
 }
@@ -401,7 +398,7 @@ pub fn doc_version(doc: &DocumentMut, label: &str) -> crate::ConfigResult<Schema
         return Ok(SchemaVersion::Legacy);
     };
     let Some(version) = item.as_str() else {
-        return Err(ConfigError::msg(format!("{label} version must be a string")).into());
+        return Err(ConfigError::msg(format!("{label} version must be a string")));
     };
     Ok(parse_version(version).with_context(|| format!("{label} version is invalid"))?)
 }
@@ -430,7 +427,7 @@ pub fn parse_version(version: &str) -> crate::ConfigResult<SchemaVersion> {
     } else if let Some(seq_raw) = suffix.strip_prefix("beta") {
         Channel::Beta(parse_sequence("beta", seq_raw)?)
     } else {
-        return Err(ConfigError::msg("version must look like v1, v1beta1, or v1alpha1").into());
+        return Err(ConfigError::msg("version must look like v1, v1beta1, or v1alpha1"));
     };
 
     Ok(SchemaVersion::Kubernetes(KubernetesVersion {

@@ -569,7 +569,7 @@ impl RunDiagnostics {
                 .unwrap_or_else(|| launch_stage_span(stage))
         } else {
             spans
-                .entry(stage.to_owned())
+                .entry(stage)
                 .or_insert_with(|| launch_stage_span(stage))
                 .clone()
         }

@@ -239,8 +239,7 @@ impl AppConfig {
                 return Err(ConfigError::msg(format!(
                     "duplicate mount destination: {}",
                     mount.dst
-                ))
-                .into());
+                )));
             }
         }
         for row in rows {
@@ -249,7 +248,7 @@ impl AppConfig {
                 return Err(ConfigError::msg(format!("global mount destination conflicts with workspace destination: {} (from global mount {} [{}])",
                     row.mount.dst,
                     row.name,
-                    scope)).into());
+                    scope)));
             }
         }
         Ok(())
@@ -260,7 +259,7 @@ impl AppConfig {
         let mut seen_keys: BTreeSet<(Option<&str>, &str)> = BTreeSet::new();
         for row in rows {
             if row.name.trim().is_empty() {
-                return Err(ConfigError::msg("global mount name cannot be empty").into());
+                return Err(ConfigError::msg("global mount name cannot be empty"));
             }
             // Two rows with the same (scope, name) silently collapse on
             // wire-write because `add_mount` keys the BTreeMap by name —
@@ -270,16 +269,14 @@ impl AppConfig {
                 return Err(ConfigError::msg(format!(
                     "duplicate global mount entry: {} [{}]",
                     row.name, scope
-                ))
-                .into());
+                )));
             }
             if !matches!(row.mount.isolation, MountIsolation::Shared) {
                 return Err(ConfigError::msg(format!(
                     "global mount {} cannot use isolation {}; global mounts are always shared",
                     row.name,
                     row.mount.isolation.as_str()
-                ))
-                .into());
+                )));
             }
             let expanded = MountConfig {
                 src: expand_tilde(&row.mount.src),
@@ -299,8 +296,7 @@ impl AppConfig {
                     return Err(ConfigError::msg(format!(
                         "duplicate global mount destination in overlapping scope: {}",
                         left.mount.dst
-                    ))
-                    .into());
+                    )));
                 }
             }
         }

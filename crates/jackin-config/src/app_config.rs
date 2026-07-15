@@ -111,8 +111,7 @@ impl AppConfig {
                 return Err(ConfigError::msg(format!(
                     "auth_forward 'oauth_token' is not supported for {}",
                     agent.slug()
-                ))
-                .into());
+                )));
             }
         }
         Ok(())
