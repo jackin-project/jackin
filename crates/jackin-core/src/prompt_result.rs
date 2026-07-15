@@ -3,8 +3,8 @@
 
 //! Result of a one-shot user prompt (e.g. trust confirm, vault selection).
 //!
-//! Moved here from `jackin-launch-tui` as part of Workstream 1
-//! (architecture/boundaries) in the completed codebase-health track. The
+//! Moved here from `jackin-launch-tui` to break an upward layering
+//! inversion. The
 //! `launch_cockpit` TUI used to live in `jackin-launch-tui` and owned this
 //! type; lower-layer crates (notably `jackin-env::env_resolver`) had to
 //! depend upward on the launch TUI crate purely to use it, inverting the

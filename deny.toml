@@ -182,8 +182,7 @@ skip = [
 # and the `cargo xtask lint arch` dependency-direction gate to make the
 # workspace crate map durable — a reintroduced shim or god-crate
 # recurrence fails one of these three checks instead of being a
-# reviewer's memory burden. See
-# Completed codebase-health plan track (W4).
+# reviewer's memory burden.
 [bans.workspace-dependencies]
 duplicates = "deny"
 include-path-dependencies = true

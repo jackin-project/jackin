@@ -1677,9 +1677,8 @@ fn emit_jsonl_event_with_level(
     }
 }
 
-// TODO(plan-005): stop exporting `kind` as an OTLP-indexed attribute once
-// the versioned JSONL adapter owns the legacy serialization path
-// (plans/codebase-health/005-jsonl-versioned-adapter.md).
+// TODO: stop exporting `kind` as an OTLP-indexed attribute once the
+// versioned JSONL adapter owns the legacy serialization path.
 //
 // `parallax.run.id` is the canonical run identity on records (never Resource).
 // Use `tracing::event!(Level::…)` rather than `info!`/`debug!`/`error!`: the

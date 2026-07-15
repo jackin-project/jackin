@@ -87,11 +87,39 @@ One-shot CLI commands keep the shipped model: one root span per invocation, name
 
 *Why:* this keeps the operator's requirement — reconstruct the entire journey backwards from the latest point — while respecting backend limits (Tempo's default per-trace byte cap, Jaeger's rendering collapse on huge traces) and the long-span guidance in the research notes (interval spans + span links are the documented alternatives to never-ending spans); creation-time links are the OTel-native mechanism for related-but-not-parent traces.
 
-### 6. Screen and widget visibility
+### 6. Background and periodic work: every task declares a context mode
+
+jackin❯ runs a lot of work no user action directly parents — the capsule daemon's 1 Hz state tick (agent-status arbitration and publish), the usage scheduler (30 s wake, ~5 min per-account provider fetches), the git branch context poll (1 s) and HEAD inotify watcher, the PR context lookup (60 s cache, `gh` subprocess), the resource sampler, the token-spend monitor, per-session PTY reader/writer/reaper tasks, socket accept loops, the console's instance-refresh cycle (500 ms `docker ps` + capsule snapshots), and fire-and-forget launch prewarms. Today all of it logs into the void with no causality. The unified layer gives every spawned task or timer exactly one of four **context modes**, chosen at the spawn point through facade spawn helpers:
+
+1. **inherit** — operator-triggered async work whose result lands back in the triggering interaction (dialog-confirmed exec runs, on-demand usage refresh from the usage dialog, forced PR lookup from the GitHub-context dialog, console save/load subscriptions, launch-internal parallel steps): the spawned future is instrumented into the active screen/action trace and appears as a child span.
+2. **link** — work that outlives or detaches from its trigger (background image/sidecar prewarm, any fire-and-forget spawn): its own trace, with a creation-time span link back to the spawning span, so the causal chain stays walkable without holding the parent open.
+3. **cycle** — timer-driven maintenance: each *meaningful* execution is its own short trace (root span named for the task, `CLIENT` children for provider HTTP, `git`/`gh`/`docker` subprocess work); a cycle that does nothing emits nothing. Sub-30-second cycles (the 1 Hz status tick, the 1 s branch poll, the 500 ms instance refresh) emit a trace only on state change, failure, or a latency threshold breach; cycle health is carried by metrics (runs/skips counters, last-success gauge), never by no-op spans.
+4. **stream** — continuous event-driven I/O (PTY pumps, attach client tasks, accept loops, inotify watchers, the SIGCHLD reaper): no per-event spans ever; discrete lifecycle operations get bounded spans (session spawn/exit, attach handshake), notable occurrences are named log events (session exited, attach failure — the existing typed attach events already have this shape), and throughput/health are metrics.
+
+Cross-process rule: work arriving over a socket that carries `TRACEPARENT` joins the caller's trace as a `SERVER`-kind span (capsule attach handshake joining the host's attach trace, host-daemon requests from a CLI invocation, the jackin-exec credential resolver); without a traceparent it starts its own trace. Reference mapping for the systems named above:
+
+| Background system | Mode | Trace shape |
+|---|---|---|
+| Agent-status tick (arbitrate → publish) | cycle | trace only on a status transition, carrying evidence/winner attributes; flap/stuck stay metrics + events |
+| Usage refresh (scheduled) | cycle | trace per account fetch with `CLIENT` HTTP spans per provider |
+| Usage refresh (dialog-triggered) | inherit | child of the usage-dialog action span |
+| Branch context poll + HEAD watcher | cycle + stream | trace only when HEAD changed or cache expired; watcher itself emits nothing |
+| PR context lookup (scheduled / dialog-forced) | cycle / inherit | `CLIENT` span for the `gh` subprocess |
+| Resource sampler, token-spend monitor | cycle (degenerate) | metrics only; error events on failure |
+| PTY reader/writer/reaper | stream | session spawn/exit spans, output volume as metrics |
+| Attach handshake + client task | stream | handshake `SERVER` span joined via `TRACEPARENT`; task lifetime is not a span |
+| Console instance refresh | cycle | trace on snapshot change or failure; cadence health as metrics |
+| Launch parallel steps (`tokio::join!`, cleanup) | inherit | children of the launch trace, proving cleanup ordering |
+| Background prewarms | link | own trace, linked to the launch span that spawned it |
+| Host daemon / exec resolver requests | stream + `SERVER` spans | one trace (or joined trace) per request |
+
+*Why:* the parent/child/link decision becomes explicit and reviewable at every spawn point instead of accidental; high-frequency tickers stop flooding backends with no-op traces; and bare `tokio::spawn`/`spawn_blocking` outside the facade helpers becomes lintable (decision 14), which is what makes "one approach" hold for background work too.
+
+### 7. Screen and widget visibility
 
 The `Screen` taxonomy generalizes to all three TUI surfaces (console — including the intro — capsule tabs, launch), and every signal emitted while a screen is active carries `jackin.screen.name`. Screen and tab-focus transitions are the trace boundaries defined in decision 5. Widget/block interactions emit named events shaped after the OTel client `app.screen.*`/`app.widget.*` conventions (`jackin.widget.id`, `jackin.widget.name`), wired at the single input choke points each TUI already has: the console's screen-sync and key/mouse dispatch in its run loop, the capsule's `apply_action`, and the launch TUI's `update_launch_view`. *Why:* the choke points already exist, so full interaction coverage is a wiring change, not an architecture change — and stamping screen context on everything is how mobile/browser instrumentation delivers "what was the user looking at" without unbounded spans.
 
-### 7. Internal vs external spans
+### 8. Internal vs external spans
 
 Span kind and standard attributes make the boundary obvious in any backend:
 
@@ -101,11 +129,11 @@ Span kind and standard attributes make the boundary obvious in any backend:
 
 *Why:* SpanKind is what backends use to derive service graphs and entry spans, and `service.peer.name`/`server.address` are the human-visible cue for "this span left jackin❯".
 
-### 8. Crate attribution
+### 9. Crate attribution
 
 Crate and module identity ride the `tracing` `target`, which is crate-prefixed by default: spans carry it as the `target` attribute plus `code.*` location attributes, and the Rust log bridge already surfaces the target as the OTLP instrumentation scope name per record. No hand-stamped "component" attribute duplicates what the ecosystem provides; `jackin.component` survives only where the target genuinely cannot express it (host vs capsule vs console process identity, which resource `service.name` also covers). *Why:* free, always correct, and one less convention to enforce.
 
-### 9. Errors, stalls, and frozen screens
+### 10. Errors, stalls, and frozen screens
 
 - Every failure path goes through the facade's error API: span status set to error, `error.type` per the OTel error conventions, exception detail as `exception.*` attributes on a log record correlated to the failing span — so "which span failed and froze the screen" is a direct query.
 - The RAII outcome guard generalizes: any operation abandoned mid-flight (early return, panic unwind, task cancellation) closes its span as `Cancelled`, never silently as success.
@@ -114,19 +142,19 @@ Crate and module identity ride the `tracing` `target`, which is crate-prefixed b
 
 *Why:* this is exactly the operator's stated debugging story — see the failed span, understand why the screen froze, from the platform.
 
-### 10. Metrics
+### 11. Metrics
 
 Metrics go through typed facade helpers backed by the OTel Meter API (not the `tracing` metrics-prefix bridge): counters, histograms (launch stage durations, render times), and gauges defined in the registry with bounded-cardinality attributes. *Why:* the Meter API gives explicit instrument types and units; registry definition keeps cardinality reviewable.
 
-### 11. Levels and gating
+### 12. Levels and gating
 
 `tracing` levels keep their documented semantics and map to OTel severity. The existing resolution order (env `JACKIN_TELEMETRY_LEVEL` → config → `--debug` fallback) survives, but gating becomes uniform: every sink is a layer with its own per-sink filter (the per-sink `JACKIN_TELEMETRY_CONSOLE_LEVEL`/`_FILE_LEVEL` vars exist today but are never consumed in production — that gap closes), and category filtering becomes attribute/target-based filtering on the same stream instead of a bespoke string-match path. *Why:* one filtering model, no special-cased firehose.
 
-### 12. The jackin❯ semantic-conventions registry, owned by Weaver
+### 13. The jackin❯ semantic-conventions registry, owned by Weaver
 
 All `jackin.*` attributes, event names, span shapes, and metrics are defined once in an [OTel Weaver](https://github.com/open-telemetry/weaver) YAML registry that imports the official conventions. Weaver generates the Rust constants (replacing the hand-rolled `otel_keys` and static `EventDef` tables as source of truth — the fail-closed runtime validation stays, now driven by generated definitions), `weaver registry check` with policy rules (every custom attribute starts with `jackin.`) and `weaver registry diff` gate CI, and `weaver registry live-check` scores the conformance lane's actual emitted telemetry against the registry. *Why:* "one standard, never a second format" needs the standard to be machine-checked, diffable, and code-generated — exactly what Weaver is for, and it retires a hand-rolled schema per the library-first rule in <RepoFile path="ENGINEERING.md" />.
 
-### 13. Cutover: one refactor, enforced ending
+### 14. Cutover: one refactor, enforced ending
 
 The migration is a single coordinated track, not a long coexistence: the facade and pipeline land first, call sites migrate crate by crate within the track, and the legacy macros/prefixes are deleted at the end of the same track. Enforcement then keeps it dead: clippy `disallowed-macros` for the print/legacy macro family (with the existing `print_stdout`/`print_stderr` denies and a grep backstop for proc-macro blind spots), the queued telemetry-discipline dylint lint in `jackin-lints` for facade bypasses (raw `tracing::event!` outside `jackin-diagnostics`, CLIENT spans missing `service.peer.name`), and the exporter-backed conformance lane extended with the Weaver live-check. *Why:* the operator's constraint is explicit — one approach everywhere, no second convention surviving the refactor — and pre-release policy (<RepoFile path="PRERELEASE.md" />) permits the breaking sweep.
 

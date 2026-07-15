@@ -1,4 +1,4 @@
-//! Test-file-layout gate from the completed codebase-health track.
+//! Test-file-layout gate.
 //!
 //! Enforces the workspace hard rule (see `crates/AGENTS.md` → "Tests in own
 //! file"): every module's tests live in a single sibling `tests.rs`, declared

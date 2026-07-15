@@ -3,9 +3,8 @@
 
 //! `Z.AI` / `GLM` usage snapshot.
 //!
-//! Carved out of `usage.rs` during the completed codebase-health Workstream W5
-//! (file-size ratchet). Items in this module are `pub(crate)` so the
-//! coordinator (`usage.rs`) can re-export them.
+//! Carved out of `usage.rs` for the file-size ratchet. Items in this module
+//! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
 #[cfg_attr(
     not(test),

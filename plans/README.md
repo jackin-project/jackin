@@ -7,7 +7,6 @@ Plans hold **unfinished** multi-step work. Fully shipped plan bodies are removed
 | Path | Scope | Status |
 |------|--------|--------|
 | [agent-status/](agent-status/) | Product detection (live goldens, pack rewrite, live authority, remote packs) | Deferred / open residuals |
-| [codebase-health/](codebase-health/) | Deep advisor gap-audit of the codebase-health enforcement roadmap (2026-07-14, commit 846038946): 27 unfinished plans, telemetry/OTLP first (001–009), then lints/CI/ownership/testing/perf/docs | Open / in progress |
 
 ## Removed (shipped)
 
@@ -16,13 +15,6 @@ These program tracks shipped on PR #759 (`chore/rust-code-health-roadmap`) and w
 - Code-health numbered plans **003–069** + residual ledger (waves 0–6 drained)
 - Launch-speed **001–008** (including 008c early restore-scan reuse)
 - Goal prompts: `GOAL-CODE-HEALTH-AND-LAUNCH-SPEED`, `GOAL-CLOSE-ALL-REMAINING`
-
-Individually verified codebase-health plans removed on 2026-07-15:
-
-- **014** — OSC 8 hyperlink identity repointing fix
-- **025** — deterministic-time seam and first boundary conversions
-
-Completed routine code-health implementation archive: [codebase-health](codebase-health/).
 
 Hard external pin only (no plan file): **iai-callgrind** — project CI has no valgrind; re-evaluate when a valgrind-capable runner exists.
 

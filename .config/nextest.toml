@@ -15,9 +15,9 @@ final-status-level = "flaky"
 [profile.docker-e2e.junit]
 path = "junit.xml"
 
-# Detect flakes: a pass-on-retry is reported as FLAKY, never silently absorbed
-# (codebase-health-enforcement Phase 3). The quarantine ledger is
-# flaky-tests.toml at the repo root; an unquarantined flake fails review.
+# Detect flakes: a pass-on-retry is reported as FLAKY, never silently absorbed.
+# The quarantine ledger is flaky-tests.toml at the repo root; an unquarantined
+# flake fails review.
 [profile.ci]
 retries = { backoff = "fixed", count = 2, delay = "1s" }
 failure-output = "immediate-final"

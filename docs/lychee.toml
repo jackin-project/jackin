@@ -56,7 +56,6 @@ exclude = [
   # Cited from reference/roadmap/clipboard-image-bridge.
   "https://xtermjs\\.org/",
   # Reddit returns 403 to automated clients for this curated Clippy lint list.
-  # Cited by the completed codebase-health implementation plans.
   "https://www\\.reddit\\.com/r/rust/comments/1rxbygj/curated_list_of_clippy_lints_worth_adding_to_the/",
 ]
 exclude_all_private = true

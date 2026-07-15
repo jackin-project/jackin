@@ -431,8 +431,8 @@ fn rejects_prewarm_image_workspace_with_role_git_override() {
 
 // ── prewarm clap invariant regression tests ─────────────────────────
 //
-// These pin the relationships the codebase-health refactor dropped when the
-// prewarm flags moved into the flattened `PrewarmFlags` struct. Each test maps
+// These pin the relationships the prewarm refactor dropped when the prewarm
+// flags moved into the flattened `PrewarmFlags` struct. Each test maps
 // to one `#[arg]` constraint restored in `prewarm.rs`. Compare against the
 // pre-refactor baseline in `origin/main:crates/jackin/src/cli/prewarm.rs`.
 
