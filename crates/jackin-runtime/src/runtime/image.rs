@@ -158,8 +158,8 @@ pub(super) async fn decide_role_image(
         Err(error) => {
             // Always-on, not just `debug_log!`: a failing tag lookup forces a
             // full rebuild, and a persistently degraded Docker daemon turns
-            // that into a silent rebuild storm whose only symptom (without
-            // JACKIN_DEBUG=1) is every launch being slow. Surface the cause.
+            // that into a silent rebuild storm whose only symptom is every
+            // launch being slow. Surface the cause at the always-on tier.
             tracing::warn!(
                 %image,
                 error = format!("{error:#}"),

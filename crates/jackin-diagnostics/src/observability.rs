@@ -960,7 +960,7 @@ mod otlp {
     }
 
     /// Capsule OTLP filter debug gate — uses the shared telemetry resolver
-    /// (plan 006), not a private `JACKIN_DEBUG` parse.
+    /// rather than parsing telemetry controls privately.
     fn capsule_debug() -> bool {
         matches!(
             crate::telemetry_level(false),

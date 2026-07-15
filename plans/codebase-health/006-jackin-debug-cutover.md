@@ -97,3 +97,4 @@ Boundary test (step 2); resolver-equivalence tests: same truthy values (`1|true|
 ## Execution notes
 
 - Boundary uses package version floor `0.6.0-dev` (not wall-clock).
+- Follow-up retirement removed the telemetry alias, dual container injection, presence tests, and boundary test; `JACKIN_TELEMETRY_LEVEL` is now the sole container telemetry control.

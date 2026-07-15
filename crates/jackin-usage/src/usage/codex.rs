@@ -775,7 +775,7 @@ pub(crate) fn fetch_codex_rpc_usage(
         )?;
         // The account label is non-essential (rate limits already succeeded), so
         // an RPC failure here degrades to no label rather than failing the whole
-        // snapshot. Logged at the firehose tier (visible under JACKIN_DEBUG): an
+        // snapshot. Logged at the firehose tier (visible at telemetry debug): an
         // absent account is usually a legitimate plan shape, not a fault, so this
         // does not warrant always-on `clog!` noise on every refresh.
         let account_value = codex_rpc_request(

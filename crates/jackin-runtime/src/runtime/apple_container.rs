@@ -74,7 +74,7 @@ pub fn print_session_contract(
     eprintln!("    apple/container vminitd is PID 1; signal forwarding relies on gRPC/vsock.");
     eprintln!("    Build-time Docker (image build) still runs on host Docker engine.");
     if debug {
-        eprintln!("  debug mode:           on (JACKIN_DEBUG=1)");
+        eprintln!("  debug mode:           on (--debug)");
     }
     eprintln!();
 }
@@ -270,8 +270,6 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     let mut env: Vec<(String, String)> =
         vec![("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned())];
     if debug {
-        env.push(("JACKIN_DEBUG".to_owned(), "1".to_owned()));
-        // Temporary dual-inject for capsule-image skew (plan 043 / DEPRECATED.md).
         env.push(("JACKIN_TELEMETRY_LEVEL".to_owned(), "debug".to_owned()));
     }
     for (k, v) in env_pairs {

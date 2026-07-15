@@ -64,7 +64,6 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "GIT_AUTHOR_NAME",
     "GIT_AUTHOR_EMAIL",
     "GH_TOKEN",
-    "JACKIN_DEBUG",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
     "TZ",
@@ -882,7 +881,7 @@ impl Session {
             GateEffect::Ignore => {
                 // An event this build does not map (runtime/version skew renamed
                 // it). The reporter's authority silently goes dark; leave a
-                // firehose breadcrumb so JACKIN_DEBUG=1 surfaces the drift.
+                // Firehose breadcrumb so debug telemetry surfaces the drift.
                 crate::cdebug!(
                     "agent-status: unmapped runtime event runtime={runtime} event={event} \
                      source={source_id}"

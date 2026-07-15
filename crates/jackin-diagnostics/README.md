@@ -1,6 +1,6 @@
 # jackin-diagnostics
 
-Host observability substrate: structured JSONL run diagnostics, the debug-mode flag, the `debug_log!` macro, redaction/secret-scrubbing, build-log capture, and the run/summary/screen/terminal reporting helpers. The two-tier telemetry (`clog!` compact always-on, `cdebug!` firehose on `JACKIN_DEBUG=1`) is rooted here.
+Host observability substrate: structured JSONL run diagnostics, the debug-mode flag, the `debug_log!` macro, redaction/secret-scrubbing, build-log capture, and the run/summary/screen/terminal reporting helpers. Its two tiers are `clog!` compact always-on and `cdebug!` firehose at telemetry debug.
 
 Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 

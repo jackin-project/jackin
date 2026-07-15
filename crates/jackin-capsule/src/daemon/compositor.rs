@@ -164,8 +164,8 @@ impl Multiplexer {
         // Frame-geometry trace: the status bar owns rows 0..STATUS_BAR_ROWS, so
         // every pane's outer rect must start at or below that. A pane whose
         // `outer.row` is smaller means its top border is being drawn over the
-        // status bar — the resize-residue class. Logged per frame (firehose,
-        // JACKIN_DEBUG only) so a soak run pins the exact offending frame.
+        // status bar — the resize-residue class. Logged per frame at the
+        // firehose tier so a soak run pins the exact offending frame.
         // Skip the per-pane trace loop entirely unless the firehose is on; the
         // individual `cdebug!`s self-gate, but the loop and its arg setup would
         // otherwise run every frame on the compose hot path.

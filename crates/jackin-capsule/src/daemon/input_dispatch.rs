@@ -280,7 +280,7 @@ impl Multiplexer {
             }
         }
         self.invalidate(frame_plan.reason());
-        // Per-keypress selection trace — firehose, gated on JACKIN_DEBUG=1.
+        // Per-keypress selection trace — firehose, gated at telemetry debug.
         if let Some(Dialog::ExitDirty { selected, .. }) = self.dialog_top() {
             crate::cdebug!("exit-dirty: selected={selected}");
         }

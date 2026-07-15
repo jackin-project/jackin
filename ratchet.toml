@@ -545,10 +545,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 6102
+bound = 6087
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 6102
+bound = 6087
 [[family.entry]]
 key = "crates/AGENTS.md"
 bound = 14742
@@ -578,7 +578,7 @@ key = "crates/jackin-dev/README.md"
 bound = 1199
 [[family.entry]]
 key = "crates/jackin-diagnostics/README.md"
-bound = 3568
+bound = 3548
 [[family.entry]]
 key = "crates/jackin-docker/README.md"
 bound = 1681

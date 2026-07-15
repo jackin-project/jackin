@@ -6,35 +6,19 @@ use super::*;
 use clap::Parser as _;
 
 #[test]
-fn launch_alias_warns_once_and_normalizes_to_load() {
-    let cli = Cli::try_parse_from(["jackin", "launch", "agent-smith", "workspace"])
-        .expect("deprecated launch syntax should parse");
-    let mut warning = Vec::new();
-    let command = normalize_deprecated_command(cli.command.expect("command"), &mut warning);
+fn retired_launch_command_is_rejected() {
+    let error = Cli::try_parse_from(["jackin", "launch", "agent-smith", "workspace"])
+        .expect_err("retired launch syntax must not parse");
 
-    assert!(matches!(
-        command,
-        Command::Load(crate::cli::role::LoadArgs {
-            selector: Some(ref selector),
-            target: Some(ref target),
-            ..
-        }) if selector == "agent-smith" && target == "workspace"
-    ));
-    assert_eq!(
-        String::from_utf8(warning).expect("warning is UTF-8"),
-        format!("{LAUNCH_DEPRECATION_WARNING}\n")
-    );
+    assert_eq!(error.kind(), clap::error::ErrorKind::InvalidSubcommand);
 }
 
 #[test]
-fn load_command_emits_no_deprecation_warning() {
+fn load_command_remains_the_launch_entry_point() {
     let cli =
         Cli::try_parse_from(["jackin", "load", "agent-smith"]).expect("load syntax should parse");
-    let mut warning = Vec::new();
-    let command = normalize_deprecated_command(cli.command.expect("command"), &mut warning);
 
-    assert!(matches!(command, Command::Load(_)));
-    assert!(warning.is_empty());
+    assert!(matches!(cli.command, Some(Command::Load(_))));
 }
 
 #[test]

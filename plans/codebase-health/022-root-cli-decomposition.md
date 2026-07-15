@@ -113,3 +113,4 @@ Steps 1–2 add the two characterization suites (these are the roadmap's named a
 - Characterization tests cover the warning text and load normalization.
 - Handler `too_many_lines` expects removed via setup/dispatch/effect splits (token/config/workspace/console).
 - TTY fallback for bare `jackin` remains characterized in `cli/dispatch` tests.
+- Follow-up retirement removed the hidden `launch` spelling and warning; parser coverage now requires that spelling to fail as an invalid subcommand.

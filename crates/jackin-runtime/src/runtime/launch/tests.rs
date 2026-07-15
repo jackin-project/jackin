@@ -1926,7 +1926,7 @@ fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
     let debug_envs = debug_runtime_envs(true);
 
     assert_eq!(run_envs, vec![format!("JACKIN_RUN_ID={}", run.run_id())]);
-    assert!(debug_envs.contains(&"JACKIN_DEBUG=1".to_owned()));
+    assert!(!debug_envs.iter().any(|env| env == "JACKIN_DEBUG=1"));
     assert!(
         !debug_envs
             .iter()
@@ -1939,17 +1939,10 @@ fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
 }
 
 #[test]
-fn debug_runtime_envs_omit_nonpersisted_diagnostics_path() {
+fn debug_runtime_envs_omit_all_envs_without_persisted_diagnostics() {
     let envs = debug_runtime_envs_for(true, None);
 
-    // Dual-inject JACKIN_TELEMETRY_LEVEL for capsule-image skew (plan 043).
-    assert_eq!(
-        envs,
-        vec![
-            "JACKIN_DEBUG=1".to_owned(),
-            "JACKIN_TELEMETRY_LEVEL=debug".to_owned(),
-        ]
-    );
+    assert!(envs.is_empty());
     assert_eq!(
         run_runtime_envs_for(Some("jk-run-backend")),
         vec!["JACKIN_RUN_ID=jk-run-backend".to_owned()]
@@ -6269,7 +6262,7 @@ plugins = []
 }
 
 #[tokio::test]
-async fn load_agent_passes_debug_flag_when_enabled() {
+async fn load_agent_forwards_telemetry_without_debug_alias() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -6324,7 +6317,8 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
-    assert!(run_cmd.contains("-e JACKIN_DEBUG=1"));
+    assert!(run_cmd.contains("-e JACKIN_TELEMETRY_LEVEL="));
+    assert!(!run_cmd.contains("JACKIN_DEBUG"));
 }
 
 #[tokio::test]
@@ -9205,35 +9199,5 @@ async fn common_path_single_current_inspect_with_early_then_reuse() {
         inspects.len(),
         1,
         "common path must inspect current-role candidate once, not twice; recorded: {inspects:?}"
-    );
-}
-
-/// Plan 006 / `DEPRECATED.md`: fail once the capsule package version floor
-/// exceeds the dual-inject window so `JACKIN_DEBUG` injection is removed.
-#[test]
-fn jackin_debug_dual_inject_boundary_holds() {
-    // When this assertion fails: remove dual inject at
-    // launch_runtime.rs / apple_container.rs, delete presence tests that
-    // require JACKIN_DEBUG=1, delete this test, and clear the DEPRECATED.md row
-    // (plans/codebase-health/006-jackin-debug-cutover.md).
-    const DUAL_INJECT_MAX_FLOOR: &str = "0.6.0-dev";
-    let floor = env!("CARGO_PKG_VERSION");
-    assert!(
-        version_floor_allows_dual_inject(floor, DUAL_INJECT_MAX_FLOOR),
-        "capsule image floor {floor} exceeds dual-inject max {DUAL_INJECT_MAX_FLOOR}: remove the JACKIN_DEBUG dual-inject at launch_runtime.rs and apple_container.rs (plan 006 / DEPRECATED.md) and delete this test"
-    );
-}
-
-fn version_floor_allows_dual_inject(current: &str, max_allowed: &str) -> bool {
-    // Pre-release: treat equal package version as still inside the window.
-    // Any newer semver-ish floor fails the boundary.
-    current == max_allowed || current.starts_with("0.6.0")
-}
-
-#[test]
-fn jackin_debug_boundary_fails_after_window() {
-    assert!(
-        !version_floor_allows_dual_inject("0.7.0", "0.6.0-dev"),
-        "post-window floors must trip the boundary helper"
     );
 }

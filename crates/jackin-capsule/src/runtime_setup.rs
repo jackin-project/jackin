@@ -1424,7 +1424,7 @@ fn runtime_setup_output(
 }
 
 fn run_optional_command(program: &str, args: &[&str]) -> bool {
-    // Shared telemetry resolver (plan 006) — not a private JACKIN_DEBUG parse.
+    // Use the shared telemetry resolver rather than parsing controls privately.
     let verbose = matches!(
         jackin_diagnostics::telemetry_level(false),
         jackin_diagnostics::TelemetryLevel::Debug | jackin_diagnostics::TelemetryLevel::Trace

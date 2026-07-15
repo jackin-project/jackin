@@ -34,8 +34,8 @@ static PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
 static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 static TRACE_ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// `true` when `JACKIN_DEBUG=1` (or any truthy value) was set in the
-/// container's env. Captured once at `init()` time so per-line emit
+/// `true` when the effective capsule telemetry level is debug or trace.
+/// Captured once at `init()` time so per-line emit
 /// paths can branch on it cheaply. Verbose `cdebug!` callers compile
 /// the format args lazily and skip the file write when `false` —
 /// production runs stay quiet, `--debug` runs get the firehose.
@@ -85,8 +85,7 @@ fn rotate_if_oversized(path: &PathBuf) -> std::io::Result<()> {
 /// point. Failures (path not writable, dir missing) are swallowed —
 /// the logger keeps emitting to stderr.
 pub fn init() {
-    // One shared resolver: `jackin_diagnostics::telemetry_level` owns the
-    // JACKIN_DEBUG alias and JACKIN_TELEMETRY_LEVEL precedence (plan 006).
+    // One shared resolver owns JACKIN_TELEMETRY_LEVEL and config precedence.
     let level = jackin_diagnostics::telemetry_level(false);
     let debug = matches!(
         level,
@@ -223,7 +222,7 @@ macro_rules! clog {
 }
 
 /// Debug-only verbose telemetry. Compiles in unconditionally but
-/// skips the format + write entirely when `JACKIN_DEBUG` is unset, so
+/// skips the format + write entirely below the debug telemetry level, so
 /// production runs pay nothing for the per-byte input dumps, per-frame
 /// render notes, and per-event dispatch traces this macro is meant
 /// for. Use for the kind of detail a triage session needs but a quiet

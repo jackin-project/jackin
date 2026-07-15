@@ -131,7 +131,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::Input(bytes) => {
             // Debug-only input-path telemetry: every chunk from the
             // client and every parser event lands in the log when
-            // `JACKIN_DEBUG=1`. Production runs stay quiet — the macro
+            // debug telemetry. Production runs stay quiet — the macro
             // skips the format + write entirely. The pair is the
             // canonical trace for "key X did nothing" triage: chunk
             // line proves the byte reached the daemon, event line

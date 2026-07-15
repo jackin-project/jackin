@@ -19,23 +19,7 @@ Each entry has:
 
 ## Active deprecations
 
-### `jackin launch` command
-
-- **Item**: `jackin launch` CLI verb (hidden compatibility alias).
-- **Type**: `cli`.
-- **Deprecated since**: 2026-07-15 (plan 022 completion).
-- **Replacement**: `jackin load` with the same arguments and flags.
-- **Remove when**: two consecutive releases show no operator reports requiring the alias.
-- **Where**: `crates/jackin/src/cli.rs` (parser alias) and `crates/jackin/src/app.rs` (warning and normalization).
-
-### JACKIN_DEBUG as telemetry control (alias + dual inject)
-
-- **Item**: `JACKIN_DEBUG` env as a telemetry control / dual host→container inject.
-- **Type**: `behavior`.
-- **Deprecated since**: 2026-07-14 (plan 006).
-- **Replacement**: `JACKIN_TELEMETRY_LEVEL` / per-sink `JACKIN_TELEMETRY_<SINK>_LEVEL`. The alias remains in `jackin_diagnostics::telemetry_level` until removal.
-- **Remove when**: capsule package version floor exceeds `0.6.0-dev` (guarded by `jackin_debug_dual_inject_boundary_holds` in `jackin-runtime`). Then delete dual inject at `launch_runtime.rs` / `apple_container.rs`, their presence tests, this row, and the boundary test.
-- **Where**: `crates/jackin-diagnostics/src/logging.rs` (alias), `crates/jackin-runtime/src/runtime/launch/launch_runtime.rs`, `crates/jackin-runtime/src/runtime/apple_container.rs`.
+_None._
 
 ## How to add an entry
 
