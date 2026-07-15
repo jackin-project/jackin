@@ -27,7 +27,6 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -247,12 +246,8 @@ fn run_docker_exec_capsule(container_name: &str, script: &str) -> Result<std::pr
         args.push(user.as_str());
     }
     args.extend_from_slice(&[container_name, "sh", "-lc", script]);
-    let mut child = Command::new("docker")
-        .args(&args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+    let request = jackin_process::ExecRequest::new("docker", &args);
+    let mut child = jackin_process::spawn_sync(&request)
         .with_context(|| format!("starting docker exec snapshot for {container_name}"))?;
 
     let deadline = Instant::now() + SOCKET_TIMEOUT;

@@ -10,7 +10,6 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use jackin_core::JackinPaths;
@@ -122,14 +121,20 @@ pub struct StdNotificationDispatcher;
 
 impl NotificationDispatcher for StdNotificationDispatcher {
     fn dispatch(&mut self, command: &NotificationCommand) -> Result<()> {
-        let status = Command::new(&command.program)
-            .args(&command.args)
-            .status()
+        let request = jackin_process::ExecRequest::new(&command.program, &command.args)
+            .stdin_mode(jackin_process::StdioMode::Inherit)
+            .stdout_mode(jackin_process::StdioMode::Inherit)
+            .stderr_mode(jackin_process::StdioMode::Inherit);
+        let status = jackin_process::exec_sync(&request)
             .with_context(|| format!("dispatching notification via {}", command.program))?;
-        if status.success() {
+        if status.success {
             Ok(())
         } else {
-            bail!("notification command {} exited {status}", command.program)
+            bail!(
+                "notification command {} exited with code {:?}",
+                command.program,
+                status.code
+            )
         }
     }
 }

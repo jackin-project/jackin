@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::host_colors::query_host_terminal_colors;
@@ -29,7 +28,6 @@ use jackin_protocol::attach::{
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::process::Command;
 use tokio::signal::unix::{SignalKind, signal};
 
 use super::attach::{
@@ -130,12 +128,12 @@ pub(super) async fn run_host_attach_session(
                 socket_path.display(),
                 direct_error
             );
-            let mut child = Command::new("docker")
-                .args(attach_proxy_exec_args(container_name))
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::inherit())
-                .spawn()
+            let process_request =
+                jackin_process::ExecRequest::new("docker", attach_proxy_exec_args(container_name))
+                    .stdin_mode(jackin_process::StdioMode::Capture)
+                    .stdout_mode(jackin_process::StdioMode::Capture)
+                    .stderr_mode(jackin_process::StdioMode::Inherit);
+            let mut child = jackin_process::spawn_async(&process_request)
                 .context("starting docker attach-proxy")?;
             let stdout = child
                 .stdout

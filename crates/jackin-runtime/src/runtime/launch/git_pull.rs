@@ -10,7 +10,7 @@ use jackin_config;
 pub(crate) enum GitPullResult {
     Success { src: String, stdout: String },
     Failure { src: String, stderr: String },
-    SpawnError { src: String, error: std::io::Error },
+    SpawnError { src: String, error: anyhow::Error },
     JoinError { src: String },
 }
 
@@ -60,17 +60,10 @@ pub(crate) fn pull_git_sources_with_git(
         pulls.push((
             src.clone(),
             std::thread::spawn(move || {
-                let mut command = std::process::Command::new(git_program);
-                command
-                    .args(["-C", &src, "pull"])
-                    .env("GIT_TERMINAL_PROMPT", "0")
-                    .stdin(std::process::Stdio::null());
-                #[expect(
-                    clippy::disallowed_methods,
-                    reason = "git pull runs on a dedicated OS thread, not the launch render runtime thread"
-                )]
-                match command.output() {
-                    Ok(out) if out.status.success() => GitPullResult::Success {
+                let request = jackin_process::ExecRequest::new(git_program, ["-C", &src, "pull"])
+                    .envs([("GIT_TERMINAL_PROMPT", "0")]);
+                match jackin_process::exec_sync(&request) {
+                    Ok(out) if out.success => GitPullResult::Success {
                         src,
                         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
                     },

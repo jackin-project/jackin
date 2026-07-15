@@ -4,7 +4,7 @@
 //! Apple Container backend launch, attach, reconnect, eject, and purge.
 //!
 //! All lifecycle operations shell out to the `container` CLI via
-//! `tokio::process::Command` — unlike the Docker backend which uses bollard.
+//! the shared process transport, unlike the Docker backend which uses bollard.
 //!
 //! # Prerequisites
 //!
@@ -86,19 +86,20 @@ pub fn print_session_contract(
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub async fn check_dns(container_name: &str) {
-    let result = tokio::process::Command::new("container")
-        .args([
+    let result = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+        "container",
+        [
             "exec",
             container_name,
             "sh",
             "-c",
             "nslookup github.com >/dev/null 2>&1 && echo ok || echo hiccup",
-        ])
-        .output()
-        .await;
+        ],
+    ))
+    .await;
 
     match result {
-        Ok(o) if o.status.success() => {
+        Ok(o) if o.success => {
             let out = String::from_utf8_lossy(&o.stdout).trim().to_owned();
             jackin_diagnostics::debug_log!("apple-container", "dns_check result={out}");
             if out == "hiccup" {
@@ -129,13 +130,14 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
             );
         }
 
-        let output = tokio::process::Command::new("container")
-            .args(["exec", container_name, "sh", "-c", check_cmd])
-            .output()
-            .await;
+        let output = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+            "container",
+            ["exec", container_name, "sh", "-c", check_cmd],
+        ))
+        .await;
 
         match output {
-            Ok(o) if o.status.success() => return Ok(()),
+            Ok(o) if o.success => return Ok(()),
             _ => {
                 tokio::time::sleep(tokio::time::Duration::from_millis(ATTACH_POLL_MS)).await;
             }
@@ -165,14 +167,16 @@ pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<
         "attach transport=container-exec name={container_name} pty=yes"
     );
 
-    let status = tokio::process::Command::new("container")
-        .args(&args)
-        .status()
+    let request = jackin_process::ExecRequest::new("container", &args)
+        .stdin_mode(jackin_process::StdioMode::Inherit)
+        .stdout_mode(jackin_process::StdioMode::Inherit)
+        .stderr_mode(jackin_process::StdioMode::Inherit);
+    let status = jackin_process::exec_async(&request)
         .await
         .context("container exec failed — is apple/container installed?")?;
 
     jackin_diagnostics::reassert_alt_screen();
-    Ok(status.code())
+    Ok(status.code)
 }
 
 /// Record the post-attach outcome into the instance manifest so
@@ -424,12 +428,13 @@ pub async fn reconnect(
             "apple-container",
             "container_state action=start name={container_name}"
         );
-        let start = tokio::process::Command::new("container")
-            .args(["start", container_name])
-            .output()
-            .await
-            .context("container start failed — is apple/container installed?")?;
-        if !start.status.success() {
+        let start = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+            "container",
+            ["start", container_name],
+        ))
+        .await
+        .context("container start failed — is apple/container installed?")?;
+        if !start.success {
             let stderr = String::from_utf8_lossy(&start.stderr);
             bail!("container start failed: {}", stderr.trim());
         }
@@ -512,12 +517,13 @@ pub async fn remove_with(
 
 /// Probe the `container` CLI version. Returns `None` if not installed.
 pub async fn probe_version() -> Option<String> {
-    let output = tokio::process::Command::new("container")
-        .arg("--version")
-        .output()
-        .await
-        .ok()?;
-    if output.status.success() {
+    let output = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+        "container",
+        ["--version"],
+    ))
+    .await
+    .ok()?;
+    if output.success {
         let v = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         jackin_diagnostics::debug_log!("apple-container", "container_version version={v}");
         Some(v)
