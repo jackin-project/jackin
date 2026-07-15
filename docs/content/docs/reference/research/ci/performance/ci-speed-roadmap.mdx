@@ -316,6 +316,8 @@ The GitHub Actions cache API showed the repository at its active-cache budget wh
 
 The corrective policy keeps `main` as the durable cache owner. PR jobs restore the default-branch tool cache but do not save a duplicate `mise` archive. The shared Cargo registry action now validates a fallback archive offline before fetching or saving, so a lockfile-key miss only creates a new cache when dependencies are actually absent. Construct PR exports retain only final BuildKit layers with `mode=min`; `main` continues to maintain the full registry build cache with `mode=max`. Rust target-cache PR writes remain unchanged because their repeated-PR benefit needs to be measured independently of tool, registry, and BuildKit duplication.
 
+The remaining delay in the cache-correction PR was runner admission, not execution: GitHub Actions showed eleven queued repository runs, nine from Renovate, while only two were in progress. Renovate previously allowed twenty concurrent PRs and unlimited hourly creation, which created more CI matrix demand than the hosted runner allocation could admit. Limit Renovate to four concurrent branches and PRs, with at most four new PRs per hour, so dependency updates make steady progress without starving human-authored CI.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.
