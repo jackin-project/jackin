@@ -97,9 +97,77 @@ fn json_report_contains_required_keys() {
         "duplicate_helpers",
         "advisory",
         "verification_map",
+        "trend",
     ] {
         assert!(json.get(key).is_some(), "missing key {key}");
     }
+}
+
+#[test]
+fn trend_reports_delta_and_requires_sustained_dated_headroom() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        &dir.path().join("ratchet.toml"),
+        r#"
+[[family]]
+id = "agent-doc-bytes"
+[[family.entry]]
+key = "AGENTS.md"
+bound = 100
+"#,
+    );
+    let mut history = String::new();
+    for (observed_at_unix, bytes) in [
+        (1_700_000_000_u64, 75_usize),
+        (1_700_900_000, 76),
+        (1_701_800_000, 74),
+        (1_702_500_000, 72),
+    ] {
+        let snapshot = serde_json::json!({
+            "observed_at_unix": observed_at_unix,
+            "report": {"agent_docs": [{"path": "AGENTS.md", "bytes": bytes}]}
+        });
+        history.push_str(&snapshot.to_string());
+        history.push('\n');
+    }
+    write(&dir.path().join("health-history.jsonl"), &history);
+
+    let trend = build_trend_section(
+        dir.path(),
+        &[DocBytes {
+            path: "AGENTS.md".to_owned(),
+            bytes: 70,
+            token_approx: 17,
+        }],
+    )
+    .unwrap();
+
+    assert_eq!(trend.history_snapshots, 4);
+    assert_eq!(trend.deltas.len(), 1);
+    assert_eq!(trend.deltas[0].baseline, 75);
+    assert_eq!(trend.deltas[0].delta, -5);
+    assert_eq!(trend.proposals.len(), 1);
+}
+
+#[test]
+fn trend_accepts_legacy_raw_reports_but_does_not_treat_them_as_dated() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        &dir.path().join("health-history.jsonl"),
+        r#"{"agent_docs":[{"path":"AGENTS.md","bytes":80}]}"#,
+    );
+    let trend = build_trend_section(
+        dir.path(),
+        &[DocBytes {
+            path: "AGENTS.md".to_owned(),
+            bytes: 70,
+            token_approx: 17,
+        }],
+    )
+    .unwrap();
+
+    assert_eq!(trend.deltas[0].delta, -10);
+    assert!(trend.proposals.is_empty());
 }
 
 #[test]

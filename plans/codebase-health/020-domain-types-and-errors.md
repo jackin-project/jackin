@@ -81,7 +81,7 @@ Newtype unit tests (constructor validation, serde round-trip preserving schema â
 - [x] `SessionId`/`ContainerId` exist, validated, serde-transparent, threaded at census-designated boundaries
 - [x] `jackin-config` public API returns typed errors; one caller converted from string-matching; rollout verdict recorded
 - [x] Adjunct decisions (Result-first, Send, non_exhaustive) recorded
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -94,7 +94,7 @@ Newtype unit tests (constructor validation, serde round-trip preserving schema â
 - The census doc is the standing decision record: new boundaries for these six concepts must pick a row (type or reasoned primitive) at review time.
 - `RoleRef`/`TokenCount`/`MountPath` adoption proceeds boundary-by-boundary using the same recipe when their census rows justify it.
 
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS â€” Done criteria not fully met; see implementer audit rollup.
+**Completed 2026-07-15**: the census, typed `SessionId`/`ContainerId` boundaries, `ConfigError` pilot, schema-preserving tests, and adjunct policy decisions are implemented. Workspace fast CI passes and the health index reflects the shipped state.
 
 ## Execution notes
 

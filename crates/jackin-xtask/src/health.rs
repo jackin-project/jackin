@@ -16,7 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::docs::repo_root;
 
@@ -117,9 +117,40 @@ struct TighteningProposal {
 }
 
 #[derive(Debug, Serialize)]
+struct TrendDelta {
+    family: String,
+    baseline: usize,
+    current: usize,
+    delta: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoricalReport {
+    agent_docs: Vec<DocBytesHistory>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DocBytesHistory {
+    path: String,
+    bytes: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoryEnvelope {
+    observed_at_unix: u64,
+    report: HistoricalReport,
+}
+
+struct HistorySnapshot {
+    observed_at_unix: Option<u64>,
+    agent_docs: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Serialize)]
 struct TrendSection {
-    /// SHA or placeholder when history artifact is absent.
     baseline_label: String,
+    history_snapshots: usize,
+    deltas: Vec<TrendDelta>,
     proposals: Vec<TighteningProposal>,
     note: String,
 }
@@ -177,7 +208,7 @@ fn collect(root: &Path, min_crates: usize) -> Result<Report> {
         bare_allow_attrs as f64 / allow_attrs as f64
     };
 
-    let trend = build_trend_section(root, &suppressions, &agent_docs)?;
+    let trend = build_trend_section(root, &agent_docs)?;
 
     Ok(Report {
         largest_production_files,
@@ -685,21 +716,52 @@ fn build_verification_map(root: &Path) -> Result<BTreeMap<String, String>> {
     Ok(map)
 }
 
-/// Plan 027 trend section: compare live agent-doc sizes to ratchet bounds
-/// (and optional `health-history.jsonl` first-line label) and list ≥20% headroom
-/// shrink proposals. History series is produced by the scheduled health-trend job.
-fn build_trend_section(
-    root: &Path,
-    suppressions: &SuppressionSummary,
-    agent_docs: &[DocBytes],
-) -> Result<TrendSection> {
+fn history_snapshot(line: &str) -> Option<HistorySnapshot> {
+    if let Ok(envelope) = serde_json::from_str::<HistoryEnvelope>(line) {
+        return Some(HistorySnapshot {
+            observed_at_unix: Some(envelope.observed_at_unix),
+            agent_docs: envelope
+                .report
+                .agent_docs
+                .into_iter()
+                .map(|doc| (doc.path, doc.bytes))
+                .collect(),
+        });
+    }
+    serde_json::from_str::<HistoricalReport>(line)
+        .ok()
+        .map(|report| HistorySnapshot {
+            observed_at_unix: None,
+            agent_docs: report
+                .agent_docs
+                .into_iter()
+                .map(|doc| (doc.path, doc.bytes))
+                .collect(),
+        })
+}
+
+fn read_health_history(path: &Path) -> Result<Vec<HistorySnapshot>> {
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(path)?;
+    Ok(text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(history_snapshot)
+        .collect())
+}
+
+/// Compare the live report with restored per-main snapshots. Tightening is
+/// proposed only after four dated observations span at least four weeks and
+/// every observation, plus the current value, retains 20% headroom.
+fn build_trend_section(root: &Path, agent_docs: &[DocBytes]) -> Result<TrendSection> {
     let history = root.join("health-history.jsonl");
-    let baseline_label = if history.is_file() {
-        let text = fs::read_to_string(&history).unwrap_or_default();
-        let lines = text.lines().filter(|l| !l.trim().is_empty()).count();
-        format!("health-history.jsonl ({lines} snapshot(s))")
+    let snapshots = read_health_history(&history)?;
+    let baseline_label = if snapshots.is_empty() {
+        String::from("no local health history (CI restores health-snapshot artifacts)")
     } else {
-        String::from("no local health-history.jsonl (CI uploads health-snapshot artifacts)")
+        format!("health-history.jsonl ({} snapshot(s))", snapshots.len())
     };
 
     // Parse agent-doc-bytes bounds from ratchet.toml (best-effort; skip if missing).
@@ -734,6 +796,35 @@ fn build_trend_section(
         }
     }
 
+    let baseline = snapshots
+        .iter()
+        .min_by_key(|snapshot| snapshot.observed_at_unix.unwrap_or(u64::MIN));
+    let mut deltas = Vec::new();
+    if let Some(baseline) = baseline {
+        for doc in agent_docs {
+            if let Some(&prior) = baseline.agent_docs.get(&doc.path) {
+                deltas.push(TrendDelta {
+                    family: format!("agent-doc-bytes/{}", doc.path),
+                    baseline: prior,
+                    current: doc.bytes,
+                    delta: doc.bytes as i64 - prior as i64,
+                });
+            }
+        }
+    }
+
+    let dated: Vec<_> = snapshots
+        .iter()
+        .filter_map(|snapshot| snapshot.observed_at_unix.map(|at| (at, snapshot)))
+        .collect();
+    let observed_span = dated
+        .iter()
+        .map(|(at, _)| *at)
+        .min()
+        .zip(dated.iter().map(|(at, _)| *at).max())
+        .map_or(0, |(first, last)| last.saturating_sub(first));
+    let sustained_window = dated.len() >= 4 && observed_span >= 28 * 24 * 60 * 60;
+
     let mut proposals = Vec::new();
     for doc in agent_docs {
         let Some(&bound) = bounds.get(&doc.path) else {
@@ -744,30 +835,27 @@ fn build_trend_section(
         }
         let headroom = bound.saturating_sub(doc.bytes);
         let headroom_pct = ((headroom as u64 * 100) / bound as u64) as u32;
-        if headroom_pct >= 20 {
+        let ceiling = bound.saturating_mul(80) / 100;
+        let sustained = sustained_window
+            && dated.iter().all(|(_, snapshot)| {
+                snapshot
+                    .agent_docs
+                    .get(&doc.path)
+                    .is_some_and(|value| *value <= ceiling)
+            });
+        if headroom_pct >= 20 && doc.bytes <= ceiling && sustained {
             proposals.push(TighteningProposal {
                 family: format!("agent-doc-bytes/{}", doc.path),
                 measured: doc.bytes,
                 bound,
                 headroom_pct,
                 note: format!(
-                    "measured {headroom_pct}% under bound — candidate for `cargo xtask lint ratchet --print agent-doc-bytes` shrink"
+                    "maintained at least 20% headroom across {} dated snapshots spanning {} days",
+                    dated.len(),
+                    observed_span / (24 * 60 * 60)
                 ),
             });
         }
-    }
-
-    // Suppression headroom: if bare allows are zero, note expect-only state.
-    if suppressions.bare_allow_attrs == 0 {
-        proposals.push(TighteningProposal {
-            family: "suppressions/bare-allow".into(),
-            measured: 0,
-            bound: 0,
-            headroom_pct: 100,
-            note: String::from(
-                "zero bare allows — bare-allow-per-crate family already at floor; keep expect-only discipline",
-            ),
-        });
     }
 
     proposals.sort_by(|a, b| {
@@ -778,9 +866,11 @@ fn build_trend_section(
 
     Ok(TrendSection {
         baseline_label,
+        history_snapshots: snapshots.len(),
+        deltas,
         proposals,
         note: String::from(
-            "Proposals are advisory; a human ratchets bounds via regenerate — never auto-shrink. Scheduled health-trend job appends JSON snapshots for multi-run series.",
+            "Deltas compare current values with the oldest restored observation. Proposals require ≥20% headroom across four dated snapshots spanning ≥28 days and remain human-applied.",
         ),
     })
 }
@@ -872,6 +962,12 @@ fn print_human(report: &Report) {
     emit("## Trend & tightening proposals (plan 027)");
     emit(&format!("  baseline: {}", report.trend.baseline_label));
     emit(&format!("  note: {}", report.trend.note));
+    for delta in &report.trend.deltas {
+        emit(&format!(
+            "  {} baseline={} current={} delta={:+}",
+            delta.family, delta.baseline, delta.current, delta.delta
+        ));
+    }
     if report.trend.proposals.is_empty() {
         emit("  (no families with ≥20% headroom under current snapshot bounds)");
     } else {

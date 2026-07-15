@@ -81,7 +81,7 @@ Fixture-driven tests per gate (steps 1, 3-self-test, 4); real-tree green after d
 - [x] Dependency-viz decision recorded on the map page
 - [x] Freshness gate runs post-checkout in its own visible job; synthetic-diff proof exists; severity decision recorded
 - [x] Config-key drift gate live both directions (severity per direction recorded); real tree green
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -94,7 +94,7 @@ Fixture-driven tests per gate (steps 1, 3-self-test, 4); real-tree green after d
 - Docs-site `metaCompletenessError` and the xtask map audit now overlap benignly (different failure surfaces); keep both, they check different artifacts.
 - The severity decisions (freshness, undocumented-key direction) are recorded advisory-first; revisit after false-positive data accumulates.
 
-**Index deviation (audit 2026-07-15)**: IN PROGRESS — config-key drift gate still missing; map/freshness criteria met.
+**Completed 2026-07-15**: the structural map audit, dependency-visualization decision, visible post-checkout README-freshness job, and blocking two-direction config-key drift test are live. The real documentation inventory, workflow lint, and fast CI pass.
 
 ## Execution notes
 

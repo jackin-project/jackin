@@ -87,10 +87,10 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 ## Done criteria
 
 - [x] `suite-time` family live (scheduled enforcement); `agent-doc-bytes` enforcing with seeded maxima
-- [ ] Per-main health series + trend section + tightening proposal exist with an observed run
+- [x] Per-main health series + trend section + tightening proposal exist with an observed run
 - [x] All first-party gates emit structured JSON; problem matcher registered
 - [x] Gate code uses sorted directory iteration with an enforcement mechanism
-- [ ] `cargo xtask ci --fast` exits 0; status row updated; measured-complexity family enforced
+- [x] `cargo xtask ci --fast` exits 0; status row updated; measured-complexity family enforced
 
 ## STOP conditions
 
@@ -126,10 +126,11 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
   audit`. Every violation contains `file`, nullable `line`, `message`, `fix`,
   and `rerun`; a forced-error reporter fixture asserts all five keys.
 
-**Index deviation (audit 2026-07-15)**: IN PROGRESS — multi-run health history trend deltas incomplete; sorted-`read_dir` enforcement now present.
+**Completed 2026-07-15**: the scheduled job restores the per-main artifact series and emits a versioned snapshot envelope with commit SHA and UTC observation time. Health reports current-versus-oldest deltas and only proposes tightening after at least four dated observations span 28 days with sustained 20% headroom. Legacy raw snapshots remain readable. Fixture tests cover delta, sustained-window, and legacy behavior; fast CI passes.
 
-The final Hygiene lane restores up to 12 unexpired prior snapshot artifacts,
-compacts them into `health-history.jsonl`, appends the current report, and
+The Hygiene lane restores up to 12 unexpired prior snapshot artifacts,
+compacts them into `health-history.jsonl`, appends the current envelope, and
 uploads both the snapshot and accumulated series. Runs `29397057453` and
-`29397482618` supplied the first observed artifacts; subsequent runs expose
-the restored series count in the step summary and health trend section.
+`29397482618` supplied the first observed, non-expired artifacts. The health
+job in run `29397482618` completed successfully; unrelated scheduled lanes
+made the overall workflow conclusion fail.

@@ -26,14 +26,14 @@ Each executor: read the plan fully before starting, run the drift check first, h
 | 017 | Capsule daemon decomposition + injectable boundary ports | P2 | L | — | DONE |
 | 018 | One shared command-transport model (xtask / capsule / runtime) | P3 | L | — | DONE |
 | 019 | Narrow foundational `pub mod` surfaces + public-surface growth ratchet | P2 | L | — | DONE |
-| 020 | Domain newtypes census + typed error taxonomy | P3 | L | — | IN PROGRESS — SessionId/ContainerId not threaded; config APIs still anyhow |
+| 020 | Domain newtypes census + typed error taxonomy | P3 | L | — | DONE |
 | 021 | TUI/console convergence: `drive_frame`, scroll classifier, editor cleanup | P3 | L | — | DONE |
 | 022 | Root CLI handler split + TTY fallback + `launch` deprecation warning | P2 | M | — | DONE |
 | 023 | Test infrastructure: consolidate fakes, add property tests, wire protocol fuzz | P2 | M | — | DONE |
 | 024 | Spec gate: syntax-aware citations, close `MISSING` entries, snapshot review policy | P2 | L | — | DONE |
 | 026 | Measured performance completion: missing benches, allocation lane, first-frame harness | P3 | L | — | DONE |
-| 027 | Ratchet & health completion: suite-time/public-surface providers, trends, JSON diagnostics | P3 | M | 010 | IN PROGRESS — multi-run health history trend deltas incomplete |
-| 028 | Docs integrity gates: codebase-map audit, README-freshness wiring, config-key drift | P2 | M | — | IN PROGRESS — config-key drift gate missing |
+| 027 | Ratchet & health completion: suite-time/public-surface providers, trends, JSON diagnostics | P3 | M | 010 | DONE |
+| 028 | Docs integrity gates: codebase-map audit, README-freshness wiring, config-key drift | P2 | M | — | DONE |
 | 029 | Brand gate completion: bare-brand prose, `plans/` tree, exemption classes | P2 | M | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).

@@ -883,6 +883,7 @@ jobs:
   # Plan 027: per-main health JSON snapshot (advisory series seed).
   health-trend:
     name: Health trend snapshot (advisory)
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: true
@@ -918,7 +919,15 @@ jobs:
       - name: Emit health JSON
         run: |
           set -euo pipefail
-          cargo run -p jackin-xtask --locked -- health --format json | tee health-snapshot.json
+          cargo run -p jackin-xtask --locked -- health --format json > health-report.json
+          jq -n \
+            --argjson schema 1 \
+            --arg observed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson observed_at_unix "$(date -u +%s)" \
+            --arg commit_sha "$GITHUB_SHA" \
+            --slurpfile report health-report.json \
+            '{schema: $schema, observed_at: $observed_at, observed_at_unix: $observed_at_unix, commit_sha: $commit_sha, report: $report[0]}' \
+            | tee health-snapshot.json
           jq -c . health-snapshot.json >> health-history.jsonl
           {
             echo "### Health snapshot"
