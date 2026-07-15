@@ -204,6 +204,9 @@ backend = "cargo:cargo-zigbuild"
 version = "0.3.41"
 backend = "cargo:codebook-lsp"
 
+[tools."cargo:codebook-lsp".options]
+default-features = "false"
+
 [[tools."cargo:dylint-link"]]
 version = "6.0.1"
 backend = "cargo:dylint-link"
