@@ -118,7 +118,7 @@ key = "clippy::disallowed_methods@jackin-pr-trailers"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
-bound = 12
+bound = 11
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-term"
 bound = 1
