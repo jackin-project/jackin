@@ -14,7 +14,6 @@ Apply these rules to every workflow under this directory. They define the reposi
 - `main` owns durable cache state. PRs may restore default-branch state but should not write duplicate caches without a measured repeated-PR benefit.
 - Every `jdx/mise-action` reachable from `pull_request` sets `cache_save: ${{ github.event_name != 'pull_request' }}`.
 - The shared Cargo registry cache verifies restored fallback content with `cargo fetch --locked --offline` for the workspace and fuzz manifests. A PR fetches only when verification fails and never saves; non-PR runs save only after such a miss.
-- Release-archive jobs use the shared `configure-sccache` action. Scope compiler caches by job family, runner OS/architecture, and target ABI. Only `main` writes; PRs, dispatches, and releases restore read-only. Bump its `sccache-vN` prefix to invalidate all compiler entries.
 - `main` writes the Construct registry BuildKit cache with `mode=max`; PR-scoped GHA BuildKit caches use `mode=min`.
 - BuildKit commands must stream inherited stdout and stderr with `--progress=plain`; GitHub Actions logs must show cache resolution and layer progress while an image build is running.
 
