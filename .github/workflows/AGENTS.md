@@ -15,6 +15,7 @@ Apply these rules to every workflow under this directory. They define the reposi
 - Every `jdx/mise-action` reachable from `pull_request` sets `cache_save: ${{ github.event_name != 'pull_request' }}`.
 - The shared Cargo registry cache verifies restored fallback content with `cargo fetch --locked --offline` for the workspace and fuzz manifests; fetch and save only when that verification fails.
 - `main` writes the Construct registry BuildKit cache with `mode=max`; PR-scoped GHA BuildKit caches use `mode=min`.
+- BuildKit commands must stream inherited stdout and stderr with `--progress=plain`; GitHub Actions logs must show cache resolution and layer progress while an image build is running.
 
 ## Tokens and Scope
 

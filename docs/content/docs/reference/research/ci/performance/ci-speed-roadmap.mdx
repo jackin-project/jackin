@@ -318,6 +318,8 @@ The corrective policy keeps `main` as the durable cache owner. PR jobs restore t
 
 The remaining delay in the cache-correction PR was runner admission, not execution: GitHub Actions showed eleven queued repository runs, nine from Renovate, while only two were in progress. Renovate previously allowed twenty concurrent PRs and unlimited hourly creation, which created more CI matrix demand than the hosted runner allocation could admit. Limit Renovate to four concurrent branches and PRs, with at most four new PRs per hour, so dependency updates make steady progress without starving human-authored CI.
 
+Construct builds also hid their active work: the xtask subprocess helper captured BuildKit stdout and stderr until `docker buildx bake` exited, so a multi-minute image build showed no layer, cache, or transfer progress. BuildKit invocations now inherit both streams and use plain progress, making runner logs a live diagnostic surface without changing the build graph or cache semantics.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.

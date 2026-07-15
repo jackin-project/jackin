@@ -22,6 +22,25 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     }
 }
 
+/// Run a long-lived command with live stdout and stderr.
+///
+/// BuildKit reports cache resolution and layer progress on stderr. Capturing
+/// that stream leaves GitHub Actions silent until the build exits, which makes
+/// an otherwise healthy image build indistinguishable from a stalled job.
+pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
+    let display = display_command(cmd);
+    let mut request = exec_request(cmd);
+    request.stdout_mode = jackin_process::StdioMode::Inherit;
+    request.stderr_mode = jackin_process::StdioMode::Inherit;
+    let result =
+        jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
+    if result.success {
+        Ok(())
+    } else {
+        Err(anyhow!("{display} failed with code {:?}", result.code))
+    }
+}
+
 /// Capture stdout as bytes. On failure, error includes trimmed stderr.
 ///
 /// Routes through [`jackin_process`] when the command is a simple program+args
