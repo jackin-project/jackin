@@ -310,6 +310,18 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
 3. Evaluated in this branch and deferred: the old fail-fast edge is not worth reintroducing on the green path. `fmt`, `actionlint`, schema checks, direct nextest shards, and `clippy` already provide early red signal without serializing all compile-heavy work. Add a single quick `cargo check` on one core crate only if future red-run measurements show wasted runner minutes that exceed the extra green-path latency.
 4. Done in this branch: capture the lint-lane wall clock before and after per Phase 0. The old serialized lint lane took about 3m56s from `cargo check all features` start to `check-default` completion on `27937532691`; the de-serialized lane took about 51s from `clippy`/`check-default` start to the slower completion on `27961783994`. The full CI required gate moved from about 12m33s to about 10m16s, and the remaining critical path is construct E2E image build plus the direct nextest package/Docker fan-out.
 
+### July 2026 cache-pressure correction
+
+The GitHub Actions cache API showed the repository at its active-cache budget while open PR refs held almost all cached bytes. The largest non-main contributors were full PR BuildKit exports, per-PR `mise` tool archives, and registry snapshots produced after fallback restores. This made the otherwise fast `main` cache vulnerable to eviction and caused intermittent cold runs.
+
+The corrective policy keeps `main` as the durable cache owner. PRs, branch dispatches, and tags restore the default-branch tool cache but do not save a duplicate `mise` archive. The shared Cargo registry action now validates a fallback archive offline before fetching; only `main` saves after a lockfile-key miss with genuinely absent dependencies. Construct PR exports retain only final BuildKit layers with `mode=min`; `main` continues to maintain the full registry build cache with `mode=max`. Preview and tagged-release archive target caches also restore from `main` but save only on `main`, so branch dispatches and release tags do not create isolated multi-platform archives. Rust target-cache PR writes remain unchanged because their repeated-PR benefit needs to be measured independently of tool, registry, and BuildKit duplication.
+
+The remaining delay in the cache-correction PR was runner admission, not execution: GitHub Actions showed eleven queued repository runs, nine from Renovate, while only two were in progress. Renovate previously allowed twenty concurrent PRs and unlimited hourly creation, which created more CI matrix demand than the hosted runner allocation could admit. Limit Renovate to four concurrent branches and PRs, with at most four new PRs per hour, so dependency updates make steady progress without starving human-authored CI.
+
+That admission delay confirmed the existing lane policy: GitHub-hosted runners remain the automatic and required PR path, while `velnor` is an explicit dispatch parity lane. A four-slot self-hosted pool would serialize a full PR matrix, so it must not become an automatic fallback. Workflow concurrency remains scoped by ref, so unrelated PRs do not cancel each other.
+
+Construct builds also hid their active work: the xtask subprocess helper captured BuildKit stdout and stderr until `docker buildx bake` exited, so a multi-minute image build showed no layer, cache, or transfer progress. BuildKit invocations now inherit both streams and use plain progress, making runner logs a live diagnostic surface without changing the build graph or cache semantics.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.

@@ -19,7 +19,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: homebrew-preview-publish
+  # Branch dispatches are build-only and must not contend with the main publish.
+  group: homebrew-preview-${{ github.ref == 'refs/heads/main' && 'publish' || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -64,10 +65,10 @@ jobs:
 
   source-changed:
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     outputs:
       source: ${{ steps.filter.outputs.source }}
       sha: ${{ steps.source.outputs.sha }}
@@ -203,7 +204,7 @@ jobs:
             # src/, docker/runtime/) MUST drift together with ci.yml
             # — when adding a new build input there, add it here too.
             case "$path" in
-              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
+              .github/actions/build-release-archive/**|.github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
                 source=true
                 ;;
               mise.toml)
@@ -309,6 +310,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
@@ -319,10 +321,10 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # Only main saves, preserving limited cache quota for reusable entries.
       - run: rustup target add ${{ matrix.target.target }}
       - name: Cache macOS SDK
         if: contains(matrix.target.target, 'apple')
@@ -404,6 +406,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
@@ -414,10 +417,10 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # Only main saves, preserving limited cache quota for reusable entries.
       - run: rustup target add ${{ matrix.target.target }}
       - name: Build signed capsule archive
         uses: ./.github/actions/build-release-archive
@@ -434,7 +437,7 @@ jobs:
 
   publish-gate:
     needs: [matrix-setup, source-changed, build-preview, build-jackin-capsule]
-    if: needs.source-changed.outputs.source == 'true' && needs.matrix-setup.outputs.has_github == 'true'
+    if: github.ref == 'refs/heads/main' && needs.source-changed.outputs.source == 'true' && needs.matrix-setup.outputs.has_github == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
@@ -496,7 +499,7 @@ jobs:
 
   publish-preview:
     needs: [source-changed, build-preview, build-jackin-capsule, publish-gate]
-    if: needs.source-changed.outputs.source == 'true' && needs.publish-gate.outputs.ci_ok == 'true'
+    if: github.ref == 'refs/heads/main' && needs.source-changed.outputs.source == 'true' && needs.publish-gate.outputs.ci_ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     concurrency:

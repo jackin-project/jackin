@@ -74,8 +74,9 @@
       "datasourceTemplate": "docker"
     }
   ],
-  "prHourlyLimit": 0,
-  "prConcurrentLimit": 20,
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 4,
+  "branchConcurrentLimit": 4,
   "commitBody": "Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>",
   "recreateWhen": "always",
   "lockFileMaintenance": {
