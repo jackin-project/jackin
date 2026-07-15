@@ -29,7 +29,7 @@ implementation branch before filtering history:
 
 The repository need not preserve these exact filenames forever, but each field and gate needs one machine-readable owner. Generation commands should be checked into the extraction plan or `xtask`; do not rely on a research-session shell history.
 
-Freeze has two prerequisites inside the donor repository. First, wire the lookbook SVG drift check (`tui-lookbook --check`) into `jackin❯` CI as a required job: today it is only a documented CLI command, so the 29 committed SVG fixtures are not mechanically proven current, and unverified fixtures cannot serve as parity evidence. Second, correct the stale donor documentation — <RepoFile path="crates/jackin-tui/COMPONENTS.md">`COMPONENTS.md`</RepoFile> points at a lookbook binary and in-crate story module that no longer exist, and the crate root documents a `Theme` type that was never implemented.
+Freeze has two prerequisites inside the donor repository. First, wire the lookbook SVG drift check (`tui-lookbook --check`) into `jackin❯` CI: today it is only a documented CLI command, so the 29 committed SVG fixtures are not mechanically proven current, and unverified fixtures cannot serve as parity evidence. The job is added on the implementation branch and attached to the existing required aggregator, so it runs on every PR push and becomes durably required at merge without a separate branch-protection change. Second, correct the stale donor documentation — <RepoFile path="crates/jackin-tui/COMPONENTS.md">`COMPONENTS.md`</RepoFile> points at a lookbook binary and in-crate story module that no longer exist, and the crate root documents a `Theme` type that was never implemented.
 
 ## Parity-first sequencing and the quality backlog
 
