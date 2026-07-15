@@ -16,29 +16,30 @@ title: "05 - Open Decisions"
 | Second consumer | Holla reuse proof |
 | Domain boundary | no product models, effects, persistence, secrets, or telemetry ownership |
 | Component graduation | second concrete consumer or clearly foundational primitive |
+| Project identity | `termrock` |
+| Repository | `tailrocks/termrock` |
+| Packages and CLI | `termrock` and `termrock-lookbook` |
 | Documentation | same-repository Fumadocs catalog backed by committed CLI-generated SVG previews |
 | Initial consumption | Git dependencies are sufficient; crates.io publication is optional |
 | Durable dependency identity | full commit revision or immutable release, never a moving branch head |
 
-## 1. Project and repository naming
+## Naming decision - closed
 
-The name must cover more than a widget crate: it identifies the Ratatui library, lookbook CLI, generated visual catalog, and Fumadocs site. Repository, crate, binary, and site names should form one understandable family without embedding `jackin❯` or implying a general-purpose non-terminal UI framework.
+The approved lowercase project name is `termrock`. It identifies the Ratatui library, lookbook CLI, generated visual catalog, and Fumadocs site without embedding `jackin❯` or implying a general-purpose non-terminal UI framework.
 
-| Candidate | Example family | Strength | Concern |
-|---|---|---|---|
-| **TermRock** | `tailrocks/termrock`, `termrock`, `termrock-lookbook` | Memorable, connects terminal use with Tailrocks, and can name the library, CLI, and docs without repetition. | Coined name needs normal trademark/domain review and a short descriptor on first use. |
-| **Tailrocks TUI** | `tailrocks/tui`, `tailrocks-tui`, `tailrocks-tui-lookbook` | Literal, immediately understandable, and clearly organization-owned. | Reads as infrastructure rather than a distinct project and repeats the organization name in package references. |
-| **Clast TUI** | `tailrocks/clast`, `clast-tui`, `clast-lookbook` | A clast is a rock fragment, matching reusable building blocks; short crate names. | The geological term is obscure and does not communicate terminal UI without the suffix. |
-| **Quarry TUI** | `tailrocks/quarry`, `quarry-tui`, `quarry-lookbook` | Communicates a shared source of building blocks and fits extraction. | Generic name, and “quarry” describes where components come from more than the runtime library itself. |
-| **Rockface** | `tailrocks/rockface`, `rockface-tui`, `rockface-lookbook` | Strong visual/component metaphor and memorable documentation identity. | Does not signal terminal use, and the name already has substantial unrelated GitHub usage. |
+```text
+Repository: tailrocks/termrock
+Core crate: termrock
+Lookbook:   termrock-lookbook
+CLI:        termrock-lookbook
+Descriptor: Ratatui components, lookbook, and documentation for Tailrocks applications
+```
 
-**Recommended default:** `TermRock`, with the descriptor “Ratatui components, lookbook, and documentation for Tailrocks applications.” If literal clarity is preferred over a standalone identity, keep `tailrocks/tui` as the fallback repository and `tailrocks-tui` as the crate.
+Alternatives considered were `Tailrocks TUI`, `Clast TUI`, `Quarry TUI`, and `Rockface`. `termrock` provides a distinct identity while still signaling terminal use and its Tailrocks origin.
 
-Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock`, `clast-tui`, `quarry-tui`, or `tailrocks-tui` crate match and no exact GitHub repository named `termrock`, `clast-tui`, or `quarry-tui`; `rockface` has many unrelated repositories. These checks are namespace evidence only, not legal, trademark, package-owner, or domain clearance.
+Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock` repository or crate match. This is namespace evidence only, not legal, trademark, package-owner, or domain clearance.
 
-**Deadline:** before external repository creation.
-
-## 2. Git dependency and publication policy
+## 1. Git dependency and publication policy
 
 **Question:** how can consumers test their own shared-component branches immediately without accepting mutable dependencies in durable builds?
 
@@ -46,15 +47,15 @@ Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock
 
 **Deadline:** before the first external consumer branch.
 
-## 3. Lookbook CLI name and command contract
+## 2. Lookbook CLI command contract
 
 **Question:** should the extracted CLI keep the donor's positional/flag interface or adopt named operations?
 
-**Recommended default:** the lookbook package owns a binary named from the final project and exposes explicit `terminal`, `list`, `render`, and `check` operations. Preserve donor behavior only long enough to validate parity; the external pre-release project does not need an indefinite compatibility shim.
+**Recommended default:** `termrock-lookbook` exposes explicit `terminal`, `list`, `render`, and `check` operations. Preserve donor behavior only long enough to validate parity; the external pre-release project does not need an indefinite compatibility shim.
 
 **Deadline:** before neutral lookbook freeze.
 
-## 4. Tokio/runtime feature
+## 3. Tokio/runtime feature
 
 **Question:** keep Tokio in the base crate?
 
@@ -62,7 +63,7 @@ Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock
 
 **Deadline:** first public manifest review.
 
-## 5. Brand API
+## 4. Brand API
 
 **Question:** one fixed Tailrocks header or consumer-defined identity?
 
@@ -70,7 +71,7 @@ Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock
 
 **Deadline:** before neutral lookbook freeze.
 
-## 6. History tooling
+## 5. History tooling
 
 **Question:** exact `git filter-repo` path strategy and documentation history set?
 
@@ -78,15 +79,15 @@ Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock
 
 **Deadline:** before extraction command execution.
 
-## 7. Testing crate
+## 6. Testing crate
 
-**Question:** publish a `<project>-testing` crate initially?
+**Question:** publish a `termrock-testing` crate initially?
 
 **Recommended default:** no. Keep lookbook/conformance helpers internal or inside the two initial crates until two consumers need a stable public testing API.
 
 **Deadline:** reconsider after Holla migration.
 
-## 8. Compatibility matrix
+## 7. Compatibility matrix
 
 **Question:** how many Ratatui/Crossterm versions should be supported?
 
@@ -94,7 +95,7 @@ Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock
 
 **Deadline:** before preview release.
 
-## 9. Theme stability
+## 8. Theme stability
 
 **Question:** are semantic token additions semver-sensitive?
 

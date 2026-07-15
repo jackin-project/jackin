@@ -8,7 +8,7 @@ title: "Shared TUI Extraction Research Brief"
 
 ## Mission
 
-Design and execute a history-preserving extraction of `crates/jackin-tui`, the neutral `crates/jackin-tui-lookbook` harness/CLI, and the generic component catalog into an independent Apache-2.0 Tailrocks repository. Migrate `jackin❯` without behavior changes, then prove the library with Holla.
+Design and execute a history-preserving extraction of `crates/jackin-tui`, the neutral `crates/jackin-tui-lookbook` harness/CLI, and the generic component catalog into the independent Apache-2.0 `tailrocks/termrock` repository. The initial packages are `termrock` and `termrock-lookbook`. Migrate `jackin❯` without behavior changes, then prove the library with Holla.
 
 The research must answer:
 
@@ -19,14 +19,14 @@ The research must answer:
 5. How are history, licensing, attribution, render fixtures, and compatibility preserved?
 6. How do Holla, Velnor, Parallax, and other Tailrocks tools consume the library without moving domain state into it?
 7. What PR/release order avoids cross-repository deadlock and visible regressions?
-8. Which project, repository, crate, and CLI names communicate a Ratatui component system without tying it to one consumer?
-9. How do consumers iterate against trusted branches or forks while pinning full commit revisions for durable builds?
-10. How does the standalone Fumadocs site remain synchronized with lookbook stories and CLI-generated SVG previews?
+8. How do consumers iterate against trusted branches or forks while pinning full commit revisions for durable builds?
+9. How does the standalone Fumadocs site remain synchronized with lookbook stories and CLI-generated SVG previews?
 
 ## Fixed boundaries
 
 In scope:
 
+- the approved `tailrocks/termrock` repository, `termrock` core crate, and `termrock-lookbook` package/CLI naming;
 - semantic themes and a default Tailrocks phosphor preset;
 - Ratatui as the only rendering framework, with no framework-neutral renderer layer;
 - display-width-aware text/layout, key input, focus, hover, scroll, modal, terminal ownership, and restoration primitives;

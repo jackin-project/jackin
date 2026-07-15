@@ -7,18 +7,18 @@ title: "03 - Target Repository"
 ## Repository shape
 
 ```text
-tailrocks/<project-name>
+tailrocks/termrock
 |- Cargo.toml
 |- crates/
-|  |- <component-crate>/
+|  |- termrock/
 |  |  |- components/
 |  |  |- input/
 |  |  |- layout/
 |  |  |- runtime/
 |  |  `- theme/
-|  `- <lookbook-crate>/
+|  `- termrock-lookbook/
 |     |- src/lib.rs
-|     `- src/bin/<lookbook-cli>.rs
+|     `- src/bin/termrock-lookbook.rs
 |- docs/
 |  |- content/docs/components/
 |  `- public/component-previews/
@@ -74,16 +74,16 @@ The shared project may expose small executor-neutral contracts such as modal out
 
 ## Git-first consumption
 
-crates.io publication is not required before the first consumers migrate. Cargo supports direct Git dependencies by branch or exact revision; the dependency key below is illustrative until naming closes:
+crates.io publication is not required before the first consumers migrate. Cargo supports direct Git dependencies by branch or exact revision:
 
 ```toml
 [dependencies]
-tailrocks-tui = { git = "https://github.com/tailrocks/<project-name>.git", rev = "<full-commit-sha>" }
+termrock = { git = "https://github.com/tailrocks/termrock.git", rev = "<full-commit-sha>" }
 ```
 
 ```toml
 [dependencies]
-tailrocks-tui = { git = "https://github.com/tailrocks/<project-name>.git", branch = "feature/new-component" }
+termrock = { git = "https://github.com/tailrocks/termrock.git", branch = "feature/new-component" }
 ```
 
 The branch form is a collaboration pointer: a consumer can develop a component fix on a trusted Tailrocks branch or fork and exercise it immediately. The exact commit is the build identity: long-lived consumer branches and default branches use `rev`, commit <RepoFile path="Cargo.lock" />, and change the revision through review. Cargo records the resolved Git commit in <RepoFile path="Cargo.lock" />, but a later update of a branch dependency can advance it; a branch name is therefore not the security or reproducibility boundary.
@@ -103,7 +103,7 @@ This lets a product unblock itself without tracking mutable code. A temporary pi
 The shared lookbook owns neutral canonical states for every public component. Consumers own composition stories:
 
 ```text
-<lookbook-crate>
+termrock-lookbook
   panel, tabs, list, input, dialogs, status, theme states
 
 jackin❯ conformance
@@ -116,13 +116,13 @@ Holla conformance
 The lookbook package exposes one documented CLI with stable conceptual operations:
 
 ```text
-<lookbook-cli> terminal
-<lookbook-cli> list
-<lookbook-cli> render --out docs/public/component-previews
-<lookbook-cli> check --dir docs/public/component-previews
+termrock-lookbook terminal
+termrock-lookbook list
+termrock-lookbook render --out docs/public/component-previews
+termrock-lookbook check --dir docs/public/component-previews
 ```
 
-The exact command spelling follows the final project name. Extraction may preserve the donor flags temporarily, but the external project owns the long-term terminal, list, render, and check contract. The harness exercises minimum, normal, and wide terminal sizes; long/wide Unicode; keyboard focus; non-color states; loading/empty/error/disabled variants; and terminal-control sanitization.
+Extraction may preserve the donor flags temporarily, but `termrock-lookbook` owns the long-term terminal, list, render, and check contract. The harness exercises minimum, normal, and wide terminal sizes; long/wide Unicode; keyboard focus; non-color states; loading/empty/error/disabled variants; and terminal-control sanitization.
 
 ## Fumadocs component catalog
 

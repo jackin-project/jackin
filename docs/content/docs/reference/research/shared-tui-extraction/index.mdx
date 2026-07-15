@@ -10,9 +10,9 @@ This is the only cross-product work that belongs in the `jackin❯` roadmap. Dat
 
 ## Decisions
 
-- **Project name:** open; `TermRock` is the current recommendation, with `Tailrocks TUI`, `Clast TUI`, and `Quarry TUI` retained as alternatives until operator approval.
-- **Repository:** independent Tailrocks repository whose slug follows the final project name.
-- **Initial packages:** one reusable component crate and one lookbook package exposing its library plus preview CLI.
+- **Project name:** `termrock`.
+- **Repository:** `tailrocks/termrock`.
+- **Initial packages:** `termrock` for reusable components and `termrock-lookbook` for the story/render library plus preview CLI.
 - **Renderer:** Ratatui only. Do not design a renderer-neutral abstraction or support competing TUI frameworks.
 - **License:** Apache-2.0, preserving donor history, authorship, SPDX headers, copyright, and attribution.
 - **Documentation:** a Fumadocs component catalog in the same repository, backed by committed CLI-generated SVG previews.
@@ -35,7 +35,7 @@ This is the only cross-product work that belongs in the `jackin❯` roadmap. Dat
 ## Intended dependency shape
 
 ```text
-                    shared TUI component crate
+                             termrock
                               |
            +------------------+------------------+
            |                  |                  |

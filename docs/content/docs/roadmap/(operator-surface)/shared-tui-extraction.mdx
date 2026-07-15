@@ -8,12 +8,13 @@ title: "Shared TUI Extraction"
 
 ## Outcome
 
-Extract the neutral component, terminal-runtime, lookbook CLI, generated SVG catalog, Fumadocs component documentation, and render-conformance foundation from `jackin-tui`, `jackin-tui-lookbook`, and the generic component docs into an independent Apache-2.0 Tailrocks repository. Naming remains open; `TermRock` is the current research recommendation over the literal `Tailrocks TUI`.
+Extract the neutral component, terminal-runtime, lookbook CLI, generated SVG catalog, Fumadocs component documentation, and render-conformance foundation from `jackin-tui`, `jackin-tui-lookbook`, and the generic component docs into the independent Apache-2.0 `tailrocks/termrock` repository.
 
 ```text
-Repository: tailrocks/<project-name>
-Packages:   <component-crate>
-            <lookbook library and CLI>
+Repository: tailrocks/termrock
+Core crate: termrock
+Lookbook:   termrock-lookbook
+CLI:        termrock-lookbook
 Docs:       same-repository Fumadocs catalog
 ```
 
@@ -89,8 +90,8 @@ The external project owns:
 - [ ] Inventory every public export and consumer in `jackin-tui` and `jackin-tui-lookbook`.
 - [ ] Classify each module/component as extract, parameterize, or remain local.
 - [ ] Capture current render fixtures, key behavior, and terminal-restoration tests as parity evidence.
-- [ ] Approve repository name, license/governance, MSRV, and compatibility policy.
-- [ ] Approve project, crate, CLI, and docs-site naming plus exact-revision/branch dependency policy.
+- [x] Approve `tailrocks/termrock`, `termrock`, and `termrock-lookbook` as the repository/crate/CLI naming family.
+- [ ] Approve license/governance, MSRV, compatibility, docs-site, and exact-revision/branch dependency policies.
 
 ### External extraction
 

@@ -6,11 +6,13 @@ title: "00 - Executive Summary"
 
 ## Recommendation
 
-Create an independent Apache-2.0 Rust project for the shared TUI system. The final name remains open; `TermRock` is the current recommendation over the literal `Tailrocks TUI`. Start with two Rust packages whose final crate names follow that project decision:
+Create `tailrocks/termrock` as an independent Apache-2.0 Rust project for the shared TUI system. The project, repository, crate, and CLI naming family is:
 
 ```text
-<component crate>
-<lookbook library and CLI>
+Repository: tailrocks/termrock
+Core crate: termrock
+Lookbook:   termrock-lookbook
+CLI:        termrock-lookbook
 ```
 
 The project is deliberately built for Ratatui. Crossterm remains the terminal backend where needed, but the public design does not introduce a renderer-neutral layer or accommodate competing TUI frameworks.

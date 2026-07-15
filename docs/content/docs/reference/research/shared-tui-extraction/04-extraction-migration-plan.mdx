@@ -8,7 +8,8 @@ This is a cross-repository program. Repository creation, commits, pushes, releas
 
 ## Stage 0 - Approve the contract
 
-- approve project/repository/crate/CLI names, Apache-2.0 ownership, DCO, security policy, MSRV, and release approach;
+- record the approved `tailrocks/termrock`, `termrock`, and `termrock-lookbook` naming family;
+- approve Apache-2.0 ownership, DCO, security policy, MSRV, and release approach;
 - approve history-preserving extraction tooling and attribution handling;
 - approve exact-revision, temporary branch/fork, and crates.io publication policies;
 - freeze the lookbook CLI and Fumadocs component-page contracts;
@@ -20,7 +21,7 @@ Exit gate: no ownership ambiguity remains and no external repository is created 
 
 ## Stage 1 - Create the external donor history
 
-- create the named Tailrocks repository with the Rust workspace, Fumadocs application, governance, CI, dependency/license gates, and release automation;
+- create `tailrocks/termrock` with the Rust workspace, Fumadocs application, governance, CI, dependency/license gates, and release automation;
 - use `git filter-repo` or equivalent to retain the two donor paths plus the neutral component pages, preview assets, and relevant TUI design history;
 - preserve authorship, timestamps where possible, SPDX headers, copyright, LICENSE, and NOTICE/attribution;
 - record the source repository and extraction revision;
@@ -85,7 +86,7 @@ Exit gate: the shared API supports a distinct application without `jackin❯` vo
 - maintain compatibility/migration notes and a consumer matrix;
 - keep branch/fork iteration available while requiring exact commit pins for durable consumer changes;
 - accept Velnor, Parallax, and other consumer needs through the two-consumer governance rule;
-- split a public testing crate only after repeated cross-consumer test-helper demand;
+- split `termrock-testing` only after repeated cross-consumer test-helper demand;
 - measure API churn, dependency weight, render performance, and maintenance load before broadening scope.
 
 ## Acceptance checklist
