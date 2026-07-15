@@ -130,7 +130,7 @@ key = "clippy::disallowed_methods@jackin-usage"
 bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
-bound = 3
+bound = 1
 [[family.entry]]
 key = "clippy::duration_suboptimal_units@jackin"
 bound = 1
