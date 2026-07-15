@@ -457,9 +457,6 @@ struct LaunchRuntime<'a, D, R> {
     resolved_profile: (DockerSecurityProfile, ProfileSource),
     effective_grants: &'a EffectiveGrants,
     adopted_sidecar_was_used: bool,
-    workspace_name_str: &'a str,
-    github_resolved_env: &'a std::collections::BTreeMap<String, String>,
-    state: &'a RoleState,
     prepared: InstancePrepared,
     workspace_materialized: WorkspaceMaterialized,
     cleanup: super::super::super::LoadCleanup,
@@ -499,6 +496,286 @@ const fn sidecar_replenish(adopted: bool) -> super::super::super::SidecarPrewarm
     }
 }
 
+fn reuse_sentinel<'a>(
+    selected_image_reused: bool,
+    paths: &jackin_core::JackinPaths,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    image: &'a str,
+    source: &'a jackin_config::RoleSource,
+    branch_override: Option<&'a str>,
+) -> Option<super::super::super::launch_runtime::ReuseStalenessSentinel<'a>> {
+    (selected_image_reused
+        && crate::runtime::image::reuse_needs_background_staleness_check(
+            paths,
+            validated_repo,
+            image,
+        ))
+    .then_some(
+        super::super::super::launch_runtime::ReuseStalenessSentinel {
+            role_git: &source.git,
+            branch_override,
+            image,
+        },
+    )
+}
+
+fn emit_auth_breadcrumbs(
+    paths: &jackin_core::JackinPaths,
+    agent: jackin_core::Agent,
+    auth_mode: jackin_config::AuthForwardMode,
+    workspace_opt: Option<&WorkspaceName>,
+    github_mode: jackin_config::GithubAuthMode,
+    github_env_decls: &std::collections::BTreeMap<String, jackin_config::EnvValue>,
+) {
+    if agent != jackin_core::Agent::Codex {
+        let _expiry_days = workspace_opt
+            .filter(|_| auth_mode == jackin_config::AuthForwardMode::OAuthToken)
+            .and_then(
+                |workspace| match jackin_env::expiry_days_for_launch(paths, workspace) {
+                    Ok(days) => days,
+                    Err(error) => {
+                        if let Some(run) = jackin_diagnostics::active_run() {
+                            run.compact(
+                                "auth",
+                                &format!(
+                                    "token expiry cache for workspace {workspace} is unreadable \
+                                 ({error}); re-run `jackin workspace claude-token setup \
+                                 {workspace}` to refresh"
+                                ),
+                            );
+                        }
+                        None
+                    }
+                },
+            );
+    }
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
+        let token_key = jackin_core::GH_TOKEN_ENV_NAME;
+        if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
+            run.compact("github_auth", "GitHub auth ignored by auth_forward=ignore");
+        } else {
+            let breadcrumb = github_env_decls.get(token_key).map_or_else(
+                || token_key.to_owned(),
+                |value| {
+                    super::super::super::auth_token_source_reference(
+                        token_key,
+                        Some(value.as_display_str()),
+                    )
+                },
+            );
+            run.compact(
+                "github_auth",
+                &format!("resolved GitHub auth from {breadcrumb}"),
+            );
+        }
+    }
+}
+
+struct MaterializeWorkspace<'a, D, R> {
+    paths: &'a jackin_core::JackinPaths,
+    config: &'a jackin_config::AppConfig,
+    selector: &'a jackin_core::RoleSelector,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    docker: &'a D,
+    runner: &'a mut R,
+    opts: &'a super::super::super::LoadOptions,
+    steps: &'a mut super::super::super::StepCounter,
+    container_name: &'a str,
+    role_key: &'a str,
+    agent: jackin_core::Agent,
+    auth_mode: jackin_config::AuthForwardMode,
+    validated_repo: &'a jackin_manifest::repo::ValidatedRoleRepo,
+    exec_bindings: Vec<jackin_protocol::ExecBinding>,
+    git_pull_join: Option<super::super::DeferredGitPull>,
+    prepared: &'a mut InstancePrepared,
+    cleanup: &'a super::super::super::LoadCleanup,
+    trust: TrustSeeded,
+}
+
+fn workspace_launch_config(
+    selector: &jackin_core::RoleSelector,
+    workspace: &jackin_config::ResolvedWorkspace,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    opts: &super::super::super::LoadOptions,
+    materialized: &crate::isolation::materialize::MaterializedWorkspace,
+    dirty_exit_policy: &str,
+    exec_bindings: Vec<jackin_protocol::ExecBinding>,
+) -> jackin_protocol::CapsuleConfig {
+    let isolated_worktrees = materialized
+        .mounts
+        .iter()
+        .filter(|mount| !mount.isolation.is_shared())
+        .map(|mount| mount.dst.clone())
+        .collect();
+    let mut launch_config = super::super::super::capsule_config(
+        selector,
+        &workspace.workdir,
+        &validated_repo.manifest,
+        opts.initial_provider(),
+        dirty_exit_policy,
+        isolated_worktrees,
+    );
+    launch_config.exec_bindings = exec_bindings;
+    launch_config
+}
+
+async fn materialize_workspace_phase<D, R, S>(
+    input: MaterializeWorkspace<'_, D, R>,
+    mut sidecar: Pin<&mut S>,
+    early_sidecar_result: Option<anyhow::Result<()>>,
+) -> anyhow::Result<WorkspaceMaterialized>
+where
+    D: DockerApi,
+    R: CommandRunner,
+    S: Future<Output = anyhow::Result<()>>,
+{
+    let MaterializeWorkspace {
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        runner,
+        opts,
+        steps,
+        container_name,
+        role_key,
+        agent,
+        auth_mode,
+        validated_repo,
+        exec_bindings,
+        git_pull_join,
+        prepared,
+        cleanup,
+        trust: TrustSeeded { environment },
+    } = input;
+    emit_auth_breadcrumbs(
+        paths,
+        agent,
+        auth_mode,
+        environment.workspace_opt.as_ref(),
+        environment.github_mode,
+        &environment.github_env_decls,
+    );
+    let workspace_label = workspace
+        .as_workspace_label()
+        .map_err(anyhow::Error::from)?;
+    jackin_diagnostics::debug_log!(
+        "isolation",
+        "load_role: invoking materialize_workspace for container {container_name} \
+         (interactive=true, force={force})",
+        force = opts.force,
+    );
+    if let Some(git_pull_join) = git_pull_join {
+        super::super::finish_deferred_git_pull(git_pull_join, steps).await?;
+    }
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_started(
+            crate::runtime::progress::LaunchStage::Workspace,
+            "materializing workspace",
+        );
+    }
+    let preflight = crate::isolation::materialize::PreflightContext {
+        workspace_label: workspace_label.clone(),
+        force: opts.force,
+        interactive: true,
+    };
+    let materialize = crate::isolation::materialize::materialize_workspace(
+        workspace,
+        &prepared.container_state,
+        role_key,
+        container_name,
+        &workspace_label,
+        &preflight,
+        runner,
+    );
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Workspace,
+        "materialize_workspace",
+        None,
+    );
+    let materialize_wait = async {
+        if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(materialize).await
+        } else {
+            materialize.await
+        }
+    };
+    let sidecar_wait = async {
+        if let Some(result) = early_sidecar_result {
+            result
+        } else {
+            sidecar.as_mut().await
+        }
+    };
+    let (sidecar_result, materialize_result) = tokio::join!(sidecar_wait, materialize_wait);
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(crate::runtime::progress::LaunchStage::Network, "isolated");
+    }
+    if let Err(error) = sidecar_result {
+        super::super::launch_phases::mark_failed_setup_then_cleanup(
+            paths,
+            &prepared.container_state,
+            container_name,
+            &mut prepared.instance_manifest,
+            cleanup,
+            docker,
+            "sidecar error",
+        )
+        .await;
+        return Err(error);
+    }
+    let materialized = match materialize_result {
+        Ok(materialized) => materialized,
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Workspace,
+                "materialize_workspace",
+                Some("error"),
+            );
+            super::super::launch_phases::mark_failed_setup_then_cleanup(
+                paths,
+                &prepared.container_state,
+                container_name,
+                &mut prepared.instance_manifest,
+                cleanup,
+                docker,
+                "workspace materialization error",
+            )
+            .await;
+            return Err(error);
+        }
+    };
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Workspace,
+        "materialize_workspace",
+        Some("materialized"),
+    );
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(
+            crate::runtime::progress::LaunchStage::Workspace,
+            "materialized",
+        );
+    }
+    let dirty_exit_policy =
+        config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
+    let launch_config = workspace_launch_config(
+        selector,
+        workspace,
+        validated_repo,
+        opts,
+        &materialized,
+        dirty_exit_policy.as_str(),
+        exec_bindings,
+    );
+    Ok(WorkspaceMaterialized {
+        materialized,
+        launch_config,
+        environment,
+    })
+}
+
 async fn launch_runtime<D, R>(input: LaunchRuntime<'_, D, R>) -> anyhow::Result<RuntimeDispatch>
 where
     D: DockerApi,
@@ -529,9 +806,6 @@ where
         resolved_profile,
         effective_grants,
         adopted_sidecar_was_used,
-        workspace_name_str,
-        github_resolved_env,
-        state,
         prepared:
             InstancePrepared {
                 image,
@@ -544,6 +818,13 @@ where
             WorkspaceMaterialized {
                 materialized,
                 launch_config,
+                environment:
+                    EnvironmentResolved {
+                        state,
+                        github_resolved_env,
+                        workspace_name_str,
+                        ..
+                    },
             },
         mut cleanup,
     } = input;
@@ -577,18 +858,13 @@ where
             return Ok(RuntimeDispatch::AppleContainer(container_name.to_owned()));
         }
     }
-    let reuse_staleness_sentinel = (selected_image_reused
-        && crate::runtime::image::reuse_needs_background_staleness_check(
-            paths,
-            validated_repo,
-            &image,
-        ))
-    .then_some(
-        super::super::super::launch_runtime::ReuseStalenessSentinel {
-            role_git: &source.git,
-            branch_override: opts.role_branch.as_deref(),
-            image: &image,
-        },
+    let reuse_staleness_sentinel = reuse_sentinel(
+        selected_image_reused,
+        paths,
+        validated_repo,
+        &image,
+        source,
+        opts.role_branch.as_deref(),
     );
     let ctx = super::super::super::LaunchContext {
         container_name,
@@ -598,7 +874,7 @@ where
         selector,
         agent_display_name,
         workspace: &materialized,
-        state,
+        state: &state,
         git,
         debug: opts.debug,
         git_coauthor_trailer: config.git.coauthor_trailer,
@@ -606,7 +882,7 @@ where
         agent,
         capsule_config: &launch_config,
         resolved_env,
-        github_env: github_resolved_env,
+        github_env: &github_resolved_env,
         profile: resolved_profile.0,
         profile_source: resolved_profile.1,
         grants: effective_grants,
@@ -629,7 +905,7 @@ where
         sibling_auth_prewarm: super::super::super::SiblingAuthPrewarm {
             manifest: &validated_repo.manifest,
             config,
-            workspace_name: workspace_name_str,
+            workspace_name: &workspace_name_str,
             role_key,
         },
     };
@@ -1035,7 +1311,7 @@ where
     let InstancePrepared {
         image,
         selected_image_reused,
-        mut instance_manifest,
+        instance_manifest,
         container_state,
         host_workdir_fingerprint,
     } = prepared;
@@ -1304,214 +1580,50 @@ where
         cleanup.run(docker).await;
         return Err(error);
     }
-    let trust: TrustSeeded = TrustSeeded;
-    let TrustSeeded = trust;
-
-    if agent != jackin_core::Agent::Codex {
-        let _expiry_days = workspace_opt
-            .as_ref()
-            .filter(|_| auth_mode == jackin_config::AuthForwardMode::OAuthToken)
-            .and_then(|ws| match jackin_env::expiry_days_for_launch(paths, ws) {
-                Ok(days) => days,
-                Err(e) => {
-                    let message = format!(
-                        "[jackin] note: token expiry cache for workspace {ws} \
-                                 is unreadable ({e}); re-run \
-                                 `jackin workspace claude-token setup {ws}` to refresh."
-                    );
-                    if let Some(run) = jackin_diagnostics::active_run() {
-                        run.compact("auth", &message);
-                    }
-                    None
-                }
-            });
-    }
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
-    }
-
-    // GitHub auth summary line — agent-neutral. The breadcrumb walks
-    // the [github.env] layers (NOT the regular operator-env tree)
-    // because the proposal documents [github.env] as the canonical
-    // place for GH_TOKEN. Falling back to lookup_operator_env_raw
-    // would render bare "GH_TOKEN" when the operator follows the
-    // docs.
-    {
-        let gh_token_key = jackin_core::GH_TOKEN_ENV_NAME;
-        if let Some(run) = jackin_diagnostics::active_run() {
-            if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
-                run.compact("github_auth", "GitHub auth ignored by auth_forward=ignore");
-            } else {
-                let token_breadcrumb = github_env_decls.get(gh_token_key).map_or_else(
-                    || gh_token_key.to_owned(),
-                    |value| {
-                        super::super::super::auth_token_source_reference(
-                            gh_token_key,
-                            Some(value.as_display_str()),
-                        )
-                    },
-                );
-                run.compact(
-                    "github_auth",
-                    &format!("resolved GitHub auth from {token_breadcrumb}"),
-                );
-            }
-        }
-    }
-
-    // Materialize workspace mounts while the already-started
-    // Docker-in-Docker sidecar finishes becoming ready. The sidecar path
-    // uses DockerApi only, and workspace materialization is still the only
-    // side that needs the mutable CommandRunner seam. Shared mounts pass through;
-    // worktree-isolated mounts get a per-container `git worktree`
-    // staged on the host. Must run AFTER `RoleState::prepare` (so the
-    // per-container state directory exists) and BEFORE the docker run
-    // command is assembled (so the docker `-v` flags reflect the
-    // per-mount bind sources).
-    let interactive = true;
-    // Path/display label (may be a workdir path for ad-hoc workspaces) — not
-    // the config-stem WorkspaceName used for saved-workspace identity.
-    let workspace_label = workspace
-        .as_workspace_label()
-        .map_err(anyhow::Error::from)?;
-    jackin_diagnostics::debug_log!(
-        "isolation",
-        "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
-        force = opts.force,
-    );
-    if let Some(git_pull_join) = git_pull_join {
-        super::super::finish_deferred_git_pull(git_pull_join, steps).await?;
-    }
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Workspace,
-            "materializing workspace",
-        );
-    }
-    let materialize_preflight = crate::isolation::materialize::PreflightContext {
-        workspace_label: workspace_label.clone(),
-        force: opts.force,
-        interactive,
+    let trust = TrustSeeded {
+        environment: EnvironmentResolved {
+            state,
+            github_resolved_env,
+            workspace_name_str,
+            workspace_opt,
+            github_mode,
+            github_env_decls,
+        },
     };
-    let materialize = crate::isolation::materialize::materialize_workspace(
-        workspace,
-        &container_state,
-        &role_key,
-        &container_name,
-        &workspace_label,
-        &materialize_preflight,
-        runner,
-    );
-    jackin_diagnostics::active_timing_started(
-        jackin_diagnostics::DiagnosticStage::Workspace,
-        "materialize_workspace",
-        None,
-    );
-    let materialize_wait = async {
-        if let Some(progress) = steps.progress_mut() {
-            progress.while_waiting(materialize).await
-        } else {
-            materialize.await
-        }
+
+    let mut prepared = InstancePrepared {
+        image,
+        selected_image_reused,
+        instance_manifest,
+        container_state,
+        host_workdir_fingerprint,
     };
-    let sidecar_wait = async {
-        if let Some(result) = early_sidecar_result {
-            result
-        } else {
-            (&mut sidecar).await
-        }
-    };
-    // TODO(launch-worktree-leak-on-sidecar-fail): `join!` runs
-    // materialization to completion even if the sidecar already failed, so
-    // a worktree-isolated mount can leave a staged worktree that
-    // `LoadCleanup` does not unstage. See TODO.md "Follow-ups".
-    let (sidecar_result, materialize_result) = tokio::join!(sidecar_wait, materialize_wait);
-    drop(sidecar);
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(crate::runtime::progress::LaunchStage::Network, "isolated");
-    }
-    if let Err(error) = sidecar_result {
-        if let Err(status_err) = super::super::super::write_instance_status(
+    let ws_mat = materialize_workspace_phase(
+        MaterializeWorkspace {
             paths,
-            &container_state,
-            &mut instance_manifest,
-            InstanceStatus::FailedSetup,
-        ) {
-            let message = format!(
-                "jackin: warning: failed to mark FailedSetup for {container_name} \
-                     after sidecar error: {status_err:#}; on-disk status may be stale"
-            );
-            if let Some(run) = jackin_diagnostics::active_run() {
-                run.compact("status", &message);
-            }
-        }
-        cleanup.run(docker).await;
-        return Err(error);
-    }
-    let materialized = match materialize_result {
-        Ok(materialized) => {
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Workspace,
-                "materialize_workspace",
-                Some("materialized"),
-            );
-            materialized
-        }
-        Err(error) => {
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Workspace,
-                "materialize_workspace",
-                Some("error"),
-            );
-            super::super::launch_phases::mark_failed_setup_then_cleanup(
-                paths,
-                &container_state,
-                &container_name,
-                &mut instance_manifest,
-                &cleanup,
-                docker,
-                "workspace materialization error",
-            )
-            .await;
-            return Err(error);
-        }
-    };
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(
-            crate::runtime::progress::LaunchStage::Workspace,
-            "materialized",
-        );
-    }
-
-    let dirty_exit_policy =
-        config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
-    // The in-capsule dirty-exit modal assesses every isolated worktree/clone
-    // mount; `shared` mounts are host-owned and never checked.
-    let isolated_worktrees = materialized
-        .mounts
-        .iter()
-        .filter(|mount| !mount.isolation.is_shared())
-        .map(|mount| mount.dst.clone())
-        .collect();
-    let mut launch_config = super::super::super::capsule_config(
-        selector,
-        &workspace.workdir,
-        &validated_repo.manifest,
-        opts.initial_provider(),
-        dirty_exit_policy.as_str(),
-        isolated_worktrees,
-    );
-    // Carry the on-demand credential bindings to the host resolver, which
-    // the launch path starts once the per-container socket dir exists.
-    launch_config.exec_bindings = exec_bindings;
-    let ws_mat: WorkspaceMaterialized = WorkspaceMaterialized {
-        materialized,
-        launch_config,
-    };
-    let WorkspaceMaterialized {
-        materialized,
-        launch_config,
-    } = ws_mat;
+            config,
+            selector,
+            workspace,
+            docker,
+            runner,
+            opts,
+            steps,
+            container_name: &container_name,
+            role_key: &role_key,
+            agent,
+            auth_mode,
+            validated_repo: &validated_repo,
+            exec_bindings,
+            git_pull_join,
+            prepared: &mut prepared,
+            cleanup: &cleanup,
+            trust,
+        },
+        sidecar.as_mut(),
+        early_sidecar_result,
+    )
+    .await?;
+    drop(sidecar);
 
     let launched = launch_runtime(LaunchRuntime {
         paths,
@@ -1538,20 +1650,8 @@ where
         resolved_profile,
         effective_grants: &effective_grants,
         adopted_sidecar_was_used,
-        workspace_name_str: &workspace_name_str,
-        github_resolved_env: &github_resolved_env,
-        state: &state,
-        prepared: InstancePrepared {
-            image,
-            selected_image_reused,
-            instance_manifest,
-            container_state,
-            host_workdir_fingerprint,
-        },
-        workspace_materialized: WorkspaceMaterialized {
-            materialized,
-            launch_config,
-        },
+        prepared,
+        workspace_materialized: ws_mat,
         cleanup,
     })
     .await?;

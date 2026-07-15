@@ -216,9 +216,12 @@ pub(crate) struct EnvironmentResolved {
 }
 
 /// Trust seeding and operator-facing auth breadcrumbs completed.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[must_use]
-pub(crate) struct TrustSeeded;
+pub(crate) struct TrustSeeded {
+    /// Environment state whose trust material was seeded.
+    pub environment: EnvironmentResolved,
+}
 
 /// Workspace mounts materialized and network/DinD sidecar ready.
 #[derive(Debug)]
@@ -228,6 +231,8 @@ pub(crate) struct WorkspaceMaterialized {
     pub materialized: crate::isolation::materialize::MaterializedWorkspace,
     /// Capsule launch config (bindings filled by the caller).
     pub launch_config: jackin_protocol::CapsuleConfig,
+    /// Trusted environment carried into runtime launch.
+    pub environment: EnvironmentResolved,
 }
 
 /// Docker (or apple-container) runtime launch completed successfully.
