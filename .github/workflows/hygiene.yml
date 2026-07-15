@@ -884,7 +884,7 @@ jobs:
       - name: Export local capsule binary
         run: |
           set -euo pipefail
-          eval "$(cargo run -p jackin-dev --bin build-jackin-capsule -- --export)"
+          eval "$(cargo run -p jackin --bin build-jackin-capsule -- --export)"
           echo "JACKIN_CAPSULE_BIN=$JACKIN_CAPSULE_BIN" >> "$GITHUB_ENV"
       - name: Run dind chaos scenarios
         run: |

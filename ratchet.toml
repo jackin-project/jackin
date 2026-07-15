@@ -782,21 +782,23 @@ kind = "numeric"
 provider = "build_times"
 mode = "artifact-ceiling"
 cap = 0
+# Ceilings from Hygiene GHA run 29396473635 (ubuntu-latest) + ~15% headroom.
+# Local machine samples are much lower and must not be used as CI ceilings.
 [[family.entry]]
 key = "jackin-runtime.clean_s"
-bound = 15
+bound = 86
 [[family.entry]]
 key = "jackin-runtime.incremental_s"
 bound = 10
 [[family.entry]]
 key = "jackin-capsule.clean_s"
-bound = 13
+bound = 67
 [[family.entry]]
 key = "jackin-capsule.incremental_s"
 bound = 7
 [[family.entry]]
 key = "jackin-console.clean_s"
-bound = 10
+bound = 18
 [[family.entry]]
 key = "jackin-console.incremental_s"
 bound = 5
@@ -808,7 +810,7 @@ key = "jackin-term.incremental_s"
 bound = 2
 [[family.entry]]
 key = "jackin-config.clean_s"
-bound = 4
+bound = 9
 [[family.entry]]
 key = "jackin-config.incremental_s"
 bound = 3
