@@ -63,10 +63,6 @@ pub(crate) fn mount_state_geometry<
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn mount_lines(
     rows: &[MountDisplayRow],
     cursor: usize,

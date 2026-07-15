@@ -204,7 +204,7 @@ impl AppConfig {
     pub fn resolve_role_source(
         &mut self,
         selector: &RoleSelector,
-    ) -> anyhow::Result<(RoleSource, bool)> {
+    ) -> crate::ConfigResult<(RoleSource, bool)> {
         if let Some(source) = self.roles.get(&selector.key()) {
             return Ok((source.clone(), false));
         }

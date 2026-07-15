@@ -7,7 +7,7 @@
 //! behavior such as grant validation, effective grants, and launch flags.
 
 use jackin_core::container_paths;
-pub use jackin_core::docker_security::{
+pub use jackin_core::{
     DindGrant, DockerGrants, DockerSecurityProfile, NetworkGrant, ParseProfileError,
 };
 
@@ -637,7 +637,7 @@ pub fn network_enforcement_label(grants: &EffectiveGrants) -> &'static str {
 /// `--debug` mode as a factual summary of what the container can do.
 // Eight contract dimensions are one flat argument list by design; bundling them
 // into a struct would just move the same fields without aiding any caller.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

@@ -619,7 +619,7 @@ fn validate_linux_clipboard_backend_env(label: &str) -> Result<()> {
 }
 
 #[cfg(any(target_os = "linux", test))]
-#[allow(
+#[expect(
     clippy::fn_params_excessive_bools,
     reason = "Four orthogonal clipboard-backend availability booleans (wayland, \
               display, wl_paste, xclip) — each is an independent capability the \

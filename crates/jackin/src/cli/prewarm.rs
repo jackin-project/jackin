@@ -45,7 +45,7 @@ pub struct PrewarmArgs {
 mod tests;
 
 /// Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics).
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Eight orthogonal CLI flag booleans (image, daemon, roles, sidecar, \
               sidecar_container, keep_sidecar_container, all_workspaces, all_roles) \
@@ -210,7 +210,7 @@ fn emit_daemon_prewarm_plan() {
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "launch_plan",
-            "sidecar",
+            jackin_diagnostics::DiagnosticStage::Sidecar,
             "selected launch plan PrewarmOnly",
             Some(detail),
         );

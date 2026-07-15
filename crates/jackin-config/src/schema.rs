@@ -14,8 +14,8 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::docker_security::{DockerGrants, DockerSecurityProfile};
 use jackin_core::{Agent, EnvValue, MountIsolation};
+use jackin_core::{DockerGrants, DockerSecurityProfile};
 use serde::{Deserialize, Serialize};
 
 use jackin_core::AuthForwardMode;
@@ -27,7 +27,7 @@ use crate::versions::current_workspace_version;
 // ─── Serde helper ────────────────────────────────────────────────────────────
 
 /// `skip_serializing_if` requires `fn(&T) -> bool`.
-#[allow(
+#[expect(
     clippy::trivially_copy_pass_by_ref,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -411,7 +411,7 @@ impl WorkspaceConfig {
     ///
     /// Mirrors `AppConfig::validate_auth_modes` for the workspace layer.
     /// Checks both the workspace-level config and every per-role override.
-    pub fn validate_auth_modes(&self) -> anyhow::Result<()> {
+    pub fn validate_auth_modes(&self) -> crate::ConfigResult<()> {
         let workspace_pairs: &[(Agent, Option<&AgentAuthConfig>)] = &[
             (Agent::Codex, self.codex.as_ref()),
             (Agent::Amp, self.amp.as_ref()),
@@ -428,8 +428,7 @@ impl WorkspaceConfig {
                 return Err(ConfigError::msg(format!(
                     "auth_forward 'oauth_token' is not supported for {}",
                     agent.slug()
-                ))
-                .into());
+                )));
             }
         }
         for (role, override_cfg) in &self.roles {
@@ -450,8 +449,7 @@ impl WorkspaceConfig {
                         "auth_forward 'oauth_token' is not supported for {} in role {}",
                         agent.slug(),
                         role
-                    ))
-                    .into());
+                    )));
                 }
             }
         }
@@ -615,19 +613,19 @@ impl ResolvedWorkspace {
 ///
 /// # Errors
 /// Returns an error if any mount has a relative path or duplicate destination.
-pub fn validate_mount_specs(mounts: &[MountConfig]) -> anyhow::Result<()> {
+pub fn validate_mount_specs(mounts: &[MountConfig]) -> crate::ConfigResult<()> {
     use std::collections::HashSet;
     use std::path::Path;
     let mut seen_dst = HashSet::new();
     for mount in mounts {
         if !Path::new(&mount.src).is_absolute() {
-            return Err(ConfigError::MountSrcNotAbsolute(mount.src.clone()).into());
+            return Err(ConfigError::MountSrcNotAbsolute(mount.src.clone()));
         }
         if !mount.dst.starts_with('/') {
-            return Err(ConfigError::MountDstNotAbsolute(mount.dst.clone()).into());
+            return Err(ConfigError::MountDstNotAbsolute(mount.dst.clone()));
         }
         if !seen_dst.insert(mount.dst.clone()) {
-            return Err(ConfigError::DuplicateMountDst(mount.dst.clone()).into());
+            return Err(ConfigError::DuplicateMountDst(mount.dst.clone()));
         }
     }
     Ok(())
@@ -637,11 +635,11 @@ pub fn validate_mount_specs(mounts: &[MountConfig]) -> anyhow::Result<()> {
 ///
 /// # Errors
 /// Returns an error if any mount source path does not exist.
-pub fn validate_mount_paths(mounts: &[MountConfig]) -> anyhow::Result<()> {
+pub fn validate_mount_paths(mounts: &[MountConfig]) -> crate::ConfigResult<()> {
     use std::path::Path;
     for mount in mounts {
         if !Path::new(&mount.src).exists() {
-            return Err(ConfigError::MountSrcMissing(mount.src.clone()).into());
+            return Err(ConfigError::MountSrcMissing(mount.src.clone()));
         }
     }
     Ok(())
@@ -651,7 +649,7 @@ pub fn validate_mount_paths(mounts: &[MountConfig]) -> anyhow::Result<()> {
 ///
 /// # Errors
 /// Returns an error if structural or filesystem validation fails.
-pub fn validate_mounts(mounts: &[MountConfig]) -> anyhow::Result<()> {
+pub fn validate_mounts(mounts: &[MountConfig]) -> crate::ConfigResult<()> {
     validate_mount_specs(mounts)?;
     validate_mount_paths(mounts)
 }

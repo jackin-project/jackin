@@ -97,6 +97,7 @@ remaining work). Defer anything whose event surface Step 1 shows is unreliable.
   event-mapping/session-authority layer
 - [x] Screen-blocked override safety net preserved (test: a visible dialog overrides a stale reported idle)
 - [x] Follow-up plans (009a/009b) written; unreliable surfaces explicitly deferred with rationale
+- [ ] Kimi/Grok reporter feasibility recorded — no finding is currently present
 - [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions

@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use jackin_core::EnvValue;
 use serde::{Deserialize, Serialize};
 
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 
 use jackin_core::AuthForwardMode;
 
@@ -94,7 +94,7 @@ impl AppConfig {
     ///
     /// Preserves the "`OAuthToken` not supported" check formerly enforced by the
     /// per-agent serde newtypes.
-    pub fn validate_auth_modes(&self) -> anyhow::Result<()> {
+    pub fn validate_auth_modes(&self) -> crate::ConfigResult<()> {
         let pairs: &[(Agent, Option<&AgentAuthConfig>)] = &[
             (Agent::Codex, self.codex.as_ref()),
             (Agent::Amp, self.amp.as_ref()),
@@ -111,8 +111,7 @@ impl AppConfig {
                 return Err(ConfigError::msg(format!(
                     "auth_forward 'oauth_token' is not supported for {}",
                     agent.slug()
-                ))
-                .into());
+                )));
             }
         }
         Ok(())
@@ -202,10 +201,10 @@ impl Default for AppConfig {
     }
 }
 
-pub mod mounts;
-pub mod persist;
-pub mod roles;
-pub mod workspaces;
+pub(crate) mod mounts;
+pub(crate) mod persist;
+pub(crate) mod roles;
+pub(crate) mod workspaces;
 
 #[cfg(test)]
 mod tests;

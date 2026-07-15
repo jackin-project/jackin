@@ -12,7 +12,7 @@ use jackin_config::AppConfig;
 use crate::isolation::materialize::MaterializedWorkspace;
 
 /// Emit the durable-home bind mounts for `agent`, derived from its
-/// [`AgentStatePaths`](jackin_core::agent::runtime::AgentStatePaths) so the
+/// [`AgentStatePaths`](jackin_core::AgentStatePaths) so the
 /// per-agent home layout (data root, paired config root, standalone home files)
 /// lives only in the agent enum. Auth-handoff mounts are agent-specific and stay
 /// inline in [`agent_mounts`].

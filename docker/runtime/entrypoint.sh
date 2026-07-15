@@ -5,11 +5,6 @@
 
 set -euo pipefail
 
-# Trace all commands in debug mode
-if [ "${JACKIN_DEBUG:-0}" = "1" ]; then
-    set -x
-fi
-
 # Run a child-process hook with a `[entrypoint]` log prefix and an
 # explicit failure-attributed exit. `$3` (optional) is appended after
 # `; ` to the failure line — used by setup-once to surface its retry
@@ -166,8 +161,8 @@ if [ -x /jackin/runtime/hooks/source.sh ]; then
     # entrypoint). Save PWD and clear any ERR trap the hook installs
     # so neither leaks into the exec'd agent.
     source_pwd="$PWD"
-    # JACKIN_DEBUG xtrace would dump expanded `export SECRET=...` lines
-    # from the sourced shell into operator logs; suspend around source.
+    # Active xtrace would dump expanded `export SECRET=...` lines from the
+    # sourced shell into operator logs; suspend it around source.
     case $- in *x*) source_xtrace=1; set +x ;; esac
     # Capture rc before the test — `$?` after `if ! .` is 0.
     rc=0
@@ -187,17 +182,6 @@ fi
 
 if [ -x /jackin/runtime/hooks/preflight.sh ]; then
     run_hook preflight /jackin/runtime/hooks/preflight.sh "" "$HOME"
-fi
-
-# In debug mode, pause so the operator can review logs before the agent clears the screen.
-# Guard with `[ -t 0 ]` so a non-tty caller (test harness, CI smoke) does not
-# trip `set -e` when `read` returns non-zero on a closed stdin.
-if [ "${JACKIN_DEBUG:-0}" = "1" ] && [ -t 0 ]; then
-    set +x
-    echo ""
-    echo "[entrypoint] Setup complete. Press Enter to launch ${JACKIN_AGENT}..."
-    read -r
-    set -x
 fi
 
 exec "${LAUNCH[@]}"

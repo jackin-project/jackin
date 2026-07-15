@@ -29,7 +29,7 @@ Test-support tier: sits just above `jackin-core`. Allowed workspace dependencies
 
 Three fakes duplicate these types elsewhere in the workspace and were deliberately left in place by this extraction (different call sites, different plan):
 
-- `crates/jackin/tests/common.rs` — its own `FakeRunner`.
+- `crates/jackin/tests/common/mod.rs` — a `FakeRunner`.
 - `crates/jackin-host/src/caffeinate/tests.rs` — its own `FakeDockerClient` + `FakeRunner`.
 - Console `StubRunner`s (×4) — different trait, not a candidate.
 

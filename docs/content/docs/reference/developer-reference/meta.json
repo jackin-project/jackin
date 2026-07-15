@@ -5,6 +5,8 @@
     "index",
     "architecture",
     "code-tour",
+    "lint-policy",
+    "domain-newtypes-census",
     "specs"
   ]
 }

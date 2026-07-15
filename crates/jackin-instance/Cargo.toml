@@ -23,6 +23,7 @@ jackin-core        = { workspace = true }
 jackin-config      = { workspace = true }
 jackin-manifest    = { workspace = true }
 jackin-diagnostics = { workspace = true }
+jackin-process     = { workspace = true }
 
 tracing      = { workspace = true }
 anyhow       = { workspace = true }

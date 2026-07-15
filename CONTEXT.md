@@ -45,5 +45,5 @@ _Avoid_: provisioning, initialization.
 ## Role environment
 
 **Role hook**:
-A script a role author ships to run at container start — `setup-once.sh` (once), `source.sh` (every start, env/PATH), `preflight.sh` (every start, validation). Hooks are the author's domain; jackin runs them faithfully and hard-fails the start on a non-zero exit, but does not police, sandbox, or rate-limit them.
+A script a role author ships to run at container start — `setup-once.sh` (once), `source.sh` (every start, env/PATH), `preflight.sh` (every start, validation). Hooks are the author's domain; jackin❯ runs them faithfully and hard-fails the start on a non-zero exit, but does not police, sandbox, or rate-limit them.
 _Avoid_: lifecycle script, init script.

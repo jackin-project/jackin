@@ -14,8 +14,8 @@ use serde::Serialize;
 use sha2::{Digest as _, Sha256};
 use std::collections::BTreeMap;
 
-use jackin_core::agent::Agent;
-use jackin_core::paths::JackinPaths;
+use jackin_core::Agent;
+use jackin_core::JackinPaths;
 use jackin_manifest::repo::CachedRepo;
 
 use crate::capsule_binary;
@@ -165,7 +165,7 @@ fn render_runtime_dockerfile(
     ))
 }
 
-fn canonical_supported_agent_slugs(manifest: &jackin_core::manifest::RoleManifest) -> Vec<String> {
+fn canonical_supported_agent_slugs(manifest: &jackin_core::RoleManifest) -> Vec<String> {
     let mut agents = manifest
         .supported_agents()
         .into_iter()
@@ -180,7 +180,7 @@ fn canonical_supported_agent_slugs(manifest: &jackin_core::manifest::RoleManifes
 /// so the recipe folds in the stored cache-bust token to force a rebuild when
 /// that token advances. Other supported sets install purely from prefetched
 /// binaries and need no cache bust.
-pub fn supported_set_uses_cache_bust(manifest: &jackin_core::manifest::RoleManifest) -> bool {
+pub fn supported_set_uses_cache_bust(manifest: &jackin_core::RoleManifest) -> bool {
     manifest
         .supported_agents()
         .iter()
@@ -312,7 +312,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// Test-only label-map builder mirroring the runtime prewarm path. Public
 /// because runtime's `#[cfg(test)]` import surfaces it across the crate
 /// boundary; non-test builds never call it.
-#[allow(clippy::expect_used, reason = "test-only API surface")]
 pub fn image_recipe_label_map_for_test(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
@@ -335,8 +334,8 @@ pub fn image_recipe_label_map_for_test(
 }
 
 /// Test-only label-map builder that takes an explicit install variant.
-#[allow(clippy::expect_used, reason = "test-only API surface")]
-#[allow(
+#[expect(clippy::expect_used, reason = "test-only API surface")]
+#[expect(
     clippy::too_many_arguments,
     reason = "Test-only API surface: passes the full recipe input set to the \
               label-map builder. Each arg is a real recipe input; bundling is a \
@@ -375,7 +374,7 @@ pub fn image_recipe_label_map_for_install_test(
 }
 
 /// Test-only `ExpectedImageRecipe` builder.
-#[allow(clippy::expect_used, reason = "test-only API surface")]
+#[expect(clippy::expect_used, reason = "test-only API surface")]
 pub fn expected_image_recipe_for_test(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,

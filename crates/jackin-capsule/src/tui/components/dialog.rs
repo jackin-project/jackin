@@ -29,11 +29,11 @@
 ///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
 use std::sync::Arc;
 
-#[allow(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(unused_imports, reason = "re-export for dialog tests via super::*")
 )]
-use crate::pull_request::PullRequestInfo;
+pub(crate) use crate::pull_request::PullRequestInfo;
 
 pub use github_context::{GithubContextView, PullRequestStatus, github_context_view_from_state};
 
@@ -427,13 +427,13 @@ impl Dialog {
     /// can overflow (`ContainerInfo`, `GitHubContext`). `None` for dialogs that do
     /// not scroll. Lets the daemon route mouse-wheel events to the dialog body.
     /// Handle a raw key byte and return the resulting action.
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "Dialog key-event dispatcher with one arm per key binding. \
                   Each arm carries its focused state transition; extracting \
                   arms into sub-dispatchers would obscure per-binding readability."
     )]
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Dialog key-event dispatcher: per-key + per-Dialog-variant nested \
                   with state-update branches. Modal nesting is the dispatch protocol."
@@ -919,7 +919,7 @@ impl Dialog {
     /// outside-dismiss; inside clicks on a row select that row and
     /// immediately confirm; clicks on the border or padding rows are
     /// consumed so they do not leak through to the focused pane underneath.
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "Dialog click dispatcher: per-Dialog-variant handle-click arm with \
                   nested per-hit-test + border-click + confirm-cancel + dialog-pop. \
