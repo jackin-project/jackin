@@ -20,11 +20,11 @@ Reference projects that stay single-crate at comparable scale: `starship` (~120 
 
 **Trigger for workspace adoption**: either (a) total Rust LOC exceeds 150 K, or (b) a type from the core codebase is needed by external tooling (an `jackin-core` use case). Whichever comes first.
 
-**Phase 2 — workspace adopted (current state).** The codebase crossed ~170 K lines as surface-specific and subsystem crates (`jackin-capsule`, `jackin-launch-tui`, `jackin-console`, `jackin-host`, `jackin-instance`, `jackin-isolation`, `jackin-usage`, `jackin-tui`, `jackin-tui-lookbook`, `jackin-protocol`, `jackin-build-meta`) were extracted. The workspace root is <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> with `members = [...]`; the `jackin` binary crate at `crates/jackin/` remains the primary binary. The `crates/` directory is the canonical home for all member crates.
+**Phase 2 — workspace adopted (current state).** The codebase crossed ~170 K lines as surface-specific and subsystem crates were extracted. Product-neutral TUI components later moved to exact-revision TermRock; the `jackin` binary crate at `crates/jackin/` remains the primary binary.
 
 ## Consequences
 
-- Incremental builds are faster per-crate: changing `jackin-capsule` does not recompile `jackin-tui`.
+- Incremental builds are faster per-crate: changing `jackin-capsule` does not rebuild unrelated product crates.
 - The root `jackin` crate is still the entry point for `cargo build --bin jackin`; operators and CI do not change their build commands.
 - Cross-crate `pub` boundaries enforce the TUI architecture boundary rule: `jackin-console` cannot accidentally call `jackin-capsule` internals.
-- New code that serves only one surface starts in that surface's crate; code used by two or more surfaces moves to a shared crate (`jackin-tui`, `jackin-protocol`).
+- New code that serves only one surface starts in that surface's crate; neutral TUI code shared across consumers belongs in TermRock, while product protocol code belongs in `jackin-protocol`.
