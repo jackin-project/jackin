@@ -192,6 +192,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.event_name != 'pull_request' }}
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
@@ -257,12 +258,12 @@ jobs:
         if: matrix.config.lane == 'GitHub' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
         env:
           # Registry buildcache (written by main) is the primary warm source — avoids a cold
-          # GHA start when the scope is empty or evicted. GHA scope is secondary: persists
-          # layers written by earlier runs of this PR so mid-PR iterations stay warm too.
+          # GHA start when the scope is empty or evicted. GHA scope is secondary,
+          # so PR refs retain only final layers while main owns the full cache.
           CACHE_FROM: |
             type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
             type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }}
-          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
+          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=min
         run: mise run construct-build-platform ${{ matrix.config.platform }}
 
       - name: Build ${{ matrix.config.platform }} without push (Velnor)
@@ -319,6 +320,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.event_name != 'pull_request' }}
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
@@ -402,6 +404,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.event_name != 'pull_request' }}
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache

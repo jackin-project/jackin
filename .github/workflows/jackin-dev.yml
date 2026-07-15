@@ -56,6 +56,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.event_name != 'pull_request' }}
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: ./.github/actions/cache-cargo-registry
@@ -246,6 +247,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.event_name != 'pull_request' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache

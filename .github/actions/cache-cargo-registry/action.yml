@@ -26,8 +26,33 @@ runs:
         restore-keys: |
           cargo-registry-v5-
           cargo-registry-v4-
-    - name: Fetch Cargo registry
+    - name: Verify restored Cargo registry
+      id: verify
       if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        CARGO_NET_OFFLINE: "true"
+        RUSTC_WRAPPER: ""
+      run: |
+        set -uo pipefail
+
+        fetch_offline() {
+          cargo fetch --locked --offline || return 1
+          while IFS= read -r manifest; do
+            cargo fetch --manifest-path "$manifest" --locked --offline || return 1
+          done < <(find crates -path '*/fuzz/Cargo.toml' -type f | sort)
+        }
+
+        if fetch_offline; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "ready=false" >> "$GITHUB_OUTPUT"
+        echo "::notice::restored Cargo registry is missing dependencies for this lockfile"
+
+    - name: Fetch missing Cargo dependencies
+      if: steps.restore.outputs.cache-hit != 'true' && steps.verify.outputs.ready != 'true'
       shell: bash
       env:
         CARGO_NET_OFFLINE: "false"
@@ -55,7 +80,7 @@ runs:
           done
         done < <(find crates -path '*/fuzz/Cargo.toml' -type f | sort)
     - name: Save Cargo registry
-      if: steps.restore.outputs.cache-hit != 'true'
+      if: steps.restore.outputs.cache-hit != 'true' && steps.verify.outputs.ready != 'true'
       continue-on-error: true
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

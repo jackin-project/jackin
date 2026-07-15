@@ -289,6 +289,15 @@ Rules for writing + maintaining workflows under `.github/workflows/` and composi
 
 **Locally:** `mise install` from repo root installs every tool at version CI uses.
 
+## Cache ownership and PR writes
+
+Every GitHub Actions cache needs a named owner, invalidation inputs, a restore source, and a deliberate write policy. Measure cache usage through the GitHub Actions cache API and workflow timing summaries before adding or widening a cache; a cache that causes eviction churn is a performance regression.
+
+- **`main` owns durable cache state.** PRs restore default-branch caches automatically, but their cache refs are isolated. Keep persistent Rust target writes only when a measured repeated-PR benefit exceeds their quota cost.
+- **Tool installs are restore-only on PRs.** Every `jdx/mise-action` invocation reachable from `pull_request` must set `cache_save: ${{ github.event_name != 'pull_request' }}`. Tool versions are already a `main`-seeded shared input; PR-local copies consume quota without adding a meaningful reuse surface.
+- **Cargo registry fallbacks must prove completeness offline.** The shared registry action restores by dependency key and fallback prefix, then verifies `cargo fetch --locked --offline` for the workspace and fuzz manifests. Fetch and save a new cache only if that verification finds missing dependencies; an exact-key miss alone is not evidence that a new registry archive is useful.
+- **BuildKit cache roles are distinct.** `main` writes the durable registry cache with `mode=max`. PR-scoped GHA exports are secondary iteration aids and must use `mode=min`; do not duplicate the full registry layer graph per PR ref unless measurement proves it beats the quota and eviction cost.
+
 ## Read-only GitHub token in workflows
 
 Pick the read token by what it reads, because the two read tokens have different rate-limit budgets. `${{ secrets.GH_READONLY_TOKEN }}` is a single organization PAT: one shared ~5000/hr bucket drained by every job, every workflow, and every concurrent PR in the org at once — so concentrating high-frequency reads on it exhausts it and fails the `changes` gate (and everything downstream) with `API rate limit exceeded for user ID …`. `${{ github.token }}` is minted fresh per workflow run with its own per-repo budget, so it spreads read load instead of pooling it.
