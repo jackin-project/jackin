@@ -133,7 +133,7 @@ async fn reconcile_inner(
     // Offload the synchronous `ps` check to the blocking pool so it never
     // stalls the tokio render thread (Defect 43 — async-first rule).
     let liveness = if let Some(pid) = current_pid {
-        tokio::task::spawn_blocking(move || is_caffeinate_alive_at(pid))
+        jackin_telemetry::spawn::joined_blocking(move || is_caffeinate_alive_at(pid))
             .await
             .unwrap_or(Liveness::Unknown)
     } else {

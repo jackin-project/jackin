@@ -27,10 +27,6 @@ const NON_TELEMETRY_DOTTED_NAME_FILES: &[&str] = &["crates/jackin-runtime/src/ru
 // Shrink-only migration inventories. A new file never joins these lists: it
 // must use the governed facade/spawn helpers from its first commit.
 const RAW_SPAWN_ALLOWLIST: &[&str] = &[
-    "crates/jackin-env/src/host_claude.rs",
-    "crates/jackin-env/src/op_cli.rs",
-    "crates/jackin-host/src/caffeinate.rs",
-    "crates/jackin-host/src/host_clipboard.rs",
     "crates/jackin-image/src/agent_binary.rs",
     "crates/jackin-image/src/capsule_binary.rs",
     "crates/jackin-launch-tui/src/tui/input.rs",

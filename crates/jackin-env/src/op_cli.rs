@@ -179,7 +179,7 @@ fn spawn_wait_thread(
     child: std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>,
     tx: std::sync::mpsc::Sender<std::io::Result<std::process::ExitStatus>>,
 ) {
-    std::thread::spawn(move || {
+    jackin_telemetry::spawn::thread_stream("op.wait", move || {
         let poll = std::time::Duration::from_millis(20);
         loop {
             let Ok(mut guard) = child.lock() else {
@@ -327,12 +327,14 @@ impl OpRunner for OpCli {
             .ok_or_else(|| anyhow::anyhow!("1Password CLI stderr pipe missing"))?;
         let timeout = self.timeout;
 
-        let stdout_handle = std::thread::spawn(move || {
+        let stdout_handle = jackin_telemetry::spawn::thread_stream("op.stdout", move || {
             let mut buf = Vec::new();
             drop(stdout.read_to_end(&mut buf));
             buf
         });
-        let stderr_handle = std::thread::spawn(move || drain_bounded_stderr(stderr));
+        let stderr_handle = jackin_telemetry::spawn::thread_stream("op.stderr", move || {
+            drain_bounded_stderr(stderr)
+        });
 
         let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
         spawn_wait_thread(std::sync::Arc::clone(&child), tx);
@@ -440,12 +442,13 @@ fn run_op_with_timeout(
         .take()
         .ok_or_else(|| anyhow::anyhow!("1Password CLI stderr pipe missing"))?;
 
-    let stdout_handle = std::thread::spawn(move || {
+    let stdout_handle = jackin_telemetry::spawn::thread_stream("op.stdout", move || {
         let mut buf = Vec::new();
         drop(stdout.read_to_end(&mut buf));
         buf
     });
-    let stderr_handle = std::thread::spawn(move || drain_bounded_stderr(stderr));
+    let stderr_handle =
+        jackin_telemetry::spawn::thread_stream("op.stderr", move || drain_bounded_stderr(stderr));
 
     let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
     spawn_wait_thread(std::sync::Arc::clone(&child), tx);

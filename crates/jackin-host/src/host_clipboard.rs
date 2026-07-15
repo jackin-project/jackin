@@ -188,19 +188,20 @@ pub async fn read_image_from_pasted_path(
         text.escape_default()
     );
     let owned = text.to_owned();
-    let resolved = tokio::task::spawn_blocking(move || -> Result<Option<ClipboardImage>> {
-        if let Some(image) = image_from_path_text(&owned)? {
-            return Ok(Some(image));
-        }
-        // Terminals shell-escape pasted paths; retry once de-escaped when there
-        // is anything to de-escape.
-        if owned.contains('\\') {
-            return image_from_path_text(&unescape_shell_path(&owned));
-        }
-        Ok(None)
-    })
-    .await
-    .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))??;
+    let resolved =
+        jackin_telemetry::spawn::joined_blocking(move || -> Result<Option<ClipboardImage>> {
+            if let Some(image) = image_from_path_text(&owned)? {
+                return Ok(Some(image));
+            }
+            // Terminals shell-escape pasted paths; retry once de-escaped when there
+            // is anything to de-escape.
+            if owned.contains('\\') {
+                return image_from_path_text(&unescape_shell_path(&owned));
+            }
+            Ok(None)
+        })
+        .await
+        .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))??;
     let Some(image) = resolved else {
         // A recognized candidate that did not resolve (missing file, unreadable,
         // not an image) is rare, so logging it is not firehose. It still forwards
@@ -223,7 +224,7 @@ async fn spawn_clipboard_probe(
     label: &str,
     f: impl FnOnce() -> Result<Option<ClipboardImage>> + Send + 'static,
 ) -> Result<Option<ClipboardImage>> {
-    tokio::task::spawn_blocking(f)
+    jackin_telemetry::spawn::joined_blocking(f)
         .await
         .map_err(|err| anyhow::anyhow!("joining {label}: {err}"))?
 }

@@ -251,7 +251,7 @@ pub(crate) fn capture_setup_token_with_binary(
     // `std::io::stdin()` (not `lock()`) so the global stdin lock
     // is not held across calls — a later jackin step that wants
     // to read stdin can do so without deadlocking on this thread.
-    std::thread::spawn(move || {
+    jackin_telemetry::spawn::thread_stream("claude.stdin", move || {
         let mut byte = [0u8; 1];
         loop {
             match std::io::stdin().read(&mut byte) {
