@@ -109,7 +109,7 @@ key = "clippy::disallowed_methods@jackin-image"
 bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-instance"
-bound = 5
+bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
 bound = 11
@@ -840,4 +840,4 @@ key = "jackin-usage"
 bound = 29
 [[family.entry]]
 key = "jackin-xtask"
-bound = 28
+bound = 27

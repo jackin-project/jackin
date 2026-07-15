@@ -1,6 +1,6 @@
 //! jackin-pr-trailers: PR trailer rewrite helper binary.
 //!
-//! **Architecture Invariant:** T0.
+//! **Architecture Invariant:** T1.
 //! Entry point: [`main`] — binary entry for trailer rewrites.
 
 use anyhow::{Context, Result, anyhow};

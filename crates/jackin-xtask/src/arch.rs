@@ -33,12 +33,12 @@ use crate::docs::repo_root;
 /// `pub(crate)` so the headers gate (plan 016) can cross-check crate
 /// ownership headers against this table.
 pub(crate) const TIERS: &[(&str, u8)] = &[
-    ("jackin-build-meta", 0),
     ("jackin-core", 0),
     ("jackin-dev", 0),
-    ("jackin-pr-trailers", 0),
     ("jackin-process", 0),
     ("jackin-term", 0),
+    ("jackin-build-meta", 1),
+    ("jackin-pr-trailers", 1),
     ("jackin-xtask", 1),
     ("jackin-config", 1),
     ("jackin-protocol", 1),

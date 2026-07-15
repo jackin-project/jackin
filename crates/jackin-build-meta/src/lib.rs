@@ -1,6 +1,6 @@
 //! jackin-build-meta: build-script helpers shared by jackin❯ crates.
 //!
-//! **Architecture Invariant:** T0.
+//! **Architecture Invariant:** T1.
 //! Entry point: [`emit_build_info`] — build-script helper shared by crates.
 
 use jackin_process::ExecRequest;
