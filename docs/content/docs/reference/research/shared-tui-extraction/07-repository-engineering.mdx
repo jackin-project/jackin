@@ -53,7 +53,7 @@ tailrocks/termrock/
 
 Commit <RepoFile path="Cargo.lock" /> because the workspace contains the `termrock-lookbook` executable and its generated output must be reproducible. Package manifests still declare compatible library dependency ranges; CI and the CLI use `--locked` after a deliberate dependency update.
 
-Start with the same current compatibility floor as the first consumer: Rust edition 2024, `rust-version = "1.95"`, and the tested toolchain pinned to `1.97.0`, matching <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> and <RepoFile path="rust-toolchain.toml">rust-toolchain.toml</RepoFile> at research time. Before repository creation, check Holla's MSRV. The shared crate may lower the floor to the lowest intended consumer only if all dependency versions and all feature combinations pass there. Cargo expects all targets and features promised by a package to work at its declared `rust-version`; see the [Cargo rust-version reference](https://doc.rust-lang.org/cargo/reference/rust-version.html).
+Start with the same current compatibility floor as the first consumer: Rust edition 2024, `rust-version = "1.95"`, and the tested toolchain pinned to `1.97.0`, matching <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> and <RepoFile path="rust-toolchain.toml">rust-toolchain.toml</RepoFile> at research time. This floor is decided: it does not wait on any consumer survey. Lowering it later for a consumer is a normal reviewed change, permitted only when all dependency versions and all feature combinations pass at the lower floor. Cargo expects all targets and features promised by a package to work at its declared `rust-version`; see the [Cargo rust-version reference](https://doc.rust-lang.org/cargo/reference/rust-version.html).
 
 ## Workspace policy
 

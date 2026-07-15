@@ -47,6 +47,8 @@ The Fumadocs application lives in the same repository. Component source, stories
 8. **Controlled dependencies.** MSRV and Ratatui/Crossterm support are published and tested.
 9. **Two-consumer graduation.** Product-local components remain local until a second concrete consumer needs the same neutral contract.
 10. **One renderer.** Public components target Ratatui directly; do not create a lowest-common-denominator renderer abstraction.
+11. **Modern-terminal baseline.** Components assume a Ghostty-class truecolor terminal with OSC 8/22/52 support; the library ships no capability-degradation or detection code, while tiny/empty rectangles remain valid panic-free inputs.
+12. **Typed escapes only.** Widgets never return raw escape bytes; hyperlink regions, pointer shapes, and clipboard writes are typed `osc` requests with pure encoders, and the consumer owns emission.
 
 ## Theme and identity
 
@@ -62,7 +64,7 @@ Theme
   link / link_hover
 ```
 
-Ship the current phosphor style as `Theme::tailrocks_phosphor()`. A consumer provides product name/mark and may override semantic tokens. Consistency comes from component behavior and meaning, not every application rendering an identical brand header.
+Ship the current phosphor style as `Theme::tailrocks_phosphor()`. A consumer provides product name/mark and may override semantic tokens. Consistency comes from component behavior and meaning, not every application rendering an identical brand header. The phosphor preset reproduces the donor's exact color values so `jackin❯` migration fixtures stay byte-identical; product-specific tokens (Capsule menu states, brand block, debug amber, rain colors) remain `jackin❯`-local constants layered above the semantic theme.
 
 ## Runtime contract
 
@@ -75,7 +77,7 @@ event -> Message -> pure update -> state + typed effects
                               consumer effect adapter
 ```
 
-The shared project may expose small executor-neutral contracts such as modal outcomes, focus ownership, and dirty/redraw state. It does not expose effect envelopes that can execute themselves, and it must not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree. Standard Ratatui `Widget`/`StatefulWidget` rendering remains usable without the optional component/update layer.
+The shared project exposes the donor's executor-neutral contracts — modal outcomes, focus ownership, dirty/redraw state, typed update results, subscriptions with std-channel and closure adapters, component/view traits, and the `drive_frame` frame driver — as one optional `runtime` module. It does not expose effect envelopes that can execute themselves, and it must not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree. Standard Ratatui `Widget`/`StatefulWidget` rendering remains usable without the optional module, no widget references it, and Tokio integration stays consumer-owned.
 
 The repository includes compile-checked direct, TEA, component-oriented, Flux,
 buffer-only, manually managed Crossterm, and TermRock-managed Crossterm
@@ -155,6 +157,8 @@ Every public component page includes:
 
 The CLI generates a manifest alongside SVGs so docs navigation and component coverage can be checked mechanically. Generated previews are committed for static hosting and reviewable diffs. CI runs the lookbook check, docs build, type checks, tests, and internal-link checks; a public component without a neutral story, generated preview, and catalog page is incomplete.
 
+The catalog also owns the neutral interaction conventions the components implement — the W3C-style tab pattern, focusability and hover-scroll rules, modal stacking, hint discipline, and the navigation model — extracted from `jackin❯`'s TUI design pages and debranded. Component behavior alone does not make two products consistent; the conventions that govern how components combine must travel with them. `jackin❯` keeps only product composition and policy decisions, linking to the external convention pages instead of duplicating them.
+
 When `jackin❯` migrates, the external site becomes the canonical component API catalog. jackin❯ keeps only product-specific TUI design decisions, composition guidance, and conformance stories; it removes the generic lookbook CLI, neutral component pages, and duplicate generated SVG assets after parity passes.
 
 ## Governance
@@ -169,5 +173,7 @@ API additions require:
 - dependency/license review.
 
 Consumers pin semver releases or immutable revisions. Branch dependencies are allowed for cross-repository iteration but are replaced by an exact revision before a consumer change becomes durable. The shared project publishes a compatibility matrix and does not coordinate adoption by requiring every Tailrocks repository to follow its default branch or wait for crates.io.
+
+Ratatui/Crossterm upgrades propagate shared-project-first: because public types come from `ratatui-core`, each Ratatui bump is a breaking `termrock` change that lands with regenerated fixtures and a migration note, after which `jackin❯` repins first as the compatibility oracle and Holla follows. No consumer upgrades Ratatui ahead of the library, and exactly one Ratatui/Crossterm pair is supported per revision line. Issue routing follows reproducibility: defects reproducible with a neutral story belong to the shared repository, product-state defects to the consumer, with cross-links when behavior spans both.
 
 Repository CI, caching, dependency policy, render/catalog coverage, and release automation are specified in [07 - Repository engineering](/reference/research/shared-tui-extraction/07-repository-engineering/). The generated extraction inventory and parity gates are specified in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).

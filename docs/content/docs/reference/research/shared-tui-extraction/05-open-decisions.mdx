@@ -1,10 +1,12 @@
 ---
-title: "05 - Open Decisions"
+title: "05 - Decision Record"
 ---
 
-# 05 - Open Decisions
+# 05 - Decision Record
 
-## Fixed
+Every decision in this chapter is closed. The remaining work is execution: the delivery checklist implements these decisions, and nothing below waits on an unanswered design question. Reopening an entry requires a new operator decision recorded here — the plan itself carries no open questions.
+
+## Decisions at a glance
 
 | Decision | Outcome |
 |---|---|
@@ -22,8 +24,12 @@ title: "05 - Open Decisions"
 | Documentation | same-repository Fumadocs catalog backed by committed CLI-generated SVG previews |
 | Initial consumption | Git dependencies are sufficient; crates.io publication is optional |
 | Durable dependency identity | full commit revision or immutable release, never a moving branch head |
+| Terminal baseline | modern truecolor terminals (Ghostty-class); the library ships no capability-degradation paths |
+| Extraction sequencing | bug-compatible extraction and byte-identical `jackin❯` parity first; recorded quality fixes land afterwards |
+| Runtime contracts | executor-neutral update/view/subscription contracts and the frame driver extract as one optional module; Tokio integration stays consumer-local |
+| Component scope | the existing donor component set only; new components are explicit post-extraction roadmap work |
 
-## Naming decision - closed
+## Naming
 
 The approved lowercase project name is `termrock`. It identifies the Ratatui library, lookbook CLI, generated visual catalog, and Fumadocs site without embedding `jackin❯` or implying a general-purpose non-terminal UI framework.
 
@@ -37,92 +43,68 @@ Descriptor: Ratatui components, lookbook, and documentation for Tailrocks applic
 
 Alternatives considered were `Tailrocks TUI`, `Clast TUI`, `Quarry TUI`, and `Rockface`. `termrock` provides a distinct identity while still signaling terminal use and its Tailrocks origin.
 
-Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock` repository or crate match. This is namespace evidence only, not legal, trademark, package-owner, or domain clearance.
+Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock` repository or crate match. This is namespace evidence only, not legal, trademark, package-owner, or domain clearance. Trademark, package-owner, and domain clearance are a tracked checklist task that must complete before any public announcement or crates.io publication.
 
 ## 1. Git dependency and publication policy
 
-**Question:** how can consumers test their own shared-component branches immediately without accepting mutable dependencies in durable builds?
-
-**Recommended default:** use a trusted branch or fork only while iterating, then pin the tested full commit SHA through Cargo's `rev` dependency form and commit <RepoFile path="Cargo.lock" /> before the consumer change becomes durable. After upstream merge, repin temporary fork commits to the canonical repository. An immutable Git revision is enough for the first `jackin❯` and Holla migrations; crates.io preview publication is optional, and stable registry publication is reconsidered after two-consumer proof.
-
-**Deadline:** before the first external consumer branch.
+**Decision:** a consumer may use a trusted branch or fork only while iterating on a shared fix, then pins the tested full commit SHA through Cargo's `rev` dependency form and commits <RepoFile path="Cargo.lock" /> before the consumer change becomes durable. After upstream merge, temporary fork commits are repinned to the canonical repository. An immutable Git revision is the adoption artifact for the `jackin❯` and Holla migrations; a crates.io preview is optional, and stable registry publication happens only through a separate operator decision after two-consumer proof. Untrusted forks, floating default branches, and automated branch advancement are rejected dependency forms.
 
 ## 2. Lookbook CLI command contract
 
-**Question:** should the extracted CLI keep the donor's positional/flag interface or adopt named operations?
+**Decision:** `termrock-lookbook` exposes explicit `terminal`, `list`, `render`, and `check` operations. Donor flag behavior is preserved only while validating extraction parity, then removed. The pre-release external project carries no indefinite compatibility shim.
 
-**Recommended default:** `termrock-lookbook` exposes explicit `terminal`, `list`, `render`, and `check` operations. Preserve donor behavior only long enough to validate parity; the external pre-release project does not need an indefinite compatibility shim.
+## 3. Tokio and the runtime module
 
-**Deadline:** before neutral lookbook freeze.
+**Decision:** no Tokio anywhere in the shared crate. Build the base library on `ratatui-core`; every component, state, logical input, focus, layout, and outcome remains available without features. The additive `crossterm` feature supplies event conversion, backend construction, and optional managed-session convenience without changing those base APIs. Ship no Tokio feature.
 
-## 3. Tokio/runtime feature
-
-**Question:** keep Tokio in the base crate?
-
-**Recommended default:** no. Build the base library on `ratatui-core`; every component, state, logical input, focus, layout, and outcome remains available without features. The additive `crossterm` feature supplies event conversion, backend construction, and optional managed-session convenience without changing those base APIs. Ship no Tokio feature initially. Reconsider a runtime adapter only after two consumers prove the same executor-neutral contract.
-
-**Deadline:** first public manifest review.
+The executor-neutral runtime contracts — `Dirty`, `UpdateResult`, `SubscriptionPoll`, the `Subscription` trait with std-channel and closure adapters, `Component`, `View`, and the `drive_frame` frame driver — extract as one optional module: they are pure Ratatui, `jackin❯`'s canonical TUI rules mandate one shared frame driver across the console, Capsule, and launch surfaces, and deleting the donor would otherwise strand that driver in a new product-local crate. Tokio receiver implementations, spawn helpers, and the fallback runtime stay in `jackin❯` with `jackin-console` as the target home. One coherence corner case is settled up front: after extraction a consumer crate cannot implement the shared `Subscription` trait directly for Tokio receiver types (foreign trait, foreign type), so the shared module ships a closure-based adapter and consumers may additionally wrap receivers in local newtypes.
 
 ## 4. Brand API
 
-**Question:** one fixed Tailrocks header or consumer-defined identity?
-
-**Recommended default:** consumer-provided product name/mark/header data plus a shared default phosphor theme. Component semantics stay consistent without pretending every product is `jackin❯`.
-
-**Deadline:** before neutral lookbook freeze.
+**Decision:** consumer-provided product name/mark/header data plus a shared default phosphor theme. Component semantics stay consistent without pretending every product is `jackin❯`. No fixed Tailrocks header ships in the library; `jackin❯` composes its wordmark locally.
 
 ## 5. History tooling
 
-**Question:** exact `git filter-repo` path strategy and documentation history set?
-
-**Recommended default:** retain both crate directories and only neutral TUI design history; record the source revision and filter command. Do not pull unrelated `jackin❯` history into the new repository.
-
-**Deadline:** before extraction command execution.
+**Decision:** run [`git-filter-repo`](https://github.com/newren/git-filter-repo) on a dedicated clone, retaining the two donor crate directories, the neutral helpers moving out of `jackin-core`, and only neutral TUI design history. Record the source revision and the exact filter command in `provenance.toml`. No unrelated `jackin❯` history enters the new repository.
 
 ## 6. Testing crate
 
-**Question:** publish a `termrock-testing` crate initially?
+**Decision:** no `termrock-testing` crate. Lookbook and conformance helpers stay internal to the two initial crates. A public testing crate is created only when two consumers demand the same stable helper API, and that creation is a new recorded decision — not a pending question in this plan.
 
-**Recommended default:** no. Keep lookbook/conformance helpers internal or inside the two initial crates until two consumers need a stable public testing API.
+## 7. Compatibility matrix and MSRV
 
-**Deadline:** reconsider after Holla migration.
-
-## 7. Compatibility matrix
-
-**Question:** how many Ratatui/Crossterm versions should be supported?
-
-**Recommended default:** one tested pair for the preview, aligned with active `jackin❯` and Holla migration requirements. Expand only when Cargo resolution and CI prove real value. Publish MSRV and platform support explicitly.
-
-**Deadline:** before preview release.
+**Decision:** exactly one tested Rust/Ratatui/Crossterm pair per revision line, aligned with the active `jackin❯` migration and extended to Holla's revision at its migration. MSRV starts at `jackin❯`'s current floor (Rust edition 2024, `rust-version = "1.95"`, toolchain pinned to `1.97.0`); lowering the floor for a future consumer is a normal reviewed change under Cargo's rust-version rules, not a pending question. MSRV and supported platforms are published explicitly in the repository and catalog.
 
 ## 8. Theme stability
 
-**Question:** are semantic token additions semver-sensitive?
-
-**Recommended default:** make `Theme` construction forward-compatible through documented defaults/builders rather than requiring every consumer to initialize each token. Removing or changing semantic meaning is breaking; adding an optional/defaulted token is not.
-
-**Deadline:** theme API review.
+**Decision:** `Theme` uses private storage with a builder and documented per-token defaults, so no consumer initializes every token. Adding an optional/defaulted token is a minor change; removing a token or changing its semantic meaning is breaking. No trait with one required method per token.
 
 ## 9. CI platform contract
 
-**Question:** which platforms are merge-blocking for the first immutable revision?
-
-**Recommended default:** run canonical render generation and all Rust quality/supply-chain gates on Linux; run the optional Crossterm compile/behavior surface on Linux and macOS because they are immediate Tailrocks targets; add Windows to the required matrix only if the initial project advertises Windows support. One Linux lane owns committed render fixtures so platforms cannot disagree on generated output.
-
-**Deadline:** repository branch-protection setup.
+**Decision:** one Linux lane owns canonical render generation and all Rust quality/supply-chain gates. The optional Crossterm compile/behavior surface runs on Linux and macOS, the immediate Tailrocks targets. Windows is excluded from the support statement and CI; adding it later is a new operator decision, and until then the project does not advertise Windows support.
 
 ## 10. API stability baseline
 
-**Question:** when does automated semver comparison become required?
+**Decision:** review a generated public API report before the first immutable consumer pin, create the automated `cargo-semver-checks` baseline at the first Git tag, and require API/migration notes for every later public change. Pre-1.0 versioning allows deliberate breaks; it does not permit accidental root re-export or feature churn.
 
-**Recommended default:** review a generated API report before the first immutable consumer pin, create the automated `cargo-semver-checks` baseline at the first Git tag, and require API/migration notes for every later public change. Pre-1.0 versioning allows deliberate breaks; it does not permit accidental root re-export or feature churn.
+## 11. Build caches
 
-**Deadline:** before the first tag.
+**Decision:** start minimal — warmed Cargo registry, offline compile jobs, one pinned Rust target cache per meaningful lane, Bun/Lychee download caches, and pull-request cache cleanup. Collect clean/warm timings for at least 20 runs; add `sccache` only when measurements show material benefit — an operational tuning step, not an open design point. Cache entries contain no secrets and generated previews remain artifacts, never caches.
 
-## 11. Build cache complexity
+## 12. Terminal capability baseline
 
-**Question:** copy jackin❯'s complete Rust cache and `sccache` system immediately?
+**Decision:** Tailrocks products run on modern terminals, and the library is allowed to require one. `termrock` assumes a Ghostty-class terminal: 24-bit truecolor SGR, alternate screen, SGR mouse reporting, OSC 8 hyperlinks, OSC 22 pointer shapes, and OSC 52 clipboard write. Components emit truecolor styles unconditionally and expose typed OSC requests as first-class data.
 
-**Recommended default:** no. Start with a warmed Cargo registry, offline compile jobs, one pinned Rust target cache per meaningful lane, Bun/Lychee download caches, and pull-request cache cleanup. Collect clean/warm timings for at least 20 runs; add `sccache` only when measurements show material benefit. Cache entries contain no secrets and generated previews remain artifacts, never caches.
+Out of library scope by decision: 256/16-color degradation, `NO_COLOR` handling, light-background adaptation, and RTL/BiDi text shaping. A consumer that needs any of these implements it above the library; `termrock` carries no capability-detection or fallback code. The supported-terminal statement is published in the repository README and the component catalog. Terminal *size* is not a capability assumption: tiny and empty rectangles remain valid, panic-free inputs.
 
-**Deadline:** CI bootstrap, then review after 20 runs.
+## 13. Parity and quality sequencing
+
+**Decision:** parity wins first, quality wins second. Extraction is bug-compatible: every known rendering defect — character-count width math in hint spans, select-list label measurement, the status-footer right group, and error-dialog wrapping, plus the color-only panel focus border — is recorded in a freeze-time quality backlog and carried through extraction and migration unchanged. After `jackin❯` parity passes, each fix lands in `termrock` as its own reviewed change with regenerated fixtures and a migration note, and `jackin❯` adopts it through a deliberate revision repin that reviews the visual diff. Conformance gates split into an extraction tier (required before the first consumer pin) and a quality tier (required before the first tag). See [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).
+
+## 14. Ratatui/Crossterm upgrade propagation
+
+**Decision:** `termrock` always upgrades first. Because the public API exposes `ratatui-core` types, every Ratatui minor bump is a breaking `termrock` change: it lands on a `termrock` branch with regenerated fixtures and a migration note, produces a new immutable revision, and consumers repin in a coordinated window — `jackin❯` first as the compatibility oracle, then Holla. No consumer upgrades Ratatui ahead of `termrock`, and `termrock` supports exactly one Ratatui/Crossterm pair per revision line.
+
+## 15. Maintenance and issue routing
+
+**Decision:** the same operator maintains both repositories under the inherited governance and solo-maintainer review model. A defect reproducible with a neutral story or fixture is a `termrock` issue; anything requiring product state, wording, or effects is a consumer issue; cross-repository reports link both sides. The model is revisited only when contribution volume justifies more structure.

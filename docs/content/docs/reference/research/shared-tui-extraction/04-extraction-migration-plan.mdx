@@ -15,6 +15,9 @@ This is a cross-repository program. Repository creation, commits, pushes, releas
 - freeze the lookbook CLI and Fumadocs component-page contracts;
 - freeze the extract/parameterize/remain ledger;
 - generate the public API, consumer map, story/render manifest, dependency tree, compatibility matrix, and provenance record defined in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/);
+- wire the lookbook SVG drift check (`tui-lookbook --check`) into `jackin❯` CI and re-verify the committed fixtures before freezing them as parity evidence;
+- record the bug-compatible quality backlog (character-count width defects, color-only panel focus cue) with post-parity fix notes;
+- fix the stale donor docs: <RepoFile path="crates/jackin-tui/COMPONENTS.md">`COMPONENTS.md`</RepoFile> lookbook pointers and the crate-root reference to a nonexistent `Theme` type;
 - capture current `jackin❯` component tests, lookbook renders, key behavior, and terminal cleanup as parity evidence;
 - identify every consumer of `jackin-tui` and `jackin-core` compatibility helpers.
 
@@ -38,7 +41,10 @@ Exit gate: provenance can trace extracted code to donor commits and the new defa
 - remove agent/container/brand-specific exports and stories;
 - introduce the private/builder-based semantic theme and consumer brand/header input;
 - depend on `ratatui-core` in the base crate and put Crossterm session/event integration behind one optional feature;
-- keep Tokio, spawning, subscriptions backed by Tokio receivers, and product-global terminal ownership consumer-owned initially;
+- extract the executor-neutral runtime contracts and `drive_frame` as one optional module; keep Tokio spawning/receiver integration (via the module's closure adapter) and product-global terminal ownership consumer-owned;
+- replace raw hyperlink/pointer/clipboard overlay bytes with typed `osc` requests and pure encoders, leaving emission policy in consumers;
+- derive lookbook SVG colors from the shared theme values, asserting the committed SVGs stay byte-identical;
+- carry every quality-backlog defect through unchanged: no width or non-color fix rides along with the ownership move;
 - convert public rendering to the stable `Widget for &T` / `StatefulWidget for &T` convention, with borrowed render data and stable consumer IDs;
 - ensure public APIs contain no consumer model.
 
@@ -66,6 +72,8 @@ Exit gate: an external minimal consumer can pin one full commit SHA, build and r
 - move generic component documentation and neutral SVG previews to the external Fumadocs site, while retaining `jackin❯` composition and design-decision docs;
 - remove the local generic lookbook CLI only after equivalent external terminal/render/check workflows pass;
 - migrate every `jackin-core` compatibility caller before deleting duplicates;
+- re-home the Tokio subscription spawn helpers into `jackin-console` (final placement decided at the migration PR);
+- keep Capsule's locally painted status bar and hint rows; converging them on the shared `Tabs`/`HintBar` is a post-parity follow-up, not a migration requirement;
 - compare console, Capsule, launch, input, mouse, modal, terminal-restoration, lookbook, and SVG fixtures;
 - update canonical TUI docs to identify shared versus `jackin❯` ownership;
 - delete in-tree donor crates only after parity and dependency audits pass.
@@ -86,7 +94,9 @@ Exit gate: the shared API supports a distinct application without `jackin❯` vo
 
 ## Stage 6 - Stabilize and expand carefully
 
+- land every quality-backlog fix (display width, non-color cues) with regenerated fixtures and migration notes before the first tag;
 - publish stable Git tags after both consumers run pinned revisions successfully, and decide separately whether crates.io publication adds enough value;
+- follow the shared-project-first Ratatui/Crossterm upgrade policy: the library upgrades first, `jackin❯` repins first, Holla follows, one supported pair per revision line;
 - maintain compatibility/migration notes and a consumer matrix;
 - keep branch/fork iteration available while requiring exact commit pins for durable consumer changes;
 - accept Velnor, Parallax, and other consumer needs through the two-consumer governance rule;
@@ -103,6 +113,7 @@ Exit gate: the shared API supports a distinct application without `jackin❯` vo
 - [ ] The standalone Fumadocs site renders generated SVG states and fails verification when component docs, stories, or previews drift.
 - [ ] Keyboard, focus, non-color, Unicode, and terminal-size contracts pass.
 - [ ] Terminal mode restoration passes supported failure paths.
+- [ ] The quality backlog was carried bug-compatible through extraction and migration; every fix landed post-parity with regenerated fixtures.
 - [ ] Base `termrock` builds without Tokio or Crossterm; every component remains available there, while the optional Crossterm integration passes additivity, partial-initialization, and PTY restoration tests.
 - [ ] Public API and package diffs pass the documented semver/package policy.
 - [ ] `jackin❯` parity passes before local donor deletion.

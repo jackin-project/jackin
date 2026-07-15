@@ -51,6 +51,21 @@ The exact dependency names and versions are confirmed during repository bootstra
 
 Cargo features unify across a dependency graph and should be additive. Optional dependencies should be named through `dep:` so dependency names do not accidentally become permanent public feature names. Removing or changing a feature can be a compatibility break, so `default = []` keeps the foundation predictable. See the [Cargo feature reference](https://doc.rust-lang.org/cargo/reference/features.html) and [Cargo SemVer guidance](https://doc.rust-lang.org/cargo/reference/semver.html#cargo).
 
+## Terminal capability baseline
+
+`termrock` targets modern truecolor terminals (Ghostty-class). Assumed capabilities: 24-bit SGR color, alternate screen, SGR mouse reporting, OSC 8 hyperlinks, OSC 22 pointer shapes, and OSC 52 clipboard write. Components emit truecolor styles unconditionally; the library contains no 256/16-color fallback, `NO_COLOR` handling, light-background adaptation, RTL/BiDi shaping, or capability-detection code. A consumer that needs degradation implements it above the library. The supported-terminal statement ships in the README and the component catalog. Terminal size is explicitly not a capability assumption: tiny and empty rectangles remain valid, panic-free inputs, and the minimum/normal/wide render gates stay required.
+
+## Typed terminal requests
+
+The modern-terminal baseline makes OSC 8 hyperlinks, OSC 22 pointer shapes, and OSC 52 clipboard writes first-class library concerns, but rendering stays side-effect free. The donor's current shape — the error and container-info dialogs returning raw overlay byte vectors for the host loop to write after the frame — is replaced by one typed surface in the `osc` module:
+
+- widgets return typed link regions (stable ID, rect, URL) derived from the same layout function that painted them;
+- pointer-shape and clipboard-write requests are plain data values;
+- pure encoders turn a request into escape bytes without performing any I/O;
+- the consumer decides whether, when, and where to emit — after the Ratatui frame, through the Capsule socket protocol, or not at all, according to its own URL/clipboard policy.
+
+Because the encoders are pure and the regions come from the shared layout function, both are unit-testable and parity-checkable even though buffer and SVG fixtures cannot capture post-frame bytes.
+
 ## Base API and Crossterm convenience API
 
 The `crossterm` feature is first-class support, not a separate widget system. It
@@ -110,6 +125,8 @@ that backend.
 | `scroll` | offsets, axes, viewport math, cursor following, scrollbar models | product content construction |
 | `style` | semantic roles, `Theme`, builders, Tailrocks phosphor preset | global product constants or capsule/status meanings |
 | `widgets` | borrowed render models and explicit stateful widgets | I/O, effects, domain records, global process state |
+| `osc` | typed hyperlink/pointer/clipboard request values and pure OSC 8/22/52 encoders | emission timing, stdout writes, clipboard policy, URL-opening decisions |
+| `runtime` | optional executor-neutral `Dirty`/`UpdateResult`/`Subscription`/`Component`/`View` contracts and the `drive_frame` frame driver | Tokio, spawning, effect execution, panic/signal policy, any requirement that widgets use it |
 | `crossterm` | optional event adapters, backend convenience, and scoped session guard | widgets, Tokio, signal policy, panic-hook installation, logging initialization |
 
 Do not add a broad `prelude` or glob re-export in the first release. Callers should import from the owning module so the library can distinguish foundational API from component internals. Private render helpers remain private. A root re-export is allowed only for the few entry types consumers use on nearly every screen, such as `Theme`.
@@ -176,7 +193,7 @@ capsule byte decoder --+
 
 This keeps the same widgets usable in `jackin❯` host surfaces and the in-container multiplexer without forcing every surface to receive Crossterm events. Key bindings own chords and actions; visible hint labels are consumer-provided data derived from that binding table. The library must not hardcode English labels such as `select`, `save`, or `cancel` inside state objects.
 
-Executor-neutral `Subscription` and `Dirty` types may remain if both `jackin❯` and Holla use them. The current Tokio receiver implementations and spawn helpers in <RepoFile path="crates/jackin-tui/src/runtime.rs">crates/jackin-tui/src/runtime.rs</RepoFile> remain consumer-local initially. No fallback Tokio runtime is created inside the component library.
+The executor-neutral runtime contracts — `Dirty`, `UpdateResult<E>`, `SubscriptionPoll`, the `Subscription` trait with std-channel and closure adapters, `Component<Ev, Msg>`, `View<Model>`, and the `drive_frame` frame driver — extract as one optional `runtime` module. They are pure Ratatui, `jackin❯`'s canonical TUI rules already mandate the one shared frame driver across its console, Capsule, and launch surfaces, and deleting the donor would otherwise strand that driver in a new product-local crate. The module stays convenience, not framework: no widget or example requires it, and Holla is not expected to adopt it. The Tokio receiver implementations, spawn helpers, and fallback runtime in <RepoFile path="crates/jackin-tui/src/runtime.rs">crates/jackin-tui/src/runtime.rs</RepoFile> stay in `jackin❯` with `jackin-console` as the target home; Rust coherence prevents a consumer crate from implementing the extracted `Subscription` trait directly for Tokio receiver types, so the shared module ships a closure-based adapter and consumers may wrap receivers in local newtypes. No fallback Tokio runtime is created inside the component library.
 
 ## Theme API
 
@@ -196,7 +213,9 @@ scroll_track / scroll_thumb
 
 Do not expose a trait with one required method per token: adding a token would break implementors. A private representation with `Theme::style(Role)` and a `ThemeBuilder` can add a role with a documented fallback. `Theme::tailrocks_phosphor()` preserves the established look without making `PHOSPHOR_GREEN` the contract of every widget.
 
-Component-specific style overrides are data passed to that component, not new global constants. All states also require a non-color signal: glyph, border, label, modifier, or position. Color cannot be the only indication of focus, selection, error, or progress.
+Component-specific style overrides are data passed to that component, not new global constants. All states also require a non-color signal: glyph, border, label, modifier, or position. Color cannot be the only indication of focus, selection, error, or progress. The donor violates this today (panel focus is a color-only border change); the fix is a recorded quality-tier item that lands after `jackin❯` parity, not during extraction.
+
+Parity constrains the refactor in three specific ways: `Theme::tailrocks_phosphor()` must reproduce the donor's exact RGB values so migrated fixtures stay byte-identical; the `faded` alpha helper keeps its exact scaling math; and the lookbook SVG writer derives its color table from the same theme values instead of the duplicated hex table it hardcodes today, with a test asserting the committed SVGs are unchanged by that consolidation. Product tokens — `CAPSULE_MENU_*`, `BRAND_BLOCK`, `DEBUG_AMBER`, `TAB_BG_*`, and the rain colors — never enter `Theme`; `jackin❯` keeps them as local constants layered on top of the semantic tokens.
 
 ## Terminal ownership
 
@@ -222,8 +241,10 @@ The application root owns panic/signal integration and calls the scoped restore 
 | `theme.rs` and root RGB constants | replace product constants with private semantic theme + phosphor preset | `style` |
 | `geometry.rs` | split display/text/tab math from `agent_display_name` | `text`, `layout`; agent mapping stays local |
 | `keymap.rs` | retain logical chord/action mapping; move action labels to consumer data | `input` |
-| `scroll.rs`, scrollable-panel math | consolidate one scroll model and one display-width source | `scroll`, `widgets` |
-| `runtime.rs` | keep pure outcomes/update contracts only when reused; remove Tokio from base | `interaction`; async adapters stay local |
+| `scroll.rs`, scrollable-panel math | consolidate one scroll model and one display-width source, retaining the `tui-scrollbar` metrics dependency as the single thumb-math source | `scroll`, `widgets` |
+| `runtime.rs` | extract executor-neutral contracts and `drive_frame` as one optional module; Tokio adapters stay in `jackin❯` | `runtime` (optional); Tokio helpers stay local |
+| root `PointerShape`, OSC 22/52 helpers | extract as typed requests plus pure encoders; emission stays consumer-owned | `osc` |
+| lookbook SVG color table | derive from the shared theme values; assert committed SVGs unchanged | `termrock-lookbook` |
 | `terminal_modes.rs` | refactor into partial-init-safe optional Crossterm session | `crossterm` |
 | `ownership.rs` | do not extract product-global terminal/diagnostics policy | `jackin❯` |
 | `host_colors.rs` | retain locally until a second consumer needs OSC 10/11 discovery | consumer adapter |
@@ -237,7 +258,7 @@ The application root owns panic/signal integration and calls the scoped restore 
 | select list | separate rows from state, use stable IDs, pluggable filtering, display-width measurement, configurable hints | `widgets` |
 | text input | use grapheme/display-column cursor rules, external validation, configurable actions | `widgets` |
 | diff view | make render/update boundary explicit; no hidden content mutation in a free render function | `widgets` |
-| URL and OSC overlays | return typed regions/requests; consumer decides whether policy permits emission | consumer adapter by default |
+| URL and OSC overlays | return typed regions/requests through `osc`; consumer decides whether policy permits emission | `osc` types; emission stays a consumer adapter |
 
 The existing `SelectListState` in <RepoFile path="crates/jackin-tui/src/components/select_list.rs">crates/jackin-tui/src/components/select_list.rs</RepoFile> demonstrates why refactoring precedes publication: it owns `Vec<String>`, returns indices, performs fixed ASCII substring filtering, measures labels with `chars().count()`, and embeds action labels. The existing `TextField` in <RepoFile path="crates/jackin-tui/src/components/text_input.rs">crates/jackin-tui/src/components/text_input.rs</RepoFile> combines editing with product validation and action wording. Those behaviors are valuable donor implementations, but their current signatures are not the reusable API.
 
@@ -252,6 +273,7 @@ Before the first immutable consumer revision:
 - run `cargo-semver-checks` against the previous tag after the first tagged baseline;
 - require a migration note for public renames, moves, changed defaults, feature changes, and MSRV changes;
 - prohibit public consumer dependencies, glob exports, mutable globals, hidden I/O, and executor-specific types;
+- verify no widget returns raw escape bytes; the typed `osc` requests and pure encoders are the only escape-producing surface;
 - verify the default-feature crate builds without Crossterm or Tokio in `cargo tree`;
 - compare base and `crossterm` render fixtures and component API inventories so enabling the feature cannot change or hide a widget;
 - use `cargo package --list` to review exactly what a registry package would contain, even while Git revisions remain the distribution path.

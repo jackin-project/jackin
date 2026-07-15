@@ -28,9 +28,11 @@ Some of these neutral types also exist as compatibility copies or lower-layer de
 
 - display-column measurement, terminal text sanitization, and bounded text helpers;
 - key/input normalization and focus ownership;
-- hover tracking and scroll state/math;
+- hover tracking and scroll state/math, retaining the maintained `tui-scrollbar` dependency that owns the proportional thumb metrics;
 - terminal ownership/mode guards;
-- ANSI text parsing and safe OSC52 helper where policy allows;
+- ANSI text parsing;
+- pure OSC 8/22/52 escape encoding and pointer-shape naming (`PointerShape`), extracted as typed request/encoder data with no emission;
+- executor-neutral runtime contracts and the `drive_frame` frame driver as one optional module;
 - output pruning and bounded output projection;
 - `Panel`, `TabStrip`, `ButtonStrip`, confirmation/error dialogs, filter input, hints, scrollable panel/list, selection list, text input, toast, status popup, and diff view;
 - modal backdrop/lifecycle and generic dialog layout;
@@ -46,6 +48,8 @@ Some of these neutral types also exist as compatibility copies or lower-layer de
 - replace use-case-specific modal rectangle functions with generic responsive dialog specifications;
 - keep Tokio runtime helpers consumer-owned initially so widgets do not force an executor;
 - define public state IDs and callbacks/messages without consumer domain types;
+- give the shared tab strip per-tab glyph/state slots and stable click regions, and cover Capsule's wrapped-hint behavior in the hint bar, so the Capsule status bar and hint rows can converge on shared widgets after parity;
+- derive the lookbook SVG color table from the shared theme values instead of the duplicated hex table hardcoded in the SVG writer today;
 - turn the preview binary into the external project's documented terminal/render/check CLI without retaining `jackin❯` paths or wording.
 
 ## Keep in `jackin❯`
@@ -55,8 +59,21 @@ Some of these neutral types also exist as compatibility copies or lower-layer de
 - OnePassword, role, scope, mount, and project-specific pickers;
 - file browser and application editors;
 - `jackin❯` brand composition and status policies;
+- Tokio subscription implementations, spawn helpers, and the fallback runtime (target home `jackin-console`; final placement decided at the migration PR);
+- product palette tokens (`CAPSULE_MENU_*`, `BRAND_BLOCK`, `DEBUG_AMBER`, `TAB_BG_*`, rain colors) as local constants layered on top of the semantic theme;
 - lookbook stories and fixtures containing agents, roles, workspaces, containers, or product paths;
 - `jackin❯` product interaction decisions and composition docs, which may link to the external component catalog rather than duplicate its generic API pages.
+
+## Known defects and stale artifacts
+
+Extraction is bug-compatible: these are recorded at freeze and fixed only after `jackin❯` parity passes, per the sequencing decision in [05 - Decision record](/reference/research/shared-tui-extraction/05-open-decisions/).
+
+- character-count width math instead of display columns in `HintSpan::display_cols`, select-list label measurement, the status-footer right group, and error-dialog wrap math;
+- panel focus signaled by border color alone, with no non-color cue;
+- three parallel color layers (`Rgb` constants, Ratatui `Color` constants, raw ANSI string helpers) plus a fourth duplicated hex table inside the lookbook SVG writer;
+- hyperlink overlays returned as raw post-frame byte vectors from the error and container-info dialogs;
+- <RepoFile path="crates/jackin-tui/COMPONENTS.md">`COMPONENTS.md`</RepoFile> references a lookbook binary and in-crate story module that no longer exist, and the crate-root docs name a `Theme` type that was never implemented — both corrected at freeze;
+- the lookbook SVG drift check (`tui-lookbook --check`) is a documented CLI command that no CI workflow currently runs, so committed fixtures are not mechanically proven current; wiring it into `jackin❯` CI is a freeze prerequisite.
 
 ## Module-level review rule
 
@@ -79,7 +96,7 @@ No module moves merely because its filename sounds generic.
 - <RepoFile path="crates/jackin-tui/src/components/status_footer.rs">`StatusFooter`</RepoFile> names container/run/usage concepts. Replace it with generic data-driven slots and retain product composition locally.
 - <RepoFile path="crates/jackin-tui/src/components/container_info.rs">`ContainerInfoState`/`DebugInfo`</RepoFile> combine reusable detail rows with agent, role, container, and version fields. Extract a neutral detail/inspector widget; keep the builder in jackin❯.
 - <RepoFile path="crates/jackin-tui/src/components/modal_rects.rs">modal rectangle modes</RepoFile> expose auth, role, mount, source, scope, and operation cases. Replace them with generic min/preferred/max responsive specifications.
-- <RepoFile path="crates/jackin-tui/src/runtime.rs">runtime helpers</RepoFile> create Tokio channels/tasks and even a fallback runtime. Keep pure update/outcome contracts only when reused and leave executor integration to consumers.
+- <RepoFile path="crates/jackin-tui/src/runtime.rs">runtime helpers</RepoFile> create Tokio channels/tasks and even a fallback runtime. Extract the executor-neutral contracts (`Dirty`, `UpdateResult`, `SubscriptionPoll`, `Subscription`, `Component`, `View`, `drive_frame`) as one optional module; Tokio receiver implementations and spawn helpers stay in `jackin❯`, connecting to the shared trait through its closure adapter because coherence forbids implementing it directly for Tokio receiver types.
 - <RepoFile path="crates/jackin-tui/src/ownership.rs">terminal ownership</RepoFile> contains jackin❯ process-global flags and title/screen policy. Do not extract it as the generic lifecycle API.
 
 The proposed replacements and semver constraints are in [06 - Public API and refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/).

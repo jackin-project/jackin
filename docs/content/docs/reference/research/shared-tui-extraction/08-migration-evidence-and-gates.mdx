@@ -24,8 +24,20 @@ Create these generated, reviewable artifacts on the active extraction branch bef
 | `dependency-tree.txt` | normal/all-feature dependency trees | no hidden product/runtime dependency |
 | `provenance.toml` | donor URL, revision, retained paths, filter command, license decision | independently reviewed |
 | `compatibility.toml` | Rust, Ratatui core, Crossterm, OS, consumer revision | every advertised cell tested |
+| `quality-backlog.md` | known rendering defects carried bug-compatible through extraction | every defect listed with a post-parity fix note; none fixed silently |
 
 The repository need not preserve these exact filenames forever, but each field and gate needs one machine-readable owner. Generation commands should be checked into the extraction plan or `xtask`; do not rely on a research-session shell history.
+
+Freeze has two prerequisites inside the donor repository. First, wire the lookbook SVG drift check (`tui-lookbook --check`) into `jackin❯` CI as a required job: today it is only a documented CLI command, so the 29 committed SVG fixtures are not mechanically proven current, and unverified fixtures cannot serve as parity evidence. Second, correct the stale donor documentation — <RepoFile path="crates/jackin-tui/COMPONENTS.md">`COMPONENTS.md`</RepoFile> points at a lookbook binary and in-crate story module that no longer exist, and the crate root documents a `Theme` type that was never implemented.
+
+## Parity-first sequencing and the quality backlog
+
+Two gates would otherwise conflict: `jackin❯` migration requires byte-identical rendering, while per-component conformance requires display-width correctness and non-color cues that the donor demonstrably violates today (character-count width math in hint spans, select-list labels, the status-footer right group, and error-dialog wrapping; a color-only panel focus border). The resolution is explicit sequencing:
+
+1. **Extraction tier — required before the first consumer pin.** Neutral naming, no product dependency, borrowed render data, stable IDs, no-panic tiny/empty rectangles, documented public items, neutral stories, and deterministic renders. Known rendering defects are carried through unchanged and bug-compatible.
+2. **Quality tier — required before the first tag.** Display-width correctness everywhere, non-color focus/selection/error cues, and any other fix that changes rendered bytes. Each lands in `termrock` as its own reviewed change with regenerated fixtures and a migration note after `jackin❯` parity passes; `jackin❯` adopts it through a deliberate revision repin that reviews the visual diff.
+
+During extraction and migration no rendering-behavior fix may ride along silently: a parity diff that traces to an unrecorded "improvement" fails the gate, and the quality backlog artifact is the only permitted list of deferred fixes.
 
 ## Classification rules
 
@@ -152,6 +164,8 @@ This is a file-reference inventory, not an estimate of edit size. Use it to orde
 5. migrate Capsule after raw-byte-to-logical-key and bottom-chrome parity is explicit;
 6. remove the donor crates only when the inverse dependency query is empty.
 
+Capsule keeps its locally painted status bar and hand-painted hint rows through migration: it re-implements tab painting today because the donor widget lacks per-tab state glyphs and click regions. The shared `Tabs`/`HintBar` contracts carry those capabilities precisely so Capsule *can* converge, but convergence is a tracked post-parity follow-up, never a migration requirement.
+
 Each slice pins a tested `termrock` revision and runs the whole workspace because changing public Ratatui types can surface failures outside files that import `jackin_tui` directly.
 
 ## Parity matrix
@@ -166,6 +180,7 @@ Each slice pins a tested `termrock` revision and runs the whole workspace becaus
 | resize | current layout/render fixtures | min/normal/wide plus zero/tiny-area no-panic tests |
 | terminal cleanup | mode/guard tests | partial-init, explicit restore, drop fallback, PTY tests |
 | process policy | rich-surface/diagnostics tests | remains entirely in `jackin❯` |
+| OSC 8/22/52 output | raw overlay bytes emitted post-frame by host loops | typed `osc` regions/requests with pure-encoder unit tests and layout-derived region parity |
 | dependency graph | donor Cargo tree | no product, Tokio, or Crossterm in base graph |
 | feature additivity | no equivalent donor boundary | same component inventory and buffer hashes with/without `crossterm`; only integration API is added |
 | docs | jackin❯ generic lookbook pages | external catalog paths and component coverage |
@@ -196,6 +211,7 @@ The new public component API should allow visible-window projection rather than 
 - [ ] Render generation is byte-deterministic.
 - [ ] Default, all-feature, feature-powerset, MSRV, macOS, Linux, and declared Windows checks pass.
 - [ ] Partial terminal initialization and restoration paths pass PTY tests.
+- [ ] The quality backlog is recorded and untouched: no listed defect fixed before `jackin❯` parity, and no unlisted rendering change present.
 - [ ] A minimal external program builds from a full Git revision.
 
 ### `jackin❯` donor retired
@@ -212,6 +228,7 @@ The new public component API should allow visible-window projection rather than 
 - [ ] Holla uses the public revision without depending on jackin❯ types or private helpers.
 - [ ] At least one Holla need feeds back through the normal component API without product vocabulary.
 - [ ] The compatibility matrix records both consumer revisions.
+- [ ] Every quality-backlog fix (display width, non-color cues) landed with regenerated fixtures and a migration note before the first tag.
 - [ ] The first tag has semver, package, docs, license, and two-consumer smoke evidence.
 
 These gates make repository extraction reversible until the donor deletion, while preventing an indefinite dual implementation after ownership changes.

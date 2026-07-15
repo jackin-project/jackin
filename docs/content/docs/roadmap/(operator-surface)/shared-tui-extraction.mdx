@@ -18,9 +18,11 @@ CLI:        termrock-lookbook
 Docs:       same-repository Fumadocs catalog
 ```
 
-The shared project targets Ratatui only, using Crossterm where terminal backend integration is required. It does not add a renderer-neutral abstraction or support alternative TUI frameworks.
+The shared project targets Ratatui only, using Crossterm where terminal backend integration is required. It does not add a renderer-neutral abstraction or support alternative TUI frameworks. Components assume a modern truecolor terminal (Ghostty-class) with OSC 8/22/52 support; the library ships no capability-degradation paths.
 
-The base crate should depend on `ratatui-core`, expose no default features, and keep Crossterm event/session integration behind one optional feature. The initial shared crate has no Tokio dependency; consumers own async execution, spawning, subscriptions, panic/signal policy, diagnostics routing, and effects.
+The base crate should depend on `ratatui-core`, expose no default features, and keep Crossterm event/session integration behind one optional feature. The shared crate has no Tokio dependency; consumers own async execution, spawning, Tokio-backed subscriptions, panic/signal policy, diagnostics routing, and effects, while the executor-neutral update/view/subscription contracts and the `drive_frame` frame driver extract as one optional module.
+
+Every decision in this plan is closed: the research chapters record decisions and execution steps, not open questions. The extraction ships only the existing donor component set and is bug-compatible — known rendering defects are recorded at freeze and fixed only after `jackin❯` parity passes, so `jackin❯`'s visual behavior never changes inside the ownership move.
 
 Migrate `jackin❯` to the released project without visible behavior changes. Holla then becomes the second proving consumer. Future Velnor runner surfaces, justified Parallax interactive CLI workflows, and independent Tailrocks tools can consume the same neutral platform without importing `jackin❯` domain code.
 
@@ -36,7 +38,9 @@ Current coupling prevents a direct publish:
 - neutral scrolling, dialog, ANSI, and bottom-chrome types are split or duplicated across the two crates;
 - global palette constants mix semantic state, Tailrocks style, and product-specific colors;
 - `BrandHeader`, container/agent helpers, product modal geometry, and animations embed `jackin❯` concepts;
-- the lookbook harness is reusable, but many stories contain workspaces, roles, agents, containers, and product paths.
+- the lookbook harness is reusable, but many stories contain workspaces, roles, agents, containers, and product paths;
+- known rendering defects (character-count width math in several components, a color-only panel focus cue) must be carried bug-compatible and fixed only after parity;
+- the lookbook SVG drift check is not wired into CI, so the committed parity fixtures are not mechanically proven current.
 
 ## Design
 
@@ -50,7 +54,13 @@ Initial adoption does not wait for crates.io. A consumer may point at a trusted 
 
 ### Registry publication
 
-An immutable Git revision is sufficient for the extraction preview and first migrations. Semver Git tags and crates.io publication remain later distribution decisions; neither blocks moving generic ownership out of jackin❯.
+An immutable Git revision is sufficient for the extraction preview and first migrations. Semver Git tags follow two-consumer proof; crates.io publication is a deliberately deferred, separate operator step. Neither blocks moving generic ownership out of jackin❯.
+
+### Terminal baseline and parity sequencing
+
+The shared library assumes a modern truecolor terminal (Ghostty-class): 24-bit color, alternate screen, SGR mouse, OSC 8 hyperlinks, OSC 22 pointer shapes, and OSC 52 clipboard. It ships no 256/16-color fallback, `NO_COLOR` handling, light-background adaptation, or RTL support; a consumer that needs degradation implements it above the library. Tiny and empty rectangles remain valid, panic-free inputs — terminal size is not a capability assumption.
+
+Extraction is bug-compatible so jackin❯ never changes visually inside the ownership move. Known donor defects — character-count width math in several components and the color-only panel focus cue — are recorded in a freeze-time quality backlog, carried unchanged through extraction and migration, and fixed afterwards as reviewed `termrock` changes with regenerated fixtures that jackin❯ adopts through deliberate repins. Conformance gates split accordingly: an extraction tier required before the first consumer pin and a quality tier required before the first tag.
 
 ## Shared ownership
 
@@ -58,7 +68,8 @@ The external project owns:
 
 - semantic themes and a default Tailrocks phosphor preset;
 - display-width, terminal-text, key, focus, hover, scroll, layout, and ownership primitives;
-- pure component/update/effect contracts that are product-neutral;
+- pure component/update/effect contracts that are product-neutral, plus the optional executor-neutral runtime module (update/view/subscription contracts and the frame driver);
+- typed OSC hyperlink/pointer/clipboard requests with pure encoders (emission stays consumer-owned);
 - panels, tabs, actions, dialogs, lists, inputs, hints, toasts, status surfaces, and diff presentation;
 - terminal lifecycle guards where they can remain executor-neutral;
 - interactive lookbook, deterministic renders, and conformance fixtures;
@@ -72,6 +83,8 @@ The external project owns:
 - OnePassword picker and all credential/product workflows;
 - file browser, role/scope/mount editors, and other application components;
 - brand composition, launch/closing animations, and product status policies;
+- Tokio subscription implementations and spawn helpers (target home `jackin-console`), connected through the shared runtime module's closure adapter;
+- product palette tokens (Capsule menu states, brand block, debug amber, rain colors) layered locally on the semantic theme;
 - consumer stories and fixtures using `jackin❯` domain data.
 
 ## API rules
@@ -79,19 +92,21 @@ The external project owns:
 - no shared public type mentions agent, database, job, trace, connection, credential, or workspace;
 - components perform no filesystem, network, process, secret, or telemetry I/O;
 - components target Ratatui directly rather than a cross-renderer abstraction;
+- components assume a modern truecolor terminal; no capability-degradation or detection code ships in the library;
+- widgets never return raw escape bytes: hyperlink regions, pointer shapes, and clipboard writes are typed requests with pure encoders, and consumers own emission;
 - consumers supply semantic theme, brand/header data, state, actions, and effects;
-- widgets remain usable without Tokio; the initial shared crate exposes no async-runtime feature;
+- widgets remain usable without Tokio; the shared crate exposes no async-runtime feature;
 - a product-local component graduates only for a second concrete consumer or a clearly foundational primitive;
 - every public component has keyboard, focus, non-color, Unicode, narrow-terminal, and lookbook evidence;
 - consumers pin a release or immutable revision, never a moving default branch.
 
 ### API structure
 
-The initial public modules are `text`, `input`, `interaction`, `layout`, `scroll`, `style`, `widgets`, and optional `crossterm`. Rendering follows standard Ratatui `Widget for &T` / `StatefulWidget for &T` contracts with borrowed render data, stable consumer IDs, and state separated from domain records. Private fields/builders and non-exhaustive growing enums keep the pre-release API evolvable; broad root re-exports and compatibility facades are prohibited.
+The initial public modules are `text`, `input`, `interaction`, `layout`, `scroll`, `style`, `widgets`, `osc`, the optional executor-neutral `runtime` module, and optional `crossterm`. Rendering follows standard Ratatui `Widget for &T` / `StatefulWidget for &T` contracts with borrowed render data, stable consumer IDs, and state separated from domain records. Private fields/builders and non-exhaustive growing enums keep the pre-release API evolvable; broad root re-exports and compatibility facades are prohibited.
 
 Every component and logical interaction API works without features. Enabling `crossterm` adds event conversion, backend construction, and an optional managed terminal-session builder; it cannot add alternate widgets, change component behavior, or become mandatory. Consumers may use only its event adapters, manage Crossterm manually, or use the convenience session while retaining ownership of their application loop, panic/signal policy, runtime, and effects.
 
-TermRock is a toolkit rather than a mandatory application framework. It exposes no required root `Application`, `Model`, `Message`, `Component`, subscription, or effect-executor trait. Component-local logical actions and pure state updates return typed outcomes that a TEA-style or component-oriented consumer maps into its own application messages and effects. This follows Ratatui's documented application patterns without forcing jackin❯ runtime concepts into other consumers.
+TermRock is a toolkit rather than a mandatory application framework. It exposes no required root `Application`, `Model`, `Message`, `Component`, subscription, or effect-executor trait. Component-local logical actions and pure state updates return typed outcomes that a TEA-style or component-oriented consumer maps into its own application messages and effects. This follows Ratatui's documented application patterns without forcing jackin❯ runtime concepts into other consumers. The donor's executor-neutral contracts (dirty/update results, subscriptions with std-channel and closure adapters, component/view traits, and the `drive_frame` frame driver) extract as one optional module because jackin❯ mandates one shared frame driver across its console, Capsule, and launch surfaces and donor deletion would otherwise strand it; nothing requires the module, and Tokio-backed subscription helpers stay in jackin❯.
 
 The external repository must include compile-checked direct, TEA, component-oriented, Flux, buffer-only, manual Crossterm, and managed Crossterm examples built from the same public widgets. The examples demonstrate integration and convenience patterns; none creates a privileged TermRock application runtime.
 
@@ -108,12 +123,15 @@ Registry and target caches are keyed by lockfile/toolchain/job purpose, compile 
 
 ### Inventory and freeze
 
+- [ ] Wire the lookbook SVG drift check (`tui-lookbook --check`) into `jackin❯` CI and re-verify the committed fixtures before freezing them as parity evidence.
 - [ ] Inventory every public export and consumer in `jackin-tui` and `jackin-tui-lookbook`.
-- [ ] Generate the public API, consumer map, extraction ledger, story/render manifests, dependency tree, compatibility matrix, and provenance record.
-- [ ] Classify each module/component as extract, parameterize, or remain local.
+- [ ] Generate the public API, consumer map, extraction ledger, story/render manifests, dependency tree, compatibility matrix, provenance record, and quality backlog.
+- [ ] Classify each module/component as extract, parameterize, or remain local — including the root `PointerShape`/OSC helpers, the `tui-scrollbar` dependency, and the duplicated SVG color table.
+- [ ] Record the bug-compatible quality backlog (display-width defects, color-only panel focus cue) with post-parity fix notes.
+- [ ] Fix stale donor docs: <RepoFile path="crates/jackin-tui/COMPONENTS.md">`COMPONENTS.md`</RepoFile> lookbook pointers and the crate-root reference to a nonexistent `Theme` type.
 - [ ] Capture current render fixtures, key behavior, and terminal-restoration tests as parity evidence.
 - [x] Approve `tailrocks/termrock`, `termrock`, and `termrock-lookbook` as the repository/crate/CLI naming family.
-- [ ] Approve license/governance, MSRV, compatibility, docs-site, and exact-revision/branch dependency policies.
+- [ ] Approve the recorded decision set (license/governance, MSRV, compatibility, docs-site, exact-revision/branch dependency policy) before repository creation, and complete trademark/package-owner/domain clearance before any public announcement.
 
 ### External extraction
 
@@ -121,9 +139,13 @@ Registry and target caches are keyed by lockfile/toolchain/job purpose, compile 
 - [ ] Preserve history with `git filter-repo` or equivalent rather than copying an anonymous snapshot.
 - [ ] Preserve SPDX headers, copyright, LICENSE/NOTICE, authorship, and relevant design history.
 - [ ] Remove the `jackin-core` dependency by moving neutral helpers to the shared project.
-- [ ] Build base widgets on `ratatui-core`; feature-gate Crossterm and exclude Tokio from the initial crate.
+- [ ] Build base widgets on `ratatui-core`; feature-gate Crossterm and exclude Tokio from the crate.
+- [ ] Extract the executor-neutral runtime contracts and `drive_frame` as one optional module; keep Tokio subscription helpers in `jackin❯` behind the module's closure adapter.
+- [ ] Replace raw hyperlink/pointer/clipboard overlay bytes with typed `osc` requests and pure encoders; consumers own emission.
 - [ ] Keep every component/state/action/outcome available without features and mechanically prove that `crossterm` only adds integration convenience.
-- [ ] Restructure components around borrowed render data, stable IDs, semantic themes, logical actions, and one Ratatui widget convention.
+- [ ] Restructure components around borrowed render data, stable IDs, semantic themes, logical actions, and one Ratatui widget convention — including per-tab glyph/state slots on the tab strip and Capsule-grade hint wrapping on the hint bar.
+- [ ] Derive lookbook SVG colors from the shared theme values and assert the committed SVGs stay byte-identical.
+- [ ] Carry every quality-backlog defect through unchanged; no rendering fix rides along with the ownership move.
 - [ ] Apply the component redesign catalog to all 24 donor component files and every supporting module; do not move an unclassified public item.
 - [ ] Keep the root TEA model/messages/effects consumer-owned while making component update/outcome contracts usable from TEA and component-oriented applications.
 - [ ] Add public-API-only direct, TEA, component, Flux, buffer-only, manual Crossterm, and managed Crossterm examples and check them across the supported feature/MSRV matrix.
@@ -140,24 +162,30 @@ Registry and target caches are keyed by lockfile/toolchain/job purpose, compile 
 
 - [ ] Replace local imports with the pinned external crates without redesigning behavior.
 - [ ] Move product-only stories/components to local modules.
+- [ ] Re-home the Tokio subscription spawn helpers into `jackin-console` (final placement decided at the migration PR).
+- [ ] Keep Capsule's locally painted status bar and hint rows through migration; converge on shared widgets only as a post-parity follow-up.
 - [ ] Remove duplicate compatibility definitions after all callers migrate.
 - [ ] Verify console, Capsule, launch, OnePassword, lookbook, SVG, mouse, focus, and terminal-restoration suites.
 - [ ] Migrate without a broad `pub use termrock::*` facade or duplicate public types under old/new owners.
 - [ ] Update `/reference/tui/` pages to state shared versus product-local ownership.
+- [ ] Move the neutral interaction conventions (tab pattern, focusability, hover-scroll, modal stacking, hint discipline) to the external catalog as debranded pages; keep only product composition and policy decisions in `jackin❯` docs, linking out.
 - [ ] Remove generic component catalog pages, preview assets, and the generic lookbook CLI from jackin❯ only after external parity passes.
 - [ ] Delete in-tree donor crates only after parity and dependency audits pass.
 
 ### Reuse proof and governance
 
-- [ ] Migrate Holla's terminal lifecycle, tabs, task output, scrolling, status, and hints during its redesign.
+- [ ] Land every quality-backlog fix (display width, non-color cues) post-parity with regenerated fixtures and migration notes, before the first tag.
+- [ ] Migrate Holla's terminal lifecycle, tabs, task output, scrolling, status, and hints during its redesign; missing widgets are accepted, not extraction blockers.
 - [ ] Keep Holla probing/commands and consumer stories in Holla.
-- [ ] Document the component contribution and two-consumer graduation process.
+- [ ] Document the component contribution and two-consumer graduation process, the shared-project-first Ratatui/Crossterm upgrade policy, and the cross-repository issue-routing rule.
 - [ ] Publish compatibility/migration notes before Velnor, Parallax, or other-product adoption.
 
 ## Acceptance
 
 - the shared crate builds and tests without any Tailrocks product crate;
 - the lookbook CLI previews and verifies every public component, and the Fumadocs catalog renders the same generated SVG states;
+- the supported-terminal baseline (modern truecolor, OSC 8/22/52) is documented and no capability-degradation code exists in the library;
+- known rendering defects were carried bug-compatible: no parity diff traces to an unrecorded fix, and quality-tier fixes landed only after parity with regenerated fixtures;
 - `jackin❯` render and behavior parity passes before in-tree code is removed;
 - Holla proves the API supports a different product state/effect model;
 - no secret, agent, database, CI, or observability domain object crosses the shared API;
@@ -171,6 +199,7 @@ Registry and target caches are keyed by lockfile/toolchain/job purpose, compile 
 
 - **Premature generalization:** solve with extract/parameterize/stay classification and the two-consumer rule.
 - **Visual regression:** migrate `jackin❯` before redesign and compare deterministic fixtures.
+- **Silent quality fixes during migration:** every parity diff must trace to a recorded quality-backlog item; an unrecorded rendering "improvement" fails the gate.
 - **Dependency inversion:** reject imports from any consumer crate, feature-gate Crossterm integration, and keep Tokio out of the initial shared crate.
 - **Cross-repository deadlock:** publish first, migrate one consumer at a time, and retain donor code until parity passes.
 - **Brand leakage:** use semantic tokens and consumer-provided branding; keep product stories local.
@@ -180,6 +209,8 @@ Registry and target caches are keyed by lockfile/toolchain/job purpose, compile 
 
 - implementation of features in consuming products;
 - Holla, Velnor, or Parallax product redesign beyond proving consumption;
+- new components beyond the donor set (trees, progress indicators, data tables, command palettes, multi-line editors) — explicit follow-up work after extraction and migration;
+- terminal capability degradation: 256/16-color fallback, `NO_COLOR` handling, light-background adaptation, and RTL/BiDi support;
 - a universal Tailrocks state/runtime/IPC framework;
 - a shared secrets crate;
 - native macOS UI components;

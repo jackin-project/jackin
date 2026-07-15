@@ -51,7 +51,11 @@ architecture.
 
 TermRock exposes composable rendering and interaction building blocks. It does
 not expose a mandatory root `Application`, `Model`, `Message`, `Component`,
-`Subscription`, or `EffectExecutor` trait.
+`Subscription`, or `EffectExecutor` trait. An optional executor-neutral
+`runtime` module (dirty/update contracts, subscriptions with std-channel and
+closure adapters, component/view traits, and the `drive_frame` frame driver)
+exists for consumers that want the donor's TEA conventions; no widget or other
+module references it, and nothing requires adopting it.
 
 ```text
 backend event
@@ -196,6 +200,13 @@ termrock/src/
 |  |- display_width.rs
 |  |- sanitize.rs
 |  `- window.rs
+|- osc/
+|  |- request.rs
+|  `- encode.rs
+|- runtime/                  # optional executor-neutral contracts
+|  |- contract.rs
+|  |- subscription.rs
+|  `- frame.rs
 |- widgets/
 |  |- action_bar.rs
 |  |- detail_table.rs
@@ -225,13 +236,14 @@ workflow.
 |---|---|---|
 | `geometry.rs` | split | Move display-width, clipping, fixed-prefix windows, and generic tab geometry; leave `agent_display_name` in jackin❯. Replace index-returning tab hit tests with stable IDs. |
 | `keymap.rs` | parameterize | Keep logical chords and binding dispatch. Feature-gate Crossterm conversion, separate the Capsule raw-byte decoder, make hint text caller data, and remove the global scroll-hint keymap. |
-| `scroll.rs` plus scroll helpers in `jackin-core` | consolidate | Create one canonical offset/axis/thumb/viewport implementation. Choose one integer policy, document saturation, and remove parallel `usize`/`u16` APIs unless the conversion is unavoidable at the Ratatui edge. |
+| `scroll.rs` plus scroll helpers in `jackin-core` | consolidate | Create one canonical offset/axis/thumb/viewport implementation. Retain the maintained `tui-scrollbar` dependency as the single proportional thumb-metrics source. Choose one integer policy, document saturation, and remove parallel `usize`/`u16` APIs unless the conversion is unavoidable at the Ratatui edge. |
 | `theme.rs` plus root RGB constants | reimplement | Replace public product constants with semantic `Theme` roles, private storage, builders, component overrides, and the optional Tailrocks phosphor preset. Capsule/debug/rain meanings stay local. |
-| `runtime.rs` | mostly remain | Do not publish the current Tokio-backed `Component<Ev, Msg>`, `View<Model>`, subscriptions, `drive_frame`, or fallback runtime. Promote only small executor-neutral outcomes after two consumers prove the same contract. |
+| `runtime.rs` | split | Extract the executor-neutral contracts and `drive_frame` as the optional `runtime` module: pure Ratatui, and `jackin❯` mandates one shared frame driver across console, Capsule, and launch, so donor deletion would otherwise strand it. Tokio receiver implementations, spawn helpers, and the fallback runtime stay in `jackin❯` (`jackin-console`), connecting through the module's closure adapter because coherence forbids direct foreign impls. |
 | `terminal_modes.rs` | reimplement | Replace two mouse helper functions with the scoped, partial-initialization-safe session described in chapter 06. Event polling and panic/signal policy remain application-owned. |
 | `ownership.rs` | remain | Rich-surface and host-screen atomics, title policy, and alternate-screen reassertion are jackin❯ process policy. None becomes TermRock global state. |
 | `ansi_text.rs` | extract | Keep pure ANSI-to-span parsing and stripping with malformed/control-sequence tests. Accept input and return data; perform no output. |
-| `ansi.rs` | split | Keep only proven generic encoding/sanitization helpers in a policy-neutral module. Brand banners, help/version output, and direct terminal emission remain local. Prefer typed regions/requests over raw overlay byte vectors. |
+| `ansi.rs` | split | Keep only proven generic encoding/sanitization helpers in a policy-neutral module. Brand banners, help/version output, and direct terminal emission remain local. Raw overlay byte vectors are replaced by the typed `osc` request/encoder surface. |
+| root `PointerShape`, OSC 22 names, OSC 52 helper | extract | Move to `osc` as typed pointer/clipboard/hyperlink requests plus pure encoders. Emission timing and policy stay in the consumer; no widget returns raw escape bytes. |
 | `url_text.rs` | remain initially | URL opening and log-redaction policy are not widget responsibilities. Promote pure parsing only after a second consumer proves an identical contract. |
 | `host_colors.rs` | optional adapter later | Host OSC color discovery performs terminal I/O and is not required to render a widget. Keep it in jackin❯ until independently demanded. |
 | `prune_output.rs`, `output.rs` | remain/split | Direct CLI output stays local. Promote only a pure bounded-lines projection if a second consumer needs the same behavior. |
@@ -246,12 +258,12 @@ workflow.
 | `bottom_chrome` | `layout::Slots` | Replace the fixed hint/spacer/footer policy with caller-supplied bottom slot heights. Keep saturating geometry and zero-height behavior. jackin❯ can provide its three-row preset locally. |
 | `button_strip` | `widgets::ActionBar<Id>` | Borrow items containing stable ID, label, enabled state, and optional style override. Store focused ID in state, return activated ID, derive hit regions from layout, and remove public line/style/rect helper duplication. |
 | `filter_input` | `widgets::TextInput` preset or `FilterField` | Render a consumer label/query with semantic input styles. Do not own filtering or assume a picker. Extract separately only if its behavior remains distinct after the text-input redesign. |
-| `hint_bar` | `widgets::HintBar` | Borrow typed hint descriptors containing chord display and caller label. Support wrapping and priority/visibility without owning a keymap or action wording. Keep display-width measurement. |
+| `hint_bar` | `widgets::HintBar` | Borrow typed hint descriptors containing chord display and caller label. Support wrapping and priority/visibility without owning a keymap or action wording. Keep display-width measurement. Wrapping must cover the Capsule wrapped-hint behavior so its hand-painted rows can converge post-parity. |
 | `hover_tracker` | `interaction::HoverState<Id>` | Track stable IDs over borrowed `HitRegion<Id>` values. Make pointer update pure and allocation-bounded; no callbacks or component names. |
 | `modal_backdrop` | `widgets::Backdrop` | Accept semantic style/character policy and implement `Widget for &Backdrop`; never assume black or the Tailrocks palette. |
 | `panel` | `widgets::Panel` | Use semantic focus/emphasis rather than phosphor constants. Accept a Ratatui `Block` or builder-lite title/border overrides; remove `modal_block` and `unfocused_block` policy helpers. |
 | `toast` | `widgets::Toast` | Borrow message, severity, anchor, and style. Geometry is pure; dismissal timer and queue live in the consumer. |
-| `tab_strip` | `widgets::Tabs<Id>` | Borrow stable-ID items with label/active/enabled state. Keep selected/hovered/focused state separate, expose hit regions keyed by ID, and implement by reference rather than consuming the widget. |
+| `tab_strip` | `widgets::Tabs<Id>` | Borrow stable-ID items with label/active/enabled state. Keep selected/hovered/focused state separate, expose hit regions keyed by ID, and implement by reference rather than consuming the widget. Include per-tab glyph/state slots — the Capsule status bar re-implements tab painting today precisely because the donor widget lacks them. |
 
 ### Reimplement before extraction
 
@@ -264,7 +276,7 @@ workflow.
 | `modal_rects` | `layout::DialogSpec` | Public variants name role, auth, mount, source, scope, and operation workflows. | Use min/preferred/max width and height, placement, margins, and overflow rules. Product screens construct specs locally. |
 | `confirm_dialog` | `widgets::ChoiceDialog<Id>` | Hardcodes exit/data-loss constructors, yes/no policy, keymap labels, and focused indices. | Borrow title/body/warning/action descriptors; use stable action IDs; expose choice/cancel outcome; keep exit wording and destructive-action policy in jackin❯. |
 | `save_discard_dialog` | `ChoiceDialog<Id>` consumer preset | Encodes a particular dirty-exit workflow and direct Crossterm handling. | Implement `Save`, `Discard`, and `Cancel` as caller action data over the generic choice dialog. No dedicated public TermRock state is needed initially. |
-| `error_dialog` | `widgets::MessageDialog` composed with `DetailTable` | Mixes scrolling, product keymap hints, row copying, hyperlinks, and raw OSC overlay bytes. | Borrow message and neutral detail rows; return typed `Copy(Id)`/`ActivateLink(Id)` outcomes and hit regions. Consumer executes clipboard/OSC/URL policy. |
+| `error_dialog` | `widgets::MessageDialog` composed with `DetailTable` | Mixes scrolling, product keymap hints, row copying, hyperlinks, and raw OSC overlay bytes. | Borrow message and neutral detail rows; return typed `Copy(Id)`/`ActivateLink(Id)` outcomes and hit regions. Link regions render through the typed `osc` surface instead of raw overlay bytes. Consumer executes clipboard/OSC/URL policy. |
 | `container_info` | `widgets::DetailTable<Id>` | `DebugInfo` explicitly builds run, container, role, agent, version, diagnostics, and file-link rows. | Extract only label/value rows, selection, scrolling, wrapping, copy/link capabilities, and typed outcomes. Keep `DebugInfo` and all product row construction in jackin❯. |
 | `status_footer` | `widgets::StatusBar<Id>` | Names usage, container, run ID, debug chip, and fixed right-side order. | Borrow left/right slots with stable IDs, priority, minimum width, truncation rule, emphasis, and enabled state. Return hit regions/activated ID. jackin❯ decides slot order and meanings. |
 | `status_popup` | `MessageDialog` or `Toast` composition | Couples status presentation to a dedicated popup state and frame renderer without proving a distinct neutral primitive. | Fold into a generic message surface unless a second consumer demonstrates unique interaction/layout behavior. |
@@ -394,7 +406,7 @@ proof remain required.
 
 ## Per-component conformance
 
-Every extracted public component needs:
+Every extracted public component needs, before the first consumer pin (extraction tier):
 
 - direct buffer tests for default, focused, disabled, empty, overflow, tiny,
   and off-origin rectangles;
@@ -402,11 +414,20 @@ Every extracted public component needs:
   return the documented outcome;
 - stable-ID tests across insertion, removal, sorting, and filtering;
 - layout/hit-test agreement at minimum, normal, and wide sizes;
-- Unicode/display-width cases appropriate to its content;
-- a non-color focus/selection/error cue;
 - a neutral lookbook story and deterministic SVG;
 - rustdoc showing standalone use without the Crossterm integration or root runtime;
 - at least one compile-only example using a non-Tailrocks domain ID type.
+
+Before the first tag (quality tier, after `jackin❯` parity):
+
+- Unicode/display-width cases appropriate to its content, with the recorded
+  character-count defects fixed;
+- a non-color focus/selection/error cue.
+
+The split exists because fixing width math or adding a non-color cue changes
+rendered bytes: those fixes land as reviewed post-parity changes with
+regenerated fixtures, per
+[08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).
 
 The repository-level direct, TEA, component, Flux, buffer-only, manual
 Crossterm, and managed Crossterm examples must also compile against every

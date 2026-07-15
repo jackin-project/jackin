@@ -33,6 +33,10 @@ All measurements were taken from the active jackin❯ branch on 2026-07-15. File
 - **Boundary:** shared components, terminal lifecycle, theme, input/focus/layout, lookbook, and render-conformance only. No agent, job, trace, database, credential, command-execution, or telemetry models.
 - **Consumption:** branches and trusted forks support cross-repository iteration, while durable consumer changes pin a full Git commit SHA and commit <RepoFile path="Cargo.lock" />.
 - **Release:** crates.io is optional; consumers can adopt immutable Git revisions before any registry publication and may later pin semver releases.
+- **Terminal baseline:** modern truecolor terminals (Ghostty-class) with OSC 8/22/52 support; the library ships no capability-degradation code.
+- **Sequencing:** bug-compatible extraction and byte-identical `jackin❯` parity first; recorded quality fixes (display width, non-color cues) land after parity and before the first tag.
+- **Runtime:** executor-neutral update/view/subscription contracts and the `drive_frame` frame driver extract as one optional module; Tokio integration stays consumer-owned.
+- **Scope:** the existing donor component set only; new components are explicit post-extraction roadmap work.
 
 ## Read order
 
@@ -41,7 +45,7 @@ All measurements were taken from the active jackin❯ branch on 2026-07-15. File
 - [02 - Donor audit](/reference/research/shared-tui-extraction/02-donor-audit/) classifies current code as extract, parameterize, or remain local.
 - [03 - Target repository](/reference/research/shared-tui-extraction/03-target-repository/) defines crates, API rules, theme, lookbook, tests, and governance.
 - [04 - Extraction and migration plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/) gives the cross-repository PR order and acceptance gates.
-- [05 - Open decisions](/reference/research/shared-tui-extraction/05-open-decisions/) bounds choices that must close before repository creation or first release.
+- [05 - Decision record](/reference/research/shared-tui-extraction/05-open-decisions/) records every closed decision; the plan carries no open design questions.
 - [06 - Public API and refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/) defines dependency layers, component contracts, feature policy, terminal ownership, and the donor refactoring ledger.
 - [07 - Repository engineering](/reference/research/shared-tui-extraction/07-repository-engineering/) specifies repository structure, CI, caching, docs, supply-chain, and release practices.
 - [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/) defines generated inventories, history/provenance, migration slices, parity evidence, and completion gates.
