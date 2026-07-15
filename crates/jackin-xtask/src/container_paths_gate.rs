@@ -23,6 +23,7 @@ use serde::Deserialize;
 use syn::visit::Visit;
 
 use crate::docs::repo_root;
+use crate::report::{self, FormatArgs};
 
 const ALLOWLIST_PATH: &str = "container-path-allowlist.toml";
 const RERUN: &str = "cargo xtask lint container-paths";
@@ -30,6 +31,8 @@ const CHOKEPOINT: &str = "crates/jackin-core/src/container_paths.rs";
 
 #[derive(Args, Debug)]
 pub(crate) struct LintContainerPathsArgs {
+    #[command(flatten)]
+    output: FormatArgs,
     /// Print a regenerated allowlist TOML for the current residual set
     /// (does not write the file).
     #[arg(long)]
@@ -75,16 +78,31 @@ struct LiteralHit {
     reason = "jackin-xtask is a CLI; the gate report is its output"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 pub(crate) fn enforce() -> Result<()> {
     run(LintContainerPathsArgs {
+        output: FormatArgs::default(),
         print_allowlist: false,
     })
 }
 
 pub(crate) fn run(args: LintContainerPathsArgs) -> Result<()> {
+    let format = args.output.resolved();
+    report::run_gate(
+        format,
+        "container-paths",
+        "crates/",
+        "route container paths through jackin_core::container_paths or shrink the allowlist",
+        RERUN,
+        || run_inner(args),
+    )
+}
+
+fn run_inner(args: LintContainerPathsArgs) -> Result<()> {
     let root = repo_root()?;
     let jackin_hits = measure_jackin_literals(&root)?;
     let forbidden_hits = measure_forbidden_roots(&root)?;

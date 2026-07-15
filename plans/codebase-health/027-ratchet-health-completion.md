@@ -118,5 +118,9 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
   `syn`, records each crate's current maximum control-flow decision count, and
   enforces shrink-only growth with an unlisted cap of 20. Clippy retains the
   independent absolute cognitive-complexity threshold.
+- Shared schema-1 diagnostics cover all ten lint gates plus `docs repo-links`,
+  `docs brand`, `docs specs`, `docs map-check`, `research check`, and `roadmap
+  audit`. Every violation contains `file`, nullable `line`, `message`, `fix`,
+  and `rerun`; a forced-error reporter fixture asserts all five keys.
 
 **Index deviation**: none remaining for 027 Done criteria (suite-time scheduled enforce when junit present).

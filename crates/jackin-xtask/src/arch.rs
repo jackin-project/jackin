@@ -24,6 +24,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 
 use crate::docs::repo_root;
+use crate::report::{self, FormatArgs};
 
 /// Architecture tiers. Lower = more foundational. A production dependency
 /// must point at a strictly lower tier; dev-dependencies may point anywhere
@@ -74,6 +75,8 @@ const DEV_CYCLE_ALLOWLIST: &[(&str, &str)] = &[];
 
 #[derive(Args, Debug)]
 pub(crate) struct LintArchArgs {
+    #[command(flatten)]
+    output: FormatArgs,
     /// Print the parsed dep graph (with tier annotations) without checking
     /// the rules. Useful for debugging the gate and re-deriving `TIERS`.
     #[arg(long)]
@@ -90,19 +93,34 @@ pub(crate) struct LintArchArgs {
     reason = "jackin-xtask is a CLI; the gate report is its output"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 /// Run the dependency-direction gate. `strict` fails on violations;
 /// non-strict reports and exits 0. The umbrella `cargo xtask lint` uses this.
 pub(crate) fn check(strict: bool) -> Result<()> {
     run(LintArchArgs {
+        output: FormatArgs::default(),
         dump: false,
         strict,
     })
 }
 
 pub(crate) fn run(args: LintArchArgs) -> Result<()> {
+    let format = args.output.resolved();
+    report::run_gate(
+        format,
+        "arch",
+        "Cargo.toml",
+        "restore the declared crate tiers and dependency direction invariants",
+        "cargo xtask lint arch --strict",
+        || run_inner(args),
+    )
+}
+
+fn run_inner(args: LintArchArgs) -> Result<()> {
     let root = repo_root()?;
     // Turso sole-owner is an architecture boundary (roadmap item 8).
     crate::container_paths_gate::check_turso_sole_owner(&root)?;

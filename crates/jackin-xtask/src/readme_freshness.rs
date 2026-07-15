@@ -14,11 +14,14 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 
 use crate::docs::repo_root;
+use crate::report::{self, FormatArgs};
 
 const RERUN: &str = "cargo xtask lint readme-freshness --base origin/main";
 
 #[derive(Args, Debug)]
 pub(crate) struct LintReadmeFreshnessArgs {
+    #[command(flatten)]
+    output: FormatArgs,
     /// Diff base ref (merge-base with HEAD). Defaults to `origin/main`.
     #[arg(long, default_value = "origin/main")]
     base: String,
@@ -29,10 +32,24 @@ pub(crate) struct LintReadmeFreshnessArgs {
     reason = "jackin-xtask is a CLI; the lint report is its output"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 pub(crate) fn run(args: LintReadmeFreshnessArgs) -> Result<()> {
+    let format = args.output.resolved();
+    report::run_gate(
+        format,
+        "readme-freshness",
+        "crates/",
+        "update each structurally changed crate README in the same change",
+        RERUN,
+        || run_inner(args),
+    )
+}
+
+fn run_inner(args: LintReadmeFreshnessArgs) -> Result<()> {
     let root = repo_root()?;
     let entries = git_name_status(&root, &args.base)?;
     let report = evaluate(&entries, &[]);

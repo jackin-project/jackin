@@ -79,3 +79,21 @@ fn violation_fields_are_non_empty() {
     assert!(!v.fix.is_empty());
     assert!(!v.rerun.is_empty());
 }
+
+#[test]
+fn prose_gate_failure_maps_to_complete_structured_diagnostic() {
+    let report = report_from_result(
+        "headers",
+        "crates/",
+        "restore headers",
+        "cargo xtask lint headers",
+        Err(anyhow::anyhow!(
+            "crates/example/src/lib.rs: missing invariant"
+        )),
+    );
+    let value = serde_json::to_value(report).expect("serialize report");
+    let violation = &value["violations"][0];
+    for key in ["file", "line", "message", "fix", "rerun"] {
+        assert!(violation.get(key).is_some(), "missing {key}");
+    }
+}

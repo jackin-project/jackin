@@ -73,6 +73,11 @@ cargo test --doc --workspace --locked
 | Agents gate | `cargo xtask lint agents` (`--format json\|github`) | new crate / AGENTS files |
 | TUI snapshots | `cargo nextest run -p jackin-capsule -p jackin-console` (insta snapshots live only in these two crates today) | TUI render changes |
 
+Every first-party `cargo xtask lint <gate>`, `docs <gate>`, `research check`, and
+`roadmap audit` command accepts `--format json|github`. JSON violations use
+schema 1 with `file`, nullable `line`, `message`, `fix`, and exact `rerun`
+fields. The shared problem matcher is registered by CI for human/GitHub output.
+
 ### Snapshot review policy
 
 Changed `.snap` files are enumerated in CI against the PR merge-base with `origin/main` (step summary + job log). Reviewers must acknowledge each listed snapshot; hand-edited snapshots that merely match buggy output are rejected in review. Pending files (`*.pending-snap`) still fail CI. Prefer `cargo insta review` / `cargo insta accept` over hand-editing `.snap` bodies.

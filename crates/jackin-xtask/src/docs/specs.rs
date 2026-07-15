@@ -475,7 +475,9 @@ fn emit(line: &str) {
         reason = "jackin-xtask is a CLI; the spec report is its output"
     )]
     {
-        println!("{line}");
+        if crate::report::human_output() {
+            println!("{line}");
+        }
     }
 }
 

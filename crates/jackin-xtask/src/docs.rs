@@ -24,6 +24,8 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
+use crate::report::{self, FormatArgs};
+
 mod brand;
 mod specs;
 
@@ -77,13 +79,19 @@ pub(crate) enum ChangeCommand {
 #[derive(Subcommand)]
 pub(crate) enum DocsCommand {
     /// Validate that repository file references use checked link components.
-    RepoLinks,
+    RepoLinks(DocsGateArgs),
     /// Reject forbidden brand spellings (`jackin'`, `Jackin`, `Jackin'`) in prose.
-    Brand,
+    Brand(DocsGateArgs),
     /// Verify every behavioral-spec INV row cites an existing test (or MISSING).
-    Specs,
+    Specs(DocsGateArgs),
     /// Every workspace member crate name appears in the Codebase Map MDX.
-    MapCheck,
+    MapCheck(DocsGateArgs),
+}
+
+#[derive(Args, Clone, Copy)]
+pub(crate) struct DocsGateArgs {
+    #[command(flatten)]
+    output: FormatArgs,
 }
 
 #[derive(Args)]
@@ -105,7 +113,7 @@ pub(crate) enum ResearchCommand {
     Scaffold(ResearchScaffoldArgs),
     /// Validate that every research `meta.json` page resolves and no `.mdx` is
     /// orphaned.
-    Check,
+    Check(DocsGateArgs),
 }
 
 #[derive(Args)]
@@ -121,7 +129,7 @@ pub(crate) struct ResearchScaffoldArgs {
 pub(crate) enum RoadmapCommand {
     /// Validate that every roadmap `meta.json` page resolves and no item `.mdx`
     /// is orphaned.
-    Audit,
+    Audit(DocsGateArgs),
     /// Retire a shipped roadmap item. `--plan` prints the worklist; `--apply`
     /// does the mechanical removal (drop the sidebar entry, delete the `.mdx`,
     /// audit, fail on a dangling inbound link); `--partial` marks it partially
@@ -154,11 +162,52 @@ pub(crate) fn run_change(command: ChangeCommand) -> Result<()> {
 
 pub(crate) fn run_docs(command: DocsCommand) -> Result<()> {
     match command {
-        DocsCommand::RepoLinks => check_repo_links(&repo_root()?),
-        DocsCommand::Brand => brand::check_brand(&repo_root()?),
-        DocsCommand::Specs => specs::check_specs(&repo_root()?),
-        DocsCommand::MapCheck => check_codebase_map(&repo_root()?),
+        DocsCommand::RepoLinks(args) => run_docs_gate(
+            args,
+            "repo-links",
+            "docs/",
+            "replace unverifiable repository paths with checked link components",
+            "cargo xtask docs repo-links",
+            check_repo_links,
+        ),
+        DocsCommand::Brand(args) => run_docs_gate(
+            args,
+            "brand",
+            ".",
+            "replace forbidden brand spellings with jackin❯ in rich text",
+            "cargo xtask docs brand",
+            brand::check_brand,
+        ),
+        DocsCommand::Specs(args) => run_docs_gate(
+            args,
+            "specs",
+            "docs/content/docs/contributing/behavioral-specs.mdx",
+            "cite an existing test for every behavioral invariant",
+            "cargo xtask docs specs",
+            specs::check_specs,
+        ),
+        DocsCommand::MapCheck(args) => run_docs_gate(
+            args,
+            "map-check",
+            "docs/content/docs/reference/getting-oriented/codebase-map.mdx",
+            "synchronize workspace crate names with the codebase map",
+            "cargo xtask docs map-check",
+            check_codebase_map,
+        ),
     }
+}
+
+fn run_docs_gate(
+    args: DocsGateArgs,
+    gate: &'static str,
+    file: &'static str,
+    fix: &'static str,
+    rerun: &'static str,
+    check: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    report::run_gate(args.output.resolved(), gate, file, fix, rerun, || {
+        check(&repo_root()?)
+    })
 }
 
 /// Recurring map↔workspace gate (R-map-metadata-gate): every `cargo metadata`
@@ -282,13 +331,27 @@ fn workspace_package_names(root: &Path) -> Result<Vec<String>> {
 pub(crate) fn run_research(command: ResearchCommand) -> Result<()> {
     match command {
         ResearchCommand::Scaffold(args) => research_scaffold(args),
-        ResearchCommand::Check => validate_tree(&research_dir()?, "research"),
+        ResearchCommand::Check(args) => report::run_gate(
+            args.output.resolved(),
+            "research",
+            "docs/content/docs/reference/research/",
+            "repair meta.json page entries and orphaned research pages",
+            "cargo xtask research check",
+            || validate_tree(&research_dir()?, "research"),
+        ),
     }
 }
 
 pub(crate) fn run_roadmap(command: RoadmapCommand) -> Result<()> {
     match command {
-        RoadmapCommand::Audit => validate_tree(&roadmap_dir()?, "roadmap"),
+        RoadmapCommand::Audit(args) => report::run_gate(
+            args.output.resolved(),
+            "roadmap",
+            "docs/content/docs/roadmap/",
+            "repair meta.json page entries and orphaned roadmap pages",
+            "cargo xtask roadmap audit",
+            || validate_tree(&roadmap_dir()?, "roadmap"),
+        ),
         RoadmapCommand::Retire(args) => {
             let docs_root = repo_root()?.join(DOCS_ROOT);
             roadmap_retire(&docs_root, args)
@@ -763,7 +826,9 @@ fn report_repo_links_clean() {
         reason = "jackin-xtask is a CLI; the audit result is its output"
     )]
     {
-        println!("repo links OK - repository file references are verifiable.");
+        if report::human_output() {
+            println!("repo links OK - repository file references are verifiable.");
+        }
     }
 }
 
@@ -776,7 +841,9 @@ fn report_repo_links_clean() {
     reason = "jackin-xtask is a CLI; the retirement worklist/report is its output"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 /// Remove `entry` from a `meta.json`'s `pages` array. Errors if it is absent.
@@ -1147,7 +1214,9 @@ fn report_clean(label: &str, meta_count: usize) {
         reason = "jackin-xtask is a CLI; the audit result is its output"
     )]
     {
-        println!("{label} sidebar OK — {meta_count} meta.json file(s), all pages resolve.");
+        if report::human_output() {
+            println!("{label} sidebar OK — {meta_count} meta.json file(s), all pages resolve.");
+        }
     }
 }
 

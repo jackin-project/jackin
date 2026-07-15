@@ -17,6 +17,8 @@ use clap::Args;
 use serde::Deserialize;
 use syn::visit::{self, Visit};
 
+use crate::report::{self, FormatArgs};
+
 const CONFIG_PATH: &str = "ratchet.toml";
 const RERUN: &str = "cargo xtask lint ratchet";
 
@@ -29,6 +31,8 @@ pub(crate) const SUPPRESSION_FAMILIES: &[&str] = &["bare-allow-per-crate", "expe
 
 #[derive(Debug, Args)]
 pub(crate) struct LintRatchetArgs {
+    #[command(flatten)]
+    output: FormatArgs,
     /// Print regenerated entries for one family (`file-size-production`, …).
     #[arg(long)]
     print: Option<String>,
@@ -158,7 +162,10 @@ pub(crate) struct FamilyCheckOutcome {
 }
 
 pub(crate) fn enforce() -> Result<()> {
-    run(LintRatchetArgs { print: None })
+    run(LintRatchetArgs {
+        output: FormatArgs::default(),
+        print: None,
+    })
 }
 
 /// Print regenerated entries for each named family (legacy `--print-*` shims).
@@ -191,6 +198,18 @@ pub(crate) fn check_families_at_root(ids: &[&str]) -> Result<FamilyCheckOutcome>
 }
 
 pub(crate) fn run(args: LintRatchetArgs) -> Result<()> {
+    let format = args.output.resolved();
+    report::run_gate(
+        format,
+        "ratchet",
+        CONFIG_PATH,
+        "remove growth or tighten the matching ratchet.toml entry after shrink",
+        RERUN,
+        || run_inner(args),
+    )
+}
+
+fn run_inner(args: LintRatchetArgs) -> Result<()> {
     let root = crate::docs::repo_root()?;
     let config = read_config(&root.join(CONFIG_PATH))?;
     if let Some(family_id) = args.print.as_deref() {
@@ -928,7 +947,9 @@ fn print_family(root: &Path, config: &Config, family_id: &str) -> Result<()> {
     reason = "jackin-xtask is a CLI; ratchet output is user-facing"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 #[cfg(test)]

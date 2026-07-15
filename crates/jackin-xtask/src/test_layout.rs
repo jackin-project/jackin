@@ -41,9 +41,12 @@ use syn::spanned::Spanned as _;
 use syn::{Attribute, Item, ItemMod, Meta, Token, Visibility};
 
 use crate::ratchet::{self, TEST_LAYOUT_FAMILIES};
+use crate::report::{self, FormatArgs};
 
 #[derive(Args, Debug)]
 pub(crate) struct LintTestsArgs {
+    #[command(flatten)]
+    output: FormatArgs,
     /// Emit regenerated `ratchet.toml` `test-layout` family keys on stdout.
     /// Prefer `cargo xtask lint ratchet --print test-layout` for the same data.
     #[arg(long)]
@@ -54,11 +57,24 @@ pub(crate) struct LintTestsArgs {
 /// entry point uses this.
 pub(crate) fn enforce() -> Result<()> {
     run(LintTestsArgs {
+        output: FormatArgs::default(),
         print_allowlist: false,
     })
 }
 
 pub(crate) fn run(args: LintTestsArgs) -> Result<()> {
+    let format = args.output.resolved();
+    report::run_gate(
+        format,
+        "test-layout",
+        "crates/",
+        "move tests into a single sibling tests.rs and update the ratchet row after shrink",
+        "cargo xtask lint tests",
+        || run_inner(args),
+    )
+}
+
+fn run_inner(args: LintTestsArgs) -> Result<()> {
     if args.print_allowlist {
         return ratchet::print_families(TEST_LAYOUT_FAMILIES);
     }
@@ -407,7 +423,9 @@ fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> R
     reason = "jackin-xtask is a CLI; gate output is its user-facing result"
 )]
 fn emit(message: &str) {
-    println!("{message}");
+    if report::human_output() {
+        println!("{message}");
+    }
 }
 
 #[cfg(test)]
