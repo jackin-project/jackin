@@ -749,7 +749,7 @@ pub(crate) async fn launch_role_runtime(
     let mut otlp_propagation: Vec<String> = Vec::new();
     if let Some(otlp) = &container_otlp {
         otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", otlp.endpoint));
-        if let Some(traceparent) = jackin_diagnostics::current_traceparent() {
+        if let Some(traceparent) = jackin_telemetry::propagation::current_traceparent() {
             otlp_propagation.push(format!("TRACEPARENT={traceparent}"));
         }
     }

@@ -61,14 +61,17 @@ pub const fn console_screen_stage_for_route(route: ConsoleManagerStageRoute) -> 
 /// Which diagnostics screen owns the visible console stage. Confirm dialogs
 /// overlay the workspace list, so their telemetry remains attached to `List`.
 #[must_use]
-pub const fn diagnostics_screen_for_stage(stage: ConsoleScreenStage) -> jackin_diagnostics::Screen {
+pub const fn diagnostics_screen_for_stage(
+    stage: ConsoleScreenStage,
+) -> jackin_telemetry::schema::enums::ScreenId {
+    use jackin_telemetry::schema::enums::ScreenId;
     match stage {
         ConsoleScreenStage::List
         | ConsoleScreenStage::ConfirmDelete
-        | ConsoleScreenStage::ConfirmInstancePurge => jackin_diagnostics::Screen::List,
-        ConsoleScreenStage::Editor => jackin_diagnostics::Screen::Editor,
-        ConsoleScreenStage::Settings => jackin_diagnostics::Screen::Settings,
-        ConsoleScreenStage::CreatePrelude => jackin_diagnostics::Screen::Create,
+        | ConsoleScreenStage::ConfirmInstancePurge => ScreenId::WorkspaceList,
+        ConsoleScreenStage::Editor => ScreenId::WorkspaceEditor,
+        ConsoleScreenStage::Settings => ScreenId::Settings,
+        ConsoleScreenStage::CreatePrelude => ScreenId::WorkspaceCreate,
     }
 }
 
@@ -526,7 +529,9 @@ pub const fn is_on_main_screen(state: &crate::tui::console::ConsoleState) -> boo
     is_main_screen_for_route(ms.stage.route(), ms.list_modal.is_some())
 }
 
-pub const fn screen_of(state: &crate::tui::console::ConsoleState) -> jackin_diagnostics::Screen {
+pub const fn screen_of(
+    state: &crate::tui::console::ConsoleState,
+) -> jackin_telemetry::schema::enums::ScreenId {
     let crate::tui::console::ConsoleStage::Manager(ms) = &state.stage;
     diagnostics_screen_for_stage(console_screen_stage_for_route(ms.stage.route()))
 }

@@ -2867,6 +2867,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-env",
  "jackin-protocol",
+ "jackin-telemetry",
  "jackin-tui",
  "nix 0.31.3",
  "open",

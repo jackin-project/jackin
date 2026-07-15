@@ -123,20 +123,14 @@ pub(super) async fn handle_load(
         any_keep_awake_enabled(config),
     )
     .await;
-    let agent_slug = opts.agent.map(jackin_core::Agent::slug);
-    let result = jackin_diagnostics::launch_trace(
-        Some(&resolved_workspace.label),
-        agent_slug,
-        None,
-        runtime::load_role(
-            paths,
-            config,
-            &class,
-            &resolved_workspace,
-            &docker,
-            runner,
-            &opts,
-        ),
+    let result = runtime::load_role(
+        paths,
+        config,
+        &class,
+        &resolved_workspace,
+        &docker,
+        runner,
+        &opts,
     )
     .await;
     remember_last_agent(
@@ -392,8 +386,6 @@ async fn console_outcome_launch_with_provider(
     provider: jackin_protocol::Provider,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
-    let provider_label = provider.label();
-    let agent_slug = agent.slug();
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = Some(agent);
     opts.provider = Some(provider);
@@ -404,13 +396,8 @@ async fn console_outcome_launch_with_provider(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-    let result = jackin_diagnostics::launch_trace(
-        Some(&workspace.label),
-        Some(agent_slug),
-        Some(provider_label),
-        runtime::load_role(
-            ctx.paths, ctx.config, &selector, &workspace, ctx.docker, ctx.runner, &opts,
-        ),
+    let result = runtime::load_role(
+        ctx.paths, ctx.config, &selector, &workspace, ctx.docker, ctx.runner, &opts,
     )
     .await;
     remember_last_agent(
@@ -453,14 +440,8 @@ async fn console_outcome_launch(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-    let agent_slug = opts.agent.map(jackin_core::Agent::slug);
-    let result = jackin_diagnostics::launch_trace(
-        Some(&workspace.label),
-        agent_slug,
-        None,
-        runtime::load_role(
-            ctx.paths, ctx.config, &class, &workspace, ctx.docker, ctx.runner, &opts,
-        ),
+    let result = runtime::load_role(
+        ctx.paths, ctx.config, &class, &workspace, ctx.docker, ctx.runner, &opts,
     )
     .await;
     remember_last_agent(

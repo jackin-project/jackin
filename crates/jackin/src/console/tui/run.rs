@@ -464,9 +464,6 @@ where
         }
         crate::console::tui::InputOutcome::ExitJackin => return Ok(ConsoleLoopFlow::Exit(None)),
         crate::console::tui::InputOutcome::LaunchNamed(name) => {
-            jackin_diagnostics::set_workspace(&name);
-            jackin_diagnostics::set_workspace_kind("named");
-            jackin_diagnostics::record_action("launch", Some(&name));
             if let Some(outcome) =
                 dispatch_launch_input(terminal, state, inputs, LoadWorkspaceInput::Saved(name))
                     .await?
@@ -480,8 +477,6 @@ where
             ))));
         }
         crate::console::tui::InputOutcome::LaunchCurrentDir => {
-            jackin_diagnostics::set_workspace_kind("current-dir");
-            jackin_diagnostics::record_action("launch", Some("current-dir"));
             if let Some(outcome) =
                 dispatch_launch_input(terminal, state, inputs, LoadWorkspaceInput::CurrentDir)
                     .await?
@@ -625,7 +620,6 @@ where
             );
         }
     }
-    jackin_diagnostics::carry_link_forward();
     handle_input_outcome(terminal, state, outcome, inputs, needs_redraw).await
 }
 

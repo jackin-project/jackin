@@ -40,27 +40,27 @@ const fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
 fn diagnostics_screen_maps_confirm_overlays_to_list() {
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::List),
-        jackin_diagnostics::Screen::List
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceList
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::ConfirmDelete),
-        jackin_diagnostics::Screen::List
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceList
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::ConfirmInstancePurge),
-        jackin_diagnostics::Screen::List
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceList
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::Editor),
-        jackin_diagnostics::Screen::Editor
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceEditor
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::Settings),
-        jackin_diagnostics::Screen::Settings
+        jackin_telemetry::schema::enums::ScreenId::Settings
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::CreatePrelude),
-        jackin_diagnostics::Screen::Create
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceCreate
     );
 }
 

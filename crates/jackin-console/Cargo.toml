@@ -20,6 +20,7 @@ jackin-core = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-env = { workspace = true }
 jackin-protocol = { workspace = true }
+jackin-telemetry = { path = "../jackin-telemetry" }
 jackin-tui = { workspace = true }
 nix = { workspace = true, features = ["term"] }
 open = "5.3.4"

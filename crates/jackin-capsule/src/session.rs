@@ -418,7 +418,6 @@ impl Session {
         let label = label.into();
         // Per-tab trace: each pane/agent spawn is its own short trace on the
         // session timeline (shares the resource session.id).
-        jackin_diagnostics::record_capsule_activity(&label, agent.as_deref());
         let rows = terminal.rows;
         let cols = terminal.cols;
         let pty_system = native_pty_system();

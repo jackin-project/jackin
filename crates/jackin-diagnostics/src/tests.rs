@@ -856,7 +856,6 @@ fn telemetry_volume_artifact_path() -> std::path::PathBuf {
 /// breadcrumbs — not synthetic events on the host subscriber.
 fn drive_standard_conformance_scenario() -> ConformanceExport {
     use crate::operation::{OperationLevel, operation_error, operation_log, operation_span};
-    use crate::screen::{Screen, enter_screen};
 
     const RUN_ID: &str = "conformance-run";
     const SESSION_ID: &str = "conformance-session";
@@ -874,71 +873,77 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
         let run = RunDiagnostics::start(&paths, true, "conformance").expect("run start");
         let _guard = run.activate();
 
-        let list = enter_screen(Screen::List);
-        list.in_scope(|| {
-            operation_log(
-                OperationLevel::Info,
-                "conformance.list",
-                "screen",
-                "list entered",
-                &[],
-            );
-            operation_log(
-                OperationLevel::Warn,
-                "conformance.op",
-                "docker",
-                "process retry exhausted",
-                &[],
-            );
-        });
-        drop(list);
+        operation_log(
+            OperationLevel::Info,
+            "conformance.list",
+            "screen",
+            "list entered",
+            &[],
+        );
+        operation_log(
+            OperationLevel::Warn,
+            "conformance.op",
+            "docker",
+            "process retry exhausted",
+            &[],
+        );
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::Prepare,
+            "preparing",
+            None,
+        );
+        run.stage("stage_done", crate::DiagnosticStage::Prepare, "ready", None);
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::DerivedImage,
+            "building",
+            None,
+        );
+        run.stage(
+            "stage_done",
+            crate::DiagnosticStage::DerivedImage,
+            "built",
+            None,
+        );
 
-        let launch = enter_screen(Screen::Launch);
-        launch.in_scope(|| {
-            run.stage("stage_started", crate::DiagnosticStage::Prepare, "preparing", None);
-            run.stage("stage_done", crate::DiagnosticStage::Prepare, "ready", None);
-            run.stage("stage_started", crate::DiagnosticStage::DerivedImage, "building", None);
-            run.stage("stage_done", crate::DiagnosticStage::DerivedImage, "built", None);
+        let span = operation_span(
+            crate::otel_events::PROCESS_EXECUTE,
+            &[(crate::otel_keys::PROCESS_COMMAND, "true".into())],
+        );
+        let guard = span.enter();
+        operation_log(
+            OperationLevel::Info,
+            "conformance.op",
+            "docker",
+            "process executed",
+            &[],
+        );
+        drop(guard);
 
-            let span = operation_span(
-                crate::otel_events::PROCESS_EXECUTE,
-                &[(crate::otel_keys::PROCESS_COMMAND, "true".into())],
-            );
-            let guard = span.enter();
-            operation_log(
-                OperationLevel::Info,
-                "conformance.op",
-                "docker",
-                "process executed",
-                &[],
-            );
-            drop(guard);
+        // Representative host failure; the actual attach failure seam is
+        // asserted in jackin-capsule's conformance test.
+        operation_error(
+            "error.typed",
+            "conformance_error",
+            "forced attach failure for conformance",
+            &[],
+        );
 
-            // Representative host failure; the actual attach failure seam is
-            // asserted in jackin-capsule's conformance test.
-            operation_error(
-                "error.typed",
-                "conformance_error",
-                "forced attach failure for conformance",
-                &[],
-            );
+        for _ in 0..100 {
+            crate::metrics::record_frame(32, 1, 4);
+            crate::metrics::record_render(50, 4);
+        }
 
-            for _ in 0..100 {
-                crate::metrics::record_frame(32, 1, 4);
-                crate::metrics::record_render(50, 4);
-            }
-
-            operation_log(
-                OperationLevel::Info,
-                "conformance.secret",
-                "security",
-                &format!(
-                    "argv={CONFORMANCE_ARGV_CANARY} url={CONFORMANCE_URL_CANARY} inspect={CONFORMANCE_INSPECT_CANARY}"
-                ),
-                &[],
-            );
-        });
-        drop(launch);
+        operation_log(
+            OperationLevel::Info,
+            "conformance.secret",
+            "security",
+            &format!(
+                "argv={CONFORMANCE_ARGV_CANARY} url={CONFORMANCE_URL_CANARY} inspect={CONFORMANCE_INSPECT_CANARY}"
+            ),
+            &[],
+        );
     });
     drop(host.logger_provider.force_flush());
     drop(host.tracer_provider.force_flush());
@@ -1261,29 +1266,30 @@ fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
 }
 
 #[test]
-fn conformance_screen_dimension_is_stamped() {
+fn conformance_has_no_legacy_screen_span_attributes() {
     let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let spans = export.all_spans();
-    assert!(spans.iter().any(|span| {
+    assert!(spans.iter().all(|span| {
         span.attributes
             .iter()
-            .any(|attribute| attribute.key.as_str() == crate::otel_keys::SCREEN_NAME)
+            .all(|attribute| attribute.key.as_str() != crate::otel_keys::SCREEN_NAME)
     }));
 }
 
 #[test]
-fn conformance_derived_image_stage_links_to_launch() {
+fn conformance_has_no_screen_lifetime_spans() {
     let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let spans = export.all_spans();
-    let derived = spans
-        .iter()
-        .find(|span| span.name.as_ref() == "launch.derived_image")
-        .expect("derived image stage span");
-    assert!(!derived.links.is_empty());
+    assert!(spans.iter().all(|span| {
+        !matches!(
+            span.name.as_ref(),
+            "screen" | "capsule.tab" | "screen.list" | "screen.launch"
+        )
+    }));
 }

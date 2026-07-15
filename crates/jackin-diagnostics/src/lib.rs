@@ -61,11 +61,7 @@ pub use run::{
     active_subprocess_done, active_timing_done, active_timing_started, install_host_panic_hook,
     mint_session_id, prune_all_runs, prune_old_runs,
 };
-pub use screen::{
-    Screen, ScreenGuard, carry_link_forward, current_screen_name, current_traceparent,
-    enter_screen, launch_trace, record_action, record_capsule_activity, set_agent_selected,
-    set_agents_active, set_provider, set_workspace, set_workspace_kind,
-};
+pub use screen::current_screen_name;
 pub use secret_scrub::scrub_secrets;
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,

@@ -50,6 +50,18 @@ pub fn inject(carrier: &mut impl Carrier) {
     );
 }
 
+/// W3C traceparent for the currently entered bounded operation.
+#[must_use]
+pub fn current_traceparent() -> Option<String> {
+    use opentelemetry::trace::TraceContextExt as _;
+    let context = tracing::Span::current().context();
+    let span = context.span().span_context().clone();
+    span.is_valid().then(|| {
+        let sampled = if span.is_sampled() { "01" } else { "00" };
+        format!("00-{}-{}-{sampled}", span.trace_id(), span.span_id())
+    })
+}
+
 pub fn extract(carrier: &impl Carrier) -> ExtractOutcome {
     if carrier.version() != VERSION || !valid_product_ids(carrier) {
         return ExtractOutcome::RejectRequest;
