@@ -62,18 +62,18 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
 /// overlay the list, so they stay on `List`; the create *prelude* and the
 /// field editor are distinct screens (the create flow shows as `create` then
 /// `editor`).
-pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Screen {
+pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_telemetry::schema::enums::ScreenId {
     use crate::console::tui::state::ManagerStage;
-    use jackin_diagnostics::Screen;
+    use jackin_telemetry::schema::enums::ScreenId;
 
     let ConsoleStage::Manager(ms) = &state.stage;
     match ms.stage {
         ManagerStage::List
         | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => Screen::List,
-        ManagerStage::Editor(_) => Screen::Editor,
-        ManagerStage::Settings(_) => Screen::Settings,
-        ManagerStage::CreatePrelude(_) => Screen::Create,
+        | ManagerStage::ConfirmInstancePurge { .. } => ScreenId::WorkspaceList,
+        ManagerStage::Editor(_) => ScreenId::WorkspaceEditor,
+        ManagerStage::Settings(_) => ScreenId::Settings,
+        ManagerStage::CreatePrelude(_) => ScreenId::WorkspaceCreate,
     }
 }
 
@@ -200,15 +200,11 @@ impl ConsoleMouseState {
 
 fn sync_active_screen(
     state: &ConsoleState,
-    active_screen: &mut Option<(jackin_diagnostics::Screen, jackin_diagnostics::ScreenGuard)>,
+    tracker: &mut jackin_telemetry::ui::ScreenVisitTracker,
 ) {
     let screen = screen_of(state);
-    if active_screen.as_ref().map(|(s, _)| *s) != Some(screen) {
-        let from = active_screen.as_ref().map(|(s, _)| s.as_str());
-        *active_screen = Some((screen, jackin_diagnostics::enter_screen(screen)));
-        if let Some(from) = from {
-            jackin_diagnostics::record_action("navigate", Some(from));
-        }
+    if tracker.current_screen() != Some(screen) {
+        let _ = tracker.enter(screen);
     }
 }
 
@@ -841,16 +837,10 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // does not linger on the screen behind it.
     let mut container_info_overlay_active = false;
 
-    // Per-screen trace: each manager stage the operator visits is its own
-    // trace, linked to the screen they came from. The guard is swapped below
-    // whenever the visible stage changes.
-    let mut active_screen: Option<(jackin_diagnostics::Screen, jackin_diagnostics::ScreenGuard)> =
-        None;
+    let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
 
     let result: anyhow::Result<Option<ConsoleOutcome>> = 'main: loop {
-        // Sync the screen trace to the visible stage. On a change, the old
-        // screen span ends and a fresh linked trace starts for the new one.
-        sync_active_screen(&state, &mut active_screen);
+        sync_active_screen(&state, &mut screen_tracker);
 
         // Drain a pending token-generate request before render: suspend the
         // TUI, let the non-TUI effect executor run the interactive mint/write,
@@ -992,6 +982,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         }
     };
 
+    let _ = screen_tracker.exit(jackin_telemetry::schema::enums::TransitionReason::Shutdown);
     // Tears down only when the console owns the screen standalone. When the
     // launch flow owns it, this is `None` and teardown waits for that guard so
     // the console → loading transition stays on one alternate screen.
