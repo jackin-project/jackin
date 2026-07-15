@@ -4,7 +4,8 @@
 //! GitHub pull-request context lookup for the capsule status bar.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+#[cfg(test)]
+use std::process::Command;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -33,12 +34,10 @@ impl std::fmt::Display for LookupError {
     }
 }
 
-fn build_gh_command(workdir: &Path) -> Command {
-    let mut cmd = Command::new("gh");
-    cmd.current_dir(workdir)
-        .env("GH_PROMPT_DISABLED", "1")
-        .env("GH_NO_UPDATE_NOTIFIER", "1");
-    cmd
+fn build_gh_command(workdir: &Path) -> jackin_process::ExecRequest {
+    jackin_process::ExecRequest::new("gh", None::<&str>)
+        .cwd(workdir)
+        .envs([("GH_PROMPT_DISABLED", "1"), ("GH_NO_UPDATE_NOTIFIER", "1")])
 }
 
 #[derive(Deserialize)]
@@ -76,10 +75,10 @@ fn gh_json<T: serde::de::DeserializeOwned>(
     args: &[&str],
     accepted_statuses: &[i32],
 ) -> Result<Option<T>, LookupError> {
-    let mut cmd = build_gh_command(workdir);
-    cmd.args(args);
+    let mut request = build_gh_command(workdir);
+    request.args.extend(args.iter().map(Into::into));
     let json =
-        run_command_capturing_output(&mut cmd, GH_PULL_REQUEST_COMMAND_TIMEOUT, accepted_statuses)?;
+        run_command_capturing_output(&request, GH_PULL_REQUEST_COMMAND_TIMEOUT, accepted_statuses)?;
     let Some(json) = json else {
         return Ok(None);
     };
@@ -262,8 +261,14 @@ fn validated_http_url(url: &str) -> Option<String> {
 
 #[cfg(test)]
 pub(crate) fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
+    let mut request = jackin_process::ExecRequest::new(command.get_program(), command.get_args())
+        .stdout_mode(jackin_process::StdioMode::Capture)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    if let Some(cwd) = command.get_current_dir() {
+        request = request.cwd(cwd);
+    }
     crate::util::command_stdout_trimmed_with_timeout(
-        command,
+        &request,
         crate::git_context::GIT_CONTEXT_COMMAND_TIMEOUT,
     )
 }
@@ -280,22 +285,15 @@ pub(crate) fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
 ///   reason — the operator can see "gh: not logged in" / "HTTP 401"
 ///   when triaging via `multiplexer.log`.
 fn run_command_capturing_output(
-    command: &mut Command,
+    request: &jackin_process::ExecRequest,
     timeout: Duration,
     accepted_statuses: &[i32],
 ) -> Result<Option<String>, LookupError> {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let program = format!("{:?}", command.get_program());
-    let mut child = match command.spawn() {
+    let program = request.program.display().to_string();
+    let mut child = match jackin_process::spawn_sync(request) {
         Ok(child) => child,
         Err(e) => {
-            return Err(LookupError::Failed(format!(
-                "{program}: spawn failed: {e} (errno={:?})",
-                e.raw_os_error()
-            )));
+            return Err(LookupError::Failed(format!("{program}: spawn failed: {e}")));
         }
     };
     let stdout = child

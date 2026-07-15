@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for `runtime/launch.rs`: load pipeline behavioral verification.
-#![allow(
-    clippy::too_many_lines,
+#![expect(
     unused_qualifications,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -39,8 +38,9 @@ fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
 }
 use crate::isolation::MountIsolation;
 use crate::isolation::materialize::{MaterializedMount, MaterializedWorkspace, WorktreeAuxMounts};
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::ANTHROPIC_API_KEY_ENV_NAME;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -50,7 +50,7 @@ fn workspace_manifest(
     container_name: &str,
     role_key: &str,
     role_display_name: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
 ) -> InstanceManifest {
     let role_source_git = format!("https://example.invalid/{role_key}.git");
     let image_tag = format!("{}{role_key}", crate::runtime::naming::IMAGE_PREFIX);
@@ -147,7 +147,7 @@ async fn resolve_workspace_restore(
         "workspace",
         "/workspace",
         role_key,
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
         docker,
         None,
     )
@@ -461,7 +461,7 @@ async fn agent_mounts_for_claude_ignore_mode_mounts_state_but_no_auth_handoff() 
     // conversations/plugins survive a Docker delete, but auth handoff
     // files under /jackin/claude/ must not flow into the container.
     use crate::instance::{PrepareResolvers, RoleState};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -528,7 +528,7 @@ fn github_config_mount_skips_absent_ignored_state() {
         gh_config_dir: root.join(".config/gh"),
         gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
         agent_runtime: crate::instance::AgentRuntimeState {
-            agent: jackin_core::agent::Agent::Claude,
+            agent: jackin_core::Agent::Claude,
             model: None,
         },
         auth: crate::instance::ProvisionedAuth::default(),
@@ -552,7 +552,7 @@ fn github_config_mount_keeps_existing_ignored_state() {
         gh_config_dir,
         gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
         agent_runtime: crate::instance::AgentRuntimeState {
-            agent: jackin_core::agent::Agent::Claude,
+            agent: jackin_core::Agent::Claude,
             model: None,
         },
         auth: crate::instance::ProvisionedAuth::default(),
@@ -576,19 +576,19 @@ fn auth_provision_launch_plan_surfaces_per_agent_outcomes() {
     let root = temp.path().join("role-state");
     let mut auth_outcomes = std::collections::BTreeMap::new();
     auth_outcomes.insert(
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
         crate::instance::AuthProvisionOutcome::Synced,
     );
     auth_outcomes.insert(
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
         crate::instance::AuthProvisionOutcome::HostMissing,
     );
     auth_outcomes.insert(
-        jackin_core::agent::Agent::Amp,
+        jackin_core::Agent::Amp,
         crate::instance::AuthProvisionOutcome::TokenMode,
     );
     auth_outcomes.insert(
-        jackin_core::agent::Agent::Grok,
+        jackin_core::Agent::Grok,
         crate::instance::AuthProvisionOutcome::Skipped,
     );
     let state = RoleState {
@@ -596,7 +596,7 @@ fn auth_provision_launch_plan_surfaces_per_agent_outcomes() {
         gh_config_dir: root.join(".config/gh"),
         gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
         agent_runtime: crate::instance::AgentRuntimeState {
-            agent: jackin_core::agent::Agent::Claude,
+            agent: jackin_core::Agent::Claude,
             model: None,
         },
         auth: crate::instance::ProvisionedAuth::default(),
@@ -606,7 +606,11 @@ fn auth_provision_launch_plan_surfaces_per_agent_outcomes() {
     emit_auth_provision_launch_plan(&state, "jk-auth-demo");
 
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+    assert!(
+        (jsonl.contains("\"event.name\":\"launch_plan\"")
+            || jsonl.contains("\"kind\":\"launch_plan\"")),
+        "{jsonl}"
+    );
     assert!(jsonl.contains("AuthProvision"), "{jsonl}");
     assert!(jsonl.contains("credential_outcomes"), "{jsonl}");
     assert!(jsonl.contains("\\\"claude\\\":\\\"synced\\\""), "{jsonl}");
@@ -621,7 +625,7 @@ fn auth_provision_launch_plan_surfaces_per_agent_outcomes() {
 #[tokio::test]
 async fn role_state_prepare_for_agents_skips_sibling_auth_slots() {
     use crate::instance::{PrepareResolvers, RoleState};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -730,7 +734,7 @@ plugins = []
         &paths,
         "jk-agent-smith",
         &prewarm,
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     )
     .expect("expected sibling auth prewarm task");
 
@@ -738,13 +742,23 @@ plugins = []
     drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\""),
+        (jsonl.contains("\"event.name\":\"sibling_auth_prewarm_done\"")
+            || jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\"")),
         "{jsonl}"
     );
-    assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+    assert!(
+        (jsonl.contains("\"event.name\":\"launch_plan\"")
+            || jsonl.contains("\"kind\":\"launch_plan\"")),
+        "{jsonl}"
+    );
     assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
     assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
-    assert!(jsonl.contains("\"kind\":\"timing_done\""), "{jsonl}");
+    assert!(
+        (jsonl.contains("\"event.name\":\"timing_done\"")
+            || jsonl.contains("\"event.name\":\"timing.done\"")
+            || jsonl.contains("\"kind\":\"timing_done\"")),
+        "{jsonl}"
+    );
     assert!(jsonl.contains("sibling_auth_prewarm"), "{jsonl}");
 }
 
@@ -754,7 +768,7 @@ async fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
     // credentials.json flow under /jackin/claude/. Plugins are baked
     // into the image and do not need a runtime mount.
     use crate::instance::{PrepareResolvers, RoleState};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -828,7 +842,7 @@ async fn agent_mounts_for_claude_oauth_token_mode_mounts_skeleton_only() {
     // launcher must mount the skeleton AND must not mount any
     // stale credentials.json that survived the provision step.
     use crate::instance::{PrepareResolvers, RoleState};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -884,7 +898,7 @@ plugins = []
 #[tokio::test]
 async fn agent_mounts_for_codex_without_auth_mounts_state_but_no_auth_handoff() {
     use crate::instance::{PrepareResolvers, RoleState};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -939,7 +953,7 @@ agents = ["codex"]
 #[tokio::test]
 async fn agent_mounts_for_codex_synced_includes_auth_json() {
     use crate::instance::{PrepareResolvers, RoleState};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -1001,7 +1015,7 @@ agents = ["codex"]
 #[tokio::test]
 async fn agent_mounts_for_codex_host_missing_omits_auth_json() {
     use crate::instance::{PrepareResolvers, RoleState};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -1052,7 +1066,7 @@ agents = ["codex"]
 #[tokio::test]
 async fn agent_mounts_for_amp_synced_includes_secrets_json() {
     use crate::instance::{PrepareResolvers, RoleState};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -1115,7 +1129,7 @@ agents = ["amp"]
 #[tokio::test]
 async fn agent_mounts_for_amp_ignore_mounts_state_but_no_auth_handoff() {
     use crate::instance::{PrepareResolvers, RoleState};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -1225,7 +1239,7 @@ fn resolve_backend_defaults_docker_and_workspace_overrides_config() {
 /// `push_agent_home_mounts`. Covers the agent-enum consolidation: a regression
 /// in any agent's `AgentStatePaths` (wrong/dropped data or config root) surfaces
 /// here instead of shipping silently.
-fn home_mounts_for(agent_slug: &str, agent: jackin_core::agent::Agent) -> Vec<String> {
+fn home_mounts_for(agent_slug: &str, agent: jackin_core::Agent) -> Vec<String> {
     use crate::instance::{PrepareResolvers, RoleState};
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -1262,7 +1276,7 @@ fn home_mounts_for(agent_slug: &str, agent: jackin_core::agent::Agent) -> Vec<St
 
 #[tokio::test]
 async fn agent_mounts_derive_opencode_data_and_config_roots() {
-    let mounts = home_mounts_for("opencode", jackin_core::agent::Agent::Opencode);
+    let mounts = home_mounts_for("opencode", jackin_core::Agent::Opencode);
     assert!(
         mounts
             .iter()
@@ -1279,7 +1293,7 @@ async fn agent_mounts_derive_opencode_data_and_config_roots() {
 
 #[tokio::test]
 async fn agent_mounts_derive_amp_paired_config_root() {
-    let mounts = home_mounts_for("amp", jackin_core::agent::Agent::Amp);
+    let mounts = home_mounts_for("amp", jackin_core::Agent::Amp);
     assert!(
         mounts
             .iter()
@@ -1290,7 +1304,7 @@ async fn agent_mounts_derive_amp_paired_config_root() {
 
 #[tokio::test]
 async fn agent_mounts_derive_grok_home_root() {
-    let mounts = home_mounts_for("grok", jackin_core::agent::Agent::Grok);
+    let mounts = home_mounts_for("grok", jackin_core::Agent::Grok);
     assert!(
         mounts.iter().any(|m| m.ends_with(":/home/agent/.grok")),
         "grok home root mount missing: {mounts:?}"
@@ -1299,7 +1313,7 @@ async fn agent_mounts_derive_grok_home_root() {
 
 #[tokio::test]
 async fn agent_mounts_derive_kimi_home_root() {
-    let mounts = home_mounts_for("kimi", jackin_core::agent::Agent::Kimi);
+    let mounts = home_mounts_for("kimi", jackin_core::Agent::Kimi);
     assert!(
         mounts
             .iter()
@@ -1611,7 +1625,7 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
         gh_config_dir: root.join("gh"),
         gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
         agent_runtime: crate::instance::AgentRuntimeState {
-            agent: jackin_core::agent::Agent::Codex,
+            agent: jackin_core::Agent::Codex,
             model: None,
         },
         auth: crate::instance::ProvisionedAuth {
@@ -1912,7 +1926,7 @@ fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
     let debug_envs = debug_runtime_envs(true);
 
     assert_eq!(run_envs, vec![format!("JACKIN_RUN_ID={}", run.run_id())]);
-    assert!(debug_envs.contains(&"JACKIN_DEBUG=1".to_owned()));
+    assert!(!debug_envs.iter().any(|env| env == "JACKIN_DEBUG=1"));
     assert!(
         !debug_envs
             .iter()
@@ -1925,17 +1939,10 @@ fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
 }
 
 #[test]
-fn debug_runtime_envs_omit_nonpersisted_diagnostics_path() {
+fn debug_runtime_envs_omit_all_envs_without_persisted_diagnostics() {
     let envs = debug_runtime_envs_for(true, None);
 
-    // Dual-inject JACKIN_TELEMETRY_LEVEL for capsule-image skew (plan 043).
-    assert_eq!(
-        envs,
-        vec![
-            "JACKIN_DEBUG=1".to_owned(),
-            "JACKIN_TELEMETRY_LEVEL=debug".to_owned(),
-        ]
-    );
+    assert!(envs.is_empty());
     assert_eq!(
         run_runtime_envs_for(Some("jk-run-backend")),
         vec!["JACKIN_RUN_ID=jk-run-backend".to_owned()]
@@ -1974,8 +1981,8 @@ plugins = []
     let manifest = jackin_manifest::load_role_manifest(temp.path()).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
 
-    let err = validate_agent_supported(&selector, &manifest, jackin_core::agent::Agent::Codex)
-        .unwrap_err();
+    let err =
+        validate_agent_supported(&selector, &manifest, jackin_core::Agent::Codex).unwrap_err();
     let message = err.to_string();
     assert!(message.contains("role \"agent-smith\""));
     assert!(message.contains("agent \"codex\""));
@@ -2017,7 +2024,7 @@ async fn restore_role_source_override_uses_manifest_source_without_mutating_conf
 /// Signature matches `deny_trust` so both can be passed as the same
 /// function-pointer type to the trust prompt; the `Ok(())` is therefore
 /// load-bearing even though clippy flags it.
-#[allow(
+#[expect(
     clippy::unnecessary_wraps,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -2479,7 +2486,7 @@ model = "gpt-5"
     .unwrap();
 
     let mut workspace = repo_workspace(&repo_dir);
-    workspace.default_agent = Some(jackin_core::agent::Agent::Codex);
+    workspace.default_agent = Some(jackin_core::Agent::Codex);
     let docker = jackin_test_support::FakeDockerClient::default();
     load_role(
         &paths,
@@ -2584,7 +2591,7 @@ agents = ["codex"]
     .unwrap();
 
     let mut workspace = repo_workspace(&repo_dir);
-    workspace.default_agent = Some(jackin_core::agent::Agent::Codex);
+    workspace.default_agent = Some(jackin_core::Agent::Codex);
     let docker = jackin_test_support::FakeDockerClient::default();
     load_role(
         &paths,
@@ -2866,10 +2873,7 @@ async fn console_agent_resolution_fast_paths_cached_manifest() {
 
     assert_eq!(
         agents,
-        vec![
-            jackin_core::agent::Agent::Claude,
-            jackin_core::agent::Agent::Codex
-        ]
+        vec![jackin_core::Agent::Claude, jackin_core::Agent::Codex]
     );
     assert!(
         f.runner.recorded.is_empty(),
@@ -2949,10 +2953,7 @@ async fn console_agent_resolution_falls_through_to_git_when_uncached() {
 
     assert_eq!(
         agents,
-        vec![
-            jackin_core::agent::Agent::Claude,
-            jackin_core::agent::Agent::Codex
-        ]
+        vec![jackin_core::Agent::Claude, jackin_core::Agent::Codex]
     );
     assert!(
         f.runner
@@ -3543,7 +3544,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -3631,7 +3632,7 @@ async fn load_agent_refresh_background_reuses_valid_local_image_and_skips_build_
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::write(
@@ -3751,7 +3752,7 @@ async fn valid_image_decision_runs_before_operator_env_resolution() {
         }),
     );
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -3819,7 +3820,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -3894,7 +3895,7 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -3989,7 +3990,7 @@ async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -4064,7 +4065,7 @@ async fn load_agent_skips_non_required_operator_credential_refs() {
         }),
     );
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -4118,7 +4119,7 @@ async fn load_agent_skips_non_required_manifest_credential_prompts() {
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::write(
@@ -4191,7 +4192,7 @@ plugins = []
 
 #[test]
 fn credential_key_filter_resolves_every_supported_agent_credential() {
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     // Generic operator/manifest vars always resolve.
     assert!(launch_pipeline::credential_key_needed_for_role(
@@ -4255,7 +4256,7 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let mut github_env = std::collections::BTreeMap::new();
     github_env.insert(
-        jackin_core::env_model::GH_TOKEN_ENV_NAME.to_owned(),
+        jackin_core::GH_TOKEN_ENV_NAME.to_owned(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://vault/github/token".to_owned(),
             path: "Vault/GitHub/token".to_owned(),
@@ -4268,7 +4269,7 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
         env: github_env,
     });
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -4331,7 +4332,7 @@ async fn load_agent_skips_unused_github_env_resolution() {
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let mut github_env = std::collections::BTreeMap::new();
     github_env.insert(
-        jackin_core::env_model::GH_TOKEN_ENV_NAME.to_owned(),
+        jackin_core::GH_TOKEN_ENV_NAME.to_owned(),
         jackin_core::EnvValue::Plain("ghp_test".to_owned()),
     );
     github_env.insert(
@@ -4348,7 +4349,7 @@ async fn load_agent_skips_unused_github_env_resolution() {
         env: github_env,
     });
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -4429,7 +4430,7 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
     });
 
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -4546,7 +4547,7 @@ async fn load_agent_grant_validation_failure_tears_down_adopted_dind() {
     });
 
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -4684,7 +4685,7 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
         "workspace".to_owned(),
         jackin_config::WorkspaceConfig {
             workdir: "/workspace".to_owned(),
-            default_agent: Some(jackin_core::agent::Agent::Claude),
+            default_agent: Some(jackin_core::Agent::Claude),
             ..jackin_config::WorkspaceConfig::default()
         },
     );
@@ -4693,7 +4694,7 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
@@ -4712,7 +4713,7 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
     ]);
     let mut workspace = repo_workspace(&cached_repo.repo_dir);
     workspace.label = "workspace".to_owned();
-    workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
+    workspace.default_agent = Some(jackin_core::Agent::Claude);
     load_role(
         &paths,
         &mut config,
@@ -4832,7 +4833,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
         "workspace".to_owned(),
         jackin_config::WorkspaceConfig {
             workdir: "/workspace".to_owned(),
-            default_agent: Some(jackin_core::agent::Agent::Claude),
+            default_agent: Some(jackin_core::Agent::Claude),
             ..jackin_config::WorkspaceConfig::default()
         },
     );
@@ -4841,7 +4842,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
@@ -4872,7 +4873,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
     let mut workspace = repo_workspace(&cached_repo.repo_dir);
     workspace.label = "workspace".to_owned();
     workspace.name = "workspace".to_owned();
-    workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
+    workspace.default_agent = Some(jackin_core::Agent::Claude);
 
     load_role(
         &paths,
@@ -4923,7 +4924,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let agent = jackin_core::agent::Agent::Claude;
+    let agent = jackin_core::Agent::Claude;
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
@@ -5071,7 +5072,7 @@ async fn load_agent_rebuild_does_not_attach_running_current_instance() {
         "workspace".to_owned(),
         jackin_config::WorkspaceConfig {
             workdir: "/workspace".to_owned(),
-            default_agent: Some(jackin_core::agent::Agent::Claude),
+            default_agent: Some(jackin_core::Agent::Claude),
             ..jackin_config::WorkspaceConfig::default()
         },
     );
@@ -5102,7 +5103,7 @@ plugins = []
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
@@ -5116,7 +5117,7 @@ plugins = []
     };
     let mut workspace = repo_workspace(&repo_dir);
     workspace.label = "workspace".to_owned();
-    workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
+    workspace.default_agent = Some(jackin_core::Agent::Claude);
     load_role(
         &paths,
         &mut config,
@@ -6261,7 +6262,7 @@ plugins = []
 }
 
 #[tokio::test]
-async fn load_agent_passes_debug_flag_when_enabled() {
+async fn load_agent_forwards_telemetry_without_debug_alias() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -6316,7 +6317,8 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
-    assert!(run_cmd.contains("-e JACKIN_DEBUG=1"));
+    assert!(run_cmd.contains("-e JACKIN_TELEMETRY_LEVEL="));
+    assert!(!run_cmd.contains("JACKIN_DEBUG"));
 }
 
 #[tokio::test]
@@ -7290,7 +7292,7 @@ async fn missing_matching_instance_recreates_current_role() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     manifest
         .write(&paths.data_dir.join(container_name))
@@ -7320,7 +7322,7 @@ async fn missing_matching_instance_records_launch_plan_rejections() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     manifest
         .write(&paths.data_dir.join(container_name))
@@ -7339,18 +7341,23 @@ async fn missing_matching_instance_records_launch_plan_rejections() {
     );
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        jsonl.contains("\"kind\":\"launch_plan_rejected\""),
+        (jsonl.contains("\"event.name\":\"launch_plan_rejected\"")
+            || jsonl.contains("\"kind\":\"launch_plan_rejected\"")),
         "{jsonl}"
     );
     assert!(jsonl.contains("AttachExisting"), "{jsonl}");
     assert!(jsonl.contains("StartStopped"), "{jsonl}");
     assert!(jsonl.contains("current_role_container_missing"), "{jsonl}");
     assert!(
-        !jsonl.contains("\"kind\":\"launch_plan\""),
+        !(jsonl.contains("\"event.name\":\"launch_plan\"")
+            || jsonl.contains("\"kind\":\"launch_plan\"")),
         "restore lookup must not select CreateFromValidImage/BuildAndCreate before image decision: {jsonl}"
     );
     assert!(
-        jsonl.contains("\"kind\":\"timing_done\"")
+        (jsonl.contains("\"event.name\":\"timing.done\"")
+            || jsonl.contains("\"event.name\":\"timing_done\"")
+            || jsonl.contains("\"event.name\":\"timing.done\"")
+            || jsonl.contains("\"kind\":\"timing_done\""))
             && jsonl.contains("current_restore_candidate")
             && jsonl.contains("inspect_current_container")
             && jsonl.contains("create_from_valid_image"),
@@ -7396,7 +7403,7 @@ async fn current_restore_candidate_lookup_records_timing() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
@@ -7412,7 +7419,7 @@ async fn current_restore_candidate_lookup_records_timing() {
         "workspace",
         "/workspace",
         "agent-smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
         &docker,
     )
     .await
@@ -7442,7 +7449,7 @@ async fn running_matching_instance_is_skipped_by_launch_path() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
     let docker = jackin_test_support::FakeDockerClient {
@@ -7467,7 +7474,7 @@ async fn stopped_matching_instance_starts_current_role() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
     // Stopped current-role containers can be started and reconnected without
@@ -7502,7 +7509,7 @@ async fn single_running_current_role_candidate_is_skipped_before_agent_selection
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
     );
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
@@ -7547,7 +7554,7 @@ async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
     );
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
@@ -7602,7 +7609,7 @@ async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
     );
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
@@ -7625,7 +7632,7 @@ async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
     .unwrap()
     .expect("missing unselected current-role instance should recreate");
 
-    assert_eq!(candidate.agent, jackin_core::agent::Agent::Codex);
+    assert_eq!(candidate.agent, jackin_core::Agent::Codex);
     assert_eq!(
         candidate.resolution,
         RestoreResolution::RecreateCurrentRole(container_name.to_owned())
@@ -7652,14 +7659,14 @@ async fn only_viable_current_role_candidate_recreates_missing_one_before_agent_s
         "jk-k7p9m2xq-workspace-agentsmith-claude",
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     claude.mark_status(InstanceStatus::RestoreAvailable);
     let mut codex = workspace_manifest(
         "jk-k7p9m2xq-workspace-agentsmith-codex",
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
     );
     codex.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &claude);
@@ -7713,14 +7720,14 @@ async fn multiple_running_current_role_agents_all_rejected_by_launch_path() {
         "jk-k7p9m2xq-workspace-agentsmith-claude",
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     claude.mark_status(InstanceStatus::RestoreAvailable);
     let mut codex = workspace_manifest(
         "jk-k7p9m2xq-workspace-agentsmith-codex",
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
     );
     codex.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &claude);
@@ -7768,7 +7775,7 @@ async fn related_restore_candidate_requires_rich_dialog_for_fresh_load() {
         container_name,
         "the-architect",
         "The Architect",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
     // inspect -> NotFound -> matching but different role, but no rich
@@ -7799,7 +7806,7 @@ async fn running_related_instance_does_not_block_fresh_load() {
         container_name,
         "the-architect",
         "The Architect",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
     // Related container is Running → skip → StartFresh
@@ -7825,7 +7832,7 @@ async fn stopped_related_instance_does_not_block_fresh_load() {
         container_name,
         "the-architect",
         "The Architect",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
     // Related container stopped non-cleanly → skip → StartFresh
@@ -7854,7 +7861,7 @@ async fn related_restore_candidates_ignore_finished_instances() {
         container_name,
         "the-architect",
         "The Architect",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     manifest.mark_status(InstanceStatus::CleanExited);
     write_indexed_manifest(&paths, &manifest);
@@ -7877,7 +7884,7 @@ async fn related_restore_candidate_with_container_recovers_in_place() {
             container_name,
             "the-architect",
             "The Architect",
-            jackin_core::agent::Agent::Claude,
+            jackin_core::Agent::Claude,
         ),
         docker_state: ContainerState::Running,
     };
@@ -7898,7 +7905,7 @@ async fn missing_related_restore_candidate_rebuilds_in_place() {
             container_name,
             "the-architect",
             "The Architect",
-            jackin_core::agent::Agent::Claude,
+            jackin_core::Agent::Claude,
         ),
         docker_state: ContainerState::NotFound,
     };
@@ -7919,7 +7926,7 @@ async fn related_restore_load_options_use_manifest_source_ref_and_agent() {
         container_name,
         "the-architect",
         "The Architect",
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
     );
     manifest.agent_runtime = "codex".to_owned();
     manifest.role_source_ref = Some("restore-ref".to_owned());
@@ -7928,7 +7935,7 @@ async fn related_restore_load_options_use_manifest_source_ref_and_agent() {
     let opts = related_restore_load_options(&current, &manifest).unwrap();
 
     assert!(opts.debug);
-    assert_eq!(opts.agent, Some(jackin_core::agent::Agent::Codex));
+    assert_eq!(opts.agent, Some(jackin_core::Agent::Codex));
     assert_eq!(opts.role_branch.as_deref(), Some("restore-ref"));
     assert_eq!(opts.restore_container_base.as_deref(), Some(container_name));
     assert_eq!(
@@ -7947,7 +7954,7 @@ async fn supersede_restore_candidates_updates_manifest_and_index() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
 
@@ -7969,7 +7976,7 @@ async fn restore_candidate_label_includes_manifest_and_mount_state() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
     );
     manifest.mark_status(InstanceStatus::PreservedDirty);
     manifest.last_attach_outcome = Some("exit:137".into());
@@ -8011,7 +8018,7 @@ async fn record_instance_attach_outcome_updates_manifest() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     manifest
         .write(&paths.data_dir.join(container_name))
@@ -8038,7 +8045,7 @@ async fn record_running_attach_outcome_restores_running_status() {
         container_name,
         "agent-smith",
         "Agent Smith",
-        jackin_core::agent::Agent::Claude,
+        jackin_core::Agent::Claude,
     );
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
@@ -8075,7 +8082,7 @@ async fn format_attach_outcome_names_running_exit_and_oom() {
 #[tokio::test]
 async fn verify_credential_sync_returns_ok_regardless() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
@@ -8093,7 +8100,7 @@ async fn verify_credential_sync_returns_ok_regardless() {
 #[tokio::test]
 async fn verify_credential_ignore_returns_ok_regardless() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
@@ -8111,12 +8118,9 @@ async fn verify_credential_ignore_returns_ok_regardless() {
 #[tokio::test]
 async fn verify_credential_api_key_present_ok() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::{agent::Agent, env_model};
+    use jackin_core::{ANTHROPIC_API_KEY_ENV_NAME, Agent};
     let mut merged = std::collections::BTreeMap::new();
-    merged.insert(
-        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
-        "sk-ant-xxx".into(),
-    );
+    merged.insert(ANTHROPIC_API_KEY_ENV_NAME.into(), "sk-ant-xxx".into());
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
         Agent::Claude,
@@ -8133,9 +8137,9 @@ async fn verify_credential_api_key_present_ok() {
 #[tokio::test]
 async fn verify_credential_api_key_missing_returns_structured_error() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::{agent::Agent, env_model};
+    use jackin_core::{ANTHROPIC_API_KEY_ENV_NAME, Agent};
     let mut merged = std::collections::BTreeMap::new();
-    merged.insert(env_model::ANTHROPIC_API_KEY_ENV_NAME.into(), String::new());
+    merged.insert(ANTHROPIC_API_KEY_ENV_NAME.into(), String::new());
     let layers = vec![
         ("[env]".into(), EnvLayerState::Unset),
         ("[roles.smith.env]".into(), EnvLayerState::Unset),
@@ -8174,7 +8178,7 @@ async fn verify_credential_api_key_missing_returns_structured_error() {
             mode_resolution,
             ..
         } => {
-            assert_eq!(env_var, env_model::ANTHROPIC_API_KEY_ENV_NAME);
+            assert_eq!(env_var, ANTHROPIC_API_KEY_ENV_NAME);
             assert_eq!(agent, Agent::Claude);
             assert_eq!(mode, AuthForwardMode::ApiKey);
             assert_eq!(workspace, "proj");
@@ -8190,7 +8194,7 @@ async fn verify_credential_api_key_missing_returns_structured_error() {
 #[tokio::test]
 async fn verify_credential_api_key_unset_returns_structured_error() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     // ANTHROPIC_API_KEY not in map at all.
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
@@ -8209,7 +8213,7 @@ async fn verify_credential_api_key_unset_returns_structured_error() {
 #[tokio::test]
 async fn verify_credential_oauth_token_missing_for_claude() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers = vec![("[env]".into(), EnvLayerState::Unset)];
     let r = verify_credential_env_present(
@@ -8232,7 +8236,7 @@ async fn verify_credential_oauth_token_missing_for_claude() {
 #[tokio::test]
 async fn verify_credential_codex_api_key_missing() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
@@ -8256,7 +8260,7 @@ async fn verify_credential_codex_api_key_missing() {
 #[tokio::test]
 async fn verify_credential_amp_api_key_missing() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
@@ -8281,7 +8285,7 @@ async fn verify_credential_amp_api_key_missing() {
 async fn build_mode_resolution_populates_all_3_layers() {
     use jackin_config::WorkspaceConfig;
     use jackin_config::{AgentAuthConfig, AuthForwardMode};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let ws = WorkspaceConfig {
         claude: Some(AgentAuthConfig {
@@ -8316,7 +8320,7 @@ async fn build_mode_resolution_populates_all_3_layers() {
 async fn build_mode_resolution_role_override_wins() {
     use jackin_config::{AgentAuthConfig, AuthForwardMode};
     use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let ro = WorkspaceRoleOverride {
         claude: Some(AgentAuthConfig {
@@ -8340,7 +8344,7 @@ async fn build_mode_resolution_role_override_wins() {
 #[tokio::test]
 async fn sync_source_resolution_uses_workspace_role_scope_per_agent() {
     use jackin_config::{AgentAuthConfig, WorkspaceConfig, WorkspaceRoleOverride};
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     use std::path::PathBuf;
 
     let mut cfg = AppConfig {
@@ -8414,11 +8418,11 @@ async fn sync_source_resolution_uses_workspace_role_scope_per_agent() {
 #[tokio::test]
 async fn build_env_layer_states_classifies_present_vs_absent() {
     use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
-    use jackin_core::{EnvValue, OpRef, env_model};
+    use jackin_core::{EnvValue, OpRef}; // env_model flattened
 
     let mut ro = WorkspaceRoleOverride::default();
     ro.env.insert(
-        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
+        ANTHROPIC_API_KEY_ENV_NAME.into(),
         EnvValue::OpRef(OpRef {
             op: "op://uuid/test/field".into(),
             path: "Test/api/key".into(),
@@ -8432,12 +8436,7 @@ async fn build_env_layer_states_classifies_present_vs_absent() {
     cfg.workspaces.insert("proj".into(), ws);
 
     let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
-    let layers = build_env_layer_states(
-        &cfg,
-        Some(&proj),
-        "smith",
-        env_model::ANTHROPIC_API_KEY_ENV_NAME,
-    );
+    let layers = build_env_layer_states(&cfg, Some(&proj), "smith", ANTHROPIC_API_KEY_ENV_NAME);
     assert_eq!(layers.len(), 4);
     assert_eq!(layers[0].0, "[env]");
     assert_eq!(layers[0].1, EnvLayerState::Unset);
@@ -8451,12 +8450,12 @@ async fn build_env_layer_states_classifies_present_vs_absent() {
 
 #[tokio::test]
 async fn build_env_layer_states_classifies_literal_at_global() {
-    use jackin_core::{EnvValue, env_model};
+    use jackin_core::EnvValue; // env_model flattened
 
     let mut env = std::collections::BTreeMap::new();
     env.insert(
-        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
-        EnvValue::Plain(format!("${}", env_model::ANTHROPIC_API_KEY_ENV_NAME)),
+        ANTHROPIC_API_KEY_ENV_NAME.into(),
+        EnvValue::Plain(format!("${ANTHROPIC_API_KEY_ENV_NAME}")),
     );
     let cfg = AppConfig {
         env,
@@ -8464,12 +8463,7 @@ async fn build_env_layer_states_classifies_literal_at_global() {
     };
 
     let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
-    let layers = build_env_layer_states(
-        &cfg,
-        Some(&proj),
-        "smith",
-        env_model::ANTHROPIC_API_KEY_ENV_NAME,
-    );
+    let layers = build_env_layer_states(&cfg, Some(&proj), "smith", ANTHROPIC_API_KEY_ENV_NAME);
     assert_eq!(layers[0].1, EnvLayerState::ResolvedLiteral);
     assert_eq!(layers[1].1, EnvLayerState::Unset);
     assert_eq!(layers[2].1, EnvLayerState::Unset);
@@ -8614,12 +8608,10 @@ async fn inspect_attach_outcome_unknown_status_returns_still_running() {
 
 #[tokio::test]
 async fn auth_credential_missing_displays_layer_trace() {
-    use jackin_core::env_model;
-
     let err = LaunchError::AuthCredentialMissing {
-        agent: jackin_core::agent::Agent::Claude,
+        agent: jackin_core::Agent::Claude,
         mode: jackin_config::AuthForwardMode::ApiKey,
-        env_var: env_model::ANTHROPIC_API_KEY_ENV_NAME,
+        env_var: ANTHROPIC_API_KEY_ENV_NAME,
         workspace: "proj".into(),
         role: "smith".into(),
         mode_resolution: vec![
@@ -8645,10 +8637,7 @@ async fn auth_credential_missing_displays_layer_trace() {
     };
     let s = err.to_string();
     assert!(s.contains("auth_forward is 'api_key'"), "got: {s}");
-    assert!(
-        s.contains(env_model::ANTHROPIC_API_KEY_ENV_NAME),
-        "got: {s}"
-    );
+    assert!(s.contains(ANTHROPIC_API_KEY_ENV_NAME), "got: {s}");
     assert!(
         s.contains("workspace × role × claude    -> api_key"),
         "got: {s}"
@@ -8660,7 +8649,7 @@ async fn auth_credential_missing_displays_layer_trace() {
 #[tokio::test]
 async fn auth_credential_missing_codex_api_key_renders() {
     let err = LaunchError::AuthCredentialMissing {
-        agent: jackin_core::agent::Agent::Codex,
+        agent: jackin_core::Agent::Codex,
         mode: jackin_config::AuthForwardMode::ApiKey,
         env_var: "OPENAI_API_KEY",
         workspace: "proj".into(),
@@ -8676,7 +8665,7 @@ async fn auth_credential_missing_codex_api_key_renders() {
 #[tokio::test]
 async fn auth_credential_missing_amp_api_key_renders() {
     let err = LaunchError::AuthCredentialMissing {
-        agent: jackin_core::agent::Agent::Amp,
+        agent: jackin_core::Agent::Amp,
         mode: jackin_config::AuthForwardMode::ApiKey,
         env_var: "AMP_API_KEY",
         workspace: "proj".into(),
@@ -8904,7 +8893,7 @@ fn early_scan_skips_current_inspect_only_for_matching_empty_scan() {
         EarlyCurrentRestoreScan, RestoreResolution, early_scan_reused_current,
         early_scan_skips_current_inspect,
     };
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
 
     let early = EarlyCurrentRestoreScan::Scanned {
         agent: Agent::Claude,
@@ -8952,7 +8941,7 @@ async fn early_empty_scan_avoids_second_current_role_inspect() {
     use super::restore_resolve::{
         EarlyCurrentRestoreScan, RestoreResolution, resolve_restore_candidate_reusing_early,
     };
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     use jackin_docker::docker_client::ContainerState;
     use jackin_test_support::FakeDockerClient;
     use std::collections::VecDeque;
@@ -9019,7 +9008,7 @@ async fn early_nonempty_scan_reuses_typed_current_without_reinspect() {
     use super::restore_resolve::{
         EarlyCurrentRestoreScan, RestoreResolution, resolve_restore_candidate_reusing_early,
     };
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     use jackin_docker::docker_client::ContainerState;
     use jackin_test_support::FakeDockerClient;
     use std::collections::VecDeque;
@@ -9086,7 +9075,7 @@ async fn unselected_empty_early_scan_skips_later_agent_current_inspect() {
     use super::restore_resolve::{
         EarlyCurrentRestoreScan, RestoreResolution, resolve_restore_candidate_reusing_early,
     };
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     use jackin_docker::docker_client::ContainerState;
     use jackin_test_support::FakeDockerClient;
     use std::collections::VecDeque;
@@ -9141,7 +9130,7 @@ async fn common_path_single_current_inspect_with_early_then_reuse() {
         EarlyCurrentRestoreScan, RestoreResolution, resolve_current_restore_candidate_timed,
         resolve_restore_candidate_reusing_early,
     };
-    use jackin_core::agent::Agent;
+    use jackin_core::Agent;
     use jackin_docker::docker_client::ContainerState;
     use jackin_test_support::FakeDockerClient;
     use std::collections::VecDeque;

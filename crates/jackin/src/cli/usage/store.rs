@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use jackin_core::account_key::account_key_hash;
+use jackin_core::account_key_hash;
 use jackin_protocol::control::AccountUsageSnapshotView;
 use jackin_usage::store_backend::{Connection, Row, connect_local, params};
 

@@ -1,8 +1,12 @@
-#[allow(
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-use super::super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::super::{
+    AuthEnterPlan, AuthRow, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorEscapeKeyPlan,
+    EditorFieldSelectionKeyPlan, EditorImmediateActionKeyPlan, EditorMode,
+    EditorMountActionKeyPlan, EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan,
+    EditorSaveKeyPlan, EditorSecretsActionKeyPlan, EditorState, EditorTab, EditorTabActionKeyPlan,
+    FieldFocus, RoleHeaderExpansionPlan, SecretsEnterPlan, SecretsRow, SecretsScopeTag,
+};
 
 impl<
     MountInfoCache,
@@ -173,17 +177,9 @@ impl<
     }
 
     #[must_use]
-    #[allow(
-        unfulfilled_lint_expectations,
-        reason = "documented residual allow; prefer expect when site is lint-true"
-    )]
-    #[expect(
-        single_use_lifetimes,
-        reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
-    )]
     pub fn eligible_role_override_selectors<'a>(
         &self,
-        registered_roles: impl Iterator<Item = &'a String>,
+        registered_roles: impl Iterator<Item = &'a String> + 'a,
     ) -> Vec<jackin_core::RoleSelector> {
         crate::workspace::eligible_role_keys_for_override(registered_roles, &self.pending)
             .into_iter()
@@ -192,17 +188,9 @@ impl<
     }
 
     #[must_use]
-    #[allow(
-        unfulfilled_lint_expectations,
-        reason = "documented residual allow; prefer expect when site is lint-true"
-    )]
-    #[expect(
-        single_use_lifetimes,
-        reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
-    )]
     pub fn auth_role_override_selectors<'a>(
         &self,
-        registered_roles: impl Iterator<Item = &'a String>,
+        registered_roles: impl Iterator<Item = &'a String> + 'a,
     ) -> Option<Vec<jackin_core::RoleSelector>> {
         let kind = self.auth_selected_kind?;
         let already_overridden: BTreeSet<String> = self
@@ -278,7 +266,7 @@ impl<
     /// Claude OAuth-token mode owns its token through the token-setup flow, so
     /// the editor must not silently remove that managed slot.
     pub fn delete_env_var(&mut self, scope: &SecretsScopeTag, key: &str) -> anyhow::Result<()> {
-        let protected = key == jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
+        let protected = key == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
             && matches!(scope, SecretsScopeTag::Workspace)
             && self.pending.claude.as_ref().map(|c| c.auth_forward)
                 == Some(jackin_config::AuthForwardMode::OAuthToken);

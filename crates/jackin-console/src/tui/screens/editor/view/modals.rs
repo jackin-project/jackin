@@ -9,10 +9,6 @@ use crate::tui::screens::editor::model::{EditorMode, SecretsScopeTag};
 use crate::tui::screens::editor::update::forbidden_secret_keys;
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn editor_header_title(mode: &EditorMode) -> String {
     match mode {
         EditorMode::Edit { name } => format!("edit workspace · {name}"),
@@ -21,10 +17,6 @@ pub(crate) fn editor_header_title(mode: &EditorMode) -> String {
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn editor_name_value(
     mode: &EditorMode,
     pending_name: Option<&str>,
@@ -37,28 +29,16 @@ pub(crate) fn editor_name_value(
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_delete_confirm_prompt(key: &str) -> String {
     format!("Delete environment variable {key}?")
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_delete_confirm_state(key: &str) -> jackin_tui::components::ConfirmState {
     jackin_tui::components::ConfirmState::new(secret_delete_confirm_prompt(key))
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_value_input_state<'a>(
     key: &str,
     current: impl Into<String>,
@@ -67,19 +47,11 @@ pub(crate) fn secret_value_input_state<'a>(
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_value_current_text(value: Option<&str>) -> String {
     value.unwrap_or_default().to_owned()
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_new_value_input_state<'a>(
     key: &str,
 ) -> jackin_tui::components::TextInputState<'a> {
@@ -90,10 +62,6 @@ pub(crate) fn secret_new_value_input_state<'a>(
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_source_picker_state(
     key: impl Into<String>,
     op_available: bool,
@@ -102,20 +70,12 @@ pub(crate) fn secret_source_picker_state(
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_scope_picker_state() -> crate::tui::components::scope_picker::ScopePickerState
 {
     crate::tui::components::scope_picker::ScopePickerState::new()
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub fn secret_new_key_label(scope: &SecretsScopeTag) -> String {
     match scope {
         SecretsScopeTag::Workspace => "New workspace environment key".to_owned(),
@@ -124,28 +84,16 @@ pub fn secret_new_key_label(scope: &SecretsScopeTag) -> String {
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_new_key_after_picker_label(scope: &SecretsScopeTag) -> String {
     format!("New environment key for {}", secrets_scope_label(scope))
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_empty_key_label() -> &'static str {
     "Key cannot be empty"
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn role_trust_confirm_state(
     role: String,
     repository: String,
@@ -162,10 +110,6 @@ pub(crate) fn role_trust_confirm_state(
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn isolated_state_save_confirm_state(
     affected_containers: &[String],
 ) -> jackin_tui::components::ConfirmState {
@@ -178,10 +122,6 @@ pub(crate) fn isolated_state_save_confirm_state(
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secrets_scope_label(scope: &SecretsScopeTag) -> &str {
     match scope {
         SecretsScopeTag::Workspace => "workspace",
@@ -190,10 +130,6 @@ pub(crate) fn secrets_scope_label(scope: &SecretsScopeTag) -> &str {
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secrets_forbidden_label(scope: &SecretsScopeTag) -> String {
     match scope {
         SecretsScopeTag::Workspace => "workspace env".to_owned(),
@@ -202,10 +138,6 @@ pub(crate) fn secrets_forbidden_label(scope: &SecretsScopeTag) -> String {
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_key_input_state<'a>(
     scope: &SecretsScopeTag,
     label: impl Into<String>,
@@ -219,10 +151,6 @@ pub(crate) fn secret_key_input_state<'a>(
 }
 
 #[must_use]
-#[allow(
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) fn secret_key_input_state_from_pending<'a, R, V>(
     workspace_env: &std::collections::BTreeMap<String, V>,
     roles: &std::collections::BTreeMap<String, R>,

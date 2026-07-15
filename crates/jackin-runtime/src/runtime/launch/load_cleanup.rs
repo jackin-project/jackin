@@ -12,6 +12,13 @@ use jackin_docker::docker_client::DockerApi;
 
 use crate::runtime::progress::launch_output;
 
+fn record_cleanup_teardown_failure(body: &'static str) {
+    let span = jackin_diagnostics::operation_span("launch.cleanup", &[]);
+    span.in_scope(|| {
+        jackin_diagnostics::operation_error("launch.cleanup", "cleanup_teardown_failed", body, &[]);
+    });
+}
+
 pub(crate) fn write_if_changed_atomic(
     path: &Path,
     tmp: &Path,
@@ -90,7 +97,11 @@ impl LoadCleanup {
             return;
         }
 
-        jackin_diagnostics::active_timing_started("cleanup", "cancel_cleanup", None);
+        jackin_diagnostics::active_timing_started(
+            jackin_diagnostics::DiagnosticStage::Cleanup,
+            "cancel_cleanup",
+            None,
+        );
         if let Some(run) = jackin_diagnostics::active_run() {
             run.compact("cleanup", "cancel cleanup started");
         }
@@ -99,24 +110,28 @@ impl LoadCleanup {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact("cleanup", &format!("cleanup failed (container): {e}"));
             }
+            record_cleanup_teardown_failure("cleanup failed (container)");
             launch_output().step_fail(&format!("cleanup failed (container): {e}"));
         }
         if let Err(e) = docker.remove_container(&self.dind).await {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact("cleanup", &format!("cleanup failed (dind): {e}"));
             }
+            record_cleanup_teardown_failure("cleanup failed (dind)");
             launch_output().step_fail(&format!("cleanup failed (dind): {e}"));
         }
         if let Err(e) = docker.remove_volume(&self.certs_volume).await {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact("cleanup", &format!("cleanup failed (certs volume): {e}"));
             }
+            record_cleanup_teardown_failure("cleanup failed (certs volume)");
             launch_output().step_fail(&format!("cleanup failed (certs volume): {e}"));
         }
         if let Err(e) = docker.remove_network(&self.network).await {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact("cleanup", &format!("cleanup failed (network): {e}"));
             }
+            record_cleanup_teardown_failure("cleanup failed (network)");
             launch_output().step_fail(&format!("cleanup failed (network): {e}"));
         }
         if self.clean_socket_dir {
@@ -124,6 +139,7 @@ impl LoadCleanup {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => {
+                    record_cleanup_teardown_failure("cleanup failed (socket dir)");
                     if let Some(run) = jackin_diagnostics::active_run() {
                         run.compact(
                             "cleanup",
@@ -140,6 +156,10 @@ impl LoadCleanup {
                 }
             }
         }
-        jackin_diagnostics::active_timing_done("cleanup", "cancel_cleanup", None);
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Cleanup,
+            "cancel_cleanup",
+            None,
+        );
     }
 }

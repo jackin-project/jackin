@@ -17,9 +17,8 @@ impl crate::tui::model::ConsoleAnimationTick for OpPickerState {
 /// Return a ready or background subscription for a typed picker load request.
 /// Caller supplies `runner`; the pending load from `take_pending_load` provides
 /// `cached` and `request`.
-#[allow(
+#[expect(
     clippy::option_if_let_else,
-    clippy::needless_pass_by_value,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub fn start_load(
@@ -37,7 +36,7 @@ pub fn start_load(
 }
 
 /// Execute one typed picker metadata request against the configured `op` runner.
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

@@ -7,7 +7,7 @@
 
 ## Status
 
-- **Implementation status**: **RESIDUAL** (kept after 2026-07-12 deep audit). Some live-backed matchers shipped
+- **Implementation status**: **RESIDUAL** (verified 2026-07-15). The core rewrite is incomplete: fabricated Amp/Kimi/OpenCode literals and Claude's ASCII prompt rule remain; only Claude has OSC-title working/idle rules; fixtures mix live captures with circular synthetic cases.
   (Claude/Codex/Amp/Kimi/OpenCode slices). Still open: fabricated kimi/amp/opencode literals, OSC-title only on
   Claude, incomplete real blocked/working/idle triad per agent.
 - **Priority**: P2
@@ -23,7 +23,7 @@ The pack rule literals for kimi/amp/opencode (and Claude's idle caret) are **fab
 not match the real TUIs — so those agents can never fire blocked/idle even when identification and cadence work.
 Because the screen pack is the sole blocked authority for reporter-less agents (kimi, amp), a wrong blocked
 literal means that agent **can never show blocked**. Separately, the dominant working/idle signal the reference
-uses for claude/codex — the **agent's own OSC-title spinner** — is parsed by jackin (`osc_title` virtual region)
+uses for claude/codex — the **agent's own OSC-title spinner** — is parsed by jackin❯ (`osc_title` virtual region)
 but the claude pack keys working off body strings ("esc to interrupt") instead, leaving working detection
 dependent on version-fragile body chrome. This plan fixes the content against real goldens and adds the
 version-stable OSC-title rules.
@@ -83,8 +83,8 @@ Every pack must match its plan-005 captured goldens for blocked/working/idle. Un
 - [ ] kimi/amp/opencode/claude/codex packs match real captured goldens for blocked, working, and idle — PARTIAL:
   Claude now has live blocked/working/idle coverage; Codex/Amp/Kimi/OpenCode have targeted live-capture-backed
   fixes; full blocked state coverage remains open
-- [x] The Claude idle caret uses the real `❯` (U+276F) via an anchored `line_regex`
-- [x] Loose idle rules (`requires_all=[">"]`) are tightened; amp bare `>` idle removed (close-out)
+- [ ] An anchored real `❯` idle rule exists, but Claude's legacy ASCII prompt-box rule remains
+- [ ] Loose idle rules are not fully tightened; Amp's bare `>` idle and Kimi's ASCII caret rule remain
   until real captures prove the replacement rules
 - [ ] OSC-title working/idle rules added where the agent emits a title spinner — PARTIAL: Claude title working/idle
   rules are present; Codex/Amp remain blocked until real captures prove title state in-container

@@ -43,7 +43,7 @@ pub fn render_footer(
     let debug_chip = debug_mode.then_some(run_id);
     // Fade the bar up from black over the first ~30 frames so it appears
     // gradually with the rain rather than popping in.
-    #[allow(
+    #[expect(
         clippy::cast_precision_loss,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]
@@ -96,7 +96,7 @@ pub fn footer_instance(view: &LaunchView) -> String {
     view.identity
         .as_ref()
         .and_then(|identity| identity.container.as_deref())
-        .and_then(jackin_core::constants::instance_id_from_container_base)
+        .and_then(jackin_core::instance_id_from_container_base)
         .map(str::to_owned)
         .unwrap_or_default()
 }

@@ -14,6 +14,13 @@ use crate::protocol::attach::{
 };
 use crate::socket;
 
+fn record_attach_failure(error_type: &'static str, body: &'static str) {
+    let span = jackin_diagnostics::operation_span("capsule.attach", &[]);
+    span.in_scope(|| {
+        jackin_diagnostics::operation_error("capsule.attach", error_type, body, &[]);
+    });
+}
+
 /// A validated attach handshake produced by `perform_handshake`. The
 /// main loop applies these — `client_permit` is kept alive until the
 /// spawned persistent attach task drops it.
@@ -171,8 +178,8 @@ pub(crate) fn send_attached_shutdown(
     context: &str,
     reason: Option<&str>,
 ) -> bool {
-    mux.client.flush_out_of_band();
-    let Some(tx) = mux.client.take() else {
+    mux.client_registry.client.flush_out_of_band();
+    let Some(tx) = mux.client_registry.client.take() else {
         return false;
     };
     if tx
@@ -212,7 +219,7 @@ async fn detach_attached_task_with_reason(
     if had_sender {
         tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_FLUSH_GRACE_MS)).await;
     }
-    if let Some(handle) = mux.attached_task.take() {
+    if let Some(handle) = mux.client_registry.attached_task.take() {
         handle.abort();
     }
 }
@@ -223,7 +230,7 @@ async fn gracefully_detach_attached_task_with_reason(
     reason: Option<&str>,
 ) {
     let had_sender = send_attached_shutdown(mux, context, reason);
-    let Some(mut handle) = mux.attached_task.take() else {
+    let Some(mut handle) = mux.client_registry.attached_task.take() else {
         return;
     };
     if !had_sender {
@@ -297,9 +304,15 @@ pub(crate) async fn handle_attach_client(
             result = stream.read_exact(&mut tag) => {
                 if let Err(e) = result {
                     if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        // Expected detach — not a failure (plan 008).
                         crate::cdebug!("attach client: socket closed (client detached)");
                     } else {
+                        // Operator-visible breadcrumb + typed OTLP failure.
                         crate::cerror!("attach client: socket read failed: {e}");
+                        record_attach_failure(
+                            "attach_socket_read_failed",
+                            "attach socket read failed",
+                        );
                     }
                     break;
                 }
@@ -307,12 +320,20 @@ pub(crate) async fn handle_attach_client(
                     Ok(Some(frame)) => frame,
                     Ok(None) => {
                         crate::cwarn!("attach client: EOF mid-frame (tag={:#04x})", tag[0]);
+                        record_attach_failure(
+                            "attach_socket_eof",
+                            "attach socket closed mid-frame",
+                        );
                         break;
                     }
                     Err(e) => {
                         crate::cerror!(
                             "attach client: frame decode failed (tag={:#04x}): {e}",
                             tag[0]
+                        );
+                        record_attach_failure(
+                            "attach_frame_decode_failed",
+                            "attach frame decode failed",
                         );
                         break;
                     }
@@ -331,6 +352,10 @@ pub(crate) async fn handle_attach_client(
                         crate::cwarn!("attach client: socket write failed: {e}");
                     } else {
                         crate::cerror!("attach client: socket write failed: {e}");
+                        record_attach_failure(
+                            "attach_socket_write_failed",
+                            "attach socket write failed",
+                        );
                     }
                     break;
                 }
@@ -350,3 +375,6 @@ pub(crate) async fn handle_attach_client(
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -17,7 +17,7 @@ use crate::agent_status::process::{
 };
 use crate::agent_status::rules::{RulePack, RulePackRegistry};
 use anyhow::Result;
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 use jackin_protocol::agent_status::{AgentStatusConfidence, AgentStatusSource};
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::mpsc;

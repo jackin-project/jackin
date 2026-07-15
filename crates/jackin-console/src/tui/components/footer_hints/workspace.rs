@@ -37,7 +37,7 @@ pub enum WorkspaceListFooterMode {
     },
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Twelve orthogonal footer-state flags (inline-agent/role-picker, \
               selected row / preview focus, snapshot+live markers, saved vs new \
@@ -62,7 +62,7 @@ pub struct WorkspaceListFooterFacts {
     pub show_open_in_github: bool,
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Eight orthogonal footer-input flags (selected row, inline-agent/role \
               pickers, preview focus, snapshot+live markers, show_expand/collapse, \
@@ -151,7 +151,7 @@ pub const fn workspace_list_footer_facts(
     }
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal scroll-axis input flags (inline-agent/role pickers, \
               list-names focus, scroll axes per pane, show_expand) — each tracks an \
