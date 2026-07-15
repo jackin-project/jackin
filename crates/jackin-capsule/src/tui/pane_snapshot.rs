@@ -91,7 +91,7 @@ pub enum PaneBodyDim {
 /// Thumb colour is phosphor-green for focused panes, gray for the
 /// rest — matches the surrounding border so focus and chrome
 /// agree.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

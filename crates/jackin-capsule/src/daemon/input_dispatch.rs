@@ -1,4 +1,4 @@
-#![allow(
+#![expect(
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -92,7 +92,7 @@ impl Multiplexer {
                 // owns the deferred control reply and answers when the command
                 // finishes (or fails closed).
                 self.dialog_pop_one();
-                if let Some(reply_tx) = self.pending_exec_reply.take() {
+                if let Some(reply_tx) = self.control.pending_exec_reply.take() {
                     tokio::spawn(async move {
                         drop(reply_tx.send(run_exec_selected(command, args, selected).await));
                     });
@@ -100,7 +100,7 @@ impl Multiplexer {
             }
             DialogAction::ExecCancel => {
                 self.dialog_pop_one();
-                if let Some(reply_tx) = self.pending_exec_reply.take() {
+                if let Some(reply_tx) = self.control.pending_exec_reply.take() {
                     drop(
                         reply_tx.send(jackin_protocol::control::ServerMsg::ExecDenied {
                             reason: "operator cancelled credential selection".to_owned(),
@@ -134,10 +134,10 @@ impl Multiplexer {
                     // Record the operator's choice; the event loop writes the
                     // exit-action file and drains on the next iteration.
                     ExitDirtyRow::Keep => {
-                        self.exit_request = Some(jackin_protocol::ExitAction::Keep);
+                        self.control.exit_request = Some(jackin_protocol::ExitAction::Keep);
                     }
                     ExitDirtyRow::Discard => {
-                        self.exit_request = Some(jackin_protocol::ExitAction::Discard);
+                        self.control.exit_request = Some(jackin_protocol::ExitAction::Discard);
                     }
                 }
             }
@@ -199,7 +199,7 @@ impl Multiplexer {
             }
             DialogAction::RenameTab { tab_idx, label } => {
                 self.dialog_clear();
-                if let Some(tab) = self.tabs.get_mut(tab_idx) {
+                if let Some(tab) = self.session_supervisor.tabs.get_mut(tab_idx) {
                     tab.set_custom_label(label);
                 }
             }
@@ -223,7 +223,7 @@ impl Multiplexer {
                 // action returned).
                 // The badge expires from the daemon's tick loop.
                 self.send_out_of_band(encode_osc52_clipboard_write(&payload));
-                self.dialog_copy_feedback_deadline =
+                self.clipboard.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
             DialogAction::OpenHostUrl(url) => {
@@ -255,7 +255,7 @@ impl Multiplexer {
                 // push it on top of the SplitDirectionPicker so Esc
                 // walks the operator one step back instead of
                 // closing the whole flow.
-                let agents = self.available_agents.clone();
+                let agents = self.launch_env.available_agents.clone();
                 self.dialog_push(Dialog::new_agent_picker(
                     agents,
                     PickerIntent::Split(direction),
@@ -280,7 +280,7 @@ impl Multiplexer {
             }
         }
         self.invalidate(frame_plan.reason());
-        // Per-keypress selection trace — firehose, gated on JACKIN_DEBUG=1.
+        // Per-keypress selection trace — firehose, gated at telemetry debug.
         if let Some(Dialog::ExitDirty { selected, .. }) = self.dialog_top() {
             crate::cdebug!("exit-dirty: selected={selected}");
         }
@@ -290,18 +290,19 @@ impl Multiplexer {
         if self.clear_clipboard_image_notice() {
             self.invalidate(FullRedrawReason::StatusChange);
         }
-        let cleared_selection = self.selection.is_some() || self.selection_copied;
-        self.pending_selection = None;
+        let cleared_selection =
+            self.clipboard.selection.is_some() || self.clipboard.selection_copied;
+        self.clipboard.pending_selection = None;
         if cleared_selection {
-            self.selection = None;
-            self.selection_copied = false;
-            self.selection_copy_feedback_deadline = None;
+            self.clipboard.selection = None;
+            self.clipboard.selection_copied = false;
+            self.clipboard.selection_copy_feedback_deadline = None;
         }
         let mut snapped = false;
         let mut unblocked = false;
         let mut delivered = false;
         if let Some(focused) = self.active_focused_id()
-            && let Some(session) = self.sessions.get_mut(&focused)
+            && let Some(session) = self.session_supervisor.sessions.get_mut(focused)
         {
             if session.scrollback_offset() != 0 {
                 session.scroll_to_live();
@@ -322,7 +323,7 @@ impl Multiplexer {
         let mut paste = Vec::new();
         let bracketed = self
             .active_focused_id()
-            .and_then(|focused| self.sessions.get(&focused))
+            .and_then(|focused| self.session_supervisor.sessions.get(focused))
             .is_some_and(crate::session::Session::bracketed_paste);
         if bracketed {
             paste.extend_from_slice(b"\x1b[200~");
@@ -347,7 +348,7 @@ impl Multiplexer {
         // Supersede any picker already in flight: deny its deferred reply (so
         // that client gets an answer instead of a closed socket) and drop its
         // now-stale dialog so confirm/cancel can't act on it.
-        if let Some(prev) = self.pending_exec_reply.take() {
+        if let Some(prev) = self.control.pending_exec_reply.take() {
             drop(prev.send(jackin_protocol::control::ServerMsg::ExecDenied {
                 reason: "superseded by a newer jackin-exec request".to_owned(),
             }));
@@ -358,21 +359,21 @@ impl Multiplexer {
         let state = crate::exec::ExecPickerState::from_bindings(
             command,
             args,
-            &self.launch_config.exec_bindings,
+            &self.launch_env.launch_config.exec_bindings,
         );
-        self.pending_exec_reply = Some(reply_tx);
+        self.control.pending_exec_reply = Some(reply_tx);
         self.dialog_push(Dialog::ExecPicker(state));
         self.invalidate(FullRedrawReason::DialogChange);
     }
 
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "Action dispatcher with one arm per multiplexed `Action` variant — \
               each arm applies its focused state mutation. Extracting arms into \
               sub-dispatchers would require re-borrowing the multiplexer state \
               across fn boundaries and obscure the per-action readability."
     )]
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Action dispatcher already accepted too_many_lines + too_many_lines \
               allows: per-action arm with nested `match` over sub-actions + \
@@ -413,30 +414,32 @@ impl Multiplexer {
                 self.invalidate_for(&Action::OpenUsage);
             }
             Action::OpenRenameTab(idx) => {
-                if idx >= self.tabs.len() {
+                if idx >= self.session_supervisor.tabs.len() {
                     return;
                 }
                 self.cancel_drag();
-                let initial = self.tabs[idx]
+                let initial = self.session_supervisor.tabs[idx]
                     .custom_label()
                     .map(str::to_owned)
                     .unwrap_or_default();
                 self.dialog_push(Dialog::new_rename_tab(idx, initial));
-                self.last_tab_click = None;
+                self.render.last_tab_click = None;
                 self.invalidate_for(&Action::OpenRenameTab(idx));
             }
             Action::OpenAgentPicker(intent) => {
-                let agents = self.available_agents.clone();
+                let agents = self.launch_env.available_agents.clone();
                 self.dialog_push(Dialog::new_agent_picker(agents, intent));
                 self.invalidate_for(&Action::OpenAgentPicker(intent));
             }
             Action::SwitchTab(idx) => {
-                if idx >= self.tabs.len() || idx == self.active_tab {
+                if idx >= self.session_supervisor.tabs.len()
+                    || idx == self.session_supervisor.active_tab
+                {
                     return;
                 }
                 self.cancel_drag();
                 let prev = self.active_focused_id();
-                self.active_tab = idx;
+                self.session_supervisor.active_tab = idx;
                 self.synthesise_focus_swap(prev, self.active_focused_id());
                 self.invalidate_for(&Action::SwitchTab(idx));
             }
@@ -479,7 +482,7 @@ impl Multiplexer {
                 self.invalidate_for(&Action::ClearFocusedPane);
             }
             Action::Detach => {
-                self.detach_requested = true;
+                self.client_registry.detach_requested = true;
                 self.invalidate_for(&Action::Detach);
             }
             Action::RefreshUsage => {
@@ -508,7 +511,7 @@ impl Multiplexer {
                     b"\x1b[O".as_ref()
                 };
                 if let Some(focused) = self.active_focused_id()
-                    && let Some(session) = self.sessions.get(&focused)
+                    && let Some(session) = self.session_supervisor.sessions.get(focused)
                     && session.focus_events_enabled()
                 {
                     session.send_input(bytes);
@@ -529,11 +532,15 @@ impl Multiplexer {
                         .dialog_top()
                         .map(|dialog| {
                             let view = github_context_view_from_state(
-                                self.pull_request_context_branch.as_deref(),
-                                self.pull_request_context.as_deref(),
+                                self.pr_watch.pull_request_context_branch.as_deref(),
+                                self.pr_watch.pull_request_context.as_deref(),
                                 self.pull_request_context_loading(),
                             );
-                            dialog.body_scroll_axes(self.term_rows, self.term_cols, Some(&view))
+                            dialog.body_scroll_axes(
+                                self.render.term_rows,
+                                self.render.term_cols,
+                                Some(&view),
+                            )
                         })
                         .unwrap_or_default();
                     if let Some(scroll) = self.dialog_top_mut().and_then(|d| d.body_scroll_mut()) {
@@ -558,7 +565,7 @@ impl Multiplexer {
                 let Some(focused) = self.active_focused_id() else {
                     return;
                 };
-                let Some(session) = self.sessions.get_mut(&focused) else {
+                let Some(session) = self.session_supervisor.sessions.get_mut(focused) else {
                     return;
                 };
                 let debug_enabled = crate::logging::debug_enabled();
@@ -649,10 +656,10 @@ impl Multiplexer {
                 }
             }
             Action::PanePrimaryPress { row, col } => {
-                if self.selection.is_some() || self.selection_copied {
-                    self.selection = None;
-                    self.selection_copied = false;
-                    self.selection_copy_feedback_deadline = None;
+                if self.clipboard.selection.is_some() || self.clipboard.selection_copied {
+                    self.clipboard.selection = None;
+                    self.clipboard.selection_copied = false;
+                    self.clipboard.selection_copy_feedback_deadline = None;
                     // Stamp the press even though it only cleared the old
                     // highlight: a double-click on the next word should be
                     // two presses, not three. The return value is ignored
@@ -691,7 +698,7 @@ impl Multiplexer {
                     if self.register_pane_press(&selection) {
                         return;
                     }
-                    self.pending_selection = Some(selection);
+                    self.clipboard.pending_selection = Some(selection);
                     return;
                 }
                 self.apply_action(Action::ForwardMouse {
@@ -702,24 +709,25 @@ impl Multiplexer {
                 });
             }
             Action::PaneButtonMotion { row, col } => {
-                if self.pending_selection.is_some() && self.selection.is_none() {
+                if self.clipboard.pending_selection.is_some() && self.clipboard.selection.is_none()
+                {
                     self.pending_selection_motion(row, col);
                     return;
                 }
                 let action = pane_button_motion_action(
-                    self.drag.is_some(),
-                    self.selection.is_some(),
+                    self.render.drag.is_some(),
+                    self.clipboard.selection.is_some(),
                     row,
                     col,
                 );
                 self.apply_action(action);
             }
             Action::StatusBarClick { col } => {
-                let tab = self.status_bar.tab_at_col(col + 1);
+                let tab = self.status.status_bar.tab_at_col(col + 1);
                 let now = Instant::now();
                 let double_click = tab
                     .and_then(|idx| {
-                        self.last_tab_click.filter(|(prev_idx, prev_t)| {
+                        self.render.last_tab_click.filter(|(prev_idx, prev_t)| {
                             *prev_idx == idx
                                 && now.duration_since(*prev_t) <= TAB_DOUBLE_CLICK_WINDOW
                         })
@@ -727,14 +735,14 @@ impl Multiplexer {
                     .is_some();
                 let Some(action) = status_bar_click_action(StatusBarClickState {
                     tab,
-                    tab_count: self.tabs.len(),
+                    tab_count: self.session_supervisor.tabs.len(),
                     double_click,
-                    menu_hit: self.status_bar.hint_at(1, col + 1),
+                    menu_hit: self.status.status_bar.hint_at(1, col + 1),
                 }) else {
                     return;
                 };
                 if matches!(action, Action::SwitchTab(_)) {
-                    self.last_tab_click = tab.map(|idx| (idx, now));
+                    self.render.last_tab_click = tab.map(|idx| (idx, now));
                     // P5: clicking a tab moves focus onto the tab bar (green
                     // underline + Left/Right nav until the agent is re-focused).
                     self.set_tab_bar_focused(true);
@@ -746,14 +754,14 @@ impl Multiplexer {
                 let hit = branch_context_bar_hit(
                     row + 1,
                     col + 1,
-                    self.term_rows,
-                    self.term_cols,
+                    self.render.term_rows,
+                    self.render.term_cols,
                     self.context_bar_branch(),
                     Some(&usage_status_label),
-                    self.pull_request_context.as_deref(),
+                    self.pr_watch.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
                     debug_run_id_label().as_deref(),
-                    self.status_bar.instance_id_label(),
+                    self.status.status_bar.instance_id_label(),
                 );
                 let Some(action) = branch_context_bar_click_action(hit) else {
                     return;
@@ -769,13 +777,14 @@ impl Multiplexer {
                 self.forward_mouse_to_focused_pane_with_kind(col, row, button, press);
             }
             Action::MouseRelease { row, col, button } => {
-                if self.pending_selection.is_some() && self.selection.is_none() {
-                    self.pending_selection = None;
+                if self.clipboard.pending_selection.is_some() && self.clipboard.selection.is_none()
+                {
+                    self.clipboard.pending_selection = None;
                     return;
                 }
                 let action = mouse_release_action(
-                    self.drag.is_some(),
-                    self.selection.is_some(),
+                    self.render.drag.is_some(),
+                    self.clipboard.selection.is_some(),
                     row,
                     col,
                     button,
@@ -786,19 +795,21 @@ impl Multiplexer {
                 self.send_bytes_to_focused_pane(&bytes);
             }
             Action::StartDragResize { row, col } => {
-                self.drag = self.detect_drag_start(row, col);
+                self.render.drag = self.detect_drag_start(row, col);
             }
             Action::DragMotion { row, col } => self.drag_motion(row, col),
             Action::EndDragResize => {
-                self.drag = None;
+                self.render.drag = None;
                 self.invalidate(drag_resize_redraw_reason());
             }
             Action::StartSelection { row, col } => {
-                self.pending_selection = None;
-                self.selection_copied = false;
-                self.selection_copy_feedback_deadline = None;
-                self.selection = self.detect_selection_start(row, col);
-                if let Some(reason) = selection_start_redraw_reason(self.selection.is_some()) {
+                self.clipboard.pending_selection = None;
+                self.clipboard.selection_copied = false;
+                self.clipboard.selection_copy_feedback_deadline = None;
+                self.clipboard.selection = self.detect_selection_start(row, col);
+                if let Some(reason) =
+                    selection_start_redraw_reason(self.clipboard.selection.is_some())
+                {
                     self.invalidate(reason);
                 }
             }
@@ -814,8 +825,8 @@ impl Multiplexer {
                 // render-side coords that are 1-based (the values passed to
                 // `move_to`, which emits `\x1b[r;cH`). Pass row+1 / col+1 here
                 // so the dialog can classify the modal click in render coords.
-                let term_rows = self.term_rows;
-                let term_cols = self.term_cols;
+                let term_rows = self.render.term_rows;
+                let term_cols = self.render.term_cols;
                 let Some(action) = self.dispatch_to_dialog_top(|dialog, github| {
                     dialog.handle_click(row + 1, col + 1, term_rows, term_cols, github)
                 }) else {
@@ -834,8 +845,8 @@ impl Multiplexer {
     /// the active-tab underline switches between phosphor-green (focused) and
     /// neutral white (agent content focused).
     pub(super) fn set_tab_bar_focused(&mut self, focused: bool) {
-        if self.tab_bar_focused != focused {
-            self.tab_bar_focused = focused;
+        if self.render.tab_bar_focused != focused {
+            self.render.tab_bar_focused = focused;
             self.invalidate(FullRedrawReason::StatusChange);
         }
     }
@@ -849,7 +860,7 @@ impl Multiplexer {
             // keys (Left/Right switch tabs; Down/Esc return focus to the agent).
             // Any other key also returns focus to the agent and is forwarded as
             // normal input, so the operator is never trapped in the bar.
-            if self.tab_bar_focused {
+            if self.render.tab_bar_focused {
                 match tab_bar_focus_key(&bytes) {
                     Some(TabBarFocusKey::Prev) => {
                         self.apply_action(Action::PreviousTab);
@@ -888,14 +899,14 @@ impl Multiplexer {
                 } => branch_context_bar_hit(
                     row + 1,
                     col + 1,
-                    self.term_rows,
-                    self.term_cols,
+                    self.render.term_rows,
+                    self.render.term_cols,
                     self.context_bar_branch(),
                     usage_status_label.as_deref(),
-                    self.pull_request_context.as_deref(),
+                    self.pr_watch.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
                     debug_run_id_label().as_deref(),
-                    self.status_bar.instance_id_label(),
+                    self.status.status_bar.instance_id_label(),
                 )
                 .is_some(),
                 _ => false,
@@ -949,7 +960,7 @@ impl Multiplexer {
                 // explicitly choose between that agent and a Shell;
                 // jumping straight into the agent would surprise an
                 // operator who picked "New tab" to open a shell.
-                let agents = self.available_agents.clone();
+                let agents = self.launch_env.available_agents.clone();
                 self.dialog_push(Dialog::new_agent_picker(agents, intent));
             }
             PaletteCommandRoute::NextTab => {

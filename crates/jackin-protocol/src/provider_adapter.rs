@@ -15,7 +15,7 @@
 //! - Adding a new provider requires exactly one registration here plus one
 //!   variant in the `Provider` enum — no N closed matches scattered elsewhere.
 //!
-//! Sibling to `jackin_core::agent::runtime::AgentRuntime`.
+//! Sibling to `jackin_core::AgentRuntime`.
 
 /// Sealing module — prevents external crates from implementing `ProviderAdapter`.
 pub(crate) mod private {
@@ -142,7 +142,7 @@ impl ProviderAdapter for AnthropicAdapter {
         // Anthropic's API key variable. The subscription path (`claude`) does
         // not need it — see `needs_key_for_agent` — but agents that do (e.g.
         // `opencode`) authenticate with this key.
-        Some(jackin_core::env_model::ANTHROPIC_API_KEY_ENV_NAME)
+        Some(jackin_core::ANTHROPIC_API_KEY_ENV_NAME)
     }
 }
 
@@ -174,7 +174,7 @@ impl ProviderAdapter for OpenaiAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        Some(jackin_core::env_model::OPENAI_API_KEY_ENV_NAME)
+        Some(jackin_core::OPENAI_API_KEY_ENV_NAME)
     }
 }
 
@@ -216,7 +216,7 @@ impl ProviderAdapter for ZaiAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        Some(jackin_core::env_model::ZAI_API_KEY_ENV_NAME)
+        Some(jackin_core::ZAI_API_KEY_ENV_NAME)
     }
 }
 
@@ -255,7 +255,7 @@ impl ProviderAdapter for MinimaxAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        Some(jackin_core::env_model::MINIMAX_API_KEY_ENV_NAME)
+        Some(jackin_core::MINIMAX_API_KEY_ENV_NAME)
     }
 
     fn codex_profile(&self) -> Option<&'static str> {
@@ -298,6 +298,6 @@ impl ProviderAdapter for KimiAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        Some(jackin_core::env_model::KIMI_CODE_API_KEY_ENV_NAME)
+        Some(jackin_core::KIMI_CODE_API_KEY_ENV_NAME)
     }
 }

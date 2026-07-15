@@ -10,8 +10,8 @@ use crate::instance::InstanceIndex;
 use crate::runtime::progress::LaunchStage;
 use crate::runtime::universe::ExitClaim;
 use jackin_config::AppConfig;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 
 pub(crate) fn launch_failure_title(
     stage: LaunchStage,

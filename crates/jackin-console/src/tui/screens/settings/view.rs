@@ -99,7 +99,7 @@ pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
     }
 }
 
-#[allow(
+#[expect(
     clippy::fn_params_excessive_bools,
     reason = "Four orthogonal settings-modal visibility flags (error_popup, \
               mounts_modal, env_modal, auth_modal) — each is an independent \

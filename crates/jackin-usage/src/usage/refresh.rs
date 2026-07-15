@@ -3,18 +3,28 @@
 
 //! Refresh orchestration: scheduling, cooldown, shared filesystem sync.
 //!
-//! Carved out of `usage.rs` during codebase-health-enforcement Workstream W5
+//! Carved out of `usage.rs` during the completed codebase-health Workstream W5
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(clippy::wildcard_imports, reason = "target-dependent")
 )]
 use super::*;
 use serde::Deserialize;
 
 pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn usage_refresh_error_type(error: &str) -> &'static str {
+    if usage_error_is_rate_limited(error) {
+        "usage_http_status"
+    } else if error.to_ascii_lowercase().contains("http") {
+        "usage_http_request_failed"
+    } else {
+        "usage_provider_failed"
+    }
+}
 
 pub(crate) fn collect_usage_refresh_results<F>(
     due_targets: Vec<UsageRefreshTarget>,
@@ -66,6 +76,14 @@ where
             }));
             match result {
                 Ok(result) => {
+                    if let Some(error) = result.view.last_error.as_deref() {
+                        jackin_diagnostics::operation_error(
+                            "usage.refresh",
+                            usage_refresh_error_type(error),
+                            "usage provider refresh failed",
+                            &[],
+                        );
+                    }
                     drop(tx.send(result));
                 }
                 Err(_) => {
@@ -104,6 +122,15 @@ where
                 "usage-refresh: provider probe timed out for {}",
                 target.cache_key()
             );
+            let span = jackin_diagnostics::operation_span("usage.refresh", &[]);
+            span.in_scope(|| {
+                jackin_diagnostics::operation_error(
+                    "usage.refresh",
+                    "usage_provider_timeout",
+                    "usage provider refresh timed out",
+                    &[],
+                );
+            });
             let mut view = cached_unavailable_view(&target.agent, target.provider.as_deref(), now);
             view.last_error = Some("usage provider probe timed out".to_owned());
             results.push(UsageRefreshResult {
@@ -420,7 +447,7 @@ pub(crate) fn write_materialized_usage_accounts(
     atomic_write_usage_json(path, &contents)
 }
 
-#[allow(
+#[expect(
     clippy::disallowed_methods,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

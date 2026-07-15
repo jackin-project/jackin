@@ -40,4 +40,3 @@ The `jackin` binary (`jackin`, `jackin load`, `jackin console`, …) plus the li
 cargo nextest run -p jackin
 cargo clippy -p jackin --all-targets -- -D warnings
 ```
-

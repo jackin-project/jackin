@@ -16,29 +16,29 @@
 //! - `agent/adapters/kimi.rs` — `KimiRuntime`
 //! - `agent/adapters/opencode.rs` — `OpencodeRuntime`
 
-pub mod amp;
-pub mod claude;
-pub mod codex;
-pub mod grok;
-pub mod kimi;
-pub mod opencode;
+pub(crate) mod amp;
+pub(crate) mod claude;
+pub(crate) mod codex;
+pub(crate) mod grok;
+pub(crate) mod kimi;
+pub(crate) mod opencode;
 
-pub use amp::AmpRuntime;
+pub(crate) use amp::AmpRuntime;
 
 #[cfg(test)]
 mod tests;
-pub use claude::ClaudeRuntime;
-pub use codex::CodexRuntime;
-pub use grok::GrokRuntime;
-pub use kimi::KimiRuntime;
-pub use opencode::OpencodeRuntime;
+pub(crate) use claude::ClaudeRuntime;
+pub(crate) use codex::CodexRuntime;
+pub(crate) use grok::GrokRuntime;
+pub(crate) use kimi::KimiRuntime;
+pub(crate) use opencode::OpencodeRuntime;
 
 use super::runtime::AgentRuntime;
 
 /// All six built-in adapters in the canonical declaration order.
 ///
 /// Adding a new runtime is one new file + one line here.
-pub const fn registry() -> &'static [&'static dyn AgentRuntime] {
+pub(crate) const fn registry() -> &'static [&'static dyn AgentRuntime] {
     &[
         &ClaudeRuntime,
         &CodexRuntime,

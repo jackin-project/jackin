@@ -293,7 +293,7 @@ impl Widget for DialogBottomChromeWidget<'_> {
     }
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

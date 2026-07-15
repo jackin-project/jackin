@@ -7,7 +7,7 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 use super::{
     collect_hot_path_counter_sums, ensure_hot_path_test_rig, incr_errors, incr_mouse_events,
-    install_hot_path_for_test, record_frame, record_render,
+    install_hot_path_for_test, record_frame, record_render, screen_metric_dims,
 };
 use crate::observability::otel_metrics as names;
 
@@ -17,6 +17,28 @@ const HOT_PATH_COUNTERS: &[&str] = &[
     names::RENDER_PAINTED_CELLS,
     names::TERMINAL_CURSOR_MOVES,
 ];
+
+#[test]
+fn interaction_metric_dimensions_cover_host_and_capsule_screens() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    crate::screen::reset_capsule_screen_for_test();
+
+    let host = crate::enter_screen(crate::Screen::List);
+    let host_dims = screen_metric_dims();
+    assert_eq!(host_dims.len(), 1);
+    assert_eq!(host_dims[0].key.as_str(), "jackin.screen.name");
+    assert_eq!(host_dims[0].value.to_string(), "list");
+    drop(host);
+
+    crate::record_capsule_activity("shell", Some("claude"));
+    let capsule_dims = screen_metric_dims();
+    assert_eq!(capsule_dims.len(), 1);
+    assert_eq!(capsule_dims[0].key.as_str(), "jackin.screen.name");
+    assert_eq!(capsule_dims[0].value.to_string(), "capsule");
+    crate::screen::reset_capsule_screen_for_test();
+}
 
 #[test]
 fn hot_path_record_paths_do_not_panic() {

@@ -32,7 +32,42 @@ sends readers here for the actual module-level detail.
 
 ## Workspace crate structure
 
-The Cargo workspace is a tiered DAG — dependencies point only downward. A higher tier may name a lower tier; never the reverse. For each crate's purpose, structure table, and public API, use the per-crate README or the generated Behind jackin❯ — crates section (one page per crate, built from the README at docs-build time) — this map stays the tier overview only.
+The Cargo workspace is a tiered DAG — dependencies point only downward. A higher tier may name a lower tier; never the reverse. For each crate's purpose, structure table, and public API, use the per-crate README or the generated Behind jackin❯ — crates section (one page per crate, built from the README at docs-build time) — this map stays the tier overview only. **Dependency visualization decision (plan 028):** the structural tier table on this page plus `cargo xtask lint arch` are the sole authoritative dependency interface; no generated dependency graph is embedded in the docs site.
+
+The following inventory is checked bidirectionally against Cargo workspace
+membership and the executable architecture-tier policy. Every row links both
+the rendered crate page and its source README.
+
+| Crate | Tier | Source contract |
+|---|---:|---|
+| [jackin-core](/reference/crates/jackin-core/) | 0 | <RepoFile path="crates/jackin-core/README.md">README</RepoFile> |
+| [jackin-dev](/reference/crates/jackin-dev/) | 0 | <RepoFile path="crates/jackin-dev/README.md">README</RepoFile> |
+| [jackin-process](/reference/crates/jackin-process/) | 0 | <RepoFile path="crates/jackin-process/README.md">README</RepoFile> |
+| [jackin-term](/reference/crates/jackin-term/) | 0 | <RepoFile path="crates/jackin-term/README.md">README</RepoFile> |
+| [jackin-build-meta](/reference/crates/jackin-build-meta/) | 1 | <RepoFile path="crates/jackin-build-meta/README.md">README</RepoFile> |
+| [jackin-pr-trailers](/reference/crates/jackin-pr-trailers/) | 1 | <RepoFile path="crates/jackin-pr-trailers/README.md">README</RepoFile> |
+| [jackin-xtask](/reference/crates/jackin-xtask/) | 1 | <RepoFile path="crates/jackin-xtask/README.md">README</RepoFile> |
+| [jackin-config](/reference/crates/jackin-config/) | 1 | <RepoFile path="crates/jackin-config/README.md">README</RepoFile> |
+| [jackin-protocol](/reference/crates/jackin-protocol/) | 1 | <RepoFile path="crates/jackin-protocol/README.md">README</RepoFile> |
+| [jackin-tui](/reference/crates/jackin-tui/) | 1 | <RepoFile path="crates/jackin-tui/README.md">README</RepoFile> |
+| [jackin-agent-status](/reference/crates/jackin-agent-status/) | 2 | <RepoFile path="crates/jackin-agent-status/README.md">README</RepoFile> |
+| [jackin-diagnostics](/reference/crates/jackin-diagnostics/) | 2 | <RepoFile path="crates/jackin-diagnostics/README.md">README</RepoFile> |
+| [jackin-manifest](/reference/crates/jackin-manifest/) | 2 | <RepoFile path="crates/jackin-manifest/README.md">README</RepoFile> |
+| [jackin-tui-lookbook](/reference/crates/jackin-tui-lookbook/) | 2 | <RepoFile path="crates/jackin-tui-lookbook/README.md">README</RepoFile> |
+| [jackin-console-oppicker](/reference/crates/jackin-console-oppicker/) | 3 | <RepoFile path="crates/jackin-console-oppicker/README.md">README</RepoFile> |
+| [jackin-docker](/reference/crates/jackin-docker/) | 3 | <RepoFile path="crates/jackin-docker/README.md">README</RepoFile> |
+| [jackin-env](/reference/crates/jackin-env/) | 3 | <RepoFile path="crates/jackin-env/README.md">README</RepoFile> |
+| [jackin-instance](/reference/crates/jackin-instance/) | 3 | <RepoFile path="crates/jackin-instance/README.md">README</RepoFile> |
+| [jackin-launch-tui](/reference/crates/jackin-launch-tui/) | 3 | <RepoFile path="crates/jackin-launch-tui/README.md">README</RepoFile> |
+| [jackin-test-support](/reference/crates/jackin-test-support/) | 3 | <RepoFile path="crates/jackin-test-support/README.md">README</RepoFile> |
+| [jackin-usage](/reference/crates/jackin-usage/) | 3 | <RepoFile path="crates/jackin-usage/README.md">README</RepoFile> |
+| [jackin-capsule](/reference/crates/jackin-capsule/) | 4 | <RepoFile path="crates/jackin-capsule/README.md">README</RepoFile> |
+| [jackin-console](/reference/crates/jackin-console/) | 4 | <RepoFile path="crates/jackin-console/README.md">README</RepoFile> |
+| [jackin-host](/reference/crates/jackin-host/) | 4 | <RepoFile path="crates/jackin-host/README.md">README</RepoFile> |
+| [jackin-image](/reference/crates/jackin-image/) | 4 | <RepoFile path="crates/jackin-image/README.md">README</RepoFile> |
+| [jackin-isolation](/reference/crates/jackin-isolation/) | 4 | <RepoFile path="crates/jackin-isolation/README.md">README</RepoFile> |
+| [jackin-runtime](/reference/crates/jackin-runtime/) | 5 | <RepoFile path="crates/jackin-runtime/README.md">README</RepoFile> |
+| [`jackin`](/reference/crates/jackin/) | 6 | <RepoFile path="crates/jackin/README.md">README</RepoFile> |
 
 ```text
 Tier 0  jackin-core        vocabulary + traits + manifest types + JackinPaths +
@@ -78,8 +113,9 @@ Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
         jackin-agent-status pure status detection/arbitration      → core, protocol
         jackin-usage       in-container usage/pricing/telemetry + token monitors → core, protocol, diagnostics
         jackin-term        owned terminal model (vte parser + DamageGrid + GridSnapshot) → (no workspace deps)
+        jackin-process     shared subprocess transport (capture/timeout/retry/status; no redaction) → (no workspace deps)
         jackin-xtask       workspace automation binary (cargo xtask; construct image + dev fixtures)
-                           → (no workspace deps; see Workspace Automation page)
+                           → jackin-process (see Workspace Automation page)
         jackin-dev         contributor PR-verification binary (standalone; no workspace deps)
         jackin-pr-trailers squash-merge trailer extraction CLI (standalone; no workspace deps)
 

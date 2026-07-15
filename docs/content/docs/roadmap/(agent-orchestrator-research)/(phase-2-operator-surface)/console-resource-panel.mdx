@@ -6,7 +6,7 @@ title: "Console Resource Panel (machine + per-agent live usage)"
 
 ## Shipped baseline
 
-jackin❯ already samples resource data in two narrow, non-operator-facing ways. The capsule daemon has a debug-only RSS/CPU sampler for its own host process (<RepoFile path="crates/jackin-capsule/src/daemon/resource_metrics.rs" />), gated behind `JACKIN_DEBUG=1` and logged via `cdebug!` — it is not surfaced to the operator. Separately, the OTLP exporter in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> emits `process.cpu.utilization` and `process.memory.usage` metrics sampled via `sysinfo`, for whoever is scraping the configured OTLP endpoint — again, not rendered in the console. Neither of these is a per-agent or machine-summary view, and no `DockerApi` stats endpoint, console panel module, or panel keybinding exists anywhere in the tree today.
+jackin❯ already samples resource data in two narrow, non-operator-facing ways. The capsule daemon has a debug-only RSS/CPU sampler for its own host process (<RepoFile path="crates/jackin-capsule/src/daemon/resource_metrics.rs" />), gated behind `JACKIN_TELEMETRY_LEVEL=debug` and logged via `cdebug!` — it is not surfaced to the operator. Separately, the OTLP exporter in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> emits `process.cpu.utilization` and `process.memory.usage` metrics sampled via `sysinfo`, for whoever is scraping the configured OTLP endpoint — again, not rendered in the console. Neither of these is a per-agent or machine-summary view, and no `DockerApi` stats endpoint, console panel module, or panel keybinding exists anywhere in the tree today.
 
 ## Remaining work
 

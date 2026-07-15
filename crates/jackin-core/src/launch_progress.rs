@@ -301,7 +301,7 @@ pub trait LaunchDiagnostics: Send + Sync {
     /// Emit an error line with optional structured error type.
     fn error(&self, kind: &str, message: &str, error_type: Option<&str>);
     /// Emit a stage transition / progress event.
-    fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>);
+    fn stage(&self, kind: &str, stage: LaunchStage, message: &str, detail: Option<&str>);
 }
 
 /// Host terminal side-effects available during launch (clipboard, pointer, debug).

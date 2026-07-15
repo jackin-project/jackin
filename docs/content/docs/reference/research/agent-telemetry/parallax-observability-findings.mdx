@@ -780,11 +780,11 @@ Representative rows:
 
 | service | span_name | spans | traces |
 |---|---|---:|---:|
-| jackin | `normal_step` | 3,413 | 3,054 |
-| jackin | `emit_insn` | 109,579 | 1,358 |
-| jackin | `translate` | 1,462 | 1,358 |
-| jackin | `begin_read_tx` | 1,192 | 1,135 |
-| jackin | `end_read_tx` | 1,623 | 1,130 |
+| jackin❯ | `normal_step` | 3,413 | 3,054 |
+| jackin❯ | `emit_insn` | 109,579 | 1,358 |
+| jackin❯ | `translate` | 1,462 | 1,358 |
+| jackin❯ | `begin_read_tx` | 1,192 | 1,135 |
+| jackin❯ | `end_read_tx` | 1,623 | 1,130 |
 
 Trace inspection of `usage:refresh_accounts` showed hundreds of micro-spans like `emit_insn`, `read_page_no_cache`, `find_frame`, and `translate`. These are storage-engine internals, not jackin❯ workflow spans.
 

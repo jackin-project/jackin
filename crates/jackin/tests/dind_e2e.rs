@@ -1,23 +1,21 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 //! End-to-end smoke that drives `jackin load` against a real Docker daemon
 //! with proxy env declared in role config, then asserts the launched agent
 //! container's environment carries the `DinD` hostname in both `NO_PROXY`
 //! and `no_proxy`. Regression guard for the proxy-routed `DinD`-handshake
 //! bug fixed in `src/runtime/launch.rs`.
 
+// Expects only apply when the e2e feature compiles the body; without it the
+// crate is empty and unfulfilled-expect would fail `cargo clippy -p jackin`.
+#![cfg_attr(
+    feature = "e2e",
+    expect(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::disallowed_methods,
+        clippy::duration_suboptimal_units,
+        reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+    )
+)]
 #![cfg(feature = "e2e")]
 use std::time::Duration;
 

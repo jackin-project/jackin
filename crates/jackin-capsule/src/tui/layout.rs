@@ -361,7 +361,7 @@ impl PaneTree {
     /// can collapse to zero cols / rows. Non-finite `delta` (NaN, ±∞)
     /// is rejected up front because `f32::clamp` on NaN returns NaN —
     /// a NaN ratio cast as `u16` collapses one child of the split.
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Pane-tree resize walker: nested `if crosses_this` + signed- \
               delta computation + recursive parent + sibling + border-crossing \

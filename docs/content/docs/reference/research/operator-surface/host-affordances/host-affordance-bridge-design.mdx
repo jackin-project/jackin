@@ -149,7 +149,7 @@ Kitty's clipboard kitten can read and write arbitrary clipboard MIME types, incl
 
 Kitty's remote-file kitten supports opening, editing, and downloading files from a remote SSH session. The terminal can use hyperlinks from commands such as `ls --hyperlink=auto`, then a modified click chooses an action. This is the closest UX precedent for jackin❯'s container-file export path: visible file path plus explicit operator action plus host-side destination. See [Kitty remote files](https://sw.kovidgoyal.net/kitty/kittens/remote_file/).
 
-Kitty's transfer kitten is a more protocol-shaped precedent: it can copy files in either direction over the TTY device, including remote-to-local download and local-to-remote upload. jackin❯ does not depend on Kitty's implementation, but it validates a typed bidirectional file-transfer capability as a terminal-adjacent primitive. See [kitten-transfer manual](https://manpages.ubuntu.com/manpages/noble/man1/kitten-transfer.1.html).
+Kitty's transfer kitten is a more protocol-shaped precedent: it can copy files in either direction over the TTY device, including remote-to-local download and local-to-remote upload. jackin❯ does not depend on Kitty's implementation, but it validates a typed bidirectional file-transfer capability as a terminal-adjacent primitive. See the [transfer kitten documentation](https://sw.kovidgoyal.net/kitty/kittens/transfer/).
 
 iTerm2's utilities include `it2dl`, which downloads a remote file into the local Downloads folder. This reinforces the correct host destination model for jackin❯: a predictable operator-owned download location with visible feedback, not silent writes to arbitrary host paths. See [iTerm2 utilities](https://iterm2.com/documentation-utilities.html).
 
@@ -169,7 +169,7 @@ Ghostty / terminal on host
           -> Capsule pastes the container-readable path into the focused PTY
 ```
 
-This fixes the structural cause: the host component that can read the host clipboard does so, then uses an explicit jackin protocol message to cross the container boundary. It also preserves the container boundary: agents receive a file path inside the container, not arbitrary host clipboard access.
+This fixes the structural cause: the host component that can read the host clipboard does so, then uses an explicit jackin❯ protocol message to cross the container boundary. It also preserves the container boundary: agents receive a file path inside the container, not arbitrary host clipboard access.
 
 A daemon remains relevant for future desktop/global bridges, but it was not required for the first correct implementation. Image paste is synchronous with an attached terminal and an explicit paste gesture. A short-lived host attach client can perform the needed host-side read without a long-running process.
 
@@ -526,5 +526,5 @@ Should directories be supported? Chosen answer: not in V1. Start with regular fi
 - [WezTerm shell integration](https://wezterm.org/shell-integration.html) — reference for OSC 7 / OSC 133 / OSC 1337 prompt and pane metadata.
 - [Kitty clipboard kitten](https://sw.kovidgoyal.net/kitty/kittens/clipboard/) — reference for terminal-mediated arbitrary clipboard MIME transfer with permission prompts.
 - [Kitty remote files](https://sw.kovidgoyal.net/kitty/kittens/remote_file/) — reference for opening, editing, and downloading remote files from visible terminal paths.
-- [Kitty transfer kitten](https://manpages.ubuntu.com/manpages/noble/man1/kitten-transfer.1.html) — reference for bidirectional TTY file transfer.
+- [Kitty transfer kitten](https://sw.kovidgoyal.net/kitty/kittens/transfer/) — reference for bidirectional TTY file transfer.
 - [iTerm2 utilities](https://iterm2.com/documentation-utilities.html) — reference for a remote-file download helper that lands files in Downloads.
