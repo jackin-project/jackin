@@ -19,7 +19,6 @@
 //! ```
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;

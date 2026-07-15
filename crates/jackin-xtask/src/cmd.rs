@@ -71,6 +71,11 @@ pub(crate) fn output_string(cmd: &mut Command) -> Result<String> {
     Ok(String::from_utf8_lossy(&output(cmd)?).into_owned())
 }
 
+/// Construct an xtask command; execution must return through this module.
+pub(crate) fn command(program: impl AsRef<OsStr>) -> Command {
+    Command::new(program)
+}
+
 /// Full process `Output` (stdout+stderr+status) for callers that inspect all three.
 pub(crate) fn output_raw(cmd: &mut Command) -> Result<jackin_process::ExecResult> {
     let display = display_command(cmd);

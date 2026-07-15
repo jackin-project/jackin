@@ -174,7 +174,7 @@ fn docker_info_field(format: &str) -> Result<String> {
 
 fn command(program: &str) -> CommandResult {
     CommandResult {
-        command: Command::new(program),
+        command: crate::cmd::command(program),
     }
 }
 
@@ -199,13 +199,13 @@ impl CommandResult {
 }
 
 fn command_output(program: &str, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new(program);
+    let mut cmd = crate::cmd::command(program);
     cmd.args(args);
     crate::cmd::output_string(&mut cmd)
 }
 
 fn docker_rm(name: &str) {
-    let mut cmd = Command::new("docker");
+    let mut cmd = crate::cmd::command("docker");
     cmd.args(["rm", "-f", name])
         .stdout(Stdio::null())
         .stderr(Stdio::null());
