@@ -20,9 +20,9 @@ mod tests;
 
 use jackin_core::{ChangedFile, changed_files, unpushed_commit_count};
 use jackin_core::{CommandRunner, RunOptions};
+use jackin_process::{ExecRequest, StdioMode};
 use jackin_protocol::{CapsuleConfig, EXIT_ACTION_PATH, ExitAction};
 use std::path::Path;
-use jackin_process::{ExecRequest, StdioMode};
 
 /// One isolated worktree carrying uncommitted or unpushed work.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -5,13 +5,13 @@
 //! entrypoint shell. The shell entrypoint remains responsible for
 //! sourcing role hooks and `exec`-ing the selected agent.
 
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
 
 use anyhow::{Context, Result, bail};
 use serde_json::json;
@@ -800,10 +800,8 @@ fn write_codex_minimax_catalog(codex_dir: &Path, model: &str) -> Result<()> {
 /// flags, base instructions) as the running binary already shaped them. `None`
 /// when Codex is absent, fails, or its output has no model object to template.
 fn codex_catalog_template_entry() -> Option<serde_json::Map<String, serde_json::Value>> {
-    let mut command = Command::new("codex");
-    command.args(["debug", "models"]);
-    let output = runtime_setup_output(&mut command).ok()?;
-    if !output.status.success() {
+    let output = runtime_setup_output("codex", ["debug", "models"]).ok()?;
+    if !output.success {
         return None;
     }
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
@@ -1241,12 +1239,10 @@ fn git_trailer_hook_ready() -> bool {
     {
         return false;
     }
-    let mut command = Command::new("git");
-    command.args(["config", "--global", "core.hooksPath"]);
-    let Ok(output) = runtime_setup_output(&mut command) else {
+    let Ok(output) = runtime_setup_output("git", ["config", "--global", "core.hooksPath"]) else {
         return false;
     };
-    output.status.success() && String::from_utf8_lossy(&output.stdout).trim_end() == GIT_HOOKS_DIR
+    output.success && String::from_utf8_lossy(&output.stdout).trim_end() == GIT_HOOKS_DIR
 }
 
 fn hook_points_to_capsule() -> bool {
@@ -1312,10 +1308,8 @@ fn git_dco_identity_cache_path() -> PathBuf {
 }
 
 fn git_config_value(key: &str) -> Option<String> {
-    let mut command = Command::new("git");
-    command.args(["config", key]);
-    let output = runtime_setup_output(&mut command).ok()?;
-    if !output.status.success() {
+    let output = runtime_setup_output("git", ["config", key]).ok()?;
+    if !output.success {
         return None;
     }
     Some(
@@ -1333,19 +1327,19 @@ fn ensure_message_trailer(
     where_arg: Option<&str>,
 ) -> Result<()> {
     remove_exact_trailer_lines(message_path, trailer, label)?;
-    let mut command = Command::new("git");
-    command.args([
-        "interpret-trailers",
-        "--in-place",
-        "--if-exists=addIfDifferent",
-    ]);
+    let mut args = vec![
+        OsString::from("interpret-trailers"),
+        OsString::from("--in-place"),
+        OsString::from("--if-exists=addIfDifferent"),
+    ];
     if let Some(where_arg) = where_arg {
-        command.arg(format!("--where={where_arg}"));
+        args.push(OsString::from(format!("--where={where_arg}")));
     }
-    command.args(["--trailer", trailer]).arg(message_path);
-    let output = runtime_setup_output(&mut command)
+    args.extend([OsString::from("--trailer"), OsString::from(trailer)]);
+    args.push(message_path.as_os_str().to_owned());
+    let output = runtime_setup_output("git", args)
         .with_context(|| format!("failed to run git interpret-trailers for {label}"))?;
-    if output.status.success() {
+    if output.success {
         return Ok(());
     }
     bail!(
@@ -1381,18 +1375,16 @@ fn remove_exact_trailer_lines(message_path: &Path, trailer: &str, label: &str) -
 }
 
 fn ensure_git_config_multivalue(key: &str, value: &str) -> Result<()> {
-    let mut command = Command::new("git");
-    command.args(["config", "--global", "--get-all", key]);
-    let output = runtime_setup_output(&mut command)
+    let output = runtime_setup_output("git", ["config", "--global", "--get-all", key])
         .with_context(|| format!("failed to read git config {key}"))?;
-    if output.status.success()
+    if output.success
         && String::from_utf8_lossy(&output.stdout)
             .lines()
             .any(|line| line == value)
     {
         return Ok(());
     }
-    if !output.status.success() && output.status.code() != Some(1) {
+    if !output.success && output.code != Some(1) {
         bail!(
             "git config --global --get-all {key} failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
@@ -1402,67 +1394,67 @@ fn ensure_git_config_multivalue(key: &str, value: &str) -> Result<()> {
 }
 
 fn gh_auth_status_ok() -> bool {
-    Command::new("gh")
-        .args(["auth", "status"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+    let request = jackin_process::ExecRequest::new("gh", ["auth", "status"])
+        .stdout_mode(jackin_process::StdioMode::Null)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    jackin_process::exec_sync(&request).is_ok_and(|result| result.success)
 }
 
 pub(crate) fn run_command(program: &str, args: &[&str]) -> Result<()> {
-    let mut command = Command::new(program);
-    command.args(args);
-    let output = runtime_setup_output(&mut command)
+    let output = runtime_setup_output(program, args.iter().copied())
         .with_context(|| format!("failed to run {}", format_command(program, args)))?;
-    if output.status.success() {
+    if output.success {
         return Ok(());
     }
     bail!(
         "{} failed with {}: {}",
         format_command(program, args),
-        output.status,
+        output
+            .code
+            .map_or_else(|| "signal".to_owned(), |code| code.to_string()),
         String::from_utf8_lossy(&output.stderr).trim()
     )
 }
 
-fn runtime_setup_output(command: &mut Command) -> io::Result<Output> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "capsule runtime setup runs before entering the multiplexer render loop"
-    )]
-    command.output()
+fn runtime_setup_output(
+    program: &str,
+    args: impl IntoIterator<Item = impl AsRef<OsStr>>,
+) -> Result<jackin_process::ExecResult> {
+    jackin_process::exec_sync(&jackin_process::ExecRequest::new(program, args))
 }
 
 fn run_optional_command(program: &str, args: &[&str]) -> bool {
-    let mut command = Command::new(program);
-    command.args(args);
     // Shared telemetry resolver (plan 006) — not a private JACKIN_DEBUG parse.
     let verbose = matches!(
         jackin_diagnostics::telemetry_level(false),
         jackin_diagnostics::TelemetryLevel::Debug | jackin_diagnostics::TelemetryLevel::Trace
     );
-    if !verbose {
-        command.stdout(Stdio::null()).stderr(Stdio::null());
-    }
+    let mode = if verbose {
+        jackin_process::StdioMode::Inherit
+    } else {
+        jackin_process::StdioMode::Null
+    };
+    let request = jackin_process::ExecRequest::new(program, args.iter().copied())
+        .stdout_mode(mode)
+        .stderr_mode(mode);
     // "Optional" means "do not abort runtime_setup", not "swallow the
     // exit code." A failing `claude mcp add tirith` or `shellfirm`
     // call leaves the role launched without the MCP wired up, so log
     // the exact failure to the multiplexer log for operator triage.
-    match command.status() {
-        Ok(status) if status.success() => true,
-        Ok(status) => {
+    match jackin_process::exec_sync(&request) {
+        Ok(result) if result.success => true,
+        Ok(result) => {
             crate::clog!(
-                "optional command {} exited with status {status}",
-                format_command(program, args)
+                "optional command {} exited with code {:?}",
+                format_command(program, args),
+                result.code
             );
             false
         }
         Err(e) => {
             crate::clog!(
-                "optional command {} failed to spawn: {e} (errno={:?})",
-                format_command(program, args),
-                e.raw_os_error()
+                "optional command {} failed to spawn: {e}",
+                format_command(program, args)
             );
             false
         }

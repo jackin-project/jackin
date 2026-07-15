@@ -29,10 +29,10 @@
 
 use crate::runtime_setup::run_command;
 use anyhow::{Context, Result, bail};
+use jackin_process::{ExecRequest, StdioMode};
 use std::collections::BTreeSet;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
-use jackin_process::{ExecRequest, StdioMode};
 
 /// ipset name holding the allowed destination addresses/CIDRs.
 const IPSET: &str = "jackin-allowed";

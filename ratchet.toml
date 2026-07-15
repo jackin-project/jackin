@@ -85,7 +85,7 @@ key = "clippy::disallowed_methods@jackin-build-meta"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-capsule"
-bound = 9
+bound = 8
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-config"
 bound = 2
