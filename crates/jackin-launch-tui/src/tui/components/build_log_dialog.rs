@@ -3,10 +3,9 @@
 
 //! Launch docker-build log overlay helpers.
 
-use jackin_tui::components::render_scrollable_block;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear};
 use termrock::HintSpan;
@@ -219,21 +218,26 @@ pub fn render_build_log_dialog(
     // Live build output is tail-relative (0 = follow newest), unlike ordinary
     // top-offset panels that can use `apply_scroll_delta` directly. Keep the
     // state in the shared `TailScroll` adapter, then convert to the top-offset
-    // consumed by `render_scrollable_block`/`FixedScrollbar`.
+    // consumed by the top-offset viewport.
     let viewport_h = viewport_height(box_area);
     let lines_len = lines.len();
-    let mut scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
-        .unwrap_or(u16::MAX);
-    let mut scroll_x = 0u16;
-    render_scrollable_block(
-        frame,
-        box_area,
-        lines,
-        &mut scroll_x,
-        &mut scroll_y,
-        true,
-        Some(title),
-    );
+    let mut scroll = termrock::scroll::DialogScroll {
+        scroll_x: 0,
+        scroll_y: u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
+            .unwrap_or(u16::MAX),
+    };
+    let viewport = termrock::widgets::Viewport {
+        lines: &lines,
+        title: Some(title),
+        content_style: termrock::style::GREEN,
+        border_style: Style::new().fg(termrock::style::PHOSPHOR_GREEN),
+        title_style: Style::new()
+            .fg(termrock::style::WHITE)
+            .add_modifier(Modifier::BOLD),
+        scroll_track_style: Style::new().fg(termrock::style::DIALOG_SCROLL_TRACK),
+        scroll_thumb_style: Style::new().fg(termrock::style::DIALOG_SCROLL_THUMB),
+    };
+    frame.render_stateful_widget(&viewport, box_area, &mut scroll);
 
     let vertical = termrock::scroll::is_scrollable(lines_len, viewport_h);
     if !debug_mode {

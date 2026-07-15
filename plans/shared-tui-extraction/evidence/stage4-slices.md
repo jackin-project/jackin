@@ -18,7 +18,7 @@
 
 - Theme, display-width geometry, ANSI text parsing, typed key dispatch, rich hints, modal backdrop, and neutral dialog scroll state now resolve from TermRock.
 - Launch-specific presentation output, warp animation, terminal-mode policy, bottom-chrome composition, and hint wording have explicit local owners in `jackin-launch-tui`.
-- TermRock repaired the missing backend-neutral dialog-scroll contract and removed stale donor-specific catalog artifacts forward; jackin❯ pins full revision `4298ea3f444d789bf84687606fd90a024719a6f0` with the lockfile committed.
+- TermRock repaired the missing backend-neutral dialog-scroll and viewport contracts and removed stale donor-specific catalog artifacts forward; jackin❯ pins full revision `d2f234f0acc7e2619a358ef8fc4c042edfd8d616` with the lockfile committed.
 - `cargo test -p jackin-launch-tui --lib` passed with 79 tests after the scroll-state repin. Remaining donor references are confined to component families still being migrated.
 
 CI/CD observation is deferred until the final aggregate verification phase.
