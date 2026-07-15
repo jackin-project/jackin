@@ -15,6 +15,7 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
 
+mod config;
 mod health;
 pub use health::{TelemetryHealth, record_telemetry_rejection, telemetry_health_snapshot};
 
@@ -251,19 +252,19 @@ pub fn init_tracing_for(
     run_id: &str,
     identity: ServiceIdentity,
 ) -> anyhow::Result<bool> {
-    {
-        if let Some(endpoints) = otlp::endpoints() {
-            return match otlp::init(debug, run_id, identity, &endpoints) {
-                Ok(()) => Ok(true),
-                Err(error) => {
-                    // OTLP requested but unavailable: install the JSONL-only
-                    // layer so the file fallback still captures events, then
-                    // report the failure to the caller (which surfaces it).
-                    install_jsonl_only();
-                    Err(error)
-                }
-            };
-        }
+    let env = |key: &str| std::env::var(key).ok();
+    if let Some(config) = config::resolve_otlp_config(&env)? {
+        let endpoints = otlp::OtlpEndpoints::from_config(&config);
+        return match otlp::init(debug, run_id, identity, &endpoints) {
+            Ok(()) => Ok(true),
+            Err(error) => {
+                // OTLP requested but unavailable: install the JSONL-only layer
+                // so fallback diagnostics still capture the initialization
+                // failure for the operator.
+                install_jsonl_only();
+                Err(error)
+            }
+        };
     }
 
     // No fmt layer: the operator's terminal must never receive the firehose.
@@ -292,7 +293,11 @@ fn install_jsonl_only() {
 /// use this to fail fast with a clear operator error before doing any work.
 #[must_use]
 pub fn unsupported_otlp_protocol() -> Option<String> {
-    otlp::first_unsupported_protocol()
+    let env = |key: &str| std::env::var(key).ok();
+    match config::resolve_otlp_config(&env) {
+        Err(config::OtlpConfigError::UnsupportedProtocol { value, .. }) => Some(value),
+        _ => None,
+    }
 }
 
 /// Flush and shut down the OTLP exporters, if any are active.
@@ -325,9 +330,10 @@ pub fn init_capsule_tracing(
     run_id: Option<&str>,
     traceparent: Option<&str>,
 ) -> anyhow::Result<bool> {
-    let activated = match otlp::base_endpoint() {
-        Some(endpoint) => {
-            otlp::init_capsule(session_id, run_id, traceparent, &endpoint)?;
+    let env = |key: &str| std::env::var(key).ok();
+    let activated = match config::resolve_otlp_config(&env)? {
+        Some(config) => {
+            otlp::init_capsule(session_id, run_id, traceparent, &config)?;
             true
         }
         None => false,
@@ -371,7 +377,7 @@ pub fn backend_query_hint(run_id: &str) -> Option<String> {
 /// it as never requested. Always `false` without the `otlp` feature.
 #[must_use]
 pub fn otlp_endpoint_configured() -> bool {
-    otlp::any_endpoint_configured()
+    config::any_endpoint_configured(&|key| std::env::var(key).ok())
 }
 
 /// How a launched container should reach the host OTLP backend.
@@ -551,9 +557,19 @@ mod otlp {
         traces: String,
         logs: String,
         metrics: Option<String>,
+        timeout: std::time::Duration,
     }
 
     impl OtlpEndpoints {
+        pub(super) fn from_config(config: &super::config::OtlpConfig) -> Self {
+            Self {
+                traces: config.traces_endpoint.clone(),
+                logs: config.logs_endpoint.clone(),
+                metrics: Some(config.metrics_endpoint.clone()),
+                timeout: config.timeout,
+            }
+        }
+
         /// The per-signal endpoints a single base produces. OTLP/gRPC sends every
         /// signal to the same endpoint verbatim and routes by gRPC service name,
         /// so — unlike OTLP/HTTP — no `/v1/<signal>` path is appended and all
@@ -571,6 +587,7 @@ mod otlp {
                 traces: grpc_endpoint(traces),
                 logs: grpc_endpoint(logs),
                 metrics: metrics.map(grpc_endpoint),
+                timeout: std::time::Duration::from_secs(5),
             }
         }
     }
@@ -632,27 +649,6 @@ mod otlp {
             }
         }
         Ok(())
-    }
-
-    /// The standard OTLP endpoint env vars (generic base + per-signal). Used to
-    /// tell "operator configured export" apart from "export not requested" even
-    /// when the config is incomplete (e.g. only a metrics endpoint, which can't
-    /// build the mandatory traces+logs and so yields no `OtlpEndpoints`).
-    const ENDPOINT_VARS: [&str; 4] = [
-        "OTEL_EXPORTER_OTLP_ENDPOINT",
-        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-        "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
-        "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
-    ];
-
-    /// Whether any OTLP endpoint var is set to a non-empty value — i.e. the
-    /// operator intends export. True even when [`endpoints`] returns `None`
-    /// because the config is incomplete; the caller uses the gap to surface a
-    /// notice rather than silently disabling export.
-    pub(super) fn any_endpoint_configured() -> bool {
-        ENDPOINT_VARS
-            .iter()
-            .any(|var| std::env::var(var).is_ok_and(|value| !value.trim().is_empty()))
     }
 
     /// The endpoint handed to a launched container. The base var wins; absent it,
@@ -758,19 +754,6 @@ mod otlp {
         Ok(())
     }
 
-    /// The first explicitly-requested non-grpc protocol value, but only when an
-    /// OTLP endpoint is configured (no endpoint → no export intended → the
-    /// protocol vars are moot). Drives the fatal startup check.
-    pub(super) fn first_unsupported_protocol() -> Option<String> {
-        endpoints()?;
-        PROTOCOL_VARS.into_iter().find_map(|var| {
-            std::env::var(var)
-                .ok()
-                .filter(|value| unsupported_protocol(value))
-                .map(|value| value.trim().to_owned())
-        })
-    }
-
     /// Stable source identity only. Run/session/component live on records and
     /// spans (`parallax.run.id`, `session.id`, `jackin.component`) so two runs
     /// of the same build share Resource identity.
@@ -821,6 +804,7 @@ mod otlp {
         resource: Resource,
         traces_endpoint: &str,
         logs_endpoint: &str,
+        timeout: std::time::Duration,
     ) -> anyhow::Result<(
         SdkTracerProvider,
         SdkLoggerProvider,
@@ -841,6 +825,7 @@ mod otlp {
         let span_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
             .with_endpoint(traces_endpoint.to_owned())
+            .with_timeout(timeout)
             .with_compression(Compression::Gzip)
             .with_retry_policy(retry::policy())
             .build()
@@ -848,6 +833,7 @@ mod otlp {
         let log_exporter = opentelemetry_otlp::LogExporter::builder()
             .with_tonic()
             .with_endpoint(logs_endpoint.to_owned())
+            .with_timeout(timeout)
             .with_compression(Compression::Gzip)
             .with_retry_policy(retry::policy())
             .build()
@@ -947,8 +933,12 @@ mod otlp {
         endpoints: &OtlpEndpoints,
     ) -> anyhow::Result<()> {
         let resource = resource(run_id, identity);
-        let (tracer_provider, logger_provider, app_handle) =
-            build_otlp_providers(resource.clone(), &endpoints.traces, &endpoints.logs)?;
+        let (tracer_provider, logger_provider, app_handle) = build_otlp_providers(
+            resource.clone(),
+            &endpoints.traces,
+            &endpoints.logs,
+            endpoints.timeout,
+        )?;
         // Metrics are best-effort: a failed exporter build must never block
         // span/log telemetry or the run itself. Defer reporting the failure —
         // emitting here would predate `try_init()` and the message would hit no
@@ -1020,13 +1010,16 @@ mod otlp {
         session_id: &str,
         run_id: Option<&str>,
         traceparent: Option<&str>,
-        endpoint: &str,
+        config: &super::config::OtlpConfig,
     ) -> anyhow::Result<()> {
-        let endpoint = grpc_endpoint(endpoint);
         let resource = capsule_resource();
-        let (tracer_provider, logger_provider, app_handle) =
-            build_otlp_providers(resource.clone(), &endpoint, &endpoint)?;
-        let meter_provider = init_metrics(&resource, &endpoint, app_handle).ok();
+        let (tracer_provider, logger_provider, app_handle) = build_otlp_providers(
+            resource.clone(),
+            &config.traces_endpoint,
+            &config.logs_endpoint,
+            config.timeout,
+        )?;
+        let meter_provider = init_metrics(&resource, &config.metrics_endpoint, app_handle).ok();
 
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer()
