@@ -17,9 +17,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use jackin_core::shorten_home;
+use jackin_tui::ModalOutcome;
 use jackin_tui::components::{DialogBorder, render_dialog_shell};
 use jackin_tui::theme::PHOSPHOR_DIM;
-use jackin_tui::{ModalOutcome, shorten_home};
 
 /// Outcome of the mount-destination modal.
 ///

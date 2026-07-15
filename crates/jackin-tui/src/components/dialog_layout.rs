@@ -74,8 +74,8 @@ impl DialogBodyScroll {
             content_width,
             viewport_width,
             ScrollAxes {
-                vertical: crate::scroll::is_scrollable(content_height, viewport_height),
-                horizontal: crate::scroll::is_scrollable(content_width, viewport_width),
+                vertical: termrock::scroll::is_scrollable(content_height, viewport_height),
+                horizontal: termrock::scroll::is_scrollable(content_width, viewport_width),
             },
         )
     }
@@ -230,8 +230,8 @@ impl DialogBodyScroll {
             kind,
             modifiers,
             ScrollAxes {
-                vertical: crate::scroll::is_scrollable(content_height, viewport_height),
-                horizontal: crate::scroll::is_scrollable(content_width, viewport_width),
+                vertical: termrock::scroll::is_scrollable(content_height, viewport_height),
+                horizontal: termrock::scroll::is_scrollable(content_width, viewport_width),
             },
         )
     }

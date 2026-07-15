@@ -67,7 +67,7 @@ pub const fn max_offset(content_len: usize, viewport: usize) -> u16 {
 }
 
 pub const fn is_scrollable(content_len: usize, viewport: usize) -> bool {
-    scroll::is_scrollable(content_len, viewport)
+    termrock::scroll::is_scrollable(content_len, viewport)
 }
 
 pub const fn effective_offset(content_len: usize, viewport: usize, offset: u16) -> u16 {

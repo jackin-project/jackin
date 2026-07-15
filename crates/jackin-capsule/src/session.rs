@@ -675,7 +675,7 @@ impl Session {
         // the `scrollable_panel` offset helpers remain for ordinary widgets.
         let filled = self.scrollback_filled();
         let before = self.scrollback_offset();
-        let mut tail = jackin_tui::scroll::TailScroll::new(before);
+        let mut tail = termrock::scroll::TailScroll::new(before);
         tail.scroll_by(filled, delta as isize);
         if tail.offset() == before {
             return false;

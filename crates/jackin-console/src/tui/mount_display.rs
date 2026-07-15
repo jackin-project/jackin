@@ -82,7 +82,7 @@ pub fn format_config_mount_rows_with_cache(
             isolation: m.isolation.as_str(),
             kind: cache.label(&m.src),
         }),
-        jackin_tui::shorten_home,
+        jackin_core::shorten_home,
     )
 }
 

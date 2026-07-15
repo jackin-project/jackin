@@ -146,7 +146,9 @@ pub(super) fn restore_terminal_for_process_exit() {
 
 pub(super) fn write_forced_terminal_restore<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
     out.write_all(jackin_tui::ansi::RESET.as_bytes())?;
-    out.write_all(jackin_tui::ansi::POINTER_DEFAULT.as_bytes())?;
+    out.write_all(&termrock::osc::encode_pointer(
+        termrock::osc::PointerShape::Default,
+    ))?;
     jackin_tui::terminal_modes::disable_mouse_capture(out)?;
     // Defensive teardown for modes used by hosted agent UIs. The launch
     // surface does not enable all of them, but a hard process exit must leave

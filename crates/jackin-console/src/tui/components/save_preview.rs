@@ -112,8 +112,8 @@ pub fn workspace_save_preview<
     WorkspaceSavePreview {
         mode,
         original_workdir: matches!(editor.mode, EditorMode::Edit { .. })
-            .then(|| jackin_tui::shorten_home(&editor.original.workdir)),
-        pending_workdir: jackin_tui::shorten_home(&editor.pending.workdir),
+            .then(|| jackin_core::shorten_home(&editor.original.workdir)),
+        pending_workdir: jackin_core::shorten_home(&editor.pending.workdir),
         mount_diffs: workspace_mount_diffs_preview(editor),
         auth_changes: workspace_auth_changes(
             config,
@@ -481,8 +481,8 @@ pub fn workspace_mount_preview_row(
     cache: &crate::mount_info_cache::MountInfoCache,
 ) -> WorkspaceMountPreviewRow {
     WorkspaceMountPreviewRow {
-        src: jackin_tui::shorten_home(&mount.src),
-        dst: jackin_tui::shorten_home(&mount.dst),
+        src: jackin_core::shorten_home(&mount.src),
+        dst: jackin_core::shorten_home(&mount.dst),
         readonly: mount.readonly,
         isolation: mount.isolation.as_str().to_owned(),
         kind: cache.label(&mount.src),
@@ -509,8 +509,8 @@ pub fn collapse_removal_lines(collapses: &[jackin_config::Removal]) -> Vec<Line<
         .iter()
         .map(|removal| {
             (
-                jackin_tui::shorten_home(&removal.child.src),
-                jackin_tui::shorten_home(&removal.covered_by.src),
+                jackin_core::shorten_home(&removal.child.src),
+                jackin_core::shorten_home(&removal.covered_by.src),
             )
         })
         .collect();
@@ -689,8 +689,8 @@ pub fn global_mount_preview_row(row: &jackin_config::GlobalMountRow) -> MountPre
     MountPreviewRow {
         scope: row.scope.clone(),
         name: row.name.clone(),
-        src: jackin_tui::shorten_home(&row.mount.src),
-        dst: jackin_tui::shorten_home(&row.mount.dst),
+        src: jackin_core::shorten_home(&row.mount.src),
+        dst: jackin_core::shorten_home(&row.mount.dst),
         readonly: row.mount.readonly,
     }
 }

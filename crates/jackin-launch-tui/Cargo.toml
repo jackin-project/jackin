@@ -17,6 +17,7 @@ jackin-core = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-tui = { workspace = true }
 ratatui = { workspace = true }
+termrock = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 tokio-util = { workspace = true }
 

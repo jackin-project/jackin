@@ -128,7 +128,10 @@ fn execute_container_info_copy(state: &mut ManagerState<'_>, row: usize, payload
     let mut out = std::io::stdout();
     let copied = std::io::Write::write_all(
         &mut out,
-        &jackin_tui::ansi::encode_osc52_clipboard_write(payload),
+        &termrock::osc::encode_clipboard(termrock::osc::ClipboardWrite {
+            selection: "c",
+            text: payload,
+        }),
     )
     .and_then(|()| std::io::Write::flush(&mut out))
     .is_ok();

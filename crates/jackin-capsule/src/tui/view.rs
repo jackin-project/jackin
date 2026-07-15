@@ -106,7 +106,7 @@ fn apply_pane_scrollbar(frame: &mut Frame<'_>, pane: &VisiblePane, offset: usize
     let track = jackin_tui::components::vertical_scrollbar_area(border_area);
     let interior_rows = usize::from(track.height);
     let content_len = filled.saturating_add(interior_rows);
-    let top_offset = jackin_tui::scroll::TailScroll::new(offset)
+    let top_offset = termrock::scroll::TailScroll::new(offset)
         .to_top_offset(content_len, interior_rows)
         .min(usize::from(u16::MAX)) as u16;
     jackin_tui::components::render_vertical_scrollbar_in_area(
@@ -399,11 +399,12 @@ pub(crate) fn pane_limit_failure_message(max_sessions: usize) -> String {
 
 /// Forwarded to the operator's outer terminal via `send_output` from the
 /// `CopyToClipboard` dialog action. The OSC 52 byte encoding and terminal
-/// compatibility notes live with the canonical implementation in
-/// `jackin_tui::ansi::encode_osc52_clipboard_write`; keeping that detail in
-/// one place stops the two copies from drifting.
+/// compatibility notes live with the canonical typed TermRock encoder.
 pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
-    jackin_tui::ansi::encode_osc52_clipboard_write(payload)
+    termrock::osc::encode_clipboard(termrock::osc::ClipboardWrite {
+        selection: "c",
+        text: payload,
+    })
 }
 
 #[cfg(test)]

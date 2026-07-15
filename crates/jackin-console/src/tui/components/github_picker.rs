@@ -12,7 +12,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
 use crate::github_mounts::GithubChoice;
-use jackin_tui::{ModalOutcome, shorten_home};
+use jackin_core::shorten_home;
+use jackin_tui::ModalOutcome;
 
 #[derive(Debug)]
 pub struct GithubPickerState {

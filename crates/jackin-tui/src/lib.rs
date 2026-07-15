@@ -25,11 +25,6 @@ pub use geometry::{
     is_terminal_control_char, lay_out_tabs, leading_space_cols, padded_line_display_cols,
     sanitize_terminal_title, tab_at_column, take_display_cols,
 };
-pub use jackin_core::shorten_home;
-pub use jackin_core::{
-    BOTTOM_CHROME_ROWS, BottomChromeAreas, DialogBodyScroll, StatusFooterHover, TailScroll,
-    bottom_chrome_areas, is_scrollable, max_line_width, max_offset,
-};
 
 /// Outcome of a modal or component event-handling cycle.
 ///

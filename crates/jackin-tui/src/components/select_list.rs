@@ -14,9 +14,10 @@ use crate::components::FilterInput;
 use crate::components::panel::{Panel, PanelFocus};
 use crate::components::scrollable_panel::ScrollableList;
 use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
-use crate::scroll::{cursor_follow_offset, full_cell_thumb, is_scrollable};
+use crate::scroll::{cursor_follow_offset, full_cell_thumb};
 use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
 use crate::{HintSpan, ModalOutcome};
+use termrock::scroll::is_scrollable;
 
 const SELECT_LIST_HORIZONTAL_SCROLL_STEP: u16 = 4;
 

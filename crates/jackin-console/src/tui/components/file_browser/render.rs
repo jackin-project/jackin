@@ -87,7 +87,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
 fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     let title = format!(
         " {} ",
-        jackin_tui::shorten_home(&state.cwd.display().to_string())
+        jackin_core::shorten_home(&state.cwd.display().to_string())
     );
     // File browser is normally the active modal (PHOSPHOR_GREEN border). When a
     // child dialog (Git repo prompt) is stacked on top, the file browser becomes

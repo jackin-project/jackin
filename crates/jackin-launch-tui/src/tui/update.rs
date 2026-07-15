@@ -30,7 +30,7 @@ pub fn initial_view() -> LaunchView {
         failure_ack: false,
         frame: 0,
         build_log_open: false,
-        build_log_scroll: jackin_tui::scroll::TailScroll::default(),
+        build_log_scroll: termrock::scroll::TailScroll::default(),
         build_log_scroll_dragging: false,
         build_log_lines: Vec::new(),
         build_log_wrapped_lines: Vec::new(),
@@ -126,7 +126,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         }
         LaunchMessage::BuildLogOpened => {
             view.build_log_open = true;
-            view.build_log_scroll = jackin_tui::scroll::TailScroll::default();
+            view.build_log_scroll = termrock::scroll::TailScroll::default();
             view.build_log_scroll_dragging = false;
             view.build_log_wrapped_lines.clear();
             view.build_log_wrapped_width = 0;
@@ -143,7 +143,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         }
         LaunchMessage::BuildLogScrollSetFromTop { filled, top_offset } => {
             view.build_log_scroll =
-                jackin_tui::scroll::TailScroll::new(filled.saturating_sub(top_offset.min(filled)));
+                termrock::scroll::TailScroll::new(filled.saturating_sub(top_offset.min(filled)));
         }
         LaunchMessage::BuildLogScrollDragChanged(dragging) => {
             view.build_log_scroll_dragging = dragging;

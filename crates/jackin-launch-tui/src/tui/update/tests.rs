@@ -136,7 +136,7 @@ fn footer_hover_message_replaces_hover_state() {
 fn build_log_messages_open_reset_and_close_overlay() {
     let mut view = initial_view();
     view.footer_hover.left = true;
-    view.build_log_scroll = jackin_tui::scroll::TailScroll::new(4);
+    view.build_log_scroll = termrock::scroll::TailScroll::new(4);
 
     drop(update_launch_view(&mut view, LaunchMessage::BuildLogOpened));
 
@@ -197,7 +197,7 @@ fn build_log_scroll_drag_state_resets_when_overlay_closes() {
 #[test]
 fn render_tick_advances_frame_and_clamps_build_log_scroll() {
     let mut view = initial_view();
-    view.build_log_scroll = jackin_tui::scroll::TailScroll::new(99);
+    view.build_log_scroll = termrock::scroll::TailScroll::new(99);
 
     let _unused = update_launch_view(
         &mut view,

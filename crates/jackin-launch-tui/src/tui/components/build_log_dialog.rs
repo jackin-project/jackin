@@ -41,7 +41,7 @@ pub fn build_log_scroll_metrics(area: Rect, raw: &[String]) -> BuildLogScrollMet
     BuildLogScrollMetrics {
         content_len,
         viewport_h,
-        filled: jackin_tui::scroll::max_offset(content_len, viewport_h),
+        filled: termrock::scroll::max_offset(content_len, viewport_h),
     }
 }
 
@@ -69,7 +69,7 @@ pub fn refresh_build_log_layout(view: &mut LaunchView, area: Rect, force: bool) 
         return;
     }
     let wrapped = build_log_wrapped_lines(&view.build_log_lines, viewport_w);
-    view.build_log_filled = jackin_tui::scroll::max_offset(wrapped.len(), viewport_h);
+    view.build_log_filled = termrock::scroll::max_offset(wrapped.len(), viewport_h);
     view.build_log_wrapped_lines = wrapped;
     view.build_log_wrapped_width = viewport_w;
     view.build_log_viewport_height = viewport_h;

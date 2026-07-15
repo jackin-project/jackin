@@ -17,7 +17,7 @@
 
 use tui_scrollbar::{SUBCELL, ScrollLengths, ScrollMetrics};
 
-pub use jackin_core::{TailScroll, is_scrollable, max_line_width, max_offset};
+use termrock::scroll::{TailScroll, is_scrollable, max_offset};
 
 use crossterm::event::{KeyModifiers, MouseEventKind};
 
