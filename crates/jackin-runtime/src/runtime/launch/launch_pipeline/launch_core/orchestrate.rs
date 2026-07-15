@@ -620,6 +620,502 @@ fn workspace_launch_config(
     launch_config
 }
 
+struct EnvironmentConfigured {
+    workspace_name_str: String,
+    workspace_opt: Option<WorkspaceName>,
+    github_mode: jackin_config::GithubAuthMode,
+    github_env_decls: std::collections::BTreeMap<String, jackin_config::EnvValue>,
+    github_resolved_env: std::collections::BTreeMap<String, String>,
+    github_ctx: crate::instance::GithubAuthContext,
+}
+
+struct ResolveEnvironment<'a, D> {
+    config: &'a jackin_config::AppConfig,
+    agent: jackin_core::Agent,
+    auth_mode: jackin_config::AuthForwardMode,
+    operator_env: &'a std::collections::BTreeMap<String, String>,
+    opts: &'a super::super::super::LoadOptions,
+    role_key: &'a str,
+    workspace_name: &'a Option<String>,
+    cleanup: &'a super::super::super::LoadCleanup,
+    docker: &'a D,
+}
+
+async fn resolve_environment<D: DockerApi>(
+    input: ResolveEnvironment<'_, D>,
+) -> anyhow::Result<EnvironmentConfigured> {
+    let ResolveEnvironment {
+        config,
+        agent,
+        auth_mode,
+        operator_env,
+        opts,
+        role_key,
+        workspace_name,
+        cleanup,
+        docker,
+    } = input;
+    let workspace_name_str = workspace_name.as_deref().unwrap_or("");
+    let workspace_opt = if workspace_name_str.is_empty() {
+        None
+    } else {
+        Some(WorkspaceName::parse(workspace_name_str).map_err(anyhow::Error::from)?)
+    };
+    let workspace_for_verify = match workspace_opt.as_ref() {
+        Some(workspace) => workspace.clone(),
+        None => WorkspaceName::parse("adhoc").map_err(anyhow::Error::from)?,
+    };
+    let mode_resolution =
+        super::super::super::build_mode_resolution(config, agent, workspace_opt.as_ref(), role_key);
+    let env_layers = agent
+        .required_env_var(auth_mode)
+        .map_or_else(Vec::new, |env_var| {
+            super::super::super::build_env_layer_states(
+                config,
+                workspace_opt.as_ref(),
+                role_key,
+                env_var,
+            )
+        });
+    if let Err(error) = verify_credential_env_present(
+        agent,
+        auth_mode,
+        operator_env,
+        &mode_resolution,
+        &env_layers,
+        &workspace_for_verify,
+        role_key,
+    ) {
+        cleanup.run(docker).await;
+        return Err(error.into());
+    }
+    let github_mode = jackin_config::resolve_github_mode(config, workspace_opt.as_ref(), role_key);
+    let github_env_decls =
+        jackin_config::build_github_env_layers(config, workspace_opt.as_ref(), role_key);
+    let required = github_env_declarations_for_mode(&github_env_decls, github_mode);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Credentials,
+        "github_env",
+        None,
+    );
+    let skipped = required.is_empty();
+    let resolved = if skipped {
+        Ok(std::collections::BTreeMap::new())
+    } else {
+        resolve_github_env_map(&required, opts)
+    };
+    let github_resolved_env = match resolved {
+        Ok(env) => {
+            let detail = if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
+                "skipped_ignore".to_owned()
+            } else if skipped {
+                "skipped_no_required_keys".to_owned()
+            } else {
+                format!("{} vars", env.len())
+            };
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Credentials,
+                "github_env",
+                Some(&detail),
+            );
+            env
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Credentials,
+                "github_env",
+                Some("error"),
+            );
+            cleanup.run(docker).await;
+            return Err(error);
+        }
+    };
+    let github_ctx = crate::instance::GithubAuthContext {
+        mode: github_mode,
+        token: github_resolved_env
+            .get(jackin_core::GH_TOKEN_ENV_NAME)
+            .cloned(),
+    };
+    if let Err(error) = verify_github_token_present(
+        github_mode,
+        github_ctx.token.as_deref(),
+        &workspace_for_verify,
+        role_key,
+    ) {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
+    Ok(EnvironmentConfigured {
+        workspace_name_str: workspace_name_str.to_owned(),
+        workspace_opt,
+        github_mode,
+        github_env_decls,
+        github_resolved_env,
+        github_ctx,
+    })
+}
+
+struct PrepareEnvironment<'a, D> {
+    paths: &'a jackin_core::JackinPaths,
+    config: &'a jackin_config::AppConfig,
+    agent: jackin_core::Agent,
+    container_name: &'a str,
+    validated_repo: &'a jackin_manifest::repo::ValidatedRoleRepo,
+    role_key: &'a str,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    steps: &'a mut super::super::super::StepCounter,
+    cleanup: &'a super::super::super::LoadCleanup,
+    docker: &'a D,
+    configured: EnvironmentConfigured,
+}
+
+async fn prepare_environment<D, S>(
+    input: PrepareEnvironment<'_, D>,
+    mut sidecar: Pin<&mut S>,
+    early_sidecar_result: &mut Option<anyhow::Result<()>>,
+) -> anyhow::Result<TrustSeeded>
+where
+    D: DockerApi,
+    S: Future<Output = anyhow::Result<()>>,
+{
+    let PrepareEnvironment {
+        paths,
+        config,
+        agent,
+        container_name,
+        validated_repo,
+        role_key,
+        workspace,
+        steps,
+        cleanup,
+        docker,
+        configured,
+    } = input;
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Credentials,
+        "role_state_prepare",
+        None,
+    );
+    let paths_owned = paths.clone();
+    let container_name_owned = container_name.to_owned();
+    let manifest_owned = validated_repo.manifest.clone();
+    let config_owned = config.clone();
+    let workspace_opt_owned = configured.workspace_opt.clone();
+    let role_key_owned = role_key.to_owned();
+    let github_ctx_owned = configured.github_ctx.clone();
+    let role_state_future = async move {
+        tokio::task::spawn_blocking(move || {
+            let resolve_mode = |candidate| {
+                jackin_config::resolve_mode(
+                    &config_owned,
+                    candidate,
+                    workspace_opt_owned.as_ref(),
+                    &role_key_owned,
+                )
+            };
+            let resolve_sync_src = |candidate| {
+                jackin_config::resolve_sync_source_dir(
+                    &config_owned,
+                    candidate,
+                    workspace_opt_owned.as_ref(),
+                    &role_key_owned,
+                )
+            };
+            let provision_agents = manifest_owned.supported_agents();
+            RoleState::prepare_for_agents(
+                &paths_owned,
+                &container_name_owned,
+                &manifest_owned,
+                &PrepareResolvers {
+                    auth_modes: &resolve_mode,
+                    sync_source_dirs: &resolve_sync_src,
+                },
+                &github_ctx_owned,
+                &paths_owned.home_dir,
+                agent,
+                &provision_agents,
+            )
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!("RoleState::prepare task panicked: {error}"))?
+    };
+    let mut role_state_future = std::pin::pin!(role_state_future);
+    let select_role_state = async {
+        if early_sidecar_result.is_some() {
+            (&mut role_state_future).await
+        } else {
+            tokio::select! {
+                result = sidecar.as_mut() => {
+                    *early_sidecar_result = Some(result);
+                    (&mut role_state_future).await
+                }
+                result = &mut role_state_future => result,
+            }
+        }
+    };
+    let role_state_result = if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(select_role_state).await
+    } else {
+        select_role_state.await
+    };
+    let (state, _) = match role_state_result {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Credentials,
+                "role_state_prepare",
+                Some("error"),
+            );
+            cleanup.run(docker).await;
+            return Err(error);
+        }
+    };
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Credentials,
+        "role_state_prepare",
+        Some("prepared"),
+    );
+    emit_auth_provision_launch_plan(&state, container_name);
+    if let Err(error) = seed_codex_project_trust(&state, workspace) {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
+    Ok(TrustSeeded {
+        environment: EnvironmentResolved {
+            state,
+            github_resolved_env: configured.github_resolved_env,
+            workspace_name_str: configured.workspace_name_str,
+            workspace_opt: configured.workspace_opt,
+            github_mode: configured.github_mode,
+            github_env_decls: configured.github_env_decls,
+        },
+    })
+}
+
+struct MaterializeImage<'a, D, R> {
+    paths: &'a jackin_core::JackinPaths,
+    selector: &'a jackin_core::RoleSelector,
+    cached_repo: &'a jackin_manifest::repo::CachedRepo,
+    validated_repo: &'a jackin_manifest::repo::ValidatedRoleRepo,
+    agent: jackin_core::Agent,
+    supported_agents: &'a [jackin_core::Agent],
+    rebuild: bool,
+    opts: &'a super::super::super::LoadOptions,
+    steps: &'a mut super::super::super::StepCounter,
+    docker: &'a D,
+    runner: &'a mut R,
+    restoring: bool,
+    container_name: &'a str,
+    repo_lock: &'a mut Option<std::fs::File>,
+    cleanup: &'a super::super::super::LoadCleanup,
+    classified: ImagePhaseClassified,
+    decision: Option<crate::runtime::image::ImageDecision>,
+}
+
+struct BuildImage<'a, D, R> {
+    common: MaterializeImage<'a, D, R>,
+    reason: crate::runtime::image::ImageInvalidationReason,
+    role_git_sha: Option<String>,
+    base_image_override: Option<String>,
+    source: String,
+}
+
+async fn build_image<D, R, S>(
+    input: BuildImage<'_, D, R>,
+    mut sidecar: Pin<&mut S>,
+    early_sidecar_result: &mut Option<anyhow::Result<()>>,
+) -> anyhow::Result<ImageMaterialized>
+where
+    D: DockerApi,
+    R: CommandRunner,
+    S: Future<Output = anyhow::Result<()>>,
+{
+    let BuildImage {
+        common,
+        reason,
+        role_git_sha,
+        base_image_override,
+        source,
+    } = input;
+    super::super::super::emit_image_materialization_plan(
+        false,
+        reason.as_str(),
+        common.restoring,
+        common.container_name,
+    );
+    jackin_diagnostics::debug_log!(
+        "image",
+        "derived image build required from {source}: {}",
+        reason.as_str(),
+    );
+    common.steps.next("Preparing runtime binaries").await?;
+    let image_agents = common.supported_agents.to_vec();
+    let binaries = poll_sidecar_while(
+        async {
+            crate::runtime::image::prepare_runtime_binaries_for_agents(
+                common.paths,
+                common.validated_repo,
+                &image_agents,
+                common.steps.progress_mut(),
+            )
+            .await
+        },
+        sidecar.as_mut(),
+        early_sidecar_result,
+    )
+    .await;
+    let binaries = match binaries {
+        Ok(binaries) => binaries,
+        Err(error) => {
+            common.cleanup.run(common.docker).await;
+            return Err(error);
+        }
+    };
+    common.steps.next("Preparing derived image").await?;
+    let Some(repo_lock) = common.repo_lock.take() else {
+        common.cleanup.run(common.docker).await;
+        return Err(anyhow::anyhow!("repo lock already consumed"));
+    };
+    let image = poll_sidecar_while(
+        async {
+            crate::runtime::image::build_agent_image(
+                common.paths,
+                common.selector,
+                common.cached_repo,
+                common.validated_repo,
+                common.agent,
+                binaries,
+                common.rebuild,
+                reason,
+                base_image_override.as_deref(),
+                common.opts.debug,
+                common.opts.role_branch.as_deref(),
+                common.docker,
+                common.runner,
+                repo_lock,
+                role_git_sha.as_deref(),
+                common.steps.progress_mut(),
+            )
+            .await
+        },
+        sidecar,
+        early_sidecar_result,
+    )
+    .await;
+    match image {
+        Ok(image) => Ok(ImageMaterialized {
+            image,
+            selected_image_reused: false,
+        }),
+        Err(error) => {
+            common.cleanup.run(common.docker).await;
+            Err(error)
+        }
+    }
+}
+
+async fn materialize_image_phase<D, R, S>(
+    mut input: MaterializeImage<'_, D, R>,
+    sidecar: Pin<&mut S>,
+    early_sidecar_result: &mut Option<anyhow::Result<()>>,
+) -> anyhow::Result<ImageMaterialized>
+where
+    D: DockerApi,
+    R: CommandRunner,
+    S: Future<Output = anyhow::Result<()>>,
+{
+    let Some(decision) = input.decision.take() else {
+        input.cleanup.run(input.docker).await;
+        return Err(anyhow::anyhow!("image decision already consumed"));
+    };
+    match (input.classified.class, decision) {
+        (
+            super::super::launch_phases::ImagePhaseClass::ReuseOrBackgroundRefresh,
+            decision @ (crate::runtime::image::ImageDecision::Reuse { .. }
+            | crate::runtime::image::ImageDecision::RefreshInBackground { .. }),
+        ) => {
+            let (image, reason) = match decision {
+                crate::runtime::image::ImageDecision::Reuse { image } => {
+                    (image, "recipe_hash_match")
+                }
+                crate::runtime::image::ImageDecision::RefreshInBackground { image, reason } => {
+                    (image, reason.as_str())
+                }
+                _ => unreachable!(),
+            };
+            super::super::super::emit_image_materialization_plan(
+                true,
+                reason,
+                input.restoring,
+                input.container_name,
+            );
+            drop(input.repo_lock.take());
+            if let Some(progress) = input.steps.progress_mut() {
+                progress.stage_skipped(
+                    crate::runtime::progress::LaunchStage::AgentBinaries,
+                    "image reused",
+                );
+                progress.stage_done(
+                    crate::runtime::progress::LaunchStage::DerivedImage,
+                    "reused local image",
+                );
+            }
+            Ok(ImageMaterialized {
+                image,
+                selected_image_reused: true,
+            })
+        }
+        (
+            super::super::launch_phases::ImagePhaseClass::BuildRequired,
+            crate::runtime::image::ImageDecision::BuildFromPublished {
+                reason,
+                role_git_sha,
+                base_image,
+            },
+        ) => {
+            let source = format!("published image {base_image}");
+            build_image(
+                BuildImage {
+                    common: input,
+                    reason,
+                    role_git_sha,
+                    base_image_override: Some(base_image),
+                    source,
+                },
+                sidecar,
+                early_sidecar_result,
+            )
+            .await
+        }
+        (
+            super::super::launch_phases::ImagePhaseClass::BuildRequired,
+            crate::runtime::image::ImageDecision::BuildFromWorkspace {
+                reason,
+                role_git_sha,
+            },
+        ) => {
+            build_image(
+                BuildImage {
+                    common: input,
+                    reason,
+                    role_git_sha,
+                    base_image_override: None,
+                    source: "workspace Dockerfile".to_owned(),
+                },
+                sidecar,
+                early_sidecar_result,
+            )
+            .await
+        }
+        _ => {
+            input.cleanup.run(input.docker).await;
+            Err(anyhow::anyhow!(
+                "internal: image phase class does not match ImageDecision variant"
+            ))
+        }
+    }
+}
+
 async fn materialize_workspace_phase<D, R, S>(
     input: MaterializeWorkspace<'_, D, R>,
     mut sidecar: Pin<&mut S>,
@@ -932,7 +1428,7 @@ where
 
 #[expect(
     clippy::too_many_lines,
-    reason = "remaining phase extraction is tracked by codebase-health plan 016"
+    reason = "initialization extraction is the final codebase-health plan 016 slice"
 )]
 pub(super) async fn run_launch_phases<D, R>(ctx: LaunchCore<'_, D, R>) -> anyhow::Result<String>
 where
@@ -1090,201 +1586,30 @@ where
     let mut sidecar = std::pin::pin!(sidecar);
     let mut early_sidecar_result: Option<anyhow::Result<()>> = None;
 
-    // Step 2: Prepare runtime assets and build the derived image when the
-    // earlier image decision proved the local recipe is missing/stale.
-    let (image, selected_image_reused) = match (image_phase.class, image_decision) {
-        (
-            super::super::launch_phases::ImagePhaseClass::ReuseOrBackgroundRefresh,
-            decision @ (crate::runtime::image::ImageDecision::Reuse { .. }
-            | crate::runtime::image::ImageDecision::RefreshInBackground { .. }),
-        ) => {
-            let (image, materialization_reason) = match decision {
-                crate::runtime::image::ImageDecision::Reuse { image } => {
-                    (image, "recipe_hash_match")
-                }
-                crate::runtime::image::ImageDecision::RefreshInBackground { image, reason } => {
-                    (image, reason.as_str())
-                }
-                _ => unreachable!(),
-            };
-            super::super::super::emit_image_materialization_plan(
-                true,
-                materialization_reason,
-                restoring,
-                &container_name,
-            );
-            drop(repo_lock.take());
-            if let Some(progress) = steps.progress_mut() {
-                progress.stage_skipped(
-                    crate::runtime::progress::LaunchStage::AgentBinaries,
-                    "image reused",
-                );
-                progress.stage_done(
-                    crate::runtime::progress::LaunchStage::DerivedImage,
-                    "reused local image",
-                );
-            }
-            debug_assert!(image_phase.selected_image_reused);
-            (image, true)
-        }
-        (
-            super::super::launch_phases::ImagePhaseClass::BuildRequired,
-            build_decision @ (crate::runtime::image::ImageDecision::BuildFromPublished { .. }
-            | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. }),
-        ) => {
-            let (reason, role_git_sha, build_source, build_base_image_override) =
-                match build_decision {
-                    crate::runtime::image::ImageDecision::BuildFromPublished {
-                        reason,
-                        role_git_sha,
-                        base_image,
-                    } => (
-                        reason,
-                        role_git_sha,
-                        format!("published image {base_image}"),
-                        Some(base_image),
-                    ),
-                    crate::runtime::image::ImageDecision::BuildFromWorkspace {
-                        reason,
-                        role_git_sha,
-                    } => (
-                        reason,
-                        role_git_sha,
-                        "workspace Dockerfile".to_owned(),
-                        None,
-                    ),
-                    crate::runtime::image::ImageDecision::Reuse { .. }
-                    | crate::runtime::image::ImageDecision::RefreshInBackground { .. } => {
-                        unreachable!()
-                    }
-                };
-            super::super::super::emit_image_materialization_plan(
-                false,
-                reason.as_str(),
-                restoring,
-                &container_name,
-            );
-            jackin_diagnostics::debug_log!(
-                "image",
-                "derived image build required from {}: {}",
-                build_source,
-                reason.as_str(),
-            );
-            steps.next("Preparing runtime binaries").await?;
-            // Prepare every agent the role supports, not just the selected
-            // one: the running container hosts a multiplexer where the
-            // operator can open a new tab for ANY supported agent, and that
-            // tab execs the agent CLI inside this same container. Baking
-            // only the selected agent makes sibling tabs crash on a missing
-            // binary. The selected agent still drives the version label and
-            // the foreground session; the others must simply be present.
-            let image_agents = supported_agents.clone();
-            let runtime_binaries_result = poll_sidecar_while(
-                async {
-                    if let Some(progress) = steps.progress_mut() {
-                        crate::runtime::image::prepare_runtime_binaries_for_agents(
-                            paths,
-                            &validated_repo,
-                            &image_agents,
-                            Some(progress),
-                        )
-                        .await
-                    } else {
-                        crate::runtime::image::prepare_runtime_binaries_for_agents(
-                            paths,
-                            &validated_repo,
-                            &image_agents,
-                            None,
-                        )
-                        .await
-                    }
-                },
-                sidecar.as_mut(),
-                &mut early_sidecar_result,
-            )
-            .await;
-            let runtime_binaries = match runtime_binaries_result {
-                Ok(runtime_binaries) => runtime_binaries,
-                Err(error) => {
-                    cleanup.run(docker).await;
-                    return Err(error);
-                }
-            };
-            steps.next("Preparing derived image").await?;
-            let Some(repo_lock) = repo_lock.take() else {
-                cleanup.run(docker).await;
-                return Err(anyhow::anyhow!("repo lock already consumed"));
-            };
-            let image_result = poll_sidecar_while(
-                async {
-                    if let Some(progress) = steps.progress_mut() {
-                        crate::runtime::image::build_agent_image(
-                            paths,
-                            selector,
-                            &cached_repo,
-                            &validated_repo,
-                            agent,
-                            runtime_binaries,
-                            rebuild,
-                            reason,
-                            build_base_image_override.as_deref(),
-                            opts.debug,
-                            opts.role_branch.as_deref(),
-                            docker,
-                            runner,
-                            repo_lock,
-                            role_git_sha.as_deref(),
-                            Some(progress),
-                        )
-                        .await
-                    } else {
-                        crate::runtime::image::build_agent_image(
-                            paths,
-                            selector,
-                            &cached_repo,
-                            &validated_repo,
-                            agent,
-                            runtime_binaries,
-                            rebuild,
-                            reason,
-                            build_base_image_override.as_deref(),
-                            opts.debug,
-                            opts.role_branch.as_deref(),
-                            docker,
-                            runner,
-                            repo_lock,
-                            role_git_sha.as_deref(),
-                            None,
-                        )
-                        .await
-                    }
-                },
-                sidecar.as_mut(),
-                &mut early_sidecar_result,
-            )
-            .await;
-            let image = match image_result {
-                Ok(image) => image,
-                Err(error) => {
-                    cleanup.run(docker).await;
-                    return Err(error);
-                }
-            };
-            debug_assert!(!image_phase.selected_image_reused);
-            (image, false)
-        }
-        _ => {
-            // Class and decision variants must stay in lock-step.
-            cleanup.run(docker).await;
-            return Err(anyhow::anyhow!(
-                "internal: image phase class does not match ImageDecision variant"
-            ));
-        }
-    };
-    let image_mat: ImageMaterialized = ImageMaterialized {
-        image,
-        selected_image_reused,
-    };
+    let image_mat = materialize_image_phase(
+        MaterializeImage {
+            paths,
+            selector,
+            cached_repo: &cached_repo,
+            validated_repo: &validated_repo,
+            agent,
+            supported_agents: &supported_agents,
+            rebuild,
+            opts,
+            steps,
+            docker,
+            runner,
+            restoring,
+            container_name: &container_name,
+            repo_lock: &mut repo_lock,
+            cleanup: &cleanup,
+            classified: image_phase,
+            decision: Some(image_decision),
+        },
+        sidecar.as_mut(),
+        &mut early_sidecar_result,
+    )
+    .await?;
     let prepared = prepare_instance(PrepareInstance {
         paths,
         workspace,
@@ -1316,280 +1641,37 @@ where
         host_workdir_fingerprint,
     } = prepared;
 
-    // Modes that inject a credential require the well-known env
-    // var to resolve to a non-empty value; fail fast with an
-    // actionable structured error so the operator sees the
-    // problem before container startup. The network/DinD sidecar may already
-    // be warming in parallel with image materialization, so these errors route
-    // through cleanup. Sync / Ignore short-circuit inside the helper.
-    //
-    // Build the per-layer mode-resolution and env-layer traces
-    // here (in the caller) so the structured error carries the
-    // full picture. The helpers mirror the layers walked by
-    // `jackin_config::resolve_mode` and
-    // `operator_env::build_attributed_layers` respectively.
-    let workspace_name_str = workspace_name.as_deref().unwrap_or("");
-    let workspace_opt = if workspace_name_str.is_empty() {
-        None
-    } else {
-        Some(WorkspaceName::parse(workspace_name_str).map_err(anyhow::Error::from)?)
-    };
-    // Ad-hoc / path launches have no saved workspace key; still need a
-    // display token for AuthCredentialMissing messaging.
-    let workspace_for_verify = match workspace_opt.as_ref() {
-        Some(ws) => ws.clone(),
-        None => WorkspaceName::parse("adhoc").map_err(anyhow::Error::from)?,
-    };
-    let mode_resolution = super::super::super::build_mode_resolution(
+    let configured = resolve_environment(ResolveEnvironment {
         config,
         agent,
-        workspace_opt.as_ref(),
-        &role_key,
-    );
-    let env_layers = agent
-        .required_env_var(auth_mode)
-        .map_or_else(Vec::new, |env_var| {
-            super::super::super::build_env_layer_states(
-                config,
-                workspace_opt.as_ref(),
-                &role_key,
-                env_var,
-            )
-        });
-    if let Err(error) = verify_credential_env_present(
-        agent,
         auth_mode,
-        &operator_env,
-        &mode_resolution,
-        &env_layers,
-        &workspace_for_verify,
-        &role_key,
-    ) {
-        cleanup.run(docker).await;
-        return Err(error.into());
-    }
+        operator_env: &operator_env,
+        opts,
+        role_key: &role_key,
+        workspace_name: &workspace_name,
+        cleanup: &cleanup,
+        docker,
+    })
+    .await?;
 
-    // Resolve the GitHub-auth axis. Layered like the per-agent
-    // resolver but with no agent dimension — `.config/gh/` is
-    // shared by every agent in the container.
-    let github_mode = jackin_config::resolve_github_mode(config, workspace_opt.as_ref(), &role_key);
-    let github_env_decls =
-        jackin_config::build_github_env_layers(config, workspace_opt.as_ref(), &role_key);
-    let github_required_env_decls =
-        github_env_declarations_for_mode(&github_env_decls, github_mode);
-    // Resolve `[…github.env]` only under modes that consume it.
-    // `Sync` and `Token` both seed `GH_TOKEN` / `GH_HOST` /
-    // `GH_ENTERPRISE_TOKEN` from the resolved map (Token also
-    // pre-flight-checks `GH_TOKEN`). `Ignore` exports nothing, so
-    // we skip the resolve to avoid unnecessary `op://` shellouts
-    // — note this also defers `op://` validation errors under
-    // Ignore until the operator flips back to a non-Ignore mode.
-    // Other keys in `[github.env]` are not injected anywhere by the
-    // runtime; leaving them unresolved keeps unrelated secret refs out of
-    // the foreground launch credential graph.
-    //
-    // Failures are aggregated and surfaced as a structured error
-    // so a missing op-CLI doesn't produce N parallel anyhows.
-    jackin_diagnostics::active_timing_started(
-        jackin_diagnostics::DiagnosticStage::Credentials,
-        "github_env",
-        None,
-    );
-    let github_env_skipped = github_required_env_decls.is_empty();
-    let github_resolved_env_result = if github_env_skipped {
-        Ok(std::collections::BTreeMap::new())
-    } else {
-        resolve_github_env_map(&github_required_env_decls, opts)
-    };
-    let github_resolved_env = match github_resolved_env_result {
-        Ok(env) => {
-            let detail = if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
-                "skipped_ignore".to_owned()
-            } else if github_env_skipped {
-                "skipped_no_required_keys".to_owned()
-            } else {
-                format!("{} vars", env.len())
-            };
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Credentials,
-                "github_env",
-                Some(&detail),
-            );
-            env
-        }
-        Err(error) => {
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Credentials,
-                "github_env",
-                Some("error"),
-            );
-            cleanup.run(docker).await;
-            return Err(error);
-        }
-    };
-    let github_ctx = crate::instance::GithubAuthContext {
-        mode: github_mode,
-        token: github_resolved_env
-            .get(jackin_core::GH_TOKEN_ENV_NAME)
-            .cloned(),
-    };
-
-    // Token-mode pre-flight: GH_TOKEN must resolve to a non-empty
-    // value before container startup. Sidecar resources may already be warming
-    // in parallel and are cleaned up on failure.
-    if let Err(error) = verify_github_token_present(
-        github_mode,
-        github_ctx.token.as_deref(),
-        &workspace_for_verify,
-        role_key.as_str(),
-    ) {
-        cleanup.run(docker).await;
-        return Err(error);
-    }
-
-    // Per-supported-agent mode resolution — each agent in
-    // `manifest.supported_agents()` honors its own configured
-    // `auth_forward`. Passing the selected agent's mode would wipe
-    // sibling agents' durable state when modes diverge.
-    //
-    // RoleState::prepare is sync and may call `gh` CLI, macOS keychain
-    // (`security`), and filesystem copies. Wrap in spawn_blocking so the
-    // tokio render thread keeps polling the cockpit rain while auth runs.
-    // All inputs are cloned to satisfy the 'static + Send bound.
-    jackin_diagnostics::active_timing_started(
-        jackin_diagnostics::DiagnosticStage::Credentials,
-        "role_state_prepare",
-        None,
-    );
-    let paths_owned = paths.clone();
-    let container_name_owned = container_name.clone();
-    let manifest_owned = validated_repo.manifest.clone();
-    let config_owned = config.clone();
-    let workspace_opt_owned = workspace_opt.clone();
-    let role_key_owned = role_key.clone();
-    let github_ctx_owned = github_ctx.clone();
-    let role_state_future = async move {
-        tokio::task::spawn_blocking(move || {
-            let resolve_mode = |a: jackin_core::Agent| {
-                jackin_config::resolve_mode(
-                    &config_owned,
-                    a,
-                    workspace_opt_owned.as_ref(),
-                    &role_key_owned,
-                )
-            };
-            // Each agent may have an operator-configured sync-source-dir override
-            // that replaces host_home for auth sync.
-            let resolve_sync_src = |a: jackin_core::Agent| {
-                jackin_config::resolve_sync_source_dir(
-                    &config_owned,
-                    a,
-                    workspace_opt_owned.as_ref(),
-                    &role_key_owned,
-                )
-            };
-            // Provision every supported agent's home/auth state, not just
-            // the selected one. The container's per-agent home dirs are
-            // bind-mounted once at `docker run`; a later `hardline --new
-            // --agent <sibling>` tab reads its auth from that mount, so a
-            // sibling whose state was skipped here would start unauthenticated
-            // with no way to add the mount after the container is running.
-            let provision_agents = manifest_owned.supported_agents();
-            RoleState::prepare_for_agents(
-                &paths_owned,
-                &container_name_owned,
-                &manifest_owned,
-                &PrepareResolvers {
-                    auth_modes: &resolve_mode,
-                    sync_source_dirs: &resolve_sync_src,
-                },
-                &github_ctx_owned,
-                &paths_owned.home_dir,
-                agent,
-                &provision_agents,
-            )
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("RoleState::prepare task panicked: {e}"))?
-    };
-    let mut role_state_future = std::pin::pin!(role_state_future);
-    // Race the overlapped sidecar/auth prep against the cancel token, like
-    // every other long-running launch step (cf. `docker build`). Without
-    // this, Ctrl+C is ignored for the tens of seconds the blocking auth
-    // prep spends in `gh` / the macOS keychain. On cancel, `while_waiting`
-    // returns `LaunchCancelled`, which flows into the `Err` arm below and
-    // runs `cleanup` — tearing down any already-started sidecar.
-    let select_role_state = async {
-        if early_sidecar_result.is_some() {
-            (&mut role_state_future).await
-        } else {
-            tokio::select! {
-                result = &mut sidecar => {
-                    early_sidecar_result = Some(result);
-                    (&mut role_state_future).await
-                }
-                result = &mut role_state_future => result,
-            }
-        }
-    };
-    let role_state_result = if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(select_role_state).await
-    } else {
-        select_role_state.await
-    };
-    let (state, _auth_outcome) = match role_state_result {
-        Ok(prepared) => {
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Credentials,
-                "role_state_prepare",
-                Some("prepared"),
-            );
-            prepared
-        }
-        Err(error) => {
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Credentials,
-                "role_state_prepare",
-                Some("error"),
-            );
-            cleanup.run(docker).await;
-            return Err(error);
-        }
-    };
-    emit_auth_provision_launch_plan(&state, &container_name);
-    let env_res: EnvironmentResolved = EnvironmentResolved {
-        state,
-        github_resolved_env,
-        workspace_name_str: workspace_name_str.to_owned(),
-        workspace_opt: workspace_opt.clone(),
-        github_mode,
-        github_env_decls: github_env_decls.clone(),
-    };
-    let EnvironmentResolved {
-        state,
-        github_resolved_env,
-        workspace_name_str,
-        workspace_opt,
-        github_mode,
-        github_env_decls,
-    } = env_res;
-    // The sidecar (adopted or freshly started above) is now running, so a
-    // bare `?` here would leak the container/network/volume. Route trust
-    // seeding through cleanup like the role-state and sidecar arms.
-    if let Err(error) = seed_codex_project_trust(&state, workspace) {
-        cleanup.run(docker).await;
-        return Err(error);
-    }
-    let trust = TrustSeeded {
-        environment: EnvironmentResolved {
-            state,
-            github_resolved_env,
-            workspace_name_str,
-            workspace_opt,
-            github_mode,
-            github_env_decls,
+    let trust = prepare_environment(
+        PrepareEnvironment {
+            paths,
+            config,
+            agent,
+            container_name: &container_name,
+            validated_repo: &validated_repo,
+            role_key: &role_key,
+            workspace,
+            steps,
+            cleanup: &cleanup,
+            docker,
+            configured,
         },
-    };
+        sidecar.as_mut(),
+        &mut early_sidecar_result,
+    )
+    .await?;
 
     let mut prepared = InstancePrepared {
         image,
