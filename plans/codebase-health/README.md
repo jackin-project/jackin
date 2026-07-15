@@ -55,7 +55,6 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 |------|--------------------|
 | 009 | Dual-bootstrap host+capsule in-process (no Docker); measured export-volume sole ratchet input; canary/redact gate invoked. |
 | 019 | jackin-config + jackin-core private impl modules; curated root re-exports; justified remainders `container_paths`/`debug_log`/`test_support`. |
-| 021 | Three `drive_frame` callers (console/launch/capsule); editor wildcards + shared modal scroll; dialog sub-loops documented out-of-scope. |
 | 022 | Launch deprecation STOP (command already gone); root CLI handlers split; four `too_many_lines` expects removed. |
 | 027 | suite-time enforce-when-junit (skip without); agent-doc enforce; problem matcher; health trend/tightening. |
 

@@ -112,18 +112,18 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 
 **Delivered (drive_frame completion pass)**
 - Three production `drive_frame` callers: host console, `jackin-launch-tui` progress render (`LaunchViewView`), capsule compositor (`CapsuleView`).
-- Dialog/prompt sub-loops in launch-tui may still use direct `terminal.draw` for non-`View` modal widgets (out of full-frame scope).
+- All launch dialog/prompt sub-loops use `drive_render`, the short-lived widget
+  adapter over `drive_frame`; no production direct `terminal.draw` remains.
 - Op-picker triage: pure planning already lives in `jackin-console-oppicker`; UI glue stays in console.
 - TUI reference `docs/content/docs/reference/tui/index.mdx` updated for the three-caller contract.
 
 **Index deviation**: none remaining for 021 Done criteria (dialog sub-loops documented as out of full-frame scope).
 
-### Op-picker triage (deferred extraction)
+### Op-picker triage
 
 | Area | Location | Disposition |
 |---|---|---|
 | Core picker state/filter/load | `jackin-console-oppicker` | **Stays** — already pure planning crate |
 | Console UI glue (auth/settings/editor modal open) | `jackin-console` input/* | **Stays** — widget/event wiring |
 | Breadcrumb/brand labels | console op_picker components | **Stays** — render only |
-| Further pure planning extraction | ~console auth/env picker plans | **Deferred** — no measured duplication pressure; revisit if a third consumer appears |
-
+| Console auth/env picker plans | console auth/env modules | **Stays** — these plans select console modal wiring and contain no reusable picker transition/filter/load logic |
