@@ -42,6 +42,7 @@ jackin-launch-tui = { workspace = true }
 jackin-console = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-usage = { workspace = true }
+jackin-process = { workspace = true }
 clap = { workspace = true, features = ["derive", "color", "env"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -69,7 +70,6 @@ assert_cmd = { workspace = true }
 jackin-config = { workspace = true, features = ["test-support"] }
 jackin-env = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
-jackin-process = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 predicates = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

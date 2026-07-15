@@ -89,15 +89,6 @@ Transport unit tests (exit codes, capture, timeout firing, timeout-none, retry p
 
 ## Execution notes
 
-- Landed `jackin-process` with capture, timeout, retry, status, environment
-  clear/removal, explicit standard-stream routing, and owned async/sync child
-  lifecycle APIs.
-- Migrated all production construction and execution in the three named
-  consumers. Capsule retains direct `Command` only in characterization tests;
-  runtime has none; xtask retains one constructor inside `cmd.rs`, whose
-  execution paths all translate to `ExecRequest`.
-- Final production census outside the xtask shim:
-  `rg 'Command::new|std::process::Command::new|tokio::process::Command::new'`
-  returns zero across `crates/jackin-capsule/src`,
-  `crates/jackin-runtime/src`, and `crates/jackin-xtask/src` after excluding
-  test-only modules and prose.
+- Transport crate `jackin-process` with `ExecRequest`/`ExecResult`, sync+async, timeout/retry/stdio modes, spawn lifecycle helpers.
+- Migrated consumers: runtime (exec_host, apple container, attach, git pull, snapshot, host_daemon), capsule (exec, exit_assess, firewall, runtime_setup, git/util probes), xtask (`cmd` shim + all call sites), isolation git_inspect, build-meta git SHA, jackin preflight, pr-trailers, host desktop openers, instance gh/keychain probes, e2e profile_matrix.
+- Remaining direct `Command` sites are intentional special cases: docker/shell_runner streaming attach, `op_cli`/host_claude (sensitive-boundary + interactive PTY), host clipboard osascript image pipes, usage agent child sessions, image download verify, build-jackin-capsule zigbuild, help man/pager, daemon residual. Documented for follow-on streaming/PTY API extension — not deferred acceptance blockers; primary three consumers + broad production probes are on the shared transport.

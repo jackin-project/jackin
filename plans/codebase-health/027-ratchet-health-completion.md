@@ -108,7 +108,7 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 Landed 2026-07-14 on `chore/codebase-health-plans`.
 
 **Delivered**
-- `suite-time` provider + family at `mode=enforce` with `junit_total_ms` ceiling; empty measure (no junit) **skips** the family; growth-only hard fail (headroom Shrink is advisory). Nextest CI runs ratchet when `junit.xml` present.
+- `suite-time` provider + family at `mode=enforce` with `junit_total_ms` ceiling; **always measures** (0 when no junit.xml) so the family never skips; growth-only hard fail (headroom Shrink is advisory).
 - `agent-doc-bytes` flipped to `enforce` with seeded maxima.
 - Scheduled `health-trend` job in `hygiene.yml` (health JSON artifact + step summary).
 - Health report `trend` section + tightening proposals (agent-doc headroom vs ratchet bounds).

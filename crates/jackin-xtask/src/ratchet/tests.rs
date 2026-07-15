@@ -165,11 +165,11 @@ fn suite_time_parses_fixture_junit_ms() {
 }
 
 #[test]
-fn suite_time_absent_junit_is_empty() {
+fn suite_time_absent_junit_measures_zero() {
     use super::measure_suite_time;
     let dir = tempfile::tempdir().expect("tempdir");
     let measured = measure_suite_time(dir.path()).expect("measure");
-    assert!(measured.is_empty());
+    assert_eq!(measured.get("junit_total_ms"), Some(&0));
 }
 
 #[test]

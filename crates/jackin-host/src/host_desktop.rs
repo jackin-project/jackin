@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
-use std::process::{Command as StdCommand, Stdio};
 
 use anyhow::{Context, Result};
 
@@ -27,15 +26,17 @@ pub fn open_host_file(path: &Path) -> Result<()> {
 }
 
 fn run_host_desktop_command(program: &str, args: Vec<String>, label: &str) -> Result<()> {
-    let status = StdCommand::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+    use jackin_process::{ExecRequest, StdioMode};
+    let request = ExecRequest::new(program, args)
+        .stdout_mode(StdioMode::Null)
+        .stderr_mode(StdioMode::Null);
+    let result = jackin_process::exec_sync(&request)
         .with_context(|| format!("running {label} command {program:?}"))?;
-    if !status.success() {
-        anyhow::bail!("{label} command {program:?} exited with {status}");
+    if !result.success {
+        anyhow::bail!(
+            "{label} command {program:?} exited with code {:?}",
+            result.code
+        );
     }
     Ok(())
 }

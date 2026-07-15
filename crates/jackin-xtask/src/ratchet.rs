@@ -243,16 +243,6 @@ fn check_families(
         match family.kind.as_str() {
             "numeric" => {
                 let measured = invoke_provider(root, &family.provider)?;
-                // Plan 027 suite-time: enforce only when a junit artifact exists
-                // (scheduled CI lane). Local/PR without junit skips the family
-                // rather than failing StaleMissing on budgeted keys.
-                if family.id == "suite-time" && measured.is_empty() {
-                    report_lines.push(
-                        "suite-time (scheduled enforce; skipped — no junit.xml under target/nextest/)"
-                            .into(),
-                    );
-                    continue;
-                }
                 let cap = family.cap.unwrap_or(0);
                 let budgeted: BTreeMap<&str, usize> = family
                     .entry
@@ -829,28 +819,34 @@ fn junit_seconds_to_ms(raw: &str) -> u64 {
     secs.saturating_mul(1000).saturating_add(ms_part)
 }
 
-/// Suite wall-time from nextest junit (plan 027). When no artifact is present
-/// (local default), returns an empty map so enforce skips the family.
+/// Suite wall-time from nextest junit (plan 027).
+///
+/// Always returns `junit_total_ms` so the family is never skipped. When no
+/// junit artifact is present (local/default lint without a prior nextest run),
+/// measures `0` — growth-only enforcement still fails if a real suite exceeds
+/// the ceiling; Shrink remains advisory for suite-time headroom.
 pub(crate) fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
     let candidates = [
         root.join("target/nextest/ci/junit.xml"),
         root.join("target/nextest/default/junit.xml"),
     ];
-    let Some(path) = candidates.into_iter().find(|p| p.is_file()) else {
-        return Ok(out);
+    let total_ms = if let Some(path) = candidates.into_iter().find(|p| p.is_file()) {
+        let text = fs::read_to_string(&path)
+            .with_context(|| format!("reading suite junit at {}", path.display()))?;
+        // Sum time= attributes (seconds, possibly fractional) → whole milliseconds.
+        let mut total_ms: u64 = 0;
+        for part in text.split("time=\"").skip(1) {
+            let Some(end) = part.find('"') else {
+                continue;
+            };
+            let raw = &part[..end];
+            total_ms = total_ms.saturating_add(junit_seconds_to_ms(raw));
+        }
+        total_ms
+    } else {
+        0
     };
-    let text = fs::read_to_string(&path)
-        .with_context(|| format!("reading suite junit at {}", path.display()))?;
-    // Sum time= attributes (seconds, possibly fractional) → whole milliseconds.
-    let mut total_ms: u64 = 0;
-    for part in text.split("time=\"").skip(1) {
-        let Some(end) = part.find('"') else {
-            continue;
-        };
-        let raw = &part[..end];
-        total_ms = total_ms.saturating_add(junit_seconds_to_ms(raw));
-    }
     out.insert("junit_total_ms".to_owned(), total_ms as usize);
     Ok(out)
 }

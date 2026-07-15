@@ -2796,6 +2796,9 @@ dependencies = [
 [[package]]
 name = "jackin-build-meta"
 version = "0.6.0-dev"
+dependencies = [
+ "jackin-process",
+]
 
 [[package]]
 name = "jackin-capsule"
@@ -2984,6 +2987,7 @@ dependencies = [
  "jackin-core",
  "jackin-diagnostics",
  "jackin-docker",
+ "jackin-process",
  "jackin-protocol",
  "jackin-test-support",
  "jackin-tui",
@@ -3032,6 +3036,7 @@ dependencies = [
  "jackin-core",
  "jackin-diagnostics",
  "jackin-manifest",
+ "jackin-process",
  "rand 0.10.2",
  "serde",
  "serde_json",
@@ -3052,6 +3057,7 @@ dependencies = [
  "jackin-core",
  "jackin-diagnostics",
  "jackin-docker",
+ "jackin-process",
  "jackin-protocol",
  "jackin-test-support",
  "serde",
@@ -3098,6 +3104,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "clap",
+ "jackin-process",
  "serde_json",
  "tempfile",
 ]
