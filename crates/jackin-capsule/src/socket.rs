@@ -124,7 +124,7 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     let limiter = Arc::new(Semaphore::new(MAX_CONCURRENT_CLIENTS));
     let limiter_for_task = Arc::clone(&limiter);
 
-    tokio::spawn(async move {
+    jackin_telemetry::spawn::spawn_stream("capsule.socket.accept", async move {
         let limiter = limiter_for_task;
         let mut consecutive_failures = 0u32;
         // `true` while the semaphore is fully acquired. Used to log

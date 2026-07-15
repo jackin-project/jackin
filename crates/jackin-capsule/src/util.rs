@@ -118,11 +118,14 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
         }
     };
     let mut stdout = child.stdout.take()?;
-    let stdout_reader = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
-        let mut bytes = Vec::new();
-        stdout.read_to_end(&mut bytes)?;
-        Ok(bytes)
-    });
+    let stdout_reader = jackin_telemetry::spawn::thread_stream(
+        "process.stdout",
+        move || -> std::io::Result<Vec<u8>> {
+            let mut bytes = Vec::new();
+            stdout.read_to_end(&mut bytes)?;
+            Ok(bytes)
+        },
+    );
     let label = request.program.display().to_string();
     let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &label, timeout) {
         WaitOutcome::Exited(status) => Some(status.code() == Some(0)),

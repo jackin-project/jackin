@@ -106,6 +106,59 @@ where
     thread_joined(work)
 }
 
+pub fn thread_stream_named<F, R>(name: String, work: F) -> std::io::Result<thread::JoinHandle<R>>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let span = Span::current();
+    thread::Builder::new()
+        .name(name)
+        .spawn(move || span.in_scope(work))
+}
+
+pub fn thread_detached<F, R>(def: &'static SpanDef, work: F) -> thread::JoinHandle<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let parent = Span::current().context().span().span_context().clone();
+    thread::spawn(move || {
+        let guard = operation_root(def, &[]).expect("registered detached span definition");
+        if parent.is_valid() {
+            guard
+                .link(&parent)
+                .expect("first detached link is within limit");
+        }
+        let result = guard.span().in_scope(work);
+        guard.complete(crate::schema::enums::OutcomeValue::Success, None);
+        result
+    })
+}
+
+pub fn thread_detached_named<F, R>(
+    name: String,
+    def: &'static SpanDef,
+    work: F,
+) -> std::io::Result<thread::JoinHandle<R>>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let parent = Span::current().context().span().span_context().clone();
+    thread::Builder::new().name(name).spawn(move || {
+        let guard = operation_root(def, &[]).expect("registered detached span definition");
+        if parent.is_valid() {
+            guard
+                .link(&parent)
+                .expect("first detached link is within limit");
+        }
+        let result = guard.span().in_scope(work);
+        guard.complete(crate::schema::enums::OutcomeValue::Success, None);
+        result
+    })
+}
+
 pub trait JoinSetExt<T: Send + 'static> {
     fn spawn_joined_on<F>(&mut self, fut: F) -> tokio::task::AbortHandle
     where

@@ -293,7 +293,7 @@ impl Multiplexer {
         }
         let provider_keys = self.launch_env.provider_keys.clone();
         let mut cache = self.usage.usage_cache.clone();
-        self.usage.usage_refresh_task = Some(tokio::task::spawn_blocking(move || {
+        self.usage.usage_refresh_task = Some(jackin_telemetry::spawn::joined_blocking(move || {
             cache.refresh_active_account_snapshots(&active_targets, focused, &provider_keys, now);
             cache
         }));

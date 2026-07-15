@@ -1119,12 +1119,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             Some((stream, client_permit)) = new_clients.recv() => {
                 let handshake_tx = handshake_tx.clone();
                 let control_tx = control_tx.clone();
-                tokio::spawn(perform_handshake(
-                    stream,
-                    client_permit,
-                    handshake_tx,
-                    control_tx,
-                ));
+                jackin_telemetry::spawn::spawn_detached(
+                    &jackin_telemetry::operation::CONNECTION_ATTEMPT,
+                    perform_handshake(stream, client_permit, handshake_tx, control_tx),
+                );
             }
 
             Some(request) = control_rx.recv() => {
@@ -1286,7 +1284,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.client_registry.client.mark_dead_logged();
                 }
                 let cmd_tx_for_task = cmd_tx.clone();
-                mux.client_registry.attached_task = Some(tokio::spawn(async move {
+                mux.client_registry.attached_task = Some(jackin_telemetry::spawn::spawn_stream("capsule.attach", async move {
                     handle_attach_client(stream, new_out_rx, cmd_tx_for_task).await;
                     // Hold the concurrency permit alive for the
                     // lifetime of the attach task. Dropping at the

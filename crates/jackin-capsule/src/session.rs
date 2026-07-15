@@ -465,7 +465,7 @@ impl Session {
         // used instead of Handle::current().block_on(rx.recv()) because
         // the latter panics inside spawn_blocking on a current-thread
         // runtime ("Cannot block the current thread from within a runtime").
-        tokio::task::spawn_blocking(move || {
+        jackin_telemetry::spawn::stream_blocking("pty.reader", move || {
             let writer = match master_for_write.lock() {
                 Err(_) => {
                     crate::clog!("session {sid}: PTY master mutex poisoned; aborting writer task");
@@ -518,7 +518,7 @@ impl Session {
         });
 
         let event_tx_reader_err = event_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        jackin_telemetry::spawn::stream_blocking("pty.writer", move || {
             let reader = match master_for_read.lock() {
                 Err(_) => {
                     crate::clog!("session {sid}: PTY master mutex poisoned; aborting reader task");
@@ -601,7 +601,7 @@ impl Session {
         // remove the pane immediately; the reader task (still
         // blocked on master) becomes a leak that ends when the
         // multiplexer process itself exits.
-        tokio::task::spawn_blocking(move || {
+        jackin_telemetry::spawn::stream_blocking("pty.wait", move || {
             let status = child.wait();
             if let Some(pid) = child_pid {
                 crate::pid1::unregister_managed_child(pid);

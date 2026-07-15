@@ -159,14 +159,18 @@ impl Multiplexer {
         // outside one (unit tests, ad-hoc tools) a plain OS thread
         // avoids spinning up a second runtime.
         match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                handle.spawn_blocking(emit);
+            Ok(_handle) => {
+                drop(jackin_telemetry::spawn::detached_blocking(
+                    &jackin_telemetry::operation::BACKGROUND_CYCLE,
+                    emit,
+                ));
             }
             Err(_) => {
-                if let Err(e) = std::thread::Builder::new()
-                    .name(format!("capsule-blocking[{label}]"))
-                    .spawn(emit)
-                {
+                if let Err(e) = jackin_telemetry::spawn::thread_detached_named(
+                    format!("capsule-blocking[{label}]"),
+                    &jackin_telemetry::operation::BACKGROUND_CYCLE,
+                    emit,
+                ) {
                     crate::clog!("{label}: failed to spawn blocking worker thread: {e}");
                 }
             }
@@ -218,12 +222,15 @@ impl Multiplexer {
             // Offload the synchronous `git` subprocess to the blocking pool so
             // it doesn't stall the daemon's render thread (Defect 43).
             let workdir = self.launch_env.workdir.clone();
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn_blocking(move || {
-                    // Result discarded: the next git-branch watcher tick will
-                    // pick up the default branch via inotify or periodic poll.
-                    drop(resolve_default_branch(&workdir));
-                });
+            if tokio::runtime::Handle::try_current().is_ok() {
+                drop(jackin_telemetry::spawn::detached_blocking(
+                    &jackin_telemetry::operation::BACKGROUND_CYCLE,
+                    move || {
+                        // Result discarded: the next git-branch watcher tick will
+                        // pick up the default branch via inotify or periodic poll.
+                        drop(resolve_default_branch(&workdir));
+                    },
+                ));
             } else {
                 self.launch_env.workdir_context.default_branch = resolve_default_branch(&workdir);
             }

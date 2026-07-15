@@ -93,9 +93,12 @@ impl Multiplexer {
                 // finishes (or fails closed).
                 self.dialog_pop_one();
                 if let Some(reply_tx) = self.control.pending_exec_reply.take() {
-                    tokio::spawn(async move {
-                        drop(reply_tx.send(run_exec_selected(command, args, selected).await));
-                    });
+                    jackin_telemetry::spawn::spawn_detached(
+                        &jackin_telemetry::operation::PROCESS_COMMAND,
+                        async move {
+                            drop(reply_tx.send(run_exec_selected(command, args, selected).await));
+                        },
+                    );
                 }
             }
             DialogAction::ExecCancel => {

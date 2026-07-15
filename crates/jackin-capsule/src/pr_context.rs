@@ -372,30 +372,33 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
     mut pipe: R,
     cap: usize,
 ) -> std::thread::JoinHandle<std::io::Result<Vec<u8>>> {
-    std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(cap.min(16 * 1024));
-        let mut buf = [0u8; 4096];
-        let mut truncated = false;
-        loop {
-            let n = pipe.read(&mut buf)?;
-            if n == 0 {
-                break;
+    jackin_telemetry::spawn::thread_stream(
+        "pr_context.stdout",
+        move || -> std::io::Result<Vec<u8>> {
+            let mut bytes = Vec::with_capacity(cap.min(16 * 1024));
+            let mut buf = [0u8; 4096];
+            let mut truncated = false;
+            loop {
+                let n = pipe.read(&mut buf)?;
+                if n == 0 {
+                    break;
+                }
+                let take = (cap - bytes.len()).min(n);
+                bytes.extend_from_slice(&buf[..take]);
+                if bytes.len() >= cap {
+                    // Cap reached; drain remaining bytes so the writer
+                    // doesn't block on SIGPIPE waiting for us.
+                    truncated = true;
+                    while pipe.read(&mut buf)? > 0 {}
+                    break;
+                }
             }
-            let take = (cap - bytes.len()).min(n);
-            bytes.extend_from_slice(&buf[..take]);
-            if bytes.len() >= cap {
-                // Cap reached; drain remaining bytes so the writer
-                // doesn't block on SIGPIPE waiting for us.
-                truncated = true;
-                while pipe.read(&mut buf)? > 0 {}
-                break;
+            if truncated {
+                crate::cdebug!(
+                    "read_pipe_bounded[{program} {stream}]: capped at {cap} bytes; downstream parsing may fail"
+                );
             }
-        }
-        if truncated {
-            crate::cdebug!(
-                "read_pipe_bounded[{program} {stream}]: capped at {cap} bytes; downstream parsing may fail"
-            );
-        }
-        Ok(bytes)
-    })
+            Ok(bytes)
+        },
+    )
 }

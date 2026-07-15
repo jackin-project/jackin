@@ -37,7 +37,7 @@ impl ResourceMetricsSampler {
         if self.pending.is_some() {
             return;
         }
-        self.pending = Some(tokio::task::spawn_blocking(Self::sample));
+        self.pending = Some(jackin_telemetry::spawn::joined_blocking(Self::sample));
     }
 
     async fn poll(&mut self) -> Option<anyhow::Result<Option<(ResourceSample, Option<f64>)>>> {

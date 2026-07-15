@@ -193,8 +193,11 @@ pub(crate) fn start_git_context_watcher(
         );
         return;
     };
-    let builder = std::thread::Builder::new().name("git-context-watch".to_owned());
-    if let Err(err) = builder.spawn(move || watch_git_head_changes(git_dir, event_tx)) {
+    if let Err(err) =
+        jackin_telemetry::spawn::thread_stream_named("git-context-watch".to_owned(), move || {
+            watch_git_head_changes(git_dir, event_tx)
+        })
+    {
         crate::clog!(
             "git-context-watch: failed to spawn watcher thread: {err}; relying on periodic poll"
         );

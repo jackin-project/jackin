@@ -127,7 +127,7 @@ fn run_runtime_setup_concurrently(
     dco_cache: impl FnOnce(),
     agent_setup: impl FnOnce() -> Result<()> + Send + 'static,
 ) -> Result<()> {
-    let agent_setup = std::thread::spawn(agent_setup);
+    let agent_setup = jackin_telemetry::spawn::thread_joined(agent_setup);
     let foreground: Result<()> = (|| {
         container_init()?;
         git_hook()?;

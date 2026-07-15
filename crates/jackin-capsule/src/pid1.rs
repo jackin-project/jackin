@@ -90,31 +90,29 @@ pub fn install_sigchld_reaper() {
         return;
     }
 
-    let reaper = std::thread::Builder::new()
-        .name("zombie-reaper".into())
-        .spawn(move || {
-            let mut sigset = SigSet::empty();
-            sigset.add(Signal::SIGCHLD);
-            loop {
-                // Block until SIGCHLD arrives. sigwait can return EINTR
-                // on signal-handler interrupt — sleep briefly so a tight
-                // loop does not hammer the kernel queue, then retry. A
-                // non-EINTR error is unexpected (corrupt sigset, ENOSYS
-                // on a stripped kernel) and warrants a log line.
-                match sigset.wait() {
-                    Ok(_) => reap_zombies(),
-                    Err(nix::errno::Errno::EINTR) => {}
-                    Err(e) => {
-                        crate::clog!("zombie-reaper sigwait error: {e}; backing off 100ms");
-                        #[expect(
-                            clippy::disallowed_methods,
-                            reason = "zombie reaper owns its OS thread and is not the multiplexer render thread"
-                        )]
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
+    let reaper = jackin_telemetry::spawn::thread_stream_named("zombie-reaper".into(), move || {
+        let mut sigset = SigSet::empty();
+        sigset.add(Signal::SIGCHLD);
+        loop {
+            // Block until SIGCHLD arrives. sigwait can return EINTR
+            // on signal-handler interrupt — sleep briefly so a tight
+            // loop does not hammer the kernel queue, then retry. A
+            // non-EINTR error is unexpected (corrupt sigset, ENOSYS
+            // on a stripped kernel) and warrants a log line.
+            match sigset.wait() {
+                Ok(_) => reap_zombies(),
+                Err(nix::errno::Errno::EINTR) => {}
+                Err(e) => {
+                    crate::clog!("zombie-reaper sigwait error: {e}; backing off 100ms");
+                    #[expect(
+                        clippy::disallowed_methods,
+                        reason = "zombie reaper owns its OS thread and is not the multiplexer render thread"
+                    )]
+                    std::thread::sleep(std::time::Duration::from_millis(100));
                 }
             }
-        });
+        }
+    });
     if let Err(error) = reaper {
         crate::clog!("failed to spawn zombie-reaper thread: {error}");
     }
