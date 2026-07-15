@@ -25,12 +25,16 @@ impl Multiplexer {
         // Any selection / drag-resize is anchored to a specific pane
         // rect that this reflow is about to invalidate.
         self.cancel_drag();
-        let Some(tab) = self.tabs.get(self.active_tab) else {
+        let Some(tab) = self
+            .session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)
+        else {
             return Ok(());
         };
         let tab_codename = tab.codename.clone();
         let from_id = tab.focused_id;
-        let content_rect = content_rect(self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.render.content_rows, self.render.term_cols);
         let from_rect = tab
             .tree
             .leaves(content_rect)
@@ -59,16 +63,16 @@ impl Multiplexer {
             }),
             launch.cmd,
             self.session_terminal(spawn_rows, spawn_cols),
-            self.event_tx.clone(),
+            self.control.event_tx.clone(),
         )?;
-        self.sessions.insert(new_id, session);
+        self.session_supervisor.sessions.insert(new_id, session);
         self.record_agent_history(
             new_id,
             tab_codename.clone(),
             agent_for_log.clone(),
             provider_label,
         );
-        let tab = &mut self.tabs[self.active_tab];
+        let tab = &mut self.session_supervisor.tabs[self.session_supervisor.active_tab];
         let placed = match direction {
             SplitDirection::Left => tab.tree.split_h(from_id, new_id, SplitPosition::Before),
             SplitDirection::Right => tab.tree.split_h(from_id, new_id, SplitPosition::After),
@@ -80,7 +84,7 @@ impl Multiplexer {
             // (e.g. the source pane exited mid-action). Undo the
             // session insert so the spawned PTY + child + tasks do
             // not leak as an orphan that no tab tree references.
-            if let Some(orphan) = self.sessions.remove(&new_id) {
+            if let Some(orphan) = self.session_supervisor.sessions.remove(new_id) {
                 orphan.terminate();
             }
             // The history record was pushed at spawn (above), before placement
@@ -120,12 +124,17 @@ impl Multiplexer {
     pub(super) fn focused_spawn_metadata(
         &self,
     ) -> (Option<String>, Vec<(String, String)>, Option<String>) {
-        let Some(tab) = self.tabs.get(self.active_tab) else {
+        let Some(tab) = self
+            .session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)
+        else {
             return (None, Vec::new(), None);
         };
         let from_id = tab.focused_id;
-        self.sessions
-            .get(&from_id)
+        self.session_supervisor
+            .sessions
+            .get(from_id)
             .map_or((None, Vec::new(), None), |session| {
                 let (env, label) = session.provider.as_ref().map_or_else(
                     || (Vec::new(), None),
@@ -138,7 +147,11 @@ impl Multiplexer {
     pub(super) fn close_focused_pane(&mut self) {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
-        let Some(tab) = self.tabs.get_mut(self.active_tab) else {
+        let Some(tab) = self
+            .session_supervisor
+            .tabs
+            .get_mut(self.session_supervisor.active_tab)
+        else {
             return;
         };
         let id = tab.focused_id;
@@ -146,11 +159,11 @@ impl Multiplexer {
         let next_focus = all.iter().find(|&&sid| sid != id).copied();
         crate::clog!(
             "action: close_focused_pane id={id} tab_idx={} siblings_remaining={}",
-            self.active_tab,
+            self.session_supervisor.active_tab,
             next_focus.is_some()
         );
         tab.tree.remove(id);
-        if let Some(session) = self.sessions.remove(&id) {
+        if let Some(session) = self.session_supervisor.sessions.remove(id) {
             session.terminate();
         }
         // Drop the tab's zoom reference when the killed pane was the
@@ -159,9 +172,12 @@ impl Multiplexer {
         if let Some(nf) = next_focus {
             tab.focused_id = nf;
         } else {
-            self.tabs.remove(self.active_tab);
-            if self.active_tab >= self.tabs.len() {
-                self.active_tab = self.tabs.len().saturating_sub(1);
+            self.session_supervisor
+                .tabs
+                .remove(self.session_supervisor.active_tab);
+            if self.session_supervisor.active_tab >= self.session_supervisor.tabs.len() {
+                self.session_supervisor.active_tab =
+                    self.session_supervisor.tabs.len().saturating_sub(1);
             }
         }
         self.mark_agent_session_exited(id);
@@ -170,19 +186,19 @@ impl Multiplexer {
     }
 
     pub(super) fn resize_panes(&mut self) {
-        let content_rect = content_rect(self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.render.content_rows, self.render.term_cols);
         if let Some(zoom_id) = self.active_zoomed_id() {
             let inner = content_rect.shrink(1);
-            if let Some(session) = self.sessions.get_mut(&zoom_id) {
+            if let Some(session) = self.session_supervisor.sessions.get_mut(zoom_id) {
                 session.resize(inner.rows, inner.cols);
             }
             return;
         }
-        for tab in &self.tabs {
+        for tab in &self.session_supervisor.tabs {
             let leaves = tab.tree.leaves(content_rect);
             for (id, rect) in leaves {
                 let inner = rect.shrink(1);
-                if let Some(session) = self.sessions.get_mut(&id) {
+                if let Some(session) = self.session_supervisor.sessions.get_mut(id) {
                     session.resize(inner.rows, inner.cols);
                 }
             }
@@ -193,19 +209,22 @@ impl Multiplexer {
         let (rows, cols) = normalize_size(rows, cols);
         crate::cdebug!(
             "resize: {}x{} → {}x{} content_rows={}",
-            self.term_cols,
-            self.term_rows,
+            self.render.term_cols,
+            self.render.term_rows,
             cols,
             rows,
             available_content_rows(rows),
         );
         // Outer-terminal resize invalidates the drag's saved rect.
         self.cancel_drag();
-        self.term_rows = rows;
-        self.term_cols = cols;
-        self.content_rows = available_content_rows(self.term_rows);
+        self.render.term_rows = rows;
+        self.render.term_cols = cols;
+        self.render.content_rows = available_content_rows(self.render.term_rows);
         self.resize_panes();
-        self.ratatui_terminal.backend_mut().resize(cols, rows);
+        self.render
+            .ratatui_terminal
+            .backend_mut()
+            .resize(cols, rows);
         // Drive Ratatui's own resize so the buffers AND `last_known_area` move
         // to the new geometry together. `Terminal::clear()` resets the diff
         // baseline but leaves `last_known_area` stale, so the `autoresize()` at
@@ -217,29 +236,37 @@ impl Multiplexer {
         // autoresize a no-op. Suppression keeps this bookkeeping byte-silent
         // (the clears would otherwise ride a later frame); the single visible
         // wipe belongs to the Resize full redraw in `compose_pending_frame`.
-        self.ratatui_terminal
+        self.render
+            .ratatui_terminal
             .backend_mut()
             .begin_clear_suppression();
         drop(
-            self.ratatui_terminal
+            self.render
+                .ratatui_terminal
                 .resize(ratatui::layout::Rect::new(0, 0, cols, rows)),
         );
-        self.ratatui_terminal.backend_mut().end_clear_suppression();
+        self.render
+            .ratatui_terminal
+            .backend_mut()
+            .end_clear_suppression();
         self.invalidate(super::FullRedrawReason::Resize);
     }
 
     pub(super) fn reconcile_content_rows(&mut self) -> bool {
-        let next = available_content_rows(self.term_rows);
-        if next == self.content_rows {
+        let next = available_content_rows(self.render.term_rows);
+        if next == self.render.content_rows {
             return false;
         }
-        self.content_rows = next;
+        self.render.content_rows = next;
         self.resize_panes();
         true
     }
 
     pub(super) fn active_focused_id(&self) -> Option<u64> {
-        self.tabs.get(self.active_tab).map(|t| t.focused_id)
+        self.session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)
+            .map(|t| t.focused_id)
     }
 
     /// Active tab's zoomed pane, if the stored id still belongs to
@@ -247,7 +274,10 @@ impl Multiplexer {
     /// this helper so inactive tabs can retain their own zoom state
     /// without leaking it into the visible tab.
     pub(super) fn active_zoomed_id(&self) -> Option<u64> {
-        let tab = self.tabs.get(self.active_tab)?;
+        let tab = self
+            .session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)?;
         let zoom_id = tab.zoomed?;
         if tab.tree.all_ids().contains(&zoom_id) {
             Some(zoom_id)
@@ -258,12 +288,13 @@ impl Multiplexer {
 
     pub(super) fn active_focused_outer_rect(&self) -> Option<Rect> {
         let focused = self.active_focused_id()?;
-        let content_rect = content_rect(self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.render.content_rows, self.render.term_cols);
         if let Some(zoom_id) = self.active_zoomed_id() {
             return (zoom_id == focused).then_some(content_rect);
         }
-        self.tabs
-            .get(self.active_tab)?
+        self.session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)?
             .tree
             .leaves(content_rect)
             .into_iter()
@@ -282,7 +313,7 @@ impl Multiplexer {
         let ids = tab.tree.all_ids();
         let pane_count = ids.len();
         let panes = ids.into_iter().filter_map(|id| {
-            self.sessions.get(&id).map(|session| {
+            self.session_supervisor.sessions.get(id).map(|session| {
                 let provider_label = session
                     .provider
                     .as_ref()
@@ -302,49 +333,63 @@ impl Multiplexer {
     /// short strings) and easier to reason about than dispatching
     /// incremental updates from every mutation site.
     pub(super) fn refresh_tab_labels(&mut self) {
-        let mut new_labels = Vec::with_capacity(self.tabs.len());
-        for tab in &self.tabs {
+        let mut new_labels = Vec::with_capacity(self.session_supervisor.tabs.len());
+        for tab in &self.session_supervisor.tabs {
             new_labels.push(self.tab_display_label(tab));
         }
-        for (tab, label) in self.tabs.iter_mut().zip(new_labels) {
+        for (tab, label) in self.session_supervisor.tabs.iter_mut().zip(new_labels) {
             tab.set_auto_label(label);
         }
     }
 
     pub(super) fn visible_panes(&self) -> Vec<VisiblePane> {
-        let content_rect = content_rect(self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.render.content_rows, self.render.term_cols);
         let focused_id = self.active_focused_id();
         visible_panes_for_layout(
             content_rect,
             focused_id,
             self.active_zoomed_id(),
-            self.tabs.get(self.active_tab),
+            self.session_supervisor
+                .tabs
+                .get(self.session_supervisor.active_tab),
         )
     }
 
     /// Adjust the split that contains the focused pane along `dir` by
     /// 5% of the parent rectangle. Triggered by `Alt-Shift-Arrow`.
     pub(super) fn resize_focused(&mut self, dir: ArrowDir) {
-        let Some(tab_idx) = self.tabs.get(self.active_tab).map(|_| self.active_tab) else {
+        let Some(tab_idx) = self
+            .session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)
+            .map(|_| self.session_supervisor.active_tab)
+        else {
             return;
         };
-        let focused = self.tabs[tab_idx].focused_id;
+        let focused = self.session_supervisor.tabs[tab_idx].focused_id;
         let d = match dir {
             ArrowDir::Left => Direction::Left,
             ArrowDir::Right => Direction::Right,
             ArrowDir::Up => Direction::Up,
             ArrowDir::Down => Direction::Down,
         };
-        if self.tabs[tab_idx].tree.resize(focused, d, 0.05) {
+        if self.session_supervisor.tabs[tab_idx]
+            .tree
+            .resize(focused, d, 0.05)
+        {
             self.resize_panes();
         }
     }
 
     pub(super) fn move_focus(&mut self, dir: ArrowDir) {
-        let Some(tab) = self.tabs.get(self.active_tab) else {
+        let Some(tab) = self
+            .session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)
+        else {
             return;
         };
-        let content_rect = content_rect(self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.render.content_rows, self.render.term_cols);
         let d = match dir {
             ArrowDir::Left => Direction::Left,
             ArrowDir::Right => Direction::Right,
@@ -353,7 +398,7 @@ impl Multiplexer {
         };
         let prev = tab.focused_id;
         if let Some(next_id) = tab.tree.adjacent(content_rect, tab.focused_id, d) {
-            self.tabs[self.active_tab].focused_id = next_id;
+            self.session_supervisor.tabs[self.session_supervisor.active_tab].focused_id = next_id;
             self.synthesise_focus_swap(Some(prev), Some(next_id));
         }
     }
@@ -378,7 +423,7 @@ impl Multiplexer {
         // bytes into their PTY would surface as literal `[I` /
         // `[O` text at the prompt.
         if let Some(o) = old
-            && let Some(s) = self.sessions.get(&o)
+            && let Some(s) = self.session_supervisor.sessions.get(o)
             && s.focus_events_enabled()
         {
             s.send_input(b"\x1b[O");
@@ -386,7 +431,7 @@ impl Multiplexer {
         // Cursor and mode state for the newly focused pane are reconciled
         // by the next composed frame (§3.4) — no assertion site here.
         if let Some(n) = new
-            && let Some(s) = self.sessions.get(&n)
+            && let Some(s) = self.session_supervisor.sessions.get(n)
             && s.focus_events_enabled()
         {
             s.send_input(b"\x1b[I");
@@ -407,8 +452,12 @@ impl Multiplexer {
         if row < STATUS_BAR_ROWS {
             return false;
         }
-        let content_rect = content_rect(self.content_rows, self.term_cols);
-        let Some(tab) = self.tabs.get(self.active_tab) else {
+        let content_rect = content_rect(self.render.content_rows, self.render.term_cols);
+        let Some(tab) = self
+            .session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)
+        else {
             return false;
         };
         let prev = tab.focused_id;
@@ -420,7 +469,8 @@ impl Multiplexer {
                 && col < content_rect.col + content_rect.cols
                 && zoom_id != prev
             {
-                self.tabs[self.active_tab].focused_id = zoom_id;
+                self.session_supervisor.tabs[self.session_supervisor.active_tab].focused_id =
+                    zoom_id;
                 self.synthesise_focus_swap(Some(prev), Some(zoom_id));
                 return true;
             }
@@ -434,7 +484,7 @@ impl Multiplexer {
                 && col < rect.col + rect.cols
                 && id != prev
             {
-                self.tabs[self.active_tab].focused_id = id;
+                self.session_supervisor.tabs[self.session_supervisor.active_tab].focused_id = id;
                 self.synthesise_focus_swap(Some(prev), Some(id));
                 return true;
             }
@@ -445,7 +495,7 @@ impl Multiplexer {
     pub(super) fn clear_focused_pane(&mut self) {
         self.cancel_drag();
         if let Some(id) = self.active_focused_id()
-            && let Some(session) = self.sessions.get_mut(&id)
+            && let Some(session) = self.session_supervisor.sessions.get_mut(id)
         {
             session.clear_scrollback_and_request_screen_clear();
         }
@@ -458,9 +508,9 @@ impl Multiplexer {
     /// untouched.
     pub(super) fn focus_session_globally(&mut self, session_id: u64) -> bool {
         use crate::tui::layout::Rect;
-        let probe_rect = Rect::new(0, 0, self.term_rows, self.term_cols);
+        let probe_rect = Rect::new(0, 0, self.render.term_rows, self.render.term_cols);
         let prev_focused = self.active_focused_id();
-        for (tab_idx, tab) in self.tabs.iter().enumerate() {
+        for (tab_idx, tab) in self.session_supervisor.tabs.iter().enumerate() {
             let leaf_ids: Vec<u64> = tab
                 .tree
                 .leaves(probe_rect)
@@ -468,8 +518,8 @@ impl Multiplexer {
                 .map(|(id, _)| id)
                 .collect();
             if leaf_ids.contains(&session_id) {
-                self.active_tab = tab_idx;
-                self.tabs[tab_idx].focused_id = session_id;
+                self.session_supervisor.active_tab = tab_idx;
+                self.session_supervisor.tabs[tab_idx].focused_id = session_id;
                 self.synthesise_focus_swap(prev_focused, Some(session_id));
                 return true;
             }

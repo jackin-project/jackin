@@ -60,7 +60,7 @@ pub struct WorkspaceListDisplayRow {
     pub hovered: bool,
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal UI state flags (selected, hovered, \
               current_dir_expanded, current_dir_has_instances) — each tracks an \
@@ -106,7 +106,7 @@ pub enum WorkspaceSidebarPlan {
     ListNames,
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal sidebar-picker visibility flags (provider, \
               launch_provider, new_session, agent, role) — each tracks an \
@@ -215,16 +215,16 @@ pub fn new_workspace_display_row(selected: bool, hovered: bool) -> WorkspaceList
 pub struct InstanceRowLabel {
     pub instance_id: String,
     pub role_key: String,
-    pub status: jackin_core::instance::InstanceStatus,
+    pub status: jackin_core::InstanceStatus,
 }
 
 #[must_use]
 pub fn workspace_instance_list_label(
     instance_id: &str,
     role_key: &str,
-    status: jackin_core::instance::InstanceStatus,
+    status: jackin_core::InstanceStatus,
 ) -> String {
-    use jackin_core::instance::InstanceStatus as S;
+    use jackin_core::InstanceStatus as S;
     match status {
         // Live instances read as today; failed/stopped ones carry a compact
         // state tag so the operator can tell them apart in the tree (D15).
@@ -237,7 +237,7 @@ pub fn workspace_instance_list_label(
 pub fn workspace_instance_display_row(
     instance_id: &str,
     role_key: &str,
-    status: jackin_core::instance::InstanceStatus,
+    status: jackin_core::InstanceStatus,
     selected: bool,
     hovered: bool,
 ) -> WorkspaceListDisplayRow {
@@ -1021,7 +1021,7 @@ pub fn render_global_mounts_subpanel(
     );
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

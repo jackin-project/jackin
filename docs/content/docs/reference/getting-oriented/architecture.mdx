@@ -192,7 +192,7 @@ Workspace mounts pass through three distinct shapes between operator intent and 
 | `ResolvedWorkspace` | `resolve_load_workspace` | Expanded host paths plus the merged composition of workspace, ad-hoc, and global mounts. Still independent of the actual container instance. |
 | `MaterializedWorkspace` | post-name-claim materializer | Final host paths Docker should bind-mount for *this* container. Isolated checkouts have been created on disk; isolated `src` values point at the per-container worktree or clone path. |
 
-Materialization happens **after** jackin claims the final unique container name and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: worktree mode creates a scratch branch from host `HEAD`, clone mode runs a local clone of the host repo's current branch, and both modes record `base_commit`. Later loads to the same container reuse the existing checkout as-is — no reset, no rebase, no fast-forward.
+Materialization happens **after** jackin❯ claims the final unique container name and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: worktree mode creates a scratch branch from host `HEAD`, clone mode runs a local clone of the host repo's current branch, and both modes record `base_commit`. Later loads to the same container reuse the existing checkout as-is — no reset, no rebase, no fast-forward.
 
 On first worktree creation for a host repo, jackin❯ enables `extensions.worktreeConfig` (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config writes via `git config --worktree` don't leak into the shared host `.git/config`.
 

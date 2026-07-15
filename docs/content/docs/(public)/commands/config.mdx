@@ -1,5 +1,5 @@
 ---
-title: jackin config
+title: jackin❯ config
 description: "View and modify operator configuration"
 ---
 
@@ -200,7 +200,7 @@ jackin config git coauthor-trailer enable
 jackin config git coauthor-trailer disable
 ```
 
-Enable or disable automatic `Co-authored-by` trailer injection for agent commits. When enabled, jackin installs a `prepare-commit-msg` hook inside every container at launch. The hook appends the running agent's `Co-authored-by` trailer whenever Git prepares a commit message, preserving existing agent trailers and deduplicating matching lines so the trailer appears in Git's final trailer block.
+Enable or disable automatic `Co-authored-by` trailer injection for agent commits. When enabled, jackin❯ installs a `prepare-commit-msg` hook inside every container at launch. The hook appends the running agent's `Co-authored-by` trailer whenever Git prepares a commit message, preserving existing agent trailers and deduplicating matching lines so the trailer appears in Git's final trailer block.
 
 Supported agents and their trailers:
 

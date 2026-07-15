@@ -15,7 +15,7 @@ const FALLBACK_INSTALL_COMMAND: &str =
 
 /// [`crate::agent::runtime::AgentRuntime`] adapter for Kimi Code.
 #[derive(Debug)]
-pub struct KimiRuntime;
+pub(crate) struct KimiRuntime;
 
 impl crate::agent::runtime::private::Sealed for KimiRuntime {}
 

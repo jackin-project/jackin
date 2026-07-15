@@ -675,8 +675,7 @@ pub async fn materialize_workspace(
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
+#[expect(
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -929,8 +928,7 @@ async fn materialize_one(
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
+#[expect(
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

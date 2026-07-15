@@ -1199,3 +1199,32 @@ fn orphan_cleanup_display_each_variant() {
     assert!(s.contains("vault locked"));
     assert!(s.contains("op item delete X --vault Y"));
 }
+
+#[test]
+fn days_until_expiry_at_is_deterministic() {
+    use jackin_core::ManualClock;
+    let base = chrono::DateTime::parse_from_rfc3339("2026-01-10T00:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let clock = ManualClock::with_system_base(base.into());
+    assert_eq!(days_until_expiry_with_clock("2026-01-15", &clock), Some(5));
+    assert_eq!(days_until_expiry_with_clock("2026-01-10", &clock), Some(0));
+    assert_eq!(days_until_expiry_with_clock("2026-01-01", &clock), Some(-9));
+    assert_eq!(days_until_expiry_with_clock("not-a-date", &clock), None);
+}
+
+#[test]
+fn upstream_expiry_stamp_at_uses_injected_now() {
+    use jackin_core::ManualClock;
+    let now = chrono::DateTime::parse_from_rfc3339("2026-01-10T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let clock = ManualClock::with_system_base(now.into());
+    let stamp = upstream_expiry_stamp_with_clock(&clock);
+    // TOKEN_LIFETIME_DAYS days from 2026-01-10
+    let expected = (now + chrono::Duration::days(TOKEN_LIFETIME_DAYS))
+        .format("%Y-%m-%d")
+        .to_string();
+    assert_eq!(stamp, expected);
+    assert_eq!(now_utc_rfc3339_with_clock(&clock), now.to_rfc3339());
+}

@@ -1,26 +1,17 @@
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
-
 mod common;
 
 use common::{FakeRunner, NoOpDocker, install_agent_binary_stubs, install_capsule_binary_stub};
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use jackin_config::AppConfig;
 use jackin_core::Agent;
+use jackin_core::JackinPaths;
 use jackin_core::MountIsolation;
 use jackin_core::RoleSelector;
-use jackin_core::paths::JackinPaths;
 use jackin_runtime::runtime::{LoadOptions, load_role};
 use std::path::Path;
 use tempfile::tempdir;

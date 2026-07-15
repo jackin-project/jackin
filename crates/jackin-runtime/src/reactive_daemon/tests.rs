@@ -75,6 +75,17 @@ fn attention_adapter_notifies_on_blocked_and_done_edges_only() {
 }
 
 #[test]
+fn attention_adapter_rejects_invalid_container_identity() {
+    let mut adapter = AttentionAdapter::new(RecordingNotifier::default());
+
+    let error = adapter
+        .ingest_snapshot("invalid/container", &snapshot(AgentState::Blocked))
+        .unwrap_err();
+
+    assert!(error.to_string().contains("validating attention snapshot"));
+}
+
+#[test]
 fn control_socket_shape_accepts_attention_snapshot() {
     let request = DaemonRequest {
         id: "req-1".to_owned(),

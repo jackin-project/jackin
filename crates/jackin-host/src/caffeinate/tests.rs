@@ -4,133 +4,11 @@
 //! Tests for `caffeinate`.
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::path::Path;
 
 use super::*;
-use jackin_core::runner::{CommandRunner, RunOptions};
-use jackin_docker::docker_client::{
-    ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
-};
+use jackin_core::ContainerRow;
+use jackin_test_support::{FakeDockerClient, FakeRunner};
 use tempfile::tempdir;
-
-/// Minimal in-file `DockerApi` fake for caffeinate tests. Only
-/// `list_containers` and `inspect_container_state` are meaningful; the
-/// remaining methods are stubbed with safe defaults. Lifted from
-/// `jackin-runtime::runtime::test_support::FakeDockerClient` and inlined
-/// here to avoid a circular `jackin-host` → `jackin-runtime` →
-/// `jackin-host` dependency (the proper fix per the C1 playbook is to
-/// move the shared `test_support` fixture into `jackin-core`).
-#[derive(Debug, Default)]
-pub(crate) struct FakeDockerClient {
-    pub list_containers_queue: RefCell<VecDeque<Vec<ContainerRow>>>,
-    pub list_calls: RefCell<usize>,
-}
-
-impl DockerApi for FakeDockerClient {
-    async fn ping(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    async fn inspect_container_state(&self, _name: &str) -> ContainerState {
-        ContainerState::NotFound
-    }
-    async fn remove_container(&self, _name: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn list_containers(
-        &self,
-        _label_filters: &[&str],
-        _all: bool,
-    ) -> anyhow::Result<Vec<ContainerRow>> {
-        *self.list_calls.borrow_mut() += 1;
-        Ok(self
-            .list_containers_queue
-            .borrow_mut()
-            .pop_front()
-            .unwrap_or_default())
-    }
-    async fn create_container(&self, _name: &str, _spec: ContainerSpec) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn start_container(&self, _name: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn remove_volume(&self, _name: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn create_network(
-        &self,
-        _name: &str,
-        _labels: HashMap<String, String>,
-        _check_existing: bool,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn remove_network(&self, _name: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn list_networks(&self, _label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
-        Ok(Vec::new())
-    }
-    async fn list_image_tags(&self, _reference_filter: &str) -> anyhow::Result<Vec<String>> {
-        Ok(Vec::new())
-    }
-    async fn remove_image(&self, _name: &str) -> anyhow::Result<RemoveImageOutcome> {
-        Ok(RemoveImageOutcome::NotFound)
-    }
-    async fn inspect_image_labels(&self, _image: &str) -> anyhow::Result<HashMap<String, String>> {
-        Ok(HashMap::new())
-    }
-    async fn pull_image(&self, _image: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn exec_capture(&self, _container: &str, _cmd: &[&str]) -> anyhow::Result<String> {
-        Ok(String::new())
-    }
-    async fn inspect_network(&self, _name: &str) -> anyhow::Result<Option<NetworkRow>> {
-        Ok(None)
-    }
-}
-
-/// Minimal in-file `CommandRunner` fake for caffeinate tests. `run` records
-/// the command and returns `Ok(())`; `capture` returns an empty string.
-/// Same circular-dep reasoning as `FakeDockerClient` above.
-#[derive(Debug, Default)]
-pub(crate) struct FakeRunner {
-    pub recorded: Vec<String>,
-}
-
-impl CommandRunner for FakeRunner {
-    async fn run(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        _cwd: Option<&Path>,
-        _opts: &RunOptions,
-    ) -> anyhow::Result<()> {
-        self.recorded
-            .push(format!("{} {}", program, args.join(" ")));
-        Ok(())
-    }
-    async fn capture(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        _cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        self.recorded
-            .push(format!("{} {}", program, args.join(" ")));
-        Ok(String::new())
-    }
-    async fn capture_secret(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        self.capture(program, args, cwd).await
-    }
-}
 
 #[tokio::test]
 async fn count_keep_awake_agents_returns_zero_for_empty_output() {
@@ -169,7 +47,14 @@ async fn reconcile_gate_false_with_no_pidfile_skips_docker_count() {
         .await
         .unwrap();
 
-    assert_eq!(*docker.list_calls.borrow(), 0);
+    // Canonical fake records list_containers as `docker ps…` entries.
+    let list_calls = docker
+        .recorded
+        .borrow()
+        .iter()
+        .filter(|op| op.contains("docker ps"))
+        .count();
+    assert_eq!(list_calls, 0);
 }
 
 #[test]

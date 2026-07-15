@@ -11,7 +11,7 @@ use crate::tui::screens::workspaces::model::ManagerListRow;
 
 /// Backing data an instance row needs to size its label: id, role, and status
 /// (status drives the `[state]` tag width for failed/stopped instances — D15).
-type InstanceRowWidthFacts = (String, String, jackin_core::instance::InstanceStatus);
+type InstanceRowWidthFacts = (String, String, jackin_core::InstanceStatus);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ListColumns {
@@ -204,7 +204,7 @@ pub fn workspace_row_width(name: &str, has_instances: bool, selected_with_cursor
 pub fn instance_row_width(
     instance_id: impl std::fmt::Display,
     role_key: &str,
-    status: jackin_core::instance::InstanceStatus,
+    status: jackin_core::InstanceStatus,
     selected_with_cursor: bool,
 ) -> usize {
     // Width must match the rendered label, including the `[state]` tag that

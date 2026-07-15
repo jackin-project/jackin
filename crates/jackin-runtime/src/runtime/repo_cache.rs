@@ -1,4 +1,4 @@
-#![allow(
+#![expect(
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -12,12 +12,13 @@
 use crate::instance::runtime_slug;
 use anyhow::Context;
 use fs4::FileExt;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
-use jackin_core::{CommandRunner, RunOptions};
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
+use jackin_core::{Clock, CommandRunner, RunOptions, SystemClock};
 use jackin_manifest::repo::{CachedRepo, validate_role_repo};
 #[cfg(test)]
 use std::io::IsTerminal;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use super::identity::try_capture;
@@ -343,15 +344,17 @@ pub(super) struct RepoResolveOptions {
     branch_override: Option<String>,
     git_interactivity: GitInteractivity,
     refresh_ttl: Option<Duration>,
+    clock: Arc<dyn Clock>,
 }
 
 impl RepoResolveOptions {
-    pub(super) const fn interactive(debug: bool) -> Self {
+    pub(super) fn interactive(debug: bool) -> Self {
         Self {
             debug,
             branch_override: None,
             git_interactivity: GitInteractivity::Interactive,
             refresh_ttl: None,
+            clock: Arc::new(SystemClock),
         }
     }
 
@@ -359,12 +362,13 @@ impl RepoResolveOptions {
     /// from inside the TUI alt-screen, where streaming git output via
     /// `--debug` would corrupt the render. Diagnostics go through the
     /// buffered `jackin_diagnostics::debug_log!` channel instead.
-    pub(super) const fn non_interactive() -> Self {
+    pub(super) fn non_interactive() -> Self {
         Self {
             debug: false,
             branch_override: None,
             git_interactivity: GitInteractivity::NonInteractive,
             refresh_ttl: None,
+            clock: Arc::new(SystemClock),
         }
     }
 
@@ -377,21 +381,40 @@ impl RepoResolveOptions {
         self.refresh_ttl = Some(ttl);
         self
     }
+
+    #[cfg(test)]
+    pub(super) fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
 }
 
-fn fetch_head_age(repo_dir: &std::path::Path) -> Option<Duration> {
+/// Age of `.git/FETCH_HEAD` relative to an injected wall clock (plan 025).
+fn fetch_head_age_at(repo_dir: &std::path::Path, now: SystemTime) -> Option<Duration> {
     let modified = std::fs::metadata(repo_dir.join(".git").join("FETCH_HEAD"))
         .and_then(|metadata| metadata.modified())
         .ok()?;
-    SystemTime::now().duration_since(modified).ok()
+    now.duration_since(modified).ok()
 }
 
-fn fetch_fresh_within_ttl(repo_dir: &std::path::Path, ttl: Duration) -> Option<Duration> {
+fn fetch_fresh_within_ttl_at(
+    repo_dir: &std::path::Path,
+    ttl: Duration,
+    now: SystemTime,
+) -> Option<Duration> {
     if ttl.is_zero() {
         return None;
     }
-    let age = fetch_head_age(repo_dir)?;
+    let age = fetch_head_age_at(repo_dir, now)?;
     (age < ttl).then_some(age)
+}
+
+fn fetch_fresh_within_ttl_with_clock(
+    repo_dir: &std::path::Path,
+    ttl: Duration,
+    clock: &dyn Clock,
+) -> Option<Duration> {
+    fetch_fresh_within_ttl_at(repo_dir, ttl, clock.now_system())
 }
 
 pub(super) async fn resolve_agent_repo_with(
@@ -526,7 +549,9 @@ pub(super) async fn resolve_agent_repo_with(
         let fresh_fetch_age = opts.refresh_ttl.and_then(|ttl| {
             opts.branch_override
                 .is_none()
-                .then(|| fetch_fresh_within_ttl(&cached_repo.repo_dir, ttl))
+                .then(|| {
+                    fetch_fresh_within_ttl_with_clock(&cached_repo.repo_dir, ttl, &*opts.clock)
+                })
                 .flatten()
         });
         if let Some(age) = fresh_fetch_age {

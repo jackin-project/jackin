@@ -39,6 +39,7 @@ otlp = [
     "dep:sysinfo",
     "dep:tokio",
 ]
+test-support = ["otlp", "opentelemetry_sdk/testing"]
 
 [dependencies]
 jackin-core = { workspace = true }

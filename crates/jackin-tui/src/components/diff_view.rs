@@ -70,7 +70,7 @@ impl DiffViewState {
     /// Equal context lines appear on both sides; removed lines land on the
     /// left with an empty right; added lines land on the right with an empty left.
     #[must_use]
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Diff-pairing state machine with per-change-tag (Equal / Delete \
                   / Insert) branching, paired-row flushing, and equal-block \
@@ -320,13 +320,6 @@ fn render_side_by_side_pane(rows: &[SideBySideRow], side: Side, label: &str) -> 
 
 /// Render the diff view into `area`. The `state.scroll_y` is clamped to valid
 /// range on each render call.
-#[allow(
-    clippy::excessive_nesting,
-    reason = "Diff-view renderer: per-mode (SideBySide vs Unified) branches with \
-              per-pane row/label/styling nested through the Ratatui buffer draw. \
-              Extracting per-mode helpers would require re-borrowing the frame + \
-              state across fn boundaries and obscure the per-mode buffer layout."
-)]
 pub fn render_diff_view(frame: &mut Frame<'_>, area: Rect, state: &mut DiffViewState) {
     // Borrow `rows` immutably for the render and yield the clamped offset; the
     // single `scroll_y` write happens after the borrow ends. Avoids cloning the

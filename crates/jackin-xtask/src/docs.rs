@@ -16,13 +16,15 @@
 //! cargo xtask roadmap audit                       # validate roadmap meta.json
 //! ```
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
+
+use crate::report::{self, FormatArgs};
 
 mod brand;
 mod specs;
@@ -77,13 +79,19 @@ pub(crate) enum ChangeCommand {
 #[derive(Subcommand)]
 pub(crate) enum DocsCommand {
     /// Validate that repository file references use checked link components.
-    RepoLinks,
+    RepoLinks(DocsGateArgs),
     /// Reject forbidden brand spellings (`jackin'`, `Jackin`, `Jackin'`) in prose.
-    Brand,
+    Brand(DocsGateArgs),
     /// Verify every behavioral-spec INV row cites an existing test (or MISSING).
-    Specs,
+    Specs(DocsGateArgs),
     /// Every workspace member crate name appears in the Codebase Map MDX.
-    MapCheck,
+    MapCheck(DocsGateArgs),
+}
+
+#[derive(Args, Clone, Copy)]
+pub(crate) struct DocsGateArgs {
+    #[command(flatten)]
+    output: FormatArgs,
 }
 
 #[derive(Args)]
@@ -105,7 +113,7 @@ pub(crate) enum ResearchCommand {
     Scaffold(ResearchScaffoldArgs),
     /// Validate that every research `meta.json` page resolves and no `.mdx` is
     /// orphaned.
-    Check,
+    Check(DocsGateArgs),
 }
 
 #[derive(Args)]
@@ -121,7 +129,7 @@ pub(crate) struct ResearchScaffoldArgs {
 pub(crate) enum RoadmapCommand {
     /// Validate that every roadmap `meta.json` page resolves and no item `.mdx`
     /// is orphaned.
-    Audit,
+    Audit(DocsGateArgs),
     /// Retire a shipped roadmap item. `--plan` prints the worklist; `--apply`
     /// does the mechanical removal (drop the sidebar entry, delete the `.mdx`,
     /// audit, fail on a dangling inbound link); `--partial` marks it partially
@@ -154,11 +162,52 @@ pub(crate) fn run_change(command: ChangeCommand) -> Result<()> {
 
 pub(crate) fn run_docs(command: DocsCommand) -> Result<()> {
     match command {
-        DocsCommand::RepoLinks => check_repo_links(&repo_root()?),
-        DocsCommand::Brand => brand::check_brand(&repo_root()?),
-        DocsCommand::Specs => specs::check_specs(&repo_root()?),
-        DocsCommand::MapCheck => check_codebase_map(&repo_root()?),
+        DocsCommand::RepoLinks(args) => run_docs_gate(
+            args,
+            "repo-links",
+            "docs/",
+            "replace unverifiable repository paths with checked link components",
+            "cargo xtask docs repo-links",
+            check_repo_links,
+        ),
+        DocsCommand::Brand(args) => run_docs_gate(
+            args,
+            "brand",
+            ".",
+            "replace forbidden brand spellings with jackin❯ in rich text",
+            "cargo xtask docs brand",
+            brand::check_brand,
+        ),
+        DocsCommand::Specs(args) => run_docs_gate(
+            args,
+            "specs",
+            "docs/content/docs/contributing/behavioral-specs.mdx",
+            "cite an existing test for every behavioral invariant",
+            "cargo xtask docs specs",
+            specs::check_specs,
+        ),
+        DocsCommand::MapCheck(args) => run_docs_gate(
+            args,
+            "map-check",
+            "docs/content/docs/reference/getting-oriented/codebase-map.mdx",
+            "synchronize workspace crate names with the codebase map",
+            "cargo xtask docs map-check",
+            check_codebase_map,
+        ),
     }
+}
+
+fn run_docs_gate(
+    args: DocsGateArgs,
+    gate: &'static str,
+    file: &'static str,
+    fix: &'static str,
+    rerun: &'static str,
+    check: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    report::run_gate(args.output.resolved(), gate, file, fix, rerun, || {
+        check(&repo_root()?)
+    })
 }
 
 /// Recurring map↔workspace gate (R-map-metadata-gate): every `cargo metadata`
@@ -170,9 +219,21 @@ fn check_codebase_map(root: &Path) -> Result<()> {
         .with_context(|| format!("reading codebase map at {}", map_path.display()))?;
 
     let members = workspace_package_names(root)?;
+    let tiers: BTreeMap<&str, u8> = crate::arch::TIERS.iter().copied().collect();
+
+    check_codebase_map_text(&map, &members, &tiers, map_rel)
+}
+
+fn check_codebase_map_text(
+    map: &str,
+    members: &[String],
+    tiers: &BTreeMap<&str, u8>,
+    map_rel: &str,
+) -> Result<()> {
+    let member_set: BTreeSet<&str> = members.iter().map(String::as_str).collect();
+
     let mut missing: Vec<String> = Vec::new();
-    for name in &members {
-        // Require a whole-token hit so short names don't false-positive.
+    for name in members {
         let needle = name.as_str();
         let present = map
             .split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
@@ -181,23 +242,94 @@ fn check_codebase_map(root: &Path) -> Result<()> {
             missing.push(name.clone());
         }
     }
-    if missing.is_empty() {
+
+    // Two-way: jackin-* tokens in the map that are not workspace members.
+    let mut stale: Vec<String> = Vec::new();
+    for tok in map.split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_') {
+        if !tok.starts_with("jackin") {
+            continue;
+        }
+        if tok == "jackin" || tok == "jackin❯" {
+            continue;
+        }
+        // crate-shaped: jackin-foo or jackin_foo
+        if !(tok.contains('-') || tok.contains('_')) {
+            continue;
+        }
+        if !member_set.contains(tok) {
+            stale.push(tok.to_owned());
+        }
+    }
+    stale.sort();
+    stale.dedup();
+
+    let mut problems = Vec::new();
+    if !missing.is_empty() {
+        missing.sort();
+        problems.push(format!(
+            "{} workspace crate(s) missing from {map_rel}:\n  {}",
+            missing.len(),
+            missing.join("\n  ")
+        ));
+    }
+    if !stale.is_empty() {
+        problems.push(format!(
+            "{} map token(s) are not workspace members (stale after rename/delete):\n  {}",
+            stale.len(),
+            stale.join("\n  ")
+        ));
+    }
+    for name in members {
+        let row = map.lines().find(|line| {
+            line.starts_with('|')
+                && line
+                    .split('|')
+                    .nth(1)
+                    .is_some_and(|cell| cell.contains(&format!("](/reference/crates/{name}/)")))
+        });
+        let Some(row) = row else {
+            problems.push(format!(
+                "{map_rel}: missing inventory row and crate-page link for {name}"
+            ));
+            continue;
+        };
+        let expected_tier = tiers.get(name.as_str()).copied();
+        match expected_tier {
+            Some(tier)
+                if row
+                    .split('|')
+                    .nth(2)
+                    .is_some_and(|cell| cell.trim() == tier.to_string()) => {}
+            Some(tier) => problems.push(format!(
+                "{map_rel}: {name} inventory row is missing architecture tier {tier}"
+            )),
+            None => problems.push(format!(
+                "{map_rel}: {name} has no tier in the executable architecture inventory"
+            )),
+        }
+        let readme_path = format!("path=\"crates/{name}/README.md\"");
+        if !row.contains(&readme_path) {
+            problems.push(format!(
+                "{map_rel}: {name} inventory row is missing README link {readme_path}"
+            ));
+        }
+    }
+    if problems.is_empty() {
         emit(&format!(
-            "docs map-check OK — {} workspace crate(s) named in {map_rel}",
+            "docs map-check OK — {} workspace crate(s); two-way map tokens clean in {map_rel}",
             members.len()
         ));
         return Ok(());
     }
-    missing.sort();
     bail!(
-        "{} workspace crate(s) missing from {map_rel}:\n  {}\n\nAdd each name to the Workspace crate structure section (or the map prose) so map↔metadata stays honest.\nre-run: cargo xtask docs map-check",
-        missing.len(),
-        missing.join("\n  ")
+        "{} map-check problem(s):\n{}\n\nre-run: cargo xtask docs map-check",
+        problems.len(),
+        problems.join("\n")
     );
 }
 
 fn workspace_package_names(root: &Path) -> Result<Vec<String>> {
-    let mut meta = std::process::Command::new("cargo");
+    let mut meta = crate::cmd::command("cargo");
     meta.args([
         "metadata",
         "--format-version",
@@ -208,7 +340,7 @@ fn workspace_package_names(root: &Path) -> Result<Vec<String>> {
     .arg(root.join("Cargo.toml"));
     let output =
         crate::cmd::output_raw(&mut meta).context("running cargo metadata for docs map-check")?;
-    if !output.status.success() {
+    if !output.success {
         bail!(
             "cargo metadata failed: {}",
             String::from_utf8_lossy(&output.stderr)
@@ -245,13 +377,27 @@ fn workspace_package_names(root: &Path) -> Result<Vec<String>> {
 pub(crate) fn run_research(command: ResearchCommand) -> Result<()> {
     match command {
         ResearchCommand::Scaffold(args) => research_scaffold(args),
-        ResearchCommand::Check => validate_tree(&research_dir()?, "research"),
+        ResearchCommand::Check(args) => report::run_gate(
+            args.output.resolved(),
+            "research",
+            "docs/content/docs/reference/research/",
+            "repair meta.json page entries and orphaned research pages",
+            "cargo xtask research check",
+            || validate_tree(&research_dir()?, "research"),
+        ),
     }
 }
 
 pub(crate) fn run_roadmap(command: RoadmapCommand) -> Result<()> {
     match command {
-        RoadmapCommand::Audit => validate_tree(&roadmap_dir()?, "roadmap"),
+        RoadmapCommand::Audit(args) => report::run_gate(
+            args.output.resolved(),
+            "roadmap",
+            "docs/content/docs/roadmap/",
+            "repair meta.json page entries and orphaned roadmap pages",
+            "cargo xtask roadmap audit",
+            || validate_tree(&roadmap_dir()?, "roadmap"),
+        ),
         RoadmapCommand::Retire(args) => {
             let docs_root = repo_root()?.join(DOCS_ROOT);
             roadmap_retire(&docs_root, args)
@@ -726,7 +872,9 @@ fn report_repo_links_clean() {
         reason = "jackin-xtask is a CLI; the audit result is its output"
     )]
     {
-        println!("repo links OK - repository file references are verifiable.");
+        if report::human_output() {
+            println!("repo links OK - repository file references are verifiable.");
+        }
     }
 }
 
@@ -739,7 +887,9 @@ fn report_repo_links_clean() {
     reason = "jackin-xtask is a CLI; the retirement worklist/report is its output"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 /// Remove `entry` from a `meta.json`'s `pages` array. Errors if it is absent.
@@ -757,25 +907,56 @@ fn remove_page(meta_path: &Path, entry: &str) -> Result<()> {
     write_meta(meta_path, &meta)
 }
 
-/// Find the `(group)/meta.json` whose `pages` registers `../<slug>`.
-fn find_group_meta(roadmap: &Path, slug: &str) -> Result<Option<PathBuf>> {
-    let entry = format!("../{slug}");
-    for dir in fs::read_dir(roadmap).with_context(|| format!("reading {}", roadmap.display()))? {
-        let path = dir?.path();
-        let meta = path.join("meta.json");
-        if !meta.is_file() {
-            continue;
-        }
+/// Find the `meta.json` entry that registers a roadmap item.
+fn find_group_registration(
+    roadmap: &Path,
+    item: &Path,
+    slug: &str,
+) -> Result<Option<(PathBuf, String)>> {
+    let mut metas = Vec::new();
+    collect_meta_files(roadmap, &mut metas)?;
+    for meta in metas {
+        let colocated = meta.parent() == item.parent();
+        let entries = if colocated {
+            [slug.to_owned(), format!("../{slug}")]
+        } else {
+            [format!("../{slug}"), slug.to_owned()]
+        };
         let value = read_meta(&meta)?;
-        let referenced = value
-            .get("pages")
-            .and_then(Value::as_array)
-            .is_some_and(|pages| pages.iter().any(|p| p.as_str() == Some(entry.as_str())));
-        if referenced {
-            return Ok(Some(meta));
+        if let Some(entry) = entries.into_iter().find(|entry| {
+            value
+                .get("pages")
+                .and_then(Value::as_array)
+                .is_some_and(|pages| pages.iter().any(|p| p.as_str() == Some(entry.as_str())))
+        }) {
+            return Ok(Some((meta, entry)));
         }
     }
     Ok(None)
+}
+
+fn find_roadmap_item(roadmap: &Path, slug: &str) -> Result<PathBuf> {
+    let filename = format!("{slug}.mdx");
+    let mut files = Vec::new();
+    collect_text_files(roadmap, &mut files)?;
+    let matches = files
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name == filename.as_str())
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [item] => Ok(item.clone()),
+        [] => bail!(
+            "no roadmap item named `{filename}` under {}",
+            roadmap.display()
+        ),
+        _ => bail!(
+            "multiple roadmap items named `{filename}` under {}; slugs must be unique",
+            roadmap.display()
+        ),
+    }
 }
 
 /// True when `line` references `slug` as a roadmap route (`roadmap/<slug>`) or a
@@ -826,8 +1007,8 @@ fn inbound_links(
 
 /// Recursively collect `.mdx` and `.json` files under `dir`.
 fn collect_text_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             collect_text_files(&path, out)?;
         } else if path
@@ -842,10 +1023,7 @@ fn collect_text_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 
 fn roadmap_retire(docs_root: &Path, args: RoadmapRetireArgs) -> Result<()> {
     let roadmap = docs_root.join(ROADMAP_REL);
-    let item = roadmap.join(format!("{}.mdx", args.slug));
-    if !item.is_file() {
-        bail!("no roadmap item at {}", item.display());
-    }
+    let item = find_roadmap_item(&roadmap, &args.slug)?;
 
     if args.partial {
         return retire_partial(&item);
@@ -860,7 +1038,7 @@ fn roadmap_retire(docs_root: &Path, args: RoadmapRetireArgs) -> Result<()> {
 fn retire_plan(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Result<()> {
     let content =
         fs::read_to_string(item).with_context(|| format!("reading {}", item.display()))?;
-    let group = find_group_meta(roadmap, slug)?;
+    let group = find_group_registration(roadmap, item, slug)?;
     let links = inbound_links(docs_root, slug, item)?;
 
     emit(&format!("Retirement plan for `{slug}` (read-only)\n"));
@@ -869,12 +1047,12 @@ fn retire_plan(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Res
     emit("   in roadmap/index.mdx; repoint the inbound links listed below.");
     emit("2. Then run: cargo xtask roadmap retire <slug> --apply\n");
     match group {
-        Some(meta) => emit(&format!(
-            "Sidebar entry to drop: `../{slug}` in {}",
+        Some((meta, entry)) => emit(&format!(
+            "Sidebar entry to drop: `{entry}` in {}",
             meta.display()
         )),
         None => emit(&format!(
-            "WARNING: `../{slug}` is not registered in any roadmap group sidebar"
+            "WARNING: `{slug}` is not registered in any roadmap group sidebar"
         )),
     }
     if links.is_empty() {
@@ -925,8 +1103,8 @@ fn retire_partial(item: &Path) -> Result<()> {
 /// `--apply`: drop the sidebar entry, delete the page, audit, fail on a dangling
 /// inbound link.
 fn retire_apply(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Result<()> {
-    let meta = find_group_meta(roadmap, slug)?
-        .with_context(|| format!("`../{slug}` is not registered in any roadmap group sidebar"))?;
+    let (meta, entry) = find_group_registration(roadmap, item, slug)?
+        .with_context(|| format!("`{slug}` is not registered in any roadmap group sidebar"))?;
 
     // Gate BEFORE any mutation: the only reference allowed to survive is the
     // group's own sidebar entry (which this command removes). Any other inbound
@@ -949,11 +1127,11 @@ fn retire_apply(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Re
         );
     }
 
-    remove_page(&meta, &format!("../{slug}"))?;
+    remove_page(&meta, &entry)?;
     fs::remove_file(item).with_context(|| format!("deleting {}", item.display()))?;
     validate_tree(roadmap, "roadmap")?;
     emit(&format!(
-        "Retired `{slug}`: removed `../{slug}` from {}, deleted the page, sidebar audit clean, no dangling links.",
+        "Retired `{slug}`: removed `{entry}` from {}, deleted the page, sidebar audit clean, no dangling links.",
         meta.display()
     ));
     Ok(())
@@ -1053,8 +1231,8 @@ fn collect_meta_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     if meta.is_file() {
         out.push(meta);
     }
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             collect_meta_files(&path, out)?;
         }
@@ -1064,8 +1242,8 @@ fn collect_meta_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 
 /// Recursively collect every `.mdx` file under `root`.
 fn collect_mdx_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             collect_mdx_files(&path, out)?;
         } else if path.extension().is_some_and(|ext| ext == "mdx") {
@@ -1080,8 +1258,8 @@ fn collect_markdown_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
     }
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             if path.file_name().is_some_and(skip_docs_vendor_dir) {
                 continue;
@@ -1110,7 +1288,9 @@ fn report_clean(label: &str, meta_count: usize) {
         reason = "jackin-xtask is a CLI; the audit result is its output"
     )]
     {
-        println!("{label} sidebar OK — {meta_count} meta.json file(s), all pages resolve.");
+        if report::human_output() {
+            println!("{label} sidebar OK — {meta_count} meta.json file(s), all pages resolve.");
+        }
     }
 }
 

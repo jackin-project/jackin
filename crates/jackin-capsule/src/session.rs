@@ -1,24 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-// Per-agent PTY session: spawn, resize, write input, read output, and track
-// session state for the daemon.
+//! Per-agent PTY session: spawn, resize, write input, read output, and track
+//! session state for the daemon.
+//!
+//! Not responsible for: attach-client I/O, socket framing, or daemon
+//! multiplexing logic (`SessionSupervisor` + the Multiplexer shell own that).
+//!
+//! Key invariant: the session's `DamageGrid` is the single source of truth
+//! for re-rendering on tab/pane switch and client reattach.
 
 mod osc_policy;
 
-#[allow(
-    unused_imports,
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
-
-//
-// Not responsible for: attach-client I/O, socket framing, or daemon
-// multiplexing logic.
-//
-// Key invariant: the session's `DamageGrid` is the single source of truth
-// for re-rendering on tab/pane switch and client reattach.
 
 /// PTY session: one PTY + one `DamageGrid` + state-inference timer.
 ///
@@ -70,7 +64,6 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "GIT_AUTHOR_NAME",
     "GIT_AUTHOR_EMAIL",
     "GH_TOKEN",
-    "JACKIN_DEBUG",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
     "TZ",
@@ -401,13 +394,13 @@ pub struct SessionTerminal {
 }
 
 impl Session {
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Session spawn wires PTY + child handle + agent + env into the \
                   multiplexer state. The nested `is_err` + `crate::clog!` + state- \
                   update branches are the per-stage error-reporting protocol."
     )]
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "Same justification as the too_many_lines + excessive_nesting \
               allows: session spawn wires PTY + child handle + agent + env into \
@@ -888,7 +881,7 @@ impl Session {
             GateEffect::Ignore => {
                 // An event this build does not map (runtime/version skew renamed
                 // it). The reporter's authority silently goes dark; leave a
-                // firehose breadcrumb so JACKIN_DEBUG=1 surfaces the drift.
+                // Firehose breadcrumb so debug telemetry surfaces the drift.
                 crate::cdebug!(
                     "agent-status: unmapped runtime event runtime={runtime} event={event} \
                      source={source_id}"
@@ -1491,7 +1484,7 @@ fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>)
 
 #[cfg(test)]
 impl Session {
-    #[allow(
+    #[expect(
         clippy::too_many_arguments,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]

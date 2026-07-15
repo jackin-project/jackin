@@ -1,0 +1,50 @@
+---
+title: "Domain newtypes census"
+---
+
+Boundary decision record for Ownership item 4 (plan 020). Each named concept records the intended type or an explicit primitive decision at real boundaries.
+
+## Six names
+
+| Name | Type | Owner | Decision |
+|---|---|---|---|
+| `WorkspaceName` | `jackin_core::WorkspaceName` | core | **Adopted** — validated config-file stem (existing). |
+| `SessionId` | `jackin_core::SessionId` | core | **Adopted** — non-zero `u64`; the capsule `SessionSupervisor` registry stores typed keys and converts raw ids at pane/control protocol edges. |
+| `ContainerId` | `jackin_core::ContainerId` | core | **Adopted** — non-empty name without whitespace/path separators; runtime attention deduplication stores typed identities and the launch pipeline validates before deriving Docker resource names. |
+| `RoleRef` | — | core/manifest | **Primitive for now** (`String` / `RoleSelector`) — selector + namespaced key already exist; newtype deferred until a validation rule beyond selector parse is needed. |
+| `TokenCount` | — | usage | **Primitive for now** (`u64`) — usage/pricing paths already use domain structs; avoid double-wrapping until a cross-crate unit mismatch appears. |
+| `MountPath` | — | config/isolation | **Primitive for now** (`String`/`PathBuf`) — mount tables mix host absolute paths and container dst paths; a single newtype would blur that distinction. Prefer `host_src`/`container_dst` field names. |
+
+## Error taxonomy pilot
+
+`jackin-config` now exposes `ConfigResult<T>` from every public fallible function. `ConfigError` carries machine-matchable validation/lookup variants plus transparent source variants for IO, TOML, path, workspace-name, and collapse failures; internal orchestration may still use `anyhow`. The conversion changed public signatures but required adapters at fewer than 30% of implementation sites, so the pilot is positive: repeat this pattern at runtime/capsule library boundaries while retaining `anyhow` in top-level reporting flows. `remove_workspace_errors_when_missing` matches `UnknownWorkspace` directly as the caller proof.
+
+## Adjunct decisions
+
+- **Result-first constructors**: newtypes use `Result` constructors (`SessionId::new`, `ContainerId::parse`, `WorkspaceName::parse`).
+- **Boundary proof**: the capsule registry rejects zero ids, attention ingestion rejects path-like container names, and production launch calls `DockerResources::from_container_id` before Docker resource derivation. Persisted and wire structs retain transparent primitive schemas.
+- **`async fn` in trait Send**: public port traits that cross spawned-task boundaries require `Send`; local-only traits document the absence. No blanket `async_trait` expansion is needed on the current stable compiler.
+- **`#[non_exhaustive]`**: extensible public taxonomies such as `ConfigError` are `#[non_exhaustive]`; the two newtype constructor errors are deliberately closed because validation has an exhaustive, stable rule set.
+
+## Public-surface note (plan 019)
+
+Executable `public-surface` ratchet (`public_surface_pub_mods`) measures root `pub mod` counts per crate. Growth is shrink-only; API snapshots were intentionally not chosen as the gate.
+
+Env-pilot guard (`cargo xtask lint arch` → `check_curated_pub_mods`) allowlists root `pub mod`s for curated crates (`jackin-env` → `test_support` only). Full `jackin-config` / `jackin-core` root narrowing is STOP-deferred (import blast radius); the ratchet bounds the surface until module-cluster slices land.
+
+### Trait-sealing spot audit (`jackin-core` / `jackin-config`)
+
+| Trait | Crate | Disposition |
+|---|---|---|
+| `AgentRuntime` | core | **Sealed** (`private::Sealed`) — extension only via in-crate adapters |
+| `DockerApi` | core | **Intentionally implementable** — fakes + production Docker client |
+| `CommandRunner` | core | **Intentionally implementable** — process runner fakes |
+| `Clock` | core | **Intentionally implementable** — `SystemClock` / `ManualClock` |
+| `DebugLogSink` | core | **Intentionally implementable** — test/production sinks |
+| `OperatorNoticeSink` | core | **Intentionally implementable** |
+| `StandaloneDialogSink` | core | **Intentionally implementable** |
+| `BuildLogSink` | core | **Intentionally implementable** |
+| `LaunchDiagnostics` / `LaunchHostTerminal` / `LaunchOutputSink` | core | **Intentionally implementable** — launch harness ports |
+| *(none public)* | config | No public traits at root; error types are enums |
+
+Non-extension points that remain open are port/fake seams; sealing them would break the intentional test-double surface. No additional seals required this track.
