@@ -73,3 +73,37 @@ fn capture_stdout_sync_echo() {
     let out = capture_stdout_sync(&ExecRequest::new("printf", ["ok"])).unwrap();
     assert_eq!(out, b"ok");
 }
+
+#[test]
+fn environment_clear_remove_and_add_are_applied() {
+    let request = ExecRequest::new("sh", ["-c", "printf '%s:%s' \"$KEPT\" \"$REMOVED\""])
+        .env_clear()
+        .envs([("KEPT", "yes"), ("REMOVED", "no")])
+        .env_remove(["REMOVED"]);
+    let out = capture_stdout_sync(&request).unwrap();
+    assert_eq!(out, b"yes:");
+}
+
+#[test]
+fn sync_spawn_exposes_captured_child_lifecycle() {
+    let request = ExecRequest::new("printf", ["spawned"])
+        .stdout_mode(StdioMode::Capture)
+        .stderr_mode(StdioMode::Null);
+    let output = spawn_sync(&request).unwrap().wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"spawned");
+}
+
+#[tokio::test]
+async fn async_spawn_exposes_captured_child_lifecycle() {
+    let request = ExecRequest::new("printf", ["spawned-async"])
+        .stdout_mode(StdioMode::Capture)
+        .stderr_mode(StdioMode::Null);
+    let output = spawn_async(&request)
+        .unwrap()
+        .wait_with_output()
+        .await
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"spawned-async");
+}

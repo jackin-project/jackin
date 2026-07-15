@@ -22,6 +22,17 @@ pub struct RetryPolicy {
     pub delay: Duration,
 }
 
+/// Child standard-stream routing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdioMode {
+    /// Connect a pipe and return the emitted bytes from `exec_*`.
+    Capture,
+    /// Inherit the caller's corresponding stream.
+    Inherit,
+    /// Connect the stream to the null device.
+    Null,
+}
+
 impl RetryPolicy {
     /// No retries.
     #[must_use]
@@ -46,6 +57,16 @@ pub struct ExecRequest {
     pub stdin: Option<Vec<u8>>,
     /// Optional extra environment entries (pass-through only — no filtering).
     pub env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+    /// Environment keys removed after applying inheritance/clear policy.
+    pub env_remove: Vec<std::ffi::OsString>,
+    /// Start with an empty environment rather than inheriting the parent.
+    pub env_clear: bool,
+    /// Stdin routing when `stdin` bytes are absent.
+    pub stdin_mode: StdioMode,
+    /// Stdout routing.
+    pub stdout_mode: StdioMode,
+    /// Stderr routing.
+    pub stderr_mode: StdioMode,
     /// Kill after this duration. `None` = wait indefinitely (capsule probe
     /// semantic: no read timeout).
     pub timeout: Option<Duration>,
@@ -69,6 +90,11 @@ impl ExecRequest {
             cwd: None,
             stdin: None,
             env: Vec::new(),
+            env_remove: Vec::new(),
+            env_clear: false,
+            stdin_mode: StdioMode::Null,
+            stdout_mode: StdioMode::Capture,
+            stderr_mode: StdioMode::Capture,
             timeout: None,
             retry: RetryPolicy::none(),
         }
@@ -84,6 +110,42 @@ impl ExecRequest {
             envs.into_iter()
                 .map(|(k, v)| (k.as_ref().to_os_string(), v.as_ref().to_os_string())),
         );
+        self
+    }
+
+    /// Remove inherited environment keys.
+    #[must_use]
+    pub fn env_remove(mut self, keys: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self {
+        self.env_remove
+            .extend(keys.into_iter().map(|key| key.as_ref().to_os_string()));
+        self
+    }
+
+    /// Start the child with an empty environment.
+    #[must_use]
+    pub fn env_clear(mut self) -> Self {
+        self.env_clear = true;
+        self
+    }
+
+    /// Route stdin when no explicit bytes are supplied.
+    #[must_use]
+    pub fn stdin_mode(mut self, mode: StdioMode) -> Self {
+        self.stdin_mode = mode;
+        self
+    }
+
+    /// Route stdout.
+    #[must_use]
+    pub fn stdout_mode(mut self, mode: StdioMode) -> Self {
+        self.stdout_mode = mode;
+        self
+    }
+
+    /// Route stderr.
+    #[must_use]
+    pub fn stderr_mode(mut self, mode: StdioMode) -> Self {
+        self.stderr_mode = mode;
         self
     }
 
@@ -153,6 +215,33 @@ pub async fn exec_async(request: &ExecRequest) -> Result<ExecResult> {
     last.ok_or_else(|| anyhow::anyhow!("jackin-process: zero attempts scheduled"))
 }
 
+/// Spawn an async child using the same request model without waiting for it.
+///
+/// Retry and timeout apply only to `exec_*`; lifecycle callers own waiting,
+/// cancellation, and retries after this function returns.
+pub fn spawn_async(request: &ExecRequest) -> Result<tokio::process::Child> {
+    if request.stdin.is_some() {
+        bail!("spawn_async does not write request stdin bytes; use exec_async or a captured stdin");
+    }
+    let mut command = tokio::process::Command::new(&request.program);
+    configure_async_command(&mut command, request);
+    command
+        .spawn()
+        .with_context(|| format!("spawning {}", display_request(request)))
+}
+
+/// Spawn a synchronous child using the same request model without waiting.
+pub fn spawn_sync(request: &ExecRequest) -> Result<std::process::Child> {
+    if request.stdin.is_some() {
+        bail!("spawn_sync does not write request stdin bytes; use exec_sync or a captured stdin");
+    }
+    let mut command = std::process::Command::new(&request.program);
+    configure_sync_command(&mut command, request);
+    command
+        .spawn()
+        .with_context(|| format!("spawning {}", display_request(request)))
+}
+
 /// Sync facade over [`exec_async`] using a current-thread runtime when needed.
 ///
 /// # Errors
@@ -184,20 +273,10 @@ pub fn exec_sync(request: &ExecRequest) -> Result<ExecResult> {
 async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
     let started = Instant::now();
     let mut cmd = tokio::process::Command::new(&request.program);
-    cmd.args(&request.args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    if let Some(cwd) = &request.cwd {
-        cmd.current_dir(cwd);
-    }
-    for (k, v) in &request.env {
-        cmd.env(k, v);
-    }
+    configure_async_command(&mut cmd, request);
+    cmd.kill_on_drop(true);
     if request.stdin.is_some() {
         cmd.stdin(Stdio::piped());
-    } else {
-        cmd.stdin(Stdio::null());
     }
 
     let mut child = cmd
@@ -242,6 +321,45 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
         duration: started.elapsed(),
         timed_out: false,
     })
+}
+
+fn stdio(mode: StdioMode) -> Stdio {
+    match mode {
+        StdioMode::Capture => Stdio::piped(),
+        StdioMode::Inherit => Stdio::inherit(),
+        StdioMode::Null => Stdio::null(),
+    }
+}
+
+fn configure_async_command(command: &mut tokio::process::Command, request: &ExecRequest) {
+    command
+        .args(&request.args)
+        .stdin(stdio(request.stdin_mode))
+        .stdout(stdio(request.stdout_mode))
+        .stderr(stdio(request.stderr_mode));
+    apply_command_options(command.as_std_mut(), request);
+}
+
+fn configure_sync_command(command: &mut std::process::Command, request: &ExecRequest) {
+    command
+        .args(&request.args)
+        .stdin(stdio(request.stdin_mode))
+        .stdout(stdio(request.stdout_mode))
+        .stderr(stdio(request.stderr_mode));
+    apply_command_options(command, request);
+}
+
+fn apply_command_options(command: &mut std::process::Command, request: &ExecRequest) {
+    if let Some(cwd) = &request.cwd {
+        command.current_dir(cwd);
+    }
+    if request.env_clear {
+        command.env_clear();
+    }
+    command.envs(request.env.iter().map(|(key, value)| (key, value)));
+    for key in &request.env_remove {
+        command.env_remove(key);
+    }
 }
 
 fn display_request(request: &ExecRequest) -> String {
