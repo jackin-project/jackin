@@ -84,13 +84,11 @@ fn local_role_base_for_test(selector: &RoleSelector, head_sha: Option<&str>) -> 
 }
 
 #[test]
-fn docker_build_failure_cli_error_includes_copyable_artifacts_table() {
+fn docker_build_failure_cli_error_contains_no_local_artifact_paths() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    std::fs::write(run.command_output_path("docker-build"), "docker failed").unwrap();
-
     let error = anyhow::anyhow!("Docker build command failed");
     let rendered = launch_failure_cli_error(
         crate::runtime::progress::LaunchStage::DerivedImage,
@@ -99,18 +97,9 @@ fn docker_build_failure_cli_error_includes_copyable_artifacts_table() {
     )
     .to_string();
 
-    assert!(rendered.starts_with("Docker build command failed\n\n"));
-    assert!(rendered.contains("run id"));
-    assert!(rendered.contains(run.run_id()));
-    assert!(rendered.contains("run diagnostics"));
-    assert!(rendered.contains(&run.path().display().to_string()));
-    assert!(rendered.contains("docker output"));
-    assert!(
-        rendered.contains(
-            &run.command_output_path("docker-build")
-                .display()
-                .to_string()
-        )
+    assert_eq!(
+        rendered,
+        "Docker build command failed: Docker build command failed"
     );
 }
 

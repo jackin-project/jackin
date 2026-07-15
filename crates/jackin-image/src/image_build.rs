@@ -217,19 +217,6 @@ pub fn dockerfile_body_requests_role_git_sha_arg(dockerfile_body: &str) -> bool 
         })
 }
 
-pub fn emit_docker_build_step_diagnostics() {
-    let Some(run) = jackin_diagnostics::active_run() else {
-        return;
-    };
-    let path = run.command_output_path("docker-build");
-    let Ok(contents) = std::fs::read_to_string(&path) else {
-        return;
-    };
-    for step in parse_docker_build_steps(&contents) {
-        run.docker_build_step(&step.step, &step.label, step.duration_ms, step.cached);
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DockerBuildStep {
     pub step: String,

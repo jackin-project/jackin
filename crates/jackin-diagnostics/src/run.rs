@@ -28,12 +28,10 @@ use std::fmt::Arguments;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::ExitStatus;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anstyle_parse::{DefaultCharAccumulator, Parser, Perform};
 use anyhow::Context;
 use owo_colors::OwoColorize;
 use rand::RngExt as _;
@@ -343,62 +341,6 @@ impl RunDiagnostics {
     #[must_use]
     pub fn persists(&self) -> bool {
         self.writer.is_some()
-    }
-
-    pub fn command_output_path(&self, name: &str) -> PathBuf {
-        self.path.with_file_name(format!(
-            "{}.{}.log",
-            self.run_id,
-            sanitize_artifact_name(name)
-        ))
-    }
-
-    pub fn write_command_output(
-        &self,
-        name: &str,
-        command: &str,
-        cwd: Option<&Path>,
-        status: ExitStatus,
-        stdout: &[u8],
-        stderr: &[u8],
-    ) -> Option<PathBuf> {
-        // Sidecars share the run file's gate: no file run, no sidecars.
-        self.writer.as_ref()?;
-        let path = self.command_output_path(name);
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "diagnostics sidecar creation is not part of a render loop"
-        )]
-        let mut file =
-            restrict_to_owner(OpenOptions::new().create(true).truncate(true).write(true))
-                .open(&path)
-                .ok()?;
-        let cwd = cwd.map_or_else(
-            || "(current process cwd)".to_owned(),
-            |path| path.display().to_string(),
-        );
-        drop(writeln!(file, "run: {}", self.run_id));
-        drop(writeln!(file, "command: {command}"));
-        drop(writeln!(file, "cwd: {cwd}"));
-        drop(writeln!(file, "status: {status}"));
-        drop(writeln!(file));
-        drop(writeln!(file, "----- stdout -----"));
-        let stdout = strip_bytes(stdout);
-        let stdout = String::from_utf8_lossy(&stdout);
-        let stdout = crate::secret_scrub::scrub_secrets(&stdout);
-        drop(file.write_all(stdout.as_bytes()));
-        if !stdout.ends_with('\n') {
-            drop(writeln!(file));
-        }
-        drop(writeln!(file, "----- stderr -----"));
-        let stderr = strip_bytes(stderr);
-        let stderr = String::from_utf8_lossy(&stderr);
-        let stderr = crate::secret_scrub::scrub_secrets(&stderr);
-        drop(file.write_all(stderr.as_bytes()));
-        if !stderr.ends_with('\n') {
-            drop(writeln!(file));
-        }
-        Some(path)
     }
 
     pub fn compact(&self, kind: &str, message: &str) {
@@ -1091,18 +1033,6 @@ fn is_run_id_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'
 }
 
-fn sanitize_artifact_name(name: &str) -> String {
-    let mut out = String::new();
-    for ch in name.chars() {
-        if is_run_id_char(ch) {
-            out.push(ch);
-        } else {
-            out.push('-');
-        }
-    }
-    out.trim_matches('-').chars().take(64).collect()
-}
-
 /// Whether an env-flag string is truthy: `1`/`true`/`yes`/`on`, case- and
 /// whitespace-insensitive. Pure so the vocabulary can be unit-tested without
 /// touching process env.
@@ -1339,34 +1269,6 @@ pub(crate) fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
 // not need to pull `jackin-tui` (L3) for the two small helpers `prune_all_runs`
 // uses. The implementations are byte-identical to the originals in
 // `jackin_core::{ansi_text, prune_output}` before their A3 move.
-
-#[must_use]
-fn strip_bytes(bytes: &[u8]) -> Vec<u8> {
-    let mut parser = Parser::<DefaultCharAccumulator>::default();
-    let mut performer = PlainPerformer { output: Vec::new() };
-    for &byte in bytes {
-        parser.advance(&mut performer, byte);
-    }
-    performer.output
-}
-
-struct PlainPerformer {
-    output: Vec<u8>,
-}
-
-impl Perform for PlainPerformer {
-    fn print(&mut self, c: char) {
-        let mut buf = [0u8; 4];
-        self.output
-            .extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
-    }
-
-    fn execute(&mut self, byte: u8) {
-        if matches!(byte, b'\n' | b'\r' | b'\t') {
-            self.output.push(byte);
-        }
-    }
-}
 
 const STATUS_COLUMN: usize = 78;
 

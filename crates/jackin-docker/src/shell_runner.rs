@@ -470,31 +470,6 @@ impl ShellRunner {
         let status = status?;
         record_subprocess_done(&op_guard, program, started, status);
         self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
-        let command = format!("{} {}", program, redact_env_args(args).join(" "));
-        if opts.tee_to_build_log
-            && let Some(run) = jackin_diagnostics::active_run()
-        {
-            let wrote = run.write_command_output(
-                "docker-build",
-                &command,
-                cwd,
-                status,
-                &stdout_buf,
-                &stderr_buf,
-            );
-            if wrote.is_none() {
-                // Sidecar open failed (disk/perm/dir-gone). Land a compact
-                // entry in the run jsonl so the failure is at least visible
-                // to anyone reading the run afterwards.
-                // `launch_failure_cli_error` itself only consults the
-                // on-disk sidecar path, so without an artifact file the CLI
-                // surface will still fall back to the bare error.
-                run.compact(
-                    "docker-build",
-                    "failed to write docker-build diagnostics sidecar",
-                );
-            }
-        }
         if !status.success() {
             if opts.tee_to_build_log {
                 return Err(DockerError::DockerBuildFailed.into());

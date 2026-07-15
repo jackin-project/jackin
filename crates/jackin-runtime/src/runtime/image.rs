@@ -1390,11 +1390,10 @@ pub(super) use jackin_image::image_build::{
     compact_image_warning_line, docker_build_env, docker_info_uses_containerd_store,
     dockerfile_body_requests_github_token_secret, dockerfile_body_requests_role_git_sha_arg,
     dockerfile_requests_github_token_secret, dockerfile_requests_role_git_sha_arg,
-    emit_build_context_snapshot, emit_compact_image_warning, emit_docker_build_step_diagnostics,
-    emit_image_build_source, emit_non_containerd_image_store_note, is_buildkit_step_description,
-    local_image_output_arg, parse_buildkit_duration_ms, parse_buildkit_line,
-    parse_completed_buildkit_step, parse_docker_build_steps, should_stream_build_output,
-    split_buildkit_duration,
+    emit_build_context_snapshot, emit_compact_image_warning, emit_image_build_source,
+    emit_non_containerd_image_store_note, is_buildkit_step_description, local_image_output_arg,
+    parse_buildkit_duration_ms, parse_buildkit_line, parse_completed_buildkit_step,
+    parse_docker_build_steps, should_stream_build_output, split_buildkit_duration,
 };
 
 #[cfg(test)]
