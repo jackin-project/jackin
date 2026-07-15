@@ -13,23 +13,23 @@ impl Multiplexer {
     /// Use this instead of inspecting `dialog_stack` directly so the
     /// "is a dialog open" check stays in one place.
     pub(super) fn dialog_top(&self) -> Option<&Dialog> {
-        self.control.dialog_stack.last()
+        self.control.dialog_top()
     }
 
     pub(super) fn dialog_top_mut(&mut self) -> Option<&mut Dialog> {
-        self.control.dialog_stack.last_mut()
+        self.control.dialog_top_mut()
     }
 
     /// `true` when at least one dialog is on the stack.
     pub(super) fn dialog_open(&self) -> bool {
-        !self.control.dialog_stack.is_empty()
+        self.control.dialog_open()
     }
 
     pub(super) fn mux_mode(&self) -> MuxMode {
         mux_mode_for_state(MuxModeState {
             dialog_open: self.dialog_open(),
             dragging: self.render.drag.is_some(),
-            selecting: self.clipboard.selection.is_some(),
+            selecting: self.clipboard.is_selecting(),
             awaiting_prefix: self.control.input_parser.is_awaiting_prefix(),
         })
     }
@@ -44,7 +44,7 @@ impl Multiplexer {
     /// pushes `AgentPicker` on top of Menu, not a replacement).
     pub(super) fn dialog_push(&mut self, d: Dialog) {
         self.clipboard.dialog_copy_feedback_deadline = None;
-        self.control.dialog_stack.push(d);
+        self.control.push_dialog(d);
     }
 
     pub(super) fn open_container_info_dialog(&mut self) {
@@ -52,11 +52,12 @@ impl Multiplexer {
             .active_focused_id()
             .and_then(|id| self.session_supervisor.sessions.get(id))
             .and_then(|s| s.agent.clone());
-        let container_name = self.status.status_bar.container_name().to_owned();
+        let (container_name, role) = self.status.container_identity();
+        let container_name = container_name.to_owned();
         let diagnostics = crate::container_context::resolve_container_diagnostics();
         self.dialog_push(Dialog::new_container_info(
             container_name,
-            self.status.status_bar.role().to_owned(),
+            role.to_owned(),
             focused_agent,
             self.launch_env.workdir.to_string_lossy().into_owned(),
             crate::tui::components::dialog::ContainerInfoDiagnostics {
@@ -77,11 +78,8 @@ impl Multiplexer {
     }
 
     pub(super) fn github_context_view(&self) -> GithubContextView<'_> {
-        github_context_view_from_state(
-            self.pr_watch.pull_request_context_branch.as_deref(),
-            self.pr_watch.pull_request_context.as_deref(),
-            self.pull_request_context_loading(),
-        )
+        let (branch, pull_request) = self.pr_watch.context();
+        github_context_view_from_state(branch, pull_request, self.pull_request_context_loading())
     }
 
     /// Single `&mut self.control.dialog_stack` borrow alongside a
@@ -119,7 +117,7 @@ impl Multiplexer {
     }
 
     pub(super) fn dialog_pop_one(&mut self) -> Option<Dialog> {
-        let popped = self.control.dialog_stack.pop();
+        let popped = self.control.pop_dialog();
         if !self
             .control
             .dialog_stack
@@ -136,7 +134,7 @@ impl Multiplexer {
     /// destructive confirmations after they fire, etc.) so the
     /// operator returns straight to the focused pane.
     pub(super) fn dialog_clear(&mut self) {
-        self.control.dialog_stack.clear();
+        self.control.clear_dialogs();
         self.clipboard.dialog_copy_feedback_deadline = None;
     }
 

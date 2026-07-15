@@ -150,6 +150,7 @@ mod pane_layout;
 mod ports;
 mod resource_metrics;
 mod session_lifecycle;
+mod subsystems;
 
 fn session_display_title(session: &Session) -> String {
     pane_display_title(session.title(), session.cwd(), &session.label)
@@ -173,6 +174,21 @@ pub(super) struct SessionSupervisor {
     pub(crate) wordlist_offset: usize,
 }
 
+impl SessionSupervisor {
+    pub(crate) fn retire_codename(&mut self, codename: &str, now: DateTime<Utc>) {
+        self.codename_live.remove(codename);
+        self.codename_retired.insert(codename.to_owned());
+        if let Some(record) = self
+            .agent_history
+            .iter_mut()
+            .rev()
+            .find(|record| record.codename == codename)
+        {
+            record.exited_at = Some(now);
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct SessionRegistry(HashMap<SessionId, Session>);
 
@@ -183,10 +199,6 @@ impl SessionRegistry {
 
     pub(crate) fn get_mut(&mut self, id: u64) -> Option<&mut Session> {
         SessionId::new(id).ok().and_then(|id| self.0.get_mut(&id))
-    }
-
-    pub(crate) fn contains_key(&self, id: u64) -> bool {
-        self.get(id).is_some()
     }
 
     pub(crate) fn insert(&mut self, id: u64, session: Session) -> Option<Session> {
@@ -239,6 +251,12 @@ pub(super) struct ClientRegistry {
     pub(crate) last_outer_terminal_title: Option<String>,
 }
 
+impl ClientRegistry {
+    pub(crate) fn has_attached_client(&self) -> bool {
+        self.attached_task.is_some()
+    }
+}
+
 /// Status bar chrome.
 pub(super) struct StatusState {
     pub(crate) status_bar: StatusBar,
@@ -284,6 +302,12 @@ pub(super) struct ControlRouting {
     pub(crate) input_parser: InputParser,
     pub(crate) event_tx: mpsc::UnboundedSender<SessionEvent>,
     pub(crate) event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+}
+
+impl ControlRouting {
+    pub(crate) fn dialog_open(&self) -> bool {
+        !self.dialog_stack.is_empty()
+    }
 }
 
 /// Terminal geometry, frame generation, compositor caches.
@@ -748,12 +772,6 @@ fn build_exit_inspect_rows(repos: &[crate::exit_assess::DirtyRepo]) -> Arc<[Insp
 /// (re-entry guard). With policy `ask` and dirty isolated work the modal is
 /// shown (no teardown); otherwise the container drains and exits, preserving the
 /// original non-clean-exit reason.
-/// Pure classifier for INV-D19: when a dialog is already open, last-session
-/// exit handling must defer so the operator can finish the modal.
-pub(crate) const fn should_defer_last_session_exit(dialog_open: bool) -> bool {
-    dialog_open
-}
-
 async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>) -> bool {
     // Called from two sites: the session-exit event handler (once, on last-session
     // exit) and the client-frame handler (on every frame while no sessions remain).
@@ -762,11 +780,11 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     // the dirty-exit flow is already active. Re-entering would push a fresh modal
     // and re-run the git assessment on every keypress, resetting selection to 0 —
     // so the operator could never move past the first row. Defer until resolved.
-    use ports::{PORTS, PersistencePort};
-    if PORTS.defer_last_session_exit(mux.dialog_open()) {
+    use ports::{ExitDisposition, PORTS, PersistencePort};
+    if PORTS.last_session_exit(&mux.control) == ExitDisposition::Defer {
         return false;
     }
-    match crate::exit_assess::decide_exit(&mux.launch_env.launch_config).await {
+    match crate::exit_assess::decide_exit(mux.launch_env.config()).await {
         crate::exit_assess::ExitDecision::Drain => {
             if let Some(ref r) = reason {
                 crate::clog!("session: final session exited: {r}");
@@ -1182,7 +1200,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let mut pending_spawn_failure = None;
                 if let Some(request) = spawn {
                     let label = spawn_request_label(&request);
-                    if let Err(err) = mux.spawn_request(request, &env) {
+                    use ports::{AttachPort, PORTS};
+                    let spawn_result = PORTS
+                        .prepare_session_spawn(&mux.session_supervisor)
+                        .and_then(|()| mux.spawn_request(request, &env).map(|_| ()));
+                    if let Err(err) = spawn_result {
                         crate::clog!("attach: spawn {label} failed: {err:#}");
                         pending_spawn_failure = Some(spawn_request_failure_message(&label, &err));
                     }
@@ -1190,13 +1212,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // Take over from any existing attach client (INV-D1). The
                 // port decides displace; the helper sends Shutdown, drains
                 // briefly, then aborts the old reader task.
-                let has_active_client = mux.client_registry.attached_task.is_some();
-                use ports::{AttachPort, PORTS};
-                if PORTS.should_displace_on_hello(has_active_client) {
+                use ports::{AttachPort, AttachTransition, PORTS};
+                if PORTS.begin_attach(&mux.client_registry) == AttachTransition::Displace {
                     detach_attached_task(&mut mux, "takeover").await;
-                    PORTS.record_detach();
+                    PORTS.record_detached();
                 }
-                PORTS.record_attach();
+                PORTS.record_attached();
                 // Drain any stale frames the old client task pushed
                 // into cmd_tx before its abort actually took effect —
                 // without this drain, the next `cmd_rx.recv()` after

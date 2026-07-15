@@ -1,94 +1,126 @@
-//! Port decision unit tests + `FakeDaemonPorts` boundary harness (plan 017).
-//!
-//! Production INV defaults are pure; fake-port tests prove attach/displace/
-//! reattach/PTY-failure/persistence observable behaviour at the port surface
-//! (not helper predicates alone).
+//! Fake-port tests over the real daemon subsystem owners.
 
 use super::*;
+use crate::daemon::Dialog;
+use chrono::TimeZone;
 use std::sync::atomic::Ordering;
 
-#[test]
-fn control_port_always_acks_unknown_session() {
-    assert!(PORTS.should_ack_unknown_session_runtime_event(1, false));
-    assert!(PORTS.should_ack_unknown_session_runtime_event(1, true));
+fn mux() -> crate::daemon::Multiplexer {
+    crate::daemon::tests::single_pane_tab_mux()
 }
 
 #[test]
-fn attach_port_displaces_only_when_client_active() {
-    assert!(PORTS.should_displace_on_hello(true));
-    assert!(!PORTS.should_displace_on_hello(false));
-}
-
-#[test]
-fn status_port_always_retires_codename() {
-    assert!(PORTS.should_retire_codename_on_exit(7, 0));
-    assert!(PORTS.should_retire_codename_on_exit(7, 3));
-}
-
-#[test]
-fn persistence_port_defers_when_dialog_open() {
-    assert!(PORTS.defer_last_session_exit(true));
-    assert!(!PORTS.defer_last_session_exit(false));
-}
-
-#[test]
-fn fake_ports_attach_displace_reattach_ledger() {
+fn control_port_applies_unknown_event_and_always_acks() {
     let ports = FakeDaemonPorts::new();
-    // First attach: no active client → no displace.
-    assert!(!ports.should_displace_on_hello(false));
-    ports.record_attach();
-    assert_eq!(ports.attach_count.load(Ordering::SeqCst), 1);
+    let mut mux = mux();
+    let reply = ports.report_runtime_event(
+        &mut mux.session_supervisor.sessions,
+        RuntimeEvent {
+            session_id: 404,
+            source_id: "hook",
+            runtime: "claude",
+            event: "busy",
+            payload: None,
+            observed_at: Instant::now(),
+        },
+    );
 
-    // Second Hello with active client → displace, then reattach.
-    assert!(ports.should_displace_on_hello(true));
-    ports.record_detach();
-    ports.record_attach();
-    assert_eq!(ports.detach_count.load(Ordering::SeqCst), 1);
+    assert!(matches!(reply, ServerMsg::Ack));
+    assert_eq!(*ports.runtime_events.lock().unwrap(), vec![404]);
+}
+
+#[tokio::test]
+async fn fake_ports_drive_attach_displace_disconnect_and_reattach() {
+    let ports = FakeDaemonPorts::new();
+    let mut mux = mux();
+
+    assert_eq!(
+        ports.begin_attach(&mux.client_registry),
+        AttachTransition::Attach
+    );
+    ports.record_attached();
+
+    mux.client_registry.attached_task = Some(tokio::spawn(async {}));
+    assert_eq!(
+        ports.begin_attach(&mux.client_registry),
+        AttachTransition::Displace
+    );
+    ports.record_detached();
+    mux.client_registry.attached_task = None;
+
+    assert_eq!(
+        ports.begin_attach(&mux.client_registry),
+        AttachTransition::Attach
+    );
+    ports.record_attached();
+
     assert_eq!(ports.attach_count.load(Ordering::SeqCst), 2);
-
-    let obs = ports.displace_observations.lock().unwrap();
-    assert_eq!(obs.as_slice(), &[false, true]);
-}
-
-#[test]
-fn fake_ports_pty_failure_path_is_observable() {
-    let ports = FakeDaemonPorts::new();
-    assert!(!ports.pty_failed());
-    ports.mark_pty_failure();
-    assert!(
-        ports.pty_failed(),
-        "PTY failure must stick for harness asserts"
+    assert_eq!(ports.detach_count.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        *ports.transitions.lock().unwrap(),
+        vec![
+            AttachTransition::Attach,
+            AttachTransition::Displace,
+            AttachTransition::Attach
+        ]
     );
 }
 
 #[test]
-fn fake_ports_persistence_round_trip_defer_policy() {
+fn fake_port_injects_pty_spawn_failure_at_supervisor_boundary() {
     let ports = FakeDaemonPorts::new();
-    assert!(!ports.defer_last_session_exit(false));
-    ports.force_defer_exit.store(true, Ordering::SeqCst);
-    assert!(
-        ports.defer_last_session_exit(false),
-        "force_defer_exit must defer even with no dialog"
+    let mux = mux();
+
+    ports.fail_spawn.store(true, Ordering::SeqCst);
+    let error = ports
+        .prepare_session_spawn(&mux.session_supervisor)
+        .expect_err("configured spawn failure must cross the port boundary");
+    assert_eq!(error.to_string(), "injected PTY spawn failure");
+}
+
+#[test]
+fn status_port_retires_codename_and_stamps_history() {
+    let ports = FakeDaemonPorts::new();
+    let mut mux = mux();
+    let observed_at = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+    mux.session_supervisor
+        .codename_live
+        .insert("test".to_owned());
+    mux.session_supervisor
+        .agent_history
+        .push(crate::daemon::AgentRecord {
+            session_id: 1,
+            codename: "test".to_owned(),
+            agent: None,
+            provider: None,
+            started_at: observed_at,
+            exited_at: None,
+        });
+
+    ports.retire_codename(&mut mux.session_supervisor, "test", observed_at);
+
+    assert!(!mux.session_supervisor.codename_live.contains("test"));
+    assert!(mux.session_supervisor.codename_retired.contains("test"));
+    assert_eq!(
+        mux.session_supervisor.agent_history[0].exited_at,
+        Some(observed_at)
     );
 }
 
 #[test]
-fn fake_ports_refuse_unknown_ack_and_skip_codename_retire() {
+fn persistence_port_reads_live_dialog_stack() {
     let ports = FakeDaemonPorts::new();
-    ports.refuse_unknown_ack.store(true, Ordering::SeqCst);
-    assert!(!ports.should_ack_unknown_session_runtime_event(9, false));
-    assert!(ports.should_ack_unknown_session_runtime_event(9, true));
+    let mut mux = mux();
+    assert_eq!(
+        ports.last_session_exit(&mux.control),
+        ExitDisposition::Evaluate
+    );
 
-    ports.skip_codename_retire.store(true, Ordering::SeqCst);
-    assert!(!ports.should_retire_codename_on_exit(3, 1));
-}
-
-#[test]
-fn fake_ports_force_displace_without_active_client() {
-    let ports = FakeDaemonPorts::new();
-    ports.force_displace.store(true, Ordering::SeqCst);
-    assert!(
-        ports.should_displace_on_hello(false),
-        "force_displace simulates sticky displace policy"
+    mux.control.dialog_stack.push(Dialog::SpawnFailure(
+        jackin_tui::components::ErrorPopupState::new("Spawn failed", "test"),
+    ));
+    assert_eq!(
+        ports.last_session_exit(&mux.control),
+        ExitDisposition::Defer
     );
 }

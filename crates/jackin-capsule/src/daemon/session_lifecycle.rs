@@ -178,11 +178,9 @@ impl Multiplexer {
                 let closed_codename = self.session_supervisor.tabs[tab_idx].codename.clone();
                 self.session_supervisor.tabs.remove(tab_idx);
                 // INV-D8: retire codename so tab labels drop the exited name.
-                let remaining_live = self.session_supervisor.sessions.len().saturating_sub(1);
                 use super::ports::{PORTS, StatusPort};
-                if PORTS.should_retire_codename_on_exit(session_id, remaining_live) {
-                    self.retire_codename(&closed_codename);
-                }
+                let now = self.wall_now_utc();
+                PORTS.retire_codename(&mut self.session_supervisor, &closed_codename, now);
                 if was_active {
                     // Move to the tab on the left when it exists;
                     // otherwise stay at index 0 (the leftmost tab
@@ -326,20 +324,8 @@ impl Multiplexer {
     /// Move a closed tab's codename from `live` to `retired` (so it is never
     /// reused this container lifetime) and stamp the matching history record.
     pub(super) fn retire_codename(&mut self, codename: &str) {
-        self.session_supervisor.codename_live.remove(codename);
-        self.session_supervisor
-            .codename_retired
-            .insert(codename.to_owned());
         let now = self.wall_now_utc();
-        if let Some(record) = self
-            .session_supervisor
-            .agent_history
-            .iter_mut()
-            .rev()
-            .find(|r| r.codename == codename)
-        {
-            record.exited_at = Some(now);
-        }
+        self.session_supervisor.retire_codename(codename, now);
     }
 
     pub(super) fn mark_agent_session_exited(&mut self, session_id: u64) {

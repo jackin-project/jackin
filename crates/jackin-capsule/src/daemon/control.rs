@@ -57,26 +57,18 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             event,
             payload,
         } => {
-            let session_known = mux.session_supervisor.sessions.contains_key(session_id);
-            if let Some(session) = mux.session_supervisor.sessions.get_mut(session_id) {
-                session.apply_runtime_event(
-                    &source_id,
-                    &runtime,
-                    &event,
-                    payload.as_deref(),
-                    Instant::now(),
-                );
-            } else {
-                crate::cdebug!("agent-status: runtime event for unknown session {session_id}");
-            }
-            // INV-D12: agent hooks never block — ACK even when session is unknown
-            // (port documents the always-ack policy at this call site).
-            use super::ports::{ControlPort, PORTS};
-            debug_assert!(
-                PORTS.should_ack_unknown_session_runtime_event(session_id, session_known),
-                "control port must ACK runtime events (session_known={session_known})"
-            );
-            ServerMsg::Ack
+            use super::ports::{ControlPort, PORTS, RuntimeEvent};
+            PORTS.report_runtime_event(
+                &mut mux.session_supervisor.sessions,
+                RuntimeEvent {
+                    session_id,
+                    source_id: &source_id,
+                    runtime: &runtime,
+                    event: &event,
+                    payload: payload.as_deref(),
+                    observed_at: Instant::now(),
+                },
+            )
         }
         // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
         ClientMsg::StatusCapture { session_id } => {
@@ -99,7 +91,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             }
         }
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
-            accounts: mux.usage.usage_cache.account_snapshot_views(),
+            accounts: mux.usage.cache().account_snapshot_views(),
         },
         ClientMsg::ExecCommand { .. } => {
             // Defensive only: `ExecCommand` is intercepted by the control loop

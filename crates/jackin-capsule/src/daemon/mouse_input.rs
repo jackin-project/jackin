@@ -69,7 +69,7 @@ impl Multiplexer {
         // The shared Debug info dialog brightens the hovered copyable row, so a
         // move between two copyable rows must redraw even though hover_target
         // stays DialogCopyTarget. Track the per-row hover separately.
-        let (term_rows, term_cols) = (self.render.term_rows, self.render.term_cols);
+        let (term_rows, term_cols) = self.render.terminal_size();
         let row_hover_changed = self.dialog_top_mut().is_some_and(|dialog| {
             let row = row + 1;
             let col = col + 1;

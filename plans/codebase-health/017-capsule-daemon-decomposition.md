@@ -83,11 +83,11 @@ Existing 321-test daemon suite is the characterization harness — it must stay 
 
 ## Done criteria
 
-- [ ] `Multiplexer` reduced to event dispatch over owned subsystem structs (field count in the struct itself < ~15, all state in subsystems)
-- [ ] Ports own effects; `FakeDaemonPorts` drives attach/displace/reattach/PTY-failure/persistence tests
-- [ ] Each subsystem's tests live with it; `daemon/tests.rs` correspondingly reduced
+- [x] `Multiplexer` reduced to event dispatch over owned subsystem structs (field count in the struct itself < ~15, all state in subsystems)
+- [x] Ports own effects; `FakeDaemonPorts` drives attach/displace/reattach/PTY-failure/persistence tests
+- [x] Each subsystem's tests live with it; `daemon/tests.rs` correspondingly reduced
 - [x] Sim-tooling evaluation verdict recorded
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -101,4 +101,20 @@ Existing 321-test daemon suite is the characterization harness — it must stay 
 - Plan 009's host-to-capsule conformance scenario can later drive the fake ports for telemetry assertions.
 - The `session.rs` split (supervision vs PTY plumbing) becomes tractable after `SessionSupervisor` exists; treat as follow-up evidence-driven work.
 
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+**Completed 2026-07-15**: `Multiplexer` contains 11 fields: nine owned state subsystems, resource metrics, and the injected clock. Subsystem behavior is exposed through owner methods, and focused tests live under `daemon/subsystems`, `daemon/ports`, `daemon/control`, `daemon/compositor`, `daemon/file_export`, and `daemon/resource_metrics`; the remaining `daemon/tests.rs` cases exercise cross-subsystem behavior. Ports now inspect and mutate the real subsystem owners for reporter ACK/application, attach takeover, codename retirement, spawn preparation, and exit persistence. `FakeDaemonPorts` covers attach/displace/disconnect/reattach, injected PTY spawn failure, runtime-event ACK, status mutation, and live-dialog persistence.
+
+## Field ownership inventory
+
+| `Multiplexer` field | Owner / responsibility |
+|---|---|
+| `session_supervisor` | sessions, tabs, active-tab policy, codenames, agent history |
+| `client_registry` | attach writer/task, terminal capabilities, pointer/title state |
+| `status` | status-bar chrome |
+| `clipboard` | selection, copy feedback, image transfers and notices |
+| `pr_watch` | branch/head identity, lookup state, PR cache |
+| `usage` | usage cache, token monitor, refresh target/task |
+| `control` | dialog stack, parser, replies, exit action, event channel |
+| `render` | terminal geometry, invalidation generations, compositor caches |
+| `launch_env` | immutable launch config, workdir context, provider keys |
+| `resource_metrics` | daemon resource sampler |
+| `clock` | injectable wall/monotonic time |
