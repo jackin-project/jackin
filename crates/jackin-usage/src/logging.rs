@@ -1,35 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! File + stderr logging for the in-container multiplexer.
-//!
-//! Two destinations on every line:
-//!   1. `stderr` — captured by Docker, visible via `docker logs <container>`.
-//!   2. A log file under the mounted state directory (`/jackin/state/`
-//!      inside the container, which the host mounts read-write under
-//!      `paths.data_dir.join(<container_base>)`). The operator can
-//!      `tail -f` the file from their host without entering the
-//!      container or watching `docker logs`, and paste the contents
-//!      when reporting bugs.
-//!
-//! Path resolution:
-//!   - `JACKIN_CAPSULE_LOG_PATH` env var (when set) overrides the
-//!     default. Useful for tests and for operators that want the log
-//!     somewhere other than the state dir.
-//!   - Default: `/jackin/state/multiplexer.log`.
-//!   - If the file cannot be opened for append, the logger silently
-//!     falls back to stderr-only. Logging must never block startup.
+//! Stderr and governed OTLP logging for the in-container multiplexer.
 
-use jackin_core::container_paths;
-use std::fs::{self, File, OpenOptions};
-use std::io::Write;
-use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
 
 use chrono::{SecondsFormat, Utc};
 
-static LOG_FILE: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 static PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
 static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 static TRACE_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -49,41 +27,6 @@ pub fn trace_enabled() -> bool {
     TRACE_ENABLED.load(Ordering::Relaxed)
 }
 
-/// Default in-container path. The host's state-dir mount makes this
-/// readable from outside the container.
-const DEFAULT_LOG_PATH: &str = container_paths::MULTIPLEXER_LOG;
-const MAX_LOG_BYTES: u64 = 32 * 1024 * 1024;
-
-/// Resolve the log path. Honours `JACKIN_CAPSULE_LOG_PATH` first,
-/// falls back to the default.
-fn resolve_log_path() -> PathBuf {
-    std::env::var_os("JACKIN_CAPSULE_LOG_PATH")
-        .map_or_else(|| PathBuf::from(DEFAULT_LOG_PATH), PathBuf::from)
-}
-
-fn rotate_if_oversized(path: &PathBuf) -> std::io::Result<()> {
-    if path
-        .metadata()
-        .is_ok_and(|metadata| metadata.len() > MAX_LOG_BYTES)
-    {
-        let rotated_name = path.file_name().map_or_else(
-            || "multiplexer.log.1".to_owned(),
-            |name| format!("{}.1", name.to_string_lossy()),
-        );
-        let rotated = path.with_file_name(rotated_name);
-        match fs::remove_file(&rotated) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
-        fs::rename(path, rotated)?;
-    }
-    Ok(())
-}
-
-/// Open the log file for append. Called once from the daemon entry
-/// point. Failures (path not writable, dir missing) are swallowed —
-/// the logger keeps emitting to stderr.
 pub fn init() {
     // One shared resolver owns JACKIN_TELEMETRY_LEVEL and config precedence.
     let level = jackin_diagnostics::telemetry_level(false);
@@ -95,72 +38,6 @@ pub fn init() {
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
     TRACE_ENABLED.store(trace, Ordering::Relaxed);
 
-    let path = resolve_log_path();
-    let file = if crate::telemetry::otlp_active() {
-        None
-    } else {
-        // Rotate only at daemon start so `tail -f` remains stable for a live session.
-        if let Err(e) = rotate_if_oversized(&path) {
-            crate::output::stderr_line(format_args!(
-                "[jackin-capsule] log rotation failed for {}: {e} (errno={:?})",
-                path.display(),
-                e.raw_os_error()
-            ));
-        }
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "capsule log opens once during logging initialization, before render loop work"
-        )]
-        match OpenOptions::new().create(true).append(true).open(&path) {
-            Ok(f) => Some(f),
-            Err(e) => {
-                crate::output::stderr_line(format_args!(
-                    "[jackin-capsule] log file open failed for {}: {e} (errno={:?})",
-                    path.display(),
-                    e.raw_os_error()
-                ));
-                None
-            }
-        }
-    };
-    if let Some(mut f) = file.as_ref().and_then(|f| f.try_clone().ok()) {
-        // Drop a startup marker so the operator can tell where one
-        // multiplexer run ends and the next begins in a long-lived
-        // log file. The marker is the only line the logger emits
-        // without going through `write_line`, so spell the timestamp
-        // here too — operators pasting a tail must see when the
-        // session started without scrolling for the first normal line.
-        let pid = std::process::id();
-        let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let _unused = writeln!(
-            f,
-            "{ts} ---- multiplexer start pid={pid} debug={debug} trace={trace} path={} ----",
-            path.display()
-        );
-        // One context banner lets the file correlate offline to the host run /
-        // OTLP timeline. Per-line stamping is deliberately out (volume).
-        let (run_id, session_id, traceparent) = crate::telemetry::session_context().map_or_else(
-            || {
-                (
-                    std::env::var("JACKIN_RUN_ID").unwrap_or_else(|_| "-".to_owned()),
-                    "-".to_owned(),
-                    std::env::var("TRACEPARENT").unwrap_or_else(|_| "-".to_owned()),
-                )
-            },
-            |(session_id, run_id, traceparent)| {
-                (
-                    run_id.unwrap_or_else(|| "-".to_owned()),
-                    session_id,
-                    traceparent.unwrap_or_else(|| "-".to_owned()),
-                )
-            },
-        );
-        let _unused = writeln!(
-            f,
-            "{ts} [jackin-capsule] context run_id={run_id} session_id={session_id} traceparent={traceparent}"
-        );
-    }
-    drop(LOG_FILE.set(Mutex::new(file)));
     let () = PANIC_HOOK_INSTALLED.get_or_init(|| {
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
@@ -169,9 +46,10 @@ pub fn init() {
             let bt = std::backtrace::Backtrace::force_capture();
             write_line(&format!("[jackin-capsule] PANIC: {info}"));
             write_line(&format!("[jackin-capsule] BACKTRACE:\n{bt}"));
-            // The hook runs while unwinding; keep the bridged record one-line
-            // and leave the backtrace in the local multiplexer log.
-            // Prefix-free body for OTLP; local file still has the tagged line above.
+            let _ = jackin_telemetry::emit_event(
+                &jackin_telemetry::event::APP_CRASH,
+                jackin_telemetry::FieldSet::new(&[], Some(&format!("PANIC: {info}"))),
+            );
             crate::telemetry::bridge_log(
                 crate::telemetry::BridgeLevel::Error,
                 &format!("PANIC: {info}"),
@@ -182,28 +60,11 @@ pub fn init() {
     });
 }
 
-/// Emit one line to both stderr and the log file (if open). Lines
-/// are timestamped (ISO-8601 UTC, millisecond precision) and prefixed
-/// with the `[jackin-capsule]` tag, so log readers see a uniform
-/// format regardless of which sink they consult. The timestamp is
-/// load-bearing for bug reports: operators paste a tail and the
-/// sequence of events has to be reconstructable from the file alone.
+/// Emit one timestamped line to stderr for Docker's process log stream.
 pub fn write_line(message: &str) {
     let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     let stamped = format!("{ts} {message}");
     crate::output::stderr_line(format_args!("{stamped}"));
-    let Some(mutex) = LOG_FILE.get() else {
-        return;
-    };
-    let Ok(mut guard) = mutex.lock() else {
-        return;
-    };
-    let Some(file) = guard.as_mut() else {
-        return;
-    };
-    // `File::write` is unbuffered, so `flush` is a no-op here; per-line
-    // append plus the OS page cache is enough for tail-style log reading.
-    drop(writeln!(file, "{stamped}"));
 }
 
 /// Convenience macro: format + tag + emit. Always emits regardless
@@ -238,19 +99,13 @@ macro_rules! cdebug {
     }};
 }
 
-/// Trace-only payload telemetry. When OTLP is active, raw payload records are
-/// exported at TRACE and are not mirrored to stderr or `multiplexer.log`; when
-/// OTLP is inactive, they fall back to the local capsule log for offline triage.
+/// Trace-only payload telemetry exported through the governed OTLP facade.
 #[macro_export]
 macro_rules! ctrace_payload {
     ($($arg:tt)*) => {{
         if $crate::logging::trace_enabled() {
             let body = format!("{}", format_args!($($arg)*));
-            if $crate::telemetry::otlp_active() {
-                $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Trace, &body);
-            } else {
-                $crate::logging::write_line(&format!("[jackin-capsule trace] {body}"));
-            }
+            $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Trace, &body);
         }
     }};
 }
@@ -279,6 +134,3 @@ macro_rules! cerror {
         $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Error, &body);
     }};
 }
-
-#[cfg(test)]
-mod tests;

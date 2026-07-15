@@ -214,7 +214,6 @@ async fn diagnose_premature_exit_returns_none_when_container_running() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
-        None,
     )
     .await;
     assert!(
@@ -243,7 +242,6 @@ async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() 
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
-        None,
     )
     .await
     .expect("stopped container must produce a diagnostic error");
@@ -278,7 +276,7 @@ async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
         ..Default::default()
     };
     let mut runner = FakeRunner::with_capture_queue([String::new()]);
-    let err = diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach, None)
+    let err = diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach)
         .await
         .expect("OOM-killed container is a premature exit");
     let msg = err.to_string();
@@ -295,7 +293,7 @@ async fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() 
     let docker = FakeDockerClient::default(); // empty queue → NotFound
     let mut runner = FakeRunner::default();
     assert!(
-        diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach, None)
+        diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach)
             .await
             .is_none(),
         "NotFound must not abort launch before exec attempt"
@@ -323,7 +321,6 @@ async fn diagnose_premature_exit_swallows_post_attach_clean_exit() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PostAttach,
-        None,
     )
     .await;
     assert!(
@@ -356,7 +353,6 @@ async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PostAttach,
-        None,
     )
     .await
     .expect("post-attach non-zero exit must produce a diagnostic error");
@@ -393,7 +389,6 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
-        None,
     )
     .await
     .expect("pre-attach exit 0 must still flag a missing Capsule");
@@ -406,21 +401,9 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
 }
 
 #[tokio::test]
-async fn diagnose_premature_exit_falls_back_to_multiplexer_log_when_docker_logs_empty() {
-    // The capsule daemon routes its startup diagnostics to multiplexer.log
-    // rather than stderr, so a pre-attach PID-1 crash leaves `docker logs`
-    // empty. The diagnostic must fall back to the capsule log tail instead of
-    // reporting an opaque "no log output".
+async fn diagnose_premature_exit_reports_empty_docker_logs() {
     use jackin_docker::docker_client::ContainerState;
     use jackin_test_support::FakeDockerClient;
-
-    let temp = tempdir().unwrap();
-    let mux_log = temp.path().join("multiplexer.log");
-    std::fs::write(
-        &mux_log,
-        "daemon start\nthread 'main' panicked: capsule boom\n",
-    )
-    .unwrap();
 
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
@@ -429,29 +412,19 @@ async fn diagnose_premature_exit_falls_back_to_multiplexer_log_when_docker_logs_
         }])),
         ..Default::default()
     };
-    // Empty `docker logs` output → drives the multiplexer.log fallback branch.
     let mut runner = FakeRunner::with_capture_queue([String::new()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
-        Some(mux_log.to_str().unwrap()),
     )
     .await
     .expect("pre-attach exit 1 must produce a diagnostic error");
     let msg = err.to_string();
     assert!(
-        msg.contains("multiplexer.log"),
-        "fallback should name the capsule log: {msg}"
-    );
-    assert!(
-        msg.contains("capsule boom"),
-        "capsule log tail missing from msg: {msg}"
-    );
-    assert!(
-        !msg.contains("no log output"),
-        "must not report 'no log output' when the capsule log has content: {msg}"
+        msg.contains("no log output"),
+        "empty-log detail missing: {msg}"
     );
 }
 
@@ -1583,28 +1556,10 @@ async fn workspace_mise_env_does_not_override_operator_value() {
 }
 
 #[test]
-fn read_text_tail_returns_recent_lines_only() {
-    let temp = tempdir().unwrap();
-    let path = temp.path().join("capsule.log");
-    std::fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
-
-    assert_eq!(
-        read_text_tail(&path, 2).unwrap(),
-        Some("three\nfour".to_owned())
-    );
-}
-
-#[test]
-fn attach_failure_error_includes_capsule_log_tail() {
-    let temp = tempdir().unwrap();
-    let path = temp.path().join("capsule.log");
-    std::fs::write(&path, "agent stderr\nfatal: missing token\n").unwrap();
-
+fn attach_failure_error_preserves_command_context() {
     let error = attach_failure_error(
         "jk-test",
         &anyhow::anyhow!("command failed: docker exec ..."),
-        &path,
-        &path.display().to_string(),
     )
     .to_string();
 
@@ -1613,7 +1568,6 @@ fn attach_failure_error_includes_capsule_log_tail() {
         "{error}"
     );
     assert!(error.contains("command failed: docker exec"), "{error}");
-    assert!(error.contains("fatal: missing token"), "{error}");
 }
 
 /// A Codex-authed role state rooted at `root` plus a workspace whose

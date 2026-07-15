@@ -205,7 +205,7 @@ pub(crate) use mounts::{
 pub(crate) use capsule_setup::{capsule_config, exec_binding_names, prepare_socket_dir};
 
 #[cfg(test)]
-pub(crate) use exit_diagnosis::{ExitPhase, diagnose_premature_exit, read_text_tail};
+pub(crate) use exit_diagnosis::{ExitPhase, diagnose_premature_exit};
 pub(crate) use exit_diagnosis::{
     attach_failure_error, diagnose_with_state, inspect_attach_outcome,
 };

@@ -60,7 +60,6 @@ pub const USAGE_ACCOUNTS: &str = "/jackin/run/usage/accounts.json";
 /// Git hooks install directory.
 pub const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
 /// Multiplexer log path.
-pub const MULTIPLEXER_LOG: &str = "/jackin/state/multiplexer.log";
 /// Exit-action handoff file.
 pub const EXIT_ACTION: &str = "/jackin/state/exit-action.json";
 /// Usage telemetry store.

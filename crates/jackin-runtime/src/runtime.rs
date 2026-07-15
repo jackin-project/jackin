@@ -19,7 +19,6 @@ pub mod host_colors;
 pub mod identity;
 pub mod image;
 pub mod launch;
-pub mod logs;
 pub mod naming;
 pub mod prewarm_trigger;
 pub mod progress;

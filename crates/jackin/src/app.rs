@@ -190,22 +190,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Eject(args) => load_cmd::handle_eject(args, &paths, debug, connect_docker).await,
         Command::Exile => load_cmd::handle_exile(&paths, debug, connect_docker).await,
-        // logs::run blocks on file I/O and a poll sleep when --follow is active.
-        // Wrap in spawn_blocking so the tokio render thread stays responsive.
-        Command::Logs(args) => {
-            let paths_owned = paths.clone();
-            jackin_telemetry::spawn::joined_blocking(move || {
-                runtime::logs::run(
-                    &paths_owned,
-                    args.selector,
-                    args.path,
-                    args.tail,
-                    args.follow,
-                    args.bundle,
-                )
-            })
-            .await?
-        }
         Command::Config(config_cmd) => config_cmd::handle(config_cmd, &mut config, &paths, debug),
         #[cfg(unix)]
         Command::Daemon(command) => daemon_cmd::handle(command, &paths).await,
@@ -327,7 +311,6 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Config(_) => "config",
         #[cfg(unix)]
         Command::Daemon(_) => "daemon",
-        Command::Logs(_) => "logs",
         Command::Doctor(_) => "doctor",
         Command::Diagnostics(crate::cli::DiagnosticsCommand::Validate) => "diagnostics.validate",
         Command::Diagnostics(_) => "diagnostics",

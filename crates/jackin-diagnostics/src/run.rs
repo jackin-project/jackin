@@ -700,7 +700,7 @@ impl RunDiagnostics {
     /// shutdowns, no event is needed.
     ///
     /// `crash_evidence` is the last N lines of `docker logs` or the
-    /// `multiplexer.log` tail — passed in by the caller which already fetched
+    /// Capsule process-log tail — passed in by the caller which already fetched
     /// it for the user-facing error message. When `crash_evidence` is `Some`,
     /// an additional `container_crash_log` event is written so the full cause
     /// is self-contained in the run JSONL.

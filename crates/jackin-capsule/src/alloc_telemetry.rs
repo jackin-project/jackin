@@ -6,7 +6,7 @@
 //! Normal capsule builds compile these helpers to no-ops. A capsule built with
 //! `--features dhat-heap` and launched with `JACKIN_DHAT_ALLOC_LOG=1` starts a
 //! DHAT heap profile guard in testing mode, allowing selected hot paths to log
-//! per-frame allocation deltas to `multiplexer.log` without writing profile
+//! per-frame allocation deltas to stderr without writing profile
 //! artifacts on process exit.
 
 #[cfg(feature = "dhat-heap")]

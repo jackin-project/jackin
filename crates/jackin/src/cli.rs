@@ -34,7 +34,6 @@ pub mod dispatch;
 pub mod doctor;
 pub mod format;
 pub mod help;
-pub mod logs;
 pub mod prewarm;
 pub mod prune;
 pub mod role;
@@ -49,7 +48,6 @@ pub use config::{
 #[cfg(unix)]
 pub use daemon::DaemonCommand;
 pub use diagnostics::DiagnosticsCommand;
-pub use logs::LogsArgs;
 pub use prewarm::PrewarmArgs;
 pub use prune::PruneCommand;
 pub use workspace::{
@@ -141,7 +139,6 @@ pub enum Command {
     #[cfg(unix)]
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Daemon(DaemonCommand),
-    Logs(LogsArgs),
     /// Run pre-flight health checks for your jackin❯ setup
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Doctor(doctor::DoctorArgs),

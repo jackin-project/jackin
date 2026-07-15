@@ -33,6 +33,5 @@ pub use runtime::{
 pub use runtime::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
 
 pub use runtime::drift;
-pub use runtime::logs;
 pub use runtime::progress;
 pub use runtime::snapshot;

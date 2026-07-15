@@ -976,7 +976,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // the session-anchor span feed into; the guard flushes on daemon exit.
     let _otlp_flush = crate::telemetry::init();
     // Initialise the capsule log after OTLP so the logger can use a single
-    // durable sink: OTLP when active, `multiplexer.log` otherwise.
+    // durable sink: OTLP when active.
     crate::logging::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();

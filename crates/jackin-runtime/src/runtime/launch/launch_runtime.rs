@@ -30,7 +30,6 @@ use super::auth_error::{
 use super::build_workspace_mount_strings;
 use super::diagnose_with_state;
 use super::exit_diagnosis::{ExitPhase, diagnose_premature_exit};
-use super::restore::capsule_multiplexer_log_path;
 use crate::runtime::progress::launch_output;
 
 pub(crate) struct LaunchContext<'a> {
@@ -1041,14 +1040,6 @@ pub(crate) async fn launch_role_runtime(
     )
     .await;
 
-    // Emit a structured container_started event so the run JSONL points at
-    // the capsule log regardless of whether the session succeeds (Defect 41).
-    let capsule_log_path = capsule_multiplexer_log_path(paths, container_name);
-    let capsule_log_str = capsule_log_path.display().to_string();
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.container_started(container_name, &capsule_log_str);
-    }
-
     // Pre-session safety check: if jackin-capsule exited immediately
     // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
@@ -1057,14 +1048,8 @@ pub(crate) async fn launch_role_runtime(
         "pre_attach_exit_check",
         Some(container_name),
     );
-    if let Some(err) = diagnose_premature_exit(
-        docker,
-        runner,
-        container_name,
-        ExitPhase::PreAttach,
-        Some(&capsule_log_str),
-    )
-    .await
+    if let Some(err) =
+        diagnose_premature_exit(docker, runner, container_name, ExitPhase::PreAttach).await
     {
         jackin_diagnostics::active_timing_done(
             jackin_diagnostics::DiagnosticStage::Capsule,
@@ -1149,14 +1134,8 @@ pub(crate) async fn launch_role_runtime(
         // the capsule attach protocol uses that path to report failed final
         // sessions while the daemon still shuts down as init with exit 0.
         let inspect = docker.inspect_container_state(container_name).await;
-        if let Some(diag) = diagnose_with_state(
-            runner,
-            container_name,
-            &inspect,
-            ExitPhase::PostAttach,
-            Some(&capsule_log_str),
-        )
-        .await
+        if let Some(diag) =
+            diagnose_with_state(runner, container_name, &inspect, ExitPhase::PostAttach).await
         {
             return Err(diag);
         }
@@ -1167,8 +1146,7 @@ pub(crate) async fn launch_role_runtime(
         // so fall through to a successful return — the pipeline then runs
         // finalize, which reads exit-action.json and executes the choice. The
         // attach detail is kept only as a diagnostic breadcrumb.
-        let attach_detail =
-            attach_failure_error(container_name, &err, &capsule_log_path, &capsule_log_str);
+        let attach_detail = attach_failure_error(container_name, &err);
         jackin_diagnostics::debug_log!(
             "session",
             "clean container exit for {container_name}; proceeding to finalize \

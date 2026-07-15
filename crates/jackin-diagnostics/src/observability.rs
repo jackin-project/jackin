@@ -1270,7 +1270,7 @@ mod otlp {
         ));
         // Surface OTLP exporter/SDK diagnostics (export failures, refused
         // endpoint, gRPC errors) to the capsule's stderr — captured by
-        // `docker logs` and mirrored into `multiplexer.log`. The OTLP span/log
+        // `docker logs`. The OTLP span/log
         // layers above keep `opentelemetry*=off`, so these diagnostics never
         // feed back through the exporter: no export-error → log → export loop.
         // Without this sink, a failing in-container export is silently dropped

@@ -67,7 +67,7 @@ struct GhStatusCheck {
 /// `gh` exited successfully (per `accepted_statuses`) with empty
 /// stdout, the documented "no rows" shape. Failure is mapped to
 /// `LookupError::Failed` with the JSON parse error and a payload
-/// prefix so the operator can triage via `multiplexer.log` /
+/// prefix so the operator can triage via governed telemetry /
 /// `--debug` traces.
 fn gh_json<T: serde::de::DeserializeOwned>(
     workdir: &Path,
@@ -283,7 +283,7 @@ pub(crate) fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
 ///   blocks reading from the daemon's stdin awaiting a prompt.
 /// - stderr is captured into a bounded buffer and surfaced in the error
 ///   reason — the operator can see "gh: not logged in" / "HTTP 401"
-///   when triaging via `multiplexer.log`.
+///   when triaging via governed telemetry.
 fn run_command_capturing_output(
     request: &jackin_process::ExecRequest,
     timeout: Duration,
