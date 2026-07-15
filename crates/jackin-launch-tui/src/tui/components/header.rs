@@ -4,12 +4,12 @@
 //! Launch cockpit header rendering.
 
 use jackin_tui::components::brand_header_line;
-use jackin_tui::theme::WHITE;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
+use termrock::style::WHITE;
 
 use crate::LaunchView;
 use crate::tui::components::cells::coalesce_cells;

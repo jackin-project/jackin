@@ -25,7 +25,7 @@
 //! round-tripping through the explorer's event handler).
 
 use jackin_tui::components::{ModalRectMode, modal_rect_for_mode as rect_for_mode};
-pub(super) use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+pub(super) use termrock::style::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub(super) mod git_prompt;
 pub(super) mod input;

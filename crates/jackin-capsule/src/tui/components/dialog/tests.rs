@@ -1613,7 +1613,7 @@ fn usage_dialog_provider_tab_hover_uses_shared_tab_hover_color() {
 
     assert_eq!(
         terminal.backend().buffer()[(tab_col, tab_row)].bg,
-        jackin_tui::theme::TAB_BG_INACTIVE_HOVER
+        termrock::style::TAB_BG_INACTIVE_HOVER
     );
 }
 

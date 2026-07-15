@@ -1082,16 +1082,16 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
             PromptContextLine::Emphasis(text) => Line::from(Span::styled(
                 text.clone(),
                 Style::default()
-                    .fg(jackin_tui::theme::WHITE)
+                    .fg(termrock::style::WHITE)
                     .add_modifier(Modifier::BOLD),
             )),
             PromptContextLine::Muted(text) => Line::from(Span::styled(
                 text.clone(),
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::style::PHOSPHOR_DIM),
             )),
             PromptContextLine::Path(text) => Line::from(Span::styled(
                 text.clone(),
-                Style::default().fg(jackin_tui::theme::LINK_BLUE),
+                Style::default().fg(termrock::style::LINK_BLUE),
             )),
             PromptContextLine::Plain(text) => Line::from(text.clone()),
             PromptContextLine::Blank => Line::from(String::new()),

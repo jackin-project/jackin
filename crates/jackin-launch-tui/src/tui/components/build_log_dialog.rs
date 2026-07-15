@@ -8,12 +8,12 @@ use jackin_tui::components::{
     bottom_chrome_areas, is_scrollable, render_hint_bar, render_scrollable_block,
     scrollbar_offset_for_track_position, vertical_scrollbar_area, viewport_height, viewport_width,
 };
-use jackin_tui::theme::DIALOG_SURFACE;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear};
+use termrock::style::DIALOG_SURFACE;
 
 use crate::LaunchView;
 use crate::tui::components::cells::coalesce_cells;
@@ -50,7 +50,7 @@ pub fn build_log_wrapped_lines(raw: &[String], width: usize) -> Vec<Line<'static
     if raw.is_empty() {
         vec![Line::from(Span::styled(
             "(waiting for docker build output…)",
-            jackin_tui::theme::DIM,
+            termrock::style::DIM,
         ))]
     } else {
         wrap_build_log_lines(raw, width)
@@ -181,7 +181,7 @@ pub fn render_build_log_dialog(
     debug_mode: bool,
 ) {
     frame.render_widget(
-        Block::default().style(Style::default().bg(jackin_tui::theme::DIALOG_BACKDROP)),
+        Block::default().style(Style::default().bg(termrock::style::DIALOG_BACKDROP)),
         area,
     );
     let chrome = launch_overlay_chrome_areas(area, debug_mode);
@@ -304,7 +304,7 @@ fn push_wrapped_build_line(
             0,
             Span::styled(
                 BUILD_LOG_WRAP_PREFIX,
-                jackin_tui::theme::DIM.bg(DIALOG_SURFACE),
+                termrock::style::DIM.bg(DIALOG_SURFACE),
             ),
         );
     }

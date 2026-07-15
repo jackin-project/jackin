@@ -73,19 +73,19 @@ fn tab_glyph_style(glyph: TabGlyph, bg: Color) -> Option<Style> {
         TabGlyph::Blocked => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_tui::theme::STATUS_BLOCKED_RED)
+                .fg(termrock::style::STATUS_BLOCKED_RED)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Working => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_tui::theme::DEBUG_AMBER)
+                .fg(termrock::style::DEBUG_AMBER)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Idle => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .fg(termrock::style::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Done | TabGlyph::Unknown => None,
@@ -110,14 +110,14 @@ impl Widget for StatusBarWidget<'_> {
 
         // Row 0: brand pill — green block, black word, white chevron.
         let pill = Style::default()
-            .bg(jackin_tui::theme::BRAND_BLOCK)
+            .bg(termrock::style::BRAND_BLOCK)
             .add_modifier(Modifier::BOLD);
         buf.set_string(area.x, area.y, " jackin", pill.fg(Color::Black));
         buf.set_string(
             area.x.saturating_add(7),
             area.y,
             "❯",
-            pill.fg(jackin_tui::theme::WHITE),
+            pill.fg(termrock::style::WHITE),
         );
         buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
@@ -129,21 +129,16 @@ impl Widget for StatusBarWidget<'_> {
         // Row 0: right-side menu button.
         if let Some(start_1based) = plan.hint_start {
             let (bg, fg) = match (self.prefix_mode, self.menu_hovered) {
-                (PrefixMode::Idle, false) => (
-                    jackin_tui::theme::CAPSULE_MENU_IDLE_BG,
-                    jackin_tui::theme::WHITE,
-                ),
-                (PrefixMode::Idle, true) => (
-                    jackin_tui::theme::CAPSULE_MENU_IDLE_HOVER_BG,
-                    jackin_tui::theme::WHITE,
-                ),
-                (PrefixMode::Awaiting, false) => {
-                    (jackin_tui::theme::CAPSULE_MENU_AWAITING_BG, Color::Black)
+                (PrefixMode::Idle, false) => {
+                    (termrock::style::MENU_IDLE_BG, termrock::style::WHITE)
                 }
-                (PrefixMode::Awaiting, true) => (
-                    jackin_tui::theme::CAPSULE_MENU_AWAITING_HOVER_BG,
-                    Color::Black,
-                ),
+                (PrefixMode::Idle, true) => {
+                    (termrock::style::MENU_IDLE_HOVER_BG, termrock::style::WHITE)
+                }
+                (PrefixMode::Awaiting, false) => (termrock::style::MENU_AWAITING_BG, Color::Black),
+                (PrefixMode::Awaiting, true) => {
+                    (termrock::style::MENU_AWAITING_HOVER_BG, Color::Black)
+                }
             };
             buf.set_string(
                 area.x.saturating_add(start_1based.saturating_sub(1)),
@@ -159,7 +154,7 @@ impl Widget for StatusBarWidget<'_> {
                 area.x.saturating_add(pos_1based.saturating_sub(1)),
                 area.y,
                 "›",
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::style::PHOSPHOR_DIM),
             );
         }
 
@@ -170,9 +165,9 @@ impl Widget for StatusBarWidget<'_> {
         {
             let underline = "━".repeat(active.cell_cols as usize);
             let underline_fg = if self.focused {
-                jackin_tui::theme::PHOSPHOR_GREEN
+                termrock::style::PHOSPHOR_GREEN
             } else {
-                jackin_tui::theme::WHITE
+                termrock::style::WHITE
             };
             buf.set_string(
                 area.x.saturating_add(active.start_col0),

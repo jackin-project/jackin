@@ -65,7 +65,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         frame.render_widget(
             Paragraph::new(Span::styled(
                 format!("\u{2717} {reason}"),
-                jackin_tui::theme::DANGER,
+                termrock::style::DANGER,
             ))
             .alignment(Alignment::Center),
             chunks[0],
@@ -95,7 +95,7 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     // border is visible (Defect 9 — one-bright-border rule).
     let block = if state.pending_git_prompt.is_some() {
         jackin_tui::components::unfocused_block()
-            .title(Span::styled(title.clone(), jackin_tui::theme::BOLD_WHITE))
+            .title(Span::styled(title.clone(), termrock::style::BOLD_WHITE))
     } else {
         Panel::new()
             .title(title.as_str())

@@ -18,10 +18,10 @@ use crate::tui::state::{ConfirmTarget, ManagerListRow, ManagerState, Modal, Secr
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
 use jackin_tui::components::scrollable_panel::max_offset;
-use jackin_tui::theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
+use termrock::style::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
 
 fn config_with_long_workspace_name() -> AppConfig {
     let mut config = AppConfig::default();

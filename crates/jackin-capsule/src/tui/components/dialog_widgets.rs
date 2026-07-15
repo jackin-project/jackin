@@ -21,7 +21,7 @@ use ratatui::widgets::{Clear, Widget};
 use jackin_tui::components::TabStrip;
 use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
 use jackin_tui::components::filter_input::render_filter_input;
-use jackin_tui::theme::PHOSPHOR_GREEN;
+use termrock::style::PHOSPHOR_GREEN;
 
 use crate::tui::components::dialog::{Dialog, GithubContextView};
 

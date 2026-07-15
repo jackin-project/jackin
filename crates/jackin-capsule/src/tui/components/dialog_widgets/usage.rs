@@ -16,7 +16,7 @@ use ratatui::{
 };
 
 use jackin_tui::components::tab_strip::TabStrip;
-use jackin_tui::theme::{DIM, PHOSPHOR_GREEN, WHITE};
+use termrock::style::{DIM, PHOSPHOR_GREEN, WHITE};
 
 pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
     Rect {

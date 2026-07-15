@@ -53,13 +53,13 @@ use jackin_tui::components::ConfirmState;
 #[cfg(test)]
 use jackin_tui::components::{ErrorPopupState, TextInputState};
 #[cfg(test)]
-use jackin_tui::theme::DANGER_RED;
-#[cfg(test)]
 use ratatui::Frame;
 #[cfg(test)]
 use ratatui::layout::Rect;
 #[cfg(test)]
 use ratatui::style::Color;
+#[cfg(test)]
+use termrock::style::DANGER_RED;
 
 struct HostTerminal;
 

@@ -454,7 +454,7 @@ fn tui_header_uses_canonical_brand_wordmark() {
 
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
-use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
+use termrock::style::{PHOSPHOR_GREEN, WHITE};
 
 /// Render a closure into a fresh `TestBackend` and return the resulting
 /// buffer. Size is chosen to comfortably fit every modal under test.

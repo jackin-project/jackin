@@ -20,7 +20,7 @@ use ratatui::{
 use jackin_core::shorten_home;
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{DialogBorder, render_dialog_shell};
-use jackin_tui::theme::PHOSPHOR_DIM;
+use termrock::style::PHOSPHOR_DIM;
 
 /// Outcome of the mount-destination modal.
 ///
@@ -114,7 +114,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            jackin_tui::theme::BOLD_WHITE,
+            termrock::style::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
         chunks[1],

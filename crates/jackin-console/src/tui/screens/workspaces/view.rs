@@ -412,8 +412,8 @@ pub fn list_name_lines(
         let current_w = jackin_tui::components::scrollable_panel::line_width(line);
         if current_w < content_w {
             let bg = match visual_rows[selected_idx].as_ref().map(|row| row.tone) {
-                Some(WorkspaceListRowTone::Instance) => jackin_tui::theme::CYAN,
-                _ => jackin_tui::theme::PHOSPHOR_GREEN,
+                Some(WorkspaceListRowTone::Instance) => termrock::style::CYAN,
+                _ => termrock::style::PHOSPHOR_GREEN,
             };
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
@@ -428,13 +428,13 @@ pub fn list_name_lines(
         && let Some(line) = lines.get_mut(hovered_idx)
     {
         for span in &mut line.spans {
-            span.style = span.style.bg(jackin_tui::theme::TAB_BG_INACTIVE_HOVER);
+            span.style = span.style.bg(termrock::style::TAB_BG_INACTIVE_HOVER);
         }
         let current_w = jackin_tui::components::scrollable_panel::line_width(line);
         if current_w < content_w {
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
-                Style::default().bg(jackin_tui::theme::TAB_BG_INACTIVE_HOVER),
+                Style::default().bg(termrock::style::TAB_BG_INACTIVE_HOVER),
             ));
         }
     }
@@ -532,9 +532,9 @@ fn render_list_name_line(
 
 fn row_fg(row: &WorkspaceListDisplayRow) -> Color {
     match row.tone {
-        WorkspaceListRowTone::White => jackin_tui::theme::WHITE,
-        WorkspaceListRowTone::Workspace => jackin_tui::theme::PHOSPHOR_GREEN,
-        WorkspaceListRowTone::Instance => jackin_tui::theme::CYAN,
+        WorkspaceListRowTone::White => termrock::style::WHITE,
+        WorkspaceListRowTone::Workspace => termrock::style::PHOSPHOR_GREEN,
+        WorkspaceListRowTone::Instance => termrock::style::CYAN,
     }
 }
 
@@ -568,19 +568,19 @@ fn push_tree_workspace_line(
                 Span::styled(
                     cursor,
                     Style::default()
-                        .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                        .bg(termrock::style::PHOSPHOR_GREEN)
                         .fg(Color::Black),
                 ),
                 Span::styled(
                     arrow,
                     Style::default()
-                        .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                        .bg(termrock::style::PHOSPHOR_GREEN)
                         .fg(Color::Black),
                 ),
                 Span::styled(
                     format!(" {}", row.label),
                     Style::default()
-                        .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                        .bg(termrock::style::PHOSPHOR_GREEN)
                         .fg(Color::Black),
                 ),
             ])
@@ -598,7 +598,7 @@ fn push_tree_workspace_line(
             Line::from(Span::styled(
                 format!("{cursor}  {}", row.label),
                 Style::default()
-                    .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                    .bg(termrock::style::PHOSPHOR_GREEN)
                     .fg(Color::Black),
             ))
         } else {
@@ -628,9 +628,7 @@ fn push_tree_instance_line(
     let line = if row.selected {
         Line::from(Span::styled(
             format!("{cursor}    {}", row.label),
-            Style::default()
-                .bg(jackin_tui::theme::CYAN)
-                .fg(Color::Black),
+            Style::default().bg(termrock::style::CYAN).fg(Color::Black),
         ))
     } else {
         let mut parts = row.label.splitn(2, "  ");
@@ -639,16 +637,16 @@ fn push_tree_instance_line(
         Line::from(vec![
             Span::styled(
                 format!("{cursor}    "),
-                Style::default().fg(jackin_tui::theme::CYAN_DIM),
+                Style::default().fg(termrock::style::CYAN_DIM),
             ),
             Span::styled(
                 instance_id.to_owned(),
-                Style::default().fg(jackin_tui::theme::CYAN_DIM),
+                Style::default().fg(termrock::style::CYAN_DIM),
             ),
             Span::styled("  ", Style::default()),
             Span::styled(
                 role_key.to_owned(),
-                Style::default().fg(jackin_tui::theme::CYAN),
+                Style::default().fg(termrock::style::CYAN),
             ),
         ])
     };
@@ -708,19 +706,19 @@ pub fn render_compact_instances_summary(
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(jackin_tui::theme::CYAN))
+        .border_style(Style::default().fg(termrock::style::CYAN))
         .title(Span::styled(
             " Running ",
             Style::default()
-                .fg(jackin_tui::theme::CYAN)
+                .fg(termrock::style::CYAN)
                 .add_modifier(Modifier::BOLD),
         ));
     let plural = if count == 1 { "instance" } else { "instances" };
     let line = Line::from(vec![
-        Span::styled("  ● ", Style::default().fg(jackin_tui::theme::CYAN)),
+        Span::styled("  ● ", Style::default().fg(termrock::style::CYAN)),
         Span::styled(
             format!("{count} {plural} running"),
-            Style::default().fg(jackin_tui::theme::CYAN),
+            Style::default().fg(termrock::style::CYAN),
         ),
         Span::styled(
             if expanded {
@@ -728,13 +726,13 @@ pub fn render_compact_instances_summary(
             } else {
                 "  ·  → expand"
             },
-            Style::default().fg(jackin_tui::theme::CYAN_DIM),
+            Style::default().fg(termrock::style::CYAN_DIM),
         ),
     ]);
     frame.render_widget(
         Paragraph::new(vec![line])
             .block(block)
-            .style(Style::default().fg(jackin_tui::theme::CYAN)),
+            .style(Style::default().fg(termrock::style::CYAN)),
         area,
     );
 }
@@ -754,15 +752,15 @@ pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
     let intro_lines = vec![
         Line::from(Span::styled(
             "  A workspace saves a project boundary once so you",
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+            Style::default().fg(termrock::style::PHOSPHOR_GREEN),
         )),
         Line::from(Span::styled(
             "  can launch roles into it from anywhere \u{2014} without",
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+            Style::default().fg(termrock::style::PHOSPHOR_GREEN),
         )),
         Line::from(Span::styled(
             "  retyping mount paths.",
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+            Style::default().fg(termrock::style::PHOSPHOR_GREEN),
         )),
     ];
     frame.render_widget(Paragraph::new(intro_lines).block(intro_block), rows[0]);
@@ -771,7 +769,7 @@ pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
         .title(" Why create one? ")
         .focus(jackin_tui::components::PanelFocus::Unfocused)
         .block();
-    let bullet_style = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
+    let bullet_style = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
     let bullets = [
         "Name a project once, launch from any cwd",
         "Keep extra mounts consistent across sessions",
@@ -817,10 +815,10 @@ pub fn render_picker_sidebar(
         .map(|label| ListItem::new(Line::from(label)))
         .collect();
     let mut list = jackin_tui::components::ScrollableList::new(items)
-        .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN))
+        .style(Style::default().fg(termrock::style::PHOSPHOR_GREEN))
         .highlight_style(
             Style::default()
-                .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .bg(termrock::style::PHOSPHOR_GREEN)
                 .fg(Color::Black),
         )
         .selected(selected)
@@ -891,15 +889,12 @@ pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_displa
         .block();
     let lines = vec![Line::from(vec![
         Span::raw("  "),
-        Span::styled(
-            "Working dir ",
-            Style::default().fg(jackin_tui::theme::WHITE),
-        ),
+        Span::styled("Working dir ", Style::default().fg(termrock::style::WHITE)),
         Span::raw(workdir_display.to_owned()),
     ])];
     let panel = Paragraph::new(lines)
         .block(block)
-        .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN));
+        .style(Style::default().fg(termrock::style::PHOSPHOR_GREEN));
     frame.render_widget(panel, area);
 }
 
@@ -965,7 +960,7 @@ pub fn render_environments_subpanel(
 
     let panel = Paragraph::new(lines)
         .block(block)
-        .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN));
+        .style(Style::default().fg(termrock::style::PHOSPHOR_GREEN));
     frame.render_widget(panel, area);
 }
 
@@ -1072,40 +1067,40 @@ pub fn render_roles_subpanel(
         || {
             (
                 "(none)".to_owned(),
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::style::PHOSPHOR_DIM),
             )
         },
         |name| {
             (
                 name.to_owned(),
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+                Style::default().fg(termrock::style::PHOSPHOR_GREEN),
             )
         },
     );
     lines.push(Line::from(vec![
         Span::raw("  "),
-        Span::styled("Default ", Style::default().fg(jackin_tui::theme::WHITE)),
+        Span::styled("Default ", Style::default().fg(termrock::style::WHITE)),
         Span::styled(value_text, value_style),
     ]));
     lines.push(Line::from(""));
 
     for row in rows {
         let name_style = if row.exists {
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
         } else {
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM)
+            Style::default().fg(termrock::style::PHOSPHOR_DIM)
         };
         let mut spans = vec![Span::styled(format!("  {}", row.name), name_style)];
         if row.is_default {
             spans.push(Span::styled(
                 " \u{2605}",
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::style::PHOSPHOR_DIM),
             ));
         }
         if row.scoped_mount_count > 0 {
             spans.push(Span::styled(
                 format!("    +{} role mounts", row.scoped_mount_count),
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::style::PHOSPHOR_DIM),
             ));
         }
         lines.push(Line::from(spans));
@@ -1296,7 +1291,7 @@ pub fn render_instance_details_pane(
     frame.render_widget(
         Paragraph::new(lines)
             .block(block)
-            .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)),
+            .style(Style::default().fg(termrock::style::PHOSPHOR_GREEN)),
         area,
     );
 }
@@ -1307,7 +1302,7 @@ fn instance_detail_lines(content: &WorkspaceInstancePaneContent) -> Vec<Line<'st
         WorkspaceInstancePaneContent::Sessions { rows } => session_instance_lines(rows),
         WorkspaceInstancePaneContent::Empty { message } => vec![Line::from(Span::styled(
             format!("  {message}"),
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            Style::default().fg(termrock::style::PHOSPHOR_DIM),
         ))],
     }
 }
@@ -1317,7 +1312,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
     if tabs.is_empty() {
         lines.push(Line::from(Span::styled(
             "  Daemon reports no tabs",
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            Style::default().fg(termrock::style::PHOSPHOR_DIM),
         )));
         return lines;
     }
@@ -1325,7 +1320,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
     lines.push(Line::from(Span::styled(
         "  Live tab/pane tree (from container daemon)",
         Style::default()
-            .fg(jackin_tui::theme::WHITE)
+            .fg(termrock::style::WHITE)
             .add_modifier(Modifier::BOLD),
     )));
     for tab in tabs {
@@ -1334,15 +1329,15 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
             Span::styled(
                 format!("  {prefix} Tab {}:  ", tab.index + 1),
                 Style::default().fg(if tab.active {
-                    jackin_tui::theme::PHOSPHOR_GREEN
+                    termrock::style::PHOSPHOR_GREEN
                 } else {
-                    jackin_tui::theme::PHOSPHOR_DIM
+                    termrock::style::PHOSPHOR_DIM
                 }),
             ),
             Span::styled(
                 tab.label.clone(),
                 Style::default()
-                    .fg(jackin_tui::theme::WHITE)
+                    .fg(termrock::style::WHITE)
                     .add_modifier(if tab.active {
                         Modifier::BOLD
                     } else {
@@ -1355,29 +1350,29 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
             let cursor_prefix = if pane.selected { "▶ " } else { "  " };
             let label_style = if pane.selected {
                 Style::default()
-                    .fg(jackin_tui::theme::WHITE)
-                    .bg(jackin_tui::theme::PHOSPHOR_DARK)
+                    .fg(termrock::style::WHITE)
+                    .bg(termrock::style::PHOSPHOR_DARK)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                Style::default().fg(termrock::style::PHOSPHOR_GREEN)
             };
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("    {cursor_prefix}{marker} "),
                     Style::default().fg(if pane.focused {
-                        jackin_tui::theme::PHOSPHOR_GREEN
+                        termrock::style::PHOSPHOR_GREEN
                     } else {
-                        jackin_tui::theme::PHOSPHOR_DIM
+                        termrock::style::PHOSPHOR_DIM
                     }),
                 ),
                 Span::styled(format!("{:<16}", pane.label), label_style),
                 Span::styled(
                     format!("  ({}) ", pane.agent_label),
-                    Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                    Style::default().fg(termrock::style::PHOSPHOR_DIM),
                 ),
                 Span::styled(
                     format!("[{}]", pane.state_label),
-                    Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                    Style::default().fg(termrock::style::PHOSPHOR_DIM),
                 ),
             ]));
         }
@@ -1389,7 +1384,7 @@ fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'sta
     let mut lines = vec![Line::from(Span::styled(
         format!("  {:<24}  Agent", "Session"),
         Style::default()
-            .fg(jackin_tui::theme::WHITE)
+            .fg(termrock::style::WHITE)
             .add_modifier(Modifier::BOLD),
     ))];
     for row in rows {
@@ -1402,11 +1397,11 @@ fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'sta
         lines.push(Line::from(vec![
             Span::styled(
                 format!("  {name:<24}  "),
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+                Style::default().fg(termrock::style::PHOSPHOR_GREEN),
             ),
             Span::styled(
                 row.agent_runtime.clone(),
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::style::PHOSPHOR_DIM),
             ),
         ]));
     }
@@ -1426,7 +1421,7 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
         spans.push(Span::styled(
             marker_text,
             Style::default()
-                .fg(jackin_tui::theme::PHOSPHOR_DIM)
+                .fg(termrock::style::PHOSPHOR_DIM)
                 .add_modifier(Modifier::ITALIC),
         ));
     } else {
@@ -1435,7 +1430,7 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
     spans.push(Span::raw(gap));
     spans.push(Span::styled(
         row.name.clone(),
-        Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+        Style::default().fg(termrock::style::PHOSPHOR_GREEN),
     ));
 
     if let Some(role) = &row.scope {
@@ -1447,7 +1442,7 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
         spans.push(Span::raw(" ".repeat(pad_count)));
         spans.push(Span::styled(
             role.clone(),
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            Style::default().fg(termrock::style::PHOSPHOR_DIM),
         ));
     }
 

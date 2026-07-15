@@ -79,7 +79,7 @@ use ratatui::{
 };
 
 use jackin_tui::components::{DialogBorder, render_dialog_shell};
-use jackin_tui::theme::PHOSPHOR_DARK;
+use termrock::style::PHOSPHOR_DARK;
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
     let title = format!("Source for {}", state.key);
