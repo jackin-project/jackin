@@ -49,15 +49,6 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 - 016 unblocks the launch-pipeline Criterion scenario and the eventual `launch/tests.rs` split for the same reason.
 
 
-## Execution deviations (STOP resolutions on this branch)
-
-| Plan | One-line deviation |
-|------|--------------------|
-| 009 | Dual-bootstrap host+capsule in-process (no Docker); measured export-volume sole ratchet input; canary/redact gate invoked. |
-| 019 | jackin-config + jackin-core private impl modules; curated root re-exports; justified remainders `container_paths`/`debug_log`/`test_support`. |
-| 022 | Launch is hidden load-alias + stderr deprecation warning; handlers split (no too_many_lines expects).
-| 027 | suite-time enforce-when-junit (skip without); agent-doc enforce; problem matcher; health trend/tightening. |
-
 ## Findings considered and rejected (do not re-audit)
 
 - **Schema-policy five-artifact gate (roadmap Characterization #7)**: already DONE — `cargo xtask schema-check` is blocking in CI, idempotence asserted by `crates/jackin/tests/migration_fixtures.rs`, corpus committed. No plan.
