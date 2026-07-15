@@ -12,7 +12,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use jackin_core::JackinPaths;
+use jackin_core::{ContainerId, JackinPaths};
 use jackin_protocol::InstanceSnapshot;
 use jackin_protocol::control::AgentState;
 use serde::{Deserialize, Serialize};
@@ -192,7 +192,7 @@ impl<D: NotificationDispatcher> AttentionNotifier for HostAttentionNotifier<D> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SessionKey {
-    container_name: String,
+    container_name: ContainerId,
     session_id: u64,
 }
 
@@ -234,10 +234,12 @@ impl<N: AttentionNotifier> AttentionAdapter<N> {
         container_name: &str,
         panes: &[AttentionPaneStatus],
     ) -> Result<usize> {
+        let container_id = ContainerId::parse(container_name)
+            .context("validating attention snapshot container name")?;
         let mut sent = 0;
         for pane in panes {
             let key = SessionKey {
-                container_name: container_name.to_owned(),
+                container_name: container_id.clone(),
                 session_id: pane.session_id,
             };
             let previous = self.last_seen.insert(key, pane.state);

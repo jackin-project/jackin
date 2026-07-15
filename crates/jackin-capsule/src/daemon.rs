@@ -136,7 +136,7 @@ use crate::tui::update::{
 use crate::tui::view::spawn_request_failure_message;
 use crate::usage::UsageCache;
 use jackin_core::Agent;
-use jackin_core::{Clock, SystemClock};
+use jackin_core::{Clock, SessionId, SystemClock};
 use jackin_protocol::control::{ClientMsg, ServerMsg};
 
 mod compositor;
@@ -164,13 +164,75 @@ struct SessionLaunch {
 
 /// Session map, tabs, and codename assignment.
 pub(super) struct SessionSupervisor {
-    pub(crate) sessions: HashMap<u64, Session>,
+    pub(crate) sessions: SessionRegistry,
     pub(crate) tabs: Vec<Tab>,
     pub(crate) active_tab: usize,
     pub(crate) codename_live: HashSet<String>,
     pub(crate) codename_retired: HashSet<String>,
     pub(crate) agent_history: Vec<AgentRecord>,
     pub(crate) wordlist_offset: usize,
+}
+
+#[derive(Default)]
+pub(crate) struct SessionRegistry(HashMap<SessionId, Session>);
+
+impl SessionRegistry {
+    pub(crate) fn get(&self, id: &u64) -> Option<&Session> {
+        SessionId::new(*id).ok().and_then(|id| self.0.get(&id))
+    }
+
+    pub(crate) fn get_mut(&mut self, id: &u64) -> Option<&mut Session> {
+        SessionId::new(*id).ok().and_then(|id| self.0.get_mut(&id))
+    }
+
+    pub(crate) fn contains_key(&self, id: &u64) -> bool {
+        self.get(id).is_some()
+    }
+
+    pub(crate) fn insert(&mut self, id: u64, session: Session) -> Option<Session> {
+        let id = SessionId::new(id).expect("allocated session ids are positive");
+        self.0.insert(id, session)
+    }
+
+    pub(crate) fn remove(&mut self, id: &u64) -> Option<Session> {
+        SessionId::new(*id).ok().and_then(|id| self.0.remove(&id))
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (u64, &Session)> {
+        self.0.iter().map(|(id, session)| (id.get(), session))
+    }
+
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (u64, &mut Session)> {
+        self.0.iter_mut().map(|(id, session)| (id.get(), session))
+    }
+
+    pub(crate) fn values(&self) -> impl Iterator<Item = &Session> {
+        self.0.values()
+    }
+
+    pub(crate) fn values_mut(&mut self) -> impl Iterator<Item = &mut Session> {
+        self.0.values_mut()
+    }
+
+    pub(crate) fn drain(&mut self) -> impl Iterator<Item = (u64, Session)> + '_ {
+        self.0.drain().map(|(id, session)| (id.get(), session))
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::ops::Index<&u64> for SessionRegistry {
+    type Output = Session;
+
+    fn index(&self, id: &u64) -> &Self::Output {
+        self.get(id).expect("session id is registered")
+    }
 }
 
 /// Single active attach client + terminal identity.
@@ -426,7 +488,7 @@ impl Multiplexer {
 
         Ok(Self {
             session_supervisor: SessionSupervisor {
-                sessions: HashMap::new(),
+                sessions: SessionRegistry::default(),
                 tabs: Vec::new(),
                 active_tab: 0,
                 codename_live: HashSet::new(),
@@ -788,7 +850,7 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
         .session_supervisor
         .sessions
         .iter()
-        .filter_map(|(id, s)| Some((*id, Agent::from_slug(s.agent.as_deref()?)?)))
+        .filter_map(|(id, s)| Some((id, Agent::from_slug(s.agent.as_deref()?)?)))
         .collect();
     mux.usage.token_monitor.reconcile_sessions(&token_sessions);
     // Returned changed-id list is unused for now (no live event stream yet);
@@ -805,9 +867,9 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
         .session_supervisor
         .sessions
         .iter()
-        .map(|(id, s)| (*id, s.state))
+        .map(|(id, s)| (id, s.state))
         .collect();
-    for (&session_id, session) in &mut mux.session_supervisor.sessions {
+    for (session_id, session) in mux.session_supervisor.sessions.iter_mut() {
         // Session::advance_status is the sole state-authoring path; the daemon
         // only reacts to the resulting transition.
         let tick = session.advance_status(rule_registry, now);
@@ -842,7 +904,7 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
         .session_supervisor
         .sessions
         .iter()
-        .map(|(id, s)| (*id, s.state))
+        .map(|(id, s)| (id, s.state))
         .collect();
     if mux.expire_dialog_copy_feedback(Instant::now()) {
         mux.invalidate(dialog_change_redraw_reason());

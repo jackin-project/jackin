@@ -10,8 +10,7 @@ use super::super::launch_phases::{
 };
 use super::super::{emit_auth_provision_launch_plan, purge_or_mark_clean_exited};
 use super::LaunchCore;
-use jackin_core::CommandRunner;
-use jackin_core::WorkspaceName;
+use jackin_core::{CommandRunner, ContainerId, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 
 use anyhow::Context;
@@ -108,11 +107,12 @@ where
         git_pull_join,
         ..
     } = ctx;
+    let container_id = ContainerId::parse(&container_name).context("validating container name")?;
     let container_state = paths.data_dir.join(&container_name);
     let adopted_sidecar = super::super::super::adopt_prewarmed_dind_sidecar(paths, docker).await;
     let adopted_sidecar_was_used = adopted_sidecar.is_some();
     let resources = adopted_sidecar.as_ref().map_or_else(
-        || DockerResources::from_container_name(&container_name),
+        || DockerResources::from_container_id(&container_id),
         |sidecar| DockerResources {
             role_container: container_name.clone(),
             dind_container: Some(sidecar.sidecar.dind.clone()),

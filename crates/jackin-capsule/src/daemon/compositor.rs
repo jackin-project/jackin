@@ -539,7 +539,7 @@ impl Multiplexer {
         self.session_supervisor
             .sessions
             .iter()
-            .map(|(&id, s)| (id, visible_agent_state_from_protocol(s.state)))
+            .map(|(id, s)| (id, visible_agent_state_from_protocol(s.state)))
             .collect()
     }
 
@@ -633,7 +633,7 @@ fn cached_pane_regions(
     cache: &mut std::collections::HashMap<u64, PaneRegionCache>,
     panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
-    sessions: &std::collections::HashMap<u64, crate::session::Session>,
+    sessions: &super::SessionRegistry,
     damaged_panes: &HashSet<u64>,
     focused_id: Option<u64>,
 ) -> PaneRegions {
@@ -755,7 +755,7 @@ fn cell_safe_uri(cell: &jackin_term::Cell) -> Option<&str> {
 fn pane_hyperlink_regions(
     panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
-    sessions: &std::collections::HashMap<u64, crate::session::Session>,
+    sessions: &super::SessionRegistry,
 ) -> Vec<(ratatui::layout::Rect, String)> {
     pane_cell_runs(
         panes,

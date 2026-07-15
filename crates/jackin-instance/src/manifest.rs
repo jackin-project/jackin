@@ -10,7 +10,7 @@
 
 use anyhow::Context;
 use fs4::FileExt;
-use jackin_core::Agent;
+use jackin_core::{Agent, ContainerId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -67,6 +67,12 @@ pub enum BackendResources {
 }
 
 impl DockerResources {
+    /// Derive Docker resource names from an already validated container id.
+    #[must_use]
+    pub fn from_container_id(container_id: &ContainerId) -> Self {
+        Self::from_container_name(container_id.as_str())
+    }
+
     /// Derive all four Docker resource names from the role container name.
     ///
     /// Invariant: all derived names follow the same suffix conventions used

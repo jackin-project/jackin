@@ -9,8 +9,8 @@ Boundary decision record for Ownership item 4 (plan 020). Each named concept rec
 | Name | Type | Owner | Decision |
 |---|---|---|---|
 | `WorkspaceName` | `jackin_core::WorkspaceName` | core | **Adopted** — validated config-file stem (existing). |
-| `SessionId` | `jackin_core::SessionId` | core | **Adopted** — non-zero `u64`; designated daemon/session-supervisor and attach/control boundaries use the newtype, with raw `u64` retained only at the schema-preserving protocol edge. |
-| `ContainerId` | `jackin_core::ContainerId` | core | **Adopted** — non-empty name without whitespace/path separators; designated runtime/docker instance boundaries use the newtype, converting to `&str` only at Docker CLI/wire edges. |
+| `SessionId` | `jackin_core::SessionId` | core | **Adopted** — non-zero `u64`; the capsule `SessionSupervisor` registry stores typed keys and converts raw ids at pane/control protocol edges. |
+| `ContainerId` | `jackin_core::ContainerId` | core | **Adopted** — non-empty name without whitespace/path separators; runtime attention deduplication stores typed identities and the launch pipeline validates before deriving Docker resource names. |
 | `RoleRef` | — | core/manifest | **Primitive for now** (`String` / `RoleSelector`) — selector + namespaced key already exist; newtype deferred until a validation rule beyond selector parse is needed. |
 | `TokenCount` | — | usage | **Primitive for now** (`u64`) — usage/pricing paths already use domain structs; avoid double-wrapping until a cross-crate unit mismatch appears. |
 | `MountPath` | — | config/isolation | **Primitive for now** (`String`/`PathBuf`) — mount tables mix host absolute paths and container dst paths; a single newtype would blur that distinction. Prefer `host_src`/`container_dst` field names. |
@@ -22,6 +22,7 @@ Boundary decision record for Ownership item 4 (plan 020). Each named concept rec
 ## Adjunct decisions
 
 - **Result-first constructors**: newtypes use `Result` constructors (`SessionId::new`, `ContainerId::parse`, `WorkspaceName::parse`).
+- **Boundary proof**: the capsule registry rejects zero ids, attention ingestion rejects path-like container names, and production launch calls `DockerResources::from_container_id` before Docker resource derivation. Persisted and wire structs retain transparent primitive schemas.
 - **`async fn` in trait Send**: public port traits that cross spawned-task boundaries require `Send`; local-only traits document the absence. No blanket `async_trait` expansion is needed on the current stable compiler.
 - **`#[non_exhaustive]`**: extensible public taxonomies such as `ConfigError` are `#[non_exhaustive]`; the two newtype constructor errors are deliberately closed because validation has an exhaustive, stable rule set.
 

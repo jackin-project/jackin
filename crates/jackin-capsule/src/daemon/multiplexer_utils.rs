@@ -385,7 +385,7 @@ impl Multiplexer {
         self.session_supervisor
             .sessions
             .iter()
-            .map(|(&id, s)| SessionInfo {
+            .map(|(id, s)| SessionInfo {
                 id,
                 label: s.label.clone(),
                 agent: s.agent.clone(),
