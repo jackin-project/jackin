@@ -29,13 +29,13 @@ pub(super) async fn published_image_freshness(
     docker: &impl DockerApi,
 ) -> PublishedImageFreshness {
     jackin_diagnostics::active_timing_started(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "published_image_pull",
         Some(published),
     );
     let pull_result = docker.pull_image(published).await;
     jackin_diagnostics::active_timing_done(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "published_image_pull",
         if pull_result.is_ok() {
             Some(published)

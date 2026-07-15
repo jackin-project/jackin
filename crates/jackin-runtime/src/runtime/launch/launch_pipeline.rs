@@ -65,7 +65,11 @@ pub(super) async fn finish_deferred_git_pull(
     };
     let (ok, failed) = super::record_git_pull_results(&results);
     let detail = git_pull_timing_detail(ok, failed);
-    jackin_diagnostics::active_timing_done("workspace", "git_pull_on_entry", Some(&detail));
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Workspace,
+        "git_pull_on_entry",
+        Some(&detail),
+    );
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
     }
@@ -95,12 +99,24 @@ fn defer_operator_env<'a>(
         workspace_typed.as_ref(),
         operator_env_needed,
     ) {
-        jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
-        jackin_diagnostics::active_timing_done("credentials", "operator_env", Some("skipped"));
+        jackin_diagnostics::active_timing_started(
+            jackin_diagnostics::DiagnosticStage::Credentials,
+            "operator_env",
+            None,
+        );
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Credentials,
+            "operator_env",
+            Some("skipped"),
+        );
         return DeferredOperatorEnv::Ready(std::collections::BTreeMap::new());
     }
 
-    jackin_diagnostics::active_timing_started("credentials", "operator_env", Some("overlapped"));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Credentials,
+        "operator_env",
+        Some("overlapped"),
+    );
     let selector_key = selector.key().clone();
     let workspace_key = workspace_name.map(String::from);
     if let Some(op_runner) = opts.op_runner.as_deref() {
@@ -183,14 +199,18 @@ async fn await_operator_env(
     match result {
         Ok(env) => {
             jackin_diagnostics::active_timing_done(
-                "credentials",
+                jackin_diagnostics::DiagnosticStage::Credentials,
                 "operator_env",
                 Some(&format!("{} vars overlapped", env.len())),
             );
             Ok(env)
         }
         Err(error) => {
-            jackin_diagnostics::active_timing_done("credentials", "operator_env", Some("error"));
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Credentials,
+                "operator_env",
+                Some("error"),
+            );
             Err(error)
         }
     }
@@ -574,13 +594,13 @@ pub(crate) async fn load_role_with(
 
     if let Some(container) = opts.restore_container_base.as_ref() {
         jackin_diagnostics::active_timing_started(
-            "restore",
+            jackin_diagnostics::DiagnosticStage::Restore,
             "explicit_restore_container",
             Some(container),
         );
         let docker_state = docker.inspect_container_state(container).await;
         jackin_diagnostics::active_timing_done(
-            "restore",
+            jackin_diagnostics::DiagnosticStage::Restore,
             "explicit_restore_container",
             Some(docker_state.short_label().as_str()),
         );
@@ -645,7 +665,7 @@ pub(crate) async fn load_role_with(
         anyhow::bail!("cached repo recovery prompt requires the rich launch dialog")
     };
     jackin_diagnostics::active_timing_started(
-        "role",
+        jackin_diagnostics::DiagnosticStage::Role,
         "repo_refresh",
         Some(selector.key().as_str()),
     );
@@ -670,11 +690,19 @@ pub(crate) async fn load_role_with(
     .await;
     let (cached_repo, validated_repo, repo_lock) = match repo_result {
         Ok(repo) => {
-            jackin_diagnostics::active_timing_done("role", "repo_refresh", Some("validated"));
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Role,
+                "repo_refresh",
+                Some("validated"),
+            );
             repo
         }
         Err(error) => {
-            jackin_diagnostics::active_timing_done("role", "repo_refresh", Some("error"));
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Role,
+                "repo_refresh",
+                Some("error"),
+            );
             return Err(error);
         }
     };
@@ -913,9 +941,13 @@ pub(crate) async fn load_role_with(
         let sources = super::git_pull_sources(workspace);
         if let Some(progress) = steps.progress_mut() {
             if sources.is_empty() {
-                jackin_diagnostics::active_timing_started("workspace", "git_pull_on_entry", None);
+                jackin_diagnostics::active_timing_started(
+                    jackin_diagnostics::DiagnosticStage::Workspace,
+                    "git_pull_on_entry",
+                    None,
+                );
                 jackin_diagnostics::active_timing_done(
-                    "workspace",
+                    jackin_diagnostics::DiagnosticStage::Workspace,
                     "git_pull_on_entry",
                     Some("skipped_no_git_repos"),
                 );
@@ -925,7 +957,7 @@ pub(crate) async fn load_role_with(
                 );
             } else {
                 jackin_diagnostics::active_timing_started(
-                    "workspace",
+                    jackin_diagnostics::DiagnosticStage::Workspace,
                     "git_pull_on_entry",
                     Some(&format!("{} repo(s)", sources.len())),
                 );
@@ -945,7 +977,7 @@ pub(crate) async fn load_role_with(
             }
         } else if !sources.is_empty() {
             jackin_diagnostics::active_timing_started(
-                "workspace",
+                jackin_diagnostics::DiagnosticStage::Workspace,
                 "git_pull_on_entry",
                 Some(&format!("{} repo(s)", sources.len())),
             );
@@ -1074,7 +1106,11 @@ pub(crate) async fn load_role_with(
     let operator_env = await_operator_env(operator_env).await?;
 
     // Resolve env vars (interactive prompts happen here, before build)
-    jackin_diagnostics::active_timing_started("credentials", "manifest_env", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Credentials,
+        "manifest_env",
+        None,
+    );
     let manifest_env: std::collections::BTreeMap<_, _> = validated_repo
         .manifest
         .env
@@ -1092,7 +1128,7 @@ pub(crate) async fn load_role_with(
     let manifest_resolved = match manifest_resolved_result {
         Ok(env) => {
             jackin_diagnostics::active_timing_done(
-                "credentials",
+                jackin_diagnostics::DiagnosticStage::Credentials,
                 "manifest_env",
                 Some(&manifest_env_timing_detail(
                     manifest_env_skipped,
@@ -1102,7 +1138,11 @@ pub(crate) async fn load_role_with(
             env
         }
         Err(error) => {
-            jackin_diagnostics::active_timing_done("credentials", "manifest_env", Some("error"));
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Credentials,
+                "manifest_env",
+                Some("error"),
+            );
             return Err(error);
         }
     };
@@ -1276,7 +1316,7 @@ pub(crate) fn emit_auth_provision_launch_plan(state: &RoleState, container: &str
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "launch_plan",
-            "credentials",
+            jackin_diagnostics::DiagnosticStage::Credentials,
             "agent credential outcomes",
             Some(&detail),
         );

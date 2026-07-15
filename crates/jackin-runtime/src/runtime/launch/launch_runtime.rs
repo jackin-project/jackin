@@ -159,11 +159,15 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         .to_string();
         run.stage(
             "launch_plan",
-            "restore",
+            jackin_diagnostics::DiagnosticStage::Restore,
             "selected launch plan PrewarmOnly",
             Some(&detail),
         );
-        run.timing_started("credentials", "sibling_auth_prewarm", Some(&timing_detail));
+        run.timing_started(
+            jackin_diagnostics::DiagnosticStage::Credentials,
+            "sibling_auth_prewarm",
+            Some(&timing_detail),
+        );
     }
 
     Some(tokio::task::spawn_blocking(move || {
@@ -191,7 +195,11 @@ pub(crate) fn spawn_sibling_auth_prewarm(
             Err(error) => format!("failed: {error}"),
         };
         if let Some(run) = &active_run {
-            run.timing_done("credentials", "sibling_auth_prewarm", Some(&timing_done));
+            run.timing_done(
+                jackin_diagnostics::DiagnosticStage::Credentials,
+                "sibling_auth_prewarm",
+                Some(&timing_done),
+            );
         }
 
         if let Some(run) = active_run {
@@ -825,7 +833,7 @@ pub(crate) async fn launch_role_runtime(
     let extrausers_group_for_write = extrausers_group.clone();
     let extrausers_entries_for_write = extrausers_entries.clone();
     jackin_diagnostics::active_timing_started(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "prepare_socket_dir",
         Some(container_name),
     );
@@ -864,7 +872,7 @@ pub(crate) async fn launch_role_runtime(
         })
     });
     jackin_diagnostics::active_timing_done(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "prepare_socket_dir",
         if prepare_socket_dir_result.is_ok() {
             Some("prepared")
@@ -942,7 +950,11 @@ pub(crate) async fn launch_role_runtime(
     // daemon uses it only to choose the first tab; per-session
     // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
     run_args.push(agent.slug());
-    jackin_diagnostics::active_timing_started("capsule", "docker_run_role", Some(container_name));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Capsule,
+        "docker_run_role",
+        Some(container_name),
+    );
     let run_role = runner.run("docker", &run_args, None, &docker_run_opts);
     let run_role_result = if let Some(progress) = steps.progress_mut() {
         progress.while_waiting(run_role).await
@@ -950,7 +962,7 @@ pub(crate) async fn launch_role_runtime(
         run_role.await
     };
     jackin_diagnostics::active_timing_done(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "docker_run_role",
         if run_role_result.is_ok() {
             Some("started")
@@ -1029,7 +1041,7 @@ pub(crate) async fn launch_role_runtime(
     // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
     jackin_diagnostics::active_timing_started(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "pre_attach_exit_check",
         Some(container_name),
     );
@@ -1042,10 +1054,18 @@ pub(crate) async fn launch_role_runtime(
     )
     .await
     {
-        jackin_diagnostics::active_timing_done("capsule", "pre_attach_exit_check", Some("exited"));
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Capsule,
+            "pre_attach_exit_check",
+            Some("exited"),
+        );
         return Err(err);
     }
-    jackin_diagnostics::active_timing_done("capsule", "pre_attach_exit_check", Some("running"));
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Capsule,
+        "pre_attach_exit_check",
+        Some("running"),
+    );
 
     // Connect the operator's terminal to the running jackin-capsule multiplexer.
     // The shared reconnect helper first waits for `/jackin/run/jackin.sock`

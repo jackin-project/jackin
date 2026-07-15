@@ -614,7 +614,7 @@ where
                 let timing_name = format!("operator_env:{key}");
                 let value_kind = ValueKind::of_env_value(value).as_timing_detail();
                 jackin_diagnostics::active_timing_started(
-                    "credentials",
+                    jackin_diagnostics::DiagnosticStage::Credentials,
                     &timing_name,
                     Some(value_kind),
                 );
@@ -623,7 +623,7 @@ where
                 match result {
                     Ok(value) => {
                         jackin_diagnostics::active_timing_done(
-                            "credentials",
+                            jackin_diagnostics::DiagnosticStage::Credentials,
                             &timing_name,
                             Some(value_kind),
                         );
@@ -631,7 +631,7 @@ where
                     }
                     Err(error) => {
                         jackin_diagnostics::active_timing_done(
-                            "credentials",
+                            jackin_diagnostics::DiagnosticStage::Credentials,
                             &timing_name,
                             Some("error"),
                         );

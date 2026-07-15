@@ -353,13 +353,23 @@ fn stage_span_duration_covers_stage() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_started", "derived image", "building", None);
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::DerivedImage,
+            "building",
+            None,
+        );
         #[expect(
             clippy::disallowed_methods,
             reason = "test needs wall time between stage start and end to assert exported duration"
         )]
         std::thread::sleep(std::time::Duration::from_millis(50));
-        run.stage("stage_done", "derived image", "built", None);
+        run.stage(
+            "stage_done",
+            crate::DiagnosticStage::DerivedImage,
+            "built",
+            None,
+        );
     });
 
     let span = spans
@@ -379,8 +389,18 @@ fn stage_span_exported_name_is_stage_specific() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_started", "derived image", "building", None);
-        run.stage("stage_done", "derived image", "built", None);
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::DerivedImage,
+            "building",
+            None,
+        );
+        run.stage(
+            "stage_done",
+            crate::DiagnosticStage::DerivedImage,
+            "built",
+            None,
+        );
     });
 
     assert!(
@@ -397,8 +417,18 @@ fn failed_stage_span_has_error_status() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_started", "derived image", "building", None);
-        run.stage("stage_failed", "derived image", "build failed", None);
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::DerivedImage,
+            "building",
+            None,
+        );
+        run.stage(
+            "stage_failed",
+            crate::DiagnosticStage::DerivedImage,
+            "build failed",
+            None,
+        );
     });
 
     let span = spans
@@ -419,10 +449,20 @@ fn timing_event_inherits_stage_span_context() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_started", "derived image", "building", None);
-        run.timing_started("derived image", "docker_build", None);
-        run.timing_done("derived image", "docker_build", None);
-        run.stage("stage_done", "derived image", "built", None);
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::DerivedImage,
+            "building",
+            None,
+        );
+        run.timing_started(crate::DiagnosticStage::DerivedImage, "docker_build", None);
+        run.timing_done(crate::DiagnosticStage::DerivedImage, "docker_build", None);
+        run.stage(
+            "stage_done",
+            crate::DiagnosticStage::DerivedImage,
+            "built",
+            None,
+        );
     });
     let spans = export.spans.get_finished_spans().unwrap();
     let logs = export.logs.get_emitted_logs().unwrap();
@@ -599,7 +639,12 @@ fn stage_failed_exports_as_error() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        run.stage("stage_failed", "derived image", "boom", None);
+        run.stage(
+            "stage_failed",
+            crate::DiagnosticStage::DerivedImage,
+            "boom",
+            None,
+        );
     });
 
     let failed = logs
@@ -681,8 +726,16 @@ fn direct_diagnostics_events_reach_otlp() {
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
 
-        run.timing_started("credentials", "operator_env", Some("layers"));
-        run.timing_done("credentials", "operator_env", Some("2 vars"));
+        run.timing_started(
+            crate::DiagnosticStage::Credentials,
+            "operator_env",
+            Some("layers"),
+        );
+        run.timing_done(
+            crate::DiagnosticStage::Credentials,
+            "operator_env",
+            Some("2 vars"),
+        );
         run.docker_build_step("12", "DONE", Some(76_500), false);
         run.container_started("jk-test", "/capsule.log");
         run.container_exited("jk-test", 137, true, "/capsule.log", Some("crash tail"));

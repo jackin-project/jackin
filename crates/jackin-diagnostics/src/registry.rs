@@ -180,68 +180,150 @@ impl std::error::Error for RegistryError {}
 pub const PROHIBITED_EXPORT_KEYS: &[&str] =
     &["error_type", "log.category", "stage", "kind", "run_id"];
 
-/// Launch/stage tokens observed in fixtures and production paths.
-pub mod otel_stages {
-    pub const PREFLIGHT: &str = "preflight";
-    pub const IMAGE: &str = "image";
-    pub const RUN: &str = "run";
-    pub const ATTACH: &str = "attach";
-    pub const CLEANUP: &str = "cleanup";
-    pub const PREPARE: &str = "prepare";
-    pub const DERIVED_IMAGE: &str = "derived image";
-    pub const START_CONTAINER: &str = "start container";
-    pub const HARDLINE: &str = "hardline";
-    pub const CREDENTIALS: &str = "credentials";
-    pub const BUILDING: &str = "building";
-    pub const PLAN: &str = "plan";
-    pub const RESTORE: &str = "restore";
-    pub const SIDECAR: &str = "sidecar";
-    pub const OP: &str = "op";
-    pub const LAUNCH: &str = "launch";
-    pub const ALL: &[&str] = &[
-        PREFLIGHT,
-        IMAGE,
-        RUN,
-        ATTACH,
-        CLEANUP,
-        PREPARE,
-        DERIVED_IMAGE,
-        START_CONTAINER,
-        HARDLINE,
-        CREDENTIALS,
-        BUILDING,
-        PLAN,
-        RESTORE,
-        SIDECAR,
-        OP,
-        LAUNCH,
-    ];
+/// Closed set of diagnostic launch-stage dimensions.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DiagnosticStage {
+    Preflight,
+    Image,
+    Run,
+    Attach,
+    Cleanup,
+    Prepare,
+    DerivedImage,
+    StartContainer,
+    Hardline,
+    Credentials,
+    Building,
+    Build,
+    Plan,
+    Restore,
+    Sidecar,
+    Op,
+    Launch,
+    Identity,
+    Role,
+    Construct,
+    AgentBinaries,
+    Workspace,
+    Network,
+    Capsule,
+    Repo,
 }
 
-/// Stable span name for a launch stage label (`launch.derived_image`, …).
-/// Unknown labels fall back to `launch.stage` (registered generic) so free
-/// strings cannot invent unbounded span names.
-#[must_use]
-pub fn launch_stage_span_name(stage: &str) -> &'static str {
-    match stage {
-        otel_stages::DERIVED_IMAGE => "launch.derived_image",
-        otel_stages::PREFLIGHT => "launch.preflight",
-        otel_stages::IMAGE => "launch.image",
-        otel_stages::RUN => "launch.run",
-        otel_stages::ATTACH => "launch.attach",
-        otel_stages::CLEANUP => "launch.cleanup",
-        otel_stages::PREPARE => "launch.prepare",
-        otel_stages::START_CONTAINER => "launch.start_container",
-        otel_stages::HARDLINE => "launch.hardline",
-        otel_stages::CREDENTIALS => "launch.credentials",
-        otel_stages::RESTORE => "launch.restore",
-        otel_stages::SIDECAR => "launch.sidecar",
-        otel_stages::LAUNCH => "launch.launch",
-        otel_stages::PLAN => "launch.plan",
-        otel_stages::OP => "launch.op",
-        otel_stages::BUILDING => "launch.building",
-        _ => "launch.stage",
+impl DiagnosticStage {
+    pub const ALL: [Self; 25] = [
+        Self::Preflight,
+        Self::Image,
+        Self::Run,
+        Self::Attach,
+        Self::Cleanup,
+        Self::Prepare,
+        Self::DerivedImage,
+        Self::StartContainer,
+        Self::Hardline,
+        Self::Credentials,
+        Self::Building,
+        Self::Build,
+        Self::Plan,
+        Self::Restore,
+        Self::Sidecar,
+        Self::Op,
+        Self::Launch,
+        Self::Identity,
+        Self::Role,
+        Self::Construct,
+        Self::AgentBinaries,
+        Self::Workspace,
+        Self::Network,
+        Self::Capsule,
+        Self::Repo,
+    ];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Preflight => "preflight",
+            Self::Image => "image",
+            Self::Run => "run",
+            Self::Attach => "attach",
+            Self::Cleanup => "cleanup",
+            Self::Prepare => "prepare",
+            Self::DerivedImage => "derived image",
+            Self::StartContainer => "start container",
+            Self::Hardline => "hardline",
+            Self::Credentials => "credentials",
+            Self::Building => "building",
+            Self::Build => "build",
+            Self::Plan => "plan",
+            Self::Restore => "restore",
+            Self::Sidecar => "sidecar",
+            Self::Op => "op",
+            Self::Launch => "launch",
+            Self::Identity => "identity",
+            Self::Role => "role",
+            Self::Construct => "construct",
+            Self::AgentBinaries => "agent binaries",
+            Self::Workspace => "workspace",
+            Self::Network => "network",
+            Self::Capsule => "capsule",
+            Self::Repo => "repo",
+        }
     }
+
+    #[must_use]
+    pub const fn span_name(self) -> &'static str {
+        match self {
+            Self::Preflight => "launch.preflight",
+            Self::Image => "launch.image",
+            Self::Run => "launch.run",
+            Self::Attach => "launch.attach",
+            Self::Cleanup => "launch.cleanup",
+            Self::Prepare => "launch.prepare",
+            Self::DerivedImage => "launch.derived_image",
+            Self::StartContainer => "launch.start_container",
+            Self::Hardline => "launch.hardline",
+            Self::Credentials => "launch.credentials",
+            Self::Building => "launch.building",
+            Self::Build => "launch.build",
+            Self::Plan => "launch.plan",
+            Self::Restore => "launch.restore",
+            Self::Sidecar => "launch.sidecar",
+            Self::Op => "launch.op",
+            Self::Launch => "launch.launch",
+            Self::Identity => "launch.identity",
+            Self::Role => "launch.role",
+            Self::Construct => "launch.construct",
+            Self::AgentBinaries => "launch.agent_binaries",
+            Self::Workspace => "launch.workspace",
+            Self::Network => "launch.network",
+            Self::Capsule => "launch.capsule",
+            Self::Repo => "launch.repo",
+        }
+    }
+}
+
+impl From<jackin_core::LaunchStage> for DiagnosticStage {
+    fn from(stage: jackin_core::LaunchStage) -> Self {
+        match stage {
+            jackin_core::LaunchStage::Identity => Self::Identity,
+            jackin_core::LaunchStage::Role => Self::Role,
+            jackin_core::LaunchStage::Credentials => Self::Credentials,
+            jackin_core::LaunchStage::Construct => Self::Construct,
+            jackin_core::LaunchStage::AgentBinaries => Self::AgentBinaries,
+            jackin_core::LaunchStage::DerivedImage => Self::DerivedImage,
+            jackin_core::LaunchStage::Workspace => Self::Workspace,
+            jackin_core::LaunchStage::Network => Self::Network,
+            jackin_core::LaunchStage::Sidecar => Self::Sidecar,
+            jackin_core::LaunchStage::Capsule => Self::Capsule,
+            jackin_core::LaunchStage::Hardline => Self::Hardline,
+        }
+    }
+}
+
+/// Stable span name for a closed launch-stage value (`launch.derived_image`, ...).
+#[must_use]
+pub const fn launch_stage_span_name(stage: DiagnosticStage) -> &'static str {
+    stage.span_name()
 }
 
 const ATTR_JACKIN_STAGE: AttrDef = AttrDef {
@@ -871,9 +953,9 @@ pub fn normalize_stage_token(value: &str) -> String {
 #[must_use]
 pub fn is_known_stage(stage: &str) -> bool {
     let normalized = normalize_stage_token(stage);
-    otel_stages::ALL
+    DiagnosticStage::ALL
         .iter()
-        .any(|s| normalize_stage_token(s) == normalized)
+        .any(|stage| normalize_stage_token(stage.as_str()) == normalized)
 }
 
 #[cfg(test)]

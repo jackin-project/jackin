@@ -228,7 +228,7 @@ pub(crate) fn resolve_github_env_map(
                 let timing_name = format!("github_env:{key}");
                 let value_kind = github_env_value_kind(value);
                 jackin_diagnostics::active_timing_started(
-                    "credentials",
+                    jackin_diagnostics::DiagnosticStage::Credentials,
                     &timing_name,
                     Some(value_kind),
                 );
@@ -239,7 +239,7 @@ pub(crate) fn resolve_github_env_map(
                 match result {
                     Ok(value) => {
                         jackin_diagnostics::active_timing_done(
-                            "credentials",
+                            jackin_diagnostics::DiagnosticStage::Credentials,
                             &timing_name,
                             Some(value_kind),
                         );
@@ -247,7 +247,7 @@ pub(crate) fn resolve_github_env_map(
                     }
                     Err(error) => {
                         jackin_diagnostics::active_timing_done(
-                            "credentials",
+                            jackin_diagnostics::DiagnosticStage::Credentials,
                             &timing_name,
                             Some("error"),
                         );

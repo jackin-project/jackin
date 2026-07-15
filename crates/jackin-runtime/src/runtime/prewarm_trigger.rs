@@ -99,7 +99,7 @@ pub fn spawn_background_image_prewarm(
         if let Some(run) = jackin_diagnostics::active_run() {
             run.stage(
                 "background_image_prewarm_skipped",
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "background image prewarm disabled in unit tests",
                 Some(&targets.len().to_string()),
             );
@@ -113,7 +113,7 @@ pub fn spawn_background_image_prewarm(
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.stage(
                     "background_image_prewarm_started",
-                    "derived image",
+                    jackin_diagnostics::DiagnosticStage::DerivedImage,
                     "refreshing stale workspace images in background",
                     Some(&targets.len().to_string()),
                 );
@@ -140,7 +140,7 @@ pub fn spawn_background_image_prewarm(
                                 .count();
                             run.stage(
                                 "background_image_prewarm_done",
-                                "derived image",
+                                jackin_diagnostics::DiagnosticStage::DerivedImage,
                                 "background workspace image refresh complete",
                                 Some(&format!(
                                     "{}:built={}/{}",
@@ -152,7 +152,7 @@ pub fn spawn_background_image_prewarm(
                         }
                         Err(error) => run.stage(
                             "background_image_prewarm_failed",
-                            "derived image",
+                            jackin_diagnostics::DiagnosticStage::DerivedImage,
                             "background workspace image refresh failed",
                             Some(&format!("{}: {error:#}", target.selector.key())),
                         ),
@@ -174,7 +174,7 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
         if let Some(run) = jackin_diagnostics::active_run() {
             run.stage(
                 "background_sidecar_prewarm_skipped",
-                "sidecar",
+                jackin_diagnostics::DiagnosticStage::Sidecar,
                 "background sidecar prewarm disabled in unit tests",
                 None,
             );
@@ -188,7 +188,7 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.stage(
                     "background_sidecar_prewarm_started",
-                    "sidecar",
+                    jackin_diagnostics::DiagnosticStage::Sidecar,
                     "checking for kept DinD sidecar prewarm",
                     None,
                 );
@@ -198,13 +198,13 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
                 match result {
                     Ok(detail) => run.stage(
                         "background_sidecar_prewarm_done",
-                        "sidecar",
+                        jackin_diagnostics::DiagnosticStage::Sidecar,
                         "background sidecar prewarm complete",
                         Some(&detail),
                     ),
                     Err(error) => run.stage(
                         "background_sidecar_prewarm_failed",
-                        "sidecar",
+                        jackin_diagnostics::DiagnosticStage::Sidecar,
                         "background sidecar prewarm failed",
                         Some(&format!("{error:#}")),
                     ),

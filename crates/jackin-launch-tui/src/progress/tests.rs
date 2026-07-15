@@ -24,7 +24,14 @@ impl LaunchDiagnostics for TestDiagnostics {
     }
     fn compact(&self, _kind: &str, _message: &str) {}
     fn error(&self, _kind: &str, _message: &str, _error_type: Option<&str>) {}
-    fn stage(&self, _kind: &str, _stage: &str, _message: &str, _detail: Option<&str>) {}
+    fn stage(
+        &self,
+        _kind: &str,
+        _stage: jackin_core::LaunchStage,
+        _message: &str,
+        _detail: Option<&str>,
+    ) {
+    }
 }
 
 fn test_progress() -> LaunchProgress {

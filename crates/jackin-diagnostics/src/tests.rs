@@ -247,9 +247,14 @@ fn run_summary_includes_metrics_surface() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
-    run.stage("stage_started", "build", "building", None);
+    run.stage(
+        "stage_started",
+        crate::DiagnosticStage::Build,
+        "building",
+        None,
+    );
     run.compact("agent_binary_cache_hit", "metadata cache hit");
-    run.stage("stage_done", "build", "built", None);
+    run.stage("stage_done", crate::DiagnosticStage::Build, "built", None);
     run.emit_run_summary();
 
     let contents = fs::read_to_string(run.path()).unwrap();
@@ -276,8 +281,16 @@ fn timing_events_include_nested_duration_summary() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
-    run.timing_started("credentials", "operator_env", Some("layers"));
-    run.timing_done("credentials", "operator_env", Some("2 vars"));
+    run.timing_started(
+        crate::DiagnosticStage::Credentials,
+        "operator_env",
+        Some("layers"),
+    );
+    run.timing_done(
+        crate::DiagnosticStage::Credentials,
+        "operator_env",
+        Some("2 vars"),
+    );
     run.emit_run_summary();
 
     let contents = fs::read_to_string(run.path()).unwrap();
@@ -316,7 +329,7 @@ fn run_summary_reports_and_clears_unclosed_timing_keys() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
-    run.timing_started("credentials", "operator_env", None);
+    run.timing_started(crate::DiagnosticStage::Credentials, "operator_env", None);
     run.emit_run_summary();
     run.emit_run_summary();
 
@@ -340,8 +353,8 @@ fn duration_histograms_cap_samples_and_count_drops() {
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
     for _ in 0..2000 {
-        run.timing_started("credentials", "operator_env", None);
-        run.timing_done("credentials", "operator_env", None);
+        run.timing_started(crate::DiagnosticStage::Credentials, "operator_env", None);
+        run.timing_done(crate::DiagnosticStage::Credentials, "operator_env", None);
     }
     run.emit_run_summary();
 
@@ -396,9 +409,24 @@ fn stage_events_reuse_one_stage_span_id() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
-    run.stage("stage_started", "derived image", "building", None);
-    run.stage("stage_progress", "derived image", "still building", None);
-    run.stage("stage_done", "derived image", "built", None);
+    run.stage(
+        "stage_started",
+        crate::DiagnosticStage::DerivedImage,
+        "building",
+        None,
+    );
+    run.stage(
+        "stage_progress",
+        crate::DiagnosticStage::DerivedImage,
+        "still building",
+        None,
+    );
+    run.stage(
+        "stage_done",
+        crate::DiagnosticStage::DerivedImage,
+        "built",
+        None,
+    );
     run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
@@ -977,12 +1005,12 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
 
         let launch = enter_screen(Screen::Launch);
         launch.in_scope(|| {
-            run.stage("stage_started", "prepare", "preparing", None);
-            run.stage("stage_done", "prepare", "ready", None);
-            run.stage("stage_started", "derived image", "building", None);
-            run.stage("stage_done", "derived image", "built", None);
-            run.stage("stage_started", "start container", "starting", None);
-            run.stage("stage_done", "start container", "started", None);
+            run.stage("stage_started", crate::DiagnosticStage::Prepare, "preparing", None);
+            run.stage("stage_done", crate::DiagnosticStage::Prepare, "ready", None);
+            run.stage("stage_started", crate::DiagnosticStage::DerivedImage, "building", None);
+            run.stage("stage_done", crate::DiagnosticStage::DerivedImage, "built", None);
+            run.stage("stage_started", crate::DiagnosticStage::StartContainer, "starting", None);
+            run.stage("stage_done", crate::DiagnosticStage::StartContainer, "started", None);
 
             let span = operation_span(
                 crate::otel_events::PROCESS_EXECUTE,

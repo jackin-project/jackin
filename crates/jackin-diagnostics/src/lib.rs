@@ -46,8 +46,8 @@ pub use operation::{
     operation_metric, operation_record_exit_code, operation_set_i64_attr, operation_span,
 };
 pub use registry::{
-    AttrDef, AttrType, Cardinality, EventDef, Outcome, Privacy, RegistryError, Severity, SinkSet,
-    lookup as lookup_event, otel_stages, validate as validate_event,
+    AttrDef, AttrType, Cardinality, DiagnosticStage, EventDef, Outcome, Privacy, RegistryError,
+    Severity, SinkSet, lookup as lookup_event, validate as validate_event,
 };
 pub use run::jsonl_adapter::{
     CanonicalEvent, PROHIBITED_TOP_LEVEL_KEYS, SCHEMA_V2, canonicalize_line, canonicalize_value,

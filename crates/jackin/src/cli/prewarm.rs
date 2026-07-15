@@ -210,7 +210,7 @@ fn emit_daemon_prewarm_plan() {
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "launch_plan",
-            "sidecar",
+            jackin_diagnostics::DiagnosticStage::Sidecar,
             "selected launch plan PrewarmOnly",
             Some(detail),
         );

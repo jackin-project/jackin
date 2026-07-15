@@ -44,7 +44,7 @@ pub async fn emit_non_containerd_image_store_note(runner: &mut impl CommandRunne
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "docker_image_store",
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             "Docker daemon is not using the containerd image store; local image export/unpack may be slower",
             Some(&detail),
         );
@@ -92,7 +92,7 @@ pub fn emit_build_context_snapshot(context_dir: &std::path::Path, source: &str) 
                 .to_string();
                 run.stage(
                     "build_context_snapshot",
-                    "derived image",
+                    jackin_diagnostics::DiagnosticStage::DerivedImage,
                     &format!(
                         "derived {source} build context snapshot: {} files, {} bytes",
                         stats.files, stats.bytes
@@ -132,7 +132,7 @@ pub fn emit_image_build_source(base_image: Option<&str>, reason: &str, pull_base
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "image_build_source",
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             "derived image build source selected",
             Some(&detail),
         );

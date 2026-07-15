@@ -565,7 +565,11 @@ where
     //
     // Failures are aggregated and surfaced as a structured error
     // so a missing op-CLI doesn't produce N parallel anyhows.
-    jackin_diagnostics::active_timing_started("credentials", "github_env", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Credentials,
+        "github_env",
+        None,
+    );
     let github_env_skipped = github_required_env_decls.is_empty();
     let github_resolved_env_result = if github_env_skipped {
         Ok(std::collections::BTreeMap::new())
@@ -581,11 +585,19 @@ where
             } else {
                 format!("{} vars", env.len())
             };
-            jackin_diagnostics::active_timing_done("credentials", "github_env", Some(&detail));
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Credentials,
+                "github_env",
+                Some(&detail),
+            );
             env
         }
         Err(error) => {
-            jackin_diagnostics::active_timing_done("credentials", "github_env", Some("error"));
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Credentials,
+                "github_env",
+                Some("error"),
+            );
             cleanup.run(docker).await;
             return Err(error);
         }
@@ -619,7 +631,11 @@ where
     // (`security`), and filesystem copies. Wrap in spawn_blocking so the
     // tokio render thread keeps polling the cockpit rain while auth runs.
     // All inputs are cloned to satisfy the 'static + Send bound.
-    jackin_diagnostics::active_timing_started("credentials", "role_state_prepare", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Credentials,
+        "role_state_prepare",
+        None,
+    );
     let paths_owned = paths.clone();
     let container_name_owned = container_name.clone();
     let manifest_owned = validated_repo.manifest.clone();
@@ -699,7 +715,7 @@ where
     let (state, _auth_outcome) = match role_state_result {
         Ok(prepared) => {
             jackin_diagnostics::active_timing_done(
-                "credentials",
+                jackin_diagnostics::DiagnosticStage::Credentials,
                 "role_state_prepare",
                 Some("prepared"),
             );
@@ -707,7 +723,7 @@ where
         }
         Err(error) => {
             jackin_diagnostics::active_timing_done(
-                "credentials",
+                jackin_diagnostics::DiagnosticStage::Credentials,
                 "role_state_prepare",
                 Some("error"),
             );
@@ -836,7 +852,11 @@ where
         &materialize_preflight,
         runner,
     );
-    jackin_diagnostics::active_timing_started("workspace", "materialize_workspace", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Workspace,
+        "materialize_workspace",
+        None,
+    );
     let materialize_wait = async {
         if let Some(progress) = steps.progress_mut() {
             progress.while_waiting(materialize).await
@@ -881,7 +901,7 @@ where
     let materialized = match materialize_result {
         Ok(materialized) => {
             jackin_diagnostics::active_timing_done(
-                "workspace",
+                jackin_diagnostics::DiagnosticStage::Workspace,
                 "materialize_workspace",
                 Some("materialized"),
             );
@@ -889,7 +909,7 @@ where
         }
         Err(error) => {
             jackin_diagnostics::active_timing_done(
-                "workspace",
+                jackin_diagnostics::DiagnosticStage::Workspace,
                 "materialize_workspace",
                 Some("error"),
             );

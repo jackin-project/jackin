@@ -132,7 +132,7 @@ pub(crate) async fn ensure_local_role_base(
 
     if let Some(published) = published_base {
         jackin_diagnostics::active_timing_started(
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             "tag_role_base",
             Some(&base_name),
         );
@@ -151,7 +151,7 @@ pub(crate) async fn ensure_local_role_base(
         };
         let result = runner.run("docker", &args, None, &options).await;
         jackin_diagnostics::active_timing_done(
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             "tag_role_base",
             if result.is_ok() {
                 Some("tagged")
@@ -163,7 +163,11 @@ pub(crate) async fn ensure_local_role_base(
         return Ok(base_name);
     }
 
-    jackin_diagnostics::active_timing_started("derived image", "build_role_base", Some(&base_name));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
+        "build_role_base",
+        Some(&base_name),
+    );
     let build = create_role_base_build_context(&cached_repo.repo_dir, validated_repo, None)?;
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
@@ -245,7 +249,7 @@ pub(crate) async fn ensure_local_role_base(
     };
     jackin_diagnostics::build_log::end();
     jackin_diagnostics::active_timing_done(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "build_role_base",
         if build_result.is_ok() {
             Some("built")
@@ -341,7 +345,11 @@ pub(crate) async fn build_agent_image(
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
     // repo can be safely modified by a parallel load.
-    jackin_diagnostics::active_timing_started("derived image", "create_build_context", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
+        "create_build_context",
+        None,
+    );
     // Install every supported agent into the image, not just the selected one.
     // The container runs a multiplexer; a new tab can launch any supported
     // agent, exec'ing its CLI inside this same container. A selected-agent-only
@@ -359,7 +367,7 @@ pub(crate) async fn build_agent_image(
     let build = match build_result {
         Ok(build) => {
             jackin_diagnostics::active_timing_done(
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "create_build_context",
                 Some("created"),
             );
@@ -373,7 +381,7 @@ pub(crate) async fn build_agent_image(
         }
         Err(error) => {
             jackin_diagnostics::active_timing_done(
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "create_build_context",
                 Some("error"),
             );
@@ -506,14 +514,18 @@ pub(crate) async fn build_agent_image(
         &context_dir,
     ]);
 
-    jackin_diagnostics::active_timing_started("derived image", "resolve_github_token", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
+        "resolve_github_token",
+        None,
+    );
     let github_token = if requests_github_token {
         resolve_github_token(runner).await
     } else {
         None
     };
     jackin_diagnostics::active_timing_done(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "resolve_github_token",
         if !requests_github_token {
             Some("skipped")
@@ -566,7 +578,11 @@ pub(crate) async fn build_agent_image(
     // `while_waiting` branch returns `Err` on cancel, which we capture in
     // `build_result` and only `?`-propagate after calling `end()`.
     jackin_diagnostics::build_log::begin();
-    jackin_diagnostics::active_timing_started("derived image", "docker_build", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
+        "docker_build",
+        None,
+    );
     let build_options = RunOptions {
         capture_stderr: true,
         capture_stdout: true,
@@ -589,7 +605,7 @@ pub(crate) async fn build_agent_image(
     };
     jackin_diagnostics::build_log::end();
     jackin_diagnostics::active_timing_done(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "docker_build",
         if build_result.is_ok() {
             Some("built")

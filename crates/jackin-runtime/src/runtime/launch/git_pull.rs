@@ -42,7 +42,11 @@ pub(crate) fn pull_git_sources_with_git(
 ) -> Vec<GitPullResult> {
     let mut pulls = Vec::new();
     let detail = format!("sources={}", sources.len());
-    jackin_diagnostics::active_timing_started("repo", "git_pull", Some(&detail));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Repo,
+        "git_pull",
+        Some(&detail),
+    );
 
     for src in sources {
         if debug {
@@ -81,7 +85,11 @@ pub(crate) fn pull_git_sources_with_git(
         .into_iter()
         .map(|(src, handle)| handle.join().unwrap_or(GitPullResult::JoinError { src }))
         .collect();
-    jackin_diagnostics::active_timing_done("repo", "git_pull", Some(&detail));
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Repo,
+        "git_pull",
+        Some(&detail),
+    );
     results
 }
 

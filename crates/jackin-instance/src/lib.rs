@@ -521,12 +521,12 @@ impl RoleState {
             let gh_provision_outcome =
                 if github_ignore_can_skip_state_prepare(&github_context, &hosts_yml)? {
                     jackin_diagnostics::active_timing_started(
-                        "credentials",
+                        jackin_diagnostics::DiagnosticStage::Credentials,
                         "role_state_prepare:github_auth",
                         Some(&github_context.mode.to_string()),
                     );
                     jackin_diagnostics::active_timing_done(
-                        "credentials",
+                        jackin_diagnostics::DiagnosticStage::Credentials,
                         "role_state_prepare:github_auth",
                         Some("skipped_no_state"),
                     );
@@ -537,7 +537,7 @@ impl RoleState {
                         let host_home = host_home_path.clone();
                         move || {
                             jackin_diagnostics::active_timing_started(
-                                "credentials",
+                                jackin_diagnostics::DiagnosticStage::Credentials,
                                 "role_state_prepare:github_auth",
                                 Some(&github_context.mode.to_string()),
                             );
@@ -555,7 +555,7 @@ impl RoleState {
                                 &host_home,
                             );
                             jackin_diagnostics::active_timing_done(
-                                "credentials",
+                                jackin_diagnostics::DiagnosticStage::Credentials,
                                 "role_state_prepare:github_auth",
                                 Some(if result.is_ok() { "prepared" } else { "error" }),
                             );
@@ -705,14 +705,14 @@ impl RoleState {
     ) -> anyhow::Result<AgentAuthProvision> {
         let timing_name = format!("role_state_prepare:{}_auth", supported.slug());
         jackin_diagnostics::active_timing_started(
-            "credentials",
+            jackin_diagnostics::DiagnosticStage::Credentials,
             &timing_name,
             Some(&mode.to_string()),
         );
         if mode == AuthForwardMode::Ignore && agent_ignore_can_skip_state_prepare(root, supported)?
         {
             jackin_diagnostics::active_timing_done(
-                "credentials",
+                jackin_diagnostics::DiagnosticStage::Credentials,
                 &timing_name,
                 Some("skipped_no_state"),
             );
@@ -758,7 +758,11 @@ impl RoleState {
         let timing_detail = provision_result
             .as_ref()
             .map_or("error".to_owned(), |(_, outcome)| format!("{outcome:?}"));
-        jackin_diagnostics::active_timing_done("credentials", &timing_name, Some(&timing_detail));
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Credentials,
+            &timing_name,
+            Some(&timing_detail),
+        );
         let (slot, outcome) = provision_result?;
         Ok(AgentAuthProvision {
             agent: supported,

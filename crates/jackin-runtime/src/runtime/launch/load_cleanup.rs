@@ -90,7 +90,11 @@ impl LoadCleanup {
             return;
         }
 
-        jackin_diagnostics::active_timing_started("cleanup", "cancel_cleanup", None);
+        jackin_diagnostics::active_timing_started(
+            jackin_diagnostics::DiagnosticStage::Cleanup,
+            "cancel_cleanup",
+            None,
+        );
         if let Some(run) = jackin_diagnostics::active_run() {
             run.compact("cleanup", "cancel cleanup started");
         }
@@ -146,6 +150,10 @@ impl LoadCleanup {
                 }
             }
         }
-        jackin_diagnostics::active_timing_done("cleanup", "cancel_cleanup", None);
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Cleanup,
+            "cancel_cleanup",
+            None,
+        );
     }
 }

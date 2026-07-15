@@ -90,7 +90,7 @@ pub struct RunDiagnostics {
     stage_starts: Mutex<HashMap<String, Instant>>,
     /// Per-stage tracing spans so all progress events for a launch stage share
     /// a stable span id in the JSONL.
-    stage_spans: Mutex<HashMap<String, tracing::Span>>,
+    stage_spans: Mutex<HashMap<crate::DiagnosticStage, tracing::Span>>,
     /// Fine-grained timing starts nested under broad launch stages.
     timing_starts: Mutex<HashMap<String, Instant>>,
     /// Accumulated per-stage durations for the end-of-run summary.
@@ -417,7 +417,14 @@ impl RunDiagnostics {
         );
     }
 
-    pub fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
+    pub fn stage(
+        &self,
+        kind: &str,
+        stage: crate::DiagnosticStage,
+        message: &str,
+        detail: Option<&str>,
+    ) {
+        let stage_label = stage.as_str();
         // Track wall-clock stage timings for the end-of-run summary (Defect 47.5).
         // A stage runs on the operator's foreground launch path, so a slow one is a
         // foreground wait the operator is paying for; capture its duration to
@@ -426,20 +433,20 @@ impl RunDiagnostics {
         let mut foreground_wait_ms: Option<u64> = None;
         let enriched_detail = match kind {
             "stage_started" => {
-                locked(&self.stage_starts).insert(stage.to_owned(), Instant::now());
-                locked(&self.stage_spans).insert(stage.to_owned(), launch_stage_span(stage));
+                locked(&self.stage_starts).insert(stage_label.to_owned(), Instant::now());
+                locked(&self.stage_spans).insert(stage, launch_stage_span(stage));
                 detail.map(String::from)
             }
             "stage_done" => {
                 let elapsed_ms = locked(&self.stage_starts)
-                    .remove(stage)
+                    .remove(stage_label)
                     .map(|t| t.elapsed().as_millis() as u64);
                 elapsed_ms.map_or_else(
                     || detail.map(String::from),
                     |ms| {
                         foreground_wait_ms = Some(ms);
-                        locked(&self.stage_durations_ms).push((stage.to_owned(), ms));
-                        locked(&self.metrics).push_stage_duration(stage.to_owned(), ms);
+                        locked(&self.stage_durations_ms).push((stage_label.to_owned(), ms));
+                        locked(&self.metrics).push_stage_duration(stage_label.to_owned(), ms);
                         let base = detail.unwrap_or("");
                         if base.is_empty() {
                             Some(format!("{{\"duration_ms\":{ms}}}"))
@@ -450,7 +457,7 @@ impl RunDiagnostics {
                 )
             }
             "stage_failed" | "stage_skipped" => {
-                let _ = locked(&self.stage_starts).remove(stage);
+                let _ = locked(&self.stage_starts).remove(stage_label);
                 detail.map(String::from)
             }
             _ => detail.map(String::from),
@@ -466,7 +473,7 @@ impl RunDiagnostics {
                 &self.run_id,
                 kind,
                 message,
-                Some(stage),
+                Some(stage_label),
                 enriched_detail.as_deref(),
                 None,
             );
@@ -475,12 +482,12 @@ impl RunDiagnostics {
                 &self.run_id,
                 kind,
                 message,
-                Some(stage),
+                Some(stage_label),
                 enriched_detail.as_deref(),
             );
         }
         if let Some(ms) = foreground_wait_ms {
-            self.explain_foreground_wait(stage, ms);
+            self.explain_foreground_wait(stage_label, ms);
         }
     }
 
@@ -510,8 +517,9 @@ impl RunDiagnostics {
         );
     }
 
-    pub fn timing_started(&self, stage: &str, name: &str, detail: Option<&str>) {
-        let key = timing_key(stage, name);
+    pub fn timing_started(&self, stage: crate::DiagnosticStage, name: &str, detail: Option<&str>) {
+        let stage_label = stage.as_str();
+        let key = timing_key(stage_label, name);
         locked(&self.timing_starts).insert(key, Instant::now());
         let event_detail = timing_detail(name, None, detail);
         let span = self.current_stage_span(stage);
@@ -520,18 +528,19 @@ impl RunDiagnostics {
             &self.run_id,
             "timing_started",
             &format!("{name} started"),
-            Some(stage),
+            Some(stage_label),
             Some(&event_detail),
         );
     }
 
-    pub fn timing_done(&self, stage: &str, name: &str, detail: Option<&str>) {
-        let key = timing_key(stage, name);
+    pub fn timing_done(&self, stage: crate::DiagnosticStage, name: &str, detail: Option<&str>) {
+        let stage_label = stage.as_str();
+        let key = timing_key(stage_label, name);
         let elapsed_ms = locked(&self.timing_starts)
             .remove(&key)
             .map(|start| start.elapsed().as_millis() as u64);
         if let Some(ms) = elapsed_ms {
-            locked(&self.metrics).push_timing_duration(format!("{stage}/{name}"), ms);
+            locked(&self.metrics).push_timing_duration(format!("{stage_label}/{name}"), ms);
         }
         let event_detail = timing_detail(name, elapsed_ms, detail);
         let span = self.current_stage_span(stage);
@@ -540,7 +549,7 @@ impl RunDiagnostics {
             &self.run_id,
             "timing_done",
             &format!("{name} done"),
-            Some(stage),
+            Some(stage_label),
             Some(&event_detail),
         );
         if let Some(ms) = elapsed_ms {
@@ -548,15 +557,15 @@ impl RunDiagnostics {
         }
     }
 
-    fn current_stage_span(&self, stage: &str) -> Option<tracing::Span> {
-        locked(&self.stage_spans).get(stage).cloned()
+    fn current_stage_span(&self, stage: crate::DiagnosticStage) -> Option<tracing::Span> {
+        locked(&self.stage_spans).get(&stage).cloned()
     }
 
-    fn stage_span_for(&self, kind: &str, stage: &str) -> tracing::Span {
+    fn stage_span_for(&self, kind: &str, stage: crate::DiagnosticStage) -> tracing::Span {
         let mut spans = locked(&self.stage_spans);
         if matches!(kind, "stage_done" | "stage_failed" | "stage_skipped") {
             spans
-                .remove(stage)
+                .remove(&stage)
                 .unwrap_or_else(|| launch_stage_span(stage))
         } else {
             spans
@@ -625,7 +634,7 @@ impl RunDiagnostics {
             unclosed.extend(
                 spans
                     .keys()
-                    .map(|key| format!("span:{}", display_unclosed_key(key))),
+                    .map(|key| format!("span:{}", display_unclosed_key(key.as_str()))),
             );
             spans.clear();
         }
@@ -903,13 +912,13 @@ pub fn active_debug(category: &str, line: &str) -> bool {
     active_run().is_some_and(|run| run.debug(category, line))
 }
 
-pub fn active_timing_started(stage: &str, name: &str, detail: Option<&str>) {
+pub fn active_timing_started(stage: crate::DiagnosticStage, name: &str, detail: Option<&str>) {
     if let Some(run) = active_run() {
         run.timing_started(stage, name, detail);
     }
 }
 
-pub fn active_timing_done(stage: &str, name: &str, detail: Option<&str>) {
+pub fn active_timing_done(stage: crate::DiagnosticStage, name: &str, detail: Option<&str>) {
     if let Some(run) = active_run() {
         run.timing_done(stage, name, detail);
     }
@@ -1170,13 +1179,13 @@ fn timing_key(stage: &str, name: &str) -> String {
     format!("{stage}\0{name}")
 }
 
-fn launch_stage_span(stage: &str) -> tracing::Span {
+fn launch_stage_span(stage: crate::DiagnosticStage) -> tracing::Span {
     // Registered span names only (plan 007) — free-form stage strings cannot
     // invent unbounded `launch.{token}` names.
     let otel_name = crate::registry::launch_stage_span_name(stage);
     let span = tracing::info_span!(
         "launch_stage",
-        "jackin.stage" = stage,
+        "jackin.stage" = stage.as_str(),
         otel.name = otel_name,
         otel.status_code = tracing::field::Empty,
         otel.status_description = tracing::field::Empty,
@@ -1191,7 +1200,7 @@ fn launch_stage_span(stage: &str) -> tracing::Span {
         }
         // Derived-image build is a peer subsystem of launch: link it to the active
         // launch span so the BuildKit trace is not a peer without a parent (plan 044).
-        if stage == "derived image" {
+        if stage == crate::DiagnosticStage::DerivedImage {
             use opentelemetry::trace::TraceContextExt as _;
             let parent_ctx = tracing::Span::current().context();
             let span_ctx = parent_ctx.span().span_context().clone();
@@ -1472,7 +1481,13 @@ impl jackin_core::LaunchDiagnostics for RunDiagnostics {
         self.error_typed(kind, message, error_type);
     }
 
-    fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
-        self.stage(kind, stage, message, detail);
+    fn stage(
+        &self,
+        kind: &str,
+        stage: jackin_core::LaunchStage,
+        message: &str,
+        detail: Option<&str>,
+    ) {
+        self.stage(kind, stage.into(), message, detail);
     }
 }

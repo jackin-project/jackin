@@ -37,12 +37,20 @@ struct CleanupTiming {
 
 impl Drop for CleanupTiming {
     fn drop(&mut self) {
-        jackin_diagnostics::active_timing_done("cleanup", self.name, None);
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Cleanup,
+            self.name,
+            None,
+        );
     }
 }
 
 fn cleanup_timing(name: &'static str) -> CleanupTiming {
-    jackin_diagnostics::active_timing_started("cleanup", name, None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Cleanup,
+        name,
+        None,
+    );
     CleanupTiming { name }
 }
 

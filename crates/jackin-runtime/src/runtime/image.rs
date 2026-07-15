@@ -139,13 +139,13 @@ pub(super) async fn decide_role_image(
     }
 
     jackin_diagnostics::active_timing_started(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "image_tag_lookup",
         Some(image.as_str()),
     );
     let tag_result = docker.list_image_tags(&image).await;
     jackin_diagnostics::active_timing_done(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "image_tag_lookup",
         if tag_result.is_ok() {
             Some(image.as_str())
@@ -207,7 +207,11 @@ pub(super) async fn decide_role_image(
         return Ok(build_decision(reason, head_sha, base_image_override));
     }
 
-    jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
+        "image_recipe",
+        None,
+    );
     let local_base_image = role_base_image_name(selector, branch_override, head_sha.as_deref());
     let expected_recipes = expected_image_recipes(
         cached_repo,
@@ -219,18 +223,18 @@ pub(super) async fn decide_role_image(
         &image,
     )?;
     jackin_diagnostics::active_timing_done(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "image_recipe",
         Some(&format!("{} expected recipes", expected_recipes.len())),
     );
     jackin_diagnostics::active_timing_started(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "image_label_inspect",
         Some(image.as_str()),
     );
     let label_result = docker.inspect_image_labels(&image).await;
     jackin_diagnostics::active_timing_done(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "image_label_inspect",
         if label_result.is_ok() {
             Some(image.as_str())
@@ -319,12 +323,16 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
     // capsule binary would produce an opaque "exec: file not found" at `docker run`.
     // Failing fast here gives an actionable error message.
     let capsule_future = async {
-        jackin_diagnostics::active_timing_started("agent binaries", "ensure_capsule_binary", None);
+        jackin_diagnostics::active_timing_started(
+            jackin_diagnostics::DiagnosticStage::AgentBinaries,
+            "ensure_capsule_binary",
+            None,
+        );
         let result = capsule_binary::ensure_available(paths)
             .await
             .context("preparing jackin-capsule binary");
         jackin_diagnostics::active_timing_done(
-            "agent binaries",
+            jackin_diagnostics::DiagnosticStage::AgentBinaries,
             "ensure_capsule_binary",
             if result.is_ok() {
                 Some("prefetched")
@@ -336,7 +344,12 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
     };
 
     let (agent_install_pairs, jackin_capsule_binary) = tokio::try_join!(
-        prepare_agent_binaries(paths, &agents, "agent binaries", true),
+        prepare_agent_binaries(
+            paths,
+            &agents,
+            jackin_diagnostics::DiagnosticStage::AgentBinaries,
+            true,
+        ),
         capsule_future
     )?;
     // Each agent appears once (one pass over supported_agents()); the map keys
@@ -383,7 +396,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
         if let Some(run) = &active_run {
             run.stage(
                 "runtime_prewarm_skipped",
-                "agent binaries",
+                jackin_diagnostics::DiagnosticStage::AgentBinaries,
                 "no sibling runtime binaries to prewarm",
                 Some(selected_agent.slug()),
             );
@@ -394,7 +407,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
         if let Some(run) = &active_run {
             run.stage(
                 "runtime_prewarm_skipped",
-                "agent binaries",
+                jackin_diagnostics::DiagnosticStage::AgentBinaries,
                 "selected image was rebuilt; skipping sibling runtime binary prewarm to avoid competing with foreground launch",
                 Some(selected_agent.slug()),
             );
@@ -418,7 +431,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
         .to_string();
         run.stage(
             "launch_plan",
-            "restore",
+            jackin_diagnostics::DiagnosticStage::Restore,
             "selected launch plan PrewarmOnly",
             Some(&detail),
         );
@@ -427,22 +440,32 @@ pub(super) fn spawn_sibling_runtime_prewarm(
         if let Some(run) = &active_run {
             run.stage(
                 "runtime_prewarm_started",
-                "agent binaries",
+                jackin_diagnostics::DiagnosticStage::AgentBinaries,
                 "prewarming sibling runtime binaries",
                 Some(&agents),
             );
         }
         if let Some(run) = &active_run {
-            run.timing_started("agent binaries", "sibling_runtime_prewarm", Some(&agents));
+            run.timing_started(
+                jackin_diagnostics::DiagnosticStage::AgentBinaries,
+                "sibling_runtime_prewarm",
+                Some(&agents),
+            );
         }
-        let result = prepare_agent_binaries(&paths, &siblings, "runtime prewarm", false).await;
+        let result = prepare_agent_binaries(
+            &paths,
+            &siblings,
+            jackin_diagnostics::DiagnosticStage::AgentBinaries,
+            false,
+        )
+        .await;
         let timing_detail = match &result {
             Ok(prepared) => agent_binary_prepare_summary(prepared),
             Err(error) => format!("failed: {error:#}"),
         };
         if let Some(run) = &active_run {
             run.timing_done(
-                "agent binaries",
+                jackin_diagnostics::DiagnosticStage::AgentBinaries,
                 "sibling_runtime_prewarm",
                 Some(&timing_detail),
             );
@@ -451,13 +474,13 @@ pub(super) fn spawn_sibling_runtime_prewarm(
             match result {
                 Ok(prepared) => run.stage(
                     "runtime_prewarm_done",
-                    "agent binaries",
+                    jackin_diagnostics::DiagnosticStage::AgentBinaries,
                     "prewarmed sibling runtime binaries",
                     Some(&agent_binary_prepare_summary(&prepared)),
                 ),
                 Err(error) => run.stage(
                     "runtime_prewarm_failed",
-                    "agent binaries",
+                    jackin_diagnostics::DiagnosticStage::AgentBinaries,
                     "sibling runtime binary prewarm failed",
                     Some(&format!("{error:#}")),
                 ),
@@ -480,7 +503,7 @@ pub(super) fn spawn_sibling_image_prewarm(
         if let Some(run) = jackin_diagnostics::active_run() {
             run.stage(
                 "sibling_image_prewarm_skipped",
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "no sibling runtime images to prewarm",
                 Some(selected_agent.slug()),
             );
@@ -491,7 +514,7 @@ pub(super) fn spawn_sibling_image_prewarm(
         if let Some(run) = jackin_diagnostics::active_run() {
             run.stage(
                 "sibling_image_prewarm_skipped",
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "selected image was rebuilt; skipping sibling image prewarm to avoid competing with foreground launch",
                 Some(selected_agent.slug()),
             );
@@ -505,7 +528,7 @@ pub(super) fn spawn_sibling_image_prewarm(
         if let Some(run) = jackin_diagnostics::active_run() {
             run.stage(
                 "sibling_image_prewarm_skipped",
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "sibling runtime image prewarm disabled in unit tests",
                 Some(selected_agent.slug()),
             );
@@ -527,14 +550,14 @@ pub(super) fn spawn_sibling_image_prewarm(
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.stage(
                     "sibling_image_prewarm_started",
-                    "derived image",
+                    jackin_diagnostics::DiagnosticStage::DerivedImage,
                     "prewarming sibling runtime images",
                     Some(&agents),
                 );
             }
 
             jackin_diagnostics::active_timing_started(
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "sibling_image_prewarm",
                 Some(&agents),
             );
@@ -552,7 +575,7 @@ pub(super) fn spawn_sibling_image_prewarm(
                 format!("built={built}; reused={reused}; failed={}", failed.len())
             };
             jackin_diagnostics::active_timing_done(
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "sibling_image_prewarm",
                 Some(&timing_detail),
             );
@@ -560,14 +583,14 @@ pub(super) fn spawn_sibling_image_prewarm(
                 if failed.is_empty() {
                     run.stage(
                         "sibling_image_prewarm_done",
-                        "derived image",
+                        jackin_diagnostics::DiagnosticStage::DerivedImage,
                         "prewarmed sibling runtime images",
                         Some(&format!("built={built}; reused={reused}")),
                     );
                 } else {
                     run.stage(
                         "sibling_image_prewarm_failed",
-                        "derived image",
+                        jackin_diagnostics::DiagnosticStage::DerivedImage,
                         "sibling runtime image prewarm finished with failures",
                         Some(&failed.join("; ")),
                     );
@@ -636,7 +659,7 @@ pub(super) fn spawn_selected_image_refresh(
         if let Some(run) = jackin_diagnostics::active_run() {
             run.stage(
                 "selected_image_refresh_skipped",
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "selected image refresh disabled in unit tests",
                 Some(&format!("{}:{}", selected_agent.slug(), reason.as_str())),
             );
@@ -653,7 +676,7 @@ pub(super) fn spawn_selected_image_refresh(
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.stage(
                     "selected_image_refresh_started",
-                    "derived image",
+                    jackin_diagnostics::DiagnosticStage::DerivedImage,
                     "refreshing selected runtime image in background",
                     Some(&format!("{}:{}", selected_agent.slug(), reason.as_str())),
                 );
@@ -661,7 +684,7 @@ pub(super) fn spawn_selected_image_refresh(
 
             let timing_detail = format!("{}:{}", selected_agent.slug(), reason.as_str());
             jackin_diagnostics::active_timing_started(
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "selected_image_refresh",
                 Some(&timing_detail),
             );
@@ -679,7 +702,7 @@ pub(super) fn spawn_selected_image_refresh(
                 Err(error) => format!("{}: failed: {error:#}", selected_agent.slug()),
             };
             jackin_diagnostics::active_timing_done(
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "selected_image_refresh",
                 Some(&timing_done),
             );
@@ -688,7 +711,7 @@ pub(super) fn spawn_selected_image_refresh(
                 match result {
                     Ok(row) => run.stage(
                         "selected_image_refresh_done",
-                        "derived image",
+                        jackin_diagnostics::DiagnosticStage::DerivedImage,
                         "refreshed selected runtime image in background",
                         Some(&format!(
                             "{}:{:?}:{}",
@@ -699,7 +722,7 @@ pub(super) fn spawn_selected_image_refresh(
                     ),
                     Err(error) => run.stage(
                         "selected_image_refresh_failed",
-                        "derived image",
+                        jackin_diagnostics::DiagnosticStage::DerivedImage,
                         "selected runtime image refresh failed",
                         Some(&format!("{}: {error:#}", selected_agent.slug())),
                     ),
@@ -737,7 +760,7 @@ pub(super) fn spawn_reuse_staleness_sentinel(
         if let Some(run) = jackin_diagnostics::active_run() {
             run.stage(
                 "reuse_staleness_sentinel_skipped",
-                "derived image",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
                 "reuse staleness sentinel disabled in unit tests",
                 Some(&format!("{}:{image}", selected_agent.slug())),
             );
@@ -755,7 +778,7 @@ pub(super) fn spawn_reuse_staleness_sentinel(
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.stage(
                     "reuse_staleness_sentinel_started",
-                    "derived image",
+                    jackin_diagnostics::DiagnosticStage::DerivedImage,
                     "checking reused runtime image staleness in background",
                     Some(&format!("{}:{image}", selected_agent.slug())),
                 );
@@ -776,7 +799,7 @@ pub(super) fn spawn_reuse_staleness_sentinel(
                 match result {
                     Ok(Some(row)) => run.stage(
                         "reuse_staleness_sentinel_done",
-                        "derived image",
+                        jackin_diagnostics::DiagnosticStage::DerivedImage,
                         "refreshed reused runtime image in background",
                         Some(&format!(
                             "{}:{:?}:{}",
@@ -787,13 +810,13 @@ pub(super) fn spawn_reuse_staleness_sentinel(
                     ),
                     Ok(None) => run.stage(
                         "reuse_staleness_sentinel_done",
-                        "derived image",
+                        jackin_diagnostics::DiagnosticStage::DerivedImage,
                         "reused runtime image is still fresh",
                         Some(&format!("{}:{image}", selected_agent.slug())),
                     ),
                     Err(error) => run.stage(
                         "reuse_staleness_sentinel_failed",
-                        "derived image",
+                        jackin_diagnostics::DiagnosticStage::DerivedImage,
                         "reuse staleness sentinel failed",
                         Some(&format!("{}: {error:#}", selected_agent.slug())),
                     ),
@@ -922,7 +945,11 @@ async fn reuse_staleness_reason(
     role_git_sha: Option<&str>,
     docker: &impl DockerApi,
 ) -> Option<ImageInvalidationReason> {
-    jackin_diagnostics::active_timing_started("derived image", "agent_version_check", Some(image));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
+        "agent_version_check",
+        Some(image),
+    );
     let agents = validated_repo.manifest.supported_agents();
     let checks = agents.iter().map(|&agent| async move {
         (
@@ -945,7 +972,7 @@ async fn reuse_staleness_reason(
         "fresh"
     };
     jackin_diagnostics::active_timing_done(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "agent_version_check",
         Some(timing_detail),
     );
@@ -1242,7 +1269,7 @@ async fn prewarm_sibling_image(
 async fn prepare_agent_binaries(
     paths: &JackinPaths,
     agents: &[Agent],
-    timing_stage: &'static str,
+    timing_stage: jackin_diagnostics::DiagnosticStage,
     warn_on_fallback: bool,
 ) -> anyhow::Result<Vec<(Agent, AgentInstall<PathBuf>, Option<String>)>> {
     let agent_futures = agents.iter().copied().map(|agent| async move {
@@ -1316,7 +1343,11 @@ pub(super) async fn role_git_sha_for_recipe(
     known_head_sha: Option<&str>,
     runner: &mut impl CommandRunner,
 ) -> Option<String> {
-    jackin_diagnostics::active_timing_started("derived image", "role_git_sha", None);
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
+        "role_git_sha",
+        None,
+    );
     let (head_sha, detail) = if let Some(sha) = known_head_sha {
         (Some(sha.to_owned()), "known")
     } else {
@@ -1328,7 +1359,11 @@ pub(super) async fn role_git_sha_for_recipe(
         };
         (resolved, detail)
     };
-    jackin_diagnostics::active_timing_done("derived image", "role_git_sha", Some(detail));
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
+        "role_git_sha",
+        Some(detail),
+    );
     head_sha
 }
 
