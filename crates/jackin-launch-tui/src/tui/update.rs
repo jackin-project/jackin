@@ -3,7 +3,7 @@
 
 //! Launch cockpit update helpers.
 
-use jackin_tui::components::StatusFooterHover;
+use crate::tui::components::footer::StatusFooterHover;
 use termrock::runtime::UpdateResult;
 
 use crate::tui::components::build_log_dialog::refresh_build_log_layout;

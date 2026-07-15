@@ -3,7 +3,7 @@
 
 //! Launch cockpit model types shared with runtime orchestration.
 
-use jackin_tui::components::StatusFooterHover;
+use crate::tui::components::footer::StatusFooterHover;
 use ratatui::text::Line;
 
 pub use jackin_core::{

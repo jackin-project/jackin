@@ -3,12 +3,72 @@
 
 //! Launch cockpit footer helpers.
 
-use jackin_tui::components::{StatusRightGroup, render_status_footer_right_group};
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
+use ratatui::widgets::Block;
+use termrock::interaction::HitRegion;
+use termrock::widgets::{StatusBar, StatusSlot};
 
 use crate::LaunchView;
 use crate::tui::components::chrome::{BottomChromeAreas, bottom_chrome_areas};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StatusFooterHover {
+    pub left: bool,
+    pub usage: bool,
+    pub right: bool,
+    pub right_debug: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FooterSlot {
+    Activity,
+    Container,
+    RunId,
+}
+
+pub fn footer_regions(
+    area: Rect,
+    activity: &str,
+    instance: &str,
+    run_id: Option<&str>,
+) -> Vec<HitRegion<FooterSlot>> {
+    let activity = format!(" {activity}");
+    let container = format!(" {instance} ");
+    let run = run_id.map(|value| format!(" {value} ")).unwrap_or_default();
+    let left = [StatusSlot {
+        id: FooterSlot::Activity,
+        content: &activity,
+        priority: 0,
+        min_width: 0,
+        enabled: true,
+        style: Style::default(),
+    }];
+    let right = [
+        StatusSlot {
+            id: FooterSlot::Container,
+            content: &container,
+            priority: 0,
+            min_width: 0,
+            enabled: !instance.is_empty(),
+            style: Style::default(),
+        },
+        StatusSlot {
+            id: FooterSlot::RunId,
+            content: &run,
+            priority: 0,
+            min_width: 0,
+            enabled: run_id.is_some_and(|value| !value.is_empty()),
+            style: Style::default(),
+        },
+    ];
+    StatusBar {
+        left: &left,
+        right: &right,
+    }
+    .regions(area)
+}
 
 /// The status-bar activity text: the current step with an upper-cased first
 /// word and a trailing ellipsis (`wiring private network` -> `Wiring private
@@ -47,17 +107,89 @@ pub fn render_footer(
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]
     let alpha = (view.frame as f32 / 30.0).min(1.0);
-    render_status_footer_right_group(
-        frame,
+    let activity = format!(" {}", format_activity(&view.status));
+    let container = format!(" {instance} ");
+    let run = debug_chip
+        .map(|value| format!(" {value} "))
+        .unwrap_or_default();
+    let faded = termrock::style::faded;
+    frame.render_widget(
+        Block::default().style(
+            Style::default()
+                .bg(faded(termrock::style::WHITE, alpha))
+                .fg(termrock::style::INK),
+        ),
         area,
-        &format_activity(&view.status),
-        StatusRightGroup {
-            usage: None,
-            container: &instance,
-            run_id: debug_chip,
+    );
+    let left = [StatusSlot {
+        id: FooterSlot::Activity,
+        content: &activity,
+        priority: 0,
+        min_width: 0,
+        enabled: true,
+        style: Style::default()
+            .bg(faded(termrock::style::WHITE, alpha))
+            .fg(faded(
+                if view.footer_hover.left {
+                    termrock::style::LINK_BLUE
+                } else {
+                    termrock::style::INK
+                },
+                alpha,
+            ))
+            .add_modifier(Modifier::BOLD),
+    }];
+    let right = [
+        StatusSlot {
+            id: FooterSlot::Container,
+            content: &container,
+            priority: 0,
+            min_width: 0,
+            enabled: !instance.is_empty(),
+            style: Style::default()
+                .bg(faded(termrock::style::WHITE, alpha))
+                .fg(faded(
+                    if view.footer_hover.right {
+                        termrock::style::DEBUG_AMBER
+                    } else {
+                        termrock::style::LINK_BLUE
+                    },
+                    alpha,
+                ))
+                .add_modifier(Modifier::BOLD),
         },
-        alpha,
-        view.footer_hover,
+        StatusSlot {
+            id: FooterSlot::RunId,
+            content: &run,
+            priority: 0,
+            min_width: 0,
+            enabled: debug_chip.is_some_and(|value| !value.is_empty()),
+            style: Style::default()
+                .bg(faded(
+                    if view.footer_hover.right_debug {
+                        termrock::style::WHITE
+                    } else {
+                        termrock::style::DANGER_RED
+                    },
+                    alpha,
+                ))
+                .fg(faded(
+                    if view.footer_hover.right_debug {
+                        termrock::style::DANGER_RED
+                    } else {
+                        termrock::style::WHITE
+                    },
+                    alpha,
+                ))
+                .add_modifier(Modifier::BOLD),
+        },
+    ];
+    frame.render_widget(
+        &StatusBar {
+            left: &left,
+            right: &right,
+        },
+        area,
     );
 }
 

@@ -10,7 +10,7 @@ use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use jackin_tui::ModalOutcome;
-use jackin_tui::components::{ModalClickResult, ScrollAxes, StatusFooterHover, classify_click};
+use jackin_tui::components::{ModalClickResult, ScrollAxes, classify_click};
 use ratatui::layout::Rect;
 use termrock::keymap::KeyChord;
 use tokio_util::sync::CancellationToken;
@@ -25,7 +25,9 @@ use crate::tui::components::failure_dialog::{
     failure_copy_payload, failure_copy_target_at, failure_popup_block_rect,
     failure_popup_body_metrics,
 };
-use crate::tui::components::footer::{footer_instance, format_activity};
+use crate::tui::components::footer::{
+    FooterSlot, StatusFooterHover, footer_instance, footer_regions, format_activity,
+};
 use crate::tui::input::{LaunchInput, is_ctrl_c_event};
 use crate::tui::terminal::current_terminal_area;
 use crate::{LaunchHostTerminal, LaunchMessage, LaunchView, update_launch_view};
@@ -297,28 +299,20 @@ fn hit_footer_container_chip(
         width: area.width,
         height: 1,
     };
-    let debug_chip = debug_mode.then_some(run_id);
-    let hit_instance =
-        jackin_tui::components::status_footer_right_chip_rect(footer_row, &instance, debug_chip)
-            .is_some_and(|rect| {
-                row >= rect.y
-                    && row < rect.y.saturating_add(rect.height)
-                    && col >= rect.x
-                    && col < rect.x.saturating_add(rect.width)
-            });
-    // The debug chip (rightmost) opens the same container-info dialog as the
-    // instance-ID chip — both show the same content, just from different entry
-    // points. Check it too so clicking either chip works.
-    let hit_debug = debug_mode
-        && jackin_tui::components::status_footer_debug_chip_rect(footer_row, run_id).is_some_and(
-            |rect| {
-                row >= rect.y
-                    && row < rect.y.saturating_add(rect.height)
-                    && col >= rect.x
-                    && col < rect.x.saturating_add(rect.width)
-            },
-        );
-    hit_instance || hit_debug
+    footer_regions(
+        footer_row,
+        &format_activity(&view.status),
+        &instance,
+        debug_mode.then_some(run_id),
+    )
+    .into_iter()
+    .any(|region| {
+        matches!(region.id, FooterSlot::Container | FooterSlot::RunId)
+            && row >= region.area.y
+            && row < region.area.bottom()
+            && col >= region.area.x
+            && col < region.area.right()
+    })
 }
 
 fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u16, row: u16) {
@@ -458,21 +452,24 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
     let debug_chip_hovering = ctx.terminal.is_debug_mode()
         && !v.build_log_open
         && v.failure.is_none()
-        && !footer_instance(v).is_empty()
-        && jackin_tui::components::status_footer_debug_chip_rect(
+        && footer_regions(
             Rect {
                 x: 0,
                 y: ctx.area.height.saturating_sub(1),
                 width: ctx.area.width,
                 height: 1,
             },
-            ctx.run_id,
+            &format_activity(&v.status),
+            &footer_instance(v),
+            Some(ctx.run_id),
         )
-        .is_some_and(|rect| {
-            row >= rect.y
-                && row < rect.y.saturating_add(rect.height)
-                && col >= rect.x
-                && col < rect.x.saturating_add(rect.width)
+        .into_iter()
+        .any(|region| {
+            region.id == FooterSlot::RunId
+                && row >= region.area.y
+                && row < region.area.bottom()
+                && col >= region.area.x
+                && col < region.area.right()
         });
     let hover = StatusFooterHover {
         left: activity_hovering,
