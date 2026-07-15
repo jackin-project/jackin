@@ -56,6 +56,7 @@ fn hello_reports_protocol_without_adapters() {
         id: "r1".to_owned(),
         protocol_version: DAEMON_PROTOCOL_VERSION,
         build_id: "test-build".to_owned(),
+        ctx: TelemetryContext::v1(),
         kind: DaemonRequestKind::Hello,
     };
 
@@ -88,12 +89,14 @@ fn protocol_and_build_mismatch_fail_closed() {
         id: "proto".to_owned(),
         protocol_version: DAEMON_PROTOCOL_VERSION + 1,
         build_id: "test-build".to_owned(),
+        ctx: TelemetryContext::v1(),
         kind: DaemonRequestKind::Status,
     };
     let build = DaemonRequest {
         id: "build".to_owned(),
         protocol_version: DAEMON_PROTOCOL_VERSION,
         build_id: "old-build".to_owned(),
+        ctx: TelemetryContext::v1(),
         kind: DaemonRequestKind::Status,
     };
 
@@ -181,6 +184,7 @@ fn attention_snapshot_request_reports_muted_without_dispatch_count() {
         id: "attention".to_owned(),
         protocol_version: DAEMON_PROTOCOL_VERSION,
         build_id: "test-build".to_owned(),
+        ctx: TelemetryContext::v1(),
         kind: DaemonRequestKind::AttentionSnapshot {
             container_name: "jk-agent-smith".to_owned(),
             panes: vec![pane(AgentState::Blocked)],

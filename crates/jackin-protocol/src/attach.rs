@@ -30,6 +30,8 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
+use crate::TelemetryContext;
+
 // Client → server tags.
 /// Wire/protocol constant `TAG_HELLO`.
 pub const TAG_HELLO: u8 = 0x01;
@@ -714,6 +716,8 @@ pub enum ClientFrame {
         focus_session: Option<u64>,
         /// `terminal` field.
         terminal: ClientTerminal,
+        /// Optional cross-process trace and product correlation.
+        context: Option<TelemetryContext>,
     },
     /// `Resize` variant.
     Resize {
@@ -871,6 +875,7 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             env,
             focus_session,
             terminal,
+            context,
         } => {
             // Layout:
             //   rows(2) cols(2) spawn_kind(1)
@@ -970,6 +975,12 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             write_color_field(&mut payload, terminal.default_fg);
             write_color_field(&mut payload, terminal.default_bg);
             write_capability_overrides(&mut payload, terminal.capability_overrides);
+            let context =
+                serde_json::to_vec(&context).context("serializing Hello telemetry context")?;
+            let context_len = u16::try_from(context.len())
+                .map_err(|_| anyhow::anyhow!("Hello telemetry context exceeds u16::MAX bytes"))?;
+            payload.extend_from_slice(&context_len.to_be_bytes());
+            payload.extend_from_slice(&context);
             encode(TAG_HELLO, &payload)
         }
         ClientFrame::Resize { rows, cols } => {
@@ -1352,6 +1363,10 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 default_bg: read_color_field(&mut cursor, "default bg")?,
                 capability_overrides: read_capability_overrides(&mut cursor)?,
             };
+            let context_len = cursor.read_u16("telemetry context length")? as usize;
+            let context: Option<TelemetryContext> =
+                serde_json::from_slice(cursor.read_bytes(context_len, "telemetry context")?)
+                    .context("decoding Hello telemetry context")?;
             if !cursor.finished() {
                 bail!("hello payload has trailing bytes");
             }
@@ -1362,6 +1377,7 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 env,
                 focus_session,
                 terminal,
+                context,
             }
         }
         TAG_RESIZE => {

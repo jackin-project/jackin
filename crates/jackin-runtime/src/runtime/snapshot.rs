@@ -31,7 +31,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use jackin_protocol::control::{
-    AccountUsageSnapshotView, ClientMsg, ServerMsg, TabSnapshot, frame as control_frame,
+    AccountUsageSnapshotView, ClientMsg, ControlRequest, ServerMsg, TabSnapshot,
+    frame as control_frame,
 };
 use serde::Deserialize;
 
@@ -152,7 +153,14 @@ fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<ServerMsg> 
         .context("setting write timeout")?;
 
     stream
-        .write_all(&control_frame(request))
+        .write_all(&control_frame(&ControlRequest {
+            ctx: {
+                let mut ctx = jackin_protocol::TelemetryContext::v1();
+                jackin_telemetry::propagation::inject(&mut ctx);
+                ctx
+            },
+            msg: request.clone(),
+        }))
         .context("writing control request to daemon")?;
 
     let mut len_buf = [0u8; 4];

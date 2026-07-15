@@ -35,7 +35,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Semaphore, mpsc};
 
-use crate::protocol::control::{ClientMsg, ServerMsg, frame};
+use crate::protocol::control::{ServerMsg, frame};
 
 type ClientPermit = tokio::sync::OwnedSemaphorePermit;
 type ListenerReceiver = mpsc::UnboundedReceiver<(UnixStream, ClientPermit)>;
@@ -221,7 +221,10 @@ const CONTROL_READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// callers can clog the underlying cause; a silently-collapsed None
 /// would let the host's `jackin status` block on `read_exact` for a
 /// reply that never comes.
-pub async fn read_control_msg(stream: &mut UnixStream, first_byte: u8) -> Result<ClientMsg> {
+pub async fn read_control_msg(
+    stream: &mut UnixStream,
+    first_byte: u8,
+) -> Result<jackin_protocol::control::ControlRequest> {
     let mut rest = [0u8; 3];
     tokio::time::timeout(CONTROL_READ_TIMEOUT, stream.read_exact(&mut rest))
         .await

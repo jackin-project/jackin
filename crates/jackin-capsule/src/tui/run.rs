@@ -57,6 +57,8 @@ pub async fn run_client(
         .await
         .context("cannot connect to jackin-capsule daemon — is it running?")?;
 
+    let mut context = jackin_protocol::TelemetryContext::v1();
+    jackin_telemetry::propagation::inject(&mut context);
     let hello = encode_client(ClientFrame::Hello {
         rows,
         cols,
@@ -64,6 +66,7 @@ pub async fn run_client(
         spawn: spawn_request,
         terminal,
         focus_session,
+        context: Some(context),
     })
     .context("encoding attach Hello frame")?;
     stream

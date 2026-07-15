@@ -235,6 +235,8 @@ where
     I: AsyncRead + Unpin,
     O: Write,
 {
+    let mut context = jackin_protocol::TelemetryContext::v1();
+    jackin_telemetry::propagation::inject(&mut context);
     let hello = encode_client(ClientFrame::Hello {
         rows,
         cols,
@@ -242,6 +244,7 @@ where
         spawn: request.spawn_request,
         terminal: request.terminal,
         focus_session: request.focus_session,
+        context: Some(context),
     })
     .context("encoding attach Hello frame")?;
     server_writer

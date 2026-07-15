@@ -13,11 +13,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use jackin_core::{ContainerId, JackinPaths};
-use jackin_protocol::InstanceSnapshot;
 use jackin_protocol::control::AgentState;
+use jackin_protocol::{InstanceSnapshot, TelemetryContext};
 use serde::{Deserialize, Serialize};
 
-pub const DAEMON_PROTOCOL_VERSION: u16 = 1;
+pub const DAEMON_PROTOCOL_VERSION: u16 = 2;
 pub const MAX_REQUEST_BYTES: u64 = 16 * 1024;
 pub const SOCKET_FILE_NAME: &str = "jackin-daemon.sock";
 pub const LOG_FILE_NAME: &str = "jackin-daemon.log";
@@ -28,6 +28,7 @@ pub struct DaemonRequest {
     pub id: String,
     pub protocol_version: u16,
     pub build_id: String,
+    pub ctx: TelemetryContext,
     #[serde(flatten)]
     pub kind: DaemonRequestKind,
 }
@@ -369,10 +370,13 @@ pub fn request(
 ) -> Result<DaemonResponse> {
     let mut stream = UnixStream::connect(socket_path)
         .with_context(|| format!("connecting to daemon socket {}", socket_path.display()))?;
+    let mut ctx = TelemetryContext::v1();
+    jackin_telemetry::propagation::inject(&mut ctx);
     let request = DaemonRequest {
         id: "cli".to_owned(),
         protocol_version: DAEMON_PROTOCOL_VERSION,
         build_id: build_id.to_owned(),
+        ctx,
         kind,
     };
     serde_json::to_writer(&mut stream, &request).context("writing daemon request")?;
@@ -500,6 +504,12 @@ fn handle_request(
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
 ) -> DaemonResponse {
+    if matches!(
+        jackin_telemetry::propagation::extract(&request.ctx),
+        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+    ) {
+        return error_response(request.id, "invalid correlation");
+    }
     if request.protocol_version != DAEMON_PROTOCOL_VERSION {
         return error_response(
             request.id,

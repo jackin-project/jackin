@@ -26,6 +26,7 @@ fn hello_roundtrips() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .unwrap();
     // First byte is tag, never `0x00` (which is reserved for the
@@ -43,6 +44,7 @@ fn hello_with_spawn_shell_roundtrips() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .unwrap();
     let payload = bytes[5..].to_vec();
@@ -56,6 +58,7 @@ fn hello_with_spawn_shell_roundtrips() {
             env: Vec::new(),
             terminal: ClientTerminal::default(),
             focus_session: None,
+            context: None,
         }
     );
 }
@@ -72,6 +75,7 @@ fn hello_with_spawn_agent_and_env_roundtrips() {
         ],
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .unwrap();
     // Decode skips the 4-byte length prefix that `encode_client` writes
@@ -90,6 +94,7 @@ fn hello_with_spawn_agent_and_env_roundtrips() {
             ],
             terminal: ClientTerminal::default(),
             focus_session: None,
+            context: None,
         }
     );
 }
@@ -111,6 +116,7 @@ fn hello_with_agent_and_provider_roundtrips() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .unwrap();
     let payload = bytes[5..].to_vec();
@@ -132,6 +138,7 @@ fn hello_rejects_oversized_provider_label_at_encode() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect_err("over-cap provider label must be rejected at encode");
     let msg = format!("{err:#}");
@@ -207,6 +214,7 @@ fn hello_with_trailing_bytes_rejected() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect("encode_client for a valid Hello must succeed");
     bytes.push(0xFF);
@@ -574,6 +582,7 @@ fn hello_env_count_over_cap_is_rejected_by_encoder() {
         env,
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect_err("over-cap env must be rejected at encode");
     let msg = format!("{err:#}");
@@ -651,6 +660,7 @@ fn hello_env_count_at_cap_round_trips() {
         env: env.clone(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect("at-cap env must encode");
     let payload = bytes[5..].to_vec();
@@ -677,6 +687,7 @@ fn hello_with_focus_session_round_trips() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: Some(target),
+        context: None,
     })
     .expect("focus_session encode");
     let payload = bytes[5..].to_vec();
@@ -706,6 +717,7 @@ fn hello_with_client_terminal_round_trips() {
         env: Vec::new(),
         terminal: terminal.clone(),
         focus_session: None,
+        context: None,
     })
     .expect("terminal identity encode");
     let payload = bytes[5..].to_vec();
@@ -817,6 +829,7 @@ fn hello_round_trips_capability_overrides() {
         spawn: None,
         env: Vec::new(),
         focus_session: None,
+        context: None,
         terminal: ClientTerminal {
             term: Some("xterm-kitty".to_owned()),
             capability_overrides: AttachCapabilityOverrides {
@@ -837,13 +850,14 @@ fn hello_round_trips_capability_overrides() {
 }
 
 #[test]
-fn hello_without_capability_override_tail_decodes_as_default() {
+fn hello_without_capability_override_tail_is_rejected() {
     let mut encoded = encode_client(ClientFrame::Hello {
         rows: 24,
         cols: 80,
         spawn: None,
         env: Vec::new(),
         focus_session: None,
+        context: None,
         terminal: ClientTerminal {
             term: Some("xterm-ghostty".to_owned()),
             default_fg: Some((1, 2, 3)),
@@ -852,19 +866,12 @@ fn hello_without_capability_override_tail_decodes_as_default() {
         },
     })
     .expect("encode hello");
-    encoded.truncate(encoded.len() - 6);
+    let context_wire_len = 2 + serde_json::to_vec(&None::<TelemetryContext>).unwrap().len();
+    let end = encoded.len() - context_wire_len;
+    encoded.drain(end - 6..end);
 
-    let decoded = decode_client(TAG_HELLO, encoded[5..].to_vec()).expect("decode old hello");
-
-    match decoded {
-        ClientFrame::Hello { terminal, .. } => {
-            assert_eq!(
-                terminal.capability_overrides,
-                AttachCapabilityOverrides::default()
-            );
-        }
-        other => panic!("expected Hello, got {other:?}"),
-    }
+    decode_client(TAG_HELLO, encoded[5..].to_vec())
+        .expect_err("old Hello without the required tail must be rejected");
 }
 
 #[test]
@@ -880,6 +887,7 @@ fn hello_env_value_over_cap_rejected_by_encoder() {
         env: vec![("PWD".into(), big)],
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect_err("over-cap env value must be rejected at encode");
     let msg = format!("{err:#}");
@@ -958,12 +966,15 @@ fn hello_rejects_unknown_color_presence_byte() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect("hello encode");
-    // Both colors are None and precede the six capability override bytes.
+    // Both colors are None and precede the six capability override bytes and
+    // length-prefixed telemetry context.
     // Corrupt the fg presence byte to an undefined discriminant.
     let mut payload = bytes[5..].to_vec();
-    let fg_presence = payload.len() - 8;
+    let context_wire_len = 2 + serde_json::to_vec(&None::<TelemetryContext>).unwrap().len();
+    let fg_presence = payload.len() - 8 - context_wire_len;
     payload[fg_presence] = 2;
     let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 2 must fail");
     assert!(
@@ -973,7 +984,7 @@ fn hello_rejects_unknown_color_presence_byte() {
 
     // Same body, bg label: bg is immediately before override bytes.
     let mut payload = bytes[5..].to_vec();
-    let bg_presence = payload.len() - 7;
+    let bg_presence = payload.len() - 7 - context_wire_len;
     payload[bg_presence] = 7;
     let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 7 must fail");
     assert!(

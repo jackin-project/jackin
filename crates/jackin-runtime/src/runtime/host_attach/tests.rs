@@ -638,6 +638,7 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
     assert_eq!(
         server_task.await.unwrap(),
         ClientFrame::Hello {
+            context: Some(jackin_protocol::TelemetryContext::v1()),
             rows: 30,
             cols: 100,
             spawn: Some(SpawnRequest::AgentWithProvider {

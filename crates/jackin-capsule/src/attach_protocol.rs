@@ -41,6 +41,7 @@ pub(crate) struct AttachHandshake {
 }
 
 pub(crate) struct ControlRequest {
+    pub(crate) ctx: jackin_protocol::TelemetryContext,
     pub(crate) msg: jackin_protocol::control::ClientMsg,
     pub(crate) reply_tx: oneshot::Sender<jackin_protocol::control::ServerMsg>,
 }
@@ -83,8 +84,8 @@ pub(crate) async fn perform_handshake(
         // Control channel — one-shot length-prefixed JSON. Decode off the
         // main loop, then ask the daemon loop to build the reply from current
         // state so refresh requests and usage APIs stay daemon-owned.
-        let msg = match socket::read_control_msg(&mut stream, first[0]).await {
-            Ok(msg) => msg,
+        let request = match socket::read_control_msg(&mut stream, first[0]).await {
+            Ok(request) => request,
             Err(e) => {
                 crate::clog!("control: rejecting malformed request: {e:#}");
                 drop(client_permit);
@@ -92,7 +93,14 @@ pub(crate) async fn perform_handshake(
             }
         };
         let (reply_tx, reply_rx) = oneshot::channel();
-        if control_tx.send(ControlRequest { msg, reply_tx }).is_err() {
+        if control_tx
+            .send(ControlRequest {
+                ctx: request.ctx,
+                msg: request.msg,
+                reply_tx,
+            })
+            .is_err()
+        {
             crate::clog!("control: daemon loop unavailable while handling request");
             drop(client_permit);
             return;
@@ -137,12 +145,23 @@ pub(crate) async fn perform_handshake(
         env,
         terminal,
         focus_session,
+        context,
     } = initial_frame
     else {
         crate::clog!("attach: rejected client whose first frame was not Hello: {initial_frame:?}");
         drop(client_permit);
         return;
     };
+    if context.as_ref().is_some_and(|ctx| {
+        matches!(
+            jackin_telemetry::propagation::extract(ctx),
+            jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+        )
+    }) {
+        crate::clog!("attach: rejected invalid telemetry correlation");
+        drop(client_permit);
+        return;
+    }
     let handshake = AttachHandshake {
         stream,
         rows,

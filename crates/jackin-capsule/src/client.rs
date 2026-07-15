@@ -13,7 +13,7 @@ use tokio::net::UnixStream;
 
 use crate::protocol::attach::SpawnRequest;
 use crate::protocol::control::{
-    AccountUsageSnapshotView, ClientMsg, ServerMsg, frame as control_frame,
+    AccountUsageSnapshotView, ClientMsg, ControlRequest, ServerMsg, frame as control_frame,
 };
 use crate::socket::SOCKET_PATH;
 
@@ -527,7 +527,14 @@ async fn connect_and_send(request: &ClientMsg) -> Result<UnixStream> {
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
         .context("cannot connect to jackin-capsule daemon")?;
-    stream.write_all(&control_frame(request)).await?;
+    let mut ctx = jackin_protocol::TelemetryContext::v1();
+    jackin_telemetry::propagation::inject(&mut ctx);
+    stream
+        .write_all(&control_frame(&ControlRequest {
+            ctx,
+            msg: request.clone(),
+        }))
+        .await?;
     Ok(stream)
 }
 

@@ -10,7 +10,17 @@
 //! disconnects.
 use serde::{Deserialize, Serialize};
 
+use crate::TelemetryContext;
 use crate::agent_status::AgentStatusReport;
+
+/// Versioned request envelope for every capsule control RPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlRequest {
+    /// Cross-process trace and product correlation.
+    pub ctx: TelemetryContext,
+    /// Requested control operation.
+    pub msg: ClientMsg,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

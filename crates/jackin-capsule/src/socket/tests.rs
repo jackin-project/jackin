@@ -3,6 +3,7 @@
 
 //! Tests for `socket`.
 use super::*;
+use crate::protocol::control::ClientMsg;
 
 #[tokio::test]
 async fn read_control_msg_rejects_oversize_length_prefix() {
@@ -33,25 +34,25 @@ async fn read_control_msg_rejects_malformed_json() {
 #[tokio::test]
 async fn read_control_msg_decodes_known_request() {
     let (mut a, mut b) = UnixStream::pair().unwrap();
-    let body = br#"{"type":"status"}"#;
+    let body = br#"{"ctx":{"v":1},"msg":{"type":"status"}}"#;
     let len_buf = (body.len() as u32).to_be_bytes();
     a.write_all(&len_buf[1..]).await.unwrap();
     a.write_all(body).await.unwrap();
     a.shutdown().await.unwrap();
     let msg = read_control_msg(&mut b, len_buf[0]).await.unwrap();
-    assert!(matches!(msg, ClientMsg::Status));
+    assert!(matches!(msg.msg, ClientMsg::Status));
 }
 
 #[tokio::test]
 async fn read_control_msg_decodes_unknown_variant_for_forward_compat() {
     let (mut a, mut b) = UnixStream::pair().unwrap();
-    let body = br#"{"type":"future_query"}"#;
+    let body = br#"{"ctx":{"v":1},"msg":{"type":"future_query"}}"#;
     let len_buf = (body.len() as u32).to_be_bytes();
     a.write_all(&len_buf[1..]).await.unwrap();
     a.write_all(body).await.unwrap();
     a.shutdown().await.unwrap();
     let msg = read_control_msg(&mut b, len_buf[0]).await.unwrap();
-    assert!(matches!(msg, ClientMsg::Unknown));
+    assert!(matches!(msg.msg, ClientMsg::Unknown));
 }
 
 #[tokio::test]

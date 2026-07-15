@@ -49,6 +49,7 @@ async fn attach_hello_roundtrips_over_socket() {
                 env: Vec::new(),
                 terminal: ClientTerminal::default(),
                 focus_session: None,
+                context: None,
             }
         );
         // Server replies with Welcome + a fake Output payload.
@@ -70,6 +71,7 @@ async fn attach_hello_roundtrips_over_socket() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect("encode Hello");
     client.write_all(&hello).await.unwrap();
@@ -172,6 +174,7 @@ async fn second_attach_takes_over_first() {
             env: Vec::new(),
             terminal: ClientTerminal::default(),
             focus_session: None,
+            context: None,
         })
         .expect("encode Hello")
     };
