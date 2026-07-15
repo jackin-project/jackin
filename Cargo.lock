@@ -2614,7 +2614,7 @@ dependencies = [
  "console",
  "once_cell",
  "regex",
- "similar 2.7.0",
+ "similar",
  "strip-ansi-escapes",
  "tempfile",
 ]
@@ -3207,32 +3207,6 @@ dependencies = [
  "anyhow",
  "jackin-core",
  "jackin-manifest",
-]
-
-[[package]]
-name = "jackin-tui"
-version = "0.6.0-dev"
-dependencies = [
- "anstyle-parse 1.0.0",
- "base64 0.22.1",
- "crossterm",
- "jackin-core",
- "owo-colors 4.3.0",
- "ratatui",
- "similar 3.1.1",
- "termrock",
- "tokio",
- "tui-scrollbar",
- "unicode-width 0.2.2",
-]
-
-[[package]]
-name = "jackin-tui-lookbook"
-version = "0.6.0-dev"
-dependencies = [
- "crossterm",
- "jackin-tui",
- "ratatui",
 ]
 
 [[package]]
@@ -6058,15 +6032,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
-name = "similar"
-version = "3.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6505efef05804732ed8a3f2d4f279429eb485bd69d5b0cc6b19cc02005cda16"
-dependencies = [
- "bstr",
-]
-
-[[package]]
 name = "simsimd"
 version = "6.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6409,7 +6374,7 @@ dependencies = [
  "ratatui-core",
  "ratatui-crossterm",
  "ratatui-widgets",
- "similar 2.7.0",
+ "similar",
  "tui-scrollbar",
  "unicode-segmentation",
  "unicode-width 0.2.2",

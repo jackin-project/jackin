@@ -11,7 +11,7 @@ description: "The hard reuse rule, the full reusable component catalog, and shar
 
 1. **Every visual pattern that appears in more than one place must use one shared implementation.** A single widget, render function, or helper — not two near-copies. When the existing implementation cannot serve a new call site without modification, extend it (add a parameter, generalize a branch, add an enum variant) rather than forking it.
 
-2. **Components have two canonical homes.** Cross-surface components live in `crates/jackin-tui/src/components/`. Surface-local components live in `crates/<surface-crate>/src/tui/components/`. Console service adapters bind component outcomes to root IO, but new canonical component patterns still belong in one of the two component homes.
+2. **Components have two canonical homes.** Product-neutral components live in [TermRock](https://github.com/tailrocks/termrock). Product composition and policy live in `crates/<surface-crate>/src/tui/components/`. Console service adapters bind component outcomes to root IO.
 
 3. **A genuinely new component is only ever written once.** The first time a new UX pattern appears, it is acceptable to implement it in the most focused way that serves the immediate need. The second time the same pattern is needed somewhere else, the two implementations must be consolidated into one shared widget before the second PR lands — not "as a follow-up."
 
@@ -25,7 +25,7 @@ description: "The hard reuse rule, the full reusable component catalog, and shar
 
 ### Component API contract
 
-Shared `jackin-tui` components use one of three API shapes:
+Shared TermRock components use one of three API shapes:
 
 1. **Stateful interactive component** — `pub struct XState` owns UI state only; rendering is a free function such as `render_x(frame: &mut Frame<'_>, area: Rect, state: &XState)`. Use `&mut XState` only when rendering must clamp scroll state, and document that reason in the component. Keyboard input lives on `XState::handle_key(&mut self, key: KeyEvent) -> ModalOutcome<T>`, where `T` is the component's semantic commit value. Do not add a parallel `impl Widget` wrapper for the same stateful component.
 2. **Pure value widget** — display-only values with no interaction implement Ratatui `Widget`. They may expose one thin `render_x(frame, area, ...)` convenience function, but that function delegates to the widget instead of carrying a second render body.
@@ -37,11 +37,11 @@ Shared `jackin-tui` components use one of three API shapes:
 
 Before adding any new TUI widget or state type:
 
-1. Search the shared component crate first: `rg 'struct .*State|fn render_|impl Widget|impl StatefulWidget' crates/jackin-tui/src/components crates/jackin-tui/src`.
+1. Search the pinned TermRock source and catalog first.
 2. Search the owning surface's final local component area: `rg 'struct .*State|fn render_|impl Widget|impl StatefulWidget' crates/<surface-crate>/src/tui`.
 3. Search the owning surface's adapter shell before moving existing behavior: `rg 'struct .*State|fn render_' crates/jackin/src/console crates/jackin-console/src/tui`.
 4. If a component already owns the pattern, extend it. Add a mode enum, parameter, flag, or semantic variant. Do not create a second module.
-5. If no component owns the pattern and only one surface needs it, add it under `crates/<surface-crate>/src/tui/components/` with a thin `components.rs` export. If more than one surface needs it, add it under `crates/jackin-tui/src/components/` with a lookbook story and visual regression coverage.
+5. If no component owns the pattern and only one surface needs it, add it under `crates/<surface-crate>/src/tui/components/` with a thin `components.rs` export. Product-neutral multi-consumer patterns belong upstream in TermRock with catalog and visual-regression coverage.
 6. When moving an existing component into the final structure, preserve behavior first: identify existing tests/snapshots or add focused coverage, move the code, keep compatibility shims only where needed for the migration, and verify the same keyboard, mouse, focus, footer, error, and render behavior afterward.
 
 ### Why this rule exists — canonical lesson
@@ -52,7 +52,7 @@ A `token_store_picker` widget once duplicated the Account → Vault → Item nav
 
 ## Reusable Component Catalog
 
-Reusable TUI widgets live first in `crates/jackin-tui/src/components/`. Surface-local widgets should live under the owning surface's `src/tui/components/`. Console adapter modules may own runner wiring, cache binding, and service execution, but they are not homes for new canonical component patterns. Use this table to identify the right component before writing new code or moving an existing widget.
+Reusable neutral TUI widgets live first in TermRock. Product-local widgets live under the owning surface's `src/tui/components/`. Console adapter modules may own runner wiring, cache binding, and service execution, but they are not homes for new canonical component patterns. Use this table to identify the right component before writing new code or moving an existing widget.
 
 | Component | Module | What it provides | When to use |
 |---|---|---|---|
