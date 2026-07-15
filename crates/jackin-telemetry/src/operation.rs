@@ -126,7 +126,39 @@ impl Drop for OperationGuard {
     }
 }
 
-fn make_span(name: &str) -> Option<Span> {
+fn make_span(name: &str, root: bool) -> Option<Span> {
+    if root {
+        return Some(match name {
+            schema::spans::CLI_COMMAND => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "cli.command")
+            }
+            schema::spans::APP_STARTUP => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "app.startup")
+            }
+            schema::spans::APP_SHUTDOWN => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "app.shutdown")
+            }
+            schema::spans::UI_ACTION => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "ui.action")
+            }
+            schema::spans::UI_SCREEN_TRANSITION => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "ui.screen.transition")
+            }
+            schema::spans::UI_RENDER => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "ui.render")
+            }
+            schema::spans::BACKGROUND_CYCLE => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "background.cycle")
+            }
+            schema::spans::CONNECTION_ATTEMPT => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "connection.attempt")
+            }
+            schema::spans::PROCESS_COMMAND => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "process.command")
+            }
+            _ => return None,
+        });
+    }
     Some(match name {
         schema::spans::CLI_COMMAND => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "cli.command")
@@ -165,7 +197,26 @@ pub fn operation(def: &'static SpanDef, attrs: &[Attr<'_>]) -> Result<OperationG
         health::reject(Rejection::SizeLimit);
         return Err(Rejection::SizeLimit);
     }
-    let Some(span) = make_span(def.name) else {
+    operation_inner(def, attrs, false)
+}
+
+pub(crate) fn operation_root(
+    def: &'static SpanDef,
+    attrs: &[Attr<'_>],
+) -> Result<OperationGuard, Rejection> {
+    operation_inner(def, attrs, true)
+}
+
+fn operation_inner(
+    def: &'static SpanDef,
+    attrs: &[Attr<'_>],
+    root: bool,
+) -> Result<OperationGuard, Rejection> {
+    if attrs.len() > limits::MAX_SPAN_ATTRIBUTES {
+        health::reject(Rejection::SizeLimit);
+        return Err(Rejection::SizeLimit);
+    }
+    let Some(span) = make_span(def.name, root) else {
         health::reject(Rejection::UnknownName);
         return Err(Rejection::UnknownName);
     };

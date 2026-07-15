@@ -14,7 +14,7 @@ Execute in the order below unless the dependency graph says otherwise. Each exec
 | [002](002-otlp-composition-root.md) | OTLP composition root: baseline deps, runtime contract, Resource | P1 | L | 001 | IN PROGRESS |
 | [003](003-tracing-bridge-layering.md) | Bridge layering: one event → one log, native EventName, no inference | P1 | M | 002 | IN PROGRESS |
 | [004](004-telemetry-facade-api.md) | Governed facade: events, operation guard, metrics, limits, lint gates | P1 | L | 001–003 | IN PROGRESS |
-| [005](005-async-spawn-helpers.md) | Spawn ownership helpers (joined/detached/cycle/stream) + spawn lint | P1 | M | 004 | TODO |
+| [005](005-async-spawn-helpers.md) | Spawn ownership helpers (joined/detached/cycle/stream) + spawn lint | P1 | M | 004 | IN PROGRESS |
 | [006](006-cross-process-propagation.md) | Versioned W3C envelopes on all protocols; CLIENT/SERVER RPC spans | P1 | L | 004, 005 | TODO |
 | [007](007-identity-lifecycle-roots.md) | `cli.invocation.id`, `session.id`, command/startup/shutdown roots | P1 | L | 004, 006 | TODO |
 | [008](008-execution-boundaries.md) | Launch, subprocess, Docker, provider HTTP, usage DB, connections | P1 | L | 004, 005, 007 | TODO |

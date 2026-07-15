@@ -14,6 +14,7 @@ pub mod metric;
 pub mod operation;
 pub mod privacy;
 pub mod schema;
+pub mod spawn;
 
 pub use event::{Attr, EventDef, FieldSet, Rejection, Severity, Value, emit_event};
 pub use health::{FacadeHealth, facade_health};
