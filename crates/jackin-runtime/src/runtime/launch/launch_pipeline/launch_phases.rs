@@ -231,9 +231,16 @@ pub(crate) struct WorkspaceMaterialized {
 }
 
 /// Docker (or apple-container) runtime launch completed successfully.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[must_use]
-pub(crate) struct RuntimeLaunched;
+pub(crate) struct RuntimeLaunched {
+    /// Manifest updated throughout finalization.
+    pub instance_manifest: InstanceManifest,
+    /// Per-container state directory.
+    pub container_state: std::path::PathBuf,
+    /// Armed teardown guard carried into finalization.
+    pub cleanup: LoadCleanup,
+}
 
 /// Foreground attach finalization decision.
 #[derive(Debug, Clone, Copy)]

@@ -26,6 +26,7 @@ use crate::runtime::attach::{
     AgentSessionInventory, ContainerState, inspect_agent_sessions,
     start_or_reconnect_capsule_client,
 };
+use crate::runtime::docker_profile::{DockerSecurityProfile, EffectiveGrants, ProfileSource};
 
 use super::super::super::launch_slot::{
     github_env_declarations_for_mode, resolve_github_env_map, verify_credential_env_present,
@@ -426,12 +427,235 @@ where
     })
 }
 
+enum RuntimeDispatch {
+    AppleContainer(String),
+    Docker(Box<RuntimeLaunched>),
+}
+
+struct LaunchRuntime<'a, D, R> {
+    paths: &'a jackin_core::JackinPaths,
+    config: &'a jackin_config::AppConfig,
+    selector: &'a jackin_core::RoleSelector,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    workspace_name: &'a Option<String>,
+    docker: &'a D,
+    runner: &'a mut R,
+    opts: &'a super::super::super::LoadOptions,
+    steps: &'a mut super::super::super::StepCounter,
+    container_name: &'a str,
+    role_key: &'a str,
+    agent_display_name: &'a str,
+    agent: jackin_core::Agent,
+    source: &'a jackin_config::RoleSource,
+    backend: super::super::super::Backend,
+    validated_repo: &'a jackin_manifest::repo::ValidatedRoleRepo,
+    resolved_env: &'a jackin_env::ResolvedEnv,
+    selected_refresh_reason: Option<crate::runtime::image::ImageInvalidationReason>,
+    git: &'a crate::runtime::identity::GitIdentity,
+    network: &'a str,
+    dind: &'a str,
+    resolved_profile: (DockerSecurityProfile, ProfileSource),
+    effective_grants: &'a EffectiveGrants,
+    adopted_sidecar_was_used: bool,
+    workspace_name_str: &'a str,
+    github_resolved_env: &'a std::collections::BTreeMap<String, String>,
+    state: &'a RoleState,
+    prepared: InstancePrepared,
+    workspace_materialized: WorkspaceMaterialized,
+    cleanup: super::super::super::LoadCleanup,
+}
+
+async fn handle_launch_failure<D: DockerApi>(
+    paths: &jackin_core::JackinPaths,
+    container_state: &std::path::Path,
+    instance_manifest: &mut InstanceManifest,
+    container_name: &str,
+    cleanup: &super::super::super::LoadCleanup,
+    docker: &D,
+) {
+    if let Err(status_error) = super::super::super::write_instance_status(
+        paths,
+        container_state,
+        instance_manifest,
+        InstanceStatus::FailedSetup,
+    ) && let Some(run) = jackin_diagnostics::active_run()
+    {
+        run.compact(
+            "status",
+            &format!(
+                "jackin: warning: failed to mark FailedSetup for {container_name} \
+                 after launch error: {status_error:#}; on-disk status may be stale"
+            ),
+        );
+    }
+    cleanup.run(docker).await;
+}
+
+const fn sidecar_replenish(adopted: bool) -> super::super::super::SidecarPrewarmReplenish {
+    if adopted {
+        super::super::super::SidecarPrewarmReplenish::AfterAttach
+    } else {
+        super::super::super::SidecarPrewarmReplenish::None
+    }
+}
+
+async fn launch_runtime<D, R>(input: LaunchRuntime<'_, D, R>) -> anyhow::Result<RuntimeDispatch>
+where
+    D: DockerApi,
+    R: CommandRunner,
+{
+    let LaunchRuntime {
+        paths,
+        config,
+        selector,
+        workspace,
+        workspace_name,
+        docker,
+        runner,
+        opts,
+        steps,
+        container_name,
+        role_key,
+        agent_display_name,
+        agent,
+        source,
+        backend,
+        validated_repo,
+        resolved_env,
+        selected_refresh_reason,
+        git,
+        network,
+        dind,
+        resolved_profile,
+        effective_grants,
+        adopted_sidecar_was_used,
+        workspace_name_str,
+        github_resolved_env,
+        state,
+        prepared:
+            InstancePrepared {
+                image,
+                selected_image_reused,
+                mut instance_manifest,
+                container_state,
+                host_workdir_fingerprint,
+            },
+        workspace_materialized:
+            WorkspaceMaterialized {
+                materialized,
+                launch_config,
+            },
+        mut cleanup,
+    } = input;
+    match backend {
+        super::super::super::Backend::Docker => {}
+        super::super::super::Backend::AppleContainer => {
+            cleanup.run(docker).await;
+            let mount_pairs = super::super::super::build_workspace_mount_pairs(&materialized);
+            crate::runtime::apple_container::launch(
+                crate::runtime::apple_container::AppleContainerLaunch {
+                    paths,
+                    container_name,
+                    image: &image,
+                    workspace_name: workspace_name.as_deref(),
+                    workspace_label: workspace.label.as_str(),
+                    workdir: &workspace.workdir,
+                    role_key,
+                    role_display_name: agent_display_name,
+                    agent,
+                    role_source_git: &source.git,
+                    role_source_ref: opts.role_branch.as_deref(),
+                    image_tag: &image,
+                    env_pairs: &resolved_env.vars,
+                    mount_pairs: &mount_pairs,
+                    host_workdir_fingerprint: &host_workdir_fingerprint,
+                    capsule_config: &launch_config,
+                    debug: opts.debug,
+                },
+            )
+            .await?;
+            return Ok(RuntimeDispatch::AppleContainer(container_name.to_owned()));
+        }
+    }
+    let reuse_staleness_sentinel = (selected_image_reused
+        && crate::runtime::image::reuse_needs_background_staleness_check(
+            paths,
+            validated_repo,
+            &image,
+        ))
+    .then_some(
+        super::super::super::launch_runtime::ReuseStalenessSentinel {
+            role_git: &source.git,
+            branch_override: opts.role_branch.as_deref(),
+            image: &image,
+        },
+    );
+    let ctx = super::super::super::LaunchContext {
+        container_name,
+        image: &image,
+        network,
+        dind,
+        selector,
+        agent_display_name,
+        workspace: &materialized,
+        state,
+        git,
+        debug: opts.debug,
+        git_coauthor_trailer: config.git.coauthor_trailer,
+        git_dco: config.git.dco,
+        agent,
+        capsule_config: &launch_config,
+        resolved_env,
+        github_env: github_resolved_env,
+        profile: resolved_profile.0,
+        profile_source: resolved_profile.1,
+        grants: effective_grants,
+        paths,
+        selected_image_refresh: selected_refresh_reason.map(|reason| {
+            super::super::super::SelectedImageRefresh {
+                role_git: &source.git,
+                branch_override: opts.role_branch.as_deref(),
+                reason,
+            }
+        }),
+        reuse_staleness_sentinel,
+        sidecar_prewarm_replenish: sidecar_replenish(adopted_sidecar_was_used),
+        sibling_prewarm: super::super::super::SiblingPrewarm {
+            role_git: &source.git,
+            branch_override: opts.role_branch.as_deref(),
+            validated_repo,
+            selected_image_reused,
+        },
+        sibling_auth_prewarm: super::super::super::SiblingAuthPrewarm {
+            manifest: &validated_repo.manifest,
+            config,
+            workspace_name: workspace_name_str,
+            role_key,
+        },
+    };
+    let launch_result = super::super::super::launch_role_runtime(&ctx, steps, docker, runner).await;
+    if launch_result.is_err() {
+        handle_launch_failure(
+            paths,
+            &container_state,
+            &mut instance_manifest,
+            container_name,
+            &cleanup,
+            docker,
+        )
+        .await;
+    }
+    launch_result?;
+    cleanup.keep_socket_dir();
+    Ok(RuntimeDispatch::Docker(Box::new(RuntimeLaunched {
+        instance_manifest,
+        container_state,
+        cleanup,
+    })))
+}
+
 #[expect(
     clippy::too_many_lines,
-    reason = "remaining phase extraction is tracked by codebase-health plan 016"
-)]
-#[expect(
-    clippy::cognitive_complexity,
     reason = "remaining phase extraction is tracked by codebase-health plan 016"
 )]
 pub(super) async fn run_launch_phases<D, R>(ctx: LaunchCore<'_, D, R>) -> anyhow::Result<String>
@@ -450,7 +674,7 @@ where
         opts,
         git,
         workspace_name,
-        mut steps,
+        steps,
         role_key,
         agent_display_name,
         agent,
@@ -511,7 +735,7 @@ where
     // container is a no-op. For a fresh launch the sidecar is not started
     // until later, so there is nothing to leak in the gap.
     let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
-    let mut cleanup = super::super::super::LoadCleanup::new(
+    let cleanup = super::super::super::LoadCleanup::new(
         container_name.clone(),
         dind.clone(),
         certs_volume.clone(),
@@ -1289,149 +1513,56 @@ where
         launch_config,
     } = ws_mat;
 
-    // Backend dispatch. A per-workspace `[runtime].backend` or the host
-    // `[runtime].default_backend` routes this launch to the apple-container
-    // backend instead of Docker. Everything above (role resolution, image
-    // build, env resolution, mount materialization, capsule config) is
-    // backend-neutral; only the container lifecycle below is Docker-specific.
-    //
-    // The apple-container VM boots its own kernel and runs rootless DinD
-    // inside, so the Docker DinD sidecar / private network / certs volume
-    // provisioned by the shared path above are unused here — tear them down
-    // before handing off so they do not leak. (The empirical Phase 0 gate —
-    // see the apple-container roadmap item — moves this branch ahead of the
-    // sidecar so it is never started; it cannot be validated without macOS
-    // 26 ARM hardware, so for now the sidecar is started and immediately
-    // reclaimed.)
-    // Exhaustive match (not an `if`) so a future backend variant is a
-    // compile error here instead of silently taking the Docker path.
-    match backend {
-        super::super::super::Backend::Docker => {}
-        super::super::super::Backend::AppleContainer => {
-            cleanup.run(docker).await;
-            let mount_pairs = super::super::super::build_workspace_mount_pairs(&materialized);
-            return crate::runtime::apple_container::launch(
-                crate::runtime::apple_container::AppleContainerLaunch {
-                    paths,
-                    container_name: &container_name,
-                    image: &image,
-                    workspace_name: workspace_name.as_deref(),
-                    workspace_label: workspace.label.as_str(),
-                    workdir: &workspace.workdir,
-                    role_key: &role_key,
-                    role_display_name: &agent_display_name,
-                    agent,
-                    role_source_git: &source.git,
-                    role_source_ref: opts.role_branch.as_deref(),
-                    image_tag: &image,
-                    env_pairs: &resolved_env.vars,
-                    mount_pairs: &mount_pairs,
-                    host_workdir_fingerprint: &host_workdir_fingerprint,
-                    capsule_config: &launch_config,
-                    debug: opts.debug,
-                },
-            )
-            .await
-            .map(|()| container_name.clone());
-        }
-    }
-
-    let reuse_staleness_sentinel = (selected_image_reused
-        && crate::runtime::image::reuse_needs_background_staleness_check(
-            paths,
-            &validated_repo,
-            &image,
-        ))
-    .then_some(
-        super::super::super::launch_runtime::ReuseStalenessSentinel {
-            role_git: &source.git,
-            branch_override: opts.role_branch.as_deref(),
-            image: &image,
-        },
-    );
-
-    let ctx = super::super::super::LaunchContext {
+    let launched = launch_runtime(LaunchRuntime {
+        paths,
+        config,
+        selector,
+        workspace,
+        workspace_name: &workspace_name,
+        docker,
+        runner,
+        opts,
+        steps,
         container_name: &container_name,
-        image: &image,
+        role_key: &role_key,
+        agent_display_name: &agent_display_name,
+        agent,
+        source: &source,
+        backend,
+        validated_repo: &validated_repo,
+        resolved_env: &resolved_env,
+        selected_refresh_reason,
+        git: &git,
         network: &network,
         dind: &dind,
-        selector,
-        agent_display_name: &agent_display_name,
-        workspace: &materialized,
+        resolved_profile,
+        effective_grants: &effective_grants,
+        adopted_sidecar_was_used,
+        workspace_name_str: &workspace_name_str,
+        github_resolved_env: &github_resolved_env,
         state: &state,
-        git: &git,
-        debug: opts.debug,
-        git_coauthor_trailer: config.git.coauthor_trailer,
-        git_dco: config.git.dco,
-        agent,
-        capsule_config: &launch_config,
-        resolved_env: &resolved_env,
-        github_env: &github_resolved_env,
-        profile: resolved_profile.0,
-        profile_source: resolved_profile.1,
-        grants: &effective_grants,
-        paths,
-        selected_image_refresh: selected_refresh_reason.map(|reason| {
-            super::super::super::SelectedImageRefresh {
-                role_git: &source.git,
-                branch_override: opts.role_branch.as_deref(),
-                reason,
-            }
-        }),
-        reuse_staleness_sentinel,
-        sidecar_prewarm_replenish: if adopted_sidecar_was_used {
-            super::super::super::SidecarPrewarmReplenish::AfterAttach
-        } else {
-            super::super::super::SidecarPrewarmReplenish::None
-        },
-        sibling_prewarm: super::super::super::SiblingPrewarm {
-            role_git: &source.git,
-            branch_override: opts.role_branch.as_deref(),
-            validated_repo: &validated_repo,
+        prepared: InstancePrepared {
+            image,
             selected_image_reused,
+            instance_manifest,
+            container_state,
+            host_workdir_fingerprint,
         },
-        sibling_auth_prewarm: super::super::super::SiblingAuthPrewarm {
-            manifest: &validated_repo.manifest,
-            config,
-            workspace_name: &workspace_name_str,
-            role_key: &role_key,
+        workspace_materialized: WorkspaceMaterialized {
+            materialized,
+            launch_config,
         },
+        cleanup,
+    })
+    .await?;
+    let RuntimeLaunched {
+        mut instance_manifest,
+        container_state,
+        mut cleanup,
+    } = match launched {
+        RuntimeDispatch::AppleContainer(container_name) => return Ok(container_name),
+        RuntimeDispatch::Docker(launched) => *launched,
     };
-    #[expect(
-        clippy::needless_borrow,
-        reason = "documented residual allow; prefer expect when site is lint-true"
-    )]
-    let launch_result =
-        super::super::super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
-    if launch_result.is_err() {
-        // FailedSetup write error must not abort cleanup; surface to stderr
-        // so the operator sees the on-disk status is stale (Active) and
-        // that `jackin inspect` / `hardline` may report misleading state.
-        if let Err(status_err) = super::super::super::write_instance_status(
-            paths,
-            &container_state,
-            &mut instance_manifest,
-            InstanceStatus::FailedSetup,
-        ) {
-            let message = format!(
-                "jackin: warning: failed to mark FailedSetup for {container_name} \
-                     after launch error: {status_err:#}; on-disk status may be stale"
-            );
-            if let Some(run) = jackin_diagnostics::active_run() {
-                run.compact("status", &message);
-            }
-        }
-        cleanup.run(docker).await;
-    }
-    launch_result?;
-    let launched: RuntimeLaunched = RuntimeLaunched;
-    let RuntimeLaunched = launched;
-    // Launch succeeded. From here on the cleanup struct is reused
-    // to tear down docker resources at session end (clean exit,
-    // crash, NotFound, etc.); the host-side socket dir + Capsule
-    // launch config stay behind for operator inspection and get
-    // swept by the next explicit `jackin eject` / Purge.
-    cleanup.keep_socket_dir();
 
     let finalized = finalize_session(FinalizeSession {
         paths,
