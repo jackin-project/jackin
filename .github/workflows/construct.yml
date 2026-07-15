@@ -38,7 +38,7 @@ env:
 jobs:
   matrix-setup:
     name: Select runner lane
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'velnor')) && fromJSON('["self-hosted","velnor-target-mvp"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     outputs:
       build_configs: ${{ steps.set.outputs.build_configs }}
@@ -78,7 +78,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'velnor')) && fromJSON('["self-hosted","velnor-target-mvp"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     outputs:
       construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
