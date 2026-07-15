@@ -10,7 +10,7 @@
 
 ## Status
 
-- **Implementation status**: **RESIDUAL** — production local `verify_signed_bundle` + `PackSource` + floor-on-failure shipped. Open: live remote publish/fetch + operator launch-summary consent; org signing target.
+- **Implementation status**: **RESIDUAL** — `PackSource` scaffolding, bounded parse/regex validation, and embedded-floor-on-rejection tests exist. Open: cryptographic signature and signer-identity verification, production signed-bundle ingestion, org-controlled publish/fetch, background refresh/hot-swap, operator consent visibility, and applied-pack logging.
 - **Priority**: P2
 - **Effort**: M–L
 - **Risk**: MED (network + trust boundary in a security-focused product)
@@ -112,13 +112,13 @@ infra / a CI job, a separate deliverable); changing the rule *engine* or pack *c
 
 ## Done criteria
 
-- [x] Registry builds from `[Embedded, LocalDir, SignedRemoteBundle]`; later validated sources win and the
+- [ ] Injected tests cover source ordering and floor preservation, but the production registry omits `SignedRemoteBundle`; later-version selection is not implemented. The intended registry builds from `[Embedded, LocalDir, SignedRemoteBundle]`; later validated sources win and the
   embedded floor is never removed
-- [x] A local signed bundle is identity+signature verified before any pack is parsed; unverified → rejected +
+- [ ] Bundle parsing is gated by a deterministic marker check, not a cryptographic signature; authentic signer identity is not verified. A local signed bundle must be identity+signature verified before any pack is parsed; unverified → rejected +
   loud registry note
 - [x] Bundle/pack size bounds + regex compile-validation on the signed-bundle path; one bad pack never aborts the
   registry
-- [x] Fetch is non-blocking; no network fetch in-tree (local/operator bundle only) — live remote fetch CLOSED-as-pinned until an
+- [ ] No fetch exists; non-blocking background fetch/hot-swap and fetch-failure/slow-source tests remain blocked until an
   org-controlled publishing/fetch target exists; no live fetch path is intentionally present
 - [ ] Remote channel is operator-visible (launch summary) with a chosen default; applied packs are logged —
   BLOCKED until the maintainer chooses the production default and publishing target; local registry notes exist
