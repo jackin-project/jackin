@@ -15,6 +15,8 @@ tailrocks/termrock
 |  |     |- input/
 |  |     |- interaction/
 |  |     |- layout/
+|  |     |- osc/
+|  |     |- runtime/
 |  |     |- scroll/
 |  |     |- style/
 |  |     |- crossterm/       # optional feature
@@ -33,7 +35,7 @@ tailrocks/termrock
 
 Start with two packages: the reusable component crate and a lookbook package that exposes the story/render library plus its CLI. Do not create a third CLI crate only to wrap the lookbook. Add a public testing crate only after two consumers require the same `TestBackend`, event fixtures, or golden-render helpers.
 
-The Fumadocs application lives in the same repository. Component source, stories, generated SVGs, docs pages, and their verification gate therefore advance in one PR and cannot drift across repositories.
+The Fumadocs application lives in the same repository. Component source, stories, generated SVGs, docs pages, and their verification gate therefore advance in one change unit and cannot drift across repositories: one signed direct-`main` commit during bootstrap, then one normal TermRock PR after the roadmap completes.
 
 ## Public API rules
 
@@ -43,7 +45,7 @@ The Fumadocs application lives in the same repository. Component source, stories
 4. **Data-driven actions.** Tabs, buttons, hints, menus, and badges accept stable IDs, labels, state, and policy from the consumer.
 5. **Complete keyboard path.** Mouse interaction may mirror actions, but focus, keyboard activation, and visible hints remain complete.
 6. **Stable geometry.** Dynamic labels, hover, selection, loading, and errors cannot shift fixed controls unpredictably.
-7. **Executor restraint.** Widgets and state do not require Tokio, and the base crate has no async-runtime dependency. The optional executor-neutral `runtime` module covers update/view/subscription contracts and the frame driver; Tokio integration stays consumer-owned.
+7. **Executor restraint.** Widgets and state do not require Tokio, and the base crate has no async-runtime dependency. The executor-neutral base `runtime` module is optional by use, covers update/view/subscription contracts and the frame driver, and is referenced by no widget; Tokio integration stays consumer-owned.
 8. **Controlled dependencies.** MSRV and Ratatui/Crossterm support are published and tested.
 9. **Two-consumer graduation.** Product-local components remain local until a second concrete consumer needs the same neutral contract.
 10. **One renderer.** Public components target Ratatui directly; do not create a lowest-common-denominator renderer abstraction.
@@ -77,7 +79,7 @@ event -> Message -> pure update -> state + typed effects
                               consumer effect adapter
 ```
 
-The shared project exposes the donor's executor-neutral contracts — modal outcomes, focus ownership, dirty/redraw state, typed update results, subscriptions with std-channel and closure adapters, component/view traits, and the `drive_frame` frame driver — as one optional `runtime` module. It does not expose effect envelopes that can execute themselves, and it must not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree. Standard Ratatui `Widget`/`StatefulWidget` rendering remains usable without the optional module, no widget references it, and Tokio integration stays consumer-owned.
+The shared project exposes the donor's executor-neutral dirty/redraw state, typed update results, subscriptions with std-channel and closure adapters, component/view traits, and the `drive_frame` frame driver in the base `runtime` module. The module is optional by use rather than a Cargo feature. It exposes no self-executing effect envelope and does not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree. Standard Ratatui `Widget`/`StatefulWidget` rendering remains independent, no widget references `runtime`, and Tokio integration stays consumer-owned. Modal outcomes and focus ownership remain in `interaction`, their single canonical module.
 
 The repository includes compile-checked direct, TEA, component-oriented, Flux,
 buffer-only, manually managed Crossterm, and TermRock-managed Crossterm
@@ -92,7 +94,7 @@ See [09 - Component redesign catalog](/reference/research/shared-tui-extraction/
 
 ## Git-first consumption
 
-crates.io publication is not required before the first consumers migrate. Cargo supports direct Git dependencies by branch or exact revision:
+crates.io publication is not required before the first consumer migrates. Cargo supports direct Git dependencies by branch or exact revision:
 
 ```toml
 [dependencies]
@@ -104,9 +106,9 @@ termrock = { git = "https://github.com/tailrocks/termrock.git", rev = "<full-com
 termrock = { git = "https://github.com/tailrocks/termrock.git", branch = "feature/new-component" }
 ```
 
-The branch form is a collaboration pointer: a consumer can develop a component fix on a trusted Tailrocks branch or fork and exercise it immediately. The exact commit is the build identity: long-lived consumer branches and default branches use `rev`, commit <RepoFile path="Cargo.lock" />, and change the revision through review. Cargo records the resolved Git commit in <RepoFile path="Cargo.lock" />, but a later update of a branch dependency can advance it; a branch name is therefore not the security or reproducibility boundary.
+During this roadmap's bootstrap, the single `jackin❯` implementation PR never uses the branch form. TermRock work is pushed directly to `main`, and every `jackin❯` checkpoint pins the tested full commit through `rev`, commits <RepoFile path="Cargo.lock" />, and records the checkpoint in the PR. The branch form becomes a collaboration pointer only after the roadmap completes: a consumer may then develop a component fix on a trusted Tailrocks branch or fork and exercise it immediately. The exact commit remains the build identity because a later update of a branch dependency can advance it; a branch name is never the security or reproducibility boundary.
 
-The supported cross-repository loop is:
+The supported post-bootstrap cross-repository loop is:
 
 1. create the component improvement on a branch in the shared repository or a trusted fork;
 2. test the consumer against that branch while iterating;
@@ -127,8 +129,8 @@ termrock-lookbook
 jackin❯ conformance
   agents, roles, workspaces, containers, OnePassword, console layouts
 
-Holla conformance
-  detected actions, task tabs, running output, command failures
+Future consumer conformance (outside this roadmap)
+  product-owned compositions and effects
 ```
 
 The lookbook package exposes one documented CLI with stable conceptual operations:
@@ -174,6 +176,8 @@ API additions require:
 
 Consumers pin semver releases or immutable revisions. Branch dependencies are allowed for cross-repository iteration but are replaced by an exact revision before a consumer change becomes durable. The shared project publishes a compatibility matrix and does not coordinate adoption by requiring every Tailrocks repository to follow its default branch or wait for crates.io.
 
-Ratatui/Crossterm upgrades propagate shared-project-first: because public types come from `ratatui-core`, each Ratatui bump is a breaking `termrock` change that lands with regenerated fixtures and a migration note, after which `jackin❯` repins first as the compatibility oracle and Holla follows. No consumer upgrades Ratatui ahead of the library, and exactly one Ratatui/Crossterm pair is supported per revision line. Issue routing follows reproducibility: defects reproducible with a neutral story belong to the shared repository, product-state defects to the consumer, with cross-links when behavior spans both.
+Ratatui/Crossterm upgrades propagate shared-project-first: because public types come from `ratatui-core`, each Ratatui bump is a breaking `termrock` change that lands with regenerated fixtures and a migration note, after which `jackin❯` repins as the compatibility oracle. Future adopters follow the same policy through their own separately scoped changes. No consumer upgrades Ratatui ahead of the library, and exactly one Ratatui/Crossterm pair is supported per revision line. Issue routing follows reproducibility: defects reproducible with a neutral story belong to the shared repository, product-state defects to the consumer, with cross-links when behavior spans both.
+
+Repository governance has one explicit bootstrap exception: while this roadmap's single `jackin❯` PR is open, DCO-signed, buildable TermRock checkpoints push directly to `main` and do not open TermRock PRs. After the final roadmap checkpoint, TermRock enables its normal protected-`main`, branch, and pull-request workflow for all later changes.
 
 Repository CI, caching, dependency policy, render/catalog coverage, and release automation are specified in [07 - Repository engineering](/reference/research/shared-tui-extraction/07-repository-engineering/). The generated extraction inventory and parity gates are specified in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).

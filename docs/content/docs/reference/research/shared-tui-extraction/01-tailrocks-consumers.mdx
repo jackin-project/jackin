@@ -4,7 +4,7 @@ title: "01 - Tailrocks Consumers"
 
 # 01 - Tailrocks Consumers
 
-Shared terminal components are useful only if product ownership stays explicit.
+Shared terminal components are useful only if product ownership stays explicit. This chapter records the reuse rationale and future boundaries; it does not add another product to the extraction program.
 
 ## Product map
 
@@ -20,7 +20,7 @@ Parallax describes CLI, API, and web clients over one canonical service in its [
 
 ## Current evidence
 
-Holla currently uses Ratatui 0.30 and Crossterm 0.29 and directly implements alternate-screen/raw-mode lifecycle, tabs, key navigation, scrolling, status glyphs, and output panes. That overlap is the strongest second-consumer proof.
+Holla currently uses Ratatui 0.30 and Crossterm 0.29 and directly implements alternate-screen/raw-mode lifecycle, tabs, key navigation, scrolling, status glyphs, and output panes. That overlap makes Holla a plausible future adopter, but this roadmap neither validates nor changes it.
 
 Velnor has no Ratatui dependency today. Its current GitHub runner uses GitHub as the scheduling/operator UI, so shared-TUI work must wait for a concrete local runner-console workflow rather than prebuilding Velnor components.
 
@@ -51,12 +51,12 @@ It is not:
 
 Products integrate with one another through commands, stable APIs, and OpenTelemetry when needed. Sharing UI mechanics does not create runtime dependencies among them.
 
-## Consumer order
+## Adoption boundary
 
-1. `jackin❯` is the donor and compatibility oracle.
-2. Holla proves reuse under a different product model.
-3. Later products adopt only when they have a concrete interactive workflow.
+1. `jackin❯` is the donor, compatibility oracle, and only consumer migrated by this roadmap.
+2. Holla, Velnor, Parallax, TableRock, and later products adopt only through separately scoped work when they have a concrete interactive workflow.
+3. No checkout, patch, build, smoke test, compatibility claim, or acceptance gate in another product repository is required to complete this roadmap.
 
-This order prevents a database grid, CI job tree, trace browser, or command menu from being declared universal before two products agree on the underlying presentation semantics.
+The public API remains neutral through product-free types, generic stories, compile-checked architecture examples, and `jackin❯` parity. It does not prebuild a database grid, CI job tree, trace browser, or command menu for hypothetical consumers.
 
 Missing widgets are accepted at adoption time: the extraction ships only the existing donor set, and consumer needs beyond it — trees, progress indicators, data tables, command palettes, multi-line editors — are deliberate post-extraction roadmap work under the two-consumer rule, never extraction blockers.

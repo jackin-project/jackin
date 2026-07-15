@@ -22,7 +22,7 @@ tailrocks/termrock/
 |- nextest.toml
 |- crates/
 |  |- termrock/
-|  |  `- src/{crossterm,input,interaction,layout,scroll,style,text,widgets}/
+|  |  `- src/{crossterm,input,interaction,layout,osc,runtime,scroll,style,text,widgets}/
 |  `- termrock-lookbook/
 |     |- src/lib.rs
 |     `- src/bin/termrock-lookbook.rs
@@ -65,14 +65,21 @@ Carry over the useful jackin❯ defaults:
 - edition and MSRV in one workspace package policy;
 - `debug = 1` in development and thin LTO for release binaries;
 - all tools pinned in <RepoFile path="mise.toml" />, with the lockfile enabled;
-- Conventional Commits, DCO sign-off, protected `main`, one PR per branch, and docs in the same PR as API changes;
+- Conventional Commits and DCO sign-off from the first commit;
+- during the roadmap bootstrap only, signed buildable checkpoints push directly to `main` with no TermRock PR, and source/story/SVG/docs changes stay in the same commit;
+- after the roadmap completes, protect `main`, require one PR per branch, and require docs in the same PR as API changes;
 - action references pinned by full commit SHA, including checkout and REUSE.
 
 Do not copy the current dependency exception ledgers. Generate a new `deny.toml` from the small actual graph. Permit Apache-2.0 and MIT by policy, add an exception only with a reason, deny yanked crates and unknown registries/Git sources, and deny wildcard requirements. `cargo-deny` should also reject duplicate versions unless the repository records a narrow reviewed exception. This is especially important for `ratatui-core`: two incompatible copies in one process can make otherwise identical public types fail to interoperate.
 
-## Required pull-request jobs
+## Required validation jobs
 
-Use path classification and two required aggregators, `rust-required` and `docs-required`, so branch protection does not change when an expensive job is skipped. Every workflow has least-privilege permissions, a timeout, and PR concurrency cancellation.
+Run the same path-classified validation graph on every bootstrap push to `main`
+and on every later pull request. Use two aggregators, `rust-required` and
+`docs-required`, so branch protection does not change when an expensive job is
+skipped. Every workflow has least-privilege permissions and a timeout; later
+PR runs also use concurrency cancellation. During bootstrap, do not push the
+next TermRock checkpoint until both aggregators pass for the current `main`.
 
 ### Fast source gates
 
@@ -89,7 +96,7 @@ Use path classification and two required aggregators, `rust-required` and `docs-
 | `rustdoc` | `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --all-features --no-deps --locked` | public docs and links |
 | `examples` | check direct, TEA, component, Flux, buffer-only, and both Crossterm integration examples through public APIs | application-pattern and feature-layer neutrality |
 
-The base crate must also pass `cargo check -p termrock --no-default-features` and a dependency assertion that finds no Tokio/Crossterm package in that graph. All component modules and architecture/buffer examples are checked with no features. The two Crossterm examples declare `required-features = ["crossterm"]` in the manifest and are checked with `--features crossterm`, so the no-feature example lane skips only those integration examples rather than weakening the component build. CI compares public component inventories and canonical buffer fixtures across both builds: enabling the feature may add only the optional integration module and adapter implementations, never hide or change a component. The Crossterm feature receives a separate all-target check on Linux, macOS, and Windows if the project claims those platforms.
+The base crate must also pass `cargo check -p termrock --no-default-features` and a dependency assertion that finds no Tokio/Crossterm package in that graph. All component modules and architecture/buffer examples are checked with no features. The two Crossterm examples declare `required-features = ["crossterm"]` in the manifest and are checked with `--features crossterm`, so the no-feature example lane skips only those integration examples rather than weakening the component build. CI compares public component inventories and canonical buffer fixtures across both builds: enabling the feature may add only the optional integration module and adapter implementations, never hide or change a component. The Crossterm feature receives separate all-target checks on Linux and macOS; Windows is outside the initial support statement and CI contract.
 
 ### API and package gates
 
@@ -145,7 +152,9 @@ The donor currently has 29 committed SVG previews and 18 Rust files using `TestB
 
 ## Documentation gates
 
-The same pull request that changes a public component changes its story, SVG, and Fumadocs page. Required docs jobs:
+The same change unit that changes a public component changes its story, SVG,
+and Fumadocs page: one signed commit during direct-`main` bootstrap and one PR
+after bootstrap. Required docs jobs:
 
 - install with `bun install --frozen-lockfile` or `bun ci` from the committed Bun lock;
 - cache only Bun's download cache, not `node_modules` or generated site output;
@@ -193,7 +202,7 @@ Never cache generated SVGs, API reports, packages, or docs output. Those are bui
 
 ## Scheduled hygiene
 
-Keep required PR latency bounded by moving broad but valuable checks to a scheduled workflow:
+Keep required validation latency bounded by moving broad but valuable checks to a scheduled workflow:
 
 - full feature powerset on every workspace package if the PR lane is scoped later;
 - advisory and yanked-dependency refresh;
@@ -212,7 +221,7 @@ The first adoption artifact is an immutable Git revision, not a binary release. 
 - serialize releases with concurrency cancellation disabled;
 - require a clean main-branch revision and all required aggregators;
 - ensure the workspace version and tag agree;
-- run semver, package, license, docs, and consumer-smoke gates;
+- run semver, package, license, docs, standalone-example, and `jackin❯` compatibility gates;
 - create annotated `v0.y.z` tags and a GitHub release with migration notes;
 - publish to crates.io only after an explicit operator decision and registry ownership check;
 - build standalone lookbook binaries only if users need installation without Cargo; do not inherit jackin❯'s unrelated cross-platform archive matrix by default.

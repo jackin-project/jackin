@@ -12,7 +12,8 @@ The migration should be driven by checked artifacts rather than a sequence of ma
 
 ## Freeze artifacts
 
-Create these generated, reviewable artifacts on the active extraction branch before filtering history:
+Create these generated, reviewable artifacts on the single `jackin❯`
+implementation branch before filtering history:
 
 | Artifact | Contents | Gate |
 |---|---|---|
@@ -113,31 +114,31 @@ No TablePro, TablePlus, Zedis, or other reference-project source belongs in this
 ## Cross-repository change graph
 
 ```text
-termrock bootstrap/history PR
+one jackin❯ implementation branch + PR (open through every stage)
+        |
+        +--> TermRock history bootstrap -> signed direct-main checkpoints
+        |                                  |
+        |                                  v
+        |                           immutable TermRock revisions
+        |                                  |
+        +<--------- exact `rev` repins -----+
         |
         v
-termrock neutralization/API PRs
+jackin❯ migration commits -> parity -> donor/docs deletion
         |
         v
-termrock immutable preview revision
-        |
-        +---------------------------+
-        v                           v
-jackin❯ migration PRs          minimal example consumer
-        |
-        v
-jackin❯ donor deletion/docs transfer
-        |
-        v
-Holla adoption + gap feedback
-        |
-        v
-termrock first compatibility tag
+TermRock first tag -> roadmap retirement -> one jackin❯ PR merge
 ```
 
-During development a `jackin❯` branch may point at a trusted `termrock` feature branch or fork. Before a consumer PR becomes durable, replace that pointer with the tested full commit in Cargo's `rev` field and commit <RepoFile path="Cargo.lock" />. Cargo's [Git dependency syntax](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#specifying-dependencies-from-git-repositories) supports both iteration pointers and exact revisions; the exact revision is the reviewed build identity.
+During this roadmap, every `jackin❯` checkpoint points at the tested full
+TermRock `main` commit in Cargo's `rev` field and commits
+<RepoFile path="Cargo.lock" />. It never follows mutable `main` or a feature
+branch. Cargo's
+[Git dependency syntax](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#specifying-dependencies-from-git-repositories)
+supports exact revisions; that revision is the reviewed build identity. Branch
+and fork iteration is a post-bootstrap workflow documented in chapter 03.
 
-Do not add `pub use termrock::*` as a compatibility facade in `jackin-tui`, and do not retain duplicated types under old paths. jackin❯ is pre-release: migrate each consumer batch to the new owning path, then remove the corresponding donor item in the same branch. The old donor can coexist only for not-yet-migrated modules, with no type duplicated across both ownership boundaries.
+Do not add `pub use termrock::*` as a compatibility facade in `jackin-tui`, and do not retain duplicated types under old paths. jackin❯ is pre-release: migrate each consumer batch to the new owning path, then remove the corresponding donor item in the same implementation branch. The old donor can coexist only for not-yet-migrated modules, with no type duplicated across both ownership boundaries. These batches are commits in the one PR, not separate PRs.
 
 ## `jackin❯` migration slices
 
@@ -168,6 +169,10 @@ Capsule keeps its locally painted status bar and hand-painted hint rows through 
 
 Each slice pins a tested `termrock` revision and runs the whole workspace because changing public Ratatui types can surface failures outside files that import `jackin_tui` directly.
 
+No slice merges early. The single implementation PR remains the review surface
+for the cumulative migration, while its commit sequence preserves bounded
+review and rollback points.
+
 ## Parity matrix
 
 | Concern | Evidence before move | Evidence after move |
@@ -185,7 +190,7 @@ Each slice pins a tested `termrock` revision and runs the whole workspace becaus
 | feature additivity | no equivalent donor boundary | same component inventory and buffer hashes with/without `crossterm`; only integration API is added |
 | docs | jackin❯ generic lookbook pages | external catalog paths and component coverage |
 
-Every render fixture needs a stated purpose. Byte-identical parity is expected during the `jackin❯` migration. Intended visual changes occur only in later product PRs, never hidden inside the ownership move.
+Every render fixture needs a stated purpose. Byte-identical parity is expected during the `jackin❯` ownership migration. Intended visual changes occur only in later, explicit quality-fix commits in the same implementation PR after parity passes, never hidden inside the ownership move.
 
 ## Performance gates
 
@@ -209,7 +214,7 @@ The new public component API should allow visible-window projection rather than 
 - [ ] Every public item is documented and present in the reviewed API report.
 - [ ] Every public component has neutral unit, buffer, story, SVG, docs, and edge-state coverage.
 - [ ] Render generation is byte-deterministic.
-- [ ] Default, all-feature, feature-powerset, MSRV, macOS, Linux, and declared Windows checks pass.
+- [ ] Default, all-feature, feature-powerset, MSRV, macOS, and Linux checks pass; Windows is neither advertised nor required by this revision line.
 - [ ] Partial terminal initialization and restoration paths pass PTY tests.
 - [ ] The quality backlog is recorded and untouched: no listed defect fixed before `jackin❯` parity, and no unlisted rendering change present.
 - [ ] A minimal external program builds from a full Git revision.
@@ -223,12 +228,11 @@ The new public component API should allow visible-window projection rather than 
 - [ ] Generic docs/previews point to the external catalog; product decisions remain in jackin❯ docs.
 - [ ] `jackin-tui` and `jackin-tui-lookbook` are deleted only after the above checks.
 
-### Reuse proven
+### Program complete
 
-- [ ] Holla uses the public revision without depending on jackin❯ types or private helpers.
-- [ ] At least one Holla need feeds back through the normal component API without product vocabulary.
-- [ ] The compatibility matrix records both consumer revisions.
+- [ ] The compatibility matrix records the exact `jackin❯` and TermRock revisions plus reproduction commands and results.
+- [ ] No other Tailrocks product repository was checked out, patched, built, validated, migrated, or released by this roadmap.
 - [ ] Every quality-backlog fix (display width, non-color cues) landed with regenerated fixtures and a migration note before the first tag.
-- [ ] The first tag has semver, package, docs, license, and two-consumer smoke evidence.
+- [ ] The first tag has semver, package, docs, license, and `jackin❯` compatibility evidence.
 
 These gates make repository extraction reversible until the donor deletion, while preventing an indefinite dual implementation after ownership changes.

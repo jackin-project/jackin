@@ -4,11 +4,13 @@ title: "Shared TUI Extraction"
 
 # Shared TUI Extraction
 
-**Status**: Open - decisions closed, execution not started
+**Status**: Open - research complete, execution not started
+
+> **Implementation source:** start with [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/). This roadmap records the goal and milestone status only. The [Decision Record](/reference/research/shared-tui-extraction/05-decision-record/) is the normative architecture, the [Extraction And Migration Plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/) owns the implementation steps, and [Migration Evidence And Gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/) decides when each ownership transition is complete. If roadmap prose and the dossier ever differ, reconcile them before implementation rather than choosing one silently.
 
 ## Goal
 
-Extract the neutral terminal system out of `jackin❯` — the component crate, executor-neutral runtime contracts, lookbook CLI, generated SVG catalog, component documentation, and render-conformance foundation from `jackin-tui` and `jackin-tui-lookbook` — into the independent Apache-2.0 `tailrocks/termrock` repository, so every Tailrocks product reuses one tested terminal component language without importing `jackin❯` domain code.
+Extract the neutral terminal system out of `jackin❯` — the component crate, executor-neutral runtime contracts, lookbook CLI, generated SVG catalog, component documentation, and render-conformance foundation from `jackin-tui` and `jackin-tui-lookbook` — into the independent Apache-2.0 `tailrocks/termrock` repository, then migrate `jackin❯` as its first consumer.
 
 ```text
 Repository: tailrocks/termrock
@@ -18,63 +20,55 @@ CLI:        termrock-lookbook
 Docs:       same-repository Fumadocs catalog
 ```
 
-Two constraints define success:
-
-- **`jackin❯` never changes visually.** Extraction and migration are bug-compatible: known rendering defects are recorded in a freeze-time quality backlog and fixed only after byte-identical parity passes, each through a deliberate revision repin that reviews the visual diff.
-- **Modern terminals only.** Components assume a Ghostty-class truecolor terminal (24-bit color, alternate screen, SGR mouse, OSC 8 hyperlinks, OSC 22 pointer shapes, OSC 52 clipboard); the library ships no capability-degradation paths.
-
-Scope is the existing donor component set only: new components (trees, progress indicators, data tables, command palettes, multi-line editors) are explicit follow-up work after migration, and Holla adopting with gaps is accepted. Every design decision is closed and recorded in [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/) — this roadmap item states the goal and tracks execution status, while the research owns every technical detail, contract, and gate.
+The resulting library must be product-neutral and reusable by future Tailrocks projects, but this roadmap does not migrate, refactor, build, or validate any other product. Migrate `jackin❯` to the external project without a product redesign or unreviewed behavior change and retire the in-tree donor only after parity. Other consumers and components beyond the existing donor set are separate follow-up work after this item completes.
 
 ## Why this belongs on the `jackin❯` roadmap
 
 `jackin❯` is the donor and first compatibility consumer; the responsibility tracked here is limited to making the mature terminal system independently reusable and migrating the donor safely. The [Donor Audit](/reference/research/shared-tui-extraction/02-donor-audit/) records why a direct publish is impossible today: `jackin-tui` is `publish = false` and depends on `jackin-core`, neutral helpers are split or duplicated across layers, the palette and several components embed product identity, known rendering defects must be carried bug-compatible, and the lookbook drift check is not yet wired into CI.
 
-## What moves and what stays
+## Boundary
 
-The shared project owns terminal mechanics and component contracts: semantic themes with the Tailrocks phosphor preset, display-width/text/input/focus/hover/scroll/layout primitives, the neutral widget set, typed OSC hyperlink/pointer/clipboard requests with pure encoders, the optional executor-neutral runtime module with the shared frame driver, the lookbook with deterministic render gates and the terminal/list/render/check CLI, and the Fumadocs catalog including the neutral interaction conventions. It publishes its own API docs, semver, MSRV, and Ratatui/Crossterm compatibility.
+TermRock receives only product-neutral Ratatui components, foundations, conformance tooling, previews, and documentation. `jackin❯` retains product state, product composition, effects, process policy, secrets, and product-specific stories. The database workbench is a separate project and is not part of this item.
 
-`jackin❯` retains product meaning and effects: agent/role/workspace/container/Capsule types, product components (OnePassword picker, file browser, role/scope/mount editors), brand composition and launch/closing animations, Tokio subscription helpers, product palette tokens layered on the semantic theme, terminal-ownership process policy, and consumer stories/fixtures using `jackin❯` domain data.
+The complete boundary, item ledger, and replacement contracts live in the [Donor Audit](/reference/research/shared-tui-extraction/02-donor-audit/), [Public API And Refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/), and [Component Redesign Catalog](/reference/research/shared-tui-extraction/09-component-redesign-catalog/).
 
-The complete boundary, item-level ledger, and per-component replacement contracts are in the [Donor Audit](/reference/research/shared-tui-extraction/02-donor-audit/), [Public API And Refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/), and [Component Redesign Catalog](/reference/research/shared-tui-extraction/09-component-redesign-catalog/).
+## Decision and execution state
+
+- [x] The TermRock repository/crate/CLI naming family is approved.
+- [x] Architecture, ownership, feature, runtime, terminal, Unicode, migration, compatibility, and release-policy decisions are closed in the research dossier.
+- [x] Delivery is approved as one future `jackin❯` implementation branch/PR, with TermRock created if absent and signed bootstrap commits pushed directly to its `main` without TermRock PRs.
+- [ ] The time-sensitive GitHub/crates.io namespaces, intended owners, and trademark disposition are revalidated and recorded during Stage 0.
+- [ ] Implementation has started.
+
+The remaining unchecked entries are execution work, not unanswered design questions. No dedicated TermRock domain is required for the initial repository-hosted documentation.
 
 ## Plan
 
-Execution follows six stages, fully specified with per-stage steps and exit gates in the [Extraction And Migration Plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/); freeze artifacts, parity evidence, and completion gates are defined in [Migration Evidence And Gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/); all closed decisions live in the [Decision Record](/reference/research/shared-tui-extraction/05-open-decisions/).
+Six ordered stages implement the goal. A checkbox changes only when the linked stage exit gate passes.
 
-- [x] Approve the `tailrocks/termrock`, `termrock`, and `termrock-lookbook` naming family.
-- [ ] **Stage 0 - Freeze.** Wire the lookbook SVG drift check into `jackin❯` CI, generate the freeze artifacts (public API, consumer map, extraction ledger, story/render manifests, dependency tree, compatibility matrix, provenance, quality backlog), fix stale donor docs, capture parity evidence, and obtain operator approval for repository creation plus trademark/package-owner/domain clearance before any public announcement.
-- [ ] **Stage 1 - External history.** Create `tailrocks/termrock` through history-preserving `git filter-repo` with governance, CI, and provenance recording.
-- [ ] **Stage 2 - Break coupling.** Remove the `jackin-core` dependency, introduce the semantic theme and consumer brand input, build on `ratatui-core` with the optional `crossterm` feature, extract the optional runtime module and typed OSC surface, and converge on one Ratatui widget convention — all bug-compatible.
-- [ ] **Stage 3 - Revision-consumable quality.** Documentation, neutral stories, deterministic render gates, the seven architecture examples, and the full CI matrix; publish the first immutable Git revision.
-- [ ] **Stage 4 - Migrate `jackin❯`.** Pin the revision, migrate in slices without redesign, prove byte-identical parity, transfer generic docs and conventions to the external catalog, and delete donor crates only after parity and dependency audits pass.
-- [ ] **Stage 5 - Prove Holla reuse.** Migrate Holla's generic TUI mechanics; missing widgets are accepted, and only neutral gaps feed back through the two-consumer rule.
-- [ ] **Stage 6 - Stabilize.** Land the quality backlog post-parity with regenerated fixtures, then publish the first tag after two-consumer proof; crates.io remains a separate, deliberately deferred operator step.
+All six stages run inside one future `jackin❯` feature branch and one PR. That PR stays open until every stage and acceptance gate passes; stages are checkpoint commits, not smaller PRs. TermRock is created when Stage 1 begins and receives signed, green checkpoint commits directly on `main` during the bootstrap/migration. `jackin❯` consumes only exact TermRock commit revisions. No other Tailrocks repository is checked out, changed, or used as an implementation gate. The complete cross-repository protocol is closed in [Decision 18](/reference/research/shared-tui-extraction/05-decision-record/#18-single-pr-delivery-topology).
+
+- [ ] [**Stage 0 - Freeze and prepare.**](/reference/research/shared-tui-extraction/04-extraction-migration-plan/#stage-0-freeze-and-prepare-execution) Produce verified donor evidence, revalidate external names/owners, and surface the approved external `main` writes in the implementation launch summary.
+- [ ] [**Stage 1 - Create external history.**](/reference/research/shared-tui-extraction/04-extraction-migration-plan/#stage-1-create-the-external-donor-history) Establish a buildable, attributable TermRock repository from donor history.
+- [ ] [**Stage 2 - Break product coupling.**](/reference/research/shared-tui-extraction/04-extraction-migration-plan/#stage-2-break-product-coupling) Reach the reviewed neutral API and dependency boundary without changing donor behavior.
+- [ ] [**Stage 3 - Establish revision quality.**](/reference/research/shared-tui-extraction/04-extraction-migration-plan/#stage-3-establish-revision-consumable-quality) Make one immutable revision independently buildable, documented, reproducible, and consumable.
+- [ ] [**Stage 4 - Migrate `jackin❯`.**](/reference/research/shared-tui-extraction/04-extraction-migration-plan/#stage-4-migrate-jackin) Move the first consumer, prove parity, and retire the donor safely.
+- [ ] [**Stage 5 - Stabilize.**](/reference/research/shared-tui-extraction/04-extraction-migration-plan/#stage-5-stabilize-termrock) Land deferred quality fixes, record `jackin❯` compatibility, and create the first tag.
 
 ## Acceptance
 
 - the shared crate builds and tests without any Tailrocks product crate, without Tokio, and (by default) without Crossterm;
 - `jackin❯` render and behavior parity passes before any in-tree donor code is removed, and every parity diff traces to a recorded quality-backlog item;
 - the lookbook CLI previews and verifies every public component, and the Fumadocs catalog renders the same generated SVG states;
-- Holla proves the API supports a different product state/effect model without `jackin❯` vocabulary;
-- durable consumers pin immutable revisions or releases, and the supported-terminal baseline and compatibility matrix are published;
+- `jackin❯` pins an immutable TermRock revision, and the supported-terminal baseline and compatibility matrix are published;
 - roadmap and canonical documentation in both repositories state one owner for every component and policy.
 
 The full completion gates are in [Migration Evidence And Gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).
 
-## Risks
-
-- **Premature generalization:** solve with extract/parameterize/stay classification and the two-consumer rule.
-- **Visual regression:** migrate `jackin❯` before redesign and compare deterministic fixtures.
-- **Silent quality fixes during migration:** every parity diff must trace to a recorded quality-backlog item; an unrecorded rendering "improvement" fails the gate.
-- **Dependency inversion:** reject imports from any consumer crate, feature-gate Crossterm integration, and keep Tokio out of the shared crate.
-- **Cross-repository deadlock:** publish first, migrate one consumer at a time, and retain donor code until parity passes.
-- **Brand leakage:** use semantic tokens and consumer-provided branding; keep product stories local.
-- **History/license loss:** use a history-preserving extraction and independent provenance review.
-
 ## Not part of this item
 
+- any checkout, refactor, migration, validation, or release work in Holla, Velnor, Parallax, TableRock, or another consumer repository;
 - implementation of features in consuming products;
-- Holla, Velnor, or Parallax product redesign beyond proving consumption;
 - new components beyond the donor set (trees, progress indicators, data tables, command palettes, multi-line editors) — explicit follow-up work after extraction and migration;
 - terminal capability degradation: 256/16-color fallback, `NO_COLOR` handling, light-background adaptation, and RTL/BiDi support;
 - a universal Tailrocks state/runtime/IPC framework;
@@ -88,7 +82,7 @@ The full completion gates are in [Migration Evidence And Gates](/reference/resea
 - [Donor Audit](/reference/research/shared-tui-extraction/02-donor-audit/)
 - [Target Repository](/reference/research/shared-tui-extraction/03-target-repository/)
 - [Extraction And Migration Plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/)
-- [Decision Record](/reference/research/shared-tui-extraction/05-open-decisions/)
+- [Decision Record](/reference/research/shared-tui-extraction/05-decision-record/)
 - [Public API And Refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/)
 - [Repository Engineering](/reference/research/shared-tui-extraction/07-repository-engineering/)
 - [Migration Evidence And Gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/)

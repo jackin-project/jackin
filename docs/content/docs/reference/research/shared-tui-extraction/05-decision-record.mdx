@@ -1,0 +1,136 @@
+---
+title: "05 - Decision Record"
+---
+
+# 05 - Decision Record
+
+Every decision in this chapter is closed. The remaining work is execution: the delivery checklist implements these decisions, and nothing below waits on an unanswered design question. Reopening an entry requires a new operator decision recorded here — the plan itself carries no open questions.
+
+## Decisions at a glance
+
+| Decision | Outcome |
+|---|---|
+| Product shape | independent Rust component/design project |
+| Donor | neutral portions of `jackin-tui` and `jackin-tui-lookbook` |
+| License | Apache-2.0 with preserved history/attribution |
+| Renderer | Ratatui only; Crossterm backend where needed |
+| First consumer | `jackin❯` compatibility migration |
+| Other consumers | separate future work; not touched or validated by this roadmap |
+| Domain boundary | no product models, effects, persistence, secrets, or telemetry ownership |
+| Component graduation | second concrete consumer or clearly foundational primitive |
+| Project identity | `termrock` |
+| Repository | `tailrocks/termrock` |
+| Packages and CLI | `termrock` and `termrock-lookbook` |
+| Documentation | same-repository Fumadocs catalog backed by committed CLI-generated SVG previews |
+| Initial consumption | Git dependencies are sufficient; crates.io publication is optional |
+| Durable dependency identity | full commit revision or immutable release, never a moving branch head |
+| Terminal baseline | modern truecolor terminals (Ghostty-class); the library ships no capability-degradation paths |
+| Extraction sequencing | bug-compatible extraction and byte-identical `jackin❯` parity first; recorded quality fixes land afterwards |
+| Runtime contracts | executor-neutral update/view/subscription contracts and the frame driver live in a base module that is optional by use; Tokio integration stays consumer-local |
+| Component scope | the existing donor component set only; new components are explicit post-extraction roadmap work |
+| Text editing | extended grapheme-cluster boundaries plus standard `unicode-width` display columns |
+| Path display | environment-aware helpers remain in `jackin-core`; TermRock owns no `$HOME` or path policy |
+| Delivery unit | one future `jackin❯` branch and PR for the whole roadmap; TermRock bootstrap commits go directly to its `main` |
+| Delivery scope | TermRock creation/extraction plus `jackin❯` migration only |
+
+## Naming
+
+The approved lowercase project name is `termrock`. It identifies the Ratatui library, lookbook CLI, generated visual catalog, and Fumadocs site without embedding `jackin❯` or implying a general-purpose non-terminal UI framework.
+
+```text
+Repository: tailrocks/termrock
+Core crate: termrock
+Lookbook:   termrock-lookbook
+CLI:        termrock-lookbook
+Descriptor: Ratatui components, lookbook, and documentation for Tailrocks applications
+```
+
+Alternatives considered were `Tailrocks TUI`, `Clast TUI`, `Quarry TUI`, and `Rockface`. `termrock` provides a distinct identity while still signaling terminal use and its Tailrocks origin.
+
+GitHub's repository search (`termrock in:name`) and `cargo search termrock` on 2026-07-15 found no exact repository or crate match. Namespace state is time-sensitive, so Stage 0 revalidates both names and records the intended owners immediately before creation or publication. This evidence is not trademark advice: the operator records the trademark disposition before public launch. A dedicated domain is not an initial requirement because the catalog is hosted with the repository.
+
+## 1. Git dependency and publication policy
+
+**Decision:** during this roadmap's bootstrap, the single `jackin❯` PR always pins a tested TermRock `main` commit through Cargo's `rev` dependency form and commits <RepoFile path="Cargo.lock" />; it never follows a branch. After bootstrap, a consumer may use a trusted branch or fork only while iterating on a shared fix, then pins the tested full commit SHA before the consumer change becomes durable. After upstream merge, temporary fork commits are repinned to the canonical repository. An immutable Git revision is the adoption artifact for the `jackin❯` migration; a crates.io preview is optional, and registry publication happens only through a separate operator decision. Untrusted forks, floating default branches, and automated branch advancement are rejected dependency forms.
+
+## 2. Lookbook CLI command contract
+
+**Decision:** `termrock-lookbook` exposes explicit `terminal`, `list`, `render`, and `check` operations. Donor flag behavior is preserved only while validating extraction parity, then removed. The pre-release external project carries no indefinite compatibility shim.
+
+## 3. Tokio and the runtime module
+
+**Decision:** no Tokio anywhere in the shared crate. Build the base library on `ratatui-core`; every component, state, logical input, focus, layout, and outcome remains available without features. The additive `crossterm` feature supplies event conversion, backend construction, and optional managed-session convenience without changing those base APIs. Ship no Tokio feature.
+
+The executor-neutral runtime contracts — `Dirty`, `UpdateResult`, `SubscriptionPoll`, the `Subscription` trait with std-channel and closure adapters, `Component`, `View`, and the `drive_frame` frame driver — extract into the ordinary base `runtime` module. It is optional by use, not a Cargo feature: no widget depends on it, no application pattern must adopt it, and compiling it adds no executor dependency. These contracts are pure Ratatui, `jackin❯`'s canonical TUI rules mandate one shared frame driver across the console, Capsule, and launch surfaces, and deleting the donor would otherwise strand that driver in a new product-local crate. Tokio receiver implementations, spawn helpers, and the fallback runtime stay in `jackin❯` with `jackin-console` as the target home. One coherence corner case is settled up front: after extraction a consumer crate cannot implement the shared `Subscription` trait directly for Tokio receiver types (foreign trait, foreign type), so the shared module ships a closure-based adapter and consumers may additionally wrap receivers in local newtypes.
+
+## 4. Brand API
+
+**Decision:** consumer-provided product name/mark/header data plus a shared default phosphor theme. Component semantics stay consistent without pretending every product is `jackin❯`. No fixed Tailrocks header ships in the library; `jackin❯` composes its wordmark locally.
+
+## 5. History tooling
+
+**Decision:** run [`git-filter-repo`](https://github.com/newren/git-filter-repo) on a dedicated clone, retaining the two donor crate directories, the neutral helpers moving out of `jackin-core`, and only neutral TUI design history. Record the source revision and the exact filter command in `provenance.toml`. No unrelated `jackin❯` history enters the new repository.
+
+## 6. Testing crate
+
+**Decision:** no `termrock-testing` crate. Lookbook and conformance helpers stay internal to the two initial crates. A public testing crate is created only when two consumers demand the same stable helper API, and that creation is a new recorded decision — not a pending question in this plan.
+
+## 7. Compatibility matrix and MSRV
+
+**Decision:** exactly one tested Rust/Ratatui/Crossterm pair per revision line, aligned with the active `jackin❯` migration. MSRV starts at `jackin❯`'s current floor (Rust edition 2024, `rust-version = "1.95"`, toolchain pinned to `1.97.0`); lowering the floor for a future consumer is a normal reviewed change under Cargo's rust-version rules, not a pending question. MSRV and supported platforms are published explicitly in the repository and catalog.
+
+## 8. Theme stability
+
+**Decision:** `Theme` uses private storage with a builder and documented per-token defaults, so no consumer initializes every token. Adding an optional/defaulted token is a minor change; removing a token or changing its semantic meaning is breaking. No trait with one required method per token.
+
+## 9. CI platform contract
+
+**Decision:** one Linux lane owns canonical render generation and all Rust quality/supply-chain gates. The optional Crossterm compile/behavior surface runs on Linux and macOS, the immediate Tailrocks targets. Windows is excluded from the support statement and CI; adding it later is a new operator decision, and until then the project does not advertise Windows support.
+
+## 10. API stability baseline
+
+**Decision:** review a generated public API report before the first immutable consumer pin, create the automated `cargo-semver-checks` baseline at the first Git tag, and require API/migration notes for every later public change. Pre-1.0 versioning allows deliberate breaks; it does not permit accidental root re-export or feature churn.
+
+## 11. Build caches
+
+**Decision:** start minimal — warmed Cargo registry, offline compile jobs, one pinned Rust target cache per meaningful lane, Bun/Lychee download caches, and pull-request cache cleanup. Collect clean/warm timings for at least 20 runs; add `sccache` only when measurements show material benefit — an operational tuning step, not an open design point. Cache entries contain no secrets and generated previews remain artifacts, never caches.
+
+## 12. Terminal capability baseline
+
+**Decision:** Tailrocks products run on modern terminals, and the library is allowed to require one. `termrock` assumes a Ghostty-class terminal: 24-bit truecolor SGR, alternate screen, SGR mouse reporting, OSC 8 hyperlinks, OSC 22 pointer shapes, and OSC 52 clipboard write. Components emit truecolor styles unconditionally and expose typed OSC requests as first-class data.
+
+Out of library scope by decision: 256/16-color degradation, `NO_COLOR` handling, light-background adaptation, and RTL/BiDi text shaping. A consumer that needs any of these implements it above the library; `termrock` carries no capability-detection or fallback code. The supported-terminal statement is published in the repository README and the component catalog. Terminal *size* is not a capability assumption: tiny and empty rectangles remain valid, panic-free inputs.
+
+## 13. Parity and quality sequencing
+
+**Decision:** parity wins first, quality wins second. Extraction is bug-compatible: every known rendering defect — character-count width math in hint spans, select-list label measurement, the status-footer right group, and error-dialog wrapping, plus the color-only panel focus border — is recorded in a freeze-time quality backlog and carried through extraction and migration unchanged. After `jackin❯` parity passes, each fix lands in `termrock` as its own reviewed change with regenerated fixtures and a migration note, and `jackin❯` adopts it through a deliberate revision repin that reviews the visual diff. Conformance gates split into an extraction tier (required before the first consumer pin) and a quality tier (required before the first tag). See [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).
+
+## 14. Ratatui/Crossterm upgrade propagation
+
+**Decision:** `termrock` always upgrades first. Because the public API exposes `ratatui-core` types, every Ratatui minor bump is a breaking `termrock` change: after bootstrap it lands on a `termrock` branch with regenerated fixtures and a migration note, produces a new immutable revision, and `jackin❯` repins as the compatibility oracle. Future consumers follow the same library-first rule when they adopt through separately scoped work. No consumer upgrades Ratatui ahead of `termrock`, and `termrock` supports exactly one Ratatui/Crossterm pair per revision line.
+
+## 15. Maintenance and issue routing
+
+**Decision:** the same operator maintains both repositories under the inherited governance and solo-maintainer review model. A defect reproducible with a neutral story or fixture is a `termrock` issue; anything requiring product state, wording, or effects is a consumer issue; cross-repository reports link both sides. The model is revisited only when contribution volume justifies more structure.
+
+## 16. Text editing and display width
+
+**Decision:** text-input cursor movement, backspace, delete, selection boundaries, and horizontal-window boundaries operate on Unicode extended grapheme clusters. Store cursor positions as byte offsets that are always validated against extended-grapheme boundaries obtained through [`unicode-segmentation`](https://docs.rs/unicode-segmentation/latest/unicode_segmentation/trait.UnicodeSegmentation.html); never expose scalar-value or byte stepping as user-visible editing behavior. Measure painted columns with [`unicode-width`](https://docs.rs/unicode-width/latest/unicode_width/trait.UnicodeWidthStr.html) over whole grapheme/string slices using the standard non-CJK width policy, matching the fixed Linux render authority. Insertion accepts valid UTF-8 at a grapheme boundary, and tests cover combining marks, emoji ZWJ sequences, emoji modifiers, regional indicators, CJK wide characters, zero-width characters, and clipping at both ends of the viewport.
+
+This closes the only implementation-policy choice previously left in the component catalog. Grapheme boundaries preserve what users perceive as one editable character, while display-column width remains a separate rendering concern.
+
+## 17. API finalization and path helpers
+
+**Decision:** the module boundary and API invariants in chapters 06 and 09 are fixed, while exact Rust type/function names and dependency patch versions are finalized during Stage 2's generated public-API review. That review may improve illustrative names and signatures but cannot add product models, a required application framework, another default feature, hidden I/O, or a second rendering path. This is bounded implementation finalization rather than an open architecture decision.
+
+`shorten_home` remains in `jackin-core`: it reads `$HOME`, is consumed by non-TUI command formatting, and represents application path-display policy. Remove the `jackin-tui` re-export during migration. TermRock's `text` module remains limited to terminal text geometry and sanitization and never reads process environment or interprets filesystem paths.
+
+## 18. Single-PR delivery topology
+
+**Decision:** after this planning PR merges, implementation of the roadmap uses one new `jackin❯` feature branch and one pull request from start to finish. Stages 0 through 5 are ordered commit/checkpoint groups inside that branch, not separately merged PRs. The PR remains open until the external repository, complete extraction, `jackin❯` migration, donor deletion, deferred quality fixes, documentation transfer, and every completion gate are finished. No partial roadmap implementation merges early, and the roadmap is retired only in the final commits of that same PR.
+
+TermRock is the explicit cross-repository exception during this bootstrap program. If `tailrocks/termrock` does not exist, the implementation creates it. History extraction and every neutralization/refactoring/docs/CI checkpoint are committed with DCO sign-off and pushed directly to TermRock's `main`, without a TermRock pull request. Each pushed checkpoint must be buildable and pass the checks available at that checkpoint; no force push or published-history rewrite is allowed after the initial history-preserving bootstrap push. Component source, story, SVG, and documentation changes remain atomic within the same TermRock commit. After the roadmap completes, normal protected-branch/pull-request governance becomes the default for subsequent TermRock development.
+
+The `jackin❯` implementation branch always depends on a full TermRock commit through Cargo's `rev` form and commits <RepoFile path="Cargo.lock" />. It may advance that revision repeatedly while the single PR is open, but it never follows mutable TermRock `main`. Every repin records which TermRock checkpoint it consumes and reruns the whole `jackin❯` workspace/parity gates.
+
+No other Tailrocks product participates in delivery. Holla, Velnor, Parallax, TableRock, and future consumers may explain neutral API constraints, but the implementation does not check out, patch, build, validate, migrate, or release those repositories. Their adoption requires separately scoped future work after this roadmap closes.

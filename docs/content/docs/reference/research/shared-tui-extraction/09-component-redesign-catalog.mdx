@@ -51,11 +51,12 @@ architecture.
 
 TermRock exposes composable rendering and interaction building blocks. It does
 not expose a mandatory root `Application`, `Model`, `Message`, `Component`,
-`Subscription`, or `EffectExecutor` trait. An optional executor-neutral
-`runtime` module (dirty/update contracts, subscriptions with std-channel and
-closure adapters, component/view traits, and the `drive_frame` frame driver)
-exists for consumers that want the donor's TEA conventions; no widget or other
-module references it, and nothing requires adopting it.
+`Subscription`, or `EffectExecutor` trait. The executor-neutral base `runtime`
+module (dirty/update contracts, subscriptions with std-channel and closure
+adapters, component/view traits, and the `drive_frame` frame driver) is
+optional by use rather than feature-gated; it exists for consumers that want
+the donor's TEA conventions, no widget or other module references it, and
+nothing requires adopting it.
 
 ```text
 backend event
@@ -203,7 +204,7 @@ termrock/src/
 |- osc/
 |  |- request.rs
 |  `- encode.rs
-|- runtime/                  # optional executor-neutral contracts
+|- runtime/                  # executor-neutral; optional by use
 |  |- contract.rs
 |  |- subscription.rs
 |  `- frame.rs
@@ -238,7 +239,7 @@ workflow.
 | `keymap.rs` | parameterize | Keep logical chords and binding dispatch. Feature-gate Crossterm conversion, separate the Capsule raw-byte decoder, make hint text caller data, and remove the global scroll-hint keymap. |
 | `scroll.rs` plus scroll helpers in `jackin-core` | consolidate | Create one canonical offset/axis/thumb/viewport implementation. Retain the maintained `tui-scrollbar` dependency as the single proportional thumb-metrics source. Choose one integer policy, document saturation, and remove parallel `usize`/`u16` APIs unless the conversion is unavoidable at the Ratatui edge. |
 | `theme.rs` plus root RGB constants | reimplement | Replace public product constants with semantic `Theme` roles, private storage, builders, component overrides, and the optional Tailrocks phosphor preset. Capsule/debug/rain meanings stay local. |
-| `runtime.rs` | split | Extract the executor-neutral contracts and `drive_frame` as the optional `runtime` module: pure Ratatui, and `jackin❯` mandates one shared frame driver across console, Capsule, and launch, so donor deletion would otherwise strand it. Tokio receiver implementations, spawn helpers, and the fallback runtime stay in `jackin❯` (`jackin-console`), connecting through the module's closure adapter because coherence forbids direct foreign impls. |
+| `runtime.rs` | split | Extract the executor-neutral contracts and `drive_frame` into the base `runtime` module, optional by use and referenced by no widget: pure Ratatui, and `jackin❯` mandates one shared frame driver across console, Capsule, and launch, so donor deletion would otherwise strand it. Tokio receiver implementations, spawn helpers, and the fallback runtime stay in `jackin❯` (`jackin-console`), connecting through the module's closure adapter because coherence forbids direct foreign impls. |
 | `terminal_modes.rs` | reimplement | Replace two mouse helper functions with the scoped, partial-initialization-safe session described in chapter 06. Event polling and panic/signal policy remain application-owned. |
 | `ownership.rs` | remain | Rich-surface and host-screen atomics, title policy, and alternate-screen reassertion are jackin❯ process policy. None becomes TermRock global state. |
 | `ansi_text.rs` | extract | Keep pure ANSI-to-span parsing and stripping with malformed/control-sequence tests. Accept input and return data; perform no output. |
@@ -279,7 +280,7 @@ workflow.
 | `error_dialog` | `widgets::MessageDialog` composed with `DetailTable` | Mixes scrolling, product keymap hints, row copying, hyperlinks, and raw OSC overlay bytes. | Borrow message and neutral detail rows; return typed `Copy(Id)`/`ActivateLink(Id)` outcomes and hit regions. Link regions render through the typed `osc` surface instead of raw overlay bytes. Consumer executes clipboard/OSC/URL policy. |
 | `container_info` | `widgets::DetailTable<Id>` | `DebugInfo` explicitly builds run, container, role, agent, version, diagnostics, and file-link rows. | Extract only label/value rows, selection, scrolling, wrapping, copy/link capabilities, and typed outcomes. Keep `DebugInfo` and all product row construction in jackin❯. |
 | `status_footer` | `widgets::StatusBar<Id>` | Names usage, container, run ID, debug chip, and fixed right-side order. | Borrow left/right slots with stable IDs, priority, minimum width, truncation rule, emphasis, and enabled state. Return hit regions/activated ID. jackin❯ decides slot order and meanings. |
-| `status_popup` | `MessageDialog` or `Toast` composition | Couples status presentation to a dedicated popup state and frame renderer without proving a distinct neutral primitive. | Fold into a generic message surface unless a second consumer demonstrates unique interaction/layout behavior. |
+| `status_popup` | `MessageDialog` or `Toast` composition | Couples status presentation to a dedicated popup state and frame renderer without proving a distinct neutral primitive. | Fold the donor behavior into a generic message surface; do not publish a dedicated TermRock status-popup type. |
 | `diff_view` | `widgets::DiffView` + `DiffState` | Rendering takes mutable state, mixes projection/layout mutation, hardcoded hints, and theme constants. | Parse/project outside rendering; borrow immutable hunks/lines; keep only selection and scroll in state; use semantic added/removed roles; return no effect from render. |
 
 ### Keep consumer-local unless reuse is proven
@@ -336,11 +337,14 @@ its chord to `EditAction::Submit`, evaluates its domain validation, and decides
 whether a `Submitted(String)` outcome changes application state or displays a
 validation message.
 
-Cursor movement and deletion need a declared Unicode policy. At minimum, the
-cursor never splits UTF-8 and its painted column uses terminal display width.
-Before release, decide whether editing operates on grapheme clusters or Unicode
-scalar boundaries; document and test combining marks, emoji sequences, CJK
-wide characters, zero-width characters, and horizontal clipping.
+Cursor movement, backspace, delete, selection, and viewport boundaries operate
+on Unicode extended grapheme clusters, with cursor positions stored as byte
+offsets that are always valid grapheme boundaries. Painting measures
+`unicode-width` display columns over whole grapheme/string slices using the
+standard non-CJK width policy. Tests cover combining marks, emoji ZWJ
+sequences and modifiers, regional indicators, CJK wide characters, zero-width
+characters, and horizontal clipping. The rationale and dependency policy are
+closed in [05 - Decision record](/reference/research/shared-tui-extraction/05-decision-record/).
 
 ### Layout and hit testing
 
@@ -401,8 +405,9 @@ any public TermRock signature or documentation contains:
 
 Use a denylist as an audit aid, not as the proof of neutrality. Generic words
 can still hide product assumptions, and a legitimate example may use one of
-these nouns in consumer documentation. Human API review and the Holla reuse
-proof remain required.
+these nouns in consumer documentation. Human API review, neutral stories,
+architecture examples, and `jackin❯` parity remain required. Another product
+proof is explicitly outside this roadmap.
 
 ## Per-component conformance
 
@@ -434,6 +439,7 @@ Crossterm, and managed Crossterm examples must also compile against every
 advertised Ratatui/MSRV compatibility cell. Canonical component buffers must be
 identical with and without the feature.
 
-Composite consumer screens remain covered in their own repositories. TermRock
-proves that primitives are neutral and correct; jackin❯, Holla, Velnor, and
-Parallax prove that their product composition and effects are correct.
+Composite consumer screens remain covered in their own repositories. This
+roadmap proves TermRock primitives are neutral and correct and proves `jackin❯`
+composition remains compatible. Every other product validates its composition
+and effects later as part of its own adoption work.

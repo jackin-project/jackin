@@ -4,11 +4,11 @@ title: "Shared TUI Extraction Research Brief"
 
 # Shared TUI Extraction Research Brief
 
-> **How to run this file:** `/goal Follow shared-tui-extraction/prompt.mdx`. Re-audit the donor and every active consumer before changing ownership or public APIs.
+> **How to run this file:** `/goal Follow shared-tui-extraction/prompt.mdx`. Re-audit the donor and the in-tree `jackin❯` consumer surfaces before changing ownership or public APIs.
 
 ## Mission
 
-Design and execute a history-preserving extraction of `crates/jackin-tui`, the neutral `crates/jackin-tui-lookbook` harness/CLI, and the generic component catalog into the independent Apache-2.0 `tailrocks/termrock` repository. The initial packages are `termrock` and `termrock-lookbook`. Migrate `jackin❯` without behavior changes, then prove the library with Holla.
+Design and execute a history-preserving extraction of `crates/jackin-tui`, the neutral `crates/jackin-tui-lookbook` harness/CLI, and the generic component catalog into the independent Apache-2.0 `tailrocks/termrock` repository. The initial packages are `termrock` and `termrock-lookbook`. Migrate `jackin❯` without behavior changes. Do not touch or validate another product repository.
 
 The research must answer:
 
@@ -17,8 +17,8 @@ The research must answer:
 3. Which terminal runtime, component, theme, input, layout, and testing contracts form the public API?
 4. How are lookbook stories divided between neutral components and consumer compositions?
 5. How are history, licensing, attribution, render fixtures, and compatibility preserved?
-6. How do Holla, Velnor, Parallax, and other Tailrocks tools consume the library without moving domain state into it?
-7. What PR/release order avoids cross-repository deadlock and visible regressions?
+6. Which product-neutral contracts let future consumers adopt the library later without moving domain state into it?
+7. How can one `jackin❯` implementation PR coordinate direct TermRock `main` checkpoints and exact revision pins without cross-repository deadlock or visible regressions?
 8. How do consumers iterate against trusted branches or forks while pinning full commit revisions for durable builds?
 9. How does the standalone Fumadocs site remain synchronized with lookbook stories and CLI-generated SVG previews?
 10. How should the public API separate `ratatui-core` widgets, logical input, state/update contracts, Crossterm terminal ownership, and consumer effects?
@@ -41,8 +41,9 @@ In scope:
 - compile-checked direct, TEA, component-oriented, Flux, buffer-only, manual Crossterm, and managed Crossterm examples using the same public components without a required TermRock runtime;
 - interactive lookbook CLI, deterministic render artifacts, and terminal-size conformance;
 - a same-repository Fumadocs component catalog backed by generated SVG states and a coverage manifest;
-- Git branch/fork iteration with exact revision pins for durable consumer builds; crates.io publication is optional;
-- `jackin❯` donor migration and Holla reuse proof;
+- one future `jackin❯` implementation branch/PR for the complete roadmap, DCO-signed TermRock bootstrap commits pushed directly to its `main`, and exact revision pins for every consumer checkpoint;
+- post-bootstrap Git branch/fork iteration with exact revision pins for durable consumer builds; crates.io publication is optional;
+- complete `jackin❯` donor migration as the only consumer adoption in this roadmap;
 - public API documentation, semver, MSRV, Ratatui/Crossterm compatibility, CI, and releases.
 
 Out of scope:
@@ -51,7 +52,7 @@ Out of scope:
 - OnePassword, file browser, mount/role/scope picker, or product command execution;
 - a universal Tailrocks application runtime, IPC protocol, persistence layer, telemetry client, or secrets crate;
 - alternative TUI rendering frameworks or a cross-renderer abstraction;
-- Holla, Velnor, Parallax, or other product redesign beyond the smallest consumption proof;
+- checking out, changing, building, validating, migrating, or releasing Holla, Velnor, Parallax, TableRock, or any other consumer project;
 - feature research or native application planning for consuming products.
 
 ## Deliverables
@@ -63,8 +64,8 @@ Out of scope:
 | `01-tailrocks-consumers.mdx` | Product ownership and concrete consumer needs |
 | `02-donor-audit.mdx` | Current coupling and extract/parameterize/remain classification |
 | `03-target-repository.mdx` | Naming inputs, repository, crates, Git consumption, API, theme, lookbook CLI, Fumadocs, testing, governance |
-| `04-extraction-migration-plan.mdx` | Ordered cross-repository changes and acceptance gates |
-| `05-open-decisions.mdx` | Closed decision record |
+| `04-extraction-migration-plan.mdx` | Ordered single-PR/direct-main cross-repository checkpoints and acceptance gates |
+| `05-decision-record.mdx` | Closed decision record |
 | `06-public-api-and-refactoring.mdx` | Dependency layers, module/component contracts, feature policy, terminal ownership, and refactoring ledger |
 | `07-repository-engineering.mdx` | Repository structure, CI/CD, caching, docs, provenance, supply chain, and release model |
 | `08-migration-evidence-and-gates.mdx` | Generated inventory, history plan, migration slices, parity matrix, performance, and completion gates |
