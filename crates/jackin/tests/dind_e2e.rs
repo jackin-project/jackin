@@ -4,12 +4,17 @@
 //! and `no_proxy`. Regression guard for the proxy-routed `DinD`-handshake
 //! bug fixed in `src/runtime/launch.rs`.
 
-#![expect(
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::duration_suboptimal_units,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+// Expects only apply when the e2e feature compiles the body; without it the
+// crate is empty and unfulfilled-expect would fail `cargo clippy -p jackin`.
+#![cfg_attr(
+    feature = "e2e",
+    expect(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::disallowed_methods,
+        clippy::duration_suboptimal_units,
+        reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+    )
 )]
 #![cfg(feature = "e2e")]
 use std::time::Duration;

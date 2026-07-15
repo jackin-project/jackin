@@ -424,26 +424,24 @@ pub(super) mod instances {
     }
 
     pub(crate) fn running_role_containers() -> anyhow::Result<Vec<String>> {
-        let mut command = std::process::Command::new("docker");
-        command.args([
-            "ps",
-            "--filter",
-            "label=jackin.kind=role",
-            "--format",
-            "{{.Names}}",
-        ]);
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "instance refresh is launched through spawn_blocking_subscription"
-        )]
-        let output = command
-            .output()
-            .map_err(anyhow::Error::new)
+        let request = jackin_process::ExecRequest::new(
+            "docker",
+            [
+                "ps",
+                "--filter",
+                "label=jackin.kind=role",
+                "--format",
+                "{{.Names}}",
+            ],
+        );
+        // Instance refresh is launched through spawn_blocking_subscription;
+        // keep the docker listing on the shared process transport.
+        let output = jackin_process::exec_sync(&request)
             .context("starting docker ps for live instance reconciliation")?;
         anyhow::ensure!(
-            output.status.success(),
+            output.success,
             "docker ps exited with status {:?}: {}",
-            output.status.code(),
+            output.code,
             String::from_utf8_lossy(&output.stderr).trim()
         );
         Ok(String::from_utf8_lossy(&output.stdout)
