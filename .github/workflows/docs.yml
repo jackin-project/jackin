@@ -87,7 +87,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust"
+          install_args: "rust lychee"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       # Plan 049 residual: generate crate README → Fumadocs pages so repo-link
@@ -107,6 +107,19 @@ jobs:
         run: echo "::add-matcher::.github/problem-matchers/xtask.json"
       - name: Check source repository links
         run: cargo xtask docs repo-links
+
+      # README links are not part of the generated docs site. Check them live
+      # without cache so a malformed or removed destination fails this PR.
+      - name: Check README links
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          lychee \
+            --config docs/lychee.toml \
+            --cache=false \
+            --root-dir "${{ github.workspace }}" \
+            README.md
+
       - name: Check brand prose
         run: cargo xtask docs brand
 
