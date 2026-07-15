@@ -342,10 +342,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         let failure_scroll = v.failure_scroll.clone();
         let popup_rect =
             failure_popup_block_rect(ctx.area, failure, ctx.run_id, ctx.terminal.is_debug_mode());
-        if !popup_rect.contains(ratatui::layout::Position { x: col, y: row }) {
-            let _dirty = update_launch_view(v, LaunchMessage::FailureAcknowledged);
-            ctx.terminal.set_pointer_shape(false);
-        } else {
+        if popup_rect.contains(ratatui::layout::Position { x: col, y: row }) {
             if let Some(target) = failure_copy_target_at(
                 ctx.area,
                 failure,
@@ -366,6 +363,9 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
                 }
             }
             // Inside non-target click → swallowed (no overlay behavior).
+        } else {
+            let _dirty = update_launch_view(v, LaunchMessage::FailureAcknowledged);
+            ctx.terminal.set_pointer_shape(false);
         }
     } else if v.build_log_open {
         refresh_build_log_layout(v, ctx.area, false);

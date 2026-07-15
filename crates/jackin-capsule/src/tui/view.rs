@@ -399,7 +399,7 @@ pub(crate) fn pane_limit_failure_message(max_sessions: usize) -> String {
 
 /// Forwarded to the operator's outer terminal via `send_output` from the
 /// `CopyToClipboard` dialog action. The OSC 52 byte encoding and terminal
-/// compatibility notes live with the canonical typed TermRock encoder.
+/// compatibility notes live with the canonical typed `TermRock` encoder.
 pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     termrock::osc::encode_clipboard(termrock::osc::ClipboardWrite {
         selection: "c",

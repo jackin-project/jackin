@@ -47,7 +47,7 @@ impl<'a> TextInputState<'a> {
             KeyCode::Home => self.inner.apply(EditAction::Home),
             KeyCode::End => self.inner.apply(EditAction::End),
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.inner.apply(EditAction::Insert(c))
+                self.inner.apply(EditAction::Insert(c));
             }
             _ => {}
         }

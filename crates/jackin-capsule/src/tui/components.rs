@@ -3,7 +3,7 @@
 
 //! Capsule-local visual components.
 //!
-//! Capsule components source colors from TermRock theme constants so
+//! Capsule components source colors from `TermRock` theme constants so
 //! capsule and host-console surfaces cannot drift; no ad-hoc inline RGB
 //! literals in component render code.
 

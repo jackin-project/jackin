@@ -14,6 +14,10 @@ use crate::LaunchView;
 use crate::tui::components::chrome::{BottomChromeAreas, bottom_chrome_areas};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent footer hit regions may be hovered simultaneously"
+)]
 pub struct StatusFooterHover {
     pub left: bool,
     pub usage: bool,

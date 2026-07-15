@@ -100,7 +100,7 @@ pub fn handle_prelude_modal(
         }
         CreatePreludeModalStep::MountDstChoice => {
             let outcome = if let Some(Modal::MountDstChoice { state, .. }) = &mut prelude.modal {
-                state.handle_key(key.into())
+                state.handle_key(key)
             } else {
                 return PreludeModalOutcome::Continue;
             };
@@ -158,7 +158,7 @@ pub fn handle_prelude_modal(
         }
         CreatePreludeModalStep::WorkdirPick => {
             let outcome = if let Some(Modal::WorkdirPick { state }) = &mut prelude.modal {
-                state.handle_key(key.into())
+                state.handle_key(key)
             } else {
                 return PreludeModalOutcome::Continue;
             };

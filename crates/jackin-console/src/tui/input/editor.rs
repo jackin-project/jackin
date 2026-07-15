@@ -616,7 +616,7 @@ pub fn handle_editor_modal(
                 }
             }
         }
-        Modal::WorkdirPick { state } => match inline_picker_plan(state.handle_key(key.into())) {
+        Modal::WorkdirPick { state } => match inline_picker_plan(state.handle_key(key)) {
             InlinePickerPlan::Commit(workdir) => {
                 editor.commit_workdir_input(workdir);
             }
@@ -670,7 +670,7 @@ pub fn handle_editor_modal(
         } => {
             let target = target.clone();
             let src = modal_state.src.clone();
-            let outcome = modal_state.handle_key(key.into());
+            let outcome = modal_state.handle_key(key);
             dispatch_editor_mount_dst_choice(editor, target, &src, &outcome);
         }
         Modal::SaveDiscardCancel { state: modal_state } => {
@@ -694,7 +694,7 @@ pub fn handle_editor_modal(
             editor.clear_modal_chain();
         }
         Modal::RoleOverridePicker { state: picker } => {
-            match inline_picker_plan(picker.handle_key(key.into())) {
+            match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
                     // The override section materializes organically on
                     // the first value commit; we don't touch
@@ -716,7 +716,7 @@ pub fn handle_editor_modal(
             }
         }
         Modal::ConfirmSave { state: modal_state } => {
-            match confirm_save_modal_plan(modal_state.handle_key(key.into())) {
+            match confirm_save_modal_plan(modal_state.handle_key(key)) {
                 ConfirmSaveModalPlan::Commit => {
                     // Confirming → PendingCommit atomically so plan +
                     // exit_on_success travel together to the outer
@@ -785,7 +785,7 @@ pub fn handle_editor_modal(
         }
         Modal::StatusPopup { .. } | Modal::ContainerInfo { .. } => {}
         Modal::ScopePicker { state: scope_state } => {
-            match scope_picker_plan(scope_state.handle_key(key.into())) {
+            match scope_picker_plan(scope_state.handle_key(key)) {
                 ScopePickerPlan::AllAgents => {
                     let scope = SecretsScopeTag::Workspace;
                     let state =
@@ -813,7 +813,7 @@ pub fn handle_editor_modal(
             state: source,
             env_key,
         } => {
-            match source_picker_plan(source.handle_key(key.into())) {
+            match source_picker_plan(source.handle_key(key)) {
                 SourcePickerPlan::Plain => {
                     let Some((scope, key)) = env_key.take() else {
                         editor.clear_modal_chain();
@@ -847,7 +847,7 @@ pub fn handle_editor_modal(
             }
         }
         Modal::AuthSourcePicker { state: source } => {
-            let outcome = source.handle_key(key.into());
+            let outcome = source.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token_target` (and stashes the form into
             // the modal parent stack for the post-mint re-mount), so
@@ -895,7 +895,7 @@ pub fn handle_editor_modal(
             }
         }
         Modal::AuthRolePicker { state: picker } => {
-            match inline_picker_plan(picker.handle_key(key.into())) {
+            match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
                     if let Some(kind) = editor.auth_selected_kind {
                         let target = crate::tui::state::AuthFormTarget::WorkspaceRole {
@@ -923,7 +923,7 @@ pub fn handle_editor_modal(
             secrets_target,
             state: picker,
         } => {
-            let outcome = picker.handle_key(key.into());
+            let outcome = picker.handle_key(key);
             let secrets_target = secrets_target.clone();
             // Token-generate wins over both browse and provide dispatch:
             // `generating_token_target` is set exactly when the picker was

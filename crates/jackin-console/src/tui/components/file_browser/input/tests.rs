@@ -61,7 +61,7 @@ fn handle_with_services(
     state: &mut FileBrowserState,
     key: KeyEvent,
 ) -> FileBrowserOutcome<PathBuf> {
-    let outcome = state.handle_key(key.into());
+    let outcome = state.handle_key(key);
     apply_with_services(state, outcome)
 }
 

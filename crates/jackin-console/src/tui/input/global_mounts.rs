@@ -595,7 +595,7 @@ pub fn handle_settings_confirm_modal(
         }
         SettingsModal::MountDstChoice { mut state } => {
             let src = state.src.clone();
-            match mount_dst_choice_plan(state.handle_key(key.into())) {
+            match mount_dst_choice_plan(state.handle_key(key)) {
                 MountDstChoicePlan::CommitSamePath => {
                     settings_update::set_global_mount_add_draft_destination(
                         &mut settings.mounts.add_draft,
@@ -625,7 +625,7 @@ pub fn handle_settings_confirm_modal(
             }
         }
         SettingsModal::MountScopePicker { mut state } => {
-            match scope_picker_plan(state.handle_key(key.into())) {
+            match scope_picker_plan(state.handle_key(key)) {
                 ScopePickerPlan::AllAgents | ScopePickerPlan::SpecificAgent => {
                     // Drop the picker before dispatching: commit_text
                     // (AllAgents path) calls clear_modal_chain anyway, and
@@ -647,7 +647,7 @@ pub fn handle_settings_confirm_modal(
             }
         }
         SettingsModal::MountRolePicker { state: mut picker } => {
-            match inline_picker_plan(picker.handle_key(key.into())) {
+            match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
                     match settings_update::global_mount_role_picker_commit_plan(
                         &mut settings.mounts.add_draft,
@@ -694,7 +694,7 @@ pub fn handle_settings_confirm_modal(
             }
         }
         SettingsModal::MountPreviewSave { mut state } => {
-            match confirm_save_modal_plan(state.handle_key(key.into())) {
+            match confirm_save_modal_plan(state.handle_key(key)) {
                 ConfirmSaveModalPlan::Commit => {
                     outcome = request_settings_save(settings);
                 }
@@ -746,7 +746,7 @@ pub fn handle_settings_env_modal(
         SettingsModal::EnvSourcePicker {
             key: env_key,
             state: mut source,
-        } => match source_picker_plan(source.handle_key(key.into())) {
+        } => match source_picker_plan(source.handle_key(key)) {
             SourcePickerPlan::Plain => {
                 commit_settings_env_source_picker(
                     env,
@@ -779,7 +779,7 @@ pub fn handle_settings_env_modal(
             target,
             state: mut picker,
         } => {
-            match crate::tui::update::op_picker_inline_plan(picker.handle_key(key.into())) {
+            match crate::tui::update::op_picker_inline_plan(picker.handle_key(key)) {
                 // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }
@@ -826,7 +826,7 @@ pub fn handle_settings_env_modal(
             }
         }
         SettingsModal::EnvRolePicker { state: mut picker } => {
-            match inline_picker_plan(picker.handle_key(key.into())) {
+            match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
                     let plan = settings_update::settings_env_role_picker_commit_plan(&role);
                     let text_plan = settings_env_new_key_text_plan(plan.scope);
@@ -852,7 +852,7 @@ pub fn handle_settings_env_modal(
             }
         }
         SettingsModal::EnvScopePicker { mut state } => {
-            match scope_picker_plan(state.handle_key(key.into())) {
+            match scope_picker_plan(state.handle_key(key)) {
                 ScopePickerPlan::AllAgents => {
                     commit_settings_env_scope_picker(
                         env,
