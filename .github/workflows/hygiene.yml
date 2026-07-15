@@ -568,9 +568,13 @@ jobs:
 
   # Plan 035: Miri pure-crate lane (advisory).
   miri:
-    name: Miri pure crates (advisory)
+    name: Miri ${{ matrix.crate }} (advisory)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [jackin-core, jackin-config, jackin-manifest, jackin-term]
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -603,39 +607,20 @@ jobs:
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Install nightly + miri
         run: rustup toolchain install nightly --profile minimal --component miri
-      # Independent per-crate invocations — no || fallback that masks config/manifest failures.
-      - name: miri jackin-core
-        id: miri-core
+      # Independent matrix invocations prevent one slow crate from starving the rest.
+      - name: miri ${{ matrix.crate }}
+        id: miri-crate
         continue-on-error: true
-        run: cargo +nightly miri test -p jackin-core --no-default-features --locked
-      - name: miri jackin-config
-        id: miri-config
-        continue-on-error: true
-        run: cargo +nightly miri test -p jackin-config --no-default-features --locked
-      - name: miri jackin-manifest
-        id: miri-manifest
-        continue-on-error: true
-        run: cargo +nightly miri test -p jackin-manifest --no-default-features --locked
-      - name: miri jackin-term
-        id: miri-term
-        continue-on-error: true
-        run: cargo +nightly miri test -p jackin-term --no-default-features --locked
+        run: cargo +nightly miri test -p "${{ matrix.crate }}" --no-default-features --locked
       - name: miri summary
         if: always()
         run: |
           echo "### Miri pure crates" >> "$GITHUB_STEP_SUMMARY"
-          for pair in "jackin-core:${{ steps.miri-core.outcome }}" \
-                      "jackin-config:${{ steps.miri-config.outcome }}" \
-                      "jackin-manifest:${{ steps.miri-manifest.outcome }}" \
-                      "jackin-term:${{ steps.miri-term.outcome }}"; do
-            crate="${pair%%:*}"
-            outcome="${pair##*:}"
-            if [ "$outcome" = "success" ]; then
-              echo "miri ${crate}: PASS" >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "miri ${crate}: FAIL(${outcome})" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          done
+          if [ "${{ steps.miri-crate.outcome }}" = "success" ]; then
+            echo "miri ${{ matrix.crate }}: PASS" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "miri ${{ matrix.crate }}: FAIL(${{ steps.miri-crate.outcome }})" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # Plan 035: cargo-mutants on smallest pure crates (advisory; never fails job).
   mutants:

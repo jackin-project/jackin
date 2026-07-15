@@ -85,7 +85,8 @@ CI-config plan: verification is actionlint + observed-run evidence + docs gates.
 
 ## Done criteria
 
-- [x] Four independent Miri invocations, no `||` fallback, per-crate summary lines
+- [x] Four independent, parallel Miri matrix invocations, no `||` fallback,
+  per-crate summary lines
 - [x] Hakari lane: real exit status visible, before/after timing artifacts, tool-failure vs clean distinguishable
 - [x] Hakari adopt/no-adopt decision recorded (or explicitly staged as first-run follow-up)
 - [x] Dylint pilot: FP rate + promote/retire decision recorded; CI matches the decision
@@ -116,3 +117,7 @@ CI-config plan: verification is actionlint + observed-run evidence + docs gates.
   **152 seconds after** `init`, `generate`, and `manage-deps` (0 seconds / 0%).
   The explicit decision is **no-adopt**: the generated workspace-hack and its
   dependency maintenance have no measured build-time return.
+- Hygiene run `29397482618` proved the original sequential Miri invocations
+  could consume most of the shared 60-minute job timeout before `jackin-term`.
+  The final lane uses a fail-fast-disabled four-crate matrix, preserving each
+  exit status and summary while preventing a slow crate from starving another.
