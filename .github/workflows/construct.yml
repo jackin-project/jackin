@@ -39,7 +39,7 @@ jobs:
   matrix-setup:
     name: Select runner lane
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     outputs:
       build_configs: ${{ steps.set.outputs.build_configs }}
       lane_configs: ${{ steps.set.outputs.lane_configs }}
@@ -79,7 +79,7 @@ jobs:
 
   changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     outputs:
       construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
       construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}

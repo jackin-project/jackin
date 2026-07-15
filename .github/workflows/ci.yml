@@ -32,7 +32,7 @@ jobs:
   matrix-setup:
     name: Select runner lane
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     outputs:
       configs: ${{ steps.set.outputs.configs }}
     steps:
@@ -51,7 +51,7 @@ jobs:
 
   changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     outputs:
       rust: ${{ steps.route.outputs.rust }}
       construct: ${{ steps.route.outputs.construct }}

@@ -16,6 +16,7 @@ Apply these rules to every workflow under this directory. They define the reposi
 - The shared Cargo registry cache verifies restored fallback content with `cargo fetch --locked --offline` for the workspace and fuzz manifests. A PR fetches only when verification fails and never saves; non-PR runs save only after such a miss.
 - `main` writes the Construct registry BuildKit cache with `mode=max`; PR-scoped GHA BuildKit caches use `mode=min`.
 - BuildKit commands must stream inherited stdout and stderr with `--progress=plain`; GitHub Actions logs must show cache resolution and layer progress while an image build is running.
+- Runner selection and change classification are metadata jobs: cap them at five minutes. Keep build, test, publish, and network-heavy jobs at a measured, explicit timeout.
 
 ## Tokens and Scope
 
