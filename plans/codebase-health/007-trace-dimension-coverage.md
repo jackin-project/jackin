@@ -114,4 +114,4 @@ Stage-enum compile coverage + span-name test; screen.name log/metric assertions;
 - Metrics: docker.inspect + db.statement counters; screen.name on interaction metric dims.
 - Exporter tests prove screen-scoped logs carry `jackin.screen.name` and that only `feature.decision` records carry provider/agent values. Capsule activity installs the process-wide capsule screen context used by subsequent interaction metrics; a metric-dimension test covers host and capsule values.
 
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+**Completed 2026-07-15**: the stage vocabulary, screen dimensions, missing counters, and feature-decision identity boundary are implemented and exporter-tested. Fast CI passes and the index reflects the completed state.

@@ -106,4 +106,4 @@ Per-area failure-injection tests (attach socket, HTTP error status via existing 
 - Attach socket/decode/write failures emit operation_error with stable error.types; expected EOF detach stays non-failure.
 - Usage HTTP/RPC, image resolution/download/checksum, Docker run/inspect/wait, cleanup teardown, process spawn, and attach I/O classes are covered by one exporter-backed failure census.
 
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+**Completed 2026-07-15**: all enumerated failure-prone boundaries emit registered, stable error classifications; expected detach remains non-failure and exporter tests cover fingerprint stability. Fast CI passes and the index reflects the completed state.
