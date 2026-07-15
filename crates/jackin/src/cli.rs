@@ -23,7 +23,7 @@ pub(super) const HELP_STYLES: Styles = Styles::styled()
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
 // The canonical jackin❯ logo, shared with the host and capsule status bars.
-pub(super) const BANNER: &str = jackin_tui::ansi::BRAND_BANNER;
+pub(super) const BANNER: &str = crate::brand_output::BRAND_BANNER;
 
 pub mod cleanup;
 pub mod config;

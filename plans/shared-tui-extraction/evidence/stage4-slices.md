@@ -32,3 +32,8 @@ CI/CD observation is deferred until the final aggregate verification phase.
 - Product-owned modal sizing, brand composition, and container/debug information moved into `jackin-console`; `cargo check -p jackin-console` passed.
 - Tokio subscription plumbing, mouse-mode escape policy, and status-footer composition now live in `jackin-console`; root console services call that owner directly.
 - `rg -l 'jackin_tui' crates/jackin-console --glob '*.rs'` is empty, the donor dependency is removed, and `cargo check -p jackin-console -p jackin` passed.
+
+## Root terminal policy
+
+- Terminal ownership/title policy and raw ANSI brand output now live in root `jackin`; the digital-rain color ramp consumes TermRock palette tokens while remaining product composition.
+- `rg -l 'jackin_tui' crates/jackin/src --glob '*.rs'` is empty, the root donor dependency is removed, and `cargo check -p jackin` passed.

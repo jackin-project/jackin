@@ -37,7 +37,6 @@ jackin-diagnostics = { workspace = true }
 jackin-env = { workspace = true }
 jackin-image = { workspace = true }
 jackin-runtime = { workspace = true }
-jackin-tui = { workspace = true }
 jackin-launch-tui = { workspace = true }
 jackin-console = { workspace = true }
 jackin-protocol = { workspace = true }

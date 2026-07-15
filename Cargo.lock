@@ -2770,7 +2770,6 @@ dependencies = [
  "jackin-protocol",
  "jackin-runtime",
  "jackin-test-support",
- "jackin-tui",
  "jackin-usage",
  "owo-colors 4.3.0",
  "predicates",
