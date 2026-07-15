@@ -2,11 +2,11 @@
 title: "jackin❯ daemon"
 ---
 
-**Status**: Lifecycle foundation plus first attention adapter shipped — `jackin daemon serve/start/stop/restart/status/logs/install/uninstall` exists with a private Unix control socket, protocol/build skew checks, redacted logs, per-user launchd/systemd unit writers, and a muted-by-default one-way attention snapshot adapter. Reactive features that still depend on it ([live auth sync](/roadmap/live-auth-sync/), [host bridge](/roadmap/host-bridge/), broader Desktop Agent Hub APIs) remain deferred until their own adapter plans land.
+**Status**: Lifecycle foundation plus first attention adapter shipped — `jackin daemon serve/start/stop/restart/status/logs/install/uninstall` exists with a private Unix control socket, protocol/build skew checks, a transitional redacted log, per-user launchd/systemd unit writers, and a muted-by-default one-way attention snapshot adapter. [Unified OpenTelemetry observability](/roadmap/unified-otel-observability/) removes the daemon log and `logs` subcommand in favor of independent OTLP export and typed live health over the control socket. Reactive features that still depend on the daemon ([live auth sync](/roadmap/live-auth-sync/), [host bridge](/roadmap/host-bridge/), broader Desktop Agent Hub APIs) remain deferred until their own adapter plans land.
 
 ## Shipped facts
 
-jackin❯ now has a per-user host daemon command group documented at [`jackin daemon`](/commands/daemon/). The daemon owns lifecycle, a same-user Unix socket at `~/.jackin/run/jackin-daemon.sock`, JSONL request/response framing, `hello`/`status`/`shutdown`, log redaction, launchd/systemd user-unit file writers, and an `attention_snapshot` consumer. The in-container `jackin-capsule` PID 1 process remains a separate per-container control plane; Capsule Phase 4 still depends on future host-daemon event subscriptions.
+jackin❯ now has a per-user host daemon command group documented at [`jackin daemon`](/commands/daemon/). The daemon owns lifecycle, a same-user Unix socket at `~/.jackin/run/jackin-daemon.sock`, JSONL request/response framing, `hello`/`status`/`shutdown`, a current local log, launchd/systemd user-unit file writers, and an `attention_snapshot` consumer. The local daemon log describes shipped behavior only: the unified observability cutover removes it, keeps redacted startup failures on the invoking product error surface, exports daemon telemetry directly over OTLP, and adds a credential-free configuration fingerprint plus typed current health to the control protocol. The in-container `jackin-capsule` PID 1 process remains a separate per-container control plane; Capsule Phase 4 still depends on future host-daemon event subscriptions.
 
 The clearest concrete stand-in for a daemon-owned watcher remains the keep-awake reconciler in <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile>: it still runs at every CLI command boundary, acquiring a lock file and starting/stopping `caffeinate -imsu` based on whether any keep-awake-labelled container is running. Moving that watcher into the daemon remains future work.
 
@@ -20,6 +20,7 @@ The Plan 047/048 production daemon lives in <RepoFile path="crates/jackin-runtim
 2. **Caffeinate migration.** Move the keep-awake reconciler from per-command into a daemon-owned Docker-events watcher.
 3. **Live auth sync.** Add the per-axis watcher adapters for [live bidirectional auth sync](/roadmap/live-auth-sync/) only after the daemon foundation has shipped and log/core-dump redaction is proven.
 4. **Further reactive adapters.** Container event watcher, cross-session notifications, and [host bridge](/roadmap/host-bridge/) each plug into the daemon's adapter surface once it exists; host bridge remains blocked until per-request approval and audit are specified.
+5. **OTLP-only observability cutover.** Remove the host-daemon log and `jackin daemon logs`; initialize one immutable daemon provider set at process startup; report its sanitized configuration fingerprint, coverage state, and typed live exporter health over the private control socket. Later clients never forward exporter credentials or reconfigure the process in place.
 
 ## Related work
 

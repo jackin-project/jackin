@@ -52,7 +52,7 @@ Rootless DinD default research is closed for this track: keep `standard` default
 - Agent bypass flags remain enabled; Docker is the enforceable boundary, not the agent's own permission model.
 - Host Docker socket exclusion is a hard rule.
 - Hardened Docker is still a shared-kernel boundary; do not describe it as hostile multi-tenant isolation.
-- OTLP host egress remains jackin❯-owned infrastructure and is always allowlisted for telemetry.
+- OTLP Capsule egress is jackin❯-owned infrastructure only in `allowlist` or `open` mode: every normalized per-signal endpoint host is derived and admitted without exposing host exporter headers to the container. `network=none` always wins and produces host-only telemetry with explicit degraded-coverage health; observability never weakens an isolation grant.
 
 ## Related files
 
