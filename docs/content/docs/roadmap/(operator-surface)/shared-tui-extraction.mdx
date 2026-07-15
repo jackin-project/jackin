@@ -1,0 +1,138 @@
+---
+title: "Shared TUI Extraction"
+---
+
+# Shared TUI Extraction
+
+**Status**: Open - research-backed cross-repository proposal
+
+## Outcome
+
+Extract the neutral component, terminal-runtime, lookbook, and render-conformance foundation from `jackin-tui` and `jackin-tui-lookbook` into an independent Apache-2.0 Tailrocks repository, tentatively:
+
+```text
+Repository: tailrocks/tui
+Crates:     tailrocks-tui
+            tailrocks-tui-lookbook
+```
+
+The shared project targets Ratatui only, using Crossterm where terminal backend integration is required. It does not add a renderer-neutral abstraction or support alternative TUI frameworks.
+
+Migrate `jackin❯` to the released project without visible behavior changes. Holla then becomes the second proving consumer. Future Velnor runner surfaces, justified Parallax interactive CLI workflows, and independent Tailrocks tools can consume the same neutral platform without importing `jackin❯` domain code.
+
+The full donor audit, consumer boundaries, extraction classification, governance, and sequence are in [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/).
+
+## Why this belongs on the `jackin❯` roadmap
+
+`jackin❯` is the donor and first compatibility consumer. The database workbench itself is not a `jackin❯` feature. The responsibility tracked here is limited to making the mature terminal system independently reusable and migrating the donor safely.
+
+Current coupling prevents a direct publish:
+
+- `jackin-tui` is `publish = false` and depends on `jackin-core`;
+- neutral scrolling, dialog, ANSI, and bottom-chrome types are split or duplicated across the two crates;
+- global palette constants mix semantic state, Tailrocks style, and product-specific colors;
+- `BrandHeader`, container/agent helpers, product modal geometry, and animations embed `jackin❯` concepts;
+- the lookbook harness is reusable, but many stories contain workspaces, roles, agents, containers, and product paths.
+
+## Shared ownership
+
+The external project owns:
+
+- semantic themes and a default Tailrocks phosphor preset;
+- display-width, terminal-text, key, focus, hover, scroll, layout, and ownership primitives;
+- pure component/update/effect contracts that are product-neutral;
+- panels, tabs, actions, dialogs, lists, inputs, hints, toasts, status surfaces, and diff presentation;
+- terminal lifecycle guards where they can remain executor-neutral;
+- interactive lookbook, deterministic renders, and conformance fixtures;
+- public API docs, semver, MSRV, Ratatui/Crossterm compatibility, and releases.
+
+`jackin❯` retains:
+
+- agent, role, workspace, container, Capsule, and host-specific types;
+- OnePassword picker and all credential/product workflows;
+- file browser, role/scope/mount editors, and other application components;
+- brand composition, launch/closing animations, and product status policies;
+- consumer stories and fixtures using `jackin❯` domain data.
+
+## API rules
+
+- no shared public type mentions agent, database, job, trace, connection, credential, or workspace;
+- components perform no filesystem, network, process, secret, or telemetry I/O;
+- components target Ratatui directly rather than a cross-renderer abstraction;
+- consumers supply semantic theme, brand/header data, state, actions, and effects;
+- widgets remain usable without forcing Tokio unless an optional runtime feature is selected;
+- a product-local component graduates only for a second concrete consumer or a clearly foundational primitive;
+- every public component has keyboard, focus, non-color, Unicode, narrow-terminal, and lookbook evidence;
+- consumers pin a release or immutable revision, never a moving default branch.
+
+## Delivery checklist
+
+### Inventory and freeze
+
+- [ ] Inventory every public export and consumer in `jackin-tui` and `jackin-tui-lookbook`.
+- [ ] Classify each module/component as extract, parameterize, or remain local.
+- [ ] Capture current render fixtures, key behavior, and terminal-restoration tests as parity evidence.
+- [ ] Approve repository name, license/governance, MSRV, and compatibility policy.
+
+### External extraction
+
+- [ ] Create the external repository only after explicit operator approval.
+- [ ] Preserve history with `git filter-repo` or equivalent rather than copying an anonymous snapshot.
+- [ ] Preserve SPDX headers, copyright, LICENSE/NOTICE, authorship, and relevant design history.
+- [ ] Remove the `jackin-core` dependency by moving neutral helpers to the shared project.
+- [ ] Parameterize semantic theme and product brand/header data.
+- [ ] Remove or relocate product-specific components, stories, modal helpers, and animations.
+- [ ] Establish neutral lookbook and deterministic minimum/normal/wide render gates.
+- [ ] Publish an immutable preview release.
+
+### `jackin❯` migration
+
+- [ ] Replace local imports with the pinned external crates without redesigning behavior.
+- [ ] Move product-only stories/components to local modules.
+- [ ] Remove duplicate compatibility definitions after all callers migrate.
+- [ ] Verify console, Capsule, launch, OnePassword, lookbook, SVG, mouse, focus, and terminal-restoration suites.
+- [ ] Update `/reference/tui/` pages to state shared versus product-local ownership.
+- [ ] Delete in-tree donor crates only after parity and dependency audits pass.
+
+### Reuse proof and governance
+
+- [ ] Migrate Holla's terminal lifecycle, tabs, task output, scrolling, status, and hints during its redesign.
+- [ ] Keep Holla probing/commands and consumer stories in Holla.
+- [ ] Document the component contribution and two-consumer graduation process.
+- [ ] Publish compatibility/migration notes before Velnor, Parallax, or other-product adoption.
+
+## Acceptance
+
+- the shared crate builds and tests without any Tailrocks product crate;
+- `jackin❯` render and behavior parity passes before in-tree code is removed;
+- Holla proves the API supports a different product state/effect model;
+- no secret, agent, database, CI, or observability domain object crosses the shared API;
+- terminal cleanup works on supported exit/failure paths;
+- releases are reproducible, documented, licensed, attributed, and semver-versioned;
+- roadmap and canonical documentation in both repositories state one owner for every component and policy.
+
+## Risks
+
+- **Premature generalization:** solve with extract/parameterize/stay classification and the two-consumer rule.
+- **Visual regression:** migrate `jackin❯` before redesign and compare deterministic fixtures.
+- **Dependency inversion:** reject imports from any consumer crate and make Tokio optional where practical.
+- **Cross-repository deadlock:** publish first, migrate one consumer at a time, and retain donor code until parity passes.
+- **Brand leakage:** use semantic tokens and consumer-provided branding; keep product stories local.
+- **History/license loss:** use a history-preserving extraction and independent provenance review.
+
+## Not part of this item
+
+- implementation of features in consuming products;
+- Holla, Velnor, or Parallax product redesign beyond proving consumption;
+- a universal Tailrocks state/runtime/IPC framework;
+- a shared secrets crate;
+- native macOS UI components;
+- compatibility shims kept indefinitely after donor migration.
+
+## References
+
+- [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/)
+- [Donor Audit](/reference/research/shared-tui-extraction/02-donor-audit/)
+- [Extraction And Migration Plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/)
+- [TUI Design Decisions](/reference/tui/)
+- [Project Structure](/reference/getting-oriented/project-structure/)

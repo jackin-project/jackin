@@ -1,0 +1,82 @@
+---
+title: "05 - Open Decisions"
+---
+
+# 05 - Open Decisions
+
+## Fixed
+
+| Decision | Outcome |
+|---|---|
+| Product shape | independent Rust component/design project |
+| Donor | neutral portions of `jackin-tui` and `jackin-tui-lookbook` |
+| License | Apache-2.0 with preserved history/attribution |
+| Renderer | Ratatui only; Crossterm backend where needed |
+| First consumer | `jackin❯` compatibility migration |
+| Second consumer | Holla reuse proof |
+| Domain boundary | no product models, effects, persistence, secrets, or telemetry ownership |
+| Component graduation | second concrete consumer or clearly foundational primitive |
+
+## 1. Repository slug
+
+**Question:** `tailrocks/tui` or `tailrocks/tailrocks-tui`?
+
+**Recommended default:** `tailrocks/tui`; published crates carry the explicit `tailrocks-tui` prefix.
+
+**Deadline:** before external repository creation.
+
+## 2. Preview publication
+
+**Question:** crates.io preview immediately or git revision first?
+
+**Recommended default:** immutable git revision during debranding, then a crates.io preview before `jackin❯` removes the donor. Stable semver follows successful Holla use.
+
+**Deadline:** extraction Stage 3.
+
+## 3. Tokio/runtime feature
+
+**Question:** keep Tokio in the base crate?
+
+**Recommended default:** no. Pure widgets, state, input, focus, layout, and terminal guards should not require Tokio. Keep a runtime feature/module only for proven reusable async behavior.
+
+**Deadline:** first public manifest review.
+
+## 4. Brand API
+
+**Question:** one fixed Tailrocks header or consumer-defined identity?
+
+**Recommended default:** consumer-provided product name/mark/header data plus a shared default phosphor theme. Component semantics stay consistent without pretending every product is `jackin❯`.
+
+**Deadline:** before neutral lookbook freeze.
+
+## 5. History tooling
+
+**Question:** exact `git filter-repo` path strategy and documentation history set?
+
+**Recommended default:** retain both crate directories and only neutral TUI design history; record the source revision and filter command. Do not pull unrelated `jackin❯` history into the new repository.
+
+**Deadline:** before extraction command execution.
+
+## 6. Testing crate
+
+**Question:** publish `tailrocks-tui-testing` initially?
+
+**Recommended default:** no. Keep lookbook/conformance helpers internal or inside the two initial crates until two consumers need a stable public testing API.
+
+**Deadline:** reconsider after Holla migration.
+
+## 7. Compatibility matrix
+
+**Question:** how many Ratatui/Crossterm versions should be supported?
+
+**Recommended default:** one tested pair for the preview, aligned with active `jackin❯` and Holla migration requirements. Expand only when Cargo resolution and CI prove real value. Publish MSRV and platform support explicitly.
+
+**Deadline:** before preview release.
+
+## 8. Theme stability
+
+**Question:** are semantic token additions semver-sensitive?
+
+**Recommended default:** make `Theme` construction forward-compatible through documented defaults/builders rather than requiring every consumer to initialize each token. Removing or changing semantic meaning is breaking; adding an optional/defaulted token is not.
+
+**Deadline:** theme API review.

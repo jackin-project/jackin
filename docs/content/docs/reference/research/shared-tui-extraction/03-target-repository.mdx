@@ -1,0 +1,99 @@
+---
+title: "03 - Target Repository"
+---
+
+# 03 - Target Repository
+
+## Repository shape
+
+```text
+tailrocks/tui
+|- Cargo.toml
+|- crates/
+|  |- tailrocks-tui/
+|  |  |- components/
+|  |  |- input/
+|  |  |- layout/
+|  |  |- runtime/
+|  |  `- theme/
+|  `- tailrocks-tui-lookbook/
+|- docs/
+|- fixtures/
+`- xtask or scripts for render conformance
+```
+
+Start with two crates. Add `tailrocks-tui-testing` only after two consumers require the same public `TestBackend`, event fixtures, or golden-render helpers.
+
+## Public API rules
+
+1. **Pure components.** Rendering receives state/data/area/theme and performs no I/O.
+2. **Semantic styling.** Consumers select a theme and brand data; private palette details are not application APIs.
+3. **No product models.** Public types never mention agent, job, trace, connection, credential, workspace, or database.
+4. **Data-driven actions.** Tabs, buttons, hints, menus, and badges accept stable IDs, labels, state, and policy from the consumer.
+5. **Complete keyboard path.** Mouse interaction may mirror actions, but focus, keyboard activation, and visible hints remain complete.
+6. **Stable geometry.** Dynamic labels, hover, selection, loading, and errors cannot shift fixed controls unpredictably.
+7. **Executor restraint.** Widgets and state do not require Tokio. Optional runtime helpers have an explicit feature and value.
+8. **Controlled dependencies.** MSRV and Ratatui/Crossterm support are published and tested.
+9. **Two-consumer graduation.** Product-local components remain local until a second concrete consumer needs the same neutral contract.
+10. **One renderer.** Public components target Ratatui directly; do not create a lowest-common-denominator renderer abstraction.
+
+## Theme and identity
+
+Use semantic tokens rather than a globally hardcoded application palette:
+
+```text
+Theme
+  surface / elevated_surface / backdrop
+  foreground / muted / disabled
+  accent / selection / focus
+  border / border_focused
+  success / warning / danger / info
+  link / link_hover
+```
+
+Ship the current phosphor style as `Theme::tailrocks_phosphor()`. A consumer provides product name/mark and may override semantic tokens. Consistency comes from component behavior and meaning, not every application rendering an identical brand header.
+
+## Runtime contract
+
+The donor's TEA model is valuable:
+
+```text
+event -> Message -> pure update -> state + typed effects
+                                      |
+                                      v
+                              consumer effect adapter
+```
+
+The shared project may expose small executor-neutral contracts such as modal outcomes, subscriptions, focus ownership, and typed effect envelopes. It must not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree.
+
+## Lookbook model
+
+The shared lookbook owns neutral canonical states for every public component. Consumers own composition stories:
+
+```text
+tailrocks-tui-lookbook
+  panel, tabs, list, input, dialogs, status, theme states
+
+jackin❯ conformance
+  agents, roles, workspaces, containers, OnePassword, console layouts
+
+Holla conformance
+  detected actions, task tabs, running output, command failures
+```
+
+The harness supports an interactive browser and deterministic noninteractive renders. Releases exercise minimum, normal, and wide terminal sizes; long/wide Unicode; keyboard focus; non-color states; loading/empty/error/disabled variants; and terminal-control sanitization.
+
+## Governance
+
+API additions require:
+
+- a second-consumer case or clearly foundational primitive;
+- neutral naming and no consumer dependency;
+- unit tests plus interactive/deterministic lookbook states;
+- keyboard, focus, Unicode, narrow-terminal, and non-color validation;
+- semver impact and migration notes;
+- dependency/license review.
+
+Consumers pin releases or immutable revisions. The shared project publishes a compatibility matrix and does not coordinate releases by requiring every Tailrocks repository to follow its default branch.
+
+Preliminary checks on 2026-07-15 returned no crate for `tailrocks-tui` in the [crates.io search](https://crates.io/search?q=tailrocks-tui). This is namespace evidence, not legal or trademark clearance.

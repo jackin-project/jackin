@@ -1,0 +1,94 @@
+---
+title: "04 - Extraction And Migration Plan"
+---
+
+# 04 - Extraction And Migration Plan
+
+This is a cross-repository program. Repository creation, commits, pushes, releases, and PRs require the normal operator approvals and each repository's governance.
+
+## Stage 0 - Approve the contract
+
+- approve repository/crate names, Apache-2.0 ownership, DCO, security policy, MSRV, and release approach;
+- approve history-preserving extraction tooling and attribution handling;
+- freeze the extract/parameterize/remain ledger;
+- capture current `jackin❯` component tests, lookbook renders, key behavior, and terminal cleanup as parity evidence;
+- identify every consumer of `jackin-tui` and `jackin-core` compatibility helpers.
+
+Exit gate: no ownership ambiguity remains and no external repository is created without explicit approval.
+
+## Stage 1 - Create the external donor history
+
+- create `tailrocks/tui` with governance, CI, dependency/license gates, and release automation;
+- use `git filter-repo` or equivalent to retain the two donor paths and relevant neutral documentation/history;
+- preserve authorship, timestamps where possible, SPDX headers, copyright, LICENSE, and NOTICE/attribution;
+- record the source repository and extraction revision;
+- make debranding/reorganization reviewed commits in the new repository rather than copying a final anonymous snapshot.
+
+Exit gate: provenance can trace extracted code to donor commits and the new default branch is buildable.
+
+## Stage 2 - Break product coupling
+
+- move neutral ANSI, scrolling, dialog, and bottom-chrome ownership from `jackin-core` to the shared crate;
+- move path-display helpers only if they are truly platform-neutral; otherwise keep adapters local;
+- remove agent/container/brand-specific exports and stories;
+- introduce semantic theme and consumer brand/header input;
+- make runtime/executor dependencies optional or consumer-owned;
+- ensure public APIs contain no consumer model.
+
+Exit gate: `cargo tree` and source audit show no Tailrocks product dependency, and neutral tests/render fixtures pass.
+
+## Stage 3 - Establish release quality
+
+- document components, state ownership, key/focus behavior, theming, and integration examples;
+- add neutral interactive stories for every public component/state;
+- add deterministic minimum/normal/wide render gates and terminal restoration tests;
+- test the supported Rust/Ratatui/Crossterm matrix on macOS and Linux;
+- run formatting, lint, unit, docs, dependency, license, and supply-chain checks;
+- publish a preview version and immutable migration guide.
+
+Exit gate: an external minimal consumer can build and render without `jackin❯` code or a moving branch.
+
+## Stage 4 - Migrate `jackin❯`
+
+- depend on the preview release or immutable revision;
+- replace imports incrementally without product redesign;
+- retain product components/stories locally;
+- migrate every `jackin-core` compatibility caller before deleting duplicates;
+- compare console, Capsule, launch, input, mouse, modal, terminal-restoration, lookbook, and SVG fixtures;
+- update canonical TUI docs to identify shared versus `jackin❯` ownership;
+- delete in-tree donor crates only after parity and dependency audits pass.
+
+Exit gate: no visible/key behavior regression, no duplicate shared implementation, and the active `jackin❯` branch is green.
+
+Rollback: until the final deletion, `jackin❯` can pin the last known preview or temporarily keep the donor. Do not publish compatibility shims indefinitely.
+
+## Stage 5 - Prove Holla reuse
+
+- replace Holla's direct raw/alternate-screen setup with shared terminal ownership where compatible;
+- use shared tabs, panels, selection/list, scrolling, hints/status, and bounded output components;
+- keep probe, action, command, and task state in Holla;
+- add Holla-local conformance stories;
+- upstream only neutral gaps with second-consumer evidence.
+
+Exit gate: the shared API supports a distinct application without `jackin❯` vocabulary or effect assumptions.
+
+## Stage 6 - Stabilize and expand carefully
+
+- publish a stable semver release after both consumers run the preview successfully;
+- maintain compatibility/migration notes and a consumer matrix;
+- accept Velnor, Parallax, and other consumer needs through the two-consumer governance rule;
+- split `tailrocks-tui-testing` only after repeated public test-helper demand;
+- measure API churn, dependency weight, render performance, and maintenance load before broadening scope.
+
+## Acceptance checklist
+
+- [ ] No Tailrocks product crate is a dependency of `tailrocks-tui`.
+- [ ] No public shared type contains a product domain model.
+- [ ] Donor history and license attribution are independently reviewed.
+- [ ] All public components have docs, tests, and neutral lookbook states.
+- [ ] Keyboard, focus, non-color, Unicode, and terminal-size contracts pass.
+- [ ] Terminal mode restoration passes supported failure paths.
+- [ ] `jackin❯` parity passes before local donor deletion.
+- [ ] Holla proves second-consumer reuse.
+- [ ] Consumers pin immutable versions and can upgrade independently.
+- [ ] Roadmap and canonical docs name one owner for each component/policy.

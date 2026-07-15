@@ -1,0 +1,60 @@
+---
+title: "01 - Tailrocks Consumers"
+---
+
+# 01 - Tailrocks Consumers
+
+Shared terminal components are useful only if product ownership stays explicit.
+
+## Product map
+
+| Product | Owns | Shared TUI need |
+|---|---|---|
+| `jackin❯` | AI-agent isolation, runtime selection, launch, orchestration, session control, and agent visibility | console/Capsule tabs, panels, trees, dialogs, status, input, terminal lifecycle, render conformance |
+| [Holla](https://github.com/tailrocks/holla) | detecting host/project context and presenting relevant commands/tasks | menu/list navigation, tabs, task states, bounded live output, hints, terminal restoration |
+| [Velnor](https://github.com/tailrocks/velnor) | GitHub Actions-compatible self-hosted runner execution today; broader workflow engine only if future scope approves it | runner health, queued/running/completed jobs, step progress, bounded logs, errors |
+| [Parallax](https://github.com/tailrocks/parallax) | OpenTelemetry ingest, debugging evidence, issues, traces, logs, metrics, and bounded context | optional interactive CLI navigation; its primary web UI remains separate |
+| Future Tailrocks tools | their own domain state and commands | consistent components without importing another product |
+
+Parallax describes CLI, API, and web clients over one canonical service in its [research map](https://github.com/tailrocks/parallax/blob/main/docs/research/README.md). Velnor defines current and future ownership in its [mission](https://github.com/tailrocks/velnor/blob/main/docs/mission.md) and [vision](https://github.com/tailrocks/velnor/blob/main/docs/vision.md). Holla's [README](https://github.com/tailrocks/holla#readme) defines an adaptive local command surface.
+
+## Current evidence
+
+Holla currently uses Ratatui 0.30 and Crossterm 0.29 and directly implements alternate-screen/raw-mode lifecycle, tabs, key navigation, scrolling, status glyphs, and output panes. That overlap is the strongest second-consumer proof.
+
+Velnor has no Ratatui dependency today. Its current GitHub runner uses GitHub as the scheduling/operator UI, so shared-TUI work must wait for a concrete local runner-console workflow rather than prebuilding Velnor components.
+
+Parallax references terminal applications as telemetry sources and remains web-first. It should adopt shared components only for a real interactive CLI. Do not reinterpret shared TUI as a reason to replace or wrap its web interface.
+
+## Integration boundary
+
+The library is a normal Rust dependency:
+
+```text
+consumer Model/Message/Effect
+           |
+           v
+tailrocks-tui state + render contracts
+           |
+           v
+Ratatui / Crossterm
+```
+
+It is not:
+
+- a shared daemon or IPC channel;
+- a command registry for all Tailrocks products;
+- a common config/persistence format;
+- a secret resolver;
+- a telemetry SDK;
+- a cross-product domain model.
+
+Products integrate with one another through commands, stable APIs, and OpenTelemetry when needed. Sharing UI mechanics does not create runtime dependencies among them.
+
+## Consumer order
+
+1. `jackin❯` is the donor and compatibility oracle.
+2. Holla proves reuse under a different product model.
+3. Later products adopt only when they have a concrete interactive workflow.
+
+This order prevents a database grid, CI job tree, trace browser, or command menu from being declared universal before two products agree on the underlying presentation semantics.

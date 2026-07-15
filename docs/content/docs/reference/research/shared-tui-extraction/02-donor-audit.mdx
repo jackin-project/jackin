@@ -1,0 +1,67 @@
+---
+title: "02 - Donor Audit"
+---
+
+# 02 - Donor Audit
+
+## Current repository facts
+
+`crates/jackin-tui` is Apache-2.0, version `0.6.0-dev`, and `publish = false`. It depends on Ratatui, Crossterm, Tokio, and `jackin-core` plus focused rendering helpers. `crates/jackin-tui-lookbook` is an Apache-2.0 binary over the component crate.
+
+The two source trees contain roughly 17,000 lines of Rust. They have extensive unit tests, interactive component states, and SVG/render generation. This should be treated as a mature donor with compatibility obligations, not a new empty crate.
+
+## Dependency inversion to remove
+
+The shared-looking crate imports from `jackin-core`:
+
+- `shorten_home`;
+- pointer/OSC52 ANSI helpers;
+- `TailScroll`, scrolling calculations, and line-width helpers;
+- `DialogBodyScroll` and status-footer hover state;
+- bottom-chrome geometry and constants.
+
+Some of these neutral types also exist as compatibility copies or lower-layer definitions, creating the wrong direction for an external component library. Move neutral ownership to `tailrocks-tui`, migrate callers, then remove duplicates. Product configuration and agent/container types remain outside.
+
+## Extract unchanged or with naming cleanup
+
+- display-column measurement, terminal text sanitization, and bounded text helpers;
+- key/input normalization and focus ownership;
+- hover tracking and scroll state/math;
+- terminal ownership/mode guards;
+- ANSI text parsing and safe OSC52 helper where policy allows;
+- output pruning and bounded output projection;
+- `Panel`, `TabStrip`, `ButtonStrip`, confirmation/error dialogs, filter input, hints, scrollable panel/list, selection list, text input, toast, status popup, and diff view;
+- modal backdrop/lifecycle and generic dialog layout;
+- lookbook registry, interactive driver, SVG/golden renderer, and fixture runner.
+
+## Parameterize before publishing
+
+- replace global color constants with semantic `Theme` tokens such as accent, surface, border, danger, warning, success, selection, and link;
+- retain a default Tailrocks phosphor theme as a preset;
+- replace hardcoded `jackin❯` brand output with consumer-provided brand/header data;
+- make bottom chrome, tabs, status, badges, hints, and actions data-driven;
+- replace use-case-specific modal rectangle functions with generic responsive dialog specifications;
+- isolate or feature-gate Tokio runtime helpers so widgets do not force an executor;
+- define public state IDs and callbacks/messages without consumer domain types.
+
+## Keep in `jackin❯`
+
+- agent display names, roles, workspaces, container/Capsule information, and host-container color mapping;
+- launch digital-rain and closing animations with product-specific meaning;
+- OnePassword, role, scope, mount, and project-specific pickers;
+- file browser and application editors;
+- `jackin❯` brand composition and status policies;
+- lookbook stories and fixtures containing agents, roles, workspaces, containers, or product paths.
+
+## Module-level review rule
+
+The classification above is a starting point, not permission for a bulk move. Before extraction, create a ledger for every public export containing:
+
+- current owner and every caller;
+- dependency graph and feature requirements;
+- product vocabulary or assumptions;
+- tests and render fixtures that define behavior;
+- target decision: extract, parameterize, remain local, or remove;
+- semver/API notes.
+
+No module moves merely because its filename sounds generic.

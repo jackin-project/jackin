@@ -1,0 +1,46 @@
+---
+title: "Shared TUI Extraction Research"
+---
+
+# Shared TUI Extraction Research
+
+Research and implementation plan for extracting the neutral parts of `jackin-tui` and `jackin-tui-lookbook` into an independent Tailrocks Rust project. The shared project should let `jackin❯`, Holla, future Velnor and Parallax terminal surfaces, and other Tailrocks tools use one tested terminal component language without sharing product state or domain code. **Research conducted: 2026-07-15.**
+
+This is the only cross-product work that belongs in the `jackin❯` roadmap. Database-client research, engine selection, product workflows, and native database-app plans belong in a separate database repository and are intentionally absent here.
+
+## Decisions
+
+- **Repository:** tentative `tailrocks/tui`.
+- **Initial crates:** `tailrocks-tui` and `tailrocks-tui-lookbook`.
+- **Renderer:** Ratatui only. Do not design a renderer-neutral abstraction or support competing TUI frameworks.
+- **License:** Apache-2.0, preserving donor history, authorship, SPDX headers, copyright, and attribution.
+- **First consumer:** `jackin❯`, migrated without visible redesign.
+- **Second consumer:** Holla, proving that the API supports a different product and effect model.
+- **Later consumers:** Velnor runner/job TUI, justified Parallax interactive CLI workflows, and independent Tailrocks development tools.
+- **Boundary:** shared components, terminal lifecycle, theme, input/focus/layout, lookbook, and render-conformance only. No agent, job, trace, database, credential, command-execution, or telemetry models.
+- **Release:** consumers pin a semver release or immutable revision, never a moving default branch.
+
+## Read order
+
+- [00 - Executive summary](/reference/research/shared-tui-extraction/00-executive-summary/) states the recommendation and sequence.
+- [01 - Tailrocks consumers](/reference/research/shared-tui-extraction/01-tailrocks-consumers/) maps product ownership and real reuse needs.
+- [02 - Donor audit](/reference/research/shared-tui-extraction/02-donor-audit/) classifies current code as extract, parameterize, or remain local.
+- [03 - Target repository](/reference/research/shared-tui-extraction/03-target-repository/) defines crates, API rules, theme, lookbook, tests, and governance.
+- [04 - Extraction and migration plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/) gives the cross-repository PR order and acceptance gates.
+- [05 - Open decisions](/reference/research/shared-tui-extraction/05-open-decisions/) bounds choices that must close before repository creation or first release.
+
+## Intended dependency shape
+
+```text
+                         tailrocks-tui
+                              |
+           +------------------+------------------+
+           |                  |                  |
+        jackin❯             Holla              Velnor
+           |                                     |
+    agent orchestration                     runner/jobs
+
+Later: Parallax interactive CLI and independent Tailrocks tools
+```
+
+Each consumer owns its model, wording, information architecture, effects, persistence, secrets, and telemetry. The library owns the neutral Ratatui mechanics and quality bar of terminal interaction.

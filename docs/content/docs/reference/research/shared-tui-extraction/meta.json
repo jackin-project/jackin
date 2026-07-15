@@ -1,0 +1,14 @@
+{
+  "title": "Shared TUI Extraction",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "prompt",
+    "00-executive-summary",
+    "01-tailrocks-consumers",
+    "02-donor-audit",
+    "03-target-repository",
+    "04-extraction-migration-plan",
+    "05-open-decisions"
+  ]
+}

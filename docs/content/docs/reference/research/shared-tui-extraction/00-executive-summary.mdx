@@ -1,0 +1,76 @@
+---
+title: "00 - Executive Summary"
+---
+
+# 00 - Executive Summary
+
+## Recommendation
+
+Create `tailrocks/tui` as an independent Apache-2.0 Rust project with two initial crates:
+
+```text
+tailrocks-tui
+tailrocks-tui-lookbook
+```
+
+The project is deliberately built for Ratatui. Crossterm remains the terminal backend where needed, but the public design does not introduce a renderer-neutral layer or accommodate competing TUI frameworks.
+
+Extract code with Git history, debrand it, break the `jackin-core` dependency, publish an immutable preview release, and migrate `jackin❯` before removing the in-tree donor. Use Holla as the second proving consumer.
+
+This project plays a role similar to a reusable component system: Tailrocks products share terminal interaction quality and visual vocabulary without recreating tabs, panels, dialogs, focus, scrolling, terminal restoration, and render testing. It is not a shared application kernel and does not own product state.
+
+## Why extract
+
+The donor has enough value to justify independent ownership:
+
+- roughly 17,000 lines of Rust across the component crate and lookbook;
+- TEA-style pure update/effect/view conventions;
+- tested terminal ownership and mode restoration;
+- display-width-aware layout, input, focus, hover, scrolling, and output helpers;
+- reusable panels, tabs, buttons, dialogs, lists, fields, hints, status, toasts, and diff views;
+- an interactive lookbook plus deterministic SVG/render fixtures.
+
+Holla already implements terminal lifecycle, tabs, scrolling, task status, and output chrome directly with Ratatui/Crossterm. Velnor needs future runner/job visibility. Parallax remains web-first, but a future interactive CLI should not rebuild these mechanics. This is real reuse pressure, not a hypothetical package split.
+
+## Required cleanup
+
+The donor is not publishable unchanged:
+
+- `jackin-tui` is `publish = false` and depends on `jackin-core`;
+- ANSI, scrolling, dialog, and bottom-chrome helpers are split or duplicated across layers;
+- palette constants mix semantic state, Tailrocks style, and `jackin❯` product meaning;
+- brand header, container/agent helpers, modal geometry, and animations contain product vocabulary;
+- lookbook machinery is neutral, but many stories contain roles, workspaces, agents, containers, and product paths;
+- Tokio is currently a direct dependency even for consumers that may need widgets only.
+
+## Ownership rule
+
+> The shared project owns terminal mechanics and component contracts. Consumers own product meaning and effects.
+
+Shared:
+
+- semantic theme tokens and the default phosphor preset;
+- terminal lifecycle/ownership, text geometry, input, focus, hover, scrolling, layout;
+- neutral components and optional executor-neutral update/effect contracts;
+- lookbook registry/harness, deterministic rendering, and conformance utilities.
+
+Consumer-local:
+
+- brand composition and product wording;
+- agent/container/job/trace/database/credential state;
+- filesystem, process, network, secret, persistence, and telemetry effects;
+- application layouts and stories using domain fixtures.
+
+## Sequence
+
+1. approve the external repository name, governance, history strategy, and API boundary;
+2. freeze donor behavior with inventory and fixtures;
+3. extract history and relevant neutral documentation;
+4. remove product coupling and introduce semantic theme/brand inputs;
+5. establish neutral lookbook and terminal conformance;
+6. publish a preview release;
+7. migrate `jackin❯` without redesign and delete local donor code only after parity passes;
+8. migrate Holla's generic TUI mechanics and feed back only genuinely neutral gaps;
+9. adopt from later products using semver and the two-consumer component rule.
+
+The detailed gates are in [04 - Extraction and migration plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/).
