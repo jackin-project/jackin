@@ -69,8 +69,8 @@ pub use ::jackin_host::caffeinate::reconcile_when_configured as reconcile_keep_a
 pub use self::launch::resolve_supported_agents_for_console;
 
 pub async fn register_agent_repo(
-    paths: &jackin_core::paths::JackinPaths,
-    selector: &jackin_core::selector::RoleSelector,
+    paths: &jackin_core::JackinPaths,
+    selector: &jackin_core::RoleSelector,
     git_url: &str,
     runner: &mut impl jackin_core::CommandRunner,
     debug: bool,

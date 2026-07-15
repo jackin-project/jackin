@@ -289,9 +289,8 @@ struct MintOutcome {
 /// Takes the same injection seams as [`run_setup_with_runner`]: a
 /// pre-resolved Claude probe (`None` on `--reuse`), a capture closure,
 /// an [`OpRunner`] for read-back, and an [`OpWriteRunner`] for create.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
-    clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 fn mint_token_value_with_runner<F>(
@@ -488,7 +487,7 @@ where
 /// The orchestrator's mutation path is gated behind these injection
 /// seams so the unit tests in this module never spawn `op` or
 /// `claude`.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -641,15 +640,14 @@ pub(crate) fn run_revoke_with_runner(
     let deleted_item = if delete_op_item {
         match prior.as_ref() {
             Some(EnvValue::OpRef(r)) => {
-                let parts =
-                    jackin_core::op_reference::parse_op_reference(&r.op).ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "--delete-op-item requested but slot {:?} did not parse into a \
+                let parts = jackin_core::parse_op_reference(&r.op).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "--delete-op-item requested but slot {:?} did not parse into a \
                          vault/item op-ref; clear the workspace via plain `revoke` and \
                          delete the item by hand from 1Password.",
-                            r.op
-                        )
-                    })?;
+                        r.op
+                    )
+                })?;
                 op_writer.item_delete(&parts.item, &parts.vault, None)?;
                 true
             }
@@ -724,9 +722,7 @@ pub struct RevokeReport {
 pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> Option<String> {
     cli_vault.or_else(|| {
         prior.and_then(|v| match v {
-            EnvValue::OpRef(r) => {
-                jackin_core::op_reference::parse_op_reference(&r.op).map(|p| p.vault)
-            }
+            EnvValue::OpRef(r) => jackin_core::parse_op_reference(&r.op).map(|p| p.vault),
             EnvValue::Plain(_) | EnvValue::Extended(_) => None,
         })
     })
@@ -966,7 +962,7 @@ enum OrphanCleanup {
 
 impl OrphanCleanup {
     fn run(op_writer: &dyn OpWriteRunner, op_ref: &OpRef, account: Option<&str>) -> Self {
-        let Some(parts) = jackin_core::op_reference::parse_op_reference(&op_ref.op) else {
+        let Some(parts) = jackin_core::parse_op_reference(&op_ref.op) else {
             return Self::UnparseableRef {
                 op: op_ref.op.clone(),
             };
@@ -1031,13 +1027,28 @@ fn sha256_prefix(value: &str) -> String {
 }
 
 fn upstream_expiry_stamp() -> String {
-    let now = chrono::Utc::now();
+    upstream_expiry_stamp_with_clock(&jackin_core::SystemClock)
+}
+
+fn upstream_expiry_stamp_with_clock(clock: &dyn jackin_core::Clock) -> String {
+    upstream_expiry_stamp_at(chrono::DateTime::<chrono::Utc>::from(clock.now_system()))
+}
+
+fn upstream_expiry_stamp_at(now: chrono::DateTime<chrono::Utc>) -> String {
     let expiry = now + chrono::Duration::days(TOKEN_LIFETIME_DAYS);
     expiry.format("%Y-%m-%d").to_string()
 }
 
 fn now_utc_rfc3339() -> String {
-    chrono::Utc::now().to_rfc3339()
+    now_utc_rfc3339_with_clock(&jackin_core::SystemClock)
+}
+
+fn now_utc_rfc3339_with_clock(clock: &dyn jackin_core::Clock) -> String {
+    now_utc_rfc3339_at(chrono::DateTime::<chrono::Utc>::from(clock.now_system()))
+}
+
+fn now_utc_rfc3339_at(now: chrono::DateTime<chrono::Utc>) -> String {
+    now.to_rfc3339()
 }
 
 /// Local cache file path holding the workspace's token expiry stamp
@@ -1140,8 +1151,17 @@ pub fn expiry_days_for_launch(
 /// Days remaining until `expiry` (YYYY-MM-DD), or `None` when the
 /// stamp cannot be parsed. Negative values mean expired.
 pub(crate) fn days_until_expiry(expiry: &str) -> Option<i64> {
+    days_until_expiry_with_clock(expiry, &jackin_core::SystemClock)
+}
+
+fn days_until_expiry_with_clock(expiry: &str, clock: &dyn jackin_core::Clock) -> Option<i64> {
+    let now = chrono::DateTime::<chrono::Utc>::from(clock.now_system());
+    days_until_expiry_at(expiry, now.date_naive())
+}
+
+/// Days remaining until `expiry` relative to an injected `today` (plan 025).
+pub(crate) fn days_until_expiry_at(expiry: &str, today: chrono::NaiveDate) -> Option<i64> {
     let parsed = chrono::NaiveDate::parse_from_str(expiry, "%Y-%m-%d").ok()?;
-    let today = chrono::Utc::now().date_naive();
     Some((parsed - today).num_days())
 }
 

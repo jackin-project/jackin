@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Standalone-dialog port (D2 in `codebase-health-enforcement`).
+//! Standalone-dialog port (D2 in the completed codebase-health track).
 //!
 //! `jackin-isolation::finalize` needs to surface an exit dialog and an
 //! error popup at host teardown. The dialog rendering lives in

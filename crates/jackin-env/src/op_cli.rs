@@ -8,7 +8,7 @@ use crate::picker::{
     resolve_edited_field_ref,
 };
 use jackin_core::OpRef;
-use jackin_core::op_types::{OpAccount, OpField, OpItem, OpVault};
+use jackin_core::{OpAccount, OpField, OpItem, OpVault};
 
 const OP_DEFAULT_BIN: &str = "op";
 const OP_DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);

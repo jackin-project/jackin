@@ -35,12 +35,10 @@
 //! identity check here; Docker Desktop and the future reactive daemon remain
 //! the tracked residuals.
 
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
-
 use anyhow::{Context as _, Result};
 use jackin_protocol::control::frame;
 use jackin_protocol::{CredReply, CredRequest, ExecBinding, ExecKind};
+use std::path::{Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
@@ -54,7 +52,7 @@ use tokio::net::{UnixListener, UnixStream};
 /// configured for this session. Only refs in this set are resolved; any
 /// incoming request that references an unknown (name, kind, source) triple
 /// is rejected, preventing escalation from a compromised in-container process.
-#[allow(
+#[expect(
     clippy::print_stderr,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -327,19 +325,15 @@ async fn resolve_one(r: &ExecBinding) -> Result<String> {
 }
 
 async fn resolve_op(op_ref: &str) -> Result<String> {
-    let output = tokio::process::Command::new("op")
-        // Insert -- end-of-options sentinel to prevent argument injection
-        // via crafted op:// values containing flags.
-        .args(["read", "--", op_ref])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("spawning `op read`")?
-        .wait_with_output()
+    // Insert -- end-of-options sentinel to prevent argument injection
+    // via crafted op:// values containing flags. No timeout: Touch ID
+    // prompts may block arbitrarily long (same semantic as pre-transport).
+    let request = jackin_process::ExecRequest::new("op", ["read", "--", op_ref]).no_timeout();
+    let output = jackin_process::exec_async(&request)
         .await
-        .context("waiting for `op read`")?;
+        .context("running `op read`")?;
 
-    if output.status.success() {
+    if output.success {
         let raw = String::from_utf8_lossy(&output.stdout);
         Ok(raw.trim_end_matches('\n').to_owned())
     } else {

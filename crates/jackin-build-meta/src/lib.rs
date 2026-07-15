@@ -1,9 +1,9 @@
 //! jackin-build-meta: build-script helpers shared by jackin❯ crates.
 //!
-//! **Architecture Invariant:** T0.
+//! **Architecture Invariant:** T1.
 //! Entry point: [`emit_build_info`] — build-script helper shared by crates.
 
-use std::process::Command;
+use jackin_process::ExecRequest;
 
 const WORKSPACE_GIT_DIR_FROM_CRATE: &str = "../../.git";
 
@@ -49,17 +49,12 @@ fn derive_version(git_dir_relative: &str) -> String {
     // repository uses.
     println!("cargo:rerun-if-changed={git_dir_relative}/packed-refs");
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "build metadata runs in Cargo build-script context, not on a render/runtime thread"
-    )]
-    let short_sha = Command::new("git")
-        .args(["rev-parse", "--short=7", "HEAD"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_owned());
+    let short_sha =
+        jackin_process::exec_sync(&ExecRequest::new("git", ["rev-parse", "--short=7", "HEAD"]))
+            .ok()
+            .filter(|o| o.success)
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_owned());
 
     short_sha.map_or_else(
         || cargo_version.clone(),

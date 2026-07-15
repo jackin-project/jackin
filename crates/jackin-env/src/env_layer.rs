@@ -33,7 +33,7 @@ impl std::fmt::Display for EnvLayer {
 }
 
 /// Later-wins merge: global → role → workspace → workspace-role.
-#[allow(dead_code, reason = "demoted with env_layer module (plan 039)")]
+#[expect(dead_code, reason = "demoted with env_layer module (plan 039)")]
 pub(crate) fn merge_layers(
     global: &BTreeMap<String, EnvValue>,
     role: &BTreeMap<String, EnvValue>,

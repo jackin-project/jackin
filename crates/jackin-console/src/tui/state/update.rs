@@ -84,7 +84,7 @@ pub type ManagerUpdate = crate::tui::update::ConsoleUpdate<ManagerEffect>;
 
 // ── Reducer ───────────────────────────────────────────────────────────────
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Manager-state reducer handles every ManagerMessage variant inline: \
               per-message-arm state mutation + per-stage emit + per-Update \
@@ -716,10 +716,6 @@ fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
     settings.apply_tab_move_plan(plan);
 }
 
-#[allow(
-    clippy::missing_const_for_fn,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;

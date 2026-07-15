@@ -405,3 +405,29 @@ fn sha256_digest_strips_prefix_only_for_sha256() {
     assert!(asset(Some("md5:deadbeef")).sha256_digest().is_none());
     assert!(asset(None).sha256_digest().is_none());
 }
+
+#[test]
+fn read_cached_release_at_past_ttl_without_wall_clock() {
+    use jackin_core::ManualClock;
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    write_cached_release(&paths, &release_fixture()).unwrap();
+    let path = metadata_cache_path(&paths, Agent::Claude);
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let clock = ManualClock::with_system_base(modified);
+    clock.advance(CACHE_TTL);
+    assert!(
+        read_cached_release_with_clock(&paths, Agent::Claude, &clock).is_none(),
+        "exactly CACHE_TTL old must miss"
+    );
+    let fresh_clock = ManualClock::with_system_base(modified);
+    fresh_clock.advance(
+        CACHE_TTL
+            .checked_sub(Duration::from_secs(1))
+            .expect("TTL exceeds one second"),
+    );
+    assert!(
+        read_cached_release_with_clock(&paths, Agent::Claude, &fresh_clock).is_some(),
+        "under TTL must hit"
+    );
+}

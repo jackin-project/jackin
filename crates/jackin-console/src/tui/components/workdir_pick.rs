@@ -34,7 +34,7 @@ impl WorkdirPickState {
     /// Excludes `/` and the literal parent of `$HOME` (typically `/Users`
     /// on macOS or `/home` on Linux) as workdir choices — they're never
     /// useful targets for a workspace workdir.
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Workdir-picker choice builder: per-mount + per-ancestor nested \
               loop with `if seen.insert` dedup + `match` on label type. The \
@@ -145,12 +145,6 @@ use jackin_tui::components::render_picker_lines;
 use jackin_tui::components::{DialogBorder, render_dialog_shell};
 use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
 
-#[allow(
-    clippy::excessive_nesting,
-    reason = "Workdir-picker renderer: per-block (header / input / list / hint) \
-              nested buffer layout through the dialog shell. The nesting is the \
-              per-block buffer-fill protocol."
-)]
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
     let inner = render_dialog_shell(
         frame,

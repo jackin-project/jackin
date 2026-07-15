@@ -172,11 +172,10 @@ fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerLis
 /// which instance-row footer actions to surface: live rows offer new-session /
 /// shell / stop; failed/stopped rows offer restart instead (D15).
 fn selected_instance_is_live(state: &ManagerState<'_>, selected: ManagerListRow) -> bool {
-    let is_live = |entry: &jackin_core::instance::InstanceIndexEntry| {
+    let is_live = |entry: &jackin_core::InstanceIndexEntry| {
         matches!(
             entry.status,
-            jackin_core::instance::InstanceStatus::Active
-                | jackin_core::instance::InstanceStatus::Running
+            jackin_core::InstanceStatus::Active | jackin_core::InstanceStatus::Running
         )
     };
     selected_instance_snapshot_available(

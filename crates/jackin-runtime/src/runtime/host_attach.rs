@@ -12,14 +12,13 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::host_colors::query_host_terminal_colors;
 use anyhow::{Context, Result, bail};
 use directories::UserDirs;
+use jackin_core::JackinPaths;
 use jackin_core::container_paths;
-use jackin_core::paths::JackinPaths;
 use jackin_protocol::attach::{
     ClientFrame, ClientTerminal, ClipboardImage, ClipboardImageChunk, ClipboardImageEnd,
     ClipboardImageStart, FileExportChunk, FileExportEnd, FileExportStart,
@@ -29,7 +28,6 @@ use jackin_protocol::attach::{
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::process::Command;
 use tokio::signal::unix::{SignalKind, signal};
 
 use super::attach::{
@@ -130,12 +128,12 @@ pub(super) async fn run_host_attach_session(
                 socket_path.display(),
                 direct_error
             );
-            let mut child = Command::new("docker")
-                .args(attach_proxy_exec_args(container_name))
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::inherit())
-                .spawn()
+            let process_request =
+                jackin_process::ExecRequest::new("docker", attach_proxy_exec_args(container_name))
+                    .stdin_mode(jackin_process::StdioMode::Capture)
+                    .stdout_mode(jackin_process::StdioMode::Capture)
+                    .stderr_mode(jackin_process::StdioMode::Inherit);
+            let mut child = jackin_process::spawn_async(&process_request)
                 .context("starting docker attach-proxy")?;
             let stdout = child
                 .stdout
@@ -199,7 +197,7 @@ where
     .await
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Attach-protocol async loop driving the host's request/response \
               exchange with the capsule daemon. Body extraction follows the \
@@ -207,13 +205,13 @@ where
               shape preserves captured socket + reader + writer borrows across \
               the protocol phases."
 )]
-#[allow(
+#[expect(
     clippy::cognitive_complexity,
     reason = "Same justification as the too_many_lines allow: attach protocol \
               async loop branching tracks the request/response routing arms, \
               not algorithmic complexity."
 )]
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Attach-protocol call site propagates the four server/terminal stream \
               handles plus geometry, request payload, initial input, and the winch \

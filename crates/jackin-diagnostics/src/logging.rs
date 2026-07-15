@@ -44,16 +44,12 @@ pub fn is_debug_mode() -> bool {
 }
 
 pub fn telemetry_level(debug: bool) -> TelemetryLevel {
-    // Resolution: env level → JACKIN_DEBUG alias → config → --debug fallback.
-    // Exactly one site resolves JACKIN_DEBUG truthiness as a telemetry control.
+    // Resolution: env level → config → --debug fallback.
     if let Some(level) = std::env::var("JACKIN_TELEMETRY_LEVEL")
         .ok()
         .and_then(|value| parse_telemetry_level(&value))
     {
         return level;
-    }
-    if jackin_debug_alias_enabled() {
-        return TelemetryLevel::Debug;
     }
     config_telemetry_level().unwrap_or({
         if debug {
@@ -61,16 +57,6 @@ pub fn telemetry_level(debug: bool) -> TelemetryLevel {
         } else {
             TelemetryLevel::Info
         }
-    })
-}
-
-/// `JACKIN_DEBUG` truthiness alias — only read here (and dual-injection sites).
-fn jackin_debug_alias_enabled() -> bool {
-    std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
-        matches!(
-            v.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        )
     })
 }
 

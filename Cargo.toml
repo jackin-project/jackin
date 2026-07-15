@@ -18,6 +18,7 @@ members = [
     "crates/jackin-host",
     "crates/jackin-image",
     "crates/jackin-manifest",
+    "crates/jackin-process",
     "crates/jackin-protocol",
     "crates/jackin-launch-tui",
     "crates/jackin-runtime",
@@ -78,6 +79,7 @@ jackin-instance = { version = "0.6.0-dev", path = "crates/jackin-instance" }
 jackin-isolation = { version = "0.6.0-dev", path = "crates/jackin-isolation" }
 jackin-launch-tui = { version = "0.6.0-dev", path = "crates/jackin-launch-tui" }
 jackin-manifest = { version = "0.6.0-dev", path = "crates/jackin-manifest" }
+jackin-process = { version = "0.6.0-dev", path = "crates/jackin-process" }
 jackin-protocol = { version = "0.6.0-dev", path = "crates/jackin-protocol" }
 jackin-runtime = { version = "0.6.0-dev", path = "crates/jackin-runtime" }
 jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
@@ -89,6 +91,7 @@ opentelemetry_sdk = "0.32"
 owo-colors = "4"
 portable-pty = "0.9"
 predicates = "=3.1.4"
+proptest = "1.9"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 procfs = "0.18"
 rand = "0.10"
@@ -174,7 +177,10 @@ all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
 # Bare-allow floor is 0 (ratchet bare-allow-per-crate); deny allows without reason.
+# Prefer #[expect] so suppressions self-retire when the lint stops firing
+# (census: docs/content/docs/reference/developer-reference/lint-policy.mdx).
 allow_attributes_without_reason = "deny"
+allow_attributes = "deny"
 dbg_macro = "deny"
 let_underscore_future = "deny"
 let_underscore_must_use = "deny"
@@ -198,11 +204,10 @@ panic = "deny"
 manual_assert = "deny"
 manual_let_else = "warn"
 match_bool = "warn"
-# allow: 154 hits measured 2026-07-12; dominant by-value state/view handoffs (plan 047).
+# allow census: docs/content/docs/reference/developer-reference/lint-policy.mdx
 needless_pass_by_value = "allow"
 trivially_copy_pass_by_ref = "warn"
 large_enum_variant = "warn"
-# allow: 137 hits measured 2026-07-12; residual large futures in attach/runtime/capsule.
 large_futures = "allow"
 result_large_err = "warn"
 clone_on_ref_ptr = "warn"
@@ -217,11 +222,8 @@ cognitive_complexity = "warn"
 excessive_nesting = "warn"
 implicit_hasher = "allow"
 similar_names = "allow"
-# allow: 34 hits measured 2026-07-12 (usage/capsule/runtime assigning_clones).
 assigning_clones = "allow"
-# allow: 88 hits measured 2026-07-12 (capsule/console/lookbook match_same_arms).
 match_same_arms = "allow"
-# allow: 35 hits measured 2026-07-12 (console-heavy drop_non_drop).
 drop_non_drop = "allow"
 format_push_string = "allow"
 no_effect_underscore_binding = "allow"

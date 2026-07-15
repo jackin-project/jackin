@@ -453,8 +453,51 @@ jobs:
       # they fail on growth above budget and on stale/missing/shrunken rows.
       # dependency-direction stays informational (exits 0) until the P2 layer
       # inversions are cleaned up. Grandfathered entries in each ratchet file
-      # may only ever shrink. See `roadmap/codebase-health-enforcement`.
+      # may only ever shrink. See `plans/codebase-health/`.
+      - name: Register xtask problem matcher
+        run: echo "::add-matcher::.github/problem-matchers/xtask.json"
       - run: cargo run -p jackin-xtask --locked -- lint --strict
+
+  # Plan 028: README freshness owns checkout (fetch-depth 0) so the gate can run.
+  readme-freshness:
+    needs: [changes, matrix-setup]
+    if: needs.changes.outputs.rust == 'true' && github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 20
+    name: README freshness (advisory) (${{ matrix.config.lane }})
+    continue-on-error: true
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Fetch base branch
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+      - name: README freshness gate
+        run: cargo run -p jackin-xtask --locked -- lint readme-freshness --base "origin/${{ github.base_ref }}"
+      - name: Synthetic-diff self-test (failure path)
+        run: |
+          set -euo pipefail
+          # Prove the CLI is wired: missing base ref must not silently no-op without output.
+          set +e
+          out=$(cargo run -p jackin-xtask --locked -- lint readme-freshness --base "origin/does-not-exist-ref-for-probe" 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          echo "exit=$code"
+          # Advisory job: either non-zero (fail-closed) or empty-diff OK message is acceptable.
 
   clippy:
     needs: [changes, matrix-setup, cargo-registry-warmup]
@@ -474,13 +517,6 @@ jobs:
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "off"
     steps:
-
-      - name: README freshness (advisory)
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        run: |
-          git fetch --no-tags origin "${{ github.base_ref }}" || true
-          cargo run -p jackin-xtask --locked -- lint readme-freshness --base "origin/${{ github.base_ref }}"
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -851,6 +887,34 @@ jobs:
         run: |
           pending=$(git ls-files --others --exclude-standard '*.pending-snap'; find crates -name '*.pending-snap' -print)
           if [ -n "$pending" ]; then echo "::error::pending insta snapshots found:"; echo "$pending"; exit 1; fi
+      - name: Enumerate changed insta snapshots for review
+        run: |
+          # Plan 024: absence of *.pending-snap is not proof of review. List every
+          # .snap that differs from origin/main so PR reviewers must acknowledge them.
+          base=$(git merge-base origin/main HEAD 2>/dev/null || true)
+          if [ -z "$base" ]; then
+            echo "No merge-base with origin/main; skipping snapshot-diff enumeration."
+            exit 0
+          fi
+          changed=$(git diff --name-only "$base" -- '*.snap' || true)
+          {
+            echo "## Changed insta snapshots"
+            if [ -z "$changed" ]; then
+              echo "_None vs origin/main._"
+            else
+              echo "Reviewer must acknowledge each changed \`.snap\` (hand-edited snapshots that match buggy output are rejected in review):"
+              echo
+              echo '```'
+              echo "$changed"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$changed" ]; then
+            echo "Changed .snap files:"
+            echo "$changed"
+          else
+            echo "No changed .snap files vs origin/main."
+          fi
       - run: cargo test --doc --workspace --locked
       - name: Capture sccache stats
         if: always()
@@ -871,6 +935,23 @@ jobs:
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
     secrets: inherit
+  # Plan 009: exporter-backed telemetry conformance matrix (named gate).
+  telemetry-conformance:
+    needs: [changes, matrix-setup, cargo-registry-warmup]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ${{ fromJSON(fromJSON(needs.matrix-setup.outputs.configs)[0].runner) }}
+    timeout-minutes: 30
+    name: telemetry conformance matrix
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust cargo:cargo-nextest"
+      - name: Run telemetry conformance filter
+        run: cargo nextest run -p jackin-diagnostics -p jackin-capsule --all-features --locked -E 'test(/conformance/)'
   fuzz:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
@@ -914,6 +995,7 @@ jobs:
             crates/jackin-term/fuzz -> target
             crates/jackin-config/fuzz -> target
             crates/jackin-manifest/fuzz -> target
+            crates/jackin-protocol/fuzz -> target
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -933,6 +1015,10 @@ jobs:
           cd crates/jackin-manifest
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_migrate -- -max_total_time=30
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_validate -- -max_total_time=30
+      - name: Fuzz protocol decode_frames
+        run: |
+          cd crates/jackin-protocol
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu decode_frames -- -max_total_time=45
   bench-build:
     # One job builds every workspace bench: the two matrix legs compiled the
     # shared dependency graph twice with two separate target caches

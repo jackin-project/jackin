@@ -24,6 +24,8 @@ Canonical host-console product surface. Owns reusable console state, update/inpu
 | [`mount_info_cache.rs`](src/mount_info_cache.rs) | mount-info cache | — |
 | [`mount_diff.rs`](src/mount_diff.rs) | mount diff | — |
 | [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | view composition + input | — |
+| [`tui/state.rs`](src/tui/state.rs) · [`tui/state/`](src/tui/state) | console manager state + bindings | — |
+| [`tui/state/manager.rs`](src/tui/state/manager.rs) · [`tui/state/manager/`](src/tui/state/manager) | concrete manager stage state | [`tests.rs`](src/tui/state/manager/tests.rs) |
 | [`tui/screens/form_model.rs`](src/tui/screens/form_model.rs) | shared form `FieldRow` / `FormSection` view models | — |
 
 ## Public API

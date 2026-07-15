@@ -22,7 +22,7 @@ pub use jackin_core::DriftDetection;
 /// recorded at materialization time. Drifted records on running containers
 /// go into `running_containers`; the rest land in `stopped_records`.
 pub async fn detect_workspace_edit_drift(
-    paths: &jackin_core::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     workspace_name: &jackin_core::WorkspaceName,
     edited_mounts: &[jackin_config::MountConfig],
     docker: &impl jackin_docker::docker_client::DockerApi,

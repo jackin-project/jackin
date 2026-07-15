@@ -94,9 +94,9 @@ impl StandaloneDialogSink for JackinStandaloneDialogSink {
     fn exit_dialog_with_inspect(
         &self,
         title: &str,
-        context: &[jackin_core::launch_progress::PromptContextLine],
+        context: &[jackin_core::PromptContextLine],
         options: Vec<String>,
-        worktrees_per_record: &[Vec<jackin_core::launch_progress::WorktreeInspect>],
+        worktrees_per_record: &[Vec<jackin_core::WorktreeInspect>],
     ) -> anyhow::Result<usize> {
         standalone_exit_dialog_with_inspect(
             title,

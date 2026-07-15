@@ -394,7 +394,7 @@ pub fn render_failure_popup(
 }
 
 #[must_use]
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

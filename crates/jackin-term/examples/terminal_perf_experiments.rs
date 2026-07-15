@@ -262,18 +262,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
     let measurements = datasets.iter().map(measure_dataset).collect::<Vec<_>>();
     for measurement in &measurements {
-        run.stage(
+        run.compact(
             "terminal_perf_measurement",
-            measurement.dataset,
-            "headless terminal perf measurement",
-            Some(&measurement_json(measurement).to_string()),
+            &format!("{} {}", measurement.dataset, measurement_json(measurement)),
         );
     }
-    run.stage(
+    run.compact(
         "terminal_perf_measurement",
-        "multipane_scaling_headless",
-        "headless multipane scaling proxy",
-        Some(&measure_multipane().to_string()),
+        &format!("multipane_scaling_headless {}", measure_multipane()),
     );
     run.emit_run_summary();
 

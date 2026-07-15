@@ -13,9 +13,9 @@ pub use crate::tui::components::editor_rows::{
     AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, SecretValueDisplay,
 };
 
-#[allow(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(unused_imports, reason = "re-export for editor view tests")
 )]
 pub(crate) use crate::tui::components::editor_rows::auth_lines;
 
@@ -67,7 +67,7 @@ pub type WorkspaceEditorState<
 >;
 
 mod general_tab;
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -76,14 +76,14 @@ pub(crate) use general_tab::{
 };
 
 mod mounts_tab;
-#[allow(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(unused_imports, reason = "re-export for editor view tests")
 )]
 pub(crate) use mounts_tab::{editor_mount_add_row_width, mount_lines};
 
 mod roles_tab;
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -93,7 +93,7 @@ pub(crate) use roles_tab::{
 };
 
 mod secrets_tab;
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -103,7 +103,7 @@ pub(crate) use secrets_tab::{
 };
 
 mod auth_tab;
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -113,7 +113,7 @@ pub(crate) use auth_tab::{
 
 mod modals;
 pub use modals::secret_new_key_label;
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -127,9 +127,9 @@ pub(crate) use modals::{
 };
 
 mod frame;
-#[allow(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(unused_imports, reason = "re-export for editor view tests")
 )]
 pub(crate) use frame::{
     editor_body_area, editor_contextual_footer_items, editor_frame_areas,

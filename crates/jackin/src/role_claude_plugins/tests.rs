@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::manifest::{ClaudeConfig, ManifestDockerConfig};
+use jackin_core::{ClaudeConfig, ManifestDockerConfig};
 use jackin_manifest::{ClaudeMarketplaceConfig, RoleManifest};
 
 use super::*;

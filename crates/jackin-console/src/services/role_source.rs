@@ -28,7 +28,7 @@ pub fn candidate_role_source(
             trusted: false,
             env: BTreeMap::new(),
         }),
-        Err(err) => Err(err),
+        Err(err) => Err(err.into()),
     }
 }
 

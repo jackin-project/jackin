@@ -7,7 +7,7 @@ use crate::tui::view::{spawn_failure_agent_label, spawn_failure_message};
 
 use super::{
     AgentRecord, Dialog, FullRedrawReason, Multiplexer, PickerIntent, Result, Session,
-    SessionLaunch, SpawnRequest, Tab, Utc, build_agent_command, build_shell_command,
+    SessionLaunch, SpawnRequest, Tab, build_agent_command, build_shell_command,
 };
 
 impl Multiplexer {
@@ -19,8 +19,9 @@ impl Multiplexer {
     }
 
     pub(super) fn active_tab_pane_count(&self) -> usize {
-        self.tabs
-            .get(self.active_tab)
+        self.session_supervisor
+            .tabs
+            .get(self.session_supervisor.active_tab)
             .map(|tab| tab.tree.all_ids().len())
             .unwrap_or_default()
     }
@@ -32,47 +33,49 @@ impl Multiplexer {
         if self.active_zoomed_id().is_some() {
             1
         } else {
-            self.tabs
-                .get(self.active_tab)
+            self.session_supervisor
+                .tabs
+                .get(self.session_supervisor.active_tab)
                 .map_or(0, |tab| tab.tree.leaf_count())
         }
     }
 
     pub(super) fn next_tab(&mut self) {
-        if self.tabs.is_empty() {
+        if self.session_supervisor.tabs.is_empty() {
             return;
         }
         self.cancel_drag();
         let prev = self.active_focused_id();
-        self.active_tab = (self.active_tab + 1) % self.tabs.len();
+        self.session_supervisor.active_tab =
+            (self.session_supervisor.active_tab + 1) % self.session_supervisor.tabs.len();
         self.synthesise_focus_swap(prev, self.active_focused_id());
     }
 
     pub(super) fn prev_tab(&mut self) {
-        if self.tabs.is_empty() {
+        if self.session_supervisor.tabs.is_empty() {
             return;
         }
         self.cancel_drag();
         let prev = self.active_focused_id();
-        self.active_tab = if self.active_tab == 0 {
-            self.tabs.len() - 1
+        self.session_supervisor.active_tab = if self.session_supervisor.active_tab == 0 {
+            self.session_supervisor.tabs.len() - 1
         } else {
-            self.active_tab - 1
+            self.session_supervisor.active_tab - 1
         };
         self.synthesise_focus_swap(prev, self.active_focused_id());
     }
 
     pub(super) fn jump_tab(&mut self, idx: usize) {
-        if idx < self.tabs.len() && idx != self.active_tab {
+        if idx < self.session_supervisor.tabs.len() && idx != self.session_supervisor.active_tab {
             self.cancel_drag();
             let prev = self.active_focused_id();
-            self.active_tab = idx;
+            self.session_supervisor.active_tab = idx;
             self.synthesise_focus_swap(prev, self.active_focused_id());
         }
     }
 
     pub(super) fn close_focused_tab(&mut self) {
-        if self.active_tab >= self.tabs.len() {
+        if self.session_supervisor.active_tab >= self.session_supervisor.tabs.len() {
             return;
         }
         // Drop any in-flight selection / drag-resize anchored to a
@@ -83,23 +86,30 @@ impl Multiplexer {
         // same reason.
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
-        let tab_ids = self.tabs[self.active_tab].tree.all_ids();
-        let closed_codename = self.tabs[self.active_tab].codename.clone();
+        let tab_ids = self.session_supervisor.tabs[self.session_supervisor.active_tab]
+            .tree
+            .all_ids();
+        let closed_codename = self.session_supervisor.tabs[self.session_supervisor.active_tab]
+            .codename
+            .clone();
         crate::clog!(
             "action: close_focused_tab tab_idx={} pane_count={}",
-            self.active_tab,
+            self.session_supervisor.active_tab,
             tab_ids.len()
         );
         for id in tab_ids {
-            if let Some(session) = self.sessions.remove(&id) {
+            if let Some(session) = self.session_supervisor.sessions.remove(id) {
                 self.mark_agent_session_exited(id);
                 session.terminate();
             }
         }
-        self.tabs.remove(self.active_tab);
+        self.session_supervisor
+            .tabs
+            .remove(self.session_supervisor.active_tab);
         self.retire_codename(&closed_codename);
-        if self.active_tab >= self.tabs.len() {
-            self.active_tab = self.tabs.len().saturating_sub(1);
+        if self.session_supervisor.active_tab >= self.session_supervisor.tabs.len() {
+            self.session_supervisor.active_tab =
+                self.session_supervisor.tabs.len().saturating_sub(1);
         }
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
@@ -109,16 +119,16 @@ impl Multiplexer {
         self.cancel_drag();
         crate::clog!(
             "action: exit_all_sessions session_count={} tab_count={}",
-            self.sessions.len(),
-            self.tabs.len()
+            self.session_supervisor.sessions.len(),
+            self.session_supervisor.tabs.len()
         );
-        for (_, session) in self.sessions.drain() {
+        for (_, session) in self.session_supervisor.sessions.drain() {
             session.terminate();
         }
-        self.tabs.clear();
-        self.active_tab = 0;
-        self.dialog_copy_feedback_deadline = None;
-        self.hover_target = None;
+        self.session_supervisor.tabs.clear();
+        self.session_supervisor.active_tab = 0;
+        self.clipboard.dialog_copy_feedback_deadline = None;
+        self.render.hover_target = None;
     }
 
     /// Drop the session whose PTY just exited. Removes the pane from
@@ -133,7 +143,7 @@ impl Multiplexer {
     /// agent should return them to whatever they were looking at
     /// before they opened that tab, not to the next-tab-to-the-right
     /// (which feels like a stack push).
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Session-removal fn: per-tab reflow with nested drag/selection \
               cancellation + tab-index clamping. The nesting is the per-tab \
@@ -150,11 +160,12 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let owning_tab = self
+            .session_supervisor
             .tabs
             .iter()
             .position(|t| t.tree.all_ids().contains(&session_id));
         if let Some(tab_idx) = owning_tab {
-            let leaves = self.tabs[tab_idx].tree.all_ids();
+            let leaves = self.session_supervisor.tabs[tab_idx].tree.all_ids();
             let tab_is_empty = leaves.len() == 1 && leaves[0] == session_id;
             if tab_is_empty {
                 // `PaneTree::remove` is a no-op on a top-level
@@ -163,15 +174,13 @@ impl Multiplexer {
                 // branch the tab persists with a dangling session
                 // id and the operator sees a `Done` tab they
                 // cannot interact with.
-                let was_active = tab_idx == self.active_tab;
-                let closed_codename = self.tabs[tab_idx].codename.clone();
-                self.tabs.remove(tab_idx);
+                let was_active = tab_idx == self.session_supervisor.active_tab;
+                let closed_codename = self.session_supervisor.tabs[tab_idx].codename.clone();
+                self.session_supervisor.tabs.remove(tab_idx);
                 // INV-D8: retire codename so tab labels drop the exited name.
-                let remaining_live = self.sessions.len().saturating_sub(1);
                 use super::ports::{PORTS, StatusPort};
-                if PORTS.should_retire_codename_on_exit(remaining_live) {
-                    self.retire_codename(&closed_codename);
-                }
+                let now = self.wall_now_utc();
+                PORTS.retire_codename(&mut self.session_supervisor, &closed_codename, now);
                 if was_active {
                     // Move to the tab on the left when it exists;
                     // otherwise stay at index 0 (the leftmost tab
@@ -181,30 +190,33 @@ impl Multiplexer {
                     // at 0" into the same expression. Clamp again
                     // so `active_tab` stays in bounds if the last
                     // tab in the strip just vanished.
-                    self.active_tab = tab_idx.saturating_sub(1);
-                    if self.active_tab >= self.tabs.len() {
-                        self.active_tab = self.tabs.len().saturating_sub(1);
+                    self.session_supervisor.active_tab = tab_idx.saturating_sub(1);
+                    if self.session_supervisor.active_tab >= self.session_supervisor.tabs.len() {
+                        self.session_supervisor.active_tab =
+                            self.session_supervisor.tabs.len().saturating_sub(1);
                     }
-                } else if tab_idx < self.active_tab {
+                } else if tab_idx < self.session_supervisor.active_tab {
                     // A non-active tab to the left of the active one
                     // vanished; shift `active_tab` down so it keeps
                     // pointing at the same tab.
-                    self.active_tab -= 1;
+                    self.session_supervisor.active_tab -= 1;
                 }
             } else {
-                self.tabs[tab_idx].tree.remove(session_id);
-                if self.tabs[tab_idx].focused_id == session_id {
-                    let remaining = self.tabs[tab_idx].tree.all_ids();
+                self.session_supervisor.tabs[tab_idx]
+                    .tree
+                    .remove(session_id);
+                if self.session_supervisor.tabs[tab_idx].focused_id == session_id {
+                    let remaining = self.session_supervisor.tabs[tab_idx].tree.all_ids();
                     if let Some(&next_focus) = remaining.first() {
-                        self.tabs[tab_idx].focused_id = next_focus;
+                        self.session_supervisor.tabs[tab_idx].focused_id = next_focus;
                     }
                 }
             }
         }
-        self.sessions.remove(&session_id);
+        self.session_supervisor.sessions.remove(session_id);
         self.mark_agent_session_exited(session_id);
         if let Some(tab_idx) = owning_tab
-            && let Some(tab) = self.tabs.get_mut(tab_idx)
+            && let Some(tab) = self.session_supervisor.tabs.get_mut(tab_idx)
         {
             tab.zoomed = tab.zoomed.filter(|&id| id != session_id);
         }
@@ -219,9 +231,10 @@ impl Multiplexer {
     ) -> Result<u64> {
         match request {
             SpawnRequest::Agent(agent_slug) => {
-                if let Err(reason) =
-                    crate::session::validate_agent_slug(&agent_slug, &self.available_agents)
-                {
+                if let Err(reason) = crate::session::validate_agent_slug(
+                    &agent_slug,
+                    &self.launch_env.available_agents,
+                ) {
                     anyhow::bail!("rejected agent {agent_slug:?}: {reason}");
                 }
                 let id = self.spawn_session(Some(agent_slug), env_overrides, None)?;
@@ -233,7 +246,7 @@ impl Multiplexer {
                 provider_label,
             } => {
                 if let Err(reason) =
-                    crate::session::validate_agent_slug(&slug, &self.available_agents)
+                    crate::session::validate_agent_slug(&slug, &self.launch_env.available_agents)
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
@@ -273,7 +286,7 @@ impl Multiplexer {
         env_passthrough: &[(String, String)],
         codename: &str,
     ) -> SessionLaunch {
-        let cwd = self.workdir.as_path();
+        let cwd = self.launch_env.workdir.as_path();
         match agent {
             Some(slug) => {
                 let label = crate::tui::model::visible_agent_label(Some(slug), provider_label);
@@ -299,37 +312,32 @@ impl Multiplexer {
     /// Increments `wordlist_offset` so consecutive tabs get different words.
     pub(super) fn pick_next_codename(&mut self) -> String {
         let codename = crate::wordlist::pick_codename(
-            &self.codename_live,
-            &self.codename_retired,
-            self.wordlist_offset,
+            &self.session_supervisor.codename_live,
+            &self.session_supervisor.codename_retired,
+            self.session_supervisor.wordlist_offset,
         );
-        self.wordlist_offset = self.wordlist_offset.wrapping_add(1);
+        self.session_supervisor.wordlist_offset =
+            self.session_supervisor.wordlist_offset.wrapping_add(1);
         codename
     }
 
     /// Move a closed tab's codename from `live` to `retired` (so it is never
     /// reused this container lifetime) and stamp the matching history record.
     pub(super) fn retire_codename(&mut self, codename: &str) {
-        self.codename_live.remove(codename);
-        self.codename_retired.insert(codename.to_owned());
-        if let Some(record) = self
-            .agent_history
-            .iter_mut()
-            .rev()
-            .find(|r| r.codename == codename)
-        {
-            record.exited_at = Some(Utc::now());
-        }
+        let now = self.wall_now_utc();
+        self.session_supervisor.retire_codename(codename, now);
     }
 
     pub(super) fn mark_agent_session_exited(&mut self, session_id: u64) {
+        let now = self.wall_now_utc();
         if let Some(record) = self
+            .session_supervisor
             .agent_history
             .iter_mut()
             .rev()
             .find(|record| record.session_id == session_id)
         {
-            record.exited_at.get_or_insert_with(Utc::now);
+            record.exited_at.get_or_insert(now);
         }
     }
 
@@ -412,23 +420,27 @@ impl Multiplexer {
             }),
             launch.cmd,
             self.session_terminal(
-                self.content_rows.saturating_sub(2),
-                self.term_cols.saturating_sub(2),
+                self.render.content_rows.saturating_sub(2),
+                self.render.term_cols.saturating_sub(2),
             ),
-            self.event_tx.clone(),
+            self.control.event_tx.clone(),
         )?;
         let tab_label = launch.label.clone();
-        self.sessions.insert(id, session);
-        if self.tabs.is_empty() {
-            self.tabs
+        self.session_supervisor.sessions.insert(id, session);
+        if self.session_supervisor.tabs.is_empty() {
+            self.session_supervisor
+                .tabs
                 .push(Tab::new_single(tab_label, id, codename.clone()));
-            self.active_tab = 0;
+            self.session_supervisor.active_tab = 0;
         } else {
-            self.tabs
+            self.session_supervisor
+                .tabs
                 .push(Tab::new_single(tab_label, id, codename.clone()));
-            self.active_tab = self.tabs.len() - 1;
+            self.session_supervisor.active_tab = self.session_supervisor.tabs.len() - 1;
         }
-        self.codename_live.insert(codename.clone());
+        self.session_supervisor
+            .codename_live
+            .insert(codename.clone());
         self.record_agent_history(id, codename, agent.clone(), provider_label);
         // Reflow so the new pane's PTY gets the correct interior
         // dimensions (outer rect minus border rows/cols). Without
@@ -441,7 +453,7 @@ impl Multiplexer {
             "action: spawn_session id={id} agent={:?} label={label} tab_idx={tab_idx}",
             agent,
             label = launch.label,
-            tab_idx = self.active_tab
+            tab_idx = self.session_supervisor.active_tab
         );
         Ok(id)
     }
@@ -463,18 +475,23 @@ impl Multiplexer {
                 Some("codex") => Some("openai".to_owned()),
                 _ => None,
             });
-        self.agent_history.push(AgentRecord {
+        let started_at = self.wall_now_utc();
+        self.session_supervisor.agent_history.push(AgentRecord {
             session_id,
             codename,
             agent,
             provider,
-            started_at: Utc::now(),
+            started_at,
             exited_at: None,
         });
     }
 
     pub(super) fn toggle_zoom(&mut self) {
-        let Some(tab) = self.tabs.get_mut(self.active_tab) else {
+        let Some(tab) = self
+            .session_supervisor
+            .tabs
+            .get_mut(self.session_supervisor.active_tab)
+        else {
             return;
         };
         let focused = tab.focused_id;

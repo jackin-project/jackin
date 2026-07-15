@@ -13,7 +13,7 @@ use crate::runtime::naming::{
 use anyhow::Context as _;
 use fs4::FileExt;
 use jackin_core::ContainerSpec;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use serde::{Deserialize, Serialize};
 
@@ -118,10 +118,14 @@ async fn create_network_timed(
     internal: bool,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    jackin_diagnostics::active_timing_started("sidecar", "create_network", Some(network));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Sidecar,
+        "create_network",
+        Some(network),
+    );
     let result = docker.create_network(network, labels, internal).await;
     jackin_diagnostics::active_timing_done(
-        "sidecar",
+        jackin_diagnostics::DiagnosticStage::Sidecar,
         "create_network",
         if result.is_ok() {
             Some("created_or_exists")
@@ -158,10 +162,14 @@ async fn run_dind_sidecar_headless_with_owner(
     // Create Docker network (sidecar networks are never internal).
     create_network_timed(network, owner.labels(None), false, docker).await?;
 
-    jackin_diagnostics::active_timing_started("sidecar", "dind_image_lookup", Some(dind_image));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Sidecar,
+        "dind_image_lookup",
+        Some(dind_image),
+    );
     let dind_image_tags = docker.list_image_tags(dind_image).await;
     jackin_diagnostics::active_timing_done(
-        "sidecar",
+        jackin_diagnostics::DiagnosticStage::Sidecar,
         "dind_image_lookup",
         match &dind_image_tags {
             Ok(tags) if tags.is_empty() => Some("missing"),
@@ -170,11 +178,15 @@ async fn run_dind_sidecar_headless_with_owner(
         },
     );
     if dind_image_tags?.is_empty() {
-        jackin_diagnostics::active_timing_started("sidecar", "pull_dind_image", Some(dind_image));
+        jackin_diagnostics::active_timing_started(
+            jackin_diagnostics::DiagnosticStage::Sidecar,
+            "pull_dind_image",
+            Some(dind_image),
+        );
         let pull_dind_image = docker.pull_image(dind_image);
         let pull_dind_image_result = pull_dind_image.await;
         jackin_diagnostics::active_timing_done(
-            "sidecar",
+            jackin_diagnostics::DiagnosticStage::Sidecar,
             "pull_dind_image",
             if pull_dind_image_result.is_ok() {
                 Some("pulled")
@@ -212,11 +224,15 @@ async fn run_dind_sidecar_headless_with_owner(
         privileged: dind_privileged,
         workdir: None,
     };
-    jackin_diagnostics::active_timing_started("sidecar", "docker_create_dind", Some(dind));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Sidecar,
+        "docker_create_dind",
+        Some(dind),
+    );
     let create_dind = docker.create_container(dind, spec);
     let create_dind_result = create_dind.await;
     jackin_diagnostics::active_timing_done(
-        "sidecar",
+        jackin_diagnostics::DiagnosticStage::Sidecar,
         "docker_create_dind",
         if create_dind_result.is_ok() {
             Some("created")
@@ -226,11 +242,15 @@ async fn run_dind_sidecar_headless_with_owner(
     );
     create_dind_result?;
 
-    jackin_diagnostics::active_timing_started("sidecar", "docker_start_dind", Some(dind));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Sidecar,
+        "docker_start_dind",
+        Some(dind),
+    );
     let start_dind = docker.start_container(dind);
     let start_dind_result = start_dind.await;
     jackin_diagnostics::active_timing_done(
-        "sidecar",
+        jackin_diagnostics::DiagnosticStage::Sidecar,
         "docker_start_dind",
         if start_dind_result.is_ok() {
             Some("started")
@@ -240,11 +260,15 @@ async fn run_dind_sidecar_headless_with_owner(
     );
     start_dind_result?;
 
-    jackin_diagnostics::active_timing_started("sidecar", "wait_dind_ready", Some(dind));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Sidecar,
+        "wait_dind_ready",
+        Some(dind),
+    );
     let dind_ready = wait_for_dind(dind, certs_volume, docker);
     let dind_ready_result = dind_ready.await;
     jackin_diagnostics::active_timing_done(
-        "sidecar",
+        jackin_diagnostics::DiagnosticStage::Sidecar,
         "wait_dind_ready",
         if dind_ready_result.is_ok() {
             Some("ready")
@@ -438,6 +462,15 @@ pub(crate) fn prewarmed_dind_state_container_name(paths: &JackinPaths) -> Option
     (state.schema_version == 1 && state.kept).then_some(state.dind)
 }
 
+fn record_prewarm_adoption_skip(reason: &str) {
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Sidecar,
+        "adopt_prewarmed_dind",
+        Some(&format!("skip:{reason}")),
+    );
+    emit_prewarmed_dind_adoption("skipped", reason);
+}
+
 /// Opportunistically consume the explicit kept sidecar prewarm as a one-shot
 /// launch resource. The warmed resource names are recorded in the instance
 /// manifest and normal session/eject cleanup owns them after launch succeeds.
@@ -446,24 +479,19 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     docker: &impl DockerApi,
 ) -> Option<AdoptedDindSidecar> {
     jackin_diagnostics::active_timing_started(
-        "sidecar",
+        jackin_diagnostics::DiagnosticStage::Sidecar,
         "adopt_prewarmed_dind",
         Some(PREWARM_STATE_FILE),
     );
     let Some(lock) = try_lock_prewarmed_dind(paths) else {
-        jackin_diagnostics::active_timing_done(
-            "sidecar",
-            "adopt_prewarmed_dind",
-            Some("skip:locked"),
-        );
-        emit_prewarmed_dind_adoption("skipped", "locked");
+        record_prewarm_adoption_skip("locked");
         return None;
     };
     let state = match read_prewarmed_dind_state(paths) {
         Ok(Some(state)) if state.schema_version == 1 && state.kept => state,
         Ok(Some(_)) => {
             jackin_diagnostics::active_timing_done(
-                "sidecar",
+                jackin_diagnostics::DiagnosticStage::Sidecar,
                 "adopt_prewarmed_dind",
                 Some("skip:state-invalid"),
             );
@@ -473,7 +501,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         }
         Ok(None) => {
             jackin_diagnostics::active_timing_done(
-                "sidecar",
+                jackin_diagnostics::DiagnosticStage::Sidecar,
                 "adopt_prewarmed_dind",
                 Some("skip:state-missing"),
             );
@@ -482,7 +510,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         }
         Err(reason) => {
             jackin_diagnostics::active_timing_done(
-                "sidecar",
+                jackin_diagnostics::DiagnosticStage::Sidecar,
                 "adopt_prewarmed_dind",
                 Some(&format!("skip:{reason}")),
             );
@@ -500,7 +528,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         docker_state => {
             let reason = format!("container:{}", docker_state.short_label());
             jackin_diagnostics::active_timing_done(
-                "sidecar",
+                jackin_diagnostics::DiagnosticStage::Sidecar,
                 "adopt_prewarmed_dind",
                 Some(&format!("skip:{reason}")),
             );
@@ -514,7 +542,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         Ok(Some(row)) => row,
         Ok(None) => {
             jackin_diagnostics::active_timing_done(
-                "sidecar",
+                jackin_diagnostics::DiagnosticStage::Sidecar,
                 "adopt_prewarmed_dind",
                 Some("skip:network-missing"),
             );
@@ -531,7 +559,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 "could not inspect kept prewarm network {network}: {error:#}"
             );
             jackin_diagnostics::active_timing_done(
-                "sidecar",
+                jackin_diagnostics::DiagnosticStage::Sidecar,
                 "adopt_prewarmed_dind",
                 Some("skip:network-inspect-error"),
             );
@@ -545,7 +573,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     };
     if network_row.labels.get("jackin.kind").map(String::as_str) != Some("prewarm-dind") {
         jackin_diagnostics::active_timing_done(
-            "sidecar",
+            jackin_diagnostics::DiagnosticStage::Sidecar,
             "adopt_prewarmed_dind",
             Some("skip:network-label-mismatch"),
         );
@@ -564,7 +592,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             "kept prewarm dind {dind} was running but not ready: {error:#}"
         );
         jackin_diagnostics::active_timing_done(
-            "sidecar",
+            jackin_diagnostics::DiagnosticStage::Sidecar,
             "adopt_prewarmed_dind",
             Some("skip:not-ready"),
         );
@@ -573,7 +601,11 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         return None;
     }
     let ready_ms = started.elapsed().as_millis();
-    jackin_diagnostics::active_timing_done("sidecar", "adopt_prewarmed_dind", Some("adopted"));
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Sidecar,
+        "adopt_prewarmed_dind",
+        Some("adopted"),
+    );
     emit_prewarmed_dind_adoption(
         "adopted",
         &format!(
@@ -629,6 +661,11 @@ pub(crate) fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::Fi
 
 fn emit_prewarmed_dind_adoption(outcome: &str, detail: &str) {
     if let Some(run) = jackin_diagnostics::active_run() {
-        run.stage("prewarmed_dind_adoption", "sidecar", outcome, Some(detail));
+        run.stage(
+            "prewarmed_dind_adoption",
+            jackin_diagnostics::DiagnosticStage::Sidecar,
+            outcome,
+            Some(detail),
+        );
     }
 }

@@ -13,7 +13,7 @@ use crate::display_cols;
 use crate::theme::{DANGER_RED, DEBUG_AMBER, INK, LINK_BLUE, WHITE, faded};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal status-footer hover flags (left, usage, right, \
               right_debug) — each is an independent footer-segment hover signal \

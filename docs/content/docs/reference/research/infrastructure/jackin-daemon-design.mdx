@@ -41,7 +41,7 @@ A handful of these features have already accumulated:
 - **Container event watcher (future).** Surface launch failures, OOM kills, agent process exits to the operator without requiring an open `jackin console` session. Today these only surface when the operator next runs `jackin console` or `gh pr checks`-style polling on the CLI.
 - **Cross-session notifications (future).** Ping the operator when an agent in a backgrounded session needs attention (sensitive-mount confirmation, auth re-prompt, network-policy violation).
 
-The pattern: each new feature that wants to **react to events instead of waiting for the next command** independently invents its own "what if jackin had a daemon" workaround. That doesn't scale.
+The pattern: each new feature that wants to **react to events instead of waiting for the next command** independently invents its own "what if jackin❯ had a daemon" workaround. That doesn't scale.
 
 This proposes introducing **the jackin❯ daemon** as a first-class concept the rest of the project can compose on. It is deliberately written before any one of the dependent features picks an implementation path, so the daemon's lifecycle, install method, security posture, and CLI surface are designed *once* and reused.
 
@@ -51,7 +51,7 @@ The daemon draft PR remains the right place to adjust the base contract while De
 
 The daemon is the long-running, per-operator-user, per-host process that holds anything jackin❯ needs to:
 
-1. **Watch host state.** Filesystem inotify, macOS Keychain notifications, periodic polls — for any host source jackin reacts to.
+1. **Watch host state.** Filesystem inotify, macOS Keychain notifications, periodic polls — for any host source jackin❯ reacts to.
 2. **Watch container state.** Docker events stream (`docker events`) for launch failures, exits, OOM kills.
 3. **Push reactive updates** into running containers via the existing bind-mount channels (no new container-side privilege).
 4. **Hold cross-process locks** that have to outlive any one CLI invocation (the live-auth-sync shared store flock, future "only one `jackin load` at a time per role class" mutex, etc.).
@@ -80,7 +80,7 @@ resolution now recorded above.
 - **Start trigger.** Auto-start on first `jackin` invocation? Auto-start on operator login (launchd / systemd)? Both, with the launchd / systemd unit as the canonical and the CLI auto-spawn as a fallback?
 - **Restart policy.** When the daemon crashes, who restarts it? launchd / systemd handle it natively; the CLI fallback needs a watchdog or accept-and-restart-from-the-next-command policy.
 - **Stop semantics.** `jackin daemon stop` for explicit shutdown? Auto-stop on operator logout? What happens to in-flight reactive work (live auth sync watchers, caffeinate locks) when the daemon shuts down?
-- **Upgrade across jackin versions.** When the operator runs `brew upgrade jackin` (or equivalent), the running daemon binary is the old version while a new CLI lives on disk. Do CLI commands force a daemon restart? Run a version-mismatch check at every connect?
+- **Upgrade across jackin❯ versions.** When the operator runs `brew upgrade jackin❯` (or equivalent), the running daemon binary is the old version while a new CLI lives on disk. Do CLI commands force a daemon restart? Run a version-mismatch check at every connect?
 
 ### Install method
 

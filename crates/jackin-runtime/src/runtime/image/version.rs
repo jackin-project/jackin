@@ -48,7 +48,7 @@ pub async fn extract_agent_version(
     let runtime = agent.runtime();
     let slug = agent.slug();
     jackin_diagnostics::active_timing_started(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "selected_agent_version_probe",
         Some(slug),
     );
@@ -61,7 +61,7 @@ pub async fn extract_agent_version(
         .await;
     let Ok(raw) = raw_result else {
         jackin_diagnostics::active_timing_done(
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             "selected_agent_version_probe",
             Some("error"),
         );
@@ -77,7 +77,7 @@ pub async fn extract_agent_version(
         return;
     };
     jackin_diagnostics::active_timing_done(
-        "derived image",
+        jackin_diagnostics::DiagnosticStage::DerivedImage,
         "selected_agent_version_probe",
         Some("probed"),
     );
@@ -98,13 +98,6 @@ pub async fn extract_agent_version(
     }
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "Image versioning: records docker-image labels + sibling to-disk per \
-              agent + per-version branch telemetry. Body extraction follows the \
-              deferred-parallel-pass plan; until that slice lands, the inline shape \
-              preserves the per-version state machine."
-)]
 pub(super) async fn record_built_agent_version(
     paths: &JackinPaths,
     image: &str,
@@ -119,12 +112,12 @@ pub(super) async fn record_built_agent_version(
     ) && let Some(version) = runtime_binaries.prefetched_agent_versions.get(&agent)
     {
         jackin_diagnostics::active_timing_started(
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             "selected_agent_version_probe",
             Some(agent.slug()),
         );
         jackin_diagnostics::active_timing_done(
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             "selected_agent_version_probe",
             Some("prefetched"),
         );
