@@ -53,7 +53,7 @@ TermRock exposes composable rendering and interaction building blocks. It does
 not expose a mandatory root `Application`, `Model`, `Message`, `Component`,
 `Subscription`, or `EffectExecutor` trait. The executor-neutral base `runtime`
 module (dirty/update contracts, subscriptions with std-channel and closure
-adapters, component/view traits, and the `drive_frame` frame driver) is
+adapters, component/view traits, and the `drive_frame`/`drive_render` frame drivers) is
 optional by use rather than feature-gated; it exists for consumers that want
 the donor's TEA conventions, no widget or other module references it, and
 nothing requires adopting it.
@@ -239,7 +239,7 @@ workflow.
 | `keymap.rs` | parameterize | Keep logical chords and binding dispatch. Feature-gate Crossterm conversion, separate the Capsule raw-byte decoder, make hint text caller data, and remove the global scroll-hint keymap. |
 | `scroll.rs` plus scroll helpers in `jackin-core` | consolidate | Create one canonical offset/axis/thumb/viewport implementation. Retain the maintained `tui-scrollbar` dependency as the single proportional thumb-metrics source. Use `usize` for logical offsets, lengths, and indices; clip in logical space and convert through one centralized saturating `u16` helper only at the Ratatui geometry edge, never wrapping or silently truncating. Remove parallel public `usize`/`u16` APIs. |
 | `theme.rs` plus root RGB constants | reimplement | Replace public product constants with semantic `Theme` roles, private storage, builders, component overrides, and the optional Tailrocks phosphor preset. Capsule/debug/rain meanings stay local. |
-| `runtime.rs` | split | Extract the executor-neutral contracts and `drive_frame` into the base `runtime` module, optional by use and referenced by no widget: pure Ratatui, and `jackin❯` mandates one shared frame driver across console, Capsule, and launch, so donor deletion would otherwise strand it. Tokio receiver implementations, spawn helpers, and the fallback runtime stay in `jackin❯` (`jackin-console`), connecting through the module's closure adapter because coherence forbids direct foreign impls. |
+| `runtime.rs` | split | Extract the executor-neutral contracts and pure Ratatui `drive_frame`/`drive_render` drivers into the base `runtime` module, optional by use and referenced by no widget. `drive_render` remains the one-shot closure adapter over the canonical driver, not a competing loop. `jackin❯` mandates one shared frame driver across console, Capsule, and launch, so donor deletion would otherwise strand them. Tokio receiver implementations, spawn helpers, and the fallback runtime stay in `jackin❯` (`jackin-console`), connecting through the subscription closure adapter because coherence forbids direct foreign impls. |
 | `terminal_modes.rs` | reimplement | Replace two mouse helper functions with the scoped, partial-initialization-safe session described in chapter 06. Event polling and panic/signal policy remain application-owned. |
 | `ownership.rs` | remain | Rich-surface and host-screen atomics, title policy, and alternate-screen reassertion are jackin❯ process policy. None becomes TermRock global state. |
 | `ansi_text.rs` | extract | Keep pure ANSI-to-span parsing and stripping with malformed/control-sequence tests. Accept input and return data; perform no output. |

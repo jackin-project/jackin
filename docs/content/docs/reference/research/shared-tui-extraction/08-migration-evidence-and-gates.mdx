@@ -149,12 +149,12 @@ Do not add `pub use termrock::*` as a compatibility facade in `jackin-tui`, and 
 
 ## `jackin❯` migration slices
 
-On 2026-07-15, `rg -l jackin_tui --glob '*.rs'` found 191 consumer files outside the donor/lookbook. Grouping paths by workspace package produced:
+On 2026-07-15 at donor revision `33896a504e19ef13adb8692550c1845cb86a9504`, `rg -l jackin_tui --glob '*.rs'` found 195 consumer files outside the donor/lookbook. Grouping paths by workspace package produced:
 
 | Consumer | Files |
 |---|---:|
-| `jackin-console` | 102 |
-| `jackin-capsule` | 41 |
+| `jackin-console` | 105 |
+| `jackin-capsule` | 42 |
 | `jackin-launch-tui` | 26 |
 | root `jackin` package | 11 |
 | `jackin-console-oppicker` | 4 |
@@ -232,7 +232,7 @@ The new public component API should allow visible-window projection rather than 
 
 ### `jackin❯` donor retired
 
-- [ ] The 191-file consumer inventory is regenerated and no old import remains.
+- [ ] The 195-file consumer inventory is regenerated and no old import remains.
 - [ ] No neutral helper remains duplicated in `jackin-core` or a product crate.
 - [ ] Console, Capsule, launch, picker, modal, mouse, Unicode, SVG, and terminal cleanup parity passes.
 - [ ] Product-specific widgets and policies have an explicit local owner.

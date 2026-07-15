@@ -12,9 +12,9 @@ Future cross-product reuse explains the extraction, but execution is limited to 
 
 ## Evidence base
 
-- **17,016 Rust lines across 77 donor files**, measured with `find` and `wc -l` over the two source trees.
-- **260 declared Rust test functions**: 245 in `jackin-tui` and 15 in the lookbook, measured from test attributes before parameter expansion.
-- **191 external Rust consumer files**, led by 102 in `jackin-console`, 41 in `jackin-capsule`, and 26 in `jackin-launch-tui`, measured with `rg -l jackin_tui` outside the donor crates.
+- **17,033 Rust lines across 77 donor files**, measured with `find` and `wc -l` over the two source trees at donor revision `33896a504e19ef13adb8692550c1845cb86a9504`.
+- **261 declared Rust test functions**: 246 in `jackin-tui` and 15 in the lookbook, measured from test attributes before parameter expansion.
+- **195 external Rust consumer files**, led by 105 in `jackin-console`, 42 in `jackin-capsule`, and 26 in `jackin-launch-tui`, measured with `rg -l jackin_tui` outside the donor crates.
 - **29 committed SVG states and 18 `TestBackend` source files**, which seed render parity but require debranding and catalog coverage.
 - **112 public declaration/re-export lines across the two facade roots**, demonstrating why the target API must be reviewed rather than copied unchanged.
 
@@ -38,7 +38,7 @@ All measurements were taken from the active jackin❯ branch on 2026-07-15. File
 - **Release:** crates.io is optional; consumers can adopt immutable Git revisions before any registry publication and may later pin semver releases.
 - **Terminal baseline:** modern truecolor terminals (Ghostty-class) with OSC 8/22/52 support; the library ships no capability-degradation code.
 - **Sequencing:** bug-compatible extraction and byte-identical `jackin❯` parity first; recorded quality fixes (display width, non-color cues) land after parity and before the first tag/API baseline.
-- **Runtime:** executor-neutral update/view/subscription contracts and the `drive_frame` frame driver live in the base `runtime` module, optional by use and required by no widget; Tokio integration stays consumer-owned.
+- **Runtime:** executor-neutral update/view/subscription contracts and the `drive_frame`/`drive_render` frame drivers live in the base `runtime` module, optional by use and required by no widget; Tokio integration stays consumer-owned.
 - **Scope:** the existing donor component set only; new components are explicit post-extraction roadmap work.
 
 The dossier is implementation-ready: every architecture decision is closed. Namespace/owner/trademark revalidation and current-`main` synchronization are explicit Stage 0 execution gates, not missing design work.

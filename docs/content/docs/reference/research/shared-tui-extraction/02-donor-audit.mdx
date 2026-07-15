@@ -8,9 +8,9 @@ title: "02 - Donor Audit"
 
 `crates/jackin-tui` is Apache-2.0, version `0.6.0-dev`, and `publish = false`. It depends on Ratatui, Crossterm, Tokio, and `jackin-core` plus focused rendering helpers. `crates/jackin-tui-lookbook` is an Apache-2.0 binary over the component crate.
 
-The two source trees contain 77 Rust files and 17,016 lines. `jackin-tui` has 245 `#[test]`/`#[tokio::test]` attributes and the lookbook has 15. There are 24 top-level component implementation files, 29 committed SVG previews, and 18 donor Rust files that use Ratatui `TestBackend`. These numbers were measured on 2026-07-15 with `find`, `wc -l`, and `rg`; test attributes measure declared test functions, not parameter-expanded executions.
+The two source trees contain 77 Rust files and 17,033 lines. `jackin-tui` has 246 `#[test]`/`#[tokio::test]` attributes and the lookbook has 15. There are 24 top-level component implementation files, 29 committed SVG previews, and 18 donor Rust files that use Ratatui `TestBackend`. These numbers were measured on 2026-07-15 at donor revision `33896a504e19ef13adb8692550c1845cb86a9504` with `find`, `wc -l`, and `rg`; test attributes measure declared test functions, not parameter-expanded executions.
 
-Outside the two donor crates, 191 Rust files reference `jackin_tui`. Grouped by package path, the largest consumers are `jackin-console` (102 files), `jackin-capsule` (41), and `jackin-launch-tui` (26). This should be treated as a mature donor with compatibility obligations, not a new empty crate. The complete migration grouping and measurement method are in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).
+Outside the two donor crates, 195 Rust files reference `jackin_tui`. Grouped by package path, the largest consumers are `jackin-console` (105 files), `jackin-capsule` (42), and `jackin-launch-tui` (26). This should be treated as a mature donor with compatibility obligations, not a new empty crate. The complete migration grouping and measurement method are in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).
 
 ## Dependency inversion to remove
 
@@ -34,7 +34,7 @@ Chapter [09 - Component redesign catalog](/reference/research/shared-tui-extract
 - the terminal mode session, reimplemented partial-initialization-safe under the optional `crossterm` feature;
 - ANSI text parsing;
 - pure OSC 8/22/52 escape encoding and pointer-shape naming (`PointerShape`), extracted as typed request/encoder data with no emission;
-- executor-neutral runtime contracts and the `drive_frame` frame driver in a base module that is optional by use and required by no widget;
+- executor-neutral runtime contracts plus the persistent `drive_frame` and one-shot `drive_render` frame drivers in a base module that is optional by use and required by no widget;
 - `Panel`, `TabStrip`, `ButtonStrip`, confirmation/error dialogs, hints, scrollable panel/list, selection list, text input plus a documented filter composition/preset, toast, and diff view — no separate public `FilterField`, while status-popup behavior folds into the generic message/toast surface without a dedicated public type;
 - modal backdrop, pure inside/outside hit classification, and generic dialog layout — modal stack, parent-chain lifecycle, and application routing remain consumer-local;
 - lookbook registry, interactive driver, SVG/golden renderer, and fixture runner;
@@ -101,7 +101,7 @@ No module moves merely because its filename sounds generic.
 - <RepoFile path="crates/jackin-tui/src/components/status_footer.rs">`StatusFooter`</RepoFile> names container/run/usage concepts. Replace it with generic data-driven slots and retain product composition locally.
 - <RepoFile path="crates/jackin-tui/src/components/container_info.rs">`ContainerInfoState`/`DebugInfo`</RepoFile> combine reusable detail rows with agent, role, container, and version fields. Extract a neutral detail/inspector widget; keep the builder in jackin❯.
 - <RepoFile path="crates/jackin-tui/src/components/modal_rects.rs">modal rectangle modes</RepoFile> expose auth, role, mount, source, scope, and operation cases. Replace them with generic min/preferred/max responsive specifications.
-- <RepoFile path="crates/jackin-tui/src/runtime.rs">runtime helpers</RepoFile> create Tokio channels/tasks and even a fallback runtime. Extract the executor-neutral contracts (`Dirty`, `UpdateResult`, `SubscriptionPoll`, `Subscription`, `Component`, `View`, `drive_frame`) into the base `runtime` module, which is optional by use rather than feature-gated; Tokio receiver implementations and spawn helpers stay in `jackin❯`, connecting to the shared trait through its closure adapter because coherence forbids implementing it directly for Tokio receiver types.
+- <RepoFile path="crates/jackin-tui/src/runtime.rs">runtime helpers</RepoFile> create Tokio channels/tasks and even a fallback runtime. Extract the executor-neutral contracts (`Dirty`, `UpdateResult`, `SubscriptionPoll`, `Subscription`, `Component`, `View`) and the pure Ratatui `drive_frame`/`drive_render` drivers into the base `runtime` module, which is optional by use rather than feature-gated; Tokio receiver implementations and spawn helpers stay in `jackin❯`, connecting to the shared subscription trait through its closure adapter because coherence forbids implementing it directly for Tokio receiver types.
 - <RepoFile path="crates/jackin-tui/src/ownership.rs">terminal ownership</RepoFile> contains jackin❯ process-global flags and title/screen policy. Do not extract it as the generic lifecycle API.
 
 The proposed replacements and semver constraints are in [06 - Public API and refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/).

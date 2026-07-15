@@ -81,7 +81,7 @@ event -> Message -> pure update -> state + typed effects
                               consumer effect adapter
 ```
 
-The shared project exposes the donor's executor-neutral dirty/redraw state, typed update results, subscriptions with std-channel and closure adapters, component/view traits, and the `drive_frame` frame driver in the base `runtime` module. The module is optional by use rather than a Cargo feature. It exposes no self-executing effect envelope and does not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree. Standard Ratatui `Widget`/`StatefulWidget` rendering remains independent, no widget references `runtime`, and Tokio integration stays consumer-owned. Modal outcomes and focus ownership remain in `interaction`, their single canonical module.
+The shared project exposes the donor's executor-neutral dirty/redraw state, typed update results, subscriptions with std-channel and closure adapters, component/view traits, and the persistent `drive_frame` plus one-shot `drive_render` frame drivers in the base `runtime` module. The module is optional by use rather than a Cargo feature. It exposes no self-executing effect envelope and does not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree. Standard Ratatui `Widget`/`StatefulWidget` rendering remains independent, no widget references `runtime`, and Tokio integration stays consumer-owned. Modal outcomes and focus ownership remain in `interaction`, their single canonical module.
 
 The repository includes compile-checked direct, TEA, component-oriented, Flux,
 buffer-only, manually managed Crossterm, and TermRock-managed Crossterm

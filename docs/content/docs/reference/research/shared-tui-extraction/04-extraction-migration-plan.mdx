@@ -53,7 +53,7 @@ Exit gate: provenance can trace extracted code to donor commits, the pre-publish
 - remove agent/container/brand-specific exports and stories;
 - introduce the private/builder-based semantic theme and consumer brand/header input;
 - depend on `ratatui-core` in the base crate and put Crossterm session/event integration behind one optional feature;
-- extract the executor-neutral runtime contracts and `drive_frame` into the base `runtime` module, optional by use and referenced by no widget; keep Tokio spawning/receiver integration (via the module's closure adapter) and product-global terminal ownership consumer-owned;
+- extract the executor-neutral runtime contracts and pure Ratatui `drive_frame`/`drive_render` drivers into the base `runtime` module, optional by use and referenced by no widget; keep Tokio spawning/receiver integration (via the module's closure adapter) and product-global terminal ownership consumer-owned;
 - replace raw hyperlink/pointer/clipboard overlay bytes with typed `osc` requests and pure encoders, leaving emission policy in consumers;
 - derive lookbook SVG colors from the shared theme values, asserting the committed SVGs stay byte-identical;
 - carry every quality-backlog defect through unchanged: no width or non-color fix rides along with the ownership move;
@@ -79,7 +79,7 @@ Exit gate: `cargo tree` and source audit show no Tailrocks product dependency; n
 
 Exit gate: an external minimal consumer can pin one full commit SHA, build and render without `jackin❯` code, open the Fumadocs catalog, and reproduce the committed previews.
 
-## Stage 4: Migrate `jackin❯`
+## Stage 4: Migrate the first consumer
 
 - depend on the tested full TermRock `main` commit through Cargo's `rev` form and commit <RepoFile path="Cargo.lock" />; do not switch this migration to a preview release or tag;
 - replace imports incrementally without product redesign or a broad compatibility re-export facade;
