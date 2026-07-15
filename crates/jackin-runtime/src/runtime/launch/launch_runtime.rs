@@ -1252,7 +1252,11 @@ pub(crate) fn run_runtime_envs_for(run_id: Option<&str>) -> Vec<String> {
 }
 
 pub(crate) fn run_runtime_envs() -> Vec<String> {
-    jackin_diagnostics::active_run().map_or_else(Vec::new, |run| {
+    let mut env = jackin_diagnostics::active_run().map_or_else(Vec::new, |run| {
         vec![format!("JACKIN_RUN_ID={}", run.run_id())]
-    })
+    });
+    if let Some(invocation) = jackin_telemetry::identity::current_invocation() {
+        env.push(format!("JACKIN_INVOCATION_ID={invocation}"));
+    }
+    env
 }

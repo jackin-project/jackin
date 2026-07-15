@@ -8,7 +8,7 @@ use tokio::task::{JoinHandle, JoinSet};
 use tracing::{Instrument as _, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
-use crate::operation::{SpanDef, operation_root};
+use crate::operation::{SpanDef, root_operation};
 
 pub fn spawn_joined<F>(fut: F) -> JoinHandle<F::Output>
 where
@@ -41,7 +41,7 @@ where
 {
     let parent = Span::current().context().span().span_context().clone();
     tokio::spawn(async move {
-        let guard = operation_root(def, &[]).expect("registered detached span definition");
+        let guard = root_operation(def, &[]).expect("registered detached span definition");
         if parent.is_valid() {
             guard
                 .link(&parent)
@@ -69,7 +69,7 @@ where
 {
     let parent = Span::current().context().span().span_context().clone();
     tokio::task::spawn_blocking(move || {
-        let guard = operation_root(def, &[]).expect("registered detached span definition");
+        let guard = root_operation(def, &[]).expect("registered detached span definition");
         if parent.is_valid() {
             guard
                 .link(&parent)
@@ -124,7 +124,7 @@ where
 {
     let parent = Span::current().context().span().span_context().clone();
     thread::spawn(move || {
-        let guard = operation_root(def, &[]).expect("registered detached span definition");
+        let guard = root_operation(def, &[]).expect("registered detached span definition");
         if parent.is_valid() {
             guard
                 .link(&parent)
@@ -147,7 +147,7 @@ where
 {
     let parent = Span::current().context().span().span_context().clone();
     thread::Builder::new().name(name).spawn(move || {
-        let guard = operation_root(def, &[]).expect("registered detached span definition");
+        let guard = root_operation(def, &[]).expect("registered detached span definition");
         if parent.is_valid() {
             guard
                 .link(&parent)

@@ -16,6 +16,12 @@ pub trait Carrier {
     fn session_id(&self) -> Option<&str>;
     fn job_id(&self) -> Option<&str>;
     fn set_trace(&mut self, traceparent: String, tracestate: Option<String>);
+    fn set_product_ids(
+        &mut self,
+        invocation_id: Option<String>,
+        session_id: Option<String>,
+        job_id: Option<String>,
+    );
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,6 +32,11 @@ pub enum ExtractOutcome {
 }
 
 pub fn inject(carrier: &mut impl Carrier) {
+    carrier.set_product_ids(
+        crate::identity::current_invocation().map(|id| id.to_string()),
+        crate::identity::current_session().map(|session| session.current.to_string()),
+        None,
+    );
     use opentelemetry::trace::TraceContextExt as _;
     let context = tracing::Span::current().context();
     let span = context.span().span_context().clone();
@@ -123,6 +134,16 @@ mod tests {
         fn set_trace(&mut self, parent: String, state: Option<String>) {
             self.parent = Some(parent);
             self.state = state;
+        }
+        fn set_product_ids(
+            &mut self,
+            invocation: Option<String>,
+            session: Option<String>,
+            job: Option<String>,
+        ) {
+            self.invocation = invocation;
+            self.session = session;
+            self.job = job;
         }
     }
 

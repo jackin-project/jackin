@@ -113,6 +113,8 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
     };
+    let invocation_id = jackin_telemetry::identity::InvocationId::mint();
+    let _ = jackin_telemetry::identity::set_current_invocation(invocation_id);
     if let Command::Role(command) = command {
         return crate::role_authoring::run(command);
     }
@@ -126,6 +128,37 @@ pub async fn run(cli: Cli) -> Result<()> {
     // id on every span and log record.
     let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
     let _diagnostics_guard = diagnostics.activate();
+    let interactive = matches!(
+        command,
+        Command::Console(_) | Command::Load(_) | Command::Hardline(_)
+    );
+    let invocation_id_value = invocation_id.to_string();
+    let root_attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::CLI_COMMAND_NAME,
+            value: jackin_telemetry::Value::Str(command_name),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::CLI_INVOCATION_ID,
+            value: jackin_telemetry::Value::Str(&invocation_id_value),
+        },
+    ];
+    if interactive {
+        if let Ok(startup) =
+            jackin_telemetry::root_operation(&jackin_telemetry::operation::APP_STARTUP, &root_attrs)
+        {
+            startup.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+        }
+    }
+    let command_operation = (!interactive)
+        .then(|| {
+            jackin_telemetry::root_operation(&jackin_telemetry::operation::CLI_COMMAND, &root_attrs)
+                .ok()
+        })
+        .flatten();
+    let command_entered = command_operation
+        .as_ref()
+        .map(|operation| operation.span().enter());
     // Wire the jackin-diagnostics operator-notice sink to the
     // jackin-core::operator_notice port-trait dispatcher so domain
     // crates (L0) can call `jackin_core::emit_compact_line` without
@@ -196,6 +229,33 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
     };
+    drop(command_entered);
+    let success = result.is_ok();
+    if let Some(operation) = command_operation {
+        operation.complete(
+            if success {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            (!success).then_some("command_failed"),
+        );
+    }
+    if interactive {
+        if let Ok(shutdown) = jackin_telemetry::root_operation(
+            &jackin_telemetry::operation::APP_SHUTDOWN,
+            &root_attrs,
+        ) {
+            shutdown.complete(
+                if success {
+                    jackin_telemetry::schema::enums::OutcomeValue::Success
+                } else {
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure
+                },
+                (!success).then_some("command_failed"),
+            );
+        }
+    }
     record_run_error(&result);
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
     // The guard's Drop then flushes OTLP, so the summary makes the export.

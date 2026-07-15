@@ -235,7 +235,7 @@ pub fn operation_with_remote_parent(
     Ok(guard)
 }
 
-pub(crate) fn operation_root(
+pub fn root_operation(
     def: &'static SpanDef,
     attrs: &[Attr<'_>],
 ) -> Result<OperationGuard, Rejection> {

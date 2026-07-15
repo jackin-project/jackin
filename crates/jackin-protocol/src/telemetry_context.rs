@@ -69,6 +69,16 @@ impl jackin_telemetry::propagation::Carrier for TelemetryContext {
         self.traceparent = Some(traceparent);
         self.tracestate = tracestate;
     }
+    fn set_product_ids(
+        &mut self,
+        invocation_id: Option<String>,
+        session_id: Option<String>,
+        job_id: Option<String>,
+    ) {
+        self.invocation_id = invocation_id;
+        self.session_id = session_id;
+        self.job_id = job_id;
+    }
 }
 
 #[cfg(test)]

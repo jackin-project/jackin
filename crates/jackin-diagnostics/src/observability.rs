@@ -476,6 +476,7 @@ mod otlp {
     use super::JackinDiagnosticsLayer;
     use super::ServiceIdentity;
     use super::health;
+    #[cfg(test)]
     use super::otel_keys as keys;
 
     mod retry;
@@ -1146,9 +1147,9 @@ mod otlp {
     /// `JackinDiagnosticsLayer` (the capsule has no JSONL run) and stamps the
     /// capsule resource; providers come from [`build_otlp_providers`].
     pub(super) fn init_capsule(
-        session_id: &str,
-        run_id: Option<&str>,
-        traceparent: Option<&str>,
+        _session_id: &str,
+        _run_id: Option<&str>,
+        _traceparent: Option<&str>,
         config: &super::config::OtlpConfig,
     ) -> anyhow::Result<()> {
         let resource = capsule_resource();
@@ -1208,7 +1209,6 @@ mod otlp {
                 logger: logger_provider,
                 meter: meter_provider,
             });
-            emit_session_start(session_id, run_id, traceparent);
         }
         installed
     }
@@ -1246,6 +1246,7 @@ mod otlp {
         "jackin_manifest",
         "jackin_pr_trailers",
         "jackin_protocol",
+        "jackin_telemetry",
         "jackin_runtime",
         "jackin_term",
         jackin_telemetry::TELEMETRY_TARGET,
@@ -1400,61 +1401,21 @@ mod otlp {
         )
     }
 
-    /// Test-only entry into production [`emit_session_start`] (plan 009).
+    /// Test-only entry for the governed session-start event.
     #[cfg(test)]
     pub(crate) fn emit_session_start_for_test(
         session_id: &str,
-        run_id: Option<&str>,
-        traceparent: Option<&str>,
+        _run_id: Option<&str>,
+        _traceparent: Option<&str>,
     ) {
-        emit_session_start(session_id, run_id, traceparent);
-    }
-
-    /// Emit the session-start marker: a short span in its own trace, linked to
-    /// the launch span (from the propagated traceparent), carrying `session.id`.
-    /// This is the entry node that joins the launch trace to the session;
-    /// per-activity traces share `session.id` rather than nesting under one
-    /// long-lived span.
-    fn emit_session_start(session_id: &str, run_id: Option<&str>, traceparent: Option<&str>) {
-        use opentelemetry::Context;
-        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-
-        let span = tracing::info_span!("capsule.session", otel.name = "capsule:session");
-        drop(span.set_parent(Context::new()));
-        span.set_attribute(keys::SESSION_ID, session_id.to_owned());
-        span.set_attribute(keys::COMPONENT, "capsule");
-        if let Some(run_id) = run_id {
-            span.set_attribute(keys::RUN_ID, run_id.to_owned());
-        }
-        if let Some(ctx) = traceparent.and_then(parse_traceparent) {
-            span.add_link(ctx);
-        }
-        // The span ends here (a marker): the link + session.id are what join
-        // the launch trace to the session timeline.
-        span.in_scope(|| {
-            tracing::info!(target: "jackin_diagnostics::session", "capsule session started");
-        });
-    }
-
-    /// Parse a W3C `traceparent` header into a remote `SpanContext`.
-    fn parse_traceparent(value: &str) -> Option<opentelemetry::trace::SpanContext> {
-        use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
-
-        let mut parts = value.split('-');
-        let version = parts.next()?;
-        let trace_id = parts.next()?;
-        let span_id = parts.next()?;
-        let flags = parts.next()?;
-        if version != "00" || parts.next().is_some() {
-            return None;
-        }
-        Some(SpanContext::new(
-            TraceId::from_hex(trace_id).ok()?,
-            SpanId::from_hex(span_id).ok()?,
-            TraceFlags::new(u8::from_str_radix(flags, 16).ok()?),
-            true,
-            TraceState::default(),
-        ))
+        let attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
+            value: jackin_telemetry::Value::Str(session_id),
+        }];
+        let _ = jackin_telemetry::emit_event(
+            &jackin_telemetry::event::SESSION_START,
+            jackin_telemetry::FieldSet::new(&attrs, None),
+        );
     }
 
     /// Shared process sampler. Both the CPU and memory instruments read from

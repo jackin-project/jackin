@@ -43,7 +43,13 @@ pub fn session_context() -> Option<(String, Option<String>, Option<String>)> {
 /// the returned guard for the daemon's lifetime so the session tail flushes on
 /// every graceful exit path.
 pub fn init() -> FlushGuard {
-    let session_id = jackin_diagnostics::mint_session_id();
+    if let Ok(value) = std::env::var("JACKIN_INVOCATION_ID") {
+        if let Ok(id) = jackin_telemetry::identity::InvocationId::parse(&value) {
+            let _ = jackin_telemetry::identity::set_current_invocation(id);
+        }
+    }
+    let session = jackin_telemetry::identity::begin_session();
+    let session_id = session.current.to_string();
     let run_id = std::env::var("JACKIN_RUN_ID").ok();
     let traceparent = std::env::var("TRACEPARENT").ok();
     drop(SESSION_CONTEXT.set(SessionContext {
@@ -58,6 +64,14 @@ pub fn init() -> FlushGuard {
     ) {
         Ok(true) => {
             OTLP_ACTIVE.store(true, Ordering::Relaxed);
+            let attrs = [jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
+                value: jackin_telemetry::Value::Str(&session_id),
+            }];
+            let _ = jackin_telemetry::emit_event(
+                &jackin_telemetry::event::SESSION_START,
+                jackin_telemetry::FieldSet::new(&attrs, None),
+            );
             crate::clog!("otlp export active: session_id={session_id}");
         }
         Ok(false) => {}
@@ -224,7 +238,20 @@ pub fn bridge_log_structured(
 /// of the session is not lost.
 pub fn shutdown() {
     if otlp_active() {
+        if let Some(session) = jackin_telemetry::identity::current_session() {
+            let session_id = session.current.to_string();
+            let attrs = [jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
+                value: jackin_telemetry::Value::Str(&session_id),
+            }];
+            let _ = jackin_telemetry::emit_event(
+                &jackin_telemetry::event::SESSION_END,
+                jackin_telemetry::FieldSet::new(&attrs, None),
+            );
+            jackin_telemetry::identity::end_session(session.current);
+        }
         jackin_diagnostics::shutdown_capsule_tracing();
+        OTLP_ACTIVE.store(false, Ordering::Relaxed);
     }
 }
 

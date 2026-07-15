@@ -1258,22 +1258,26 @@ fn conformance_waterfall_has_distinct_rows() {
         names.len() >= 3,
         "expected at least three span names: {names:?}"
     );
-    // Capsule session-start span must appear on the capsule exporter only.
+    // Capsule lifecycle is an event, never a session-lifetime span.
     assert!(
         export
+            .capsule
+            .logs
+            .get_emitted_logs()
+            .unwrap()
+            .iter()
+            .any(|log| log.record.event_name() == Some("session.start")),
+        "capsule bootstrap must export session.start"
+    );
+    assert!(
+        !export
             .capsule
             .spans
             .get_finished_spans()
             .unwrap()
             .iter()
-            .any(|span| {
-                span.name.as_ref().contains("session")
-                    || span.attributes.iter().any(|a| {
-                        a.key.as_str() == crate::otel_keys::COMPONENT
-                            && format!("{}", a.value) == "capsule"
-                    })
-            }),
-        "capsule bootstrap must export a session-start span"
+            .any(|span| span.name.as_ref().contains("session")),
+        "capsule bootstrap must not export a session span"
     );
 }
 

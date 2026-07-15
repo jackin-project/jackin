@@ -8,8 +8,8 @@ use opentelemetry_sdk::trace::SpanData;
 use super::keys;
 use super::{
     OtlpProviders, SHUTDOWN_ORDER, TestExport, build_resource,
-    export_filter_directive_with_internal, grpc_endpoint, parse_traceparent, resolve_endpoint,
-    resolve_endpoints, runtime_creation_count, shutdown, test_layers, unsupported_protocol,
+    export_filter_directive_with_internal, grpc_endpoint, resolve_endpoint, resolve_endpoints,
+    runtime_creation_count, shutdown, test_layers, unsupported_protocol,
 };
 
 fn attr(resource: &opentelemetry_sdk::Resource, key: &'static str) -> Option<String> {
@@ -1013,23 +1013,6 @@ fn crash_evidence_is_redacted_and_capped() {
     assert!(!detail.contains("ghp_"));
     assert!(detail.ends_with("tail"));
     assert!(detail.len() <= "(truncated to last 4096 bytes)\n".len() + 4096);
-}
-
-#[test]
-fn format_parse_traceparent_roundtrip() {
-    let trace_id = "0123456789abcdef0123456789abcdef";
-    let span_id = "0123456789abcdef";
-    let header = format!("00-{trace_id}-{span_id}-01");
-
-    let context = parse_traceparent(&header).unwrap();
-    assert_eq!(context.trace_id().to_string(), trace_id);
-    assert_eq!(context.span_id().to_string(), span_id);
-    assert!(context.trace_flags().is_sampled());
-
-    assert!(parse_traceparent(&format!("01-{trace_id}-{span_id}-01")).is_none());
-    assert!(parse_traceparent(&format!("00-{trace_id}-{span_id}")).is_none());
-    assert!(parse_traceparent(&format!("00-{trace_id}-{span_id}-01-extra")).is_none());
-    assert!(parse_traceparent(&format!("00-not-hex-{span_id}-01")).is_none());
 }
 
 #[test]
