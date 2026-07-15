@@ -84,10 +84,10 @@ Per-area failure-injection tests (attach socket, HTTP error status via existing 
 ## Done criteria
 
 - [x] `grep -rn "cerror!" crates/jackin-capsule/src/attach_protocol.rs` → remaining sites are render-only breadcrumbs paired with `operation_error` (or gone)
-- [x] Every enumerated failure path exports registered `error.type` + `event.outcome=failure` + span status ERROR (tests prove per area)
-- [x] Volatile-identifier variation does not split fingerprints (test-proven)
+- [ ] Every enumerated failure path exports registered `error.type` + `event.outcome=failure` + span status ERROR (tests prove per area)
+- [ ] Volatile-identifier variation does not split fingerprints (test-proven)
 - [x] Expected detach → `expected_close`, no error.type
-- [x] `cargo xtask ci --fast` exits 0; status row updated
+- [ ] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

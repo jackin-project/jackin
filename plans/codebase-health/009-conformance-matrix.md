@@ -85,11 +85,11 @@ The matrix IS the test plan; model captures on existing `InMemoryLogExporter` us
 
 ## Done criteria
 
-- [x] All 7 matrix points asserted from a host-to-capsule scenario (not direct-facade-only)
+- [ ] All 7 matrix points asserted from a host-to-capsule scenario (not direct-facade-only)
 - [x] `DroppedAttributesCount == 0` asserted; explicit SDK limits configured
 - [x] `export-volume` ratchet consumes measured counts; constants no longer parsed from source
 - [x] Conformance lane named explicitly in CI
-- [x] `cargo xtask ci --fast` + `cargo xtask lint ratchet` exit 0; status row updated
+- [ ] `cargo xtask ci --fast` + `cargo xtask lint ratchet` exit 0; status row updated
 
 ## STOP conditions
 

@@ -77,11 +77,11 @@ Fixture-driven tests per gate (steps 1, 3-self-test, 4); real-tree green after d
 
 ## Done criteria
 
-- [x] Map audit: non-member entries, missing tier, missing README/crate-page link all fail with file-level messages; real tree green
+- [ ] Map audit: non-member entries, missing tier, missing README/crate-page link all fail with file-level messages; real tree green
 - [x] Dependency-viz decision recorded on the map page
 - [x] Freshness gate runs post-checkout in its own visible job; synthetic-diff proof exists; severity decision recorded
-- [x] Config-key drift gate live both directions (severity per direction recorded); real tree green
-- [x] `cargo xtask ci --fast` exits 0; status row updated
+- [ ] Config-key drift gate live both directions (severity per direction recorded); real tree green
+- [ ] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

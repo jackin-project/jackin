@@ -83,11 +83,11 @@ Existing 321-test daemon suite is the characterization harness — it must stay 
 
 ## Done criteria
 
-- [x] `Multiplexer` reduced to event dispatch over owned subsystem structs (field count in the struct itself < ~15, all state in subsystems)
-- [x] Ports own effects; `FakeDaemonPorts` drives attach/displace/reattach/PTY-failure/persistence tests
-- [x] Each subsystem's tests live with it; `daemon/tests.rs` correspondingly reduced
+- [ ] `Multiplexer` reduced to event dispatch over owned subsystem structs (field count in the struct itself < ~15, all state in subsystems)
+- [ ] Ports own effects; `FakeDaemonPorts` drives attach/displace/reattach/PTY-failure/persistence tests
+- [ ] Each subsystem's tests live with it; `daemon/tests.rs` correspondingly reduced
 - [x] Sim-tooling evaluation verdict recorded
-- [x] `cargo xtask ci --fast` exits 0; status row updated
+- [ ] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

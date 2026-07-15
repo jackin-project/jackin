@@ -89,11 +89,11 @@ Stage-enum compile coverage + span-name test; screen.name log/metric assertions;
 
 ## Done criteria
 
-- [x] No `format!("launch.` span-name construction; stages are a closed enum
-- [x] Log + interaction-metric captures carry `jackin.screen.name` (host and capsule-tab)
+- [ ] No `format!("launch.` span-name construction; stages are a closed enum
+- [ ] Log + interaction-metric captures carry `jackin.screen.name` (host and capsule-tab)
 - [x] `jackin.docker.inspect.count` and `jackin.db.statement.count` registered and emitted
-- [x] Generic spans/records carry no provider/agent identity; feature-decision events carry it (tests prove both)
-- [x] `cargo xtask ci --fast` exits 0; status row updated
+- [ ] Generic spans/records carry no provider/agent identity; feature-decision events carry it (tests prove both)
+- [ ] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

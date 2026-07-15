@@ -86,8 +86,8 @@ Fixture per exemption class + the four acceptance classes the roadmap names (bar
 - [x] `plans/` (and censused trees) scanned; include/exclude reasons recorded
 - [x] Classifier distinguishes commands/identifiers/paths/URLs/labels/plaintext fallbacks; ALLOWLIST entries all reasoned
 - [x] Whole tree passes `cargo xtask docs brand`
-- [x] RULES.md prose-invariant audit table recorded with per-invariant disposition
-- [x] `cargo xtask ci --fast` exits 0; status row updated
+- [ ] RULES.md prose-invariant audit table recorded with per-invariant disposition
+- [ ] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -115,6 +115,4 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 - Bare-brand prose is unconditionally enforced by the normal gate; no environment opt-in remains.
 - Whole-tree `cargo xtask docs brand` exits 0 with all 204 original hits resolved.
 
-**Index deviation**: none remaining.
-
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — roadmap brand disposition still advisory/stale vs enforced bare-brand gate; see implementer audit rollup.

@@ -77,9 +77,9 @@ Steps 1–3 are all test work; the gates above are the verification. Total suite
 ## Done criteria
 
 - [x] No duplicate FakeDockerClient/FakeRunner outside test-support (console stubs resolved or recorded)
-- [x] Property suites in manifest/config/env covering idempotence, validity, unknown-field, reserved-key, ordering invariants
+- [ ] Property suites in manifest/config/env covering idempotence, validity, unknown-field, reserved-key, ordering invariants
 - [x] `decode_frames` in scheduled fuzz + PR smoke + committed seed corpus + written promotion rule
-- [x] `cargo xtask ci --fast` exits 0; status row updated
+- [ ] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 

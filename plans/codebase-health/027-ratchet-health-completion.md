@@ -87,10 +87,10 @@ Provider fixtures (junit sample, health-history sample), forced-failure JSON emi
 ## Done criteria
 
 - [x] `suite-time` family live (scheduled enforcement); `agent-doc-bytes` enforcing with seeded maxima
-- [x] Per-main health series + trend section + tightening proposal exist with an observed run
+- [ ] Per-main health series + trend section + tightening proposal exist with an observed run
 - [x] All first-party gates emit structured JSON; problem matcher registered
-- [x] Gate code uses sorted directory iteration with an enforcement mechanism
-- [x] `cargo xtask ci --fast` exits 0; status row updated; measured-complexity family enforced
+- [ ] Gate code uses sorted directory iteration with an enforcement mechanism
+- [ ] `cargo xtask ci --fast` exits 0; status row updated; measured-complexity family enforced
 
 ## STOP conditions
 
@@ -126,6 +126,4 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
   audit`. Every violation contains `file`, nullable `line`, `message`, `fix`,
   and `rerun`; a forced-error reporter fixture asserts all five keys.
 
-**Index deviation**: none remaining for 027 Done criteria (suite-time scheduled enforce when junit present).
-
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — health multi-run series + sorted-`read_dir` enforcement incomplete; see implementer audit rollup.
