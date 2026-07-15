@@ -84,10 +84,10 @@ Per-area failure-injection tests (attach socket, HTTP error status via existing 
 ## Done criteria
 
 - [x] `grep -rn "cerror!" crates/jackin-capsule/src/attach_protocol.rs` → remaining sites are render-only breadcrumbs paired with `operation_error` (or gone)
-- [ ] Every enumerated failure path exports registered `error.type` + `event.outcome=failure` + span status ERROR (tests prove per area)
-- [ ] Volatile-identifier variation does not split fingerprints (test-proven)
+- [x] Every enumerated failure path exports registered `error.type` + `event.outcome=failure` + span status ERROR (tests prove per area)
+- [x] Volatile-identifier variation does not split fingerprints (test-proven)
 - [x] Expected detach → `expected_close`, no error.type
-- [ ] `cargo xtask ci --fast` exits 0; status row updated
+- [x] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
 
@@ -104,6 +104,6 @@ Per-area failure-injection tests (attach socket, HTTP error status via existing 
 ## Execution notes
 
 - Attach socket/decode/write failures emit operation_error with stable error.types; expected EOF detach stays non-failure.
-- Usage codex RPC + cleanup container teardown similarly typed; full provider HTTP census deferred if not on critical path.
+- Usage HTTP/RPC, image resolution/download/checksum, Docker run/inspect/wait, cleanup teardown, process spawn, and attach I/O classes are covered by one exporter-backed failure census.
 
 **Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
