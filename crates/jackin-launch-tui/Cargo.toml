@@ -18,7 +18,7 @@ jackin-diagnostics = { workspace = true }
 jackin-tui = { workspace = true }
 owo-colors = { workspace = true }
 ratatui = { workspace = true }
-termrock = { workspace = true }
+termrock = { workspace = true, features = ["crossterm"] }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 tokio-util = { workspace = true }
 

@@ -432,7 +432,9 @@ fn failure_hint_spans() -> Vec<HintSpan<'static>> {
         HintSpan::Text("copy value"),
         HintSpan::GroupSep,
     ];
-    spans.extend(crate::tui::keymap::FAILURE_KEYMAP.hint_spans());
+    spans.extend(crate::tui::keymap::donor_hints(
+        crate::tui::keymap::FAILURE_KEYMAP.hint_spans(),
+    ));
     spans.push(HintSpan::GroupSep);
     spans.extend(crate::tui::keymap::cockpit_global_hint_spans());
     spans

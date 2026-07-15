@@ -10,9 +10,9 @@ use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use jackin_tui::ModalOutcome;
-use jackin_tui::components::KeyChord;
 use jackin_tui::components::{ModalClickResult, ScrollAxes, StatusFooterHover, classify_click};
 use ratatui::layout::Rect;
+use termrock::keymap::KeyChord;
 use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::build_log_dialog::{
@@ -581,7 +581,8 @@ pub fn handle_cockpit_input(
             // answered. No/Esc resumes launch; Yes hard-exits immediately.
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
-                    && crate::tui::keymap::COCKPIT_KEYMAP.dispatch(KeyChord::from(k))
+                    && crate::tui::keymap::COCKPIT_KEYMAP
+                        .dispatch(KeyChord::from(termrock::crossterm::key(k)))
                         == Some(crate::tui::keymap::CockpitAction::OpenQuitConfirm) =>
             {
                 v.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
@@ -702,7 +703,7 @@ pub fn handle_cockpit_input(
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.container_info_open => {
                 use crate::tui::keymap::{CONTAINER_INFO_KEYMAP, ContainerInfoAction};
-                match CONTAINER_INFO_KEYMAP.dispatch(KeyChord::from(k)) {
+                match CONTAINER_INFO_KEYMAP.dispatch(KeyChord::from(termrock::crossterm::key(k))) {
                     Some(ContainerInfoAction::CopyValue) => {
                         let state = launch_container_info_state(
                             &v,
@@ -748,7 +749,7 @@ pub fn handle_cockpit_input(
                 if k.kind == KeyEventKind::Press
                     && v.failure.is_some()
                     && crate::tui::keymap::FAILURE_KEYMAP
-                        .dispatch(KeyChord::from(k))
+                        .dispatch(KeyChord::from(termrock::crossterm::key(k)))
                         .is_some() =>
             {
                 // Failure popup is modal over the cockpit; Enter/Esc acknowledges
@@ -759,7 +760,7 @@ pub fn handle_cockpit_input(
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => {
                 use crate::tui::keymap::{BUILD_LOG_KEYMAP, BuildLogAction};
                 let vertical = build_log_scroll_axes(&v, area).vertical;
-                match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(k)) {
+                match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(termrock::crossterm::key(k))) {
                     Some(BuildLogAction::Close) => {
                         let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
                     }
