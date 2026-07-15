@@ -299,6 +299,49 @@ fn exported_error_log_is_error_severity() {
 }
 
 #[test]
+fn conformance_single_delivery() {
+    let export = export_after(false, "run1", || {
+        let span = tracing::info_span!(
+            target: "jackin_diagnostics",
+            "conformance.operation",
+            "event.outcome" = tracing::field::Empty,
+        );
+        let _entered = span.enter();
+        tracing::event!(
+            name: "operation.failed",
+            target: "jackin_diagnostics",
+            tracing::Level::ERROR,
+            "event.name" = "operation.failed",
+            "jackin.category" = "operation",
+            "event.outcome" = "failure",
+            "error.type" = "conformance_failure",
+            "single delivery"
+        );
+    });
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    let spans = export.spans.get_finished_spans().unwrap();
+    assert_eq!(logs.len(), 1, "one tracing event must produce one OTel log");
+    assert_eq!(spans.len(), 1, "the operation span must export once");
+
+    let log = &logs[0].record;
+    assert_eq!(log.event_name(), Some("operation.failed"));
+    assert_eq!(log.severity_number(), Some(Severity::Error));
+    let log_context = log.trace_context().expect("log must inherit span context");
+    assert_eq!(log_context.trace_id, spans[0].span_context.trace_id());
+    assert_eq!(log_context.span_id, spans[0].span_context.span_id());
+    assert!(
+        spans[0].events.is_empty(),
+        "the span layer must reject events already delivered by the logs bridge"
+    );
+    assert_eq!(
+        spans[0].status,
+        Status::Unset,
+        "ERROR events must not infer span status; the operation owner sets it"
+    );
+}
+
+#[test]
 fn debug_kind_is_debug_severity_and_filtered_at_info() {
     let info_logs = exported_logs!(false, "run1", || {
         crate::observability::emit_jsonl_event("run1", "debug", "debug line", None, Some("docker"));

@@ -107,4 +107,32 @@ pub mod std_attrs {
     pub const SERVER_ADDRESS: &str = "server.address";
     pub const DB_SYSTEM_NAME: &str = "db.system.name";
     pub const DB_OPERATION_NAME: &str = "db.operation.name";
+    pub const ALL_KEYS: &[&str] = &[
+        SERVICE_NAME,
+        SERVICE_NAMESPACE,
+        SERVICE_VERSION,
+        SERVICE_INSTANCE_ID,
+        PROCESS_PID,
+        PROCESS_EXECUTABLE_NAME,
+        PROCESS_EXIT_CODE,
+        PROCESS_COMMAND,
+        CONTAINER_ID,
+        SESSION_ID,
+        SESSION_PREVIOUS_ID,
+        APP_SCREEN_ID,
+        APP_SCREEN_NAME,
+        APP_WIDGET_ID,
+        APP_WIDGET_NAME,
+        GEN_AI_AGENT_NAME,
+        GEN_AI_CONVERSATION_ID,
+        GEN_AI_PROVIDER_NAME,
+        ERROR_TYPE,
+        RPC_SYSTEM_NAME,
+        RPC_METHOD,
+        HTTP_REQUEST_METHOD,
+        URL_TEMPLATE,
+        SERVER_ADDRESS,
+        DB_SYSTEM_NAME,
+        DB_OPERATION_NAME,
+    ];
 }

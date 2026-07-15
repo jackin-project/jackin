@@ -1011,7 +1011,11 @@ mod otlp {
             };
 
         let tracer = tracer_provider.tracer("jackin");
-        let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let span_layer = tracing_opentelemetry::layer()
+            .with_tracer(tracer)
+            .with_error_records_to_exceptions(false)
+            .with_error_events_to_status(false)
+            .with_error_fields_to_exceptions(false);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
         // Scope the export to jackin❯'s own telemetry. Dependency-internal
@@ -1023,7 +1027,13 @@ mod otlp {
             export_filter_directive(export_level_for(crate::TelemetrySink::OtlpLogs, debug));
         let installed = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
-            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(
+                span_layer
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.is_span()
+                    }))
+                    .with_filter(EnvFilter::new(span_directive)),
+            )
             .with(log_layer.with_filter(EnvFilter::new(log_directive)))
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
@@ -1065,7 +1075,11 @@ mod otlp {
         let meter_provider = init_metrics(&resource, &endpoint, app_handle).ok();
 
         let tracer = tracer_provider.tracer("jackin");
-        let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let span_layer = tracing_opentelemetry::layer()
+            .with_tracer(tracer)
+            .with_error_records_to_exceptions(false)
+            .with_error_events_to_status(false)
+            .with_error_fields_to_exceptions(false);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
         let span_directive = export_filter_directive(export_level_for(
@@ -1091,7 +1105,13 @@ mod otlp {
                 "off,opentelemetry=warn,opentelemetry_sdk=warn,opentelemetry_otlp=warn",
             ));
         let installed = tracing_subscriber::registry()
-            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(
+                span_layer
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.is_span()
+                    }))
+                    .with_filter(EnvFilter::new(span_directive)),
+            )
             .with(log_layer.with_filter(EnvFilter::new(log_directive)))
             .with(otlp_diag_layer)
             .try_init()
@@ -1203,7 +1223,11 @@ mod otlp {
             .with_resource(resource)
             .build();
         let tracer = tracer_provider.tracer("jackin");
-        let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let span_layer = tracing_opentelemetry::layer()
+            .with_tracer(tracer)
+            .with_error_records_to_exceptions(false)
+            .with_error_events_to_status(false)
+            .with_error_fields_to_exceptions(false);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
         let test_level = if debug { "debug" } else { "info" };
         let span_directive = export_filter_directive(test_level);
@@ -1211,7 +1235,13 @@ mod otlp {
         // Host bootstrap: JackinDiagnosticsLayer (JSONL) + host Resource.
         let subscriber = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
-            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(
+                span_layer
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.is_span()
+                    }))
+                    .with_filter(EnvFilter::new(span_directive)),
+            )
             .with(log_layer.with_filter(EnvFilter::new(log_directive)));
 
         (
@@ -1245,13 +1275,23 @@ mod otlp {
             .with_resource(resource)
             .build();
         let tracer = tracer_provider.tracer("jackin");
-        let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let span_layer = tracing_opentelemetry::layer()
+            .with_tracer(tracer)
+            .with_error_records_to_exceptions(false)
+            .with_error_events_to_status(false)
+            .with_error_fields_to_exceptions(false);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
         let test_level = if debug { "debug" } else { "info" };
         let span_directive = export_filter_directive(test_level);
         let log_directive = export_filter_directive(test_level);
         let subscriber = tracing_subscriber::registry()
-            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(
+                span_layer
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.is_span()
+                    }))
+                    .with_filter(EnvFilter::new(span_directive)),
+            )
             .with(log_layer.with_filter(EnvFilter::new(log_directive)));
 
         (
@@ -1493,6 +1533,7 @@ mod otlp {
             .build();
 
         crate::metrics::install_hot_path(&meter);
+        jackin_telemetry::install(&meter);
 
         Ok(provider)
     }

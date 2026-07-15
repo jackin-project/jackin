@@ -10,8 +10,18 @@ readme = "README.md"
 publish = false
 
 [dependencies]
+opentelemetry.workspace = true
 opentelemetry-semantic-conventions = { workspace = true, features = ["semconv_experimental"] }
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
 uuid = { workspace = true }
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "disabled_fast_path"
+harness = false
 
 [lints]
 workspace = true
