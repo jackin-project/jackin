@@ -1,1 +1,30 @@
-groups: []
+groups:
+  - { id: metric.cli.invocations, type: metric, metric_name: cli.invocations, instrument: counter, unit: "{invocation}", brief: CLI invocations started., stability: development }
+  - { id: metric.cli.duration, type: metric, metric_name: cli.duration, instrument: histogram, unit: s, brief: CLI invocation duration., stability: development }
+  - { id: metric.cli.failures, type: metric, metric_name: cli.failures, instrument: counter, unit: "{failure}", brief: CLI invocations ending in failure., stability: development }
+  - { id: metric.ui.transitions, type: metric, metric_name: ui.transitions, instrument: counter, unit: "{transition}", brief: UI screen transitions., stability: development }
+  - { id: metric.ui.actions, type: metric, metric_name: ui.actions, instrument: counter, unit: "{action}", brief: Completed UI actions., stability: development }
+  - { id: metric.ui.screen.dwell, type: metric, metric_name: ui.screen.dwell, instrument: histogram, unit: s, brief: UI screen dwell duration., stability: development }
+  - { id: metric.ui.focus.duration, type: metric, metric_name: ui.focus.duration, instrument: histogram, unit: s, brief: UI widget focus duration., stability: development }
+  - { id: metric.ui.render.duration, type: metric, metric_name: ui.render.duration, instrument: histogram, unit: s, brief: UI render duration., stability: development }
+  - { id: metric.launch.stage.duration, type: metric, metric_name: launch.stage.duration, instrument: histogram, unit: s, brief: Launch stage duration., stability: development }
+  - { id: metric.launch.cache.reuse, type: metric, metric_name: launch.cache.reuse, instrument: counter, unit: "{reuse}", brief: Launch cache reuse decisions., stability: development }
+  - { id: metric.prewarm.jobs, type: metric, metric_name: prewarm.jobs, instrument: counter, unit: "{job}", brief: Detached prewarm jobs started., stability: development }
+  - { id: metric.prewarm.active, type: metric, metric_name: prewarm.active, instrument: updowncounter, unit: "{job}", brief: Active detached prewarm jobs., stability: development }
+  - { id: metric.prewarm.duration, type: metric, metric_name: prewarm.duration, instrument: histogram, unit: s, brief: Detached prewarm job duration., stability: development }
+  - { id: metric.background.cycles, type: metric, metric_name: background.cycles, instrument: counter, unit: "{cycle}", brief: Background cycles started., stability: development }
+  - { id: metric.background.cycle.duration, type: metric, metric_name: background.cycle.duration, instrument: histogram, unit: s, brief: Background cycle duration., stability: development }
+  - { id: metric.connection.attempts, type: metric, metric_name: connection.attempts, instrument: counter, unit: "{attempt}", brief: Connection attempts., stability: development }
+  - { id: metric.connection.active, type: metric, metric_name: connection.active, instrument: updowncounter, unit: "{connection}", brief: Active connections., stability: development }
+  - { id: metric.connection.duration, type: metric, metric_name: connection.duration, instrument: histogram, unit: s, brief: Connection duration., stability: development }
+  - { id: metric.rpc.requests, type: metric, metric_name: rpc.requests, instrument: counter, unit: "{request}", brief: RPC requests., stability: development }
+  - { id: metric.rpc.active, type: metric, metric_name: rpc.active, instrument: updowncounter, unit: "{request}", brief: Active RPC requests., stability: development }
+  - { id: metric.rpc.duration, type: metric, metric_name: rpc.duration, instrument: histogram, unit: s, brief: RPC request duration., stability: development }
+  - { id: metric.agent.state.transitions, type: metric, metric_name: agent.state.transitions, instrument: counter, unit: "{transition}", brief: Effective agent state transitions., stability: development }
+  - { id: metric.agent.state.stuck, type: metric, metric_name: agent.state.stuck, instrument: counter, unit: "{event}", brief: Agent stuck-state detections., stability: development }
+  - { id: metric.agent.state.flaps, type: metric, metric_name: agent.state.flaps, instrument: counter, unit: "{event}", brief: Agent state flap detections., stability: development }
+  - { id: metric.terminal.io.bytes, type: metric, metric_name: terminal.io.bytes, instrument: counter, unit: By, brief: Terminal stream bytes., stability: development, attributes: [{ ref: stream.direction, requirement_level: required }] }
+  - { id: metric.terminal.cursor.moves, type: metric, metric_name: terminal.cursor.moves, instrument: counter, unit: "{move}", brief: Terminal cursor moves., stability: development }
+  - { id: metric.terminal.render.cells, type: metric, metric_name: terminal.render.cells, instrument: counter, unit: "{cell}", brief: Terminal cells painted., stability: development }
+  - { id: metric.terminal.render.duration, type: metric, metric_name: terminal.render.duration, instrument: histogram, unit: s, brief: Terminal render duration., stability: development }
+  - { id: metric.telemetry.rejections, type: metric, metric_name: telemetry.rejections, instrument: counter, unit: "{rejection}", brief: Governed facade rejections., stability: development, attributes: [{ ref: telemetry.signal, requirement_level: required }, { ref: telemetry.rejection.reason, requirement_level: required }] }

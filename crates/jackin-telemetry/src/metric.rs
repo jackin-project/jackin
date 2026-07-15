@@ -10,12 +10,13 @@ use opentelemetry::{KeyValue, metrics::Meter};
 
 use crate::{
     event::{Attr, Rejection, Value},
-    health, limits, privacy,
+    health, limits, privacy, schema,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InstrumentKind {
     Counter,
+    UpDownCounter,
     Histogram,
 }
 
@@ -36,6 +37,11 @@ pub const CLI_DURATION: InstrumentDef = InstrumentDef {
     unit: "s",
     kind: InstrumentKind::Histogram,
 };
+pub const CLI_FAILURES: InstrumentDef = InstrumentDef {
+    name: "cli.failures",
+    unit: "{failure}",
+    kind: InstrumentKind::Counter,
+};
 pub const UI_TRANSITIONS: InstrumentDef = InstrumentDef {
     name: "ui.transitions",
     unit: "{transition}",
@@ -51,10 +57,115 @@ pub const UI_DWELL: InstrumentDef = InstrumentDef {
     unit: "s",
     kind: InstrumentKind::Histogram,
 };
+pub const UI_FOCUS_DURATION: InstrumentDef = InstrumentDef {
+    name: "ui.focus.duration",
+    unit: "s",
+    kind: InstrumentKind::Histogram,
+};
+pub const UI_RENDER_DURATION: InstrumentDef = InstrumentDef {
+    name: "ui.render.duration",
+    unit: "s",
+    kind: InstrumentKind::Histogram,
+};
+pub const LAUNCH_STAGE_DURATION: InstrumentDef = InstrumentDef {
+    name: "launch.stage.duration",
+    unit: "s",
+    kind: InstrumentKind::Histogram,
+};
+pub const LAUNCH_CACHE_REUSE: InstrumentDef = InstrumentDef {
+    name: "launch.cache.reuse",
+    unit: "{reuse}",
+    kind: InstrumentKind::Counter,
+};
+pub const PREWARM_JOBS: InstrumentDef = InstrumentDef {
+    name: "prewarm.jobs",
+    unit: "{job}",
+    kind: InstrumentKind::Counter,
+};
+pub const PREWARM_ACTIVE: InstrumentDef = InstrumentDef {
+    name: "prewarm.active",
+    unit: "{job}",
+    kind: InstrumentKind::UpDownCounter,
+};
+pub const PREWARM_DURATION: InstrumentDef = InstrumentDef {
+    name: "prewarm.duration",
+    unit: "s",
+    kind: InstrumentKind::Histogram,
+};
+pub const BACKGROUND_CYCLES: InstrumentDef = InstrumentDef {
+    name: "background.cycles",
+    unit: "{cycle}",
+    kind: InstrumentKind::Counter,
+};
+pub const BACKGROUND_CYCLE_DURATION: InstrumentDef = InstrumentDef {
+    name: "background.cycle.duration",
+    unit: "s",
+    kind: InstrumentKind::Histogram,
+};
+pub const CONNECTION_ATTEMPTS: InstrumentDef = InstrumentDef {
+    name: "connection.attempts",
+    unit: "{attempt}",
+    kind: InstrumentKind::Counter,
+};
+pub const CONNECTION_ACTIVE: InstrumentDef = InstrumentDef {
+    name: "connection.active",
+    unit: "{connection}",
+    kind: InstrumentKind::UpDownCounter,
+};
+pub const CONNECTION_DURATION: InstrumentDef = InstrumentDef {
+    name: "connection.duration",
+    unit: "s",
+    kind: InstrumentKind::Histogram,
+};
+pub const RPC_REQUESTS: InstrumentDef = InstrumentDef {
+    name: "rpc.requests",
+    unit: "{request}",
+    kind: InstrumentKind::Counter,
+};
+pub const RPC_ACTIVE: InstrumentDef = InstrumentDef {
+    name: "rpc.active",
+    unit: "{request}",
+    kind: InstrumentKind::UpDownCounter,
+};
+pub const RPC_DURATION: InstrumentDef = InstrumentDef {
+    name: "rpc.duration",
+    unit: "s",
+    kind: InstrumentKind::Histogram,
+};
+pub const AGENT_STATE_TRANSITIONS: InstrumentDef = InstrumentDef {
+    name: "agent.state.transitions",
+    unit: "{transition}",
+    kind: InstrumentKind::Counter,
+};
+pub const AGENT_STATE_STUCK: InstrumentDef = InstrumentDef {
+    name: "agent.state.stuck",
+    unit: "{event}",
+    kind: InstrumentKind::Counter,
+};
+pub const AGENT_STATE_FLAPS: InstrumentDef = InstrumentDef {
+    name: "agent.state.flaps",
+    unit: "{event}",
+    kind: InstrumentKind::Counter,
+};
 pub const TERMINAL_BYTES: InstrumentDef = InstrumentDef {
     name: "terminal.io.bytes",
     unit: "By",
     kind: InstrumentKind::Counter,
+};
+pub const TERMINAL_CURSOR_MOVES: InstrumentDef = InstrumentDef {
+    name: "terminal.cursor.moves",
+    unit: "{move}",
+    kind: InstrumentKind::Counter,
+};
+pub const TERMINAL_RENDER_CELLS: InstrumentDef = InstrumentDef {
+    name: "terminal.render.cells",
+    unit: "{cell}",
+    kind: InstrumentKind::Counter,
+};
+pub const TERMINAL_RENDER_DURATION: InstrumentDef = InstrumentDef {
+    name: "terminal.render.duration",
+    unit: "s",
+    kind: InstrumentKind::Histogram,
 };
 pub const TELEMETRY_REJECTIONS: InstrumentDef = InstrumentDef {
     name: "telemetry.rejections",
@@ -93,6 +204,14 @@ fn key_values(attrs: &[Attr<'_>]) -> Result<Vec<KeyValue>, Rejection> {
         .collect()
 }
 
+fn validate_instrument(def: &InstrumentDef, expected: InstrumentKind) -> Result<(), Rejection> {
+    if def.kind != expected || !schema::metrics::ALL.contains(&def.name) {
+        health::reject(Rejection::UnknownName);
+        return Err(Rejection::UnknownName);
+    }
+    limits::validate_name(def.name)
+}
+
 fn accept_series(name: &'static str, attrs: &[KeyValue]) -> bool {
     let fingerprint = format!("{attrs:?}");
     let mut all = SERIES
@@ -115,6 +234,8 @@ fn accept_series(name: &'static str, attrs: &[KeyValue]) -> bool {
 pub struct Counter(&'static InstrumentDef);
 #[derive(Clone, Copy, Debug)]
 pub struct Histogram(&'static InstrumentDef);
+#[derive(Clone, Copy, Debug)]
+pub struct UpDownCounter(&'static InstrumentDef);
 
 #[must_use]
 pub const fn counter(def: &'static InstrumentDef) -> Counter {
@@ -124,36 +245,63 @@ pub const fn counter(def: &'static InstrumentDef) -> Counter {
 pub const fn histogram(def: &'static InstrumentDef) -> Histogram {
     Histogram(def)
 }
+#[must_use]
+pub const fn up_down_counter(def: &'static InstrumentDef) -> UpDownCounter {
+    UpDownCounter(def)
+}
 
 impl Counter {
     pub fn add(self, value: u64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        let Some(meter) = METER.get() else {
+            return Ok(());
+        };
+        validate_instrument(self.0, InstrumentKind::Counter)?;
         let kv = key_values(attrs).inspect_err(|reason| health::reject(*reason))?;
         if !accept_series(self.0.name, &kv) {
             return Err(Rejection::Cardinality);
         }
-        if let Some(meter) = METER.get() {
-            meter
-                .u64_counter(self.0.name)
-                .with_unit(self.0.unit)
-                .build()
-                .add(value, &kv);
-        }
+        meter
+            .u64_counter(self.0.name)
+            .with_unit(self.0.unit)
+            .build()
+            .add(value, &kv);
         Ok(())
     }
 }
 impl Histogram {
     pub fn record(self, value: f64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        let Some(meter) = METER.get() else {
+            return Ok(());
+        };
+        validate_instrument(self.0, InstrumentKind::Histogram)?;
         let kv = key_values(attrs).inspect_err(|reason| health::reject(*reason))?;
         if !accept_series(self.0.name, &kv) {
             return Err(Rejection::Cardinality);
         }
-        if let Some(meter) = METER.get() {
-            meter
-                .f64_histogram(self.0.name)
-                .with_unit(self.0.unit)
-                .build()
-                .record(value, &kv);
+        meter
+            .f64_histogram(self.0.name)
+            .with_unit(self.0.unit)
+            .build()
+            .record(value, &kv);
+        Ok(())
+    }
+}
+
+impl UpDownCounter {
+    pub fn add(self, value: i64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        let Some(meter) = METER.get() else {
+            return Ok(());
+        };
+        validate_instrument(self.0, InstrumentKind::UpDownCounter)?;
+        let kv = key_values(attrs).inspect_err(|reason| health::reject(*reason))?;
+        if !accept_series(self.0.name, &kv) {
+            return Err(Rejection::Cardinality);
         }
+        meter
+            .i64_up_down_counter(self.0.name)
+            .with_unit(self.0.unit)
+            .build()
+            .add(value, &kv);
         Ok(())
     }
 }
@@ -165,15 +313,11 @@ mod tests {
 
     #[test]
     fn cardinality_rejects_the_257th_set_without_eviction() {
-        static DEF: InstrumentDef = InstrumentDef {
-            name: "test.cardinality",
-            unit: "{item}",
-            kind: InstrumentKind::Counter,
-        };
+        install(&opentelemetry::global::meter("cardinality-test"));
         let before = crate::facade_health().cardinality;
         for index in 0..limits::MAX_CARDINALITY {
             let value = index.to_string();
-            counter(&DEF)
+            counter(&TERMINAL_BYTES)
                 .add(
                     1,
                     &[Attr {
@@ -185,7 +329,7 @@ mod tests {
         }
         let overflow = "overflow";
         assert_eq!(
-            counter(&DEF).add(
+            counter(&TERMINAL_BYTES).add(
                 1,
                 &[Attr {
                     key: attrs::JOB_ID,

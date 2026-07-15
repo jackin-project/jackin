@@ -20,7 +20,10 @@ pub mod spawn;
 
 pub use event::{Attr, EventDef, FieldSet, Rejection, Severity, Value, emit_event};
 pub use health::{FacadeHealth, facade_health};
-pub use metric::{Counter, Histogram, InstrumentDef, InstrumentKind, counter, histogram, install};
+pub use metric::{
+    Counter, Histogram, InstrumentDef, InstrumentKind, UpDownCounter, counter, histogram, install,
+    up_down_counter,
+};
 pub use operation::{OperationGuard, SpanDef, operation};
 
 /// The only tracing target accepted for governed product telemetry.

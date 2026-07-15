@@ -136,6 +136,16 @@ macro_rules! emit_named {
 }
 
 pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Rejection> {
+    let enabled = match def.severity {
+        Severity::Trace => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::TRACE),
+        Severity::Debug => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::DEBUG),
+        Severity::Info => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::INFO),
+        Severity::Warn => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::WARN),
+        Severity::Error => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::ERROR),
+    };
+    if !enabled {
+        return Ok(());
+    }
     if let Err(reason) = validate(def, &fields) {
         health::reject(reason);
         return Err(reason);

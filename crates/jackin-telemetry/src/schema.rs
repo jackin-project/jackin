@@ -6,6 +6,7 @@
 pub mod attrs;
 pub mod enums;
 pub mod events;
+pub mod metrics;
 pub mod spans;
 
 pub use attrs::ALL_KEYS;
