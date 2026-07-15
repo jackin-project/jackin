@@ -16,7 +16,8 @@ use termrock::keymap::KeyChord;
 use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::build_log_dialog::{
-    build_log_scrollbar_top_offset_for_row_cached, refresh_build_log_layout,
+    build_log_scrollbar_top_offset_for_row_cached, refresh_build_log_layout, viewport_height,
+    viewport_width,
 };
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state,
@@ -220,8 +221,8 @@ fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
 
 fn build_log_scroll_axes(view: &LaunchView, area: Rect) -> ScrollAxes {
     let box_area = crate::tui::components::build_log_dialog::build_log_box_area(area);
-    let viewport_w = jackin_tui::components::viewport_width(box_area);
-    let viewport_h = jackin_tui::components::viewport_height(box_area);
+    let viewport_w = viewport_width(box_area);
+    let viewport_h = viewport_height(box_area);
     ScrollAxes {
         vertical: view.build_log_filled > 0
             && view.build_log_wrapped_width == viewport_w

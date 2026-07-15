@@ -3,10 +3,7 @@
 
 //! Launch docker-build log overlay helpers.
 
-use jackin_tui::components::{
-    is_scrollable, render_scrollable_block, scrollbar_offset_for_track_position,
-    vertical_scrollbar_area, viewport_height, viewport_width,
-};
+use jackin_tui::components::render_scrollable_block;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
@@ -25,6 +22,26 @@ pub struct BuildLogScrollMetrics {
     pub content_len: usize,
     pub viewport_h: usize,
     pub filled: usize,
+}
+
+#[must_use]
+pub const fn viewport_width(area: Rect) -> usize {
+    area.width.saturating_sub(2) as usize
+}
+
+#[must_use]
+pub const fn viewport_height(area: Rect) -> usize {
+    area.height.saturating_sub(2) as usize
+}
+
+#[must_use]
+const fn vertical_scrollbar_area(area: Rect) -> Rect {
+    Rect {
+        x: area.x.saturating_add(area.width.saturating_sub(1)),
+        y: area.y.saturating_add(1),
+        width: 1,
+        height: area.height.saturating_sub(2),
+    }
 }
 
 #[must_use]
@@ -107,7 +124,7 @@ pub fn build_log_scrollbar_top_offset_for_row(
     row: u16,
 ) -> Option<usize> {
     let metrics = build_log_scroll_metrics(area, raw);
-    if !is_scrollable(metrics.content_len, metrics.viewport_h) {
+    if !termrock::scroll::is_scrollable(metrics.content_len, metrics.viewport_h) {
         return None;
     }
     let scrollbar = vertical_scrollbar_area(build_log_box_area(area));
@@ -117,12 +134,14 @@ pub fn build_log_scrollbar_top_offset_for_row(
     }
     let max_position = scrollbar.height.saturating_sub(1);
     let track_position = row.saturating_sub(scrollbar.y).min(max_position);
-    Some(usize::from(scrollbar_offset_for_track_position(
-        metrics.content_len,
-        metrics.viewport_h,
-        track_len,
-        usize::from(track_position),
-    )))
+    Some(usize::from(
+        termrock::scroll::offset_for_track_position_u16(
+            metrics.content_len,
+            metrics.viewport_h,
+            track_len,
+            usize::from(track_position),
+        ),
+    ))
 }
 
 #[must_use]
@@ -150,12 +169,14 @@ pub fn build_log_scrollbar_top_offset_for_row_cached(
     }
     let max_position = scrollbar.height.saturating_sub(1);
     let track_position = row.saturating_sub(scrollbar.y).min(max_position);
-    Some(usize::from(scrollbar_offset_for_track_position(
-        view.build_log_wrapped_lines.len(),
-        view.build_log_viewport_height,
-        track_len,
-        usize::from(track_position),
-    )))
+    Some(usize::from(
+        termrock::scroll::offset_for_track_position_u16(
+            view.build_log_wrapped_lines.len(),
+            view.build_log_viewport_height,
+            track_len,
+            usize::from(track_position),
+        ),
+    ))
 }
 
 /// Footer-hint keys for the build-log overlay.
@@ -214,7 +235,7 @@ pub fn render_build_log_dialog(
         Some(title),
     );
 
-    let vertical = is_scrollable(lines_len, viewport_h);
+    let vertical = termrock::scroll::is_scrollable(lines_len, viewport_h);
     if !debug_mode {
         frame.render_widget(Clear, chrome.hint);
     }
