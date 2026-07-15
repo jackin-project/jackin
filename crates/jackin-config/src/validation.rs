@@ -14,7 +14,7 @@ use crate::schema::{MountConfig, WorkspaceConfig, validate_mount_specs};
 /// Two rules enforced:
 /// 1. No nested isolated mounts (inner dst inside outer dst).
 /// 2. No same-host-repo worktree siblings (same src canonicalized).
-pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
+pub fn validate_isolation_layout(mounts: &[MountConfig]) -> crate::ConfigResult<()> {
     let isolated: Vec<(usize, &MountConfig, &str)> = mounts
         .iter()
         .enumerate()
@@ -37,8 +37,7 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
                     "isolated mount `{inner}` cannot be nested inside isolated mount `{outer}`; \
                      either make the inner mount `shared` or move the inner mount outside \
                      the parent's path"
-                ))
-                .into());
+                )));
             }
             if matches!(ma.isolation, MountIsolation::Worktree)
                 && matches!(mb.isolation, MountIsolation::Worktree)
@@ -48,8 +47,7 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
                     "isolated mounts `{}` and `{}` cannot share the same host repository `{}`; \
                      remove one of them or change one to `shared` (V1 limitation — see roadmap)",
                     ma.dst, mb.dst, ma.src,
-                ))
-                .into());
+                )));
             }
         }
     }
@@ -60,18 +58,18 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
 pub fn validate_workspace_config(
     name: &WorkspaceName,
     workspace: &WorkspaceConfig,
-) -> anyhow::Result<()> {
+) -> crate::ConfigResult<()> {
     // Use Debug of the stem string (not Debug of the newtype) so operator
     // messages stay `workspace "foo"` rather than `WorkspaceName("foo")`.
     let name = name.as_str();
     if workspace.workdir.is_empty() {
-        return Err(ConfigError::WorkdirRequired(name.to_owned()).into());
+        return Err(ConfigError::WorkdirRequired(name.to_owned()));
     }
     if !workspace.workdir.starts_with('/') {
-        return Err(ConfigError::WorkdirNotAbsolute(name.to_owned()).into());
+        return Err(ConfigError::WorkdirNotAbsolute(name.to_owned()));
     }
     if workspace.mounts.is_empty() {
-        return Err(ConfigError::MountsRequired(name.to_owned()).into());
+        return Err(ConfigError::MountsRequired(name.to_owned()));
     }
 
     validate_mount_specs(&workspace.mounts)?;
@@ -87,8 +85,7 @@ pub fn validate_workspace_config(
     if !covers_workdir {
         return Err(ConfigError::msg(format!(
             "workspace {name:?} workdir must be equal to, inside, or a parent of one of the workspace mount destinations"
-        ))
-        .into());
+        )));
     }
 
     if let Some(default_role) = &workspace.default_role
@@ -100,8 +97,7 @@ pub fn validate_workspace_config(
     {
         return Err(ConfigError::msg(format!(
             "workspace {name:?} default_role must be a member of allowed_roles when allowed_roles is set"
-        ))
-        .into());
+        )));
     }
 
     Ok(())

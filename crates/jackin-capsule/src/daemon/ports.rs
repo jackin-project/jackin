@@ -1,67 +1,218 @@
-//! Daemon port seams for control, attach, status, and persistence.
+//! Effectful daemon ports at the Multiplexer / session-supervisor boundary.
 //!
-//! Production code calls these pure decision helpers at the real Multiplexer
-//! boundaries (control replies, Hello takeover, codename retirement, last-
-//! session exit). Characterization tests exercise those call sites.
+//! Production ports operate on the owning subsystem rather than accepting
+//! precomputed predicates. Tests inject [`FakeDaemonPorts`] and inspect its
+//! event ledger after driving the same operations.
+//!
+//! ## Sim / state-machine tooling evaluation (plan 017 step 4)
+//!
+//! | Tool | Verdict | Rationale |
+//! |---|---|---|
+//! | `proptest-state-machine` | **defer** | The fake-port transition suite covers attach, displace, detach, and reattach over the real registry boundary; add a model when supervisor transitions gain another asynchronous edge. |
+//! | `turmoil` / `madsim` | **defer** | The in-container event loop has no network-partition surface; host-to-capsule networking is integration-tested at its transport boundary. |
+//! | `fail` / failpoints | **defer** | Spawn failure is already injected through the port without process-wide failpoints or global test state. |
 
-/// Control-channel decisions for one-shot status / runtime-event replies.
+use std::time::Instant;
+
+use chrono::{DateTime, Utc};
+use jackin_protocol::control::ServerMsg;
+
+use super::{ClientRegistry, ControlRouting, SessionRegistry, SessionSupervisor};
+
+#[cfg(test)]
+use std::sync::Mutex;
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+pub(crate) struct RuntimeEvent<'a> {
+    pub(crate) session_id: u64,
+    pub(crate) source_id: &'a str,
+    pub(crate) runtime: &'a str,
+    pub(crate) event: &'a str,
+    pub(crate) payload: Option<&'a str>,
+    pub(crate) observed_at: Instant,
+}
+
+/// Control-channel effects for reporter events.
 pub(crate) trait ControlPort {
-    /// Whether an unknown session still receives an ACK (agent hooks must
-    /// never block; unknown session is logged, not failed).
-    fn should_ack_unknown_session_runtime_event(&self, session_known: bool) -> bool;
+    fn report_runtime_event(
+        &self,
+        sessions: &mut SessionRegistry,
+        event: RuntimeEvent<'_>,
+    ) -> ServerMsg;
 }
 
-/// Attach lifecycle: single active client; Hello displaces the previous client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AttachTransition {
+    Attach,
+    Displace,
+}
+
+/// Attach lifecycle over the live client registry.
 pub(crate) trait AttachPort {
-    /// True when an incoming Hello must displace an already-attached client.
-    fn should_displace_on_hello(&self, has_active_client: bool) -> bool;
+    fn begin_attach(&self, clients: &ClientRegistry) -> AttachTransition;
+    fn record_attached(&self) {}
+    fn record_detached(&self) {}
+    fn prepare_session_spawn(&self, _sessions: &SessionSupervisor) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
-/// Status publication surface (tab labels, session list).
+/// Status effects over session-owned state.
 pub(crate) trait StatusPort {
-    /// True when removing an exited session should retire its codename.
-    fn should_retire_codename_on_exit(&self, remaining_live_sessions: usize) -> bool;
+    fn retire_codename(
+        &self,
+        sessions: &mut SessionSupervisor,
+        codename: &str,
+        observed_at: DateTime<Utc>,
+    );
 }
 
-/// Persistence / reattach decisions after last-session exit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExitDisposition {
+    Evaluate,
+    Defer,
+}
+
+/// Persistence decision over the live control state.
 pub(crate) trait PersistencePort {
-    /// True when last-session exit handling should be deferred (dialog open).
-    fn defer_last_session_exit(&self, dialog_open: bool) -> bool;
+    fn last_session_exit(&self, control: &ControlRouting) -> ExitDisposition;
 }
 
-/// Default production-shaped port implementations (INV rules).
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct DefaultDaemonPorts;
 
 impl ControlPort for DefaultDaemonPorts {
-    fn should_ack_unknown_session_runtime_event(&self, _session_known: bool) -> bool {
-        // INV-D12: always ACK so agent hooks never block on control.
-        true
+    fn report_runtime_event(
+        &self,
+        sessions: &mut SessionRegistry,
+        event: RuntimeEvent<'_>,
+    ) -> ServerMsg {
+        if let Some(session) = sessions.get_mut(event.session_id) {
+            session.apply_runtime_event(
+                event.source_id,
+                event.runtime,
+                event.event,
+                event.payload,
+                event.observed_at,
+            );
+        } else {
+            crate::cdebug!(
+                "agent-status: runtime event for unknown session {}",
+                event.session_id
+            );
+        }
+        // INV-D12: reporter hooks always receive an ACK, including when the
+        // addressed session disappeared before the event was processed.
+        ServerMsg::Ack
     }
 }
 
 impl AttachPort for DefaultDaemonPorts {
-    fn should_displace_on_hello(&self, has_active_client: bool) -> bool {
-        // INV-D1: at most one attach client; Hello displaces when one is live.
-        has_active_client
+    fn begin_attach(&self, clients: &ClientRegistry) -> AttachTransition {
+        if clients.has_attached_client() {
+            AttachTransition::Displace
+        } else {
+            AttachTransition::Attach
+        }
     }
 }
 
 impl StatusPort for DefaultDaemonPorts {
-    fn should_retire_codename_on_exit(&self, _remaining_live_sessions: usize) -> bool {
-        // INV-D8: always retire the exited session's codename so labels update.
-        true
+    fn retire_codename(
+        &self,
+        sessions: &mut SessionSupervisor,
+        codename: &str,
+        observed_at: DateTime<Utc>,
+    ) {
+        sessions.retire_codename(codename, observed_at);
     }
 }
 
 impl PersistencePort for DefaultDaemonPorts {
-    fn defer_last_session_exit(&self, dialog_open: bool) -> bool {
-        super::should_defer_last_session_exit(dialog_open)
+    fn last_session_exit(&self, control: &ControlRouting) -> ExitDisposition {
+        if control.dialog_open() {
+            ExitDisposition::Defer
+        } else {
+            ExitDisposition::Evaluate
+        }
     }
 }
 
-/// Production ports singleton used at call sites.
 pub(crate) const PORTS: DefaultDaemonPorts = DefaultDaemonPorts;
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct FakeDaemonPorts {
+    pub fail_spawn: AtomicBool,
+    pub attach_count: AtomicUsize,
+    pub detach_count: AtomicUsize,
+    pub transitions: Mutex<Vec<AttachTransition>>,
+    pub runtime_events: Mutex<Vec<u64>>,
+}
+
+#[cfg(test)]
+impl FakeDaemonPorts {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[cfg(test)]
+impl ControlPort for FakeDaemonPorts {
+    fn report_runtime_event(
+        &self,
+        sessions: &mut SessionRegistry,
+        event: RuntimeEvent<'_>,
+    ) -> ServerMsg {
+        self.runtime_events.lock().unwrap().push(event.session_id);
+        DefaultDaemonPorts.report_runtime_event(sessions, event)
+    }
+}
+
+#[cfg(test)]
+impl AttachPort for FakeDaemonPorts {
+    fn begin_attach(&self, clients: &ClientRegistry) -> AttachTransition {
+        let transition = DefaultDaemonPorts.begin_attach(clients);
+        self.transitions.lock().unwrap().push(transition);
+        transition
+    }
+
+    fn record_attached(&self) {
+        self.attach_count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn record_detached(&self) {
+        self.detach_count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn prepare_session_spawn(&self, _sessions: &SessionSupervisor) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.fail_spawn.load(Ordering::SeqCst),
+            "injected PTY spawn failure"
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl StatusPort for FakeDaemonPorts {
+    fn retire_codename(
+        &self,
+        sessions: &mut SessionSupervisor,
+        codename: &str,
+        observed_at: DateTime<Utc>,
+    ) {
+        sessions.retire_codename(codename, observed_at);
+    }
+}
+
+#[cfg(test)]
+impl PersistencePort for FakeDaemonPorts {
+    fn last_session_exit(&self, control: &ControlRouting) -> ExitDisposition {
+        DefaultDaemonPorts.last_session_exit(control)
+    }
+}
 
 #[cfg(test)]
 mod tests;

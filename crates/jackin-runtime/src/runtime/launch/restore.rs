@@ -4,7 +4,7 @@
 use super::{LoadOptions, RestoreResolution};
 use crate::instance::{InstanceIndex, InstanceManifest, InstanceQuery, InstanceStatus};
 use crate::runtime::attach::ContainerState;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
 use std::path::PathBuf;
 
@@ -17,21 +17,21 @@ fn launch_candidate_for_manifest(
     paths: &JackinPaths,
     manifest: &InstanceManifest,
     label: String,
-) -> jackin_core::launch_progress::LaunchCandidate {
+) -> jackin_core::LaunchCandidate {
     let state_dir = paths.data_dir.join(&manifest.container_base);
     let records = crate::isolation::state::read_records(&state_dir).unwrap_or_default();
     let is_dirty = records.iter().any(|r| {
         matches!(
             r.cleanup_status,
-            jackin_core::isolation_record::CleanupStatus::PreservedDirty
-                | jackin_core::isolation_record::CleanupStatus::PreservedUnpushed
+            jackin_core::CleanupStatus::PreservedDirty
+                | jackin_core::CleanupStatus::PreservedUnpushed
         )
     });
     let inspect = records
         .iter()
         .map(|rec| crate::isolation::git_inspect::worktree_inspect(&rec.worktree_path))
         .collect();
-    jackin_core::launch_progress::LaunchCandidate {
+    jackin_core::LaunchCandidate {
         label,
         is_dirty,
         inspect,
@@ -53,7 +53,7 @@ pub(super) fn present_restore_choice(
     related: &[RelatedRestoreCandidate],
 ) -> anyhow::Result<RestoreResolution> {
     // Build candidate list (same-role first, then related).
-    let mut launch_candidates: Vec<jackin_core::launch_progress::LaunchCandidate> = candidates
+    let mut launch_candidates: Vec<jackin_core::LaunchCandidate> = candidates
         .iter()
         .map(|manifest| {
             launch_candidate_for_manifest(paths, manifest, restore_candidate_label(paths, manifest))
@@ -81,17 +81,17 @@ pub(super) fn present_restore_choice(
         progress.launch_dialog_progress("Unfinished jackin instances", &launch_candidates)?;
 
     match result {
-        jackin_core::launch_progress::LaunchDialogResult::StartFresh => {
+        jackin_core::LaunchDialogResult::StartFresh => {
             supersede_restore_candidates(paths, candidates)?;
             Ok(RestoreResolution::StartFresh)
         }
-        jackin_core::launch_progress::LaunchDialogResult::Restore(i) if i < candidates.len() => Ok(
+        jackin_core::LaunchDialogResult::Restore(i) if i < candidates.len() => Ok(
             RestoreResolution::RestoreCurrentRole(candidates[i].container_base.clone()),
         ),
-        jackin_core::launch_progress::LaunchDialogResult::Restore(i) => {
+        jackin_core::LaunchDialogResult::Restore(i) => {
             recover_related_restore_candidate(&related[i - candidates.len()])
         }
-        jackin_core::launch_progress::LaunchDialogResult::Delete(i) => {
+        jackin_core::LaunchDialogResult::Delete(i) => {
             let container = if i < candidates.len() {
                 candidates[i].container_base.clone()
             } else {
@@ -117,7 +117,7 @@ pub(super) async fn related_restore_candidates(
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Vec<RelatedRestoreCandidate>> {
     let mut candidates = Vec::new();
@@ -255,7 +255,7 @@ pub(super) fn matching_instance_manifests(
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
 ) -> anyhow::Result<Vec<InstanceManifest>> {
     InstanceIndex::matching_manifests(
         &paths.data_dir,

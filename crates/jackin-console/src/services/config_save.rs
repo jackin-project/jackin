@@ -14,7 +14,7 @@ use jackin_config::{
     AppConfig, AuthForwardMode, EnvScope, EnvValue, GithubAuthMode, MountConfig, Removal,
     WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride, plan_create, plan_edit,
 };
-use jackin_core::{Agent, WorkspaceName, env_model};
+use jackin_core::{Agent, WorkspaceName, is_reserved};
 use jackin_tui::shorten_home;
 
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
@@ -189,8 +189,7 @@ pub fn pre_existing_redundant_mounts_message(original_name: &str, collapses: &[R
     )
 }
 
-#[allow(
-    clippy::too_many_lines,
+#[expect(
     clippy::needless_pass_by_value,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -251,23 +250,15 @@ pub fn plan_editor_save_preview(
     }
 }
 
-#[allow(
-    unfulfilled_lint_expectations,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-#[expect(
-    single_use_lifetimes,
-    reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
-)]
 fn validate_settings_env_keys<'a>(
     scope: &str,
-    keys: impl Iterator<Item = &'a String>,
+    keys: impl Iterator<Item = &'a String> + 'a,
 ) -> anyhow::Result<()> {
     for key in keys {
         if key.trim().is_empty() {
             anyhow::bail!("env var key cannot be empty");
         }
-        if env_model::is_reserved(key) {
+        if is_reserved(key) {
             anyhow::bail!(
                 "env name {key:?} in {scope} is reserved by the jackin runtime and cannot be set"
             );
@@ -467,8 +458,7 @@ pub struct SettingsSaveInput<'a> {
 }
 
 /// Save all settings tabs and return the reloaded config model.
-#[allow(
-    clippy::too_many_lines,
+#[expect(
     clippy::needless_pass_by_value,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -560,7 +550,7 @@ pub fn save_settings(
     editor_doc.set_git_coauthor_trailer(input.git_coauthor_trailer);
     editor_doc.set_git_dco(input.git_dco);
 
-    editor_doc.save()
+    Ok(editor_doc.save()?)
 }
 
 #[cfg(test)]

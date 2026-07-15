@@ -19,14 +19,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Reject workspace file stems that are not valid [`WorkspaceName`](jackin_core::WorkspaceName)s.
-pub fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
+pub fn validate_workspace_file_stem(name: &str) -> crate::ConfigResult<()> {
     jackin_core::WorkspaceName::parse(name)
         .map(drop)
         .map_err(Into::into)
 }
 
 /// Write `contents` to `path` via a unique staged file then rename.
-pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
+pub fn atomic_write(path: &Path, contents: &str) -> crate::ConfigResult<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory {}", parent.display()))?;
@@ -46,15 +46,16 @@ pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
     let staged = stage_write(&tmp, contents);
     if let Err(err) = staged {
         drop(std::fs::remove_file(&tmp));
-        return Err(err);
+        return Err(err.into());
     }
 
     if let Err(rename_err) = std::fs::rename(&tmp, path) {
         // Rename failure leaves the staged file behind; clean up so it does
         // not accumulate.
         drop(std::fs::remove_file(&tmp));
-        return Err(rename_err)
-            .with_context(|| format!("renaming {} -> {}", tmp.display(), path.display()));
+        return Err(anyhow::Error::new(rename_err)
+            .context(format!("renaming {} -> {}", tmp.display(), path.display()))
+            .into());
     }
     Ok(())
 }

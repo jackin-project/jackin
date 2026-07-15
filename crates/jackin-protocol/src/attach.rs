@@ -1,4 +1,4 @@
-#![allow(
+#![expect(
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -213,7 +213,7 @@ pub struct ClientTerminal {
 /// `session::OscPolicy` and the terminal profile, not these flags. They are the
 /// forward contract for capability-driven downsampling (deferred per roadmap).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Orthogonal terminal capability flags (pointer_shapes, truecolor, \
               synchronized_output, osc8_hyperlinks, underline_style) — each is an \
@@ -240,7 +240,7 @@ pub struct AttachCapabilities {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Per-capability source-of-truth flags (handshake_identity, terminfo_name, \
               safe_color_probe, user_override, denylist) — each is an independent \
@@ -1265,7 +1265,7 @@ where
     Ok(Some(decode_server(tag, payload)?))
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Attach-protocol frame decoder: per-tag (Ctrl / Attach / Detach / \
               Hello / Bye / ...) branches each decode their own frame payload. \

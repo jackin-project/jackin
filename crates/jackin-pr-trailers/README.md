@@ -44,4 +44,4 @@ rm "$BODY_FILE"
 - Trailer parsing is delegated to `git interpret-trailers --parse --only-trailers --unfold`, then deduplicated and ordered.
 - Minimal dependencies, includes unit tests for the parser.
 
-This is a developer/ agent tool for the merge process, not part of the main jackin runtime.
+A CLI developer/agent tool for the merging process, not part of the main jackin❯ runtime.

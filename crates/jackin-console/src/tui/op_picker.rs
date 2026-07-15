@@ -30,9 +30,9 @@ pub fn start_ref_validation(
 /// to `jackin-core` types already available in this crate.
 pub type OpPickerSelection = model::OpPickerSelection<
     jackin_core::OpRef,
-    jackin_core::op_types::OpAccount,
-    jackin_core::op_types::OpVault,
-    jackin_core::op_types::OpItem,
+    jackin_core::OpAccount,
+    jackin_core::OpVault,
+    jackin_core::OpItem,
     jackin_core::FieldTarget,
 >;
 
@@ -81,7 +81,7 @@ pub fn invalidate_cache_for_ref(
     op_cache: &std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
     op_ref: &jackin_core::OpRef,
 ) {
-    let Some(parts) = jackin_core::op_reference::parse_op_reference(&op_ref.op) else {
+    let Some(parts) = jackin_core::parse_op_reference(&op_ref.op) else {
         return;
     };
     let account = op_ref.account.as_deref();

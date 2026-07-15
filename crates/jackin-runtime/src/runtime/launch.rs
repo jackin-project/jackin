@@ -65,7 +65,7 @@ pub(crate) use crate::instance::{
 };
 #[cfg(test)]
 pub(crate) use crate::runtime::attach::ContainerState;
-use jackin_core::selector::RoleSelector;
+use jackin_core::RoleSelector;
 #[cfg(test)]
 pub(crate) use jackin_docker::docker_client::DockerApi;
 #[cfg(test)]
@@ -110,7 +110,7 @@ pub struct LoadOptions {
     /// `default_agent`, the role's single supported agent, or a rich launch
     /// dialog. A launch against a multi-agent role with no resolved choice is
     /// an error when the rich dialog is unavailable.
-    pub agent: Option<jackin_core::agent::Agent>,
+    pub agent: Option<jackin_core::Agent>,
 
     /// When set, resolve this branch of the role repo instead of the default
     /// branch, build the image locally from the branch's Dockerfile (ignoring
@@ -167,7 +167,7 @@ impl LoadOptions {
 pub(super) fn validate_agent_supported(
     selector: &RoleSelector,
     manifest: &jackin_manifest::RoleManifest,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
 ) -> anyhow::Result<()> {
     let supported = manifest.supported_agents();
     if supported.contains(&agent) {
@@ -244,9 +244,12 @@ pub(crate) use restore_resolve::{
 };
 
 mod launch_runtime;
-#[allow(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_imports,
+        reason = "re-export launch_runtime helpers for sibling modules and tests"
+    )
 )]
 pub(crate) use launch_runtime::{
     LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,

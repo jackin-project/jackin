@@ -50,7 +50,7 @@ Every capability the base image supports must reach the agent inside the pane.
 ### Pointer shape
 
 - OSC 22 pointer-shape feedback is allowed only for terminals known to support CSS-style pointer names, currently Ghostty, Kitty, Foot, and iTerm-style environments detected from the active attach client's `TERM` / `TERM_PROGRAM`.
-- Clickable jackin chrome should advertise `pointer`; split borders should advertise `ew-resize` or `ns-resize`; selectable pane text should advertise `text`; all other regions should restore `default`.
+- Clickable jackin❯ chrome should advertise `pointer`; split borders should advertise `ew-resize` or `ns-resize`; selectable pane text should advertise `text`; all other regions should restore `default`.
 - Pointer-shape output is an enhancement. It must not become required for input routing, click behavior, text selection, or clipboard copy.
 
 ### OSC and desktop notifications
@@ -102,7 +102,7 @@ Handled-in-grid and never forwarded: DECSTR (`CSI ! p`, soft-resets the grid, no
 - **One writer, atomic frames.** Every byte to the attach client flows through `ClientWriter`. Non-empty frames are wrapped in `\x1b[?2026h … \x1b[?2026l` synchronized-output brackets so the outer terminal applies them atomically; out-of-band sequences (OSC passthrough, clipboard writes, pointer shapes) queue and flush only at frame boundaries, never mid-frame.
 - **Wipe policy.** A real screen erase (`\x1b[2J`) precedes a frame only on first attach and resize. Every other invalidation repaints in place — a tab switch, zoom, or dialog close that flashes the screen blank is a bug.
 - **Frame model beyond cells.** Cursor visibility/position and the focused pane's modes (bracketed paste, application cursor keys, kitty keyboard level) are derived fresh every frame from the focused pane's grid and reconciled against the last asserted state. There is no mode-assertion site outside the encoder; focus swap is not a special case.
-- `JACKIN_DEBUG=1` render telemetry must be good enough to compare behavior across changes: invalidation reason, wipe, generation, bytes emitted, and compose duration per frame.
+- `JACKIN_TELEMETRY_LEVEL=debug` render telemetry must be good enough to compare behavior across changes: invalidation reason, wipe, generation, bytes emitted, and compose duration per frame.
 
 ---
 

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use jackin_core::CommandRunner;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
 
 use crate::apple_container_client::{AppleContainerApi, AppleContainerClient};

@@ -8,8 +8,8 @@
 //! for the reserved-env-var list (`env_model.rs`) or Docker injection —
 //! callers pass the resolved set to the container launch path.
 
-use jackin_core::env_model::EnvCycleError;
-use jackin_core::manifest::EnvVarDecl;
+use jackin_core::EnvCycleError;
+use jackin_core::EnvVarDecl;
 use std::collections::BTreeMap;
 
 // Moved to `jackin_core` (Workstream 1, architecture/boundaries). The
@@ -115,8 +115,7 @@ pub fn resolve_env_with_overrides(
 ) -> anyhow::Result<ResolvedEnv> {
     // Port trait (`EnvPrompter`) errors stay anyhow; typed variants are
     // attached as sources for the cycle / required-prompt paths.
-    let order = jackin_core::env_model::topological_env_order(declarations)
-        .map_err(ResolveEnvError::from)?;
+    let order = jackin_core::topological_env_order(declarations).map_err(ResolveEnvError::from)?;
     let mut vars = Vec::new();
     let mut skipped: std::collections::HashSet<String> = std::collections::HashSet::new();
 

@@ -1,17 +1,7 @@
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
-
 use super::*;
 use jackin_core::WorkspaceName;
 
@@ -73,7 +63,7 @@ fn seed_override_picker_workspace(
     };
     let mut ce = ConfigEditor::open(paths)?;
     ce.create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), ws)?;
-    ce.save()
+    Ok(ce.save()?)
 }
 
 /// Press `Enter` on the workspace-level `+ Add environment variable`

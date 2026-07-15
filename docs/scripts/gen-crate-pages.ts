@@ -240,9 +240,10 @@ export function transformReadmeBody(crateName: string, body: string): string {
 
 export function renderMdxPage(crateName: string, body: string): string {
   const transformed = transformReadmeBody(crateName, body)
+  const title = crateName === 'jackin' ? 'jackin❯' : crateName
   return [
     '---',
-    `title: "${crateName}"`,
+    `title: "${title}"`,
     '---',
     '',
     `{/* GENERATED from crates/${crateName}/README.md — edit the README, not this file */}`,

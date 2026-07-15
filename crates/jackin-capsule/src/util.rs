@@ -8,7 +8,7 @@
 
 use std::io::Read;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 use std::time::{Duration, Instant};
 
 /// Cap reads against text metadata files so a corrupt or hostile file
@@ -107,18 +107,13 @@ pub(crate) fn wait_child_with_timeout(
 }
 
 pub(crate) fn command_stdout_trimmed_with_timeout(
-    command: &mut Command,
+    request: &jackin_process::ExecRequest,
     timeout: Duration,
 ) -> Option<String> {
-    command.stdout(Stdio::piped()).stderr(Stdio::null());
-    let mut child = match command.spawn() {
+    let mut child = match jackin_process::spawn_sync(request) {
         Ok(child) => child,
         Err(e) => {
-            crate::clog!(
-                "command spawn failed ({:?}): {e} (errno={:?})",
-                command.get_program(),
-                e.raw_os_error()
-            );
+            crate::clog!("command spawn failed ({}): {e}", request.program.display());
             return None;
         }
     };
@@ -128,7 +123,7 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
         stdout.read_to_end(&mut bytes)?;
         Ok(bytes)
     });
-    let label = format!("{:?}", command.get_program());
+    let label = request.program.display().to_string();
     let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &label, timeout) {
         WaitOutcome::Exited(status) => Some(status.code() == Some(0)),
         // Status is lost; trust the stdout pipe (callers like the
@@ -145,8 +140,8 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
         }
         WaitOutcome::Failed(e) => {
             crate::clog!(
-                "command try_wait failed ({:?}): {e} (errno={:?})",
-                command.get_program(),
+                "command try_wait failed ({}): {e} (errno={:?})",
+                request.program.display(),
                 e.raw_os_error()
             );
             drop(stdout_reader.join());
@@ -155,8 +150,8 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
     };
     if status_success == Some(false) {
         crate::cdebug!(
-            "command exited non-accepted status ({:?}); stderr was nulled so reason is unavailable",
-            command.get_program()
+            "command exited non-accepted status ({}); stderr was nulled so reason is unavailable",
+            request.program.display()
         );
         return None;
     }

@@ -38,14 +38,14 @@
 //! shared across machines doesn't error on the non-mac ones.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use anyhow::Context;
 use fs4::{FileExt, TryLockError};
 
 use jackin_core::CommandRunner;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
+use jackin_process::{ExecRequest, StdioMode};
 
 const PID_FILENAME: &str = "caffeinate.pid";
 const LOCK_FILENAME: &str = "caffeinate.lock";
@@ -303,17 +303,12 @@ fn is_caffeinate_alive_at(pid: u32) -> Liveness {
     // fall through to `Unknown` so the reconciler can leave state
     // alone rather than guessing.
     for _ in 0..2 {
-        let mut command = Command::new("ps");
-        command
-            .args(["-p", &pid.to_string(), "-o", "comm="])
-            .stderr(Stdio::null());
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "caffeinate process liveness probe runs inside spawn_blocking"
-        )]
-        if let Ok(output) = command.output() {
+        // Caffeinate process liveness probe runs inside spawn_blocking.
+        let request = ExecRequest::new("ps", ["-p", &pid.to_string(), "-o", "comm="])
+            .stderr_mode(StdioMode::Null);
+        if let Ok(output) = jackin_process::exec_sync(&request) {
             return classify_ps_comm_output(
-                output.status.success(),
+                output.success,
                 &String::from_utf8_lossy(&output.stdout),
             );
         }

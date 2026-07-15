@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Instant, SystemTime};
 
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 
 use jackin_protocol::control::TokenUsageSummary;
 

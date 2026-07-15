@@ -59,7 +59,7 @@ Each value is one of:
 
 | Syntax | Resolution |
 |---|---|
-| `op://VAULT/ITEM/FIELD` | Resolved via the [1Password CLI](https://developer.1password.com/docs/cli/) (`op read "<ref>"`). Requires `op` on `PATH` and an authenticated session. |
+| `op://VAULT/ITEM/FIELD` | Resolved via the [1Password CLI](https://www.1password.dev/cli) (`op read "<ref>"`). Requires `op` on `PATH` and an authenticated session. |
 | `$NAME` or `${NAME}` | Read from the host's environment at launch time. Errors if the host var is unset. |
 | Anything else | Literal string. |
 
@@ -108,7 +108,7 @@ These variables affect host run telemetry and diagnostics capture; see [Run Tele
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Enables OTLP export for traces, logs, and metrics through one base gRPC endpoint. When this is active, the backend is the sink and the local run JSONL file is not written unless `JACKIN_DIAGNOSTICS_FILE=1` is also set. |
 | `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_ENDPOINT` | Overrides the endpoint per signal. jackin❯ still exports over gRPC only. |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_PROTOCOL` | Must be `grpc` or unset when an endpoint is configured; any other value stops startup with [E016](/reference/errors/E016/). |
-| `JACKIN_DEBUG` | Backs `--debug` for verbose diagnostics and capsule debug logging. Raw PTY/frame/input payloads require the trace telemetry level. |
+| `JACKIN_DEBUG` | Backs the host `--debug` flag. Without an explicit telemetry-level override, that enables verbose diagnostics and capsule debug logging. Raw PTY/frame/input payloads require the trace telemetry level. |
 | `JACKIN_TELEMETRY_LEVEL` | Overrides `[telemetry].level` from `config.toml`: `info` (default), `debug`, or `trace`. `debug`/`trace` enable debug-category diagnostics even when `--debug` is not set; `trace` also enables raw capsule PTY/frame/input payload records. |
 | `JACKIN_TELEMETRY_CATEGORIES` | Overrides `[telemetry].categories` from `config.toml` with a comma-separated debug-category allowlist such as `docker,launch`; `*` allows every debug category. Applies before debug-category events enter JSONL or OTLP. |
 | `JACKIN_DIAGNOSTICS_FILE` | Set to `1`, `true`, `yes`, or `on` to write the local run JSONL file even when OTLP export is active. |
@@ -153,7 +153,7 @@ COLORTERM=truecolor
 
 ## 1Password CLI setup
 
-1. Install the [1Password CLI](https://developer.1password.com/docs/cli/get-started/).
+1. Install the [1Password CLI](https://www.1password.dev/cli/get-started).
 2. Sign in: `eval $(op signin)` (or unlock the desktop-app integration).
 3. Set values with `op://...` references — for example:
 

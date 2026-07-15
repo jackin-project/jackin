@@ -4,6 +4,7 @@ import {
   escapeMdxOutsideFences,
   metaCompletenessError,
   normalizeRepoPath,
+  renderMdxPage,
   rewriteLinks,
   siblingCrateRoute,
   stripH1,
@@ -92,6 +93,14 @@ describe('transformReadmeBody', () => {
     expect(out.startsWith('#')).toBe(false)
     expect(out).toContain('<RepoFile path="crates/jackin-core/src/lib.rs">')
     expect(out).toContain('\\{brace}')
+  })
+})
+
+describe('renderMdxPage', () => {
+  test('uses the product brand for the root crate display title', () => {
+    expect(renderMdxPage('jackin', '# jackin\n').split('\n')[1]).toBe(
+      'title: "jackin❯"',
+    )
   })
 })
 

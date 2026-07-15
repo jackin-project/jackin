@@ -129,7 +129,7 @@ impl Agent {
     /// Returns the adapter that encapsulates all behavioral logic for this
     /// agent. Phase 2 will migrate all match-arm dispatch sites to call
     /// `agent.runtime().<method>()` instead of matching on `agent` directly.
-    pub fn runtime(self) -> &'static dyn runtime::AgentRuntime {
+    pub fn runtime(self) -> &'static dyn AgentRuntime {
         use runtime::adapters;
         match self {
             Self::Claude => &adapters::ClaudeRuntime,
@@ -181,8 +181,18 @@ impl FromStr for Agent {
     }
 }
 
-pub mod adapters;
-pub mod runtime;
+// Nested modules are crate-private; public surface is re-exported below.
+pub(crate) mod adapters;
+pub(crate) mod runtime;
+
+pub use runtime::{AgentRuntime, AgentStatePaths};
+
+/// Public registry entry: all built-in [`AgentRuntime`] adapters.
+#[inline]
+#[must_use]
+pub const fn agent_runtime_registry() -> &'static [&'static dyn AgentRuntime] {
+    adapters::registry()
+}
 
 #[cfg(test)]
 mod tests;

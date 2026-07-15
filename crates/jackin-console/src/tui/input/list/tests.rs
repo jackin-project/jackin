@@ -14,7 +14,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
 use jackin_core::JackinPaths;
-use jackin_core::instance::{InstanceIndexEntry, InstanceStatus};
+use jackin_core::{InstanceIndexEntry, InstanceStatus};
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 

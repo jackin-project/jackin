@@ -1,4 +1,4 @@
-# ratchet.toml — unified shrink-only budgets (codebase-health-enforcement Phase 7).
+# ratchet.toml — unified shrink-only budgets (completed codebase-health Phase 7).
 # Each entry: a metric (computed by a named provider in jackin-xtask), a bound,
 # and shrink-only semantics: measured > bound fails (growth); measured < bound
 # fails telling you to tighten the bound; measured == bound is steady state.
@@ -18,8 +18,8 @@ provider = "file_lines_production"
 cap = 1850
 mode = "enforce"
 [[family.entry]]
-key = "crates/jackin-runtime/src/runtime/image.rs"
-bound = 1941
+key = "crates/jackin-diagnostics/src/observability.rs"
+bound = 2052
 
 [[family]]
 id = "file-size-test"
@@ -45,10 +45,8 @@ provider = "bare_allow_per_crate"
 cap = 0
 mode = "enforce"
 [[family.entry]]
-key = "jackin-xtask"
+key = "jackin-image"
 bound = 1
-
-# Per-lint expect counts: key = "{lint}@{crate}" (see ratchet::expect_key).
 [[family]]
 id = "expect-per-lint-crate"
 kind = "numeric"
@@ -56,23 +54,17 @@ provider = "expect_per_lint_crate"
 cap = 0
 mode = "enforce"
 [[family.entry]]
-key = "and@jackin-dev"
+key = "clippy::await_holding_lock@jackin-docker"
 bound = 1
 [[family.entry]]
-key = "and@jackin-xtask"
-bound = 2
-[[family.entry]]
-key = "before@jackin-usage"
+key = "clippy::cast_precision_loss@jackin-launch-tui"
 bound = 1
-[[family.entry]]
-key = "cargo@jackin-dev"
-bound = 1
-[[family.entry]]
-key = "cargo@jackin-xtask"
-bound = 2
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
 bound = 6
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-console"
+bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-launch-tui"
 bound = 6
@@ -83,17 +75,14 @@ bound = 5
 key = "clippy::cast_sign_loss@jackin-usage"
 bound = 12
 [[family.entry]]
-key = "clippy::cognitive_complexity@jackin-xtask"
-bound = 1
+key = "clippy::cognitive_complexity@jackin-runtime"
+bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
-bound = 9
-[[family.entry]]
-key = "clippy::disallowed_methods@jackin-build-meta"
-bound = 1
+bound = 11
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-capsule"
-bound = 9
+bound = 8
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-config"
 bound = 2
@@ -114,19 +103,16 @@ key = "clippy::disallowed_methods@jackin-env"
 bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-host"
-bound = 5
+bound = 4
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-image"
 bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-instance"
-bound = 5
-[[family.entry]]
-key = "clippy::disallowed_methods@jackin-pr-trailers"
-bound = 1
+bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
-bound = 12
+bound = 11
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-term"
 bound = 1
@@ -135,12 +121,48 @@ key = "clippy::disallowed_methods@jackin-tui"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage"
-bound = 3
+bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
-bound = 3
+bound = 1
+[[family.entry]]
+key = "clippy::duration_suboptimal_units@jackin"
+bound = 1
 [[family.entry]]
 key = "clippy::duration_suboptimal_units@jackin-env"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-agent-status"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-capsule"
+bound = 11
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-config"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-console"
+bound = 2
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-core"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-launch-tui"
+bound = 4
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-runtime"
+bound = 2
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-term"
+bound = 1
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-tui"
+bound = 4
+[[family.entry]]
+key = "clippy::excessive_nesting@jackin-tui-lookbook"
 bound = 1
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-xtask"
@@ -149,8 +171,11 @@ bound = 1
 key = "clippy::exit@jackin"
 bound = 2
 [[family.entry]]
+key = "clippy::exit@jackin-capsule"
+bound = 1
+[[family.entry]]
 key = "clippy::expect_used@jackin"
-bound = 2
+bound = 12
 [[family.entry]]
 key = "clippy::expect_used@jackin-capsule"
 bound = 1
@@ -165,13 +190,25 @@ key = "clippy::expect_used@jackin-diagnostics"
 bound = 1
 [[family.entry]]
 key = "clippy::expect_used@jackin-image"
-bound = 1
+bound = 3
 [[family.entry]]
 key = "clippy::expect_used@jackin-runtime"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::expect_used@jackin-test-support"
 bound = 2
+[[family.entry]]
+key = "clippy::filter_map_next@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::fn_params_excessive_bools@jackin-console"
+bound = 8
+[[family.entry]]
+key = "clippy::fn_params_excessive_bools@jackin-host"
+bound = 1
+[[family.entry]]
+key = "clippy::items_after_statements@jackin-image"
+bound = 1
 [[family.entry]]
 key = "clippy::large_enum_variant@jackin-term"
 bound = 1
@@ -188,17 +225,53 @@ bound = 1
 key = "clippy::let_underscore_must_use@jackin-core"
 bound = 1
 [[family.entry]]
+key = "clippy::map_unwrap_or@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::missing_const_for_fn@jackin-console"
+bound = 1
+[[family.entry]]
+key = "clippy::missing_const_for_fn@jackin-console-oppicker"
+bound = 1
+[[family.entry]]
+key = "clippy::needless_collect@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::needless_pass_by_value@jackin-console"
+bound = 3
+[[family.entry]]
+key = "clippy::option_if_let_else@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::option_if_let_else@jackin-console"
+bound = 1
+[[family.entry]]
+key = "clippy::option_if_let_else@jackin-env"
+bound = 1
+[[family.entry]]
+key = "clippy::option_option@jackin-console"
+bound = 2
+[[family.entry]]
+key = "clippy::panic@jackin"
+bound = 7
+[[family.entry]]
 key = "clippy::panic@jackin-capsule"
 bound = 1
 [[family.entry]]
 key = "clippy::panic@jackin-config"
+bound = 2
+[[family.entry]]
+key = "clippy::panic@jackin-manifest"
 bound = 1
 [[family.entry]]
 key = "clippy::panic@jackin-term"
 bound = 4
 [[family.entry]]
-key = "clippy::print_stderr@jackin"
+key = "clippy::panic@jackin-usage"
 bound = 3
+[[family.entry]]
+key = "clippy::print_stderr@jackin"
+bound = 4
 [[family.entry]]
 key = "clippy::print_stderr@jackin-dev"
 bound = 1
@@ -213,13 +286,13 @@ key = "clippy::print_stderr@jackin-pr-trailers"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-runtime"
-bound = 5
+bound = 8
 [[family.entry]]
 key = "clippy::print_stderr@jackin-xtask"
 bound = 2
 [[family.entry]]
 key = "clippy::print_stdout@jackin"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "clippy::print_stdout@jackin-build-meta"
 bound = 1
@@ -237,34 +310,145 @@ key = "clippy::print_stdout@jackin-term"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stdout@jackin-xtask"
-bound = 26
+bound = 25
+[[family.entry]]
+key = "clippy::redundant_pub_crate@jackin"
+bound = 1
 [[family.entry]]
 key = "clippy::reversed_empty_ranges@jackin-capsule"
+bound = 1
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin"
+bound = 2
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-agent-status"
+bound = 2
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-capsule"
+bound = 4
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-console"
+bound = 14
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-console-oppicker"
+bound = 3
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-core"
+bound = 2
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-launch-tui"
+bound = 1
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-protocol"
+bound = 3
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-term"
+bound = 3
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-tui"
+bound = 1
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-xtask"
+bound = 1
+[[family.entry]]
+key = "clippy::suboptimal_flops@jackin-tui"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-capsule"
+bound = 6
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-console"
+bound = 5
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-env"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-image"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-instance"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-isolation"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-launch-tui"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-runtime"
+bound = 11
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-usage"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-capsule"
+bound = 8
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-console"
+bound = 7
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-diagnostics"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-env"
 bound = 1
 [[family.entry]]
-key = "clippy::too_many_lines@jackin-xtask"
+key = "clippy::too_many_lines@jackin-isolation"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-launch-tui"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-protocol"
+bound = 2
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-runtime"
+bound = 7
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-term"
 bound = 1
 [[family.entry]]
-key = "clippy::type_complexity@jackin-console"
+key = "clippy::too_many_lines@jackin-tui-lookbook"
+bound = 2
+[[family.entry]]
+key = "clippy::trivially_copy_pass_by_ref@jackin-config"
 bound = 1
 [[family.entry]]
 key = "clippy::type_complexity@jackin-test-support"
 bound = 1
 [[family.entry]]
-key = "clippy::unwrap_used@jackin"
+key = "clippy::type_complexity@jackin-tui"
 bound = 1
+[[family.entry]]
+key = "clippy::unnecessary_wraps@jackin-config"
+bound = 2
+[[family.entry]]
+key = "clippy::unnecessary_wraps@jackin-runtime"
+bound = 1
+[[family.entry]]
+key = "clippy::unused_self@jackin-diagnostics"
+bound = 1
+[[family.entry]]
+key = "clippy::unwrap_used@jackin"
+bound = 12
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-capsule"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-runtime"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-test-support"
 bound = 1
+[[family.entry]]
+key = "clippy::useless_let_if_seq@jackin"
+bound = 1
+[[family.entry]]
+key = "clippy::wildcard_imports@jackin-term"
+bound = 2
+[[family.entry]]
+key = "clippy::wildcard_imports@jackin-usage"
+bound = 8
 [[family.entry]]
 key = "dead_code@jackin"
 bound = 1
@@ -273,30 +457,33 @@ key = "dead_code@jackin-core"
 bound = 4
 [[family.entry]]
 key = "dead_code@jackin-diagnostics"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "dead_code@jackin-env"
-bound = 2
+bound = 3
+[[family.entry]]
+key = "dead_code@jackin-image"
+bound = 1
+[[family.entry]]
+key = "dead_code@jackin-lints"
+bound = 1
 [[family.entry]]
 key = "dead_code@jackin-runtime"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "dead_code@jackin-tui-lookbook"
 bound = 1
 [[family.entry]]
+key = "dead_code@jackin-usage"
+bound = 1
+[[family.entry]]
 key = "dead_code@jackin-xtask"
-bound = 3
+bound = 4
 [[family.entry]]
-key = "gh@jackin-xtask"
-bound = 2
-[[family.entry]]
-key = "git@jackin-dev"
+key = "deprecated@jackin-capsule"
 bound = 1
 [[family.entry]]
-key = "kept@jackin-xtask"
-bound = 1
-[[family.entry]]
-key = "measured_n@jackin-xtask"
+key = "irrefutable_let_patterns@jackin"
 bound = 1
 [[family.entry]]
 key = "missing_debug_implementations@jackin-capsule"
@@ -320,70 +507,159 @@ bound = 1
 key = "missing_debug_implementations@jackin-test-support"
 bound = 1
 [[family.entry]]
-key = "not@jackin"
-bound = 2
-[[family.entry]]
-key = "not@jackin-build-meta"
-bound = 1
-[[family.entry]]
-key = "not@jackin-capsule"
-bound = 2
-[[family.entry]]
-key = "not@jackin-console"
-bound = 1
-[[family.entry]]
-key = "not@jackin-diagnostics"
-bound = 1
-[[family.entry]]
-key = "not@jackin-host"
-bound = 4
-[[family.entry]]
-key = "not@jackin-runtime"
-bound = 3
-[[family.entry]]
-key = "not@jackin-usage"
-bound = 1
-[[family.entry]]
-key = "not@jackin-xtask"
-bound = 1
-[[family.entry]]
 key = "private_bounds@jackin-core"
 bound = 1
 [[family.entry]]
 key = "private_bounds@jackin-protocol"
 bound = 1
 [[family.entry]]
-key = "redirectable@jackin-xtask"
+key = "private_interfaces@jackin-runtime"
 bound = 1
 [[family.entry]]
-key = "single_use_lifetimes@jackin-console"
+key = "unreachable_pub@jackin"
+bound = 1
+[[family.entry]]
+key = "unreachable_pub@jackin-console"
+bound = 2
+[[family.entry]]
+key = "unused_imports@jackin-capsule"
+bound = 2
+[[family.entry]]
+key = "unused_imports@jackin-console"
 bound = 11
 [[family.entry]]
-key = "synchronous@jackin-capsule"
+key = "unused_imports@jackin-runtime"
+bound = 2
+[[family.entry]]
+key = "unused_imports@jackin-usage"
+bound = 9
+[[family.entry]]
+key = "unused_qualifications@jackin-runtime"
 bound = 1
-
 [[family]]
 id = "agent-doc-bytes"
 kind = "numeric"
 provider = "agent_doc_bytes"
-mode = "report"
-# Report-only Phase 6 context-economy seed; never fails.
+mode = "enforce"
+# Plan 027: enforce at measured maxima (shrink-only). Cap 0 → every key must be listed.
+cap = 0
+[[family.entry]]
+key = "AGENTS.md"
+bound = 6087
+[[family.entry]]
+key = "CLAUDE.md"
+bound = 6087
+[[family.entry]]
+key = "crates/AGENTS.md"
+bound = 14742
+[[family.entry]]
+key = "crates/jackin-agent-status/README.md"
+bound = 2129
+[[family.entry]]
+key = "crates/jackin-build-meta/README.md"
+bound = 628
+[[family.entry]]
+key = "crates/jackin-capsule/README.md"
+bound = 6235
+[[family.entry]]
+key = "crates/jackin-config/README.md"
+bound = 2745
+[[family.entry]]
+key = "crates/jackin-console-oppicker/README.md"
+bound = 1395
+[[family.entry]]
+key = "crates/jackin-console/README.md"
+bound = 2512
+[[family.entry]]
+key = "crates/jackin-core/README.md"
+bound = 5467
+[[family.entry]]
+key = "crates/jackin-dev/README.md"
+bound = 1199
+[[family.entry]]
+key = "crates/jackin-diagnostics/README.md"
+bound = 3548
+[[family.entry]]
+key = "crates/jackin-docker/README.md"
+bound = 1681
+[[family.entry]]
+key = "crates/jackin-env/README.md"
+bound = 2872
+[[family.entry]]
+key = "crates/jackin-host/README.md"
+bound = 1756
+[[family.entry]]
+key = "crates/jackin-image/README.md"
+bound = 2685
+[[family.entry]]
+key = "crates/jackin-instance/README.md"
+bound = 1807
+[[family.entry]]
+key = "crates/jackin-isolation/README.md"
+bound = 2155
+[[family.entry]]
+key = "crates/jackin-launch-tui/README.md"
+bound = 1695
+[[family.entry]]
+key = "crates/jackin-lints/README.md"
+bound = 2031
+[[family.entry]]
+key = "crates/jackin-manifest/README.md"
+bound = 1797
+[[family.entry]]
+key = "crates/jackin-pr-trailers/README.md"
+bound = 1882
+[[family.entry]]
+key = "crates/jackin-process/README.md"
+bound = 780
+[[family.entry]]
+key = "crates/jackin-protocol/README.md"
+bound = 1046
+[[family.entry]]
+key = "crates/jackin-runtime/README.md"
+bound = 3515
+[[family.entry]]
+key = "crates/jackin-term/README.md"
+bound = 2915
+[[family.entry]]
+key = "crates/jackin-test-support/README.md"
+bound = 2633
+[[family.entry]]
+key = "crates/jackin-tui-lookbook/README.md"
+bound = 1791
+[[family.entry]]
+key = "crates/jackin-tui/README.md"
+bound = 1033
+[[family.entry]]
+key = "crates/jackin-usage/README.md"
+bound = 2272
+[[family.entry]]
+key = "crates/jackin-xtask/README.md"
+bound = 5038
+[[family.entry]]
+key = "crates/jackin/README.md"
+bound = 2790
 
-# Telemetry-conformance export-volume budgets: constants live in the canonical
-# crates/jackin-diagnostics/src/tests.rs suite; shrink-only via this family.
 [[family]]
 id = "export-volume"
 kind = "numeric"
-provider = "export_volume_constants"
+provider = "export_volume_measured"
 mode = "enforce"
-# Cap 0 → every measured key must be listed (no unlisted firehose constants).
+# Cap 0 → every measured key > 0 must be listed (no unlisted firehose).
+# Bounds are measured default-mode counts from target/telemetry-volume.json
+# (written by conformance_export_volume); regenerate after intentional growth:
+#   cargo nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'
+#   cargo xtask lint ratchet --print export-volume
 cap = 0
 [[family.entry]]
-key = "max_debug_logs"
-bound = 64
+key = "default_mode_logs"
+bound = 18
 [[family.entry]]
-key = "max_spans"
-bound = 48
+key = "default_mode_metrics"
+bound = 5
+[[family.entry]]
+key = "default_mode_spans"
+bound = 7
 
 # dhat allocation ceilings (source: jackin-capsule perf_budgets).
 # iai-callgrind: PINNED — project CI images do not ship valgrind; re-evaluate
@@ -406,3 +682,204 @@ bound = 3
 [[family.entry]]
 key = "focused_borrowed_view_max_bytes"
 bound = 1024
+
+# Plan 019: public-surface growth report (shrink-only). Counts root `pub mod`
+# declarations per crate lib.rs. Growth requires regenerate + review.
+# Decision: executable growth report + reviewed baseline instead of cargo-public-api snapshots.
+[[family]]
+id = "public-surface"
+kind = "numeric"
+provider = "public_surface_pub_mods"
+cap = 0
+mode = "enforce"
+[[family.entry]]
+key = "jackin"
+bound = 8
+[[family.entry]]
+key = "jackin-agent-status"
+bound = 6
+[[family.entry]]
+key = "jackin-capsule"
+bound = 34
+[[family.entry]]
+key = "jackin-config"
+bound = 1
+[[family.entry]]
+key = "jackin-console"
+bound = 7
+[[family.entry]]
+key = "jackin-console-oppicker"
+bound = 3
+[[family.entry]]
+key = "jackin-core"
+bound = 2
+[[family.entry]]
+key = "jackin-diagnostics"
+bound = 13
+[[family.entry]]
+key = "jackin-docker"
+bound = 3
+[[family.entry]]
+key = "jackin-env"
+bound = 1
+[[family.entry]]
+key = "jackin-host"
+bound = 5
+[[family.entry]]
+key = "jackin-image"
+bound = 9
+[[family.entry]]
+key = "jackin-instance"
+bound = 2
+[[family.entry]]
+key = "jackin-isolation"
+bound = 6
+[[family.entry]]
+key = "jackin-launch-tui"
+bound = 5
+[[family.entry]]
+key = "jackin-manifest"
+bound = 5
+[[family.entry]]
+key = "jackin-protocol"
+bound = 5
+[[family.entry]]
+key = "jackin-runtime"
+bound = 7
+[[family.entry]]
+key = "jackin-term"
+bound = 6
+[[family.entry]]
+key = "jackin-test-support"
+bound = 4
+[[family.entry]]
+key = "jackin-tui"
+bound = 15
+[[family.entry]]
+key = "jackin-usage"
+bound = 7
+
+
+# Plan 027: suite wall-time from nextest junit. The provider reports zero when
+# no artifact exists; zero and ordinary headroom are advisory, while growth
+# beyond the ceiling fails wherever nextest emits junit.xml.
+[[family]]
+id = "suite-time"
+kind = "numeric"
+provider = "suite_time"
+mode = "enforce"
+# Cap unused for this family (path-style key). Bound is a soft ceiling for total
+# junit wall-ms (sum of time= attributes). Raise only after reviewing slow tests.
+[[family.entry]]
+key = "junit_total_ms"
+bound = 3600000
+
+# Scheduled build-time ceilings from target/build-times.json. The Hygiene lane
+# enforces these after measurement; local/PR lint reports an artifact skip.
+[[family]]
+id = "build-time"
+kind = "numeric"
+provider = "build_times"
+mode = "artifact-ceiling"
+cap = 0
+# Ceilings from Hygiene GHA ubuntu-latest samples (runs 29396473635 +
+# 29397057453). Wall-clock varies ~40% on shared runners; headroom is ~40%
+# above the higher sample. Local samples must not set these ceilings.
+[[family.entry]]
+key = "jackin-runtime.clean_s"
+bound = 143
+[[family.entry]]
+key = "jackin-runtime.incremental_s"
+bound = 12
+[[family.entry]]
+key = "jackin-capsule.clean_s"
+bound = 111
+[[family.entry]]
+key = "jackin-capsule.incremental_s"
+bound = 8
+[[family.entry]]
+key = "jackin-console.clean_s"
+bound = 28
+[[family.entry]]
+key = "jackin-console.incremental_s"
+bound = 6
+[[family.entry]]
+key = "jackin-term.clean_s"
+bound = 2
+[[family.entry]]
+key = "jackin-term.incremental_s"
+bound = 2
+[[family.entry]]
+key = "jackin-config.clean_s"
+bound = 14
+[[family.entry]]
+key = "jackin-config.incremental_s"
+bound = 3
+
+# Per-function syntax decision count. Clippy owns the absolute cognitive-
+# complexity threshold; this measured family prevents today's structurally
+# complex production functions from growing and requires new functions to stay
+# at or below the unlisted cap.
+[[family]]
+id = "rust-function-complexity"
+kind = "numeric"
+provider = "rust_function_complexity"
+mode = "enforce"
+cap = 20
+[[family.entry]]
+key = "jackin"
+bound = 28
+[[family.entry]]
+key = "jackin-agent-status"
+bound = 26
+[[family.entry]]
+key = "jackin-capsule"
+bound = 88
+[[family.entry]]
+key = "jackin-config"
+bound = 22
+[[family.entry]]
+key = "jackin-console"
+bound = 73
+[[family.entry]]
+key = "jackin-diagnostics"
+bound = 28
+[[family.entry]]
+key = "jackin-env"
+bound = 29
+[[family.entry]]
+key = "jackin-host"
+bound = 21
+[[family.entry]]
+key = "jackin-image"
+bound = 28
+[[family.entry]]
+key = "jackin-isolation"
+bound = 23
+[[family.entry]]
+key = "jackin-launch-tui"
+bound = 41
+[[family.entry]]
+key = "jackin-lints"
+bound = 27
+[[family.entry]]
+key = "jackin-protocol"
+bound = 77
+[[family.entry]]
+key = "jackin-runtime"
+bound = 96
+[[family.entry]]
+key = "jackin-term"
+bound = 66
+[[family.entry]]
+key = "jackin-tui"
+bound = 52
+[[family.entry]]
+key = "jackin-tui-lookbook"
+bound = 48
+[[family.entry]]
+key = "jackin-usage"
+bound = 29
+[[family.entry]]
+key = "jackin-xtask"
+bound = 28

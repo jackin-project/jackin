@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Implementation status**: **RESIDUAL** — production payload subtype enrich shipped; live wait-edge validation open
+- **Implementation status**: **RESIDUAL** — production payload capture/enrichment, partial-authority mapping, pending-permission suppression, and screen-blocked override tests shipped; live in-container permission/idle/elicitation wait-edge and ordering validation remains open
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED

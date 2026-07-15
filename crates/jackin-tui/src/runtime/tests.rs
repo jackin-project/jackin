@@ -3,7 +3,7 @@
 
 //! Tests for `runtime`.
 use super::{
-    Subscription, SubscriptionPoll, View, drive_frame, spawn_blocking_subscription,
+    Subscription, SubscriptionPoll, View, drive_frame, drive_render, spawn_blocking_subscription,
     spawn_named_blocking_subscription,
 };
 
@@ -145,4 +145,20 @@ fn drive_frame_renders_view_then_overlay_in_one_draw() {
     );
     let buffer = terminal.backend().buffer();
     assert_eq!(buffer.content[0].symbol(), "m");
+}
+
+#[test]
+fn drive_render_adapts_short_lived_widget_renderer() {
+    let backend = ratatui::backend::TestBackend::new(8, 1);
+    let mut terminal = ratatui::Terminal::new(backend).expect("terminal should build");
+    let mut rendered = false;
+
+    drive_render(&mut terminal, |frame| {
+        rendered = true;
+        frame.render_widget(ratatui::widgets::Paragraph::new("prompt"), frame.area());
+    })
+    .expect("draw should succeed");
+
+    assert!(rendered);
+    assert_eq!(terminal.backend().buffer().content[0].symbol(), "p");
 }

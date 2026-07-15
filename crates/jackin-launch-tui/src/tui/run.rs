@@ -1,4 +1,4 @@
-#![allow(
+#![expect(
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -23,10 +23,11 @@ use crate::tui::components::prompts::{
 };
 use crate::tui::input::{LaunchInput, restore_renderer_terminal_for_process_exit};
 use crate::tui::message::LaunchMessage;
+use crate::tui::model::{LaunchRenderContext, LaunchViewView};
 use crate::tui::subscriptions::{CockpitOutcome, SharedView, handle_cockpit_input};
 use crate::tui::terminal::current_terminal_area;
 use crate::tui::update::update_launch_view;
-use crate::tui::view::{launch_hyperlink_overlays, render_launch_frame};
+use crate::tui::view::launch_hyperlink_overlays;
 use crate::{LaunchHostTerminal, LaunchView, PromptContextLine, PromptResult};
 
 pub fn rich_launch_dialog_required_message(what: &str) -> String {
@@ -66,7 +67,7 @@ pub struct RichDriver {
 }
 
 impl RichDriver {
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "RichDriver spawn wires the render thread, the tick loop, the \
                   input loop, and the main task; the nesting is the per-loop-arm \
@@ -394,19 +395,23 @@ impl RichRenderer {
         }
         let rain = self.rain.as_ref();
         let size = self.terminal.size().ok();
-        self.terminal
-            .draw(|frame| {
-                render_launch_frame(
-                    frame,
-                    view,
-                    run_id,
-                    run_log_path,
-                    no_motion,
-                    rain,
-                    self.host.is_debug_mode(),
-                    self.jackin_version,
-                );
-            })
+        let area = size.map_or_else(
+            || Rect::new(0, 0, 80, 24),
+            |s| Rect::new(0, 0, s.width, s.height),
+        );
+        let adapter = LaunchViewView {
+            context: LaunchRenderContext {
+                run_id,
+                run_log_path,
+                no_motion,
+                rain,
+                debug_mode: self.host.is_debug_mode(),
+                jackin_version: self.jackin_version,
+            },
+        };
+        // Progress frame via shared drive_frame (plan 021); OSC 8 post-pass
+        // remains caller-owned per drive_frame contract.
+        jackin_tui::runtime::drive_frame(&mut self.terminal, &adapter, view, area, |_| {})
             .map(|_| ())
             .context("rendering launch progress TUI")?;
         if let Some(size) = size {
@@ -472,9 +477,10 @@ impl RichRenderer {
     ) -> anyhow::Result<usize> {
         let mut picker = SelectListState::new(items);
         loop {
-            self.terminal
-                .draw(|frame| draw_select(frame, title, context, &picker))
-                .context("rendering launch picker")?;
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
+                draw_select(frame, title, context, &picker);
+            })
+            .context("rendering launch picker")?;
             if let Some(index) = update_forced_select(
                 &mut picker,
                 SelectLoopMessage::Key(read_pressed_key(
@@ -510,9 +516,10 @@ impl RichRenderer {
             TextInputState::new(title, initial)
         };
         loop {
-            self.terminal
-                .draw(|frame| draw_text_prompt(frame, &input, skippable))
-                .context("rendering launch env text prompt")?;
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
+                draw_text_prompt(frame, &input, skippable);
+            })
+            .context("rendering launch env text prompt")?;
             if let Some(result) = update_text_prompt(
                 &mut input,
                 skippable,
@@ -556,9 +563,10 @@ impl RichRenderer {
             picker.select_index(index);
         }
         loop {
-            self.terminal
-                .draw(|frame| draw_select(frame, title, &[], &picker))
-                .context("rendering launch env select prompt")?;
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
+                draw_select(frame, title, &[], &picker);
+            })
+            .context("rendering launch env select prompt")?;
             if let Some(result) = update_select_prompt(
                 &mut picker,
                 options,
@@ -593,9 +601,10 @@ impl RichRenderer {
 
     fn confirm_loop(&mut self, state: &mut ConfirmState) -> anyhow::Result<bool> {
         loop {
-            self.terminal
-                .draw(|frame| draw_confirm(frame, state))
-                .context("rendering launch confirmation")?;
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
+                draw_confirm(frame, state);
+            })
+            .context("rendering launch confirmation")?;
             if let Some(result) = update_confirm_prompt(
                 state,
                 ConfirmPromptMessage::Key(read_pressed_key(
@@ -608,18 +617,13 @@ impl RichRenderer {
         }
     }
 
-    #[allow(
-        clippy::excessive_nesting,
-        reason = "Popup loop: per-modal-state (Picker / Confirm / Error / etc.) \
-                  branches with per-arm draw + key-read + state-update nested \
-                  through the modal dispatch. The modal nesting is the protocol."
-    )]
     fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
         let mut state = ErrorPopupState::new(title, message);
         loop {
-            self.terminal
-                .draw(|frame| draw_error_popup(frame, &state))
-                .context("rendering launch error popup")?;
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
+                draw_error_popup(frame, &state);
+            })
+            .context("rendering launch error popup")?;
             if update_error_prompt(
                 &mut state,
                 ErrorPromptMessage::Key(read_pressed_key(
@@ -648,13 +652,7 @@ impl RichRenderer {
         })
     }
 
-    #[allow(
-        clippy::excessive_nesting,
-        reason = "Launch dialog loop: mode (Picker / Inspect) branches with \
-                  per-arm render + key-read + select-flow nested through the \
-                  launcher dialog dispatch. Modal nesting is the protocol."
-    )]
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Launch dialog loop: mode (Picker / Inspect) branches with \
                   per-arm render + key-read + select-flow nested through the \
@@ -700,31 +698,29 @@ impl RichRenderer {
         loop {
             match &mut mode {
                 Mode::Picker => {
-                    self.terminal
-                        .draw(|frame| {
-                            let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-                            let picker_rect = {
-                                let rows = u16::try_from(picker.len())
-                                    .unwrap_or(u16::MAX)
-                                    .saturating_add(4);
-                                let height =
-                                    rows.clamp(6, box_area.height.saturating_sub(2).max(6));
-                                modal_rect(
-                                    box_area,
-                                    ModalRectSpec::PercentClampWithMargin {
-                                        width_pct: 80,
-                                        min_width: 40.min(box_area.width),
-                                        width_margin: 2,
-                                        height_margin: 2,
-                                        height,
-                                    },
-                                )
-                            };
-                            use jackin_tui::components::render_select_list;
-                            render_select_list(frame, picker_rect, &picker, title, &[]);
-                            render_hint_bar(frame, hint_area, hint_normal);
-                        })
-                        .context("rendering launch dialog")?;
+                    jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
+                        let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+                        let picker_rect = {
+                            let rows = u16::try_from(picker.len())
+                                .unwrap_or(u16::MAX)
+                                .saturating_add(4);
+                            let height = rows.clamp(6, box_area.height.saturating_sub(2).max(6));
+                            modal_rect(
+                                box_area,
+                                ModalRectSpec::PercentClampWithMargin {
+                                    width_pct: 80,
+                                    min_width: 40.min(box_area.width),
+                                    width_margin: 2,
+                                    height_margin: 2,
+                                    height,
+                                },
+                            )
+                        };
+                        use jackin_tui::components::render_select_list;
+                        render_select_list(frame, picker_rect, &picker, title, &[]);
+                        render_hint_bar(frame, hint_area, hint_normal);
+                    })
+                    .context("rendering launch dialog")?;
 
                     let key = read_pressed_key(&self.input, "reading launch dialog input")?;
                     // Check for I (inspect) or Del before passing to picker.
@@ -767,26 +763,25 @@ impl RichRenderer {
                     let mut confirm = ConfirmState::new(format!(
                         "Delete {label}?\n\nAny uncommitted changes will be lost."
                     ));
-                    self.terminal
-                        .draw(|frame| {
-                            let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-                            use jackin_tui::components::{
-                                confirm_hint_spans, confirm_required_height, confirm_width_pct,
-                            };
-                            let rect = modal_rect(
-                                box_area,
-                                ModalRectSpec::PercentClampWithMargin {
-                                    width_pct: confirm_width_pct(&confirm),
-                                    min_width: 0,
-                                    width_margin: 2,
-                                    height_margin: 2,
-                                    height: confirm_required_height(&confirm),
-                                },
-                            );
-                            render_confirm_dialog(frame, rect, &confirm);
-                            render_hint_bar(frame, hint_area, &confirm_hint_spans());
-                        })
-                        .context("rendering delete confirm")?;
+                    jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
+                        let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+                        use jackin_tui::components::{
+                            confirm_hint_spans, confirm_required_height, confirm_width_pct,
+                        };
+                        let rect = modal_rect(
+                            box_area,
+                            ModalRectSpec::PercentClampWithMargin {
+                                width_pct: confirm_width_pct(&confirm),
+                                min_width: 0,
+                                width_margin: 2,
+                                height_margin: 2,
+                                height: confirm_required_height(&confirm),
+                            },
+                        );
+                        render_confirm_dialog(frame, rect, &confirm);
+                        render_hint_bar(frame, hint_area, &confirm_hint_spans());
+                    })
+                    .context("rendering delete confirm")?;
                     let key = read_pressed_key(&self.input, "reading delete confirm input")?;
                     match update_confirm_prompt(&mut confirm, ConfirmPromptMessage::Key(key)) {
                         Some(true) => return Ok(crate::LaunchDialogResult::Delete(ci)),
@@ -802,7 +797,7 @@ impl RichRenderer {
 
     /// D24: read-only inspect surface for dirty/unpushed worktrees.
     /// Returns when the operator presses Esc.
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Inspect-surface loop: per-focus-tab (Repos / Files / Diff) nested \
                   arms for render + key-handle, plus the focus-state-machine nested \
@@ -885,61 +880,60 @@ impl RichRenderer {
             let has_repos = worktrees.len() > 1;
             let mut diff_cloned = diff_state.clone();
 
-            self.terminal
-                .draw(|frame| {
-                    let (body, hint_area) = dialog_backdrop(frame, frame.area());
-                    render_hint_bar(frame, hint_area, hint);
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
+                let (body, hint_area) = dialog_backdrop(frame, frame.area());
+                render_hint_bar(frame, hint_area, hint);
 
-                    // Split body: repos (if >1) | files | diff
-                    let constraints = if has_repos {
-                        vec![
-                            Constraint::Percentage(20),
-                            Constraint::Percentage(30),
-                            Constraint::Percentage(50),
-                        ]
+                // Split body: repos (if >1) | files | diff
+                let constraints = if has_repos {
+                    vec![
+                        Constraint::Percentage(20),
+                        Constraint::Percentage(30),
+                        Constraint::Percentage(50),
+                    ]
+                } else {
+                    vec![Constraint::Percentage(35), Constraint::Percentage(65)]
+                };
+                let panes = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints(constraints)
+                    .split(body);
+
+                let (repos_area, files_area, diff_area) = if has_repos {
+                    (Some(panes[0]), panes[1], panes[2])
+                } else {
+                    (None, panes[0], panes[1])
+                };
+
+                // Mark the Tab-focused pane with the ▸ selection glyph so the
+                // operator sees which pane Up/Down/PageUp drive.
+                if let Some(repos_area) = repos_area {
+                    let mut repos_state = SelectListState::new(wt_labels.clone());
+                    repos_state.select_index(wt_sel_c);
+                    let title = if matches!(focus_c, InspFocus::Repos) {
+                        "▸ Repos"
                     } else {
-                        vec![Constraint::Percentage(35), Constraint::Percentage(65)]
+                        "Repos"
                     };
-                    let panes = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints(constraints)
-                        .split(body);
+                    render_select_list(frame, repos_area, &repos_state, title, &[]);
+                }
 
-                    let (repos_area, files_area, diff_area) = if has_repos {
-                        (Some(panes[0]), panes[1], panes[2])
-                    } else {
-                        (None, panes[0], panes[1])
-                    };
+                let mut files_state = SelectListState::new(file_labels.clone());
+                files_state.select_index(file_sel_c);
+                let files_title = if matches!(focus_c, InspFocus::Files) {
+                    "▸ Changed files"
+                } else {
+                    "Changed files"
+                };
+                render_select_list(frame, files_area, &files_state, files_title, &[]);
 
-                    // Mark the Tab-focused pane with the ▸ selection glyph so the
-                    // operator sees which pane Up/Down/PageUp drive.
-                    if let Some(repos_area) = repos_area {
-                        let mut repos_state = SelectListState::new(wt_labels.clone());
-                        repos_state.select_index(wt_sel_c);
-                        let title = if matches!(focus_c, InspFocus::Repos) {
-                            "▸ Repos"
-                        } else {
-                            "Repos"
-                        };
-                        render_select_list(frame, repos_area, &repos_state, title, &[]);
-                    }
-
-                    let mut files_state = SelectListState::new(file_labels.clone());
-                    files_state.select_index(file_sel_c);
-                    let files_title = if matches!(focus_c, InspFocus::Files) {
-                        "▸ Changed files"
-                    } else {
-                        "Changed files"
-                    };
-                    render_select_list(frame, files_area, &files_state, files_title, &[]);
-
-                    if let Some(diff) = diff_cloned.as_mut() {
-                        diff.set_scroll_y(diff_scroll_y);
-                        render_diff_view(frame, diff_area, diff);
-                        diff_scroll_y = diff.scroll_y();
-                    }
-                })
-                .context("rendering inspect surface")?;
+                if let Some(diff) = diff_cloned.as_mut() {
+                    diff.set_scroll_y(diff_scroll_y);
+                    render_diff_view(frame, diff_area, diff);
+                    diff_scroll_y = diff.scroll_y();
+                }
+            })
+            .context("rendering inspect surface")?;
 
             let key = read_pressed_key(&self.input, "reading inspect surface input")?;
             match key.code {
@@ -1040,11 +1034,10 @@ impl RichRenderer {
         let mut picker = SelectListState::new(options);
 
         loop {
-            self.terminal
-                .draw(|frame| {
-                    draw_select(frame, title, context, &picker);
-                })
-                .context("rendering exit dialog")?;
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
+                draw_select(frame, title, context, &picker);
+            })
+            .context("rendering exit dialog")?;
 
             let key = read_pressed_key(&self.input, "reading exit dialog input")?;
 
