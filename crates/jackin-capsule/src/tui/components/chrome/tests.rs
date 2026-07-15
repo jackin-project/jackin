@@ -57,7 +57,7 @@ fn status_bar_renders_shared_tab_underline() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    let tab_start = u16::try_from(jackin_tui::display_cols(" jackin❯ ")).unwrap() + 1;
+    let tab_start = u16::try_from(termrock::display_cols(" jackin❯ ")).unwrap() + 1;
 
     assert_eq!(buf[(tab_start, 1)].symbol(), "━");
     assert_eq!(buf[(tab_start, 1)].fg, termrock::style::WHITE);
@@ -135,7 +135,7 @@ fn status_bar_renders_working_idle_done_and_unknown_glyphs() {
     let glyph_cell = |cell: &StatusTabCell| {
         let x = cell
             .start_col0
-            .saturating_add(u16::try_from(jackin_tui::display_cols(&cell.name)).unwrap())
+            .saturating_add(u16::try_from(termrock::display_cols(&cell.name)).unwrap())
             .saturating_add(2);
         (buf[(x, 0)].symbol().to_owned(), buf[(x, 0)].fg)
     };

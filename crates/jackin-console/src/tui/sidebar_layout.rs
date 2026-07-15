@@ -466,7 +466,7 @@ where
 {
     role_keys
         .into_iter()
-        .map(|key| jackin_tui::display_cols(key.as_ref()) + 4)
+        .map(|key| termrock::display_cols(key.as_ref()) + 4)
         .max()
         .unwrap_or(0)
 }

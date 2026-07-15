@@ -577,7 +577,7 @@ const fn padded_width_cols(width: usize, leading_spaces: usize) -> usize {
 }
 
 fn text_width(text: &str) -> usize {
-    jackin_tui::display_cols(text)
+    termrock::display_cols(text)
 }
 
 #[cfg(test)]

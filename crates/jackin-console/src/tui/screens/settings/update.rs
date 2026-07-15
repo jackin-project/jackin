@@ -1369,7 +1369,7 @@ pub fn trust_content_width(state: &SettingsTrustState) -> usize {
     state
         .pending
         .iter()
-        .map(|row| 42 + jackin_tui::display_cols(&row.git))
+        .map(|row| 42 + termrock::display_cols(&row.git))
         .chain(["  Role                         Trust      Git".len()])
         .max()
         .unwrap_or(0)

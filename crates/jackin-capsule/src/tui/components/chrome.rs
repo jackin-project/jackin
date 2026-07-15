@@ -51,7 +51,7 @@ impl StatusBarWidget<'_> {
         let x = area.x.saturating_add(cell.start_col0);
         buf.set_string(x, area.y, &content, style);
         if let Some(glyph_style) = tab_glyph_style(cell.glyph, bg) {
-            let name_cols = u16::try_from(jackin_tui::display_cols(&cell.name)).unwrap_or(u16::MAX);
+            let name_cols = u16::try_from(termrock::display_cols(&cell.name)).unwrap_or(u16::MAX);
             let glyph_x = x.saturating_add(name_cols).saturating_add(2);
             buf.set_string(glyph_x, area.y, glyph_char.to_string(), glyph_style);
         }
@@ -380,7 +380,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
         for span in &line.spans {
             let content = span.content.as_ref();
             buf.set_string(x, row_y, content, span.style);
-            x += jackin_tui::display_cols(content) as u16;
+            x += termrock::display_cols(content) as u16;
         }
     }
 }
@@ -388,7 +388,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
 fn line_display_cols(line: &ratatui::text::Line<'_>) -> usize {
     line.spans
         .iter()
-        .map(|span| jackin_tui::display_cols(span.content.as_ref()))
+        .map(|span| termrock::display_cols(span.content.as_ref()))
         .sum()
 }
 

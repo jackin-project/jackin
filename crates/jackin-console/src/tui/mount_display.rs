@@ -155,7 +155,7 @@ pub fn settings_global_config_mounts_content_height(
 pub fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
     rows.iter()
         .flat_map(|row| std::iter::once(&row.destination).chain(row.host_source.as_ref()))
-        .map(|p| jackin_tui::display_cols(p))
+        .map(|p| termrock::display_cols(p))
         .max()
         .unwrap_or(0)
         .max(10)

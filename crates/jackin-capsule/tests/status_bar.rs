@@ -66,7 +66,7 @@ fn active_tab_background_differs_from_brand_pill() {
     let active_tab_cells = (0..80)
         .filter(|x| buf[(*x, 0)].bg == termrock::style::TAB_BG_ACTIVE)
         .count();
-    assert_eq!(brand_cells, jackin_tui::display_cols(" jackin❯ "));
+    assert_eq!(brand_cells, termrock::display_cols(" jackin❯ "));
     assert!(active_tab_cells > 0, "active tab should use graphite bg");
 }
 

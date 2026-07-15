@@ -551,7 +551,7 @@ fn push_tree_workspace_line(
     };
     if row.label.starts_with("+ ") {
         let cursor_col = cursor_gutter(row.selected && show_cursor);
-        *max_w = (*max_w).max(2 + jackin_tui::display_cols(&row.label));
+        *max_w = (*max_w).max(2 + termrock::display_cols(&row.label));
         lines.push(Line::from(vec![
             Span::styled(cursor_col, action_row_style(row.selected)),
             Span::styled(row.label.clone(), action_row_style(row.selected)),
@@ -561,7 +561,7 @@ fn push_tree_workspace_line(
     let disclosure = row.disclosure;
     let color = row_fg(row);
     let line = if let Some(arrow) = disclosure.glyph() {
-        let text_w = 1 + 1 + 1 + jackin_tui::display_cols(&row.label);
+        let text_w = 1 + 1 + 1 + termrock::display_cols(&row.label);
         *max_w = (*max_w).max(text_w);
         if row.selected {
             Line::from(vec![
@@ -592,7 +592,7 @@ fn push_tree_workspace_line(
             ])
         }
     } else {
-        let text_w = 3 + jackin_tui::display_cols(&row.label);
+        let text_w = 3 + termrock::display_cols(&row.label);
         *max_w = (*max_w).max(text_w);
         if row.selected {
             Line::from(Span::styled(
@@ -622,7 +622,7 @@ fn push_tree_instance_line(
     } else {
         " "
     };
-    let text_w = 1 + 4 + jackin_tui::display_cols(&row.label);
+    let text_w = 1 + 4 + termrock::display_cols(&row.label);
     *max_w = (*max_w).max(text_w);
 
     let line = if row.selected {
