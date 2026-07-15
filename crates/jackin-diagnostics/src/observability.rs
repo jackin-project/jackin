@@ -1727,6 +1727,7 @@ fn emit_info_jsonl_event(
     error_type: Option<&str>,
     taxonomy: &EventTaxonomy,
 ) {
+    let screen_name = crate::current_screen_name().unwrap_or("");
     match (stage, detail, error_type) {
         (Some(stage), Some(detail), Some(error_type)) => tracing::event!(
             target: JSONL_TARGET,
@@ -1737,6 +1738,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "jackin.detail" = detail,
             "error.type" = error_type,
@@ -1751,6 +1753,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "jackin.detail" = detail,
             "{message}"
@@ -1764,6 +1767,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "error.type" = error_type,
             "{message}"
@@ -1777,6 +1781,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "{message}"
         ),
@@ -1789,6 +1794,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.detail" = detail,
             "error.type" = error_type,
             "{message}"
@@ -1802,6 +1808,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.detail" = detail,
             "{message}"
         ),
@@ -1814,6 +1821,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "error.type" = error_type,
             "{message}"
         ),
@@ -1826,6 +1834,7 @@ fn emit_info_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "{message}"
         ),
     }
@@ -1840,6 +1849,7 @@ fn emit_debug_jsonl_event(
     error_type: Option<&str>,
     taxonomy: &EventTaxonomy,
 ) {
+    let screen_name = crate::current_screen_name().unwrap_or("");
     match (stage, detail, error_type) {
         (Some(stage), Some(detail), Some(error_type)) => tracing::event!(
             target: JSONL_TARGET,
@@ -1850,6 +1860,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "jackin.detail" = detail,
             "error.type" = error_type,
@@ -1864,6 +1875,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "jackin.detail" = detail,
             "{message}"
@@ -1877,6 +1889,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "error.type" = error_type,
             "{message}"
@@ -1890,6 +1903,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "{message}"
         ),
@@ -1902,6 +1916,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.detail" = detail,
             "error.type" = error_type,
             "{message}"
@@ -1915,6 +1930,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.detail" = detail,
             "{message}"
         ),
@@ -1927,6 +1943,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "error.type" = error_type,
             "{message}"
         ),
@@ -1939,6 +1956,7 @@ fn emit_debug_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "{message}"
         ),
     }
@@ -1953,6 +1971,7 @@ fn emit_error_jsonl_event(
     error_type: Option<&str>,
     taxonomy: &EventTaxonomy,
 ) {
+    let screen_name = crate::current_screen_name().unwrap_or("");
     match (stage, detail, error_type) {
         (Some(stage), Some(detail), Some(error_type)) => tracing::event!(
             target: JSONL_TARGET,
@@ -1963,6 +1982,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "jackin.detail" = detail,
             "error.type" = error_type,
@@ -1977,6 +1997,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "jackin.detail" = detail,
             "{message}"
@@ -1990,6 +2011,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "error.type" = error_type,
             "{message}"
@@ -2003,6 +2025,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.stage" = stage,
             "{message}"
         ),
@@ -2015,6 +2038,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.detail" = detail,
             "error.type" = error_type,
             "{message}"
@@ -2028,6 +2052,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "jackin.detail" = detail,
             "{message}"
         ),
@@ -2040,6 +2065,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "error.type" = error_type,
             "{message}"
         ),
@@ -2052,6 +2078,7 @@ fn emit_error_jsonl_event(
             jackin.component = taxonomy.component,
             jackin.operation = taxonomy.operation.as_str(),
             jackin.category = taxonomy.category.as_str(),
+            "jackin.screen.name" = screen_name,
             "{message}"
         ),
     }

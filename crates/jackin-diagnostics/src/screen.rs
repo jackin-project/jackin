@@ -22,6 +22,10 @@
 use tracing::Span;
 
 #[cfg(feature = "otlp")]
+static CAPSULE_SCREEN_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(feature = "otlp")]
 use opentelemetry::trace::{SpanContext, TraceContextExt as _};
 #[cfg(feature = "otlp")]
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
@@ -196,7 +200,13 @@ pub fn set_provider(provider: &str) {
 pub fn current_screen_name() -> Option<&'static str> {
     #[cfg(feature = "otlp")]
     {
-        CURRENT.with(|cell| cell.borrow().as_ref().map(|link| link.name))
+        CURRENT
+            .with(|cell| cell.borrow().as_ref().map(|link| link.name))
+            .or_else(|| {
+                CAPSULE_SCREEN_ACTIVE
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    .then_some(Screen::Capsule.as_str())
+            })
     }
     #[cfg(not(feature = "otlp"))]
     {
@@ -279,6 +289,7 @@ pub fn record_capsule_activity(label: &str, agent: Option<&str>) {
         use opentelemetry::Context;
 
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+        CAPSULE_SCREEN_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
         let span = tracing::info_span!("capsule.tab", otel.name = "capsule:tab");
         drop(span.set_parent(Context::new()));
         span.set_attribute(otel_keys::TAB_LABEL, label.to_owned());
@@ -302,6 +313,11 @@ pub fn record_capsule_activity(label: &str, agent: Option<&str>) {
     }
     #[cfg(not(feature = "otlp"))]
     let _ = (label, agent);
+}
+
+#[cfg(all(test, feature = "otlp"))]
+pub(crate) fn reset_capsule_screen_for_test() {
+    CAPSULE_SCREEN_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Snapshot the current screen as the link target for the next screen entered

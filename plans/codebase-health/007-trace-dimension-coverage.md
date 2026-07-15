@@ -90,9 +90,9 @@ Stage-enum compile coverage + span-name test; screen.name log/metric assertions;
 ## Done criteria
 
 - [x] No `format!("launch.` span-name construction; stages are a closed enum
-- [ ] Log + interaction-metric captures carry `jackin.screen.name` (host and capsule-tab)
+- [x] Log + interaction-metric captures carry `jackin.screen.name` (host and capsule-tab)
 - [x] `jackin.docker.inspect.count` and `jackin.db.statement.count` registered and emitted
-- [ ] Generic spans/records carry no provider/agent identity; feature-decision events carry it (tests prove both)
+- [x] Generic spans/records carry no provider/agent identity; feature-decision events carry it (tests prove both)
 - [ ] `cargo xtask ci --fast` exits 0; status row updated
 
 ## STOP conditions
@@ -112,5 +112,6 @@ Stage-enum compile coverage + span-name test; screen.name log/metric assertions;
 - Launch stages: `DiagnosticStage` is the closed diagnostics boundary; `RunDiagnostics`, timing helpers, cockpit adapters, runtime helpers, tests, and examples accept enum values only. `launch_stage_span_name` is total over the enum and has no generic fallback.
 - Provider/agent identity moved to `feature.decision` events; not stamped on generic spans.
 - Metrics: docker.inspect + db.statement counters; screen.name on interaction metric dims.
+- Exporter tests prove screen-scoped logs carry `jackin.screen.name` and that only `feature.decision` records carry provider/agent values. Capsule activity installs the process-wide capsule screen context used by subsequent interaction metrics; a metric-dimension test covers host and capsule values.
 
 **Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.

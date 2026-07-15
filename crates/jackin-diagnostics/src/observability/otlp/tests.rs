@@ -776,6 +776,69 @@ fn direct_diagnostics_events_reach_otlp() {
 }
 
 #[test]
+fn screen_context_is_exported_on_log_records() {
+    let logs = exported_logs!(false, "screen-log-run", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "screen-log").unwrap();
+        let _active = run.activate();
+        let screen = crate::enter_screen(crate::Screen::List);
+        screen.in_scope(|| run.container_started("jk-screen-test", "/capsule.log"));
+    });
+
+    let record = logs
+        .iter()
+        .find(|log| log_attr(&log.record, "event.name").as_deref() == Some("container_started"))
+        .expect("screen-scoped log exported");
+    assert_eq!(
+        log_attr(&record.record, keys::SCREEN_NAME).as_deref(),
+        Some("list")
+    );
+}
+
+#[test]
+fn identity_is_exported_only_by_feature_decisions() {
+    let export = export_after(false, "identity-run", || {
+        let screen = crate::enter_screen(crate::Screen::Launch);
+        screen.in_scope(|| {
+            crate::set_provider("anthropic");
+            crate::set_agent_selected("claude");
+            crate::set_agents_active(&["claude", "codex"]);
+            tracing::info!(target: "jackin_diagnostics", "generic launch record");
+        });
+    });
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    let decisions: Vec<_> = logs
+        .iter()
+        .filter(|log| log_attr(&log.record, "event.name").as_deref() == Some("feature.decision"))
+        .collect();
+    assert_eq!(decisions.len(), 3);
+    assert!(decisions.iter().all(|log| {
+        log_attr(&log.record, "feature.key").is_some()
+            && log_attr(&log.record, "feature.provider").is_some()
+            && log_attr(&log.record, "feature.variant").is_some()
+    }));
+
+    const GENERIC_IDENTITY_KEYS: [&str; 3] =
+        [keys::PROVIDER, keys::AGENT_SELECTED, keys::AGENTS_ACTIVE];
+    for log in &logs {
+        assert!(
+            GENERIC_IDENTITY_KEYS
+                .iter()
+                .all(|key| log_attr(&log.record, key).is_none())
+        );
+    }
+    for span in export.spans.get_finished_spans().unwrap() {
+        assert!(
+            GENERIC_IDENTITY_KEYS
+                .iter()
+                .all(|key| span_attr(&span, key).is_none())
+        );
+    }
+}
+
+#[test]
 fn crash_evidence_is_redacted_and_capped() {
     let logs = exported_logs!(false, "run1", || {
         let tmp = tempfile::tempdir().unwrap();
