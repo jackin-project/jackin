@@ -20,6 +20,9 @@ pub mod attach;
 pub mod control;
 pub mod provider_adapter;
 pub mod snapshot;
+pub mod telemetry_context;
+
+pub use telemetry_context::TelemetryContext;
 
 pub use provider_adapter::ProviderAdapter;
 pub use snapshot::InstanceSnapshot;
@@ -60,6 +63,8 @@ pub struct ExecBinding {
 /// [`control::frame`], same as the control socket.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CredRequest {
+    /// Cross-process trace and product correlation.
+    pub ctx: TelemetryContext,
     /// `refs` field.
     pub refs: Vec<ExecBinding>,
 }

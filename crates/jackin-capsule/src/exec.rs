@@ -148,7 +148,9 @@ pub async fn resolve_credentials(
         .await
         .with_context(|| format!("connecting to host credential resolver at {host_sock_path}"))?;
 
-    stream.write_all(&frame(&CredRequest { refs })).await?;
+    let mut ctx = jackin_protocol::TelemetryContext::v1();
+    jackin_telemetry::propagation::inject(&mut ctx);
+    stream.write_all(&frame(&CredRequest { ctx, refs })).await?;
 
     const MAX_REPLY: usize = 1024 * 1024;
     let reply_body = read_framed(&mut stream, MAX_REPLY)

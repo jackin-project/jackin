@@ -167,6 +167,17 @@ async fn handle_connection(
     stream.read_exact(&mut body).await?;
 
     let req: CredRequest = serde_json::from_slice(&body).context("parsing CredRequest")?;
+    if matches!(
+        jackin_telemetry::propagation::extract(&req.ctx),
+        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+    ) {
+        stream
+            .write_all(&frame(&CredReply::Error {
+                error: "invalid correlation".to_owned(),
+            }))
+            .await?;
+        return Ok(());
+    }
 
     // Validate every requested ref against the operator-approved bindings.
     // Reject any ref that wasn't explicitly configured — this prevents a

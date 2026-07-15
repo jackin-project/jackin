@@ -29,6 +29,7 @@ jackin-launch-tui = { workspace = true }
 jackin-host = { workspace = true }
 jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
+jackin-telemetry = { path = "../jackin-telemetry" }
 jackin-isolation = { workspace = true }
 jackin-instance = { workspace = true }
 

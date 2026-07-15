@@ -2818,6 +2818,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-process",
  "jackin-protocol",
+ "jackin-telemetry",
  "jackin-term",
  "jackin-tui",
  "jackin-usage",
@@ -3127,6 +3128,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "jackin-core",
+ "jackin-telemetry",
  "serde",
  "serde_json",
  "tokio",
@@ -3158,6 +3160,7 @@ dependencies = [
  "jackin-manifest",
  "jackin-process",
  "jackin-protocol",
+ "jackin-telemetry",
  "jackin-test-support",
  "jackin-tui",
  "nix 0.31.3",

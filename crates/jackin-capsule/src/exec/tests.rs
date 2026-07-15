@@ -54,11 +54,13 @@ fn selected_refs_wire_shape_is_stable() {
         cursor: 0,
     };
     let req = jackin_protocol::CredRequest {
+        ctx: jackin_protocol::TelemetryContext::v1(),
         refs: state.selected_refs(),
     };
     assert_eq!(
         serde_json::to_value(&req).unwrap(),
         serde_json::json!({
+            "ctx": { "v": 1 },
             "refs": [{ "name": "GH_TOKEN", "kind": "op", "source": "op://vault/item/field" }]
         })
     );
