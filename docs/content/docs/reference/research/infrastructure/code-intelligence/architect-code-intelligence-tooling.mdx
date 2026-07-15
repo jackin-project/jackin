@@ -26,7 +26,7 @@ Four candidate tools were compared for the agent code-search/intelligence layer.
 
 | Tool | Category | Mechanism | Decision for the-architect |
 |---|---|---|---|
-| [`ast-grep`](https://ast-grep.github.io/) | Structural search / rewrite | tree-sitter AST patterns, deterministic, CLI | **Pilot — default** for syntax-shape queries and codemods |
+| [`ast-grep`](https://astgrep.com/) | Structural search / rewrite | tree-sitter AST patterns, deterministic, CLI | **Pilot — default** for syntax-shape queries and codemods |
 | [`rust-analyzer`](https://rust-analyzer.github.io/) | Semantic navigation | LSP, compiler-grade resolution | **Pilot — default** for definitions / references / types / impls |
 | [`fff`](https://github.com/dmtrKovalenko/fff) | Resident file / content search | warm in-memory index, frecency + git-aware ranking, MCP | **Pilot — default** for file / path / literal-content search |
 | [`codedb`](https://github.com/justrach/codedb) | Code-intelligence server | Zig, index-once in-memory (symbols, outline, callers, deps, task-context), MCP | **A/B evaluation arm** for relationship / task-context queries |
@@ -346,7 +346,7 @@ The pilot succeeds when, across a handful of representative the-architect sessio
 
 - [AGENTS.md](https://agents.md/) — the cross-tool agent-instructions standard, read globally by Codex at `~/.codex/AGENTS.md`, OpenCode at `~/.config/opencode/AGENTS.md`, and Amp at `~/.config/AGENTS.md`. Claude Code reads `~/.claude/CLAUDE.md`.
 - [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/) — the research dossier behind this decision: market sweep, token economics, local measurements, validation harness, and acceptance rule.
-- [ast-grep](https://ast-grep.github.io/) — structural search/rewrite CLI (no Debian apt package; installed via mise). Official Claude skill: [ast-grep/agent-skill](https://github.com/ast-grep/agent-skill) (Claude-only).
+- [ast-grep](https://astgrep.com/) — structural search/rewrite CLI (no Debian apt package; installed via mise). Official Claude skill: [ast-grep/agent-skill](https://github.com/ast-grep/agent-skill) (Claude-only).
 - [rust-analyzer](https://rust-analyzer.github.io/) — the Rust language server (rustup component).
 - [fff](https://github.com/dmtrKovalenko/fff) — resident file-search toolkit for AI agents with an MCP server.
 - [codedb](https://github.com/justrach/codedb) — code-intelligence server and MCP toolset (telemetry on by default — `CODEDB_NO_TELEMETRY=1` to disable; install the binary only and skip the installer's block-legacy hook).

@@ -59,7 +59,7 @@ Each value is one of:
 
 | Syntax | Resolution |
 |---|---|
-| `op://VAULT/ITEM/FIELD` | Resolved via the [1Password CLI](https://developer.1password.com/docs/cli/) (`op read "<ref>"`). Requires `op` on `PATH` and an authenticated session. |
+| `op://VAULT/ITEM/FIELD` | Resolved via the [1Password CLI](https://www.1password.dev/cli) (`op read "<ref>"`). Requires `op` on `PATH` and an authenticated session. |
 | `$NAME` or `${NAME}` | Read from the host's environment at launch time. Errors if the host var is unset. |
 | Anything else | Literal string. |
 
@@ -153,7 +153,7 @@ COLORTERM=truecolor
 
 ## 1Password CLI setup
 
-1. Install the [1Password CLI](https://developer.1password.com/docs/cli/get-started/).
+1. Install the [1Password CLI](https://www.1password.dev/cli/get-started).
 2. Sign in: `eval $(op signin)` (or unlock the desktop-app integration).
 3. Set values with `op://...` references — for example:
 
