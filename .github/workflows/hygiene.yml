@@ -686,7 +686,7 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-  # Plan 035: hakari timing investigation only — do NOT create workspace-hack.
+  # Plan 012: create an ephemeral workspace-hack in the CI checkout for timing only.
   hakari-timing:
     name: hakari timing investigation (advisory)
     runs-on: ubuntu-latest
@@ -745,7 +745,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          cargo hakari init 2>&1 | tee hakari-run.txt
+          cargo hakari init target/hakari-workspace-hack --yes 2>&1 | tee hakari-run.txt
           cargo hakari generate 2>&1 | tee -a hakari-run.txt
           echo "hakari_exit=0" >> "$GITHUB_OUTPUT"
       - name: workspace build after hakari (after)
@@ -780,7 +780,7 @@ jobs:
             echo "before wall-clock (s): ${{ steps.hakari-before.outputs.before_secs }}"
             echo "after wall-clock (s): ${{ steps.hakari-after.outputs.after_secs }}"
             echo "Comparison uses shell wall-clock of the two \`cargo build --workspace --timings\` steps (stable cargo; no -Z JSON timings)."
-            echo "Adopt/no-adopt decision: recorded in rust-ci-tooling.mdx as **no-adopt pending first measured delta** until a scheduled run supplies numbers."
+            echo "Adopt/no-adopt decision: update rust-ci-tooling.mdx from this observed delta."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Plan 048: hyperfine cold-start measurement (advisory).
