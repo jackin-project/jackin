@@ -19,6 +19,15 @@ pub fn render_dialog_backdrop(frame: &mut Frame<'_>, area: Rect) {
     frame.render_widget(&backdrop, area);
 }
 
+pub fn donor_dialog_scroll(
+    scroll: &termrock::scroll::DialogScroll,
+) -> jackin_tui::components::DialogBodyScroll {
+    jackin_tui::components::DialogBodyScroll {
+        scroll_x: scroll.scroll_x,
+        scroll_y: scroll.scroll_y,
+    }
+}
+
 /// Paint the shared solid dialog backdrop over the content body and split the
 /// standard bottom chrome into hint/spacer/footer rows.
 ///

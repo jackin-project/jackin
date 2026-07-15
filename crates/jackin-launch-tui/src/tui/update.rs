@@ -44,11 +44,11 @@ pub fn initial_view() -> LaunchView {
         failure_copied: None,
         failure_revealed: None,
         failure_opened: None,
-        failure_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        failure_scroll: termrock::scroll::DialogScroll::new(),
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
-        container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        container_info_scroll: termrock::scroll::DialogScroll::new(),
         last_dialog_mouse_cell: None,
         quit_confirm: None,
     }
@@ -85,7 +85,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.failure_copied = None;
             view.failure_revealed = None;
             view.failure_opened = None;
-            view.failure_scroll = jackin_tui::components::DialogBodyScroll::new();
+            view.failure_scroll = termrock::scroll::DialogScroll::new();
             // The failure popup must own the screen. Close every lower-priority
             // overlay that could otherwise hide it or intercept its input — the
             // build-log overlay owns the whole frame behind an opaque backdrop,
@@ -174,7 +174,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.container_info_open = true;
             view.container_info_copied = None;
             view.container_info_hover = None;
-            view.container_info_scroll = jackin_tui::components::DialogBodyScroll::new();
+            view.container_info_scroll = termrock::scroll::DialogScroll::new();
             view.footer_hover.right = false;
         }
         LaunchMessage::ContainerInfoClosed => {

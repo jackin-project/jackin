@@ -13,7 +13,7 @@ use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
 use termrock::HintSpan;
 
-use crate::tui::components::dialog::render_dialog_backdrop;
+use crate::tui::components::dialog::{donor_dialog_scroll, render_dialog_backdrop};
 use crate::tui::components::footer::launch_overlay_chrome_areas;
 use crate::{FailureCopyTarget, LaunchFailure, LaunchView};
 
@@ -103,7 +103,7 @@ fn failure_error_state(
 fn failure_error_state_with_feedback(
     failure: &LaunchFailure,
     run_id: &str,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
     revealed: Option<FailureCopyTarget>,
@@ -136,7 +136,7 @@ fn failure_error_state_with_feedback(
     let mut state =
         ErrorPopupState::new(failure.title.clone(), failure.summary.clone()).with_rows(rows);
     if let Some(scroll) = scroll {
-        state.scroll = scroll;
+        state.scroll = donor_dialog_scroll(&scroll);
     }
     state
 }
@@ -209,7 +209,7 @@ pub fn failure_popup_value_rect_scrolled(
     rect: Rect,
     rows: &[FailurePopupRow],
     target: FailureCopyTarget,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
 ) -> Option<Rect> {
     // Structural exception: copy hit-testing derives rects from wrapped failure rows rendered by this dialog.
     failure_popup_value_rects(rect, rows, target, scroll)
@@ -221,7 +221,7 @@ fn failure_popup_value_rects(
     rect: Rect,
     rows: &[FailurePopupRow],
     target: FailureCopyTarget,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
 ) -> Vec<Rect> {
     let display_rows = rows
         .iter()
@@ -241,7 +241,7 @@ fn failure_popup_value_rects(
         .map_or("", |row| row.value.as_str());
     let mut state = ErrorPopupState::new("Build failed", message).with_rows(display_rows);
     if let Some(scroll) = scroll {
-        state.scroll = scroll;
+        state.scroll = donor_dialog_scroll(&scroll);
     }
     let inner = rect.inner(ratatui::layout::Margin {
         horizontal: 1,
@@ -272,7 +272,7 @@ pub fn failure_copy_target_at(
     debug_mode: bool,
     col: u16,
     row: u16,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
 ) -> Option<FailureCopyTarget> {
     let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
     let state =
@@ -404,7 +404,7 @@ pub fn failure_popup_hyperlink_overlay(
     failure: &LaunchFailure,
     run_id: &str,
     debug_mode: bool,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
     revealed: Option<FailureCopyTarget>,

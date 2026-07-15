@@ -99,6 +99,13 @@ struct CockpitContext<'a> {
     jackin_version: &'static str,
 }
 
+const fn neutral_axes(axes: ScrollAxes) -> termrock::scroll::ScrollAxes {
+    termrock::scroll::ScrollAxes {
+        vertical: axes.vertical,
+        horizontal: axes.horizontal,
+    }
+}
+
 /// Clamp the Debug-info dialog scroll to its content so over-scrolling cannot
 /// accumulate (which would make the opposite key/wheel feel dead while it
 /// unwinds). Called after every scroll key/wheel on the dialog.
@@ -111,11 +118,11 @@ fn clamp_container_info_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
         ctx.jackin_version,
     );
     let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
-    jackin_tui::components::clamp_container_info_scroll(
-        &mut view.container_info_scroll,
-        state.content_width(),
+    view.container_info_scroll.clamp(
         state.content_height(),
-        rect,
+        usize::from(rect.height.saturating_sub(2)),
+        state.content_width(),
+        usize::from(rect.width.saturating_sub(2)),
     );
 }
 
@@ -164,7 +171,7 @@ fn apply_failure_body_wheel_scroll(
     let axes = failure_body_scroll_axes(view, ctx);
     if view
         .failure_scroll
-        .on_mouse_scroll_for_axes(kind, modifiers, axes)
+        .handle_mouse(kind.into(), modifiers.into(), neutral_axes(axes))
     {
         clamp_failure_scroll(view, ctx);
     }
@@ -188,12 +195,12 @@ fn apply_failure_body_key_scroll(
         horizontal: false,
     };
     let _consumed = view.failure_scroll.handle_key_for_axes(
-        key,
+        key.into(),
         content_height,
         viewport_h,
         usize::MAX,
         usize::MAX,
-        axes,
+        neutral_axes(axes),
     );
     clamp_failure_scroll(view, ctx);
 }
@@ -655,9 +662,11 @@ pub fn handle_cockpit_input(
                             state.content_height(),
                             rect,
                         );
-                        if v.container_info_scroll
-                            .on_mouse_scroll_for_axes(kind, m.modifiers, axes)
-                        {
+                        if v.container_info_scroll.handle_mouse(
+                            kind.into(),
+                            m.modifiers.into(),
+                            neutral_axes(axes),
+                        ) {
                             clamp_container_info_scroll(&mut v, ctx);
                         }
                     }
@@ -692,12 +701,12 @@ pub fn handle_cockpit_input(
                     rect,
                 );
                 let _consumed = v.container_info_scroll.handle_key_for_axes(
-                    k,
+                    k.into(),
                     state.content_height(),
                     usize::from(rect.height.saturating_sub(2)),
                     state.content_width(),
                     usize::from(rect.width.saturating_sub(2)),
-                    axes,
+                    neutral_axes(axes),
                 );
                 clamp_container_info_scroll(&mut v, ctx);
             }

@@ -298,7 +298,7 @@ fn scrolled_failure_copy_hit_and_overlay_follow_failure_scroll() {
 
     // Large scroll: the same screen y must no longer hit that absolute row
     // unless we pass the matching scroll into hit-test.
-    let mut scrolled = jackin_tui::components::DialogBodyScroll::new();
+    let mut scrolled = termrock::scroll::DialogScroll::new();
     scrolled.scroll_y = 8;
     let vr_scrolled = failure_popup_value_rect_scrolled(
         rect0,

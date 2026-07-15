@@ -14,7 +14,7 @@ use ratatui::widgets::Clear;
 use termrock::HintSpan;
 
 use crate::LaunchView;
-use crate::tui::components::dialog::render_dialog_backdrop;
+use crate::tui::components::dialog::{donor_dialog_scroll, render_dialog_backdrop};
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
 fn debug_info_hint_spans(axes: jackin_tui::components::ScrollAxes) -> Vec<HintSpan<'static>> {
@@ -93,7 +93,7 @@ pub fn launch_container_info_state(
         state.mark_copied(row);
     }
     state.set_hovered_row(view.container_info_hover);
-    state.scroll = view.container_info_scroll.clone();
+    state.scroll = donor_dialog_scroll(&view.container_info_scroll);
     state
 }
 

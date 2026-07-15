@@ -14,4 +14,11 @@
 - `Dirty`, `UpdateResult`, `NoEffect`, `Subscription`, `SubscriptionPoll`, `Component`, `View`, `drive_frame`, and `drive_render` now resolve from `termrock::runtime`.
 - Tokio receiver/spawn plumbing remains consumer-owned while its final console relocation proceeds.
 
+## Launch foundations
+
+- Theme, display-width geometry, ANSI text parsing, typed key dispatch, rich hints, modal backdrop, and neutral dialog scroll state now resolve from TermRock.
+- Launch-specific presentation output, warp animation, terminal-mode policy, bottom-chrome composition, and hint wording have explicit local owners in `jackin-launch-tui`.
+- TermRock repaired the missing backend-neutral dialog-scroll contract forward; jackin❯ pins full revision `530dba4d6b5d8315e8fcecd99340f106386a20b8` with the lockfile committed.
+- `cargo test -p jackin-launch-tui --lib` passed with 79 tests after the scroll-state repin. Remaining donor references are confined to component families still being migrated.
+
 CI/CD observation is deferred until the final aggregate verification phase.

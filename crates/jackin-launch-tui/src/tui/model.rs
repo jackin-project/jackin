@@ -61,7 +61,7 @@ pub struct LaunchView {
     /// Scroll offsets for the failure popup body. Long diagnostics or next-step
     /// rows can exceed the viewport-safe popup height; the offset persists here
     /// so the body scrolls instead of silently clipping the overflow.
-    pub failure_scroll: jackin_tui::components::DialogBodyScroll,
+    pub failure_scroll: termrock::scroll::DialogScroll,
     /// Operator opened the shared container info dialog from the footer chip.
     pub container_info_open: bool,
     /// Last copied row in the container info dialog.
@@ -72,7 +72,7 @@ pub struct LaunchView {
     /// Scroll offsets for the container info dialog body. The state is rebuilt
     /// each frame, so the offset persists here and is threaded into the rebuilt
     /// `ContainerInfoState` — long paths scroll instead of clipping.
-    pub container_info_scroll: jackin_tui::components::DialogBodyScroll,
+    pub container_info_scroll: termrock::scroll::DialogScroll,
     /// Last dialog mouse cell logged for `Moved` debug telemetry. This keeps
     /// debug runs from recording repeated terminal mouse-move events that
     /// report the same cell while preserving click/drag/scroll evidence.

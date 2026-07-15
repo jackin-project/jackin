@@ -84,7 +84,7 @@ fn stage_failed_clears_overlays_so_failure_cannot_be_hidden() {
     assert!(!view.failure_ack, "failure must start unacknowledged");
     assert_eq!(
         view.failure_scroll,
-        jackin_tui::components::DialogBodyScroll::new(),
+        termrock::scroll::DialogScroll::new(),
         "failure body scroll resets for a fresh failure"
     );
 }
