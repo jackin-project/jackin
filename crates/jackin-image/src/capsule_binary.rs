@@ -303,7 +303,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // blocking pool so concurrent launch / TUI tasks keep progressing.
     let archive_for_hash = tmp_archive.clone();
     let hash_result =
-        tokio::task::spawn_blocking(move || hash_file_sha256(&archive_for_hash)).await;
+        jackin_telemetry::spawn::joined_blocking(move || hash_file_sha256(&archive_for_hash)).await;
     let actual_sha = match hash_result {
         Err(e) => {
             // JoinError: worker panicked or runtime shut down. Clean up before propagating —

@@ -89,7 +89,7 @@ impl RichDriver {
         let handle = {
             let renderer = std::sync::Arc::clone(&renderer);
             let stop = std::sync::Arc::clone(&stop);
-            tokio::spawn(async move {
+            jackin_telemetry::spawn::spawn_cycle("launch.render", async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_millis(33));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {

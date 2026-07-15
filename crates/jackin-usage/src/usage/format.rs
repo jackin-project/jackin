@@ -267,8 +267,10 @@ pub(super) fn run_cli_with_timeout_full(
         .stderr
         .take()
         .ok_or_else(|| format!("{command} stderr unavailable"))?;
-    let stdout_reader = thread::spawn(move || read_process_pipe(stdout));
-    let stderr_reader = thread::spawn(move || read_process_pipe(stderr));
+    let stdout_reader =
+        jackin_telemetry::spawn::thread_stream("usage.stdout", move || read_process_pipe(stdout));
+    let stderr_reader =
+        jackin_telemetry::spawn::thread_stream("usage.stderr", move || read_process_pipe(stderr));
     let started = Instant::now();
     loop {
         match child.try_wait() {

@@ -22,6 +22,7 @@ jackin-core = { workspace = true }
 jackin-manifest = { workspace = true }
 jackin-docker = { workspace = true }
 jackin-diagnostics = { workspace = true }
+jackin-telemetry = { path = "../jackin-telemetry" }
 nix = { workspace = true, features = ["user"] }
 hex = { workspace = true }
 sha2 = { workspace = true }

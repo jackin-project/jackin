@@ -177,35 +177,38 @@ fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
         drop((paths, agent));
     }
     #[cfg(not(test))]
-    tokio::spawn(async move {
-        record(
-            "agent_binary_resolve_started",
-            &format!("{} latest release background", agent.slug()),
-        );
-        match resolve_latest_release(agent).await {
-            Ok(release) => {
-                record(
-                    "agent_binary_resolved",
-                    &format!(
-                        "{} {} from {} background",
-                        agent.slug(),
-                        release.version,
-                        release.url
-                    ),
-                );
-                persist_release_cache_async(&paths, &release).await;
+    jackin_telemetry::spawn::spawn_detached(
+        &jackin_telemetry::operation::BACKGROUND_CYCLE,
+        async move {
+            record(
+                "agent_binary_resolve_started",
+                &format!("{} latest release background", agent.slug()),
+            );
+            match resolve_latest_release(agent).await {
+                Ok(release) => {
+                    record(
+                        "agent_binary_resolved",
+                        &format!(
+                            "{} {} from {} background",
+                            agent.slug(),
+                            release.version,
+                            release.url
+                        ),
+                    );
+                    persist_release_cache_async(&paths, &release).await;
+                }
+                Err(error) => {
+                    record(
+                        "warning",
+                        &format!(
+                            "{} background latest version lookup failed: {error:#}",
+                            agent.slug()
+                        ),
+                    );
+                }
             }
-            Err(error) => {
-                record(
-                    "warning",
-                    &format!(
-                        "{} background latest version lookup failed: {error:#}",
-                        agent.slug()
-                    ),
-                );
-            }
-        }
-    });
+        },
+    );
 }
 
 /// Build `release` into `cached`; on failure, fall back to the newest cached
@@ -755,10 +758,11 @@ async fn download_and_cache_inner(
     // does on non-Windows) to verify we got a runnable binary for that version.
     if let Some(expected) = release.checksum.as_deref() {
         let tmp_for_hash = tmp_download.to_owned();
-        let actual = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
-            .await
-            .context("hash worker join")?
-            .with_context(|| format!("hashing {}", tmp_download.display()))?;
+        let actual =
+            jackin_telemetry::spawn::joined_blocking(move || hash_file_sha256(&tmp_for_hash))
+                .await
+                .context("hash worker join")?
+                .with_context(|| format!("hashing {}", tmp_download.display()))?;
         if !actual.eq_ignore_ascii_case(expected) {
             return Err(ImageError::msg(format!(
                 "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
@@ -783,15 +787,17 @@ async fn download_and_cache_inner(
         let archive = tmp_download.to_owned();
         let member = member.clone();
         let output = tmp_binary.to_owned();
-        tokio::task::spawn_blocking(move || extract_tar_gz_member(&archive, &member, &output))
-            .await
-            .context("archive extraction worker join")??;
+        jackin_telemetry::spawn::joined_blocking(move || {
+            extract_tar_gz_member(&archive, &member, &output)
+        })
+        .await
+        .context("archive extraction worker join")??;
         drop(tokio::fs::remove_file(tmp_download).await);
     } else {
         tokio::fs::rename(tmp_download, tmp_binary).await?;
     }
     let binary_for_chmod = tmp_binary.to_owned();
-    tokio::task::spawn_blocking(move || chmod_executable(&binary_for_chmod))
+    jackin_telemetry::spawn::joined_blocking(move || chmod_executable(&binary_for_chmod))
         .await
         .context("chmod worker join")??;
 
@@ -903,7 +909,8 @@ fn read_cached_release_at(
 
 async fn read_cached_release_async(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
     let paths = paths.clone();
-    match tokio::task::spawn_blocking(move || read_cached_release(&paths, agent)).await {
+    match jackin_telemetry::spawn::joined_blocking(move || read_cached_release(&paths, agent)).await
+    {
         Ok(release) => release,
         Err(error) => {
             // A join error here means the worker was cancelled or panicked; the
@@ -951,7 +958,10 @@ async fn newest_cached_executable_release_async(
     agent: Agent,
 ) -> Option<(SystemTime, AgentRelease, PathBuf)> {
     let paths = paths.clone();
-    match tokio::task::spawn_blocking(move || newest_cached_executable_release(&paths, agent)).await
+    match jackin_telemetry::spawn::joined_blocking(move || {
+        newest_cached_executable_release(&paths, agent)
+    })
+    .await
     {
         Ok(found) => found,
         Err(error) => {
@@ -991,7 +1001,7 @@ async fn persist_release_cache_async(paths: &JackinPaths, release: &AgentRelease
     let paths = paths.clone();
     let release = release.clone();
     let slug = release.agent.slug();
-    let result = tokio::task::spawn_blocking(move || {
+    let result = jackin_telemetry::spawn::joined_blocking(move || {
         (
             write_cached_release(&paths, &release),
             write_version_release(&paths, &release),
@@ -1022,14 +1032,14 @@ async fn persist_release_cache_async(paths: &JackinPaths, release: &AgentRelease
 
 async fn is_executable_file_async(path: &Path) -> bool {
     let path = path.to_owned();
-    tokio::task::spawn_blocking(move || is_executable_file(&path))
+    jackin_telemetry::spawn::joined_blocking(move || is_executable_file(&path))
         .await
         .unwrap_or(false)
 }
 
 async fn repair_cached_binary_mode_async(path: &Path) -> Result<bool> {
     let path = path.to_owned();
-    tokio::task::spawn_blocking(move || repair_executable_file(&path))
+    jackin_telemetry::spawn::joined_blocking(move || repair_executable_file(&path))
         .await
         .context("cache chmod worker join")?
 }

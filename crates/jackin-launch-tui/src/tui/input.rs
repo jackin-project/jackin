@@ -33,7 +33,7 @@ impl LaunchInput {
         let (tx, rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop);
-        std::thread::spawn(move || {
+        jackin_telemetry::spawn::thread_stream("launch.input", move || {
             let mut ctrl_c = DoubleCtrlC::new(DOUBLE_CTRL_C_WINDOW);
             while !thread_stop.load(Ordering::Relaxed) {
                 match event::poll(Duration::from_millis(25)) {

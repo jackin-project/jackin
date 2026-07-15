@@ -161,7 +161,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         // Wrap in spawn_blocking so the tokio render thread stays responsive.
         Command::Logs(args) => {
             let paths_owned = paths.clone();
-            tokio::task::spawn_blocking(move || {
+            jackin_telemetry::spawn::joined_blocking(move || {
                 runtime::logs::run(
                     &paths_owned,
                     args.selector,

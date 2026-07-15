@@ -741,7 +741,7 @@ pub(crate) fn fetch_codex_rpc_usage(
         .take()
         .ok_or_else(|| "codex app-server stdout unavailable".to_owned())?;
     let (tx, rx) = mpsc::channel();
-    let reader = thread::spawn(move || {
+    let reader = jackin_telemetry::spawn::thread_stream("codex.stdout", move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             if tx.send(line).is_err() {
                 break;

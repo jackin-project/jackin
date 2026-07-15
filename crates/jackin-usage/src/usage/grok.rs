@@ -384,7 +384,7 @@ pub(crate) fn fetch_grok_rpc_billing(
         .take()
         .ok_or_else(|| "grok agent stdio stdout unavailable".to_owned())?;
     let (tx, rx) = mpsc::channel();
-    let reader = thread::spawn(move || {
+    let reader = jackin_telemetry::spawn::thread_stream("grok.stdout", move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             if tx.send(line).is_err() {
                 break;

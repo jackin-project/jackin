@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::thread;
 
 #[test]
 fn compact_count_uses_token_suffixes() {

@@ -100,10 +100,13 @@ where
     let run = move || {
         drop(tx.send(worker()));
     };
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn_blocking(run);
+    if tokio::runtime::Handle::try_current().is_ok() {
+        drop(jackin_telemetry::spawn::joined_blocking(run));
     } else {
-        drop(std::thread::Builder::new().name(name.into()).spawn(run));
+        drop(jackin_telemetry::spawn::thread_stream_named(
+            name.into(),
+            run,
+        ));
     }
     rx
 }

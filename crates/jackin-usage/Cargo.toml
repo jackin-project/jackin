@@ -23,6 +23,7 @@ default = []
 jackin-core = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-diagnostics = { workspace = true, features = ["otlp"] }
+jackin-telemetry = { path = "../jackin-telemetry" }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 fs4 = { workspace = true }

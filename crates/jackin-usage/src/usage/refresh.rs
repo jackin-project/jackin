@@ -57,7 +57,7 @@ where
     for target in due_targets {
         let tx = tx.clone();
         let probe = Arc::clone(&probe);
-        thread::spawn(move || {
+        jackin_telemetry::spawn::thread_joined(move || {
             // One span per provider probe so the refresh lifecycle is visible in
             // telemetry — each provider's fetch duration (e.g. the slow Amp CLI
             // fallback) shows directly instead of being lost in the render
