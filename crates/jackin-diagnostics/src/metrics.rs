@@ -276,6 +276,25 @@ pub(crate) fn collect_hot_path_counter_sums(names: &[&str]) -> Option<Vec<u64>> 
     Some(totals)
 }
 
+/// Number of metric streams with exported data in the test provider.
+#[cfg(all(test, feature = "otlp"))]
+pub(crate) fn collect_hot_path_metric_count() -> Option<usize> {
+    let rig = HOT_PATH_TEST_RIG.get()?;
+    if !rig.instruments_owned {
+        return None;
+    }
+    rig.exporter.reset();
+    rig.provider.force_flush().ok()?;
+    let finished = rig.exporter.get_finished_metrics().ok()?;
+    Some(
+        finished
+            .iter()
+            .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
+            .map(|scope| scope.metrics().count())
+            .sum(),
+    )
+}
+
 #[cfg(all(test, feature = "otlp"))]
 fn sum_resource_counters(
     resource: &opentelemetry_sdk::metrics::data::ResourceMetrics,

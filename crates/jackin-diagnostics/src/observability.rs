@@ -1077,11 +1077,7 @@ mod otlp {
         )
     }
 
-    /// Capsule-side in-memory bootstrap (plan 009 dual-bootstrap).
-    ///
-    /// Mirrors production `init_capsule`: capsule Resource, **no**
-    /// `JackinDiagnosticsLayer`. Call [`emit_session_start_for_test`] under the
-    /// returned subscriber to drive the production session-start path.
+    /// Capsule-side in-memory bootstrap without the host JSONL layer.
     #[cfg(any(test, feature = "test-support"))]
     pub fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber) {
         use opentelemetry::trace::TracerProvider as _;

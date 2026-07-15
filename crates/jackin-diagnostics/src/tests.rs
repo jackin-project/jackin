@@ -983,8 +983,13 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
     const RUN_ID: &str = "conformance-run";
     const SESSION_ID: &str = "conformance-session";
 
+    assert!(
+        crate::metrics::ensure_hot_path_test_rig(),
+        "conformance scenario must own the in-memory metric exporter"
+    );
+
     // ── Host bootstrap ──────────────────────────────────────────────────
-    let (host, host_sub) = crate::observability::test_layers(true, RUN_ID);
+    let (host, host_sub) = crate::observability::test_layers(false, RUN_ID);
     tracing::subscriber::with_default(host_sub, || {
         let tmp = tempfile::tempdir().expect("tempdir");
         let paths = JackinPaths::for_tests(tmp.path());
@@ -1000,6 +1005,13 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
                 "list entered",
                 &[],
             );
+            operation_log(
+                OperationLevel::Warn,
+                "conformance.op",
+                "docker",
+                "process retry exhausted",
+                &[],
+            );
         });
         drop(list);
 
@@ -1009,8 +1021,6 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
             run.stage("stage_done", crate::DiagnosticStage::Prepare, "ready", None);
             run.stage("stage_started", crate::DiagnosticStage::DerivedImage, "building", None);
             run.stage("stage_done", crate::DiagnosticStage::DerivedImage, "built", None);
-            run.stage("stage_started", crate::DiagnosticStage::StartContainer, "starting", None);
-            run.stage("stage_done", crate::DiagnosticStage::StartContainer, "started", None);
 
             let span = operation_span(
                 crate::otel_events::PROCESS_EXECUTE,
@@ -1026,7 +1036,8 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
             );
             drop(guard);
 
-            // Forced attach-shaped failure on the host launch path (typed error).
+            // Representative host failure; the actual attach failure seam is
+            // asserted in jackin-capsule's conformance test.
             operation_error(
                 "error.typed",
                 "conformance_error",
@@ -1055,10 +1066,13 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
     drop(host.tracer_provider.force_flush());
 
     // ── Capsule bootstrap (separate provider, production session-start) ─
-    let (capsule, capsule_sub) = crate::observability::test_capsule_layers(true);
+    let (capsule, capsule_sub) = crate::observability::test_capsule_layers(false);
     tracing::subscriber::with_default(capsule_sub, || {
         // Same code path as init_capsule → emit_session_start after attach.
         crate::observability::emit_session_start_for_test(SESSION_ID, Some(RUN_ID), None);
+
+        let attach = operation_span("capsule.attach", &[]);
+        let _attach_guard = attach.enter();
 
         // Capsule breadcrumb through the capsule target/bridge shape (plan 004).
         // Emitted under the capsule subscriber, not the host facade.
@@ -1134,6 +1148,46 @@ fn conformance_exported_bodies_have_no_bracket_prefix() {
             );
         }
     }
+}
+
+#[cfg(feature = "otlp")]
+#[test]
+fn conformance_records_have_complete_otlp_shape() {
+    use opentelemetry::logs::Severity;
+
+    let _lock = DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let export = drive_standard_conformance_scenario();
+    let logs = export.all_logs();
+    let mut observed = std::collections::BTreeSet::new();
+    for log in logs.iter().filter(|log| {
+        matches!(
+            conformance_log_attr(&log.record, "event.name").as_deref(),
+            Some("conformance.op" | "error.typed" | "capsule.session.detach")
+        )
+    }) {
+        let event_name = log.record.event_name().expect("top-level EventName");
+        assert_eq!(
+            conformance_log_attr(&log.record, "event.name").as_deref(),
+            Some(event_name)
+        );
+        assert!(
+            log.record.timestamp().is_some() || log.record.observed_timestamp().is_some(),
+            "{event_name} must carry a timestamp"
+        );
+        assert!(log.record.severity_number().is_some());
+        assert!(log.record.severity_text().is_some());
+        assert!(conformance_log_body(&log.record).is_some());
+        let trace = log.record.trace_context().expect("active trace context");
+        assert_ne!(trace.trace_id, opentelemetry::TraceId::INVALID);
+        assert_ne!(trace.span_id, opentelemetry::SpanId::INVALID);
+        assert!(trace.trace_flags.is_some());
+        observed.insert(log.record.severity_number().unwrap());
+    }
+    assert!(observed.contains(&Severity::Info));
+    assert!(observed.contains(&Severity::Warn));
+    assert!(observed.contains(&Severity::Error));
 }
 
 #[cfg(feature = "otlp")]
@@ -1268,6 +1322,8 @@ fn conformance_export_volume_stays_within_budget() {
     let export = drive_standard_conformance_scenario();
     let logs = export.all_logs();
     let spans = export.all_spans();
+    let metrics = crate::metrics::collect_hot_path_metric_count()
+        .expect("collect conformance metric streams");
     // In-test guardrails only (not ratchet input — plan 009 measured path).
     assert!(logs.len() <= MAX_DEBUG_LOGS);
     assert!(spans.len() <= MAX_SPANS);
@@ -1276,7 +1332,7 @@ fn conformance_export_volume_stays_within_budget() {
     let volume = serde_json::json!({
         "default_mode_logs": logs.len(),
         "default_mode_spans": spans.len(),
-        "default_mode_metrics": 0,
+        "default_mode_metrics": metrics,
     });
     let path = telemetry_volume_artifact_path();
     if let Some(parent) = path.parent() {

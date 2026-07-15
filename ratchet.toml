@@ -19,7 +19,7 @@ cap = 1850
 mode = "enforce"
 [[family.entry]]
 key = "crates/jackin-diagnostics/src/observability.rs"
-bound = 2053
+bound = 2052
 
 [[family]]
 id = "file-size-test"
@@ -657,6 +657,9 @@ cap = 0
 [[family.entry]]
 key = "default_mode_logs"
 bound = 18
+[[family.entry]]
+key = "default_mode_metrics"
+bound = 5
 [[family.entry]]
 key = "default_mode_spans"
 bound = 7

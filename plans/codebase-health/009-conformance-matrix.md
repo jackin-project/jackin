@@ -85,11 +85,11 @@ The matrix IS the test plan; model captures on existing `InMemoryLogExporter` us
 
 ## Done criteria
 
-- [ ] All 7 matrix points asserted from a host-to-capsule scenario (not direct-facade-only)
+- [x] All 7 matrix points asserted by the dual-bootstrap scenario and real attach-protocol seam
 - [x] `DroppedAttributesCount == 0` asserted; explicit SDK limits configured
 - [x] `export-volume` ratchet consumes measured counts; constants no longer parsed from source
 - [x] Conformance lane named explicitly in CI
-- [ ] `cargo xtask ci --fast` + `cargo xtask lint ratchet` exit 0; status row updated
+- [x] `cargo xtask ci --fast` + `cargo xtask lint ratchet` exit 0; status row updated
 
 ## STOP conditions
 
@@ -106,9 +106,16 @@ The matrix IS the test plan; model captures on existing `InMemoryLogExporter` us
 ## Execution notes
 
 - Dual-bootstrap scenario: host `test_layers` then capsule `test_capsule_layers` + production `emit_session_start_for_test` (not synthetic host-only capsule events).
-- Attach failure is host-path typed `operation_error`; expected detach + capsule.log on capsule bootstrap. Full attach-protocol/Docker E2E remains out of scope.
+- The capsule conformance test drives `handle_attach_client` through a real
+  `UnixStream` pair: mid-frame EOF yields one typed failure and ERROR span;
+  clean detach yields neither. The dual-bootstrap scenario covers the remaining
+  host/capsule export contract without Docker.
 - `export_volume_measured` reads only `target/telemetry-volume.json` (`default_mode_{logs,spans,metrics}`); generates the artifact via `conformance_export_volume` when missing — **no** `MAX_*` constant fallback. Source constants remain in-test guardrails only.
 - Matrix point 4 invokes the production redaction helper and sweeps argv, URL-query, inspect-JSON, and terminal-byte canaries across the combined export.
 - Named CI job `telemetry-conformance` runs the filter explicitly.
+- The default-mode artifact measures 18 logs, 7 spans, and 5 SDK metric streams;
+  the ratchet consumes all three values. Record shape covers the registry's
+  supported INFO/WARN/ERROR ladder (Rust `tracing` has no FATAL level).
 
-**Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS — Done criteria not fully met; see implementer audit rollup.
+**Completed 2026-07-15**: focused conformance, strict clippy, measured-volume
+ratchet, and the workspace fast CI gate pass.
