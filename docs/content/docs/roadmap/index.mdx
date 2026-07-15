@@ -132,7 +132,7 @@ jackin❯ is a functional proof of concept, not a stable product line. **`Claude
 
 ### Codebase health
 
-- **[Unified OpenTelemetry observability](/roadmap/unified-otel-observability/)** — implementation-ready OTLP-only cross-crate refactor: one generated typed facade backed by the native OTel Logs, Trace, and Metrics APIs; independently secured host/Capsule export; request-scoped correlation; linked, bounded operation and UI traces; no prefix loggers, run JSONL, command-output sidecars, Capsule/daemon logs, local log readers, or raw emission bypasses (status: open — implementation-ready design)
+- **[Unified OpenTelemetry observability](/roadmap/unified-otel-observability/)** — implementation-ready OTLP-only application refactor: governed Rust `tracing` spans/events bridged to OTel traces/logs, explicit OTel metrics/context, semantic-convention-first fields without a project attribute prefix, bounded action/request/job traces, screen lifecycle events and dwell metrics, direct Parallax export, and no local telemetry/log artifacts or raw emission bypasses (status: open — implementation-ready design)
 - **[Open review findings catalog](/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations; five confirmed findings currently need fixes (two previously-cataloged rows were verified resolved and dropped). Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning") (status: open)
 
 ### Documentation infrastructure

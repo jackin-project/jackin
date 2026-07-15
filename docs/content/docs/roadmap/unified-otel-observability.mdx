@@ -2,19 +2,48 @@
 title: "Unified OpenTelemetry observability"
 ---
 
-**Status**: Open — design finalized with the operator and implementation-ready. This is an OTLP-only cross-crate refactor: product telemetry is exported to a configured OpenTelemetry endpoint and is never persisted to a jackin❯ telemetry file or rendered as a local telemetry stream
+**Status**: Open — application design finalized and implementation-ready. This is an OTLP-only refactor of jackin❯ product code. It does not deploy or configure a Collector, gateway, backend, dashboard, or storage system
 
 ## Goal
 
-Establish one governed, typed observability contract across every jackin❯ product crate, producing correlated OpenTelemetry logs, traces, and metrics across host and Capsule boundaries with bounded volume, explicit context propagation, and no telemetry leakage into operator output. "One contract" means one legal call-site facade and one semantic-conventions registry; internally, each signal uses its native OpenTelemetry API. This item is purely the jackin❯ application refactor: what jackin❯ emits and how the code is restructured to emit it. In practice the configured endpoint is the Parallax observability platform, but the emitted contract stays plain standard OTLP — nothing jackin❯ produces is backend-specific beyond honoring the `parallax.run.id` correlation key — and nothing outside the application (collectors, gateways, pipelines, backend setup) is designed, shipped, or configured here.
+Refactor jackin❯ into a convention-led Rust application that emits correlated OpenTelemetry logs, traces, and metrics directly to the OTLP endpoint supplied by Parallax. The application must use the standard Rust `tracing` and OpenTelemetry integrations, standard semantic conventions wherever they apply, bounded in-memory SDK pipelines, explicit async and cross-process context propagation, and no local telemetry files or terminal telemetry stream.
 
-The resulting platform view must let an operator filter successfully delivered logs and traces by `parallax.run.id` and reconstruct the work causally owned by one invocation or console run: host and Capsule operations, the ordered chains of bounded operation and UI traces, named interaction and lifecycle events, correlated failures, and subprocess and Docker boundaries. Stable low-cardinality metrics describe product and exporter health; metric-to-trace correlation relies on shared bounded dimensions for now, because trace exemplars are deferred until the Rust SDK implements exemplar collection. Autonomous long-lived daemon work that belongs to no invocation remains queryable by its stable process identity and must never inherit a stale run id.
+The governing model is:
 
-## Problem
+> A long-running CLI invocation is a correlation domain, not one enormous trace.
 
-jackin❯ already has an OpenTelemetry substrate, but most of the codebase does not emit through it. `RunDiagnostics` mints a run id, the optional `otlp` feature exports all three signals, and `jackin-diagnostics` contains a registry, redaction logic, screen taxonomy, and conformance tests. Alongside that substrate, prefix-tagged printf strings, direct terminal writes, hand-rolled JSONL diagnostics, and raw `tracing` sites remain separate observability interfaces.
+A two-second command and a week-long console process use the same model. Stable process, invocation, session, and job identifiers join many bounded traces and named log events. Metrics describe aggregate behavior. No process-lifetime, invocation-lifetime, session-lifetime, screen-lifetime, daemon-lifetime, or stream-lifetime span exists.
 
-The raw workspace inventory captured on 2026-07-15 found 284 `debug_log!` occurrences, 284 Capsule logging-macro occurrences, 127 `eprintln!` occurrences, 99 Tokio spawn/spawn-blocking occurrences, and 29 thread-spawn occurrences. These are search baselines, not all migration sites: definitions, tests, and legitimate operator output are included where applicable. Reproduce the inventory rather than copying the counts forward:
+The resulting Parallax view must support:
+
+- an invocation timeline across all participating host and Capsule processes;
+- one readable waterfall for a user action, command, synchronous daemon request, connection attempt, job attempt, or meaningful background cycle;
+- session and screen history reconstructed from named events rather than a giant trace;
+- navigation, action, render, job, connection, and process health through low-cardinality metrics;
+- direct parentage for synchronous work and links for detached, delayed, retried, fan-out, or independently owned work;
+- log-to-trace and trace-to-log navigation using native trace and span IDs.
+
+OpenTelemetry is the application instrumentation and transport layer. Parallax owns telemetry storage, search, visualization, retention, and backend policy.
+
+## Scope
+
+This item changes jackin❯ application code only:
+
+- product-crate instrumentation APIs and call sites;
+- Resource, identity, event, span, metric, and error contracts;
+- Rust subscriber/provider initialization and shutdown;
+- OTLP/gRPC export to the configured Parallax endpoint;
+- host, Capsule, daemon, subprocess, Docker, TUI, async-task, and control-protocol propagation;
+- removal of every jackin❯-owned production log/telemetry file and reader;
+- conformance, privacy, propagation, volume, performance, and lifecycle tests.
+
+It does **not** add Collector configuration, an agent/gateway topology, backend queries, dashboards, alerts, tail-sampling rules, storage queues, or Parallax infrastructure. jackin❯ neither ships nor operates an OpenTelemetry Collector.
+
+## Current conflicts
+
+jackin❯ already has an optional OpenTelemetry substrate, but the application does not have one coherent instrumentation model. The workspace combines `debug_log!`, Capsule prefix macros, raw `tracing`, terminal writes, diagnostics JSONL, command-output sidecars, `multiplexer.log`, a host-daemon log, local log commands/readers, and a partial OTLP bridge. These surfaces disagree about identity, redaction, retention, event names, crate ownership, and failure behavior.
+
+The inventory captured on 2026-07-15 found 284 `debug_log!` occurrences, 284 Capsule logging-macro occurrences, 127 `eprintln!` occurrences, 99 Tokio spawn/spawn-blocking occurrences, and 29 thread-spawn occurrences. The counts include definitions, tests, and legitimate operator output, so implementation must classify the sites rather than replace them mechanically:
 
 ```bash
 rg -n 'debug_log!' --glob '*.rs' crates | wc -l
@@ -24,281 +53,282 @@ rg -n 'tokio::spawn|spawn_blocking' --glob '*.rs' crates | wc -l
 rg -n 'thread::spawn|std::thread::spawn' --glob '*.rs' crates | wc -l
 ```
 
-The current split creates several concrete failures:
+The current roadmap direction also contained conflicts that this design resolves:
 
-- **Message bodies carry dimensions.** Variable values are flattened into strings, so backends need regular expressions instead of typed attribute queries.
-- **Events are not real OTel events.** The current function facade writes an `event.name` attribute instead of the top-level OpenTelemetry `EventName`, and dynamic attribute slices are stamped onto the active span rather than the emitted log record.
-- **Crate ownership is lost.** A function-based facade reports `jackin-diagnostics` as the `tracing` target instead of the calling crate and module.
-- **Identity is process-global where it must be request-scoped.** Capsule receives a launch-time `JACKIN_RUN_ID`, but its daemon can outlive that launch and serve later attaches belonging to other host runs.
-- **The facade is in the wrong dependency tier.** `jackin-diagnostics` is Tier 2 while foundational crates such as `jackin-core` and `jackin-process` are Tier 0, so a universal facade in `jackin-diagnostics` would violate the enforced dependency direction.
-- **Operator output and telemetry overlap.** Some terminal writes are product output, some are diagnostics, and some do both. A rich TUI cannot safely share its terminal with a telemetry formatter.
-- **Background causality is accidental.** Async tasks, blocking tasks, threads, socket handlers, timers, and stream pumps routinely detach from the triggering context or retain context longer than intended.
-- **The local logging surface is larger than one JSONL file.** Run JSONL, command-output sidecars, Capsule `multiplexer.log`, the host-daemon log, `jackin logs`, `jackin daemon logs`, failure-tail readers, reveal actions, and bundle writers form a second observability product with separate schemas, retention, and redaction behavior. This item removes that product instead of renaming only its primary artifact.
-- **Capsule delivery crosses a security boundary.** Directly forwarding OTLP headers, client keys, or arbitrary Resource attributes would expose operator-owned backend credentials or metadata inside an agent-controlled container. Endpoint routing and telemetry context are safe to propagate; exporter secrets are not.
-- **Persistent processes freeze exporter configuration.** A Capsule or host daemon may survive the CLI process that launched it. A later attach can supply a new run/trace context, but an OpenTelemetry provider and `tracing` subscriber cannot be silently replaced with a different endpoint or credential set mid-process.
-- **The current topology conflates work with presentation.** A command or request can continue across several screens, while one screen can initiate several operations. Treating a screen visit as the operation trace makes ownership, outcome, and rotation ambiguous.
+- A run, session, or screen was treated as a trace even though those lifetimes can span hours or days and cross unrelated operations.
+- Screen visits were modeled as long spans even though a visible screen mostly represents state or idle time.
+- A custom dispatch and direct Logs API were proposed where the maintained Rust logs bridge already maps `tracing` event names to native OpenTelemetry `EventName`.
+- Product-specific `jackin.*` attributes duplicated concepts already covered by OpenTelemetry semantic conventions.
+- Direct OTLP export and a local Collector were both described as the target. This item now owns direct application export only.
+- OTLP-only behavior was claimed while JSONL, sidecars, Capsule/daemon logs, log commands, and reveal/follow readers remained.
+- `--debug` was allowed to become an export requirement even though it also controls redacted operator-facing troubleshooting output.
+- Exact partial-success, queue-drop, and retry counters were promised even where the Rust exporter exposes no stable typed callback.
 
-## Target view
+## Semantic convention policy
 
-- **One run, one query scope.** Every run-owned log and span carries `parallax.run.id`; filtering by it returns the complete causal story exported by host and Capsule processes. A run is a correlation scope, not necessarily one trace.
-- **Stable resources, dynamic context.** Resource attributes identify the emitting process. Run, operator-session, screen, pane, and request identities live on the records and spans whose lifetimes they actually describe.
-- **Two bounded trace families.** Operation traces describe commands, requests, and substantive background work. UI-interval traces describe screen visits and tab focus. A semantic UI action links to the operation it starts; neither trace family borrows the other's lifetime.
-- **Named, typed events.** Interaction, lifecycle, transition, failure, and operator-notice mirrors are log-based events with a real top-level `EventName`, typed attributes, a redacted body, and current trace context.
-- **Failures point at themselves.** Failed operations set span status and `error.type`; cancellation is distinguishable from failure; exception records correlate to the failed span; telemetry delivery failures never recurse into the same exporter.
-- **Background work is useful, not noisy.** Meaningful scheduled work and state changes are observable; no-op ticks and continuous byte streams remain metrics rather than traces.
-- **OTLP is the only production telemetry destination.** No product telemetry file, JSONL fallback, stdout exporter, stderr formatter, or TUI telemetry layer exists. Without a configured OTLP endpoint there is no retained telemetry.
+OpenTelemetry semantic conventions 1.43.0 are the naming authority. The implementation imports and pins them in one schema module and uses their standard names, types, units, requirement levels, and well-known values. There is no `jackin.*` attribute, event, span, or metric prefix.
 
-The backend-neutral query contract is:
+Use the standard fields first:
 
-| View | Required join and shape |
+| Purpose | Contract |
 |---|---|
-| Run | Filter logs and spans by `parallax.run.id`; group by process Resource (`service.name`); show operation roots, linked UI intervals, failures, and external boundaries |
-| Operation | Start from a root whose low-cardinality span name is the registered operation; read outcome from span status and outcome attributes; follow children and links; do not infer outcome from log severity |
-| Session/UI | Filter by `session.id`; order screen/focus roots by explicit predecessor links and transition events rather than assuming clocks give a total order |
-| Health | Query low-cardinality product/exporter metrics by stable Resource and component; never join metrics by run, session, attach, path, branch, or container name |
+| Process/service identity | `service.name`, `service.namespace`, `service.version`, `service.instance.id`, `process.pid`, `process.executable.name`, and applicable `container.*`, `os.*`, and runtime attributes |
+| Interactive session | `session.id`, `session.previous_id`, `session.start`, and `session.end` |
+| UI context | `app.screen.id`, `app.screen.name`, `app.widget.id`, and `app.widget.name` |
+| AI agent context | `gen_ai.agent.name`/`gen_ai.agent.id` for the hosted coding agent, `gen_ai.conversation.id` for one agent session/thread, and `gen_ai.provider.name` (well-known values include `anthropic` and `openai`) on provider calls |
+| Failure | span Status plus stable low-cardinality `error.type`; `exception.type`, `exception.message`, and `exception.stacktrace` only for a real redacted exception |
+| Source ownership | standard `code.*` attributes and the `tracing` target/module metadata |
+| Network/RPC/process work | the applicable RPC, HTTP, network, server, process, and CLI conventions |
+| Causality | native trace/span IDs, W3C `traceparent`/`tracestate`, parent-child relationships, and span links |
 
-## Scope and consequences
+Where OpenTelemetry 1.43 has no applicable convention, the schema may define a small neutral extension without a product/vendor prefix. The initial gaps are `cli.invocation.id`, `cli.command.name`, `job.id`, `job.type`, `ui.action.name`, `ui.screen.visit.id`, and `ui.navigation.sequence`. These retain a generic semantic-domain namespace because unqualified keys collide, but never add a jackin❯ or other product prefix. The screen and widget attributes remain the standard `app.*` fields. Each listed gap is verified against 1.43: no convention defines a CLI invocation id (`cicd.pipeline.run.id` is CI/CD-scoped and `faas.invocation_id` serverless-scoped), no screen entered/exited, navigation-sequence, or dwell convention exists, and no general-purpose outcome attribute exists — outcome *values* nevertheless mirror the CICD result enum (`success`, `failure`, `error`, `timeout`, `skip`, `cancellation`), the one place the industry defines cancellation as a first-class result. New extensions require proof that no current semantic convention fits, a bounded type/value set, privacy review, and a migration note for adopting a later standard.
 
-This item owns the jackin❯-application refactor only: the cross-crate API, signal semantics, context propagation, OTLP runtime, migration, and enforcement. Everything between jackin❯ and its configured endpoint — collectors, gateways, sampling infrastructure, dashboards — is outside it. It supersedes the observability-format fragments in the following items:
+`cli.invocation.id` is the application's correlation key from the first migrated release, with no transition period and no compatibility minting of the old key. `parallax.run.id` is not an application-defined replacement for `cli.invocation.id`: if Parallax supplies it, jackin❯ validates and preserves it as external backend correlation metadata, and otherwise it simply does not appear. jackin❯ never mints it, overloads it as Resource identity, or copies it into metric dimensions. The same rule applies to every attribute: an invented key is fully replaced by the applicable convention in the same cutover — no invented key survives alongside its standard equivalent.
 
-- [Launch Progress TUI](/roadmap/launch-progress-tui/) keeps current-run application state and the correlation run id visible; historical traces and cross-run comparison remain in the operator's configured backend because OTLP is an export protocol, not a query protocol.
-- [Console resource panel](/roadmap/console-resource-panel/) may render live product state or separately queried backend data; it does not read a local telemetry artifact.
-- [jackin❯ join & Debug Export](/roadmap/jackin-join-and-debug-bundle/) cannot automatically package telemetry after this cutover. A debug bundle may include non-telemetry diagnostics and redacted configuration, while telemetry remains in the operator's backend.
-- [Sensitive-boundary code health](/roadmap/sensitive-boundary-code-health/) supplies the negative privacy assertions and issue-fingerprint policy consumed by the unified facade and OTLP conformance lane.
+Development-status conventions — Session, App, CLI, and the GenAI registry (maintained in its own `semantic-conventions-genai` repository since 2026, where `gen_ai.system` is already deprecated in favor of `gen_ai.provider.name`) — are isolated behind the schema module. An OpenTelemetry version update changes their mapping centrally instead of leaving old names throughout the codebase. OTel Weaver validates imported conventions and the small extension registry; generated Rust constants prevent stringly typed keys and drift.
 
-The loss of offline telemetry is deliberate. Normal commands continue when no endpoint is configured; telemetry levels and categories then have no signal sink, while `--debug` still controls redacted operator-facing error detail. Only a command that explicitly validates export, such as `jackin diagnostics validate`, fails when no endpoint is configured or a test export cannot flush. The render-conformance fixture recorder (`cargo xtask pty-fixture`) currently harvests PTY byte dumps from the run artifact and the Capsule log file; because PTY bytes are banned from telemetry and those files disappear, fixture recording moves to a dedicated development capture channel owned by the test harness — explicitly not telemetry and never enabled in production paths. Run JSONL, command-output sidecars, `multiplexer.log`, the host-daemon log, their readers/reveal/bundle commands, file-specific environment variables, and telemetry inclusion in debug bundles are removed during cutover with no migration shim under the pre-release policy. Contributor and CI telemetry validation runs against an in-memory test receiver or an operator-run Collector; jackin❯ itself persists nothing.
+## jackin❯ attribute contract by case
 
-A local break-glass log file — the common mitigation for telemetry lost to `SIGKILL`, OOM, or power loss — is consciously rejected: crash evidence is limited to container-runtime stderr capture, exit codes, and whatever telemetry flushed before termination.
+The registry binds each real jackin❯ surface to explicit fields. Values shown are the initial seed observed in the codebase on 2026-07-15; the generated registry owns the authoritative enums, and only cases that exist in jackin❯ belong in it:
+
+| jackin❯ case | Attribute contract |
+|---|---|
+| Every process | Resource: `service.namespace=jackin`; `service.name` = `jackin`, `jackin-daemon`, or `jackin-capsule`; `service.version`; opaque `service.instance.id` per process; `process.pid`, `process.executable.name`; Capsule adds stable `container.id` when known |
+| CLI command | Root span per the CLI convention; opaque `cli.invocation.id`; `cli.command.name` ∈ {`load`, `console`, `hardline`, `status`, `doctor`, `eject`, `prune`, `workspace`, `role`, `config`, `diagnostics`, …}; `process.exit.code`; `error.type` on failure |
+| Console/launch screens | `app.screen.name` ∈ {`intro`, `list`, `settings`, `editor`, `create`, `launch`, `capsule`}; `app.screen.id` for the registry screen type; opaque `ui.screen.visit.id`; `ui.navigation.sequence` |
+| Capsule tabs/panes | Same screen fields with `app.screen.name=capsule`; a tab-focus interval is a screen visit; pane/tab control types ride `app.widget.id` |
+| Widget interaction | `app.widget.id` (registry control id such as `workspace-row`, `mount-editor`, `auth-tab-generate`, `dialog-confirm`) and `app.widget.name`; `ui.action.name` for the semantic command (`launch_role`, `open_settings`, `save_workspace`, `switch_tab`, `confirm_exit`, …) |
+| Hosted agent session | `gen_ai.agent.name` ∈ {`claude-code`, `codex`, `amp`, `kimi`, `opencode`, `grok`}; opaque `gen_ai.conversation.id` per PTY agent lifetime |
+| Provider calls | HTTP client conventions plus `gen_ai.provider.name` (`anthropic`, `openai`, and documented custom values for Z.AI, MiniMax, Moonshot, xAI); also the bounded provider dimension on usage-refresh metrics |
+| Subprocess | CLI caller-convention `CLIENT` span named for the executable ∈ {`git`, `gh`, `op`, `docker`, `caffeinate`, agent binaries}; `process.executable.name`, `process.exit.code`, `error.type`; arguments and paths omitted by default |
+| Docker Engine API | HTTP client conventions over the Unix socket: `http.request.method`, low-cardinality route in the span name, `server.address` for the socket, `network.transport=unix`, target `container.id` |
+| Attach/control protocol | RPC conventions: `rpc.system=jackin` (documented custom value), `rpc.method` ∈ {`attach`, `displace`, `status`, `exec_resolve`, …}, `CLIENT`/`SERVER` spans, `network.transport=unix` |
+| Launch pipeline | One operation trace per launch; child spans named per stage ∈ {`identity`, `role`, `credentials`, `construct`, `agent_binaries`, `derived_image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`}; the stage enum is the launch-duration metric dimension |
+| Background work | Opaque durable `job.id`; `job.type` ∈ {`image_prewarm`, `sidecar_prewarm`, `usage_refresh`, `pr_context`, `branch_context`, `instance_refresh`, `status_tick`, …}; `PRODUCER`/`CONSUMER` spans for queued hand-offs |
+| Failure classification | `error.type` from the bounded registry set (`timeout`, `permission_denied`, `connection_refused`, `protocol_decode`, `resource_exhausted`, `invalid_configuration`, `docker_unavailable`, `auth_failed`, …) |
+
+Workspace names, role identifiers, repository names and paths, container names, and branch names are user data — never attribute values; bounded kind enums classify them where classification is needed.
 
 ## Research basis
 
-Verified against OpenTelemetry Rust, OTLP 1.10.0, semantic conventions 1.43.0, and OTel Weaver as of 2026-07-15.
+Verified against OpenTelemetry Rust 0.32, `tracing-opentelemetry` 0.33, OpenTelemetry semantic conventions 1.43.0, and the OTLP specification as of 2026-07-15:
 
-- **Signal-native APIs.** OpenTelemetry Rust provides independent logger, tracer, and meter providers. The project facade uses the Logs API for named events, `tracing` plus `tracing-opentelemetry` for spans and context, and the Meter API for metrics. A shared contract does not require forcing all three signals through `tracing`.
-- **Log-based events.** OpenTelemetry's stable [logs data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/) defines `EventName` as a top-level field. OpenTelemetry [deprecated the span-events API](https://opentelemetry.io/blog/2026/deprecating-span-events/) for new instrumentation, so event-shaped data is emitted as named logs correlated to the current span.
-- **OTLP transport.** The [OTLP specification](https://opentelemetry.io/docs/specs/otlp/) defines delivery, retry, partial-success, and duplicate-data behavior. jackin❯ keeps its existing OTLP/gRPC transport choice and rejects unsupported protocol configuration rather than silently changing transport.
-- **Resources.** Resource attributes describe the entity producing telemetry and remain fixed for a provider lifetime. Dynamic run and attach context therefore belongs on individual records and spans, not the Capsule daemon's Resource.
-- **CLI conventions.** The [CLI span conventions](https://opentelemetry.io/docs/specs/semconv/cli/cli-spans/) are Development status and apply only to short-lived programs. They require `process.executable.name`, `process.pid`, and `process.exit.code`; command arguments are withheld by default because they can contain secrets.
-- **Session conventions.** The [session conventions](https://opentelemetry.io/docs/specs/semconv/general/session/) are Development and Opt-In. `session.previous_id` describes continuation on `session.start`; it is not stamped indiscriminately on every signal.
-- **Context propagation.** W3C propagation carries and validates both `traceparent` and `tracestate`. Baggage is excluded from jackin❯ propagation until a separately reviewed, bounded use case exists.
-- **Rust context timing.** `tracing-opentelemetry` can reject a parent assigned after a span has started, and thread-local OpenTelemetry context guards are unsafe to hold across arbitrary async suspension. Remote context must therefore be extracted before span creation and carried by async-aware wrappers or explicit tokens.
-- **Exporter behavior.** OTLP partial success is success with rejected counts and must not be retried. In the current Rust exporter family, spec-aware gRPC retry is an opt-in maintained feature and partial-success detail is reported through internal diagnostics rather than a stable typed health callback.
-- **TUI semantics.** TUI telemetry belongs at semantic message/action/effect boundaries, not raw key, mouse, text-input, clipboard, or PTY dispatch points.
-- **Bounded traces travel well.** Downstream tail sampling buffers whole traces keyed by trace id, so it only works when traces are bounded — the rotation limits below keep everything jackin❯ emits compatible with whatever pipeline sits behind the endpoint, without jackin❯ designing that pipeline.
+- The [OpenTelemetry Rust project](https://github.com/open-telemetry/opentelemetry-rust) recommends `tracing` for new application instrumentation. `opentelemetry-appender-tracing` maps a `tracing` event's metadata name to native log `EventName`, while `tracing-opentelemetry` maps spans and, unless filtered, events to OTel spans/span events.
+- A bridged tracing span is finalized when it closes, so an invocation-, session-, or screen-lifetime span delays completion and conflicts with bounded span data. Bounded operation spans are the unit of tracing; history is a correlated log/event view.
+- The [Session conventions](https://opentelemetry.io/docs/specs/semconv/general/session/) define a session as a collection of logs, events, and spans carrying `session.id`, with `session.start`/`session.end`; they do not define a session root span.
+- The [App conventions](https://opentelemetry.io/docs/specs/semconv/app/app-events/) provide `app.screen.*` and `app.widget.*` fields and click events, but no screen entered/exited, dwell, navigation-sequence, or transport-neutral semantic-action contract. Those exact gaps justify the neutral `ui.*` extensions above.
+- The [CLI conventions](https://opentelemetry.io/docs/specs/semconv/cli/cli-spans/) apply to short-lived commands and define `INTERNAL` callee and `CLIENT` caller spans with process attributes. They do not apply a process-lifetime root to an interactive console or daemon.
+- The [OTLP specification](https://opentelemetry.io/docs/specs/otlp/) defines retry, partial-success, and duplicate-delivery behavior. Partial success is not retryable, and telemetry transport cannot be treated as an audit or crash-durability channel.
+- Rust async context uses `#[instrument(skip_all)]`, `Future::instrument`, `or_current()`, or synchronous `in_scope`; a span/context enter guard must not live across `.await`, and an extracted remote parent must be applied before the receiving span starts.
 
-## Design
+## Rust instrumentation architecture
 
-Settled with the operator on 2026-07-15. These decisions resolve the call-site API, dependency ownership, signal semantics, identity lifecycles, cross-process propagation, trace topology, delivery behavior, privacy boundary, governance, cutover, and completion gates.
+### 1. Use the maintained Rust stack
 
-### 1. OTLP is the only production telemetry output
+The initial implementation pins the compatible family:
 
-The product binaries compile the OpenTelemetry API, SDK, and OTLP/gRPC exporters as baseline dependencies. Logs, traces, and metrics have separate SDK providers and processors but one runtime configuration contract. Only OTLP/gRPC export is supported; file, stdout, stderr, console, JSONL, TUI, and persistent queue/spool exporters do not exist. Delivery buffers are bounded and memory-only. The OTLP crate disables default features and enables only `trace`, `logs`, `metrics`, `grpc-tonic`, `experimental-grpc-retry`, `gzip-tonic`, `tls-aws-lc`, and `tls-roots`, so an unused OTLP/HTTP client is not linked into an allegedly gRPC-only product. The `internal-logs` feature stays disabled: the current exporter can render raw headers in an internal debug record, and exporter text is neither a privacy-safe nor a typed health API.
+```toml
+opentelemetry = "0.32"
+opentelemetry_sdk = "0.32"
+opentelemetry-otlp = "0.32"
+opentelemetry-appender-tracing = "0.32"
+opentelemetry-semantic-conventions = "0.32"
+tracing-opentelemetry = "0.33"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+```
 
-`OTEL_EXPORTER_OTLP_ENDPOINT` supplies the base endpoint for all three signals. A standard per-signal endpoint overrides that base for its signal; when no base is set, all three per-signal endpoints must be present, so a partially configured signal set fails initialization instead of silently omitting logs, traces, or metrics. The base and per-signal protocol variables, when set, must all resolve to `grpc`; exporter selectors must be absent or `otlp`; the propagator is fixed to `tracecontext`; and a conflicting sampler is rejected rather than silently weakening the run story. `OTEL_SDK_DISABLED=true` wins over endpoint presence and produces the same no-provider state as no endpoint. Standard timeout, gzip compression, Resource, service-name, header, and per-signal overrides are supported within the safety ceilings below.
+Product modules instrument spans and events through `tracing`. The OpenTelemetry API is used directly only for metric instruments, W3C context, links, and explicit status/attributes not represented safely by `tracing`. Only process composition roots depend on the SDK, OTLP exporter, logs bridge, tracing bridge, and subscriber construction.
 
-Host and Capsule processes export independently; jackin❯ does not relay, proxy, or reserialize telemetry. At launch, the host propagates only normalized endpoint/protocol/compression routing, a sanitized Resource subset, and W3C context. OTLP headers, embedded endpoint userinfo, client keys/certificates, and raw `OTEL_RESOURCE_ATTRIBUTES` are never injected into an agent-visible environment. Host-side headers may authenticate the host exporter. Capsule export therefore requires a credential-free, container-reachable receiver; how that receiver is provided (Parallax directly, or whatever the operator runs in front of it) is outside this item.
+A new lowest-tier `jackin-telemetry` crate contains the convention registry, generated constants, thin macros/helpers that expand to `tracing`, typed metric handles, operation outcome guard, context carrier, and async spawn helpers. It is not a second logging framework and has no provider dispatch of its own. `jackin-diagnostics` remains the composition root that builds and owns providers, layers, exporter runtime, health, flush, and shutdown.
 
-Every distinct Capsule endpoint host is derived from the normalized per-signal endpoints and added to the jackin❯ infrastructure allowlist only when the effective network grant permits egress. `network=none` always wins: the launch continues with host-only telemetry and emits a safe host-side `telemetry.coverage.changed` event instead of weakening isolation or failing product work. A Collector on host loopback is rewritten per endpoint to the container-reachable host gateway. OTLP environment names are reserved from role/workspace overrides. *Why:* a pure OTLP path is useful only if it does not smuggle backend credentials across the trust boundary or override an explicit isolation decision.
+`#[tracing::instrument]` is permitted only with `skip_all`, a registered static span name, and explicit approved fields. Dynamic values never enter span names. Automatic argument capture, raw project OTel logger calls, raw metric construction outside the registry, unrestricted raw `tracing` calls, and application formatter layers are prohibited by lint.
 
-When no endpoint is configured or the SDK is disabled, normal product flows use no-op tracer/meter behavior, leave the log dispatch uninstalled (the Rust Logs API deliberately has no global provider), and create no telemetry files, exporter runtime, worker thread, or network socket. `--debug` keeps its redacted operator-output role and, when OTLP is active, raises the telemetry level to DEBUG; it never makes an otherwise valid command depend on collector availability. `[telemetry].level`, `JACKIN_TELEMETRY_LEVEL`, and category controls are inert without an active provider. `jackin diagnostics validate` is the explicit delivery promise: it emits one marked record for each signal, force-flushes, and fails if configuration or delivery cannot be confirmed. Runtime unreachability during normal product work does not fail or block that work. *Why:* optional observability must not become a product availability dependency, while a purpose-built validation command can truthfully promise an export attempt.
+### 2. Route events once
 
-Exporter configuration is immutable for one provider/process lifetime. A persistent host daemon or Capsule reports an opaque SHA-256 fingerprint of its canonical, length-delimited effective exporter configuration over its control protocol; secrets contribute to equality but are never rendered or returned. A later client with a different fingerprint does not reconfigure the process; host telemetry continues under the client's provider, the persistent process keeps its original provider, and coverage is marked degraded until that daemon/container is restarted. Dynamic run/session/trace context still changes per request. *Why:* OpenTelemetry providers and the global `tracing` subscriber are install-once process infrastructure, not request configuration.
+`OpenTelemetryTracingBridge` converts governed `tracing` events to OpenTelemetry log records. The `tracing` metadata name becomes native `EventName`; `message` becomes the optional body; level becomes native severity; fields remain typed attributes; and active trace context supplies TraceId and SpanId.
 
-### 2. Lowest-tier facade, higher-tier runtime
+The `tracing-opentelemetry` layer converts governed spans to OpenTelemetry spans. Per-layer filters accept all registered spans but reject the target class reserved for log-based events, while the logs bridge accepts that event class. Conformance tests prove one event produces one OTel log and zero OTel span events. Error-event-to-status and error-record-to-exception inference are disabled; the operation owner sets status and exception fields explicitly.
 
-A new dependency-minimal `jackin-telemetry` crate becomes the lowest product architecture tier. It owns the generated names and attributes, typed values, log/span/metric call-site macros, operation outcome guard, explicit context token, and spawn helpers. It depends on no other jackin❯ crate. Existing foundational product crates that emit telemetry are re-tiered above it, and <RepoFile path="crates/jackin-xtask/src/arch.rs" /> remains the authority that proves every production dependency points downward. Re-tiering `jackin-core` and `jackin-process` above the new crate renumbers the whole tier table — including per-crate README tier sections and the header cross-check — a known mechanical consequence of this decision, not scope creep.
+The logs bridge stays unconfigured for experimental span-attribute copying. Important log events carry their searchable invocation, session, screen, and job correlation explicitly, so behavior does not depend on experimental enrichment or ambient thread-local state.
 
-`jackin-telemetry` exposes an install-once process dispatch. Before installation, its enabled checks are false and all signal calls are no-ops; once installed, the dispatch holds only signal-facing traits and explicit context machinery, not `jackin-diagnostics` or SDK types. Call sites check enablement before formatting bodies or constructing dynamic attributes. `jackin-diagnostics` remains the process-level runtime owner: it builds the logger, tracer, and meter providers; installs the dispatch, span bridge, and propagator; applies filters and SDK limits; manages the dedicated export runtime; exposes in-memory exporter health; and coordinates flush/shutdown. A second installation is a fatal initialization error. *Why:* every product crate needs the facade, while provider construction, terminal ownership, and process lifecycle are application concerns that cannot sit at the bottom of the graph.
+### 3. Keep operator output separate
 
-### 3. One call-site contract, three native signal APIs
+Operator output remains a separate typed product port that may own stdout, stderr, or a TUI surface. Telemetry never renders there. A notice may have an independently defined safe telemetry event, but an already formatted terminal string is never mirrored automatically.
 
-Every product log is a registered log-based event; there is no unregistered free-form telemetry logger. The OpenTelemetry Logs API populates `EventName`, optional static/redacted body, severity number/text, typed attributes, timestamp, instrumentation scope, trace id, and span id in their native fields. Event names and attribute keys are generated constants, variable data lives only in typed attributes, and the event name is not duplicated as an attribute. The facade obtains correlation from the current `tracing` span or an explicit context token and sets the log record's trace context directly rather than relying on ambient thread-local context across async suspension.
+`--debug` continues to enable redacted operator-facing troubleshooting detail. When OTLP is active it also enables governed DEBUG telemetry; it never requires an endpoint. TRACE remains semantic and privacy constrained: it cannot contain raw keys, text input, prompts, clipboard data, PTY bytes, terminal frames, command arguments, environment values, credentials, or file contents.
 
-Spans use facade macros over `tracing` and `tracing-opentelemetry`; metrics use facade helpers over the OTel Meter API. A log instrumentation scope is the emitting crate name/version plus the registry schema URL, not `module_path!()`; module, repo-relative compile-time source path, and line are code attributes. Shared product metrics use one generated `jackin-telemetry` meter scope so the same instrument does not split into different metric identities by caller; bounded component/operation attributes carry ownership. Spans bridged through `tracing` share one process-level tracer scope by construction, so the same registered code/owner attributes carry span ownership. Dynamic values support the OTel scalar and array types rather than being coerced to `String`.
+## Telemetry model
 
-Raw `tracing::event!`, raw OTel logger/meter calls, and unrestricted `#[instrument]` are forbidden outside the facade/runtime implementation and generated code. Facade span macros default to `skip_all` behavior and require registered attributes, preventing automatic argument capture. Project log events are not routed through the span-event conversion path, and conformance tests prove that each facade event produces one log-based event and zero OTel span events. *Why:* a single governed surface is compatible with signal-native data only when bypasses and double emission are both closed.
+### Resource and correlation lifetimes
 
-### 4. Weaver owns the telemetry contract
+| Concept | Lifetime and representation |
+|---|---|
+| Process instance | One random UUID per OS process start in `service.instance.id`; never reused after restart |
+| Service | `service.namespace=jackin`; `service.name=jackin`, `jackin-daemon`, or `jackin-capsule`; package version in `service.version` |
+| CLI invocation | One random UUID in `cli.invocation.id` for every command or console process; stable for the complete process, even if it lives for a week |
+| Interactive session | One random UUID in `session.id` from TUI/attach terminal ownership until detach or process exit; reattach emits a new `session.start` with `session.previous_id`, after the prior `session.end`; no idle-time rotation in the initial implementation |
+| Background job | Durable opaque `job.id` plus bounded `job.type`; attempts may use separate traces and process instances |
+| Screen visit | Opaque `ui.screen.visit.id` plus monotonic per-session `ui.navigation.sequence`; events and metrics, not a span |
+| Hosted agent session | One coding-agent lifetime in a Capsule pane: `gen_ai.agent.name` plus `gen_ai.conversation.id`; never overloaded into `session.id` |
+| External Parallax run | Validated incoming `parallax.run.id` when supplied; record correlation only, never Resource or metric identity |
 
-An OTel Weaver registry imports semantic conventions 1.43.0 and defines every project or vendor extension, including `jackin.*` and `parallax.run.id`, plus every event, span, metric, type, requirement level, stability marker, unit, histogram boundary, and allowed attribute set. Naming is standard-first: every attribute, event, span, and metric uses the official semantic convention when one exists — including Development-status conventions such as the client `app.*` and session groups, pinned by version rather than avoided; a `jackin.*` extension is added only where no convention fits, records which gap it fills, and migrates to the upstream name when that convention stabilizes. Custom keys are always project-namespaced (never squatting an official namespace) because unprefixed invented keys collide — bespoke keys are the exception, never the default. Weaver 0.24.2 is pinned for the initial implementation; version upgrades are explicit schema changes. Project-owned Rust templates generate constants and typed definitions consumed by `jackin-telemetry`. The Resource carries `jackin.telemetry.schema.version=1`, all instrumentation scopes use the matching custom schema URL, and an incompatible registry diff increments that version so backends can distinguish mixed deployments. `weaver registry check`, a reviewed `registry diff`, generated-drift detection, and `weaver registry live-check` join CI.
+All providers in one process receive clones of one immutable Resource value. Invocation, session, job, screen, and Parallax run identifiers belong on relevant spans/logs, never the Resource. Noninteractive one-shot commands omit `session.id`. A persistent daemon has no stale invocation/session on autonomous work and applies request correlation only inside that request.
 
-Weaver complements rather than replaces runtime and behavioral enforcement. Fail-closed runtime validation, prohibited-key/body checks, privacy negatives, cardinality checks, export-volume ratchets, propagation tests, in-memory SDK tests, and an OTLP wire-capture conformance lane remain required. An unregistered event, span shape, metric, or attribute is rejected before it reaches any provider. *Why:* schema correctness, privacy, causality, and operational behavior are different properties and need different proofs.
+### Bounded trace boundaries
 
-### 5. Telemetry and operator output are separate ports
+One trace represents one independently understandable operation with one owner and one outcome:
 
-Operator output stays on the product output port and may render to stdout, stderr, or a TUI-owned surface according to the command contract. Telemetry never writes to those surfaces. Operator notices are not mirrored automatically: each typed notice declares `none` or a registered safe telemetry event, with `none` as the default. A mirrored event is independently redacted and carries safe structured fields; it never reuses an already-formatted terminal string.
+| Activity | Trace design |
+|---|---|
+| One-shot CLI command | One `INTERNAL` execution root following the CLI convention, with low-cardinality command classification and final exit code |
+| Interactive startup/shutdown | Separate `app.startup` and `app.shutdown` roots; no process-lifetime parent |
+| User action | Root `ui.action` with `ui.action.name` and standard `app.screen.*`/`app.widget.*` context |
+| Synchronous daemon/control call | `CLIENT` span under the current operation and a remote `SERVER` span in the same trace |
+| Delayed/detached job | `PRODUCER` scheduling span; a separate `CONSUMER` attempt trace linked to the producer and joined by `job.id` |
+| Meaningful periodic work | One root `background.cycle` per substantive cycle; no-op timer ticks are metrics only |
+| Connection/reconnect | One `connection.attempt` trace per attempt; retry scheduling is a WARN event, not an open parent |
+| Long-lived stream/watcher | No lifetime span; bounded open/handshake/control/close operations are spans, state changes are logs, throughput/liveness are metrics |
+| Subprocess | `CLIENT` span following the CLI caller convention; executable name, pid, exit code, and `error.type`, with args/path omitted by default |
 
-Exporter initialization, queue, flush, and delivery failures use a minimal self-diagnostics control path that cannot call the telemetry facade. It may update an in-memory health snapshot and surface one debounced notice per health-state transition when terminal ownership permits, but it never serializes application telemetry or writes a diagnostics file. Capsule daemon boot and fatal-exit lines emitted before providers exist or after they shut down are bounded operator output on stderr and may be captured by the container runtime; jackin❯ does not mirror or copy them into a log file.
+Provider quota and API calls carry `gen_ai.provider.name` with its well-known values, so per-provider behavior uses the industry key rather than an invented provider label. Direct execution ancestry uses parent-child spans. Delayed, independently retryable, fan-out, batch, or multiply caused work starts a new root with links. A durable job that lasts for days is divided into scheduling and bounded attempt/lease/checkpoint traces; `job.id` supplies continuity. No trace is kept open merely to preserve history.
 
-Transient command/build output required by an active TUI is held in a bounded in-memory ring and discarded when the owning operation ends. Machine-relevant failure state crosses typed result/control messages instead of being recovered by tailing a file. Automatically persisted run JSONL, command-output sidecars, `multiplexer.log`, and host-daemon logs are telemetry/log surfaces and are removed together with `jackin logs`, `jackin daemon logs`, reveal/follow/bundle actions, and failure-tail readers. Explicit user data, workspace state, caches, usage-history state that powers a product feature, and test-only fixture capture are not telemetry; misleading names such as `telemetry_store` are renamed to the product concept they actually persist. *Why:* product output must remain predictable, and an OTLP-only claim is false while jackin❯ still owns another automatic log store.
+Successful spans keep Status Unset and omit `error.type`. A terminal operation failure sets Error status and one stable `error.type`; only the owning operation emits the ERROR log. Expected cancellation emits a named cancellation log and leaves status unset. Deadline expiry or dependency-driven cancellation is an error. Guard abandonment is an instrumentation error, not user cancellation.
 
-### 6. Identity has explicit lifecycles
+### Screens and TUI actions
 
-| Identity | Lifetime | Placement |
-|---|---|---|
-| Process resource | One host or Capsule process/provider lifetime | `service.namespace=jackin`, stable service name, `service.version`, 128-bit `service.instance.id`, `process.pid`, runtime/process/container attributes on Resource |
-| Run | One host CLI invocation or one `jackin console` process | `parallax.run.id` on every run-owned log and span; omitted from autonomous daemon telemetry and metric dimensions |
-| Operator session | One top-level interactive client lifetime | 128-bit `session.id` on session-owned logs and spans; propagated to every attach initiated by that client; `session.start` and `session.end`; `session.previous_id` only on a continuing `session.start` |
-| Attach | One host-to-Capsule handshake/connection lifecycle | 128-bit `jackin.attach.id` on attach-owned logs and spans; never a metric dimension |
-| Agent session | One Capsule PTY/pane agent lifetime | `jackin.agent.session.id` plus bounded tab/pane attributes; never overloaded into `session.id` |
-| Trace context | One invocation, screen/focus interval, request, or bounded background operation | Native trace/span ids plus W3C propagation |
+Screens are application state, not operations. Entering a screen emits `ui.screen.entered`; leaving emits `ui.screen.exited`; both use a registry-bounded screen type in standard `app.screen.id`/`app.screen.name`, the per-visit id, session id, invocation id, and navigation sequence. The exit event records a bounded reason, and `ui.screen.dwell.duration` records dwell seconds by `app.screen.name`. Stable registry IDs identify screen/widget types; visit IDs never replace them. Focus changes use the same event-plus-duration approach and never create hour-long focus spans.
 
-Locally minted run, session, attach, agent-session, and process-instance identifiers use cryptographically random 128-bit values encoded as 32 lowercase hexadecimal characters. An external Parallax run id is trimmed, may lose one leading `run_` compatibility prefix, and must then contain 1–64 ASCII alphanumeric, hyphen, or underscore characters; invalid input is rejected instead of filtered or truncated. Resource never contains a run, session, attach, or dynamic component label. Metrics use the stable Resource plus bounded dimensions; run, session, attach, agent-session, container name, path, branch, user-entered values, and other unbounded identifiers are prohibited as metric attributes. Trace exemplars are explicitly deferred: the Rust SDK does not collect exemplars yet, so metric-to-trace correlation uses shared bounded dimensions until upstream support lands.
+An action is instrumented only after raw keyboard, mouse, paste, or protocol input has been interpreted. Equivalent keyboard and mouse paths produce the same `ui.action` trace. Standard `app.widget.id` and `app.widget.name` identify the control; `ui.action.name` identifies the semantic command. Raw key values, coordinates, typed text, selections, prompts, clipboard contents, PTY data, and terminal escape sequences are not telemetry.
 
-All three providers receive clones of the same immutable Resource value, and their instrumentation scopes use the registry schema URL. `service.name` is `jackin` for CLI/console processes, `jackin-daemon` for the host daemon, and `jackin-capsule` for Capsule; all use `service.namespace=jackin`. SDK process/service detectors and `OTEL_SERVICE_NAME`/`OTEL_RESOURCE_ATTRIBUTES` are honored with explicit policy: the operator may override `service.name`, but product-owned `service.namespace`, `service.version`, `service.instance.id`, process identity, and telemetry schema keys cannot be overridden; `parallax.run.id` is extracted into run context and removed from Resource; remaining operator attributes are string-only, redacted, count/size-capped, and rejected when malformed or credential-shaped. Only that normalized subset may be propagated to Capsule. *Why:* standard deployment metadata remains useful without allowing dynamic correlation ids, secrets, or spoofed process identity to fragment every signal.
+A screen transition caused by an action is a child `ui.screen.transition` span inside that action trace and is accompanied by exited/entered events. Rendering caused directly by a bounded action may be a child `ui.render` span. Continuous render loops and idle refreshes are metric-only unless an individual slow/failing render crosses a reviewed diagnostic threshold.
 
-Host run-id precedence is `PARALLAX_RUN_ID`, then a valid `parallax.run.id` parsed from `OTEL_RESOURCE_ATTRIBUTES` for Parallax compatibility, then a locally minted id. A run id exists even with telemetry disabled because the live UI and protocol use it as correlation state. Capsule startup may receive the launch run context, but every later attach/control request supplies its own validated context; no daemon-global `JACKIN_RUN_ID` may stamp unrelated work. Conflicting non-empty identities reject initialization or the request rather than being silently merged. A request carrying valid propagated context reuses the originating operator session; a new `session.id` is minted only for a new top-level interactive client, while every attach mints its own `jackin.attach.id`. *Why:* identity follows ownership and duration, which prevents stale correlation and metric-cardinality explosions while preserving the Parallax query key.
+The current OpenTelemetry App conventions define screen/widget fields and click events for client applications, but not screen entered/exited, navigation sequence, or a transport-neutral semantic action. The neutral `ui.*` gaps above are therefore registry extensions, not renamed copies of an existing standard. If OpenTelemetry adds suitable conventions, the schema module migrates to them.
 
-### 7. Context crosses every jackin❯ process boundary explicitly
+### Logs and events
 
-The attach and control protocols gain a versioned `TelemetryContext` carrying `parallax.run.id`, `session.id` when applicable, `traceparent`, and `tracestate`. Outgoing request boundaries create a `CLIENT` span and use the official W3C `TextMapPropagator` to inject both fields into the protocol carrier. Capsule and host-daemon handlers extract before creating the corresponding `SERVER` span and set its remote parent before the span is entered or any field/event is recorded. Malformed/oversized W3C fields and `tracestate` without a valid `traceparent` are ignored without echoing raw values; the product request starts a safe local root and records only a bounded propagation-error classification. Malformed or conflicting run/session identities reject the request because those fields govern product correlation rather than optional trace parenting. When both W3C fields are absent, a valid run/session starts a local trace without reporting an error. Context-free autonomous work starts under process identity with no run or operator session.
+Logs answer what changed, what degraded, what finally failed, and which invocation/session/job/trace was involved. Every product log has a registered static event name and structured fields; free-form diagnostic logging is not a production API.
 
-Launch-time environment propagation parents Capsule startup only. Dynamic operations never rely on an environment variable that was fixed when the container started. `traceparent` and `tracestate` propagate together; baggage is not accepted or forwarded; upstream sampled flags are honored by the parent-based sampler. Context is passed explicitly across concurrent tasks rather than stored in a mutable process-global slot. A thread-local OpenTelemetry `ContextGuard` cannot live across `.await`; async helpers instrument the future or re-enter context only for a synchronous poll/emit boundary. *Why:* the persistent Capsule and host daemon can serve multiple runs over time, so request context must be scoped like request data and attached before the Rust bridge starts a span.
+| Level | Contract |
+|---|---|
+| ERROR | The owning operation finally failed, data may be lost, or operator action is required |
+| WARN | Degraded but handled behavior, retry scheduling, fallback, partial result, or temporary disconnect |
+| INFO | Lifecycle and semantic state changes: startup/shutdown, session, navigation, connection, and job transitions |
+| DEBUG | Bounded diagnostic decisions and state summaries |
+| TRACE | Rare semantic internals under an explicit gate; never raw payload capture |
 
-### 8. Runs contain bounded trace graphs
+Lower layers return typed errors and enrich their spans; they do not repeat the final ERROR at every stack layer. Human-readable messages may be redacted log bodies, but grouping and metrics use stable `error.type`, never an error message. Exception records follow the exceptions-on-logs conventions: stable `exception.type`/`exception.message`/`exception.stacktrace` fields, operation-specific failure events using a `.exception`-suffixed event name, and the bare `exception` name reserved for a global last-resort handler.
 
-Runs contain two independent, linked trace families:
+### Metrics
 
-- **Operation traces** represent one top-level CLI command, semantic TUI operation, incoming request, or substantive background job. A short-lived CLI execution root follows the pinned CLI convention (`INTERNAL`, executable name, pid, exit code); daemon lifetimes do not. A UI action that starts work emits its action event on the current UI-interval span, then the new operation root links to that span context rather than inheriting the whole screen lifetime.
-- **UI-interval traces** represent one console/launch screen visit or one Capsule tab-focus interval. They contain semantic UI actions/effects only; launch stages, Docker calls, and other operational spans stay in the operation trace. PTY output is never represented as spans.
-- Every trace rotates after 30 minutes or 512 ended spans, whichever comes first. A successor root links to the predecessor root and carries the same run/session plus trace-family and operation/screen classification. These initial limits are registry-governed constants, not user configuration.
-- After a successor exists, the predecessor context emits `screen.transition`, `focus.changed`, or `trace.rotated` with the successor trace id. Each interval emits a start event immediately and an end event on normal close. No design depends on a nonexistent transition span or a final event surviving fatal termination.
+Metrics use the OpenTelemetry Meter API, registered views, cumulative temporality, explicit units/descriptions, and fixed histogram boundaries. Initial application instruments cover:
 
-`parallax.run.id`, `session.id`, explicit links, and stable operation/screen names are the joins across the graph. Timestamps support display but never establish causal ordering across processes. A daemon lifetime is represented by its Resource identity, registered lifecycle events (`process.started`, `daemon.ready`, `daemon.draining`, `daemon.stopped`), and health metrics — never by a lifetime span. *Why:* work and presentation have different lifetimes; separating them preserves ownership and boundedness without backend-hostile monster traces.
+- invocation and action count/duration/failure;
+- screen transition count, dwell duration, action duration, and render duration;
+- job scheduled/started/completed/active, attempt duration, and queue depth;
+- connection attempts/reconnects and duration;
+- daemon request count/active/duration;
+- launch-stage duration and cache/reuse decisions;
+- process uptime, CPU, memory, and bounded runtime state;
+- facade validation, redaction, and cardinality rejection.
 
-### 9. Every concurrent task declares a context mode
+Metric names use the neutral domain (`cli.*`, `ui.*`, `job.*`, `connection.*`, `daemon.*`, `process.*`, or applicable standard instrument names), never a jackin❯ prefix. Metric attributes are bounded enums such as command, screen, action, job type, operation, reason, `gen_ai.provider.name`, and `error.type`. They never contain invocation/session/Parallax run/trace/span/job/visit IDs, paths, branches, repository/container names, raw URLs, commands, error messages, or user input.
 
-Facade helpers cover `tokio::spawn`, runtime-handle/`JoinSet` spawning, `spawn_blocking`, `spawn_local`, `std::thread::spawn`, scoped/thread-builder spawning, TUI subscription helpers, socket/request handlers, timers, and long-lived stream tasks. Type-aware linting, not the baseline grep counts, is the completion authority. Every production spawn site declares exactly one mode:
+Each metric stream allows at most 256 active attribute sets per process. A new set over the limit is rejected and counted rather than evicting an arbitrary live series. Observable callbacks read atomics or cheap snapshots only; they do not perform I/O, block on async locks, scan files, or enter a Tokio runtime. The initial export interval is 30 seconds, and graceful shutdown force-flushes metrics.
 
-1. **inherit** — bounded work whose result returns to the triggering interaction; it remains a child of the active operation.
-2. **link** — detached work that outlives its trigger; it starts a new trace linked to the spawning span. When the detachment is a scheduled or queued hand-off, the scheduling span is `PRODUCER` and the processing root is `CONSUMER` (decision 11).
-3. **cycle** — periodic maintenance; health is metrics, and state changes, failures, or slow completions are named logs. A trace is created only when substantive work is known before execution, such as a scheduled provider fetch, never retroactively after a no-op poll. A cycle trace carries aggregate counts (items scanned, changed, failed) as attributes; per-item spans and per-item events are prohibited.
-4. **stream** — continuous pumps, watchers, accept loops, and reapers; the stream lifetime is not a span. Bounded handshakes/lifecycle operations are spans, notable occurrences are logs, and throughput/health are metrics.
+## Async and distributed context
 
-High-frequency status ticks, branch polling, instance refresh, render loops, PTY pumps, and resource sampling cannot emit per-cycle or per-item spans. Bare spawn calls outside approved facade/runtime internals fail lint. *Why:* causality and volume must be deliberate at the creation point; tail-buffering every poll merely to decide whether it was interesting is unnecessary complexity.
+W3C `traceparent` and `tracestate` are the only trace propagation format. Baggage is disabled until a separately reviewed use case exists. Attach, control, daemon, resolver, and queued-job envelopes carry a versioned string map plus the required invocation/session/job correlation fields.
 
-### 10. TUI observability records semantic actions, never raw input
+The caller creates the `CLIENT` or `PRODUCER` span, injects its OpenTelemetry context, and sends the envelope. The receiver extracts before constructing the `SERVER` or `CONSUMER` span and sets the parent or link before that span starts. Malformed W3C data is ignored without echoing it and starts a safe local root; malformed product correlation IDs reject the request. A remote unsampled decision is honored by the parent-based sampler.
 
-Console, launch, and Capsule instrumentation attaches at their semantic message, action, and effect boundaries after keyboard and mouse input has been interpreted. Events describe actions such as screen transition, widget activation, dialog open/confirm/cancel, focus change, and operation request. They may carry registered screen/action/widget identifiers but never raw keys, typed text, selected secret values, clipboard contents, PTY bytes, terminal escape sequences, command bodies, or unbounded labels.
+Never hold `Span::enter()`, `.entered()`, or an OpenTelemetry `ContextGuard` across `.await`. Async functions use `#[instrument(skip_all)]`, `Future::instrument`, or synchronous `in_scope` sections. Joined tasks use a child span instrumented with `or_current()`; detached tasks create a new root and link. Facade helpers cover Tokio spawn, handles, `JoinSet`, blocking/local tasks, standard/scoped threads, TUI subscriptions, socket handlers, timers, and stream tasks. Type-aware lint requires every production spawn to declare joined, detached, cycle, or stream ownership.
 
-UI vocabulary is the industry vocabulary: the registry adopts the OTel client application conventions directly — `app.screen.name`/`app.screen.id` for screens, `app.widget.id`/`app.widget.name` for activated blocks, `app.screen.click`/`app.widget.click`-shaped interaction event names, and the session conventions for session lifecycle — pinned at semantic conventions 1.43.0 through Weaver even though those groups are Development status; a reviewed registry diff absorbs upstream renames. The former `jackin.screen.name` key and any `jackin.ui.*` parallel vocabulary are retired: concepts the industry already tracks are never re-invented under a project prefix. Only true convention gaps stay project-namespaced (the monotonic navigation sequence, dwell-histogram naming), each recorded in the registry as filling a named gap and migrating when upstream stabilizes an equivalent. Screen analytics ride metrics and events rather than span duration: each screen-exit event carries dwell time feeding a per-screen dwell histogram, transitions carry a bounded reason, and the navigation sequence orders navigation without relying on cross-process clocks. *Why:* industry-adopted names are what backends and Parallax understand out of the box, and semantic actions answer what the operator did without turning observability into input capture.
+## OTLP runtime contract
 
-### 11. External boundaries use pinned semantic conventions
+All product binaries compile the three OpenTelemetry APIs/SDKs and OTLP/gRPC exporters as baseline dependencies. `opentelemetry-otlp` disables default features and enables only traces, logs, metrics, tonic gRPC, gzip, project-standard TLS roots/provider, and the maintained gRPC retry feature. HTTP, file, stdout, stderr, JSONL, TUI, and persistent spool exporters are absent. The exporter `internal-logs` feature is disabled because current internal debug records can render headers and do not form a typed health API.
 
-- Internal work uses `SpanKind::INTERNAL`, low-cardinality names, and registered parameters as attributes.
-- Subprocess calls use `SpanKind::CLIENT` in the shared `jackin-process` boundary after its dependency re-tiering. Spans include executable name, child pid, exit code, and a documented low-cardinality error type. `process.command_args` and executable paths are omitted by default; a future sanitized allowlist requires separate privacy review.
-- Docker Engine and provider HTTP work use the pinned client conventions with network/server attributes and a bounded custom external-system classification where the standard has no exact equivalent.
-- Outgoing attach, control, daemon, and credential-resolver requests use `SpanKind::CLIENT`; the receiving process uses `SpanKind::SERVER`. Persistent PTY/byte streams are not request spans: only their bounded handshake, control operations, and close lifecycle are traced.
-- Scheduling deferred or queued work uses `SpanKind::PRODUCER`; the later processing root uses `SpanKind::CONSUMER` with a creation-time link back to the producer span, so a retried or delayed job never inherits a completed trigger as its parent.
+`OTEL_EXPORTER_OTLP_ENDPOINT` is the normal Parallax endpoint. Standard per-signal endpoints override it; all three signals must resolve when telemetry is enabled. Only `grpc` is accepted. Standard timeout, compression, TLS, header, Resource, and service-name configuration is validated before providers start. The initial sampler is fixed to `ParentBased(AlwaysOn)`: local roots are recorded and a valid unsampled remote parent remains unsampled. A conflicting `OTEL_TRACES_SAMPLER` fails initialization; probabilistic application sampling is a later evidence-led policy, while any Parallax-side sampling remains outside this item. Programmatic safety ceilings win over larger environment values. `OTEL_SDK_DISABLED=true` disables all three providers.
 
-Log instrumentation scope or the registered code/owner attributes identify the emitting crate/module; shared metrics use their generated product scope and bounded ownership dimensions. A separate bounded `jackin.category` may classify operational domains; `target` is never overloaded as both ownership and category. *Why:* backend service graphs, ownership queries, and category filters need distinct, semantically correct fields.
+Host, daemon, and Capsule processes export independently and directly to their resolved endpoint. jackin❯ does not relay or proxy OTLP. Exporter credentials are resolved per trust boundary: host headers/client keys are never copied automatically into an agent-visible Capsule environment. Capsule export requires endpoint/auth material explicitly classified as Capsule-safe by the Parallax launch environment; otherwise product work continues with host-only telemetry and live coverage health reports the gap. `network=none` always prevents Capsule telemetry egress and never gets weakened for observability.
 
-### 12. Operation outcomes are result-aware
+With no endpoint or with the SDK disabled, normal commands use no-op instrumentation and create no exporter runtime, worker, socket, or telemetry artifact. Enabled checks occur before body formatting and dynamic field allocation. `--debug` still works as operator output. `jackin diagnostics validate` is the only command that promises an export attempt: it emits one marked log, trace, and metric, force-flushes, and fails when configuration or delivery cannot be confirmed.
 
-Operation wrappers close explicitly from `Result`, exit status, or a typed cancellation reason. Success leaves OTel span status unset and records `jackin.operation.outcome=success`; failure sets Error status, a stable low-cardinality `error.type`, and emits exactly one registered `operation.failed` or domain-failure event, with `exception.*` fields only when a real error value is available. Expected operator cancellation/detach records `cancelled` without Error status. A typed task abort records `cancelled`; an unclassified guard drop records `abandoned`, sets Error status, and uses a stable instrumentation-error type so missing completion paths are visible rather than mislabeled as user intent. Panic unwind records failure where Rust can observe it; process abort and `SIGKILL` make no flush or final-span guarantee.
+Exporter/provider configuration is immutable for a process lifetime. Persistent daemons report a sanitized configuration fingerprint and typed current health over their control protocol; later clients do not replace a subscriber/provider in place. Health includes only typed observations exposed by jackin-owned validation or stable SDK/exporter hooks: active signals, outer export attempt/success/failure, facade rejection, flush, and shutdown. It does not parse exporter text or promise exact SDK queue-drop, retry-attempt, partial-success, or backend-rejection counts when no typed hook exists.
 
-Failure ownership is single: lower layers return typed errors and may attach attributes or DEBUG events, and only the layer that owns the operation outcome emits the one failure event — never one ERROR per layer for the same failure. Recovered degradation (retry scheduled, fallback selected, partial result, temporary disconnection) is WARN with a bounded classification; ERROR is reserved for the owning operation's terminal failure. Exception attributes and stack details pass the same redaction and size policies as every other event. Product binaries centralize exit-code selection so roots close and providers flush before the final `ExitCode`/`process::exit` boundary; no lower layer terminates the process directly. *Why:* `?`, user cancellation, task abort, panic, non-zero exit, and an instrumentation gap are different outcomes and must remain distinguishable in a backend.
+The SDK queues are bounded and memory-only: 4,096 log records, 2,048 spans, batches no larger than 512, a 1-second schedule delay, a 5-second total export-attempt timeout including at most three retries, a 30-second metric interval, one dedicated single-worker export runtime, and a 5-second coordinated shutdown budget. Saturation drops telemetry rather than blocking product work. Retry handles only retryable transport/throttle failures; authentication/configuration failures and OTLP partial success are not retried.
 
-### 13. Metrics have explicit instruments and cardinality budgets
+Graceful shutdown has one owner: stop accepting actions/requests; cancel and time-bound background work; emit final session/job/process events; end remaining operation spans; force-flush all signals; shut down tracer, logger, then meter providers while the runtime is alive; stop the runtime. Abort, OOM, `SIGKILL`, and power loss have no durability guarantee. No local log is retained as a fallback.
 
-Every metric registry entry declares instrument kind, unit, description, aggregation, cumulative temporality, histogram boundaries where applicable, and its complete allowed dimension set. Counters cover operations, failures, bytes, transitions, facade validation/cardinality drops, and cycles; histograms cover launch stages, render time, request latency, and exporter flush latency; observable gauges cover liveness, process uptime, and bounded resource/runtime state, and their callbacks read pre-computed atomics rather than performing I/O or taking async locks. Shared instruments use the generated `jackin-telemetry` meter scope regardless of the calling crate, so one metric identity cannot split accidentally across instrumentation scopes.
+## Privacy and limits
 
-Metrics never contain run/session/attach ids, trace ids, paths, branch names, container names, user input, event bodies, or error messages. Every dimension is a registry enum or another explicitly bounded value; an instrument may have at most 256 active attribute sets per process between collection cycles. A new attribute set over that ceiling is rejected and counted as a cardinality drop rather than evicting an arbitrary live series. The interactive export interval starts at 30 seconds and every normal product shutdown force-flushes metrics before provider shutdown. Short-lived commands flush all three providers explicitly. *Why:* metrics remain aggregatable and affordable only when dimensions, series ceilings, and lifecycle behavior are part of the contract.
+Instrumentation is allowlist-first. Passwords, API tokens, authorization headers, cookies, keys, environment values, raw command lines, clipboard contents, keystrokes, typed text, prompts, PTY/terminal content, file contents, full paths, raw URLs, repository/user names, and arbitrary debug representations are prohibited by default at every level.
 
-### 14. Filtering, sampling, and SDK limits are signal-specific
+The initial ceilings are 32 attributes per log, 64 attributes and 8 links per span, 32 attributes per metric point, 4 KiB for a redacted body or exception message, 1 KiB for one string attribute, 32 elements for one array, and 128 bytes for an event/span/instrument name. Safe text is redacted before UTF-8 truncation. Invalid names, keys, enums, counts, or prohibited values reject the signal and update typed health; no raw fallback exists.
 
-There is one OTLP destination but each signal keeps the policy native to it:
+Processors validate the allowlist again before export. Endpoint/TLS errors render sanitized authorities only and never headers, embedded credentials, or client-key paths. Parallax-side redaction may add defense in depth, but application correctness cannot depend on backend cleanup.
 
-- Logs use severity and target/category filtering. INFO is the default product threshold; DEBUG activates only through the existing resolved telemetry-level contract after endpoint validation; TRACE remains a separately gated trusted diagnostic tier.
-- DEBUG and TRACE remain semantic telemetry. Neither tier permits raw PTY, input, clipboard, command arguments, credentials, environment values, or other prohibited payloads.
-- Traces use `ParentBased(AlwaysOn)`: jackin❯ roots are recorded, while a valid unsampled remote parent remains unsampled. Volume is controlled by bounded topology and task modes rather than probabilistic loss of the support story. Bounded rotation keeps every trace compatible with downstream tail sampling; if volume ever demands probabilistic root sampling, that is a future registry-governed policy change, not an environment tweak.
-- Metrics use registered instruments, views, and cumulative temporality; log severity does not disable required health metrics.
-- Product log scopes and the single product tracer scope export by default; registered metric instruments use the single generated meter scope. Dependency scopes are off unless explicitly allowlisted to prevent exporter/network recursion and dependency noise.
+## Cutover
 
-Initial SDK budgets are explicit ceilings: 4,096 queued log records, 2,048 queued spans, batches no larger than 512 records, a 1-second scheduled delay for logs and traces, a 5-second total export attempt including retry delays, a 30-second metric interval, a 5-second total coordinated shutdown budget, and one dedicated single-worker Tokio runtime per process for all exporters. Supported standard environment variables may lower these ceilings; values that are invalid or exceed them fail explicit telemetry initialization rather than being ignored or clamped invisibly. Queue exhaustion drops telemetry instead of blocking product hot paths; exact SDK queue-drop accounting is exposed only when the pinned SDK provides a stable typed hook. With no active provider, enabled checks return before message formatting, attribute allocation, span construction, or export-runtime access. A checked-in telemetry benchmark covers no-provider and active-provider launch, render, and PTY paths; the ratchet permits no more than a 5% regression from its reviewed baseline. Budget changes require conformance-volume and overhead evidence. *Why:* levels, sampling, metric views, and resource budgets solve different problems and cannot truthfully be one generic filter.
+The implementation lands in dependency order:
 
-### 15. OTLP failure behavior is bounded and visible
+1. Pin the Rust/semantic-convention family and add the generated convention registry plus thin `tracing`/metrics/context helpers.
+2. Build the three providers, two subscriber bridges with non-duplicating filters, Resource, direct OTLP runtime, health, validation command, and ordered shutdown.
+3. Separate `RunDiagnostics` into in-memory invocation/progress state and remove JSONL ownership. Mint `cli.invocation.id` independently of optional incoming `parallax.run.id`.
+4. Version protocol propagation for invocation/session/job identity and W3C context; add synchronous parent and detached link conformance tests.
+5. Instrument the shared subprocess, Docker, RPC/control, job, connection, async-task, and TUI boundaries before migrating leaf call sites.
+6. Replace screen/focus spans with entered/exited/focus events, dwell metrics, navigation sequence, and action-root traces.
+7. Classify every raw print as operator output, error output, protocol output, or telemetry; migrate only telemetry and leave legitimate product output typed and separate.
+8. Remove legacy macros, raw bypasses, run JSONL, command-output sidecars, `multiplexer.log`, host-daemon logs, `jackin logs`, `jackin daemon logs`, reveal/follow/bundle readers, file-specific telemetry configuration, and compatibility tests.
+9. Rename product usage state currently called `telemetry_store`; retain genuine application state and test-only PTY/DHAT fixture output outside production telemetry.
+10. Enable architecture, lint, Weaver, generated-drift, privacy, wire, propagation, cardinality, volume, soak, and performance gates as migration completion authority.
 
-Invalid endpoint, protocol, TLS, header, sampler, propagator, exporter selector, or over-budget SDK configuration fails initialization when the operator explicitly configured telemetry. Once initialized, the maintained spec-aware gRPC retry feature handles only retryable transport and server-throttle failures, honors retry delay metadata, uses exponential backoff with jitter, attempts at most three retries, and remains inside the per-batch 5-second export timeout. Authentication/configuration failures, other non-retryable status codes, and OTLP partial-success responses are never retried. Product work does not wait for retry exhaustion, and duplicate delivery is accepted as an OTLP property.
-
-`TelemetryHealth` is deliberately limited to data available from stable typed SDK/exporter hooks: configured and active signals, configuration fingerprint, facade validation/cardinality/redaction drops, last export attempt, last successful export, last failed export, force-flush result, and shutdown result. SDK queue-drop counts, retry-attempt counts, exact partial-success, and backend-rejected counts are added only when the exporter family exposes stable typed callbacks; the implementation must not scrape or parse exporter diagnostic text to manufacture them. A jackin-owned exporter wrapper records typed outer export results without changing payloads or retry classification. Upstream internal logs stay disabled, and one debounced operator notice derives only from those typed state transitions.
-
-`jackin diagnostics status` becomes a live configuration/health command rather than a local-run reader. It reports resolved current-process configuration plus typed health obtained over the existing control protocol from a selected live host daemon or Capsule: active signals, sanitized endpoint authority, protocol, queue ceilings, configuration fingerprint match, coverage state, and the fields above. It never prints headers or endpoint userinfo. The snapshot is not persisted, does not promise post-exit history, and does not query the backend. A TUI defers the one operator failure notice to its owned notice surface; telemetry never writes directly to the terminal.
-
-Shutdown has one owner and one order: stop accepting new work; close operation and UI roots; force-flush metrics, logs, and traces while the export runtime is alive; shut down the three providers; then stop the runtime. The complete sequence shares the 5-second budget, records which phase timed out, and may drop remaining telemetry but may not deadlock or extend product shutdown indefinitely. *Why:* OTLP-only delivery gives the backend ownership of retention and query, while jackin❯ still needs truthful, non-recursive current health and a deterministic provider lifetime.
-
-### 16. Redaction happens before every provider
-
-The facade accepts typed safe values and validates/redacts bodies and attributes before invoking a logger, tracer, or meter. Provider processors enforce the prohibited-key and size policies again as defense in depth. Authentication headers, credentials, environment values, command arguments, PTY/input payloads, clipboard data, terminal escape content, full paths, and unbounded error/debug dumps are deny-by-default.
-
-The initial registry ceilings are 32 attributes per log, 64 attributes and 8 links per span, 32 attributes per metric point, 4 KiB for a log body or redacted exception message, 1 KiB for one string attribute, 32 elements for one array value, and 128 bytes for an event, span, instrument, or registered enum name. Source paths, when enabled, are normalized repository-relative paths rather than absolute paths. Safe textual values are redacted first and then UTF-8-truncated with an explicit marker and original-length field; attribute-count, array-count, link-count, unknown-key, and invalid-enum overflow rejects the signal or metric update and increments typed self-health. There is no raw-value fallback.
-
-Redaction failure rejects the signal and updates self-health; it never falls back to a raw formatted string. Endpoint and TLS errors sanitize authorities and never render headers or embedded credentials. *Why:* data that entered a provider can already reach an exporter, so the primary privacy boundary must be before provider submission rather than only in an exporter layer.
-
-### 17. The cutover is staged but has one enforced ending
-
-The coordinated track lands in dependency order: the registry and `jackin-telemetry` contract; the `jackin-diagnostics` providers and OTLP-only runtime; protocol identity and context propagation; shared subprocess/Docker/task/TUI boundaries; crate-by-crate call-site migration and operator-output classification; then removal of legacy macros, file logging, JSONL run artifacts, command-output sidecars, Capsule and host-daemon logs, log/reveal/follow/bundle readers, obsolete environment/config keys, and compatibility tests. `RunDiagnostics` is split so the correlation id and current progress model remain in memory without any artifact writer. The product usage database remains because it is application state rather than observability, but misleading `telemetry_store` naming is changed to a usage-domain name. DHAT output and render-conformance capture remain test-harness outputs that production code cannot enable. Multiple reviewable PRs may advance the one roadmap item, but the final cutover cannot retain a second production telemetry API or exporter.
-
-Clippy `disallowed-macros`, existing print lints, grep backstops for macro blind spots, architecture-tier checks, and a telemetry-discipline dylint prohibit the deleted logging macros, raw print diagnostics, raw project `tracing`/OTel emission, bare spawns, unregistered attributes, and malformed external spans. Developer tooling binaries (`jackin-xtask`, `jackin-dev`, `jackin-pr-trailers`, and the TUI lookbook) remain outside product telemetry scope and keep intentional terminal output. *Why:* a large migration needs incremental review, while the shipped state still needs exactly one enforced approach.
+Multiple reviewable PRs may advance this item, but the final shipped state has one application instrumentation path and one production destination: OTLP to the configured Parallax endpoint.
 
 ## Acceptance criteria
 
-The item is complete only when all of the following are true:
-
-- Product builds contain the OTel API/SDK and OTLP/gRPC exporters without an `otlp` compile-time escape hatch; endpoint presence controls runtime activation.
-- With no endpoint or with `OTEL_SDK_DISABLED=true`, normal product flows and the redacted operator-output role of `--debug` work without an export runtime, worker, socket, formatted telemetry body, or telemetry artifact. Only `jackin diagnostics validate` promises delivery and fails with an actionable no-endpoint error.
-- Partial per-signal endpoint configuration, non-gRPC protocol configuration, unsupported exporter/propagator/sampler selection, embedded Capsule endpoint credentials, and an over-ceiling SDK budget fail initialization before product work begins.
-- With a test OTLP receiver, host and Capsule export logs, traces, and metrics independently over gRPC. Host exporter headers never enter the Capsule environment or control protocol; Capsule export works against any credential-free reachable receiver, supplied by the test harness in CI.
-- `network=none` never gains telemetry egress and product work continues with host-only coverage. Allowlist/open modes derive every normalized per-signal endpoint host, and persistent-process fingerprint mismatch is reported as degraded coverage until restart.
-- No production file/stdout/stderr/TUI exporter, persistent telemetry queue, run JSONL, command-output sidecar, `multiplexer.log`, host-daemon log, log/reveal/follow reader, or telemetry debug-bundle member remains.
-- Each facade event arrives once as an OTel log with top-level `EventName`, typed attributes, instrumentation scope, and current trace context, with no corresponding OTel span event.
-- One immutable, schema-versioned Resource is shared by all three providers in a process; product-owned identity cannot be overridden. Run, session, attach, trace, path, branch, and container-instance ids are absent from Resources and metric dimensions.
-- Launch, reattach, concurrent control requests, and later attaches to a persistent Capsule carry validated W3C context plus the correct request-scoped run/session/attach identities; invalid context starts a safe local root, and autonomous daemon work carries no stale run id.
-- Operation traces and UI-interval traces remain distinct, link across semantic actions, and rotate after 30 minutes or 512 ended spans with explicit predecessor links and events.
-- Failure, cancellation, detach, task abort, panic unwind, non-zero subprocess exit, and guard abandonment produce their documented distinct outcomes.
-- Semantic TUI interaction tests prove equivalent keyboard/mouse actions emit the same action event, while text input, secrets, clipboard contents, raw keys, and PTY bytes never appear in exported telemetry.
-- Endpoint loss, retry, queue/cardinality saturation, partial success, flush timeout, and shutdown obey the documented limits, are non-recursive, and do not block product hot paths. Wire tests prove partial success is not retried; health tests assert only typed observations the exporter actually exposes.
-- Coordinated shutdown closes roots, flushes all signals, shuts down providers, and stops the runtime in order inside the 5-second total budget, including unreachable-receiver and saturated-queue cases.
-- Registry tests enforce the attribute, body, string, array, link, name, and metric-series ceilings; redaction/truncation happens before provider submission and prohibited data has no DEBUG or TRACE exception.
-- Weaver check/diff/live-check, generated-drift, registry fail-closed, OTLP wire capture, privacy negatives, propagation, export-volume ratchet, and performance budgets pass. The checked-in benchmark proves the no-provider fast path and keeps the active-provider launch/render/PTY regression within 5% of its reviewed baseline.
-- Type-aware lint and workspace searches find no legacy telemetry macros/prefixes, local log writer/reader/command, production raw facade bypass, or spawn site without an explicit context mode.
-- The render-conformance fixture recorder works from its dedicated development capture channel with no dependency on telemetry files.
-- The run telemetry guide, diagnostics reference, testing guide, engineering telemetry contract, debug-bundle scope, configuration reference, deprecated-surface catalog, and roadmap overview all describe the shipped OTLP-only behavior in the landing PR.
+- Product code uses governed `tracing` spans/events, explicit OpenTelemetry metrics/context, and composition-root SDK setup; no custom provider dispatch or raw emission bypass remains.
+- Workspace and wire tests find no `jackin.*` attribute/event/span/metric namespace. Standard semantic conventions are used where available; neutral extension keys are limited to the documented gaps. Incoming `parallax.run.id` is the only vendor key and is never minted by jackin❯.
+- A one-shot command, week-long console simulation, daemon lifetime, screen visit, focus interval, job, and stream never create a lifetime trace. Each meaningful action/request/attempt/cycle has a bounded trace and searchable correlation fields.
+- Synchronous CLI-to-daemon/control calls use one trace with `CLIENT`/`SERVER` parentage. Detached jobs use `PRODUCER`/`CONSUMER` traces with a valid link and shared `job.id`.
+- Each registered event arrives once as an OTel log with native `EventName`, severity, typed fields, Resource, and current TraceId/SpanId, and does not also arrive as an OTel span event.
+- Screen history uses `ui.screen.entered`/`ui.screen.exited`, standard `app.screen.*`, visit id, navigation sequence, and dwell metrics. Equivalent keyboard/mouse actions produce the same `ui.action` trace; raw input and PTY content never appear.
+- Hosted-agent and provider telemetry uses the GenAI conventions (`gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.provider.name`); no invented agent or provider keys remain.
+- Resource values are stable for one process and cloned across all providers. Invocation/session/job/screen/Parallax IDs are absent from Resource and metric dimensions.
+- Error ownership, span status, `error.type`, cancellation, deadline, abandonment, and exception behavior match the documented contract without duplicate ERROR records.
+- With a test OTLP receiver representing Parallax, host, daemon, and a Capsule-safe configuration export all three signals directly over gRPC. No Collector config or OTLP relay is added to jackin❯.
+- With no endpoint, SDK disabled, `network=none`, endpoint loss, partial success, queue saturation, or slow export, product work remains bounded and usable; `--debug` remains operator output and only `jackin diagnostics validate` promises delivery.
+- Workspace searches find no production telemetry/log file writer or reader, JSONL run artifact, command-output sidecar, Capsule/daemon log, local log command, stdout/stderr/TUI telemetry layer, or persistent telemetry spool.
+- W3C propagation, disabled-child `or_current()`, link, malformed-context, concurrent-session, persistent-daemon, graceful-shutdown, privacy-negative, cardinality, and accelerated soak tests pass.
+- A checked-in benchmark proves the disabled fast path avoids formatting/allocation and keeps active telemetry launch/render/PTY overhead within 5% of the reviewed baseline.
+- Operator and contributor documentation describes direct OTLP-to-Parallax behavior, backend-owned history, in-memory current-run UI state, and the absence of local telemetry files.
 
 ## Out of scope
 
-- Shipping, operating, or configuring an OpenTelemetry Collector, gateway, or observability backend — jackin❯ emits standard OTLP; in practice the destination is Parallax, and everything on the far side of the endpoint is that platform's concern.
-- Defining a generic backend query API; OTLP exports telemetry but does not provide backend-independent queries.
-- Persisting, viewing, or bundling telemetry locally.
-- Profiles until the OpenTelemetry Rust profiling signal is stable and separately designed; any future production profile export is OTLP-only.
-- Shipping backend-specific dashboards, alerts, or saved queries. The backend-neutral fields and joins above are the compatibility contract.
-- Redesigning the content and formatting of operator-facing command output beyond consolidating it onto the product output port and classifying safe telemetry mirrors.
-- Telemetry for developer-only tooling binaries.
+- Deploying or configuring an OpenTelemetry Collector, gateway, agent, sidecar, backend, dashboard, alert, or saved query.
+- Parallax ingestion, authentication, storage, retention, sampling, redaction, routing, or visualization changes.
+- A backend-neutral query/viewer API inside jackin❯.
+- Local telemetry persistence, crash log, debug-bundle telemetry, audit trail, or disk-backed queue.
+- Profiles until the OpenTelemetry Rust profiling signal is stable and separately designed; any future production profile export remains OTLP-only.
+- Instrumentation of developer-only binaries such as `jackin-xtask`, `jackin-dev`, `jackin-pr-trailers`, and the TUI lookbook.
 
 ## Related files
 
-- <RepoFile path="crates/jackin-diagnostics/src/operation.rs" /> — current function facade, operation outcomes, and event emission.
-- <RepoFile path="crates/jackin-diagnostics/src/registry.rs" /> — current hand-maintained event and attribute registry.
-- <RepoFile path="crates/jackin-diagnostics/src/metrics.rs" /> — current Meter instruments and dimensions.
-- <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> — current providers, subscriber stack, exporters, filters, and Resource construction.
-- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — current run/session minting and JSONL artifact ownership.
-- <RepoFile path="crates/jackin-diagnostics/src/screen.rs" /> — current screen taxonomy and traces.
-- <RepoFile path="crates/jackin-diagnostics/src/logging.rs" /> — current host telemetry level and `debug_log!` sink.
-- <RepoFile path="crates/jackin-diagnostics/src/build_log.rs" /> — current command-output sidecar writer and failure-tail reader to replace with bounded in-memory state.
-- <RepoFile path="crates/jackin-diagnostics/src/tests.rs" /> — exporter-backed conformance, identity, privacy, volume, and topology tests.
-- <RepoFile path="crates/jackin-diagnostics/target/telemetry-volume.json" /> and <RepoFile path="ratchet.toml" /> — measured export-volume budget.
-- <RepoFile path="crates/jackin-usage/src/logging.rs" /> and <RepoFile path="crates/jackin-usage/src/telemetry.rs" /> — Capsule prefix logger, file writer, and OTLP bridge to remove.
-- <RepoFile path="crates/jackin-usage/src/telemetry_store.rs" /> — product usage state to preserve under usage-domain naming rather than misclassify as telemetry.
-- <RepoFile path="crates/jackin-core/src/debug_log.rs" /> — current low-tier debug-log port.
-- <RepoFile path="crates/jackin-process/src/lib.rs" /> — lowest-tier subprocess boundary that needs facade access after re-tiering.
-- <RepoFile path="crates/jackin-protocol/src/attach.rs" /> and <RepoFile path="crates/jackin-protocol/src/control.rs" /> — versioned context propagation across persistent process boundaries.
-- <RepoFile path="crates/jackin-runtime/src/runtime/host_attach.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> — host context injection and launch-only environment propagation.
-- <RepoFile path="crates/jackin-runtime/src/runtime/logs.rs" />, <RepoFile path="crates/jackin/src/cli/logs.rs" />, and <RepoFile path="crates/jackin/src/app/daemon_cmd.rs" /> — local log commands and readers to remove.
-- <RepoFile path="crates/jackin-runtime/src/host_daemon.rs" /> — current persistent daemon log and control health surface.
-- <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" /> — in-memory current-run progress to retain after artifact removal.
-- <RepoFile path="crates/jackin-capsule/src/container_context.rs" /> and <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — persistent Capsule identity, request context, task modes, and semantic actions.
-- <RepoFile path="crates/jackin-capsule/src/alloc_telemetry.rs" /> — DHAT test output that remains explicitly outside production telemetry.
-- <RepoFile path="crates/jackin-xtask/src/arch.rs" /> — enforced crate tiers and dependency direction.
+- <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> — current providers, subscriber, exporter, filtering, and Resource setup.
+- <RepoFile path="crates/jackin-diagnostics/src/operation.rs" /> — current operation facade and result handling.
+- <RepoFile path="crates/jackin-diagnostics/src/registry.rs" /> and <RepoFile path="crates/jackin-diagnostics/src/metrics.rs" /> — current schema and instruments to replace with convention-led generated definitions.
+- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> and <RepoFile path="crates/jackin-diagnostics/src/build_log.rs" /> — invocation/progress state to retain in memory and artifact writers/readers to remove.
+- <RepoFile path="crates/jackin-diagnostics/src/screen.rs" /> — current screen traces to replace with events, action traces, and dwell metrics.
+- <RepoFile path="crates/jackin-diagnostics/src/logging.rs" /> and <RepoFile path="crates/jackin-core/src/debug_log.rs" /> — legacy host logging paths to remove.
+- <RepoFile path="crates/jackin-usage/src/logging.rs" /> and <RepoFile path="crates/jackin-usage/src/telemetry.rs" /> — Capsule prefix/file logging and partial OTLP path to replace.
+- <RepoFile path="crates/jackin-usage/src/telemetry_store.rs" /> — product usage state to preserve under accurate domain naming.
+- <RepoFile path="crates/jackin-process/src/lib.rs" /> — shared CLI/subprocess caller instrumentation boundary.
+- <RepoFile path="crates/jackin-protocol/src/attach.rs" /> and <RepoFile path="crates/jackin-protocol/src/control.rs" /> — versioned correlation and W3C context envelopes.
+- <RepoFile path="crates/jackin-runtime/src/runtime/host_attach.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" />, and <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" /> — host propagation and in-memory launch state.
+- <RepoFile path="crates/jackin-runtime/src/runtime/logs.rs" />, <RepoFile path="crates/jackin-runtime/src/host_daemon.rs" />, <RepoFile path="crates/jackin/src/cli/logs.rs" />, and <RepoFile path="crates/jackin/src/app/daemon_cmd.rs" /> — local log files, commands, readers, and daemon health surfaces.
+- <RepoFile path="crates/jackin-capsule/src/container_context.rs" /> and <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — persistent Capsule context, action, job, and task ownership.
+- <RepoFile path="crates/jackin-capsule/src/alloc_telemetry.rs" /> — DHAT test output that remains outside production telemetry.
+- <RepoFile path="crates/jackin-xtask/src/arch.rs" /> — dependency tiers and instrumentation enforcement.
 - <RepoFile path="ENGINEERING.md" />, <RepoFile path="TESTING.md" />, and <RepoFile path="DEPRECATED.md" /> — contributor contracts updated by the landing implementation.
 
-Current operator/contributor behavior remains documented in [Run telemetry](/guides/run-telemetry/) and [Run Diagnostics](/reference/runtime/diagnostics/) until the implementation lands; the landing PR replaces those descriptions with the OTLP-only contract above.
+Current behavior remains documented in [Run telemetry](/guides/run-telemetry/) and [Run Diagnostics](/reference/runtime/diagnostics/) until implementation lands. The landing PR replaces those pages with the direct OTLP-to-Parallax application contract above.
