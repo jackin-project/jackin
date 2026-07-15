@@ -1,0 +1,20 @@
+# Generated from Cargo.toml, Cargo.lock, and rust-toolchain.toml during Stage 0.
+schema = 1
+recorded_at = "2026-07-15"
+donor_revision = "33896a504e19ef13adb8692550c1845cb86a9504"
+edition = "2024"
+rust_version_floor = "1.95"
+tested_toolchain = "1.97.0"
+ratatui = "0.30.2"
+ratatui_core = "0.1.2"
+ratatui_crossterm = "0.1.2"
+crossterm = "0.29.0"
+tested_operating_systems = ["linux", "macos"]
+
+[[reproduction]]
+command = "cargo nextest run -p jackin-tui -p jackin-tui-lookbook"
+expected = "all donor and lookbook tests pass"
+
+[[reproduction]]
+command = "cargo run -p jackin-tui-lookbook -- --check docs/public/tui-lookbook"
+expected = "committed SVG catalog is current"
