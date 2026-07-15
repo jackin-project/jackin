@@ -185,6 +185,10 @@ pub(crate) struct ImageMaterialized {
 #[derive(Debug)]
 #[must_use]
 pub(crate) struct InstancePrepared {
+    /// Materialized image tag carried into runtime launch.
+    pub image: String,
+    /// Whether the selected agent image was reused.
+    pub selected_image_reused: bool,
     /// On-disk instance identity for the launch.
     pub instance_manifest: InstanceManifest,
     /// Per-container state directory under `paths.data_dir`.

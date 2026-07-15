@@ -313,6 +313,119 @@ where
     })
 }
 
+struct PrepareInstance<'a, D> {
+    paths: &'a jackin_core::JackinPaths,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    workspace_name: &'a Option<String>,
+    container_name: &'a str,
+    role_key: &'a str,
+    agent_display_name: &'a str,
+    agent: jackin_core::Agent,
+    source: &'a jackin_config::RoleSource,
+    opts: &'a super::super::super::LoadOptions,
+    dind_started: bool,
+    dind: &'a str,
+    network: &'a str,
+    certs_volume: &'a str,
+    recipe_role_git_sha: Option<String>,
+    recipe_base_image_ref: Option<String>,
+    supported_agents: &'a [jackin_core::Agent],
+    restoring: bool,
+    docker: &'a D,
+    cleanup: &'a super::super::super::LoadCleanup,
+    image: ImageMaterialized,
+}
+
+async fn prepare_instance<D>(input: PrepareInstance<'_, D>) -> anyhow::Result<InstancePrepared>
+where
+    D: DockerApi,
+{
+    let PrepareInstance {
+        paths,
+        workspace,
+        workspace_name,
+        container_name,
+        role_key,
+        agent_display_name,
+        agent,
+        source,
+        opts,
+        dind_started,
+        dind,
+        network,
+        certs_volume,
+        recipe_role_git_sha,
+        recipe_base_image_ref,
+        supported_agents,
+        restoring,
+        docker,
+        cleanup,
+        image: ImageMaterialized {
+            image,
+            selected_image_reused,
+        },
+    } = input;
+    let host_workdir_fingerprint =
+        super::super::super::manifest_host_workdir_fingerprint(workspace);
+    let new_manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: container_name,
+        workspace_name: workspace_name.as_deref(),
+        workspace_label: workspace.label.as_str(),
+        workdir: &workspace.workdir,
+        host_workdir_fingerprint: &host_workdir_fingerprint,
+        role_key,
+        role_display_name: agent_display_name,
+        agent_runtime: agent,
+        role_source_git: &source.git,
+        role_source_ref: opts.role_branch.as_deref(),
+        image_tag: &image,
+        docker: DockerResources {
+            role_container: container_name.to_owned(),
+            dind_container: dind_started.then(|| dind.to_owned()),
+            network: network.to_owned(),
+            certs_volume: dind_started.then(|| certs_volume.to_owned()),
+        },
+        role_git_sha: recipe_role_git_sha,
+        base_image_ref: recipe_base_image_ref,
+        base_image_digest: None,
+        supported_agents: supported_agents.to_vec(),
+    });
+    let container_state = paths.data_dir.join(container_name);
+    let mut instance_manifest = if restoring {
+        match InstanceManifest::read_optional(&container_state).with_context(|| {
+            format!(
+                "restoring container `{container_name}`: existing manifest is unreadable; \
+                 repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity"
+            )
+        }) {
+            Ok(Some(existing)) => existing,
+            Ok(None) => new_manifest,
+            Err(error) => {
+                cleanup.run(docker).await;
+                return Err(error);
+            }
+        }
+    } else {
+        new_manifest
+    };
+    if let Err(error) = super::super::super::write_instance_status(
+        paths,
+        &container_state,
+        &mut instance_manifest,
+        InstanceStatus::Active,
+    ) {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
+    Ok(InstancePrepared {
+        image,
+        selected_image_reused,
+        instance_manifest,
+        container_state,
+        host_workdir_fingerprint,
+    })
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "remaining phase extraction is tracked by codebase-health plan 016"
@@ -363,7 +476,6 @@ where
         ..
     } = ctx;
     let container_id = ContainerId::parse(&container_name).context("validating container name")?;
-    let container_state = paths.data_dir.join(&container_name);
     let adopted_sidecar = super::super::super::adopt_prewarmed_dind_sidecar(paths, docker).await;
     let adopted_sidecar_was_used = adopted_sidecar.is_some();
     let resources = adopted_sidecar.as_ref().map_or_else(
@@ -673,74 +785,32 @@ where
         image,
         selected_image_reused,
     };
-    let ImageMaterialized {
+    let prepared = prepare_instance(PrepareInstance {
+        paths,
+        workspace,
+        workspace_name: &workspace_name,
+        container_name: &container_name,
+        role_key: &role_key,
+        agent_display_name: &agent_display_name,
+        agent,
+        source: &source,
+        opts,
+        dind_started,
+        dind: &dind,
+        network: &network,
+        certs_volume: &certs_volume,
+        recipe_role_git_sha,
+        recipe_base_image_ref,
+        supported_agents: &supported_agents,
+        restoring,
+        docker,
+        cleanup: &cleanup,
+        image: image_mat,
+    })
+    .await?;
+    let InstancePrepared {
         image,
         selected_image_reused,
-    } = image_mat;
-
-    let host_workdir_fingerprint =
-        super::super::super::manifest_host_workdir_fingerprint(workspace);
-    let new_manifest = InstanceManifest::new(NewInstanceManifest {
-        container_base: &container_name,
-        workspace_name: workspace_name.as_deref(),
-        workspace_label: workspace.label.as_str(),
-        workdir: &workspace.workdir,
-        host_workdir_fingerprint: &host_workdir_fingerprint,
-        role_key: &role_key,
-        role_display_name: &agent_display_name,
-        agent_runtime: agent,
-        role_source_git: &source.git,
-        role_source_ref: opts.role_branch.as_deref(),
-        image_tag: &image,
-        docker: DockerResources {
-            role_container: container_name.clone(),
-            dind_container: dind_started.then(|| dind.clone()),
-            network: network.clone(),
-            certs_volume: dind_started.then(|| certs_volume.clone()),
-        },
-        // D7: pin the launch recipe for faithful restore.
-        role_git_sha: recipe_role_git_sha,
-        base_image_ref: recipe_base_image_ref,
-        base_image_digest: None, // D16: populated when Docker reports digest post-build
-        supported_agents: supported_agents.clone(),
-    });
-    // `read_optional` already separates "manifest absent" (fall back
-    // to `new_manifest` and re-record the recovered identity) from
-    // "manifest unreadable" (must surface — the operator either
-    // repairs the file or purges the recorded state).
-    let mut instance_manifest = if restoring {
-        match InstanceManifest::read_optional(&container_state).with_context(|| {
-                format!(
-                    "restoring container `{container_name}`: existing manifest is unreadable; \
-                     repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity"
-                )
-            }) {
-                Ok(Some(existing)) => existing,
-                Ok(None) => new_manifest,
-                Err(error) => {
-                    cleanup.run(docker).await;
-                    return Err(error);
-                }
-            }
-    } else {
-        new_manifest
-    };
-    if let Err(error) = super::super::super::write_instance_status(
-        paths,
-        &container_state,
-        &mut instance_manifest,
-        InstanceStatus::Active,
-    ) {
-        cleanup.run(docker).await;
-        return Err(error);
-    }
-
-    let prepared: InstancePrepared = InstancePrepared {
-        instance_manifest,
-        container_state: container_state.clone(),
-        host_workdir_fingerprint: host_workdir_fingerprint.clone(),
-    };
-    let InstancePrepared {
         mut instance_manifest,
         container_state,
         host_workdir_fingerprint,
