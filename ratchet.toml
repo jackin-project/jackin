@@ -605,7 +605,7 @@ key = "crates/jackin-launch-tui/README.md"
 bound = 1695
 [[family.entry]]
 key = "crates/jackin-lints/README.md"
-bound = 2051
+bound = 2031
 [[family.entry]]
 key = "crates/jackin-manifest/README.md"
 bound = 1797

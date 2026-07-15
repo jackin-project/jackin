@@ -29,10 +29,10 @@ cd crates/jackin-lints && cargo test
 cargo dylint --all -- --workspace
 ```
 
-Scheduled enforced lane: Hygiene job `dylint-advisory`. The pinned 6.0.1 tools
-are source-built because the upstream prebuilt embeds its release-builder
-`dylint_driver` path. Real exit status is captured in the step summary and
-fails the job on findings or tool failure.
+Scheduled enforced lane: Hygiene job `dylint-advisory`. Pinned 6.0.1 tools are
+source-built (upstream prebuilt embeds its release-builder `dylint_driver`
+path). Real exit status is in the step summary and fails the job on findings
+or tool failure.
 
 ## Pilot closure (plan 012, 2026-07-14)
 
