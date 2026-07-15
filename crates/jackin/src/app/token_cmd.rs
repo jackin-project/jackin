@@ -9,35 +9,28 @@ use crate::cli;
 use jackin_config::AppConfig;
 use jackin_core::{JackinPaths, WorkspaceName};
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "Claude token subcommand dispatch (setup/rotate/revoke/doctor); one line over cap. Tracked for the root-jackin-integration decomposition slice (codebase-health)."
-)]
+fn parse_reuse(input: &str, account: Option<&str>) -> Result<jackin_core::OpRef> {
+    if !input.starts_with("op://") {
+        anyhow::bail!(
+            "--reuse expects an op:// reference (got {input:?}); see \
+             https://developer.1password.com/docs/cli/secret-reference-syntax/"
+        );
+    }
+    // Canonicalise via the same disambiguation path the picker
+    // uses. Thread the operator's `--op-account` into every
+    // underlying `op vault list` / `item list` / `item get` query
+    // so multi-1P-account operators resolve `--reuse` against the
+    // pinned account; otherwise a coincidentally-named item in
+    // the default account could swap in for the intended one.
+    let probe = jackin_env::OpCli::new();
+    jackin_env::resolve_op_uri_to_ref(input, &probe, account)
+}
+
 pub(super) fn handle_claude_token(
     paths: &JackinPaths,
     config: &mut AppConfig,
     action: cli::WorkspaceClaudeTokenCommand,
 ) -> Result<()> {
-    use crate::workspace::token_setup;
-    use jackin_core::OpRef;
-
-    fn parse_reuse(input: &str, account: Option<&str>) -> Result<OpRef> {
-        if !input.starts_with("op://") {
-            anyhow::bail!(
-                "--reuse expects an op:// reference (got {input:?}); see \
-                 https://developer.1password.com/docs/cli/secret-reference-syntax/"
-            );
-        }
-        // Canonicalise via the same disambiguation path the picker
-        // uses. Thread the operator's `--op-account` into every
-        // underlying `op vault list` / `item list` / `item get` query
-        // so multi-1P-account operators resolve `--reuse` against the
-        // pinned account; otherwise a coincidentally-named item in
-        // the default account could swap in for the intended one.
-        let probe = jackin_env::OpCli::new();
-        jackin_env::resolve_op_uri_to_ref(input, &probe, account)
-    }
-
     match action {
         cli::WorkspaceClaudeTokenCommand::Setup {
             workspace,
@@ -48,163 +41,221 @@ pub(super) fn handle_claude_token(
             reuse,
             plain,
             interactive,
-        } => {
-            config.require_workspace(
-                &WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?,
-            )?;
-
-            // Interactive mode: walk the operator through 1Password with
-            // plain CLI prompts (account → vault → item → field) when
-            // --interactive is set. The rich TUI drill-down lives only in
-            // `jackin console`; the CLI stays CLI.
-            let (args, role) = if interactive {
-                // --role flag wins; otherwise prompt for the scope so the
-                // interactive path selects everything.
-                let role = match role {
-                    Some(r) => Some(r),
-                    None => prompt_interactive_role(config, &workspace)?,
-                };
-                let args = match prompt_interactive_token_source()? {
-                    InteractiveTokenSource::Plain => token_setup::TokenSetupArgs {
-                        account: op_account,
-                        plain_text: true,
-                        ..Default::default()
-                    },
-                    InteractiveTokenSource::Op => {
-                        prompt_interactive_token_store(&workspace, op_account)?
-                    }
-                };
-                (args, role)
-            } else if plain {
-                let args = token_setup::TokenSetupArgs {
-                    account: op_account,
-                    plain_text: true,
-                    ..Default::default()
-                };
-                (args, role)
-            } else {
-                let reuse_ref = reuse
-                    .as_deref()
-                    .map(|r| parse_reuse(r, op_account.as_deref()))
-                    .transpose()?;
-                let args = token_setup::TokenSetupArgs {
-                    vault,
-                    item_name,
-                    account: op_account,
-                    reuse: reuse_ref,
-                    field_label: None,
-                    edit_existing: None,
-                    section: None,
-                    plain_text: false,
-                };
-                (args, role)
-            };
-
-            // A flag-supplied role is taken verbatim, so reject one the
-            // workspace doesn't allow before minting — otherwise the OAuth
-            // round-trip runs and wires a token to a dead role scope. The
-            // interactive prompt already only offers allowed roles.
-            if let Some(role) = role.as_deref() {
-                validate_setup_role_allowed(config, &workspace, role)?;
-            }
-            let scope = match role {
-                Some(role) => token_setup::TokenSetupScope::WorkspaceRole { workspace, role },
-                None => token_setup::TokenSetupScope::Workspace(workspace),
-            };
-            let report = token_setup::run_setup(paths, config, &scope, &args)?;
-            print_token_setup_report(&report);
-            Ok(())
-        }
+        } => handle_token_setup(
+            paths,
+            config,
+            cli::WorkspaceClaudeTokenCommand::Setup {
+                workspace,
+                role,
+                vault,
+                item_name,
+                op_account,
+                reuse,
+                plain,
+                interactive,
+            },
+        ),
         cli::WorkspaceClaudeTokenCommand::Rotate {
             workspace,
             role,
             vault,
             item_name,
             op_account,
-        } => {
-            // Reject a disallowed flag-supplied role before minting, same
-            // as setup — otherwise rotate wires a token to a dead scope.
-            if let Some(role) = role.as_deref() {
-                validate_setup_role_allowed(config, &workspace, role)?;
-            }
-            let scope = match role {
-                Some(role) => token_setup::TokenSetupScope::WorkspaceRole { workspace, role },
-                None => token_setup::TokenSetupScope::Workspace(workspace),
-            };
-            // Read the prior token from the SAME scope being rotated so a
-            // role-scoped token (wired by `setup --role`) is found and its
-            // vault/op-item are reused, not the workspace-level slot.
-            let prior = token_setup::prior_token_slot(config, &scope);
-            // Default rotate to the prior item's vault when
-            // `--vault` is not supplied. Without this, the
-            // documented `rotate my-app` form errors inside
-            // `create_op_item` AFTER the PTY token capture
-            // completes. See [`token_setup::vault_for_rotate`].
-            let derived_vault = token_setup::vault_for_rotate(vault, prior.as_ref());
-            let args = token_setup::TokenSetupArgs {
-                vault: derived_vault,
-                item_name,
-                account: op_account,
-                reuse: None,
-                field_label: None,
-                edit_existing: None,
-                section: None,
-                plain_text: false,
-            };
-            let report = token_setup::run_setup(paths, config, &scope, &args)?;
-            print_token_setup_report(&report);
-            // Rotate is an op-only flow (it always mints into a new 1P
-            // item), so the report always carries an op ref here.
-            let new_ref = report
-                .op_ref
-                .as_ref()
-                .expect("rotate always wires an op reference");
-            delete_prior_op_item(prior, new_ref, report.op_account)?;
-            Ok(())
-        }
+        } => handle_token_rotate(paths, config, workspace, role, vault, item_name, op_account),
         cli::WorkspaceClaudeTokenCommand::Revoke {
             workspace,
             delete_op_item,
-        } => {
-            let workspace = WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?;
-            let report = token_setup::run_revoke(paths, config, &workspace, delete_op_item)?;
-            if report.cleared_slot {
-                println!(
-                    "Cleared canonical slot for workspace {:?}.",
-                    report.workspace
-                );
-            } else {
-                println!(
-                    "Workspace {:?} had no canonical slot — config left unchanged.",
-                    report.workspace
-                );
-            }
-            if report.deleted_op_item {
-                println!("Deleted referenced 1P item.");
-            }
-            Ok(())
-        }
+        } => handle_token_revoke(paths, config, workspace, delete_op_item),
         cli::WorkspaceClaudeTokenCommand::Doctor { workspace } => {
-            let workspace = WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?;
-            let report = token_setup::run_doctor(config, &workspace)?;
-            println!("workspace        {}", report.workspace);
-            println!("auth_forward     {}", report.mode);
-            println!(
-                "op account       {}",
-                report.op_account.as_deref().unwrap_or("(default)")
-            );
-            if let Some(r) = &report.op_ref {
-                println!("op_ref           {}", r.path);
-            } else {
-                println!("op_ref           (literal slot)");
-            }
-            println!(
-                "token sha256     {}… (12 hex prefix; matches stored value)",
-                report.token_sha256_prefix
-            );
-            Ok(())
+            handle_token_doctor(config, workspace)
         }
     }
+}
+
+fn handle_token_setup(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    action: cli::WorkspaceClaudeTokenCommand,
+) -> Result<()> {
+    let cli::WorkspaceClaudeTokenCommand::Setup {
+        workspace,
+        role,
+        vault,
+        item_name,
+        op_account,
+        reuse,
+        plain,
+        interactive,
+    } = action
+    else {
+        unreachable!("handle_token_setup requires Setup");
+    };
+
+    use crate::workspace::token_setup;
+
+    config.require_workspace(&WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?)?;
+
+    // Interactive mode: walk the operator through 1Password with
+    // plain CLI prompts (account → vault → item → field) when
+    // --interactive is set. The rich TUI drill-down lives only in
+    // `jackin console`; the CLI stays CLI.
+    let (args, role) = if interactive {
+        // --role flag wins; otherwise prompt for the scope so the
+        // interactive path selects everything.
+        let role = match role {
+            Some(r) => Some(r),
+            None => prompt_interactive_role(config, &workspace)?,
+        };
+        let args = match prompt_interactive_token_source()? {
+            InteractiveTokenSource::Plain => token_setup::TokenSetupArgs {
+                account: op_account,
+                plain_text: true,
+                ..Default::default()
+            },
+            InteractiveTokenSource::Op => prompt_interactive_token_store(&workspace, op_account)?,
+        };
+        (args, role)
+    } else if plain {
+        let args = token_setup::TokenSetupArgs {
+            account: op_account,
+            plain_text: true,
+            ..Default::default()
+        };
+        (args, role)
+    } else {
+        let reuse_ref = reuse
+            .as_deref()
+            .map(|r| parse_reuse(r, op_account.as_deref()))
+            .transpose()?;
+        let args = token_setup::TokenSetupArgs {
+            vault,
+            item_name,
+            account: op_account,
+            reuse: reuse_ref,
+            field_label: None,
+            edit_existing: None,
+            section: None,
+            plain_text: false,
+        };
+        (args, role)
+    };
+
+    // A flag-supplied role is taken verbatim, so reject one the
+    // workspace doesn't allow before minting — otherwise the OAuth
+    // round-trip runs and wires a token to a dead role scope. The
+    // interactive prompt already only offers allowed roles.
+    if let Some(role) = role.as_deref() {
+        validate_setup_role_allowed(config, &workspace, role)?;
+    }
+    let scope = match role {
+        Some(role) => token_setup::TokenSetupScope::WorkspaceRole { workspace, role },
+        None => token_setup::TokenSetupScope::Workspace(workspace),
+    };
+    let report = token_setup::run_setup(paths, config, &scope, &args)?;
+    print_token_setup_report(&report);
+    Ok(())
+}
+
+fn handle_token_rotate(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    workspace: String,
+    role: Option<String>,
+    vault: Option<String>,
+    item_name: Option<String>,
+    op_account: Option<String>,
+) -> Result<()> {
+    use crate::workspace::token_setup;
+
+    // Reject a disallowed flag-supplied role before minting, same
+    // as setup — otherwise rotate wires a token to a dead scope.
+    if let Some(role) = role.as_deref() {
+        validate_setup_role_allowed(config, &workspace, role)?;
+    }
+    let scope = match role {
+        Some(role) => token_setup::TokenSetupScope::WorkspaceRole { workspace, role },
+        None => token_setup::TokenSetupScope::Workspace(workspace),
+    };
+    // Read the prior token from the SAME scope being rotated so a
+    // role-scoped token (wired by `setup --role`) is found and its
+    // vault/op-item are reused, not the workspace-level slot.
+    let prior = token_setup::prior_token_slot(config, &scope);
+    // Default rotate to the prior item's vault when
+    // `--vault` is not supplied. Without this, the
+    // documented `rotate my-app` form errors inside
+    // `create_op_item` AFTER the PTY token capture
+    // completes. See [`token_setup::vault_for_rotate`].
+    let derived_vault = token_setup::vault_for_rotate(vault, prior.as_ref());
+    let args = token_setup::TokenSetupArgs {
+        vault: derived_vault,
+        item_name,
+        account: op_account,
+        reuse: None,
+        field_label: None,
+        edit_existing: None,
+        section: None,
+        plain_text: false,
+    };
+    let report = token_setup::run_setup(paths, config, &scope, &args)?;
+    print_token_setup_report(&report);
+    // Rotate is an op-only flow (it always mints into a new 1P
+    // item), so the report always carries an op ref here.
+    let new_ref = report
+        .op_ref
+        .as_ref()
+        .expect("rotate always wires an op reference");
+    delete_prior_op_item(prior, new_ref, report.op_account)?;
+    Ok(())
+}
+
+fn handle_token_revoke(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    workspace: String,
+    delete_op_item: bool,
+) -> Result<()> {
+    use crate::workspace::token_setup;
+
+    let workspace = WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?;
+    let report = token_setup::run_revoke(paths, config, &workspace, delete_op_item)?;
+    if report.cleared_slot {
+        println!(
+            "Cleared canonical slot for workspace {:?}.",
+            report.workspace
+        );
+    } else {
+        println!(
+            "Workspace {:?} had no canonical slot — config left unchanged.",
+            report.workspace
+        );
+    }
+    if report.deleted_op_item {
+        println!("Deleted referenced 1P item.");
+    }
+    Ok(())
+}
+
+fn handle_token_doctor(config: &AppConfig, workspace: String) -> Result<()> {
+    use crate::workspace::token_setup;
+
+    let workspace = WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?;
+    let report = token_setup::run_doctor(config, &workspace)?;
+    println!("workspace        {}", report.workspace);
+    println!("auth_forward     {}", report.mode);
+    println!(
+        "op account       {}",
+        report.op_account.as_deref().unwrap_or("(default)")
+    );
+    if let Some(r) = &report.op_ref {
+        println!("op_ref           {}", r.path);
+    } else {
+        println!("op_ref           (literal slot)");
+    }
+    println!(
+        "token sha256     {}… (12 hex prefix; matches stored value)",
+        report.token_sha256_prefix
+    );
+    Ok(())
 }
 
 /// Delete the previous 1P item after a rotate succeeded.

@@ -53,11 +53,13 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 
 | Plan | One-line deviation |
 |------|--------------------|
+| 009 | Matrix point 4 redaction helpers still absent — structural prohibitions only (plan-allowed). |
+| 018 | Three consumers on `jackin-process`; remaining `Command::new` sites enumerated (sensitive-boundary / PTY / tooling) — see plan Execution notes. |
 | 019 | jackin-config + jackin-core private impl modules; curated root re-exports; justified remainders `container_paths`/`debug_log`/`test_support`. |
 | 021 | Three `drive_frame` callers (console/launch/capsule); editor wildcards + shared modal scroll; dialog sub-loops documented out-of-scope. |
+| 022 | Launch deprecation STOP (command already gone); root CLI handlers split; four `too_many_lines` expects removed. |
 | 027 | suite-time enforce-when-junit (skip without); agent-doc enforce; problem matcher; health trend/tightening. |
 | 029 | Bare-brand classifier + plans scan live; mass-fix held (204 hits > STOP ~50); enforce via `JACKIN_BRAND_BARE_ENFORCE`. |
-| 009 | Matrix point 4 redaction helpers still absent — structural prohibitions only (plan-allowed). |
 
 ## Findings considered and rejected (do not re-audit)
 

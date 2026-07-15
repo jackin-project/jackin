@@ -91,7 +91,7 @@ Steps 1–2 add the two characterization suites (these are the roadmap's named a
 ## Done criteria
 
 - [x] TTY fallback implemented + characterized; console docs page consistent
-- [x] `launch` warning implemented + characterized; DEPRECATED.md row added
+- [x] `launch` deprecation: STOP — command already removed (drift); documented, no warning shipped
 - [x] All five `too_many_lines` expectations removed, each after green narrow coverage
 - [x] `session.rs` (+ sweep misses) carry `//!` contracts
 - [x] `cargo xtask ci --fast` exits 0; status row updated
@@ -106,3 +106,10 @@ Steps 1–2 add the two characterization suites (these are the roadmap's named a
 
 - Future handlers follow setup/dispatch/effect from birth; `too_many_lines` expectations on new code should be rejected in review.
 - If the bare-command fallback changes again, `docs/content/docs/commands/console.mdx` is the single page that documents it (docs rule).
+
+## Execution notes
+
+- **Launch deprecation (STOP)**: `Command::Launch` / `jackin launch` no longer exists in the CLI (`app.rs` note: deprecation N/A). No stderr warning and no DEPRECATED.md row for a removed command — reporting only, per plan STOP.
+- **TTY fallback**: implemented + characterized in `cli/dispatch` tests (bare TTY → console; non-TTY → silent help; explicit `console` without TTY errors).
+- **Handler splits (too_many_lines)**: removed `#[expect(clippy::too_many_lines)]` from `token_cmd`, `config_cmd`, `workspace_cmd`, and `load_cmd::handle_console` by extracting setup/dispatch/effect helpers (token setup/rotate/revoke/doctor; config mount/trust/auth/env/git; workspace create/list/show/edit/prune/remove/env with edit prep/summary/apply; console outcome dispatch via `ConsoleLaunchCtx`). `cli/status.rs` had no remaining expects at execution time.
+- `session.rs` `//!` contract and module sweep left as previously landed on this branch.

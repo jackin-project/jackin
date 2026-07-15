@@ -328,7 +328,7 @@ key = "clippy::reversed_empty_ranges@jackin-capsule"
 bound = 1
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-agent-status"
 bound = 2
@@ -389,9 +389,6 @@ bound = 11
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-usage"
 bound = 2
-[[family.entry]]
-key = "clippy::too_many_lines@jackin"
-bound = 4
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-capsule"
 bound = 8

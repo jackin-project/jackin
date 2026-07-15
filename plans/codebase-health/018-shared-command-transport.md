@@ -86,3 +86,24 @@ Transport unit tests (exit codes, capture, timeout firing, timeout-none, retry p
 
 - Retry/timeout policy convergence (making sites share defaults) is a deliberate later decision with this crate as the lever.
 - New subprocess call sites use the transport crate — reviewer rule; consider a disallowed-methods entry for `std::process::Command::new` outside the transport crate once migration stabilizes (plan 011's inventory owns that decision).
+
+## Execution notes
+
+- Landed transport crate `jackin-process` (`ExecRequest` / `ExecResult`, async + sync, timeout/retry). Primary consumers migrated: `jackin-runtime` `exec_host`, `jackin-capsule` `exec`, `jackin-xtask` `cmd` (shim when program+args are simple).
+- Surviving direct `Command::new` / `tokio::process::Command::new` sites (~94 production, outside `jackin-process`) — left direct per STOP (load-bearing semantics, sensitive-boundary ownership, or not in the three-consumer migration set):
+
+| Category | Why left direct |
+|----------|-----------------|
+| Capsule firewall / netns (`firewall.rs`, `ipset`) | Requires precise process/fd and netns attach semantics the transport API does not model |
+| Capsule runtime_setup / git_context / pr_context / exit_assess | Host probes with mixed git/gh/codex binaries and bespoke env; not the ShellRunner/exec_host path |
+| Apple Container CLI (`apple_container*.rs`) | Third-party `container` binary lifecycle; streaming/spawn shapes differ from capture-oriented transport |
+| Docker CLI helpers (`docker_client`, `snapshot`, `host_attach`, shell_runner residual) | Bollard is primary; residual CLI spawns need interactive/streaming attach |
+| 1Password / host Claude (`op_cli`, `host_claude`) | Sensitive-boundary ownership — plan STOP forbids moving protected-value paths into transport |
+| Host desktop/clipboard/caffeinate (`jackin-host`) | GUI/platform tools (osascript etc.), not shell transport |
+| Isolation git inspect | Tiny read-only git probes; characterization fixtures use Command directly in tests |
+| Image agent/capsule binary | Download verify + `gh` release tools |
+| xtask / pr-trailers / build-meta / build_jackin_capsule | Dev/CI tooling outside the three product consumers; xtask `cmd` already shims simple cases via `jackin-process` |
+| Usage CLI helpers | Provider-specific local tools |
+| Root binary preflight / daemon_cmd / help / console services | One-off host checks, not the shared shell model |
+
+- API gap (STOP): >10 survivors remain by design — full migration needs streaming/PTY/sensitive-boundary extensions; not blocking the three-consumer model.
