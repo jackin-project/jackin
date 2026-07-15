@@ -1,0 +1,210 @@
+---
+title: "06 - Public API And Refactoring"
+---
+
+# 06 - Public API And Refactoring
+
+The extraction must produce a deliberately small library API, not preserve every current `pub` item. The donor root and component facade currently contain 39 public module declarations, 29 public re-export statements, and 112 public declaration/re-export lines in total. This count was produced on 2026-07-15 with `rg` over <RepoFile path="crates/jackin-tui/src/lib.rs">crates/jackin-tui/src/lib.rs</RepoFile> and <RepoFile path="crates/jackin-tui/src/components.rs">crates/jackin-tui/src/components.rs</RepoFile>. It measures declaration lines rather than unique Rust API items, but it demonstrates that the existing root is already a large compatibility surface.
+
+The two donor source trees contain 77 Rust files and 17,016 lines, measured with `find ... -name '*.rs'` and `wc -l`. There are 245 `#[test]` or `#[tokio::test]` attributes in `jackin-tui`, 15 in the lookbook, and 191 Rust consumer files outside the donor crates that reference `jackin_tui`. The migration therefore needs an API inventory and compatibility program, even though both projects are pre-release.
+
+## Target dependency layers
+
+```text
+consumer domain models and effects
+              |
+              v
+termrock optional adapters
+  crossterm event conversion + terminal session ownership
+              |
+              v
+termrock components
+  widgets + interaction state + semantic theme
+              |
+              v
+termrock foundations
+  text + input + focus + geometry + scrolling
+              |
+              v
+ratatui-core
+
+termrock-lookbook -> termrock + crossterm adapter + SVG renderer
+docs             -> termrock-lookbook generated catalog
+```
+
+Ratatui 0.30 split its workspace so widget-library authors can depend on `ratatui-core` for fewer dependencies and a narrower API surface, while applications may continue to use the umbrella `ratatui` crate. The Ratatui documentation explicitly recommends `ratatui-core` for widget-library authors. [`termrock` should follow that boundary](https://docs.rs/ratatui/0.30.2/ratatui/index.html#crate-organization): the base crate renders into Ratatui buffers and does not initialize a terminal.
+
+The initial manifest should expose only one optional integration feature:
+
+```toml
+[features]
+default = []
+crossterm = ["dep:crossterm", "dep:ratatui-crossterm"]
+```
+
+The exact dependency names and versions are confirmed during repository bootstrap against the selected Ratatui release. The policy is more important than the spelling:
+
+- base `termrock` contains no Tokio, async runtime, stdout/stderr, filesystem, network, process, telemetry, or secret dependency;
+- Crossterm types do not appear in the default API; conversion from Crossterm events and terminal-session ownership are feature-gated adapters;
+- `termrock-lookbook` enables the adapter because its interactive CLI owns a real terminal;
+- add no `serde`, `tokio`, or testing feature until a concrete second consumer requires the same contract.
+
+Cargo features unify across a dependency graph and should be additive. Optional dependencies should be named through `dep:` so dependency names do not accidentally become permanent public feature names. Removing or changing a feature can be a compatibility break, so `default = []` keeps the foundation predictable. See the [Cargo feature reference](https://doc.rust-lang.org/cargo/reference/features.html) and [Cargo SemVer guidance](https://doc.rust-lang.org/cargo/reference/semver.html#cargo).
+
+## Proposed public modules
+
+| Module | Owns | Must not own |
+|---|---|---|
+| `text` | display width, clipping, terminal-control sanitization, bounded lines | paths, URLs, command output policy |
+| `input` | logical keys, modifiers, chords, bindings, action dispatch | product commands or hardcoded action wording |
+| `interaction` | focus, hover, selection, modal outcomes | application navigation or root model |
+| `layout` | responsive dialog specifications, hit-test geometry, bottom regions | role/auth/mount/database-specific rectangles |
+| `scroll` | offsets, axes, viewport math, cursor following, scrollbar models | product content construction |
+| `style` | semantic roles, `Theme`, builders, Tailrocks phosphor preset | global product constants or capsule/status meanings |
+| `widgets` | borrowed render models and explicit stateful widgets | I/O, effects, domain records, global process state |
+| `terminal` | optional Crossterm event adapter and scoped session guard | Tokio, signal policy, panic-hook installation, logging initialization |
+
+Do not add a broad `prelude` or glob re-export in the first release. Callers should import from the owning module so the library can distinguish foundational API from component internals. Private render helpers remain private. A root re-export is allowed only for the few entry types consumers use on nearly every screen, such as `Theme`.
+
+## Component contract
+
+Ratatui recommends implementing widgets by reference for reuse. New components should implement `Widget for &Component` for stateless rendering and `StatefulWidget for &Component` when Ratatui-managed interaction state is genuinely required. Do not expose the current mixture of free `render_*` functions, `Frame`-specific wrappers, and consuming widgets as three equivalent public paths. See Ratatui's [custom widget guidance](https://docs.rs/ratatui/0.30.2/ratatui/widgets/index.html#authoring-custom-widgets).
+
+Use this shape:
+
+```rust
+pub struct Tabs<'a, Id> {
+    items: &'a [Tab<'a, Id>],
+    theme: &'a Theme,
+}
+
+pub struct TabsState<Id> {
+    selected: Option<Id>,
+    hovered: Option<Id>,
+    focused: bool,
+}
+
+impl<Id> StatefulWidget for &Tabs<'_, Id> {
+    type State = TabsState<Id>;
+
+    fn render(self, area: Rect, buffer: &mut Buffer, state: &mut Self::State) {
+        // Paint from borrowed items and explicit interaction state.
+    }
+}
+```
+
+The code is illustrative, not a frozen signature. The required properties are:
+
+- render data is borrowed where practical rather than cloned into a component every frame;
+- stable consumer IDs cross the interaction boundary instead of array indices;
+- interaction state is separate from domain data;
+- rendering has no side effects and never changes domain state;
+- builders keep fields private so a field can be added without breaking every struct literal;
+- public enums that may grow are `#[non_exhaustive]`, with consumers required to handle unknown variants;
+- hit-test geometry is derived by the same layout function used to paint the component;
+- a component does not retain callbacks, views, executors, or product objects.
+
+`WidgetRef` and `StatefulWidgetRef` remain unstable Ratatui features in the researched release. `termrock` should use the stable `Widget for &T` / `StatefulWidget for &T` pattern and avoid making an unstable Ratatui feature part of its contract.
+
+## State, input, and effects
+
+The donor's `Component<Ev, Msg>`, `View<Model>`, `Dirty`, `ModalOutcome<T>`, and typed `UpdateResult<E>` concepts are useful, but they should not become mandatory widget machinery.
+
+Ratatui's [Elm Architecture guidance](https://ratatui.rs/concepts/application-patterns/the-elm-architecture/) separates model, message-driven updates, and a side-effect-free view. Its [Component Architecture guidance](https://ratatui.rs/concepts/application-patterns/component-architecture/) describes a valid application-level alternative that co-locates event handling, update, and rendering. TermRock must remain compatible with both without choosing either for the consumer: it provides component interaction state, logical actions, pure updates, typed outcomes, and standard widgets, while the consumer owns the root model/message loop and effect execution. The complete per-component application of this decision is in [09 - Component redesign catalog](/reference/research/shared-tui-extraction/09-component-redesign-catalog/).
+
+The initial contract has three independent levels:
+
+1. **Rendering:** standard Ratatui `Widget`/`StatefulWidget` implementations.
+2. **Interaction:** component-specific `handle_action` methods over logical actions, returning a small outcome such as `Ignored`, `Changed`, `Submitted(Id)`, or `Cancelled`.
+3. **Application effects:** consumer-owned update code converts outcomes into product messages and executes I/O.
+
+Raw terminal events are adapted before component dispatch:
+
+```text
+Crossterm KeyEvent ----+
+                       +--> termrock::input::KeyChord --> consumer keymap --> Action
+capsule byte decoder --+
+```
+
+This keeps the same widgets usable in `jackin❯` host surfaces and the in-container multiplexer without forcing every surface to receive Crossterm events. Key bindings own chords and actions; visible hint labels are consumer-provided data derived from that binding table. The library must not hardcode English labels such as `select`, `save`, or `cancel` inside state objects.
+
+Executor-neutral `Subscription` and `Dirty` types may remain if both `jackin❯` and Holla use them. The current Tokio receiver implementations and spawn helpers in <RepoFile path="crates/jackin-tui/src/runtime.rs">crates/jackin-tui/src/runtime.rs</RepoFile> remain consumer-local initially. No fallback Tokio runtime is created inside the component library.
+
+## Theme API
+
+The current palette exposes product constants for rain animation, Capsule menu states, debug chips, status tabs, and links from <RepoFile path="crates/jackin-tui/src/lib.rs">crates/jackin-tui/src/lib.rs</RepoFile>. That is a product stylesheet, not a reusable theme API.
+
+`Theme` should have private fields and a builder/default path. Components request semantic roles rather than palette names:
+
+```text
+canvas / surface / elevated / backdrop
+text / text_muted / text_disabled
+border / border_focused / selection / focus
+accent / success / warning / danger / info
+link / link_hover
+input / input_invalid
+scroll_track / scroll_thumb
+```
+
+Do not expose a trait with one required method per token: adding a token would break implementors. A private representation with `Theme::style(Role)` and a `ThemeBuilder` can add a role with a documented fallback. `Theme::tailrocks_phosphor()` preserves the established look without making `PHOSPHOR_GREEN` the contract of every widget.
+
+Component-specific style overrides are data passed to that component, not new global constants. All states also require a non-color signal: glyph, border, label, modifier, or position. Color cannot be the only indication of focus, selection, error, or progress.
+
+## Terminal ownership
+
+Crossterm's raw mode, alternate screen, and mouse capture are separate operations, and its APIs require explicit disable/leave operations. See the Crossterm [terminal module](https://docs.rs/crossterm/0.29.0/crossterm/terminal/index.html) and [event module](https://docs.rs/crossterm/0.29.0/crossterm/event/index.html).
+
+The optional terminal adapter should provide a scoped session with these rules:
+
+- record each mode only after it was successfully enabled;
+- if setup fails halfway, restore the already-enabled modes before returning the error;
+- expose an explicit fallible `restore()` used on the normal path;
+- use `Drop` only as an idempotent best-effort fallback because `Drop` cannot report restoration failure;
+- restore modes in reverse ownership order and always attempt every cleanup step;
+- support alternate-screen and inline modes through explicit options;
+- never install a global panic hook, signal handler, logger, or diagnostics route from the library;
+- never use product-global atomics such as the current rich-surface/host-screen flags in <RepoFile path="crates/jackin-tui/src/ownership.rs">crates/jackin-tui/src/ownership.rs</RepoFile>.
+
+The application root owns panic/signal integration and calls the scoped restore operation. `termrock-lookbook` provides a complete reference integration and PTY tests. Crossterm event conversion is pure; event polling strategy remains consumer-owned.
+
+## Donor refactoring ledger
+
+| Donor area | Required action | Target |
+|---|---|---|
+| `theme.rs` and root RGB constants | replace product constants with private semantic theme + phosphor preset | `style` |
+| `geometry.rs` | split display/text/tab math from `agent_display_name` | `text`, `layout`; agent mapping stays local |
+| `keymap.rs` | retain logical chord/action mapping; move action labels to consumer data | `input` |
+| `scroll.rs`, scrollable-panel math | consolidate one scroll model and one display-width source | `scroll`, `widgets` |
+| `runtime.rs` | keep pure outcomes/update contracts only when reused; remove Tokio from base | `interaction`; async adapters stay local |
+| `terminal_modes.rs` | refactor into partial-init-safe optional Crossterm session | `terminal` |
+| `ownership.rs` | do not extract product-global terminal/diagnostics policy | `jackin❯` |
+| `host_colors.rs` | retain locally until a second consumer needs OSC 10/11 discovery | consumer adapter |
+| `ansi.rs` | split pure parsing/sanitization from banners, version/help, and direct output | `text`; product output stays local |
+| `animation.rs`, `output.rs` | do not extract launch/container behavior or direct output | `jackin❯` |
+| `BrandHeader` | keep `jackin❯` wordmark composition local; extract only a neutral header bar if Holla needs it | consumer first |
+| `ContainerInfo` / `DebugInfo` | replace generic row rendering with `DetailTable`; keep container/version builder local | `widgets` + consumer facade |
+| confirm dialog | extract generic state/widget; move exit wording and data-loss constructors local | `widgets` |
+| modal rectangles | replace role/auth/source/mount modes with min/preferred/max dialog specification | `layout` |
+| status footer | redesign as data-driven left/right slots with stable IDs; keep usage/container/run policy local | `widgets` + consumer facade |
+| select list | separate rows from state, use stable IDs, pluggable filtering, display-width measurement, configurable hints | `widgets` |
+| text input | use grapheme/display-column cursor rules, external validation, configurable actions | `widgets` |
+| diff view | make render/update boundary explicit; no hidden content mutation in a free render function | `widgets` |
+| URL and OSC overlays | return typed regions/requests; consumer decides whether policy permits emission | consumer adapter by default |
+
+The existing `SelectListState` in <RepoFile path="crates/jackin-tui/src/components/select_list.rs">crates/jackin-tui/src/components/select_list.rs</RepoFile> demonstrates why refactoring precedes publication: it owns `Vec<String>`, returns indices, performs fixed ASCII substring filtering, measures labels with `chars().count()`, and embeds action labels. The existing `TextField` in <RepoFile path="crates/jackin-tui/src/components/text_input.rs">crates/jackin-tui/src/components/text_input.rs</RepoFile> combines editing with product validation and action wording. Those behaviors are valuable donor implementations, but their current signatures are not the reusable API.
+
+Chapter 09 expands this ledger across every current component implementation file and the supporting geometry, input, theme, runtime, terminal, ANSI, URL, output, and animation modules. Its classification is the required source for the generated extraction ledger; the shorter table above is only the dependency-level summary.
+
+## Public API review gate
+
+Before the first immutable consumer revision:
+
+- generate and review a public-item inventory for `termrock`;
+- deny missing documentation and broken intra-doc links;
+- run `cargo-semver-checks` against the previous tag after the first tagged baseline;
+- require a migration note for public renames, moves, changed defaults, feature changes, and MSRV changes;
+- prohibit public consumer dependencies, glob exports, mutable globals, hidden I/O, and executor-specific types;
+- verify the default-feature crate builds without Crossterm or Tokio in `cargo tree`;
+- use `cargo package --list` to review exactly what a registry package would contain, even while Git revisions remain the distribution path.
+
+`cargo-semver-checks` detects many Rust API changes, but it cannot prove behavioral, keyboard, rendering, or feature-default compatibility. The deterministic lookbook and conformance suites remain independent required gates. Cargo's own [SemVer reference](https://doc.rust-lang.org/cargo/reference/semver.html) is the policy baseline.

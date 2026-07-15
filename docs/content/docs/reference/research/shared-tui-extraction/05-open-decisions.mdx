@@ -59,7 +59,7 @@ Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock
 
 **Question:** keep Tokio in the base crate?
 
-**Recommended default:** no. Pure widgets, state, input, focus, layout, and terminal guards should not require Tokio. Keep a runtime feature/module only for proven reusable async behavior.
+**Recommended default:** no. Build the base library on `ratatui-core`; put Crossterm event/session integration behind one optional feature, and ship no Tokio feature initially. Pure widgets, state, input, focus, layout, and terminal guards do not require an async executor. Reconsider a runtime adapter only after two consumers prove the same executor-neutral contract.
 
 **Deadline:** first public manifest review.
 
@@ -102,3 +102,27 @@ Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock
 **Recommended default:** make `Theme` construction forward-compatible through documented defaults/builders rather than requiring every consumer to initialize each token. Removing or changing semantic meaning is breaking; adding an optional/defaulted token is not.
 
 **Deadline:** theme API review.
+
+## 9. CI platform contract
+
+**Question:** which platforms are merge-blocking for the first immutable revision?
+
+**Recommended default:** run canonical render generation and all Rust quality/supply-chain gates on Linux; run the optional Crossterm compile/behavior surface on Linux and macOS because they are immediate Tailrocks targets; add Windows to the required matrix only if the initial project advertises Windows support. One Linux lane owns committed render fixtures so platforms cannot disagree on generated output.
+
+**Deadline:** repository branch-protection setup.
+
+## 10. API stability baseline
+
+**Question:** when does automated semver comparison become required?
+
+**Recommended default:** review a generated API report before the first immutable consumer pin, create the automated `cargo-semver-checks` baseline at the first Git tag, and require API/migration notes for every later public change. Pre-1.0 versioning allows deliberate breaks; it does not permit accidental root re-export or feature churn.
+
+**Deadline:** before the first tag.
+
+## 11. Build cache complexity
+
+**Question:** copy jackin❯'s complete Rust cache and `sccache` system immediately?
+
+**Recommended default:** no. Start with a warmed Cargo registry, offline compile jobs, one pinned Rust target cache per meaningful lane, Bun/Lychee download caches, and pull-request cache cleanup. Collect clean/warm timings for at least 20 runs; add `sccache` only when measurements show material benefit. Cache entries contain no secrets and generated previews remain artifacts, never caches.
+
+**Deadline:** CI bootstrap, then review after 20 runs.

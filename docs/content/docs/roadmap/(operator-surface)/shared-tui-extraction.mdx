@@ -20,6 +20,8 @@ Docs:       same-repository Fumadocs catalog
 
 The shared project targets Ratatui only, using Crossterm where terminal backend integration is required. It does not add a renderer-neutral abstraction or support alternative TUI frameworks.
 
+The base crate should depend on `ratatui-core`, expose no default features, and keep Crossterm event/session integration behind one optional feature. The initial shared crate has no Tokio dependency; consumers own async execution, spawning, subscriptions, panic/signal policy, diagnostics routing, and effects.
+
 Migrate `jackin❯` to the released project without visible behavior changes. Holla then becomes the second proving consumer. Future Velnor runner surfaces, justified Parallax interactive CLI workflows, and independent Tailrocks tools can consume the same neutral platform without importing `jackin❯` domain code.
 
 The full donor audit, consumer boundaries, extraction classification, governance, and sequence are in [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/).
@@ -78,16 +80,34 @@ The external project owns:
 - components perform no filesystem, network, process, secret, or telemetry I/O;
 - components target Ratatui directly rather than a cross-renderer abstraction;
 - consumers supply semantic theme, brand/header data, state, actions, and effects;
-- widgets remain usable without forcing Tokio unless an optional runtime feature is selected;
+- widgets remain usable without Tokio; the initial shared crate exposes no async-runtime feature;
 - a product-local component graduates only for a second concrete consumer or a clearly foundational primitive;
 - every public component has keyboard, focus, non-color, Unicode, narrow-terminal, and lookbook evidence;
 - consumers pin a release or immutable revision, never a moving default branch.
+
+### API structure
+
+The initial public modules are `text`, `input`, `interaction`, `layout`, `scroll`, `style`, `widgets`, and optional `terminal`. Rendering follows standard Ratatui `Widget for &T` / `StatefulWidget for &T` contracts with borrowed render data, stable consumer IDs, and state separated from domain records. Private fields/builders and non-exhaustive growing enums keep the pre-release API evolvable; broad root re-exports and compatibility facades are prohibited.
+
+TermRock is a toolkit rather than a mandatory application framework. It exposes no required root `Application`, `Model`, `Message`, `Component`, subscription, or effect-executor trait. Component-local logical actions and pure state updates return typed outcomes that a TEA-style or component-oriented consumer maps into its own application messages and effects. This follows Ratatui's documented application patterns without forcing jackin❯ runtime concepts into other consumers.
+
+The external repository must include compile-checked direct, TEA, component-oriented, Flux, and buffer-only examples built from the same public widgets. The examples demonstrate integration patterns; none creates a privileged TermRock application runtime.
+
+The current root palette, product wording, Tokio helpers, terminal-global atomics, and domain-specific modal/status/debug constructors are refactored before publication. The full contract and item-level ledger are in [Public API And Refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/).
+The file-by-file dispositions and replacement APIs are in [Component Redesign Catalog](/reference/research/shared-tui-extraction/09-component-redesign-catalog/).
+
+### Repository engineering
+
+The repository adopts jackin❯'s strict Rust lints, DCO, protected main branch, pinned tools/actions, committed <RepoFile path="Cargo.lock" />, Cargo dependency policy, REUSE/SPDX, Renovate, docs-in-the-same-PR, and aggregate required checks. It scales CI to a component library: default/all-feature/feature-powerset/MSRV/rustdoc/nextest, semver/package, dependency/advisory/provenance, deterministic render/catalog, Fumadocs build/link, and declared-platform terminal checks.
+
+Registry and target caches are keyed by lockfile/toolchain/job purpose, compile jobs run offline after a locked fetch, Bun/Lychee cache only downloads, and PR caches are deleted on close. Generated SVGs, API reports, packages, and docs builds are artifacts rather than caches. `sccache` is added only after measured need. See [Repository Engineering](/reference/research/shared-tui-extraction/07-repository-engineering/).
 
 ## Delivery checklist
 
 ### Inventory and freeze
 
 - [ ] Inventory every public export and consumer in `jackin-tui` and `jackin-tui-lookbook`.
+- [ ] Generate the public API, consumer map, extraction ledger, story/render manifests, dependency tree, compatibility matrix, and provenance record.
 - [ ] Classify each module/component as extract, parameterize, or remain local.
 - [ ] Capture current render fixtures, key behavior, and terminal-restoration tests as parity evidence.
 - [x] Approve `tailrocks/termrock`, `termrock`, and `termrock-lookbook` as the repository/crate/CLI naming family.
@@ -99,11 +119,18 @@ The external project owns:
 - [ ] Preserve history with `git filter-repo` or equivalent rather than copying an anonymous snapshot.
 - [ ] Preserve SPDX headers, copyright, LICENSE/NOTICE, authorship, and relevant design history.
 - [ ] Remove the `jackin-core` dependency by moving neutral helpers to the shared project.
+- [ ] Build base widgets on `ratatui-core`; feature-gate Crossterm and exclude Tokio from the initial crate.
+- [ ] Restructure components around borrowed render data, stable IDs, semantic themes, logical actions, and one Ratatui widget convention.
+- [ ] Apply the component redesign catalog to all 24 donor component files and every supporting module; do not move an unclassified public item.
+- [ ] Keep the root TEA model/messages/effects consumer-owned while making component update/outcome contracts usable from TEA and component-oriented applications.
+- [ ] Add public-API-only direct, TEA, component, Flux, and buffer-only examples and check them across the supported feature/MSRV matrix.
 - [ ] Parameterize semantic theme and product brand/header data.
 - [ ] Remove or relocate product-specific components, stories, modal helpers, and animations.
 - [ ] Establish neutral lookbook and deterministic minimum/normal/wide render gates.
 - [ ] Extract the terminal preview CLI and document terminal, list, render, and check operations.
 - [ ] Establish the standalone Fumadocs component catalog backed by committed generated SVGs.
+- [ ] Establish required Rust/API/package, render/catalog, docs, dependency/security, REUSE/DCO, MSRV, and declared-platform CI aggregators.
+- [ ] Establish locked registry/target/docs caches, offline compile lanes, cache metrics, and PR cache cleanup without caching generated artifacts.
 - [ ] Publish an immutable Git revision; crates.io preview publication is optional.
 
 ### `jackin❯` migration
@@ -112,6 +139,7 @@ The external project owns:
 - [ ] Move product-only stories/components to local modules.
 - [ ] Remove duplicate compatibility definitions after all callers migrate.
 - [ ] Verify console, Capsule, launch, OnePassword, lookbook, SVG, mouse, focus, and terminal-restoration suites.
+- [ ] Migrate without a broad `pub use termrock::*` facade or duplicate public types under old/new owners.
 - [ ] Update `/reference/tui/` pages to state shared versus product-local ownership.
 - [ ] Remove generic component catalog pages, preview assets, and the generic lookbook CLI from jackin❯ only after external parity passes.
 - [ ] Delete in-tree donor crates only after parity and dependency audits pass.
@@ -133,13 +161,14 @@ The external project owns:
 - terminal cleanup works on supported exit/failure paths;
 - durable consumers pin immutable Git revisions or releases, while branch/fork references remain an explicit iteration mechanism;
 - releases and revision snapshots are reproducible, documented, licensed, and attributed;
+- public API, feature, MSRV, package contents, and render/catalog drift are mechanically reviewed;
 - roadmap and canonical documentation in both repositories state one owner for every component and policy.
 
 ## Risks
 
 - **Premature generalization:** solve with extract/parameterize/stay classification and the two-consumer rule.
 - **Visual regression:** migrate `jackin❯` before redesign and compare deterministic fixtures.
-- **Dependency inversion:** reject imports from any consumer crate and make Tokio optional where practical.
+- **Dependency inversion:** reject imports from any consumer crate, feature-gate Crossterm integration, and keep Tokio out of the initial shared crate.
 - **Cross-repository deadlock:** publish first, migrate one consumer at a time, and retain donor code until parity passes.
 - **Brand leakage:** use semantic tokens and consumer-provided branding; keep product stories local.
 - **History/license loss:** use a history-preserving extraction and independent provenance review.
@@ -159,4 +188,4 @@ The external project owns:
 - [Donor Audit](/reference/research/shared-tui-extraction/02-donor-audit/)
 - [Extraction And Migration Plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/)
 - [TUI Design Decisions](/reference/tui/)
-- [Project Structure](/reference/getting-oriented/project-structure/)
+- [Codebase Map](/reference/getting-oriented/codebase-map/)

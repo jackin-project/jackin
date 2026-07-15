@@ -8,7 +8,9 @@ title: "02 - Donor Audit"
 
 `crates/jackin-tui` is Apache-2.0, version `0.6.0-dev`, and `publish = false`. It depends on Ratatui, Crossterm, Tokio, and `jackin-core` plus focused rendering helpers. `crates/jackin-tui-lookbook` is an Apache-2.0 binary over the component crate.
 
-The two source trees contain roughly 17,000 lines of Rust. They have extensive unit tests, interactive component states, and SVG/render generation. This should be treated as a mature donor with compatibility obligations, not a new empty crate.
+The two source trees contain 77 Rust files and 17,016 lines. `jackin-tui` has 245 `#[test]`/`#[tokio::test]` attributes and the lookbook has 15. There are 24 top-level component implementation files, 29 committed SVG previews, and 18 donor Rust files that use Ratatui `TestBackend`. These numbers were measured on 2026-07-15 with `find`, `wc -l`, and `rg`; test attributes measure declared test functions, not parameter-expanded executions.
+
+Outside the two donor crates, 191 Rust files reference `jackin_tui`. Grouped by package path, the largest consumers are `jackin-console` (102 files), `jackin-capsule` (41), and `jackin-launch-tui` (26). This should be treated as a mature donor with compatibility obligations, not a new empty crate. The complete migration grouping and measurement method are in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).
 
 ## Dependency inversion to remove
 
@@ -42,7 +44,7 @@ Some of these neutral types also exist as compatibility copies or lower-layer de
 - replace hardcoded `jackin❯` brand output with consumer-provided brand/header data;
 - make bottom chrome, tabs, status, badges, hints, and actions data-driven;
 - replace use-case-specific modal rectangle functions with generic responsive dialog specifications;
-- isolate or feature-gate Tokio runtime helpers so widgets do not force an executor;
+- keep Tokio runtime helpers consumer-owned initially so widgets do not force an executor;
 - define public state IDs and callbacks/messages without consumer domain types;
 - turn the preview binary into the external project's documented terminal/render/check CLI without retaining `jackin❯` paths or wording.
 
@@ -69,3 +71,15 @@ The classification above is a starting point, not permission for a bulk move. Be
 - semver/API notes.
 
 No module moves merely because its filename sounds generic.
+
+## Signatures that must change before publication
+
+- <RepoFile path="crates/jackin-tui/src/components/select_list.rs">`SelectListState`</RepoFile> owns `Vec<String>`, reports indices, hardcodes ASCII substring filtering and action labels, and measures width with character count rather than display columns. Separate consumer rows from interaction state, use stable IDs, and make filtering/hints inputs.
+- <RepoFile path="crates/jackin-tui/src/components/text_input.rs">`TextField`</RepoFile> combines cursor/edit state, forbidden-value validation, and save/cancel wording. Make editing Unicode/display-width aware and validation/action wording consumer-owned.
+- <RepoFile path="crates/jackin-tui/src/components/status_footer.rs">`StatusFooter`</RepoFile> names container/run/usage concepts. Replace it with generic data-driven slots and retain product composition locally.
+- <RepoFile path="crates/jackin-tui/src/components/container_info.rs">`ContainerInfoState`/`DebugInfo`</RepoFile> combine reusable detail rows with agent, role, container, and version fields. Extract a neutral detail/inspector widget; keep the builder in jackin❯.
+- <RepoFile path="crates/jackin-tui/src/components/modal_rects.rs">modal rectangle modes</RepoFile> expose auth, role, mount, source, scope, and operation cases. Replace them with generic min/preferred/max responsive specifications.
+- <RepoFile path="crates/jackin-tui/src/runtime.rs">runtime helpers</RepoFile> create Tokio channels/tasks and even a fallback runtime. Keep pure update/outcome contracts only when reused and leave executor integration to consumers.
+- <RepoFile path="crates/jackin-tui/src/ownership.rs">terminal ownership</RepoFile> contains jackin❯ process-global flags and title/screen policy. Do not extract it as the generic lifecycle API.
+
+The proposed replacements and semver constraints are in [06 - Public API and refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/).

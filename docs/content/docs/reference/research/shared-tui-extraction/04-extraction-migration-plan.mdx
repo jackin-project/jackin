@@ -14,6 +14,7 @@ This is a cross-repository program. Repository creation, commits, pushes, releas
 - approve exact-revision, temporary branch/fork, and crates.io publication policies;
 - freeze the lookbook CLI and Fumadocs component-page contracts;
 - freeze the extract/parameterize/remain ledger;
+- generate the public API, consumer map, story/render manifest, dependency tree, compatibility matrix, and provenance record defined in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/);
 - capture current `jackin❯` component tests, lookbook renders, key behavior, and terminal cleanup as parity evidence;
 - identify every consumer of `jackin-tui` and `jackin-core` compatibility helpers.
 
@@ -21,7 +22,7 @@ Exit gate: no ownership ambiguity remains and no external repository is created 
 
 ## Stage 1 - Create the external donor history
 
-- create `tailrocks/termrock` with the Rust workspace, Fumadocs application, governance, CI, dependency/license gates, and release automation;
+- create `tailrocks/termrock` with the Rust workspace, Fumadocs application, governance, CI, dependency/license gates, cache policy, and release automation specified in [07 - Repository engineering](/reference/research/shared-tui-extraction/07-repository-engineering/);
 - use `git filter-repo` or equivalent to retain the two donor paths plus the neutral component pages, preview assets, and relevant TUI design history;
 - preserve authorship, timestamps where possible, SPDX headers, copyright, LICENSE, and NOTICE/attribution;
 - record the source repository and extraction revision;
@@ -32,11 +33,13 @@ Exit gate: provenance can trace extracted code to donor commits and the new defa
 
 ## Stage 2 - Break product coupling
 
-- move neutral ANSI, scrolling, dialog, and bottom-chrome ownership from `jackin-core` to the shared crate;
+- move neutral text, scrolling, dialog, and bottom-chrome ownership from `jackin-core` to the shared crate in foundation-first order;
 - move path-display helpers only if they are truly platform-neutral; otherwise keep adapters local;
 - remove agent/container/brand-specific exports and stories;
-- introduce semantic theme and consumer brand/header input;
-- make runtime/executor dependencies optional or consumer-owned;
+- introduce the private/builder-based semantic theme and consumer brand/header input;
+- depend on `ratatui-core` in the base crate and put Crossterm session/event integration behind one optional feature;
+- keep Tokio, spawning, subscriptions backed by Tokio receivers, and product-global terminal ownership consumer-owned initially;
+- convert public rendering to the stable `Widget for &T` / `StatefulWidget for &T` convention, with borrowed render data and stable consumer IDs;
 - ensure public APIs contain no consumer model.
 
 Exit gate: `cargo tree` and source audit show no Tailrocks product dependency, and neutral tests/render fixtures pass.
@@ -50,6 +53,7 @@ Exit gate: `cargo tree` and source audit show no Tailrocks product dependency, a
 - document and test terminal, list, render, and check CLI operations;
 - test the supported Rust/Ratatui/Crossterm matrix on macOS and Linux;
 - run formatting, lint, unit, docs, dependency, license, and supply-chain checks;
+- run default/no-default, all-feature, feature-powerset, MSRV, rustdoc, package, semver-baseline, catalog-coverage, deterministic-render, and declared-platform checks;
 - publish an immutable Git revision and migration guide; publishing a crates.io preview remains optional.
 
 Exit gate: an external minimal consumer can pin one full commit SHA, build and render without `jackin❯` code, open the Fumadocs catalog, and reproduce the committed previews.
@@ -57,7 +61,7 @@ Exit gate: an external minimal consumer can pin one full commit SHA, build and r
 ## Stage 4 - Migrate `jackin❯`
 
 - depend on an immutable Git revision, or a preview release if one exists;
-- replace imports incrementally without product redesign;
+- replace imports incrementally without product redesign or a broad compatibility re-export facade;
 - retain product components/stories locally;
 - move generic component documentation and neutral SVG previews to the external Fumadocs site, while retaining `jackin❯` composition and design-decision docs;
 - remove the local generic lookbook CLI only after equivalent external terminal/render/check workflows pass;
@@ -68,7 +72,7 @@ Exit gate: an external minimal consumer can pin one full commit SHA, build and r
 
 Exit gate: no visible/key behavior regression, no duplicate shared implementation, and the active `jackin❯` branch is green.
 
-Rollback: until the final deletion, `jackin❯` can pin the last known preview or temporarily keep the donor. Do not publish compatibility shims indefinitely.
+Rollback: until the final deletion, `jackin❯` can pin the last known preview or temporarily retain not-yet-migrated donor modules. Do not duplicate a type under both owners and do not publish compatibility shims.
 
 ## Stage 5 - Prove Holla reuse
 
@@ -99,6 +103,8 @@ Exit gate: the shared API supports a distinct application without `jackin❯` vo
 - [ ] The standalone Fumadocs site renders generated SVG states and fails verification when component docs, stories, or previews drift.
 - [ ] Keyboard, focus, non-color, Unicode, and terminal-size contracts pass.
 - [ ] Terminal mode restoration passes supported failure paths.
+- [ ] Base `termrock` builds without Tokio or Crossterm; the optional Crossterm adapter passes partial-initialization and PTY restoration tests.
+- [ ] Public API and package diffs pass the documented semver/package policy.
 - [ ] `jackin❯` parity passes before local donor deletion.
 - [ ] Holla proves second-consumer reuse.
 - [ ] Consumers can iterate against trusted branches but pin immutable commits or releases for durable builds.

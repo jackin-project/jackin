@@ -8,12 +8,23 @@ Research and implementation plan for extracting the neutral parts of `jackin-tui
 
 This is the only cross-product work that belongs in the `jackin❯` roadmap. Database-client research, engine selection, product workflows, and native database-app plans belong in a separate database repository and are intentionally absent here.
 
+## Evidence base
+
+- **17,016 Rust lines across 77 donor files**, measured with `find` and `wc -l` over the two source trees.
+- **260 declared Rust test functions**: 245 in `jackin-tui` and 15 in the lookbook, measured from test attributes before parameter expansion.
+- **191 external Rust consumer files**, led by 102 in `jackin-console`, 41 in `jackin-capsule`, and 26 in `jackin-launch-tui`, measured with `rg -l jackin_tui` outside the donor crates.
+- **29 committed SVG states and 18 `TestBackend` source files**, which seed render parity but require debranding and catalog coverage.
+- **112 public declaration/re-export lines across the two facade roots**, demonstrating why the target API must be reviewed rather than copied unchanged.
+
+All measurements were taken from the active jackin❯ branch on 2026-07-15. File/reference counts describe migration pressure, not unique API items or executed test cases; exact methods and implications are documented in the donor/API/migration chapters.
+
 ## Decisions
 
 - **Project name:** `termrock`.
 - **Repository:** `tailrocks/termrock`.
 - **Initial packages:** `termrock` for reusable components and `termrock-lookbook` for the story/render library plus preview CLI.
 - **Renderer:** Ratatui only. Do not design a renderer-neutral abstraction or support competing TUI frameworks.
+- **Base dependency:** `ratatui-core`; Crossterm integration is an optional adapter and Tokio is absent from the initial shared crate.
 - **License:** Apache-2.0, preserving donor history, authorship, SPDX headers, copyright, and attribution.
 - **Documentation:** a Fumadocs component catalog in the same repository, backed by committed CLI-generated SVG previews.
 - **First consumer:** `jackin❯`, migrated without visible redesign.
@@ -31,6 +42,10 @@ This is the only cross-product work that belongs in the `jackin❯` roadmap. Dat
 - [03 - Target repository](/reference/research/shared-tui-extraction/03-target-repository/) defines crates, API rules, theme, lookbook, tests, and governance.
 - [04 - Extraction and migration plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/) gives the cross-repository PR order and acceptance gates.
 - [05 - Open decisions](/reference/research/shared-tui-extraction/05-open-decisions/) bounds choices that must close before repository creation or first release.
+- [06 - Public API and refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/) defines dependency layers, component contracts, feature policy, terminal ownership, and the donor refactoring ledger.
+- [07 - Repository engineering](/reference/research/shared-tui-extraction/07-repository-engineering/) specifies repository structure, CI, caching, docs, supply-chain, and release practices.
+- [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/) defines generated inventories, history/provenance, migration slices, parity evidence, and completion gates.
+- [09 - Component redesign catalog](/reference/research/shared-tui-extraction/09-component-redesign-catalog/) applies Ratatui's TEA, component, widget, builder, and testing guidance to every donor component and defines the replacement contract for coupled APIs.
 
 ## Intended dependency shape
 

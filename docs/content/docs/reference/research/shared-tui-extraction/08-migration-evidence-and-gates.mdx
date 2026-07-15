@@ -1,0 +1,215 @@
+---
+title: "08 - Migration Evidence And Gates"
+---
+
+# 08 - Migration Evidence And Gates
+
+The migration should be driven by checked artifacts rather than a sequence of manual copy-and-fix changes. The donor and target repositories need evidence that answers three questions at every stage:
+
+1. which repository owns each behavior now;
+2. whether the extracted API is neutral and reproducible;
+3. whether `jackin❯` still renders and behaves the same before local code is deleted.
+
+## Freeze artifacts
+
+Create these generated, reviewable artifacts on the active extraction branch before filtering history:
+
+| Artifact | Contents | Gate |
+|---|---|---|
+| `public-api.txt` | donor public item paths/signatures | no unclassified item |
+| `consumer-map.tsv` | file, crate, imported item, interaction surface | no unknown caller |
+| `extraction-ledger.csv` | item/module, decision, target owner, dependencies, tests, docs, reviewer | every row decided |
+| `story-manifest.json` | story ID, component, dimensions, fixture, product terms | every moved story is neutral |
+| `render-manifest.json` | SVG/hash/size and buffer fixture hashes | baseline reproducible |
+| `dependency-tree.txt` | normal/all-feature dependency trees | no hidden product/runtime dependency |
+| `provenance.toml` | donor URL, revision, retained paths, filter command, license decision | independently reviewed |
+| `compatibility.toml` | Rust, Ratatui core, Crossterm, OS, consumer revision | every advertised cell tested |
+
+The repository need not preserve these exact filenames forever, but each field and gate needs one machine-readable owner. Generation commands should be checked into the extraction plan or `xtask`; do not rely on a research-session shell history.
+
+## Classification rules
+
+Each public item receives one of four decisions:
+
+- **extract:** product-neutral implementation and contract move with history;
+- **parameterize:** implementation moves only after product data, text, theme, or runtime policy becomes an input;
+- **remain:** behavior belongs to `jackin❯` or another consumer;
+- **remove:** redundant compatibility export or unused API has no future owner.
+
+The ledger also records:
+
+```text
+current Rust path
+current source file and last meaningful donor commit
+all direct consumer files
+normal and feature-gated dependencies
+I/O, executor, global-state, or product-vocabulary flags
+unit/render/PTY tests
+component docs and lookbook stories
+target module and proposed public name
+semver and behavior notes
+```
+
+No module is moved wholesale merely because most of it is neutral. <RepoFile path="crates/jackin-tui/src/geometry.rs">crates/jackin-tui/src/geometry.rs</RepoFile>, for example, contains reusable display-column/tab geometry and a product-specific agent-name helper. <RepoFile path="crates/jackin-tui/src/components/container_info.rs">crates/jackin-tui/src/components/container_info.rs</RepoFile> contains reusable detail-row/hit-test mechanics and a `DebugInfo` builder that encodes containers, agents, roles, and jackin❯ versions.
+
+## Refactoring order
+
+Refactor in the dependency direction so a high-level widget never becomes the accidental owner of a lower-level primitive.
+
+### Batch A - foundations
+
+1. terminal text sanitization and display-column slicing;
+2. logical keys, modifiers, keymaps, and action/hint descriptors;
+3. focus and hover ownership;
+4. scroll axes, offsets, cursor following, and scrollbar geometry;
+5. generic responsive rectangles and hit-test primitives;
+6. semantic theme and the Tailrocks phosphor preset.
+
+These packages have the smallest behavioral surface and unlock removal of the five current `jackin_core` reference lines in the donor, measured with `rg -n jackin_core` on 2026-07-15.
+
+### Batch B - leaf widgets
+
+Move simple buffer-rendering components first: panel, modal backdrop, hint bar, filter display, button/action strip, toast, and tabs. Convert them to the one stable widget convention and remove public duplicate `render_*` wrappers.
+
+### Batch C - stateful widgets
+
+Move scrollable lists, select list, text input, dialogs, status slots, detail table, and diff view after the foundation API is exercised. This is where stable IDs, borrowed row models, configurable labels, external validation/filtering, Unicode cursor rules, and explicit state mutation must be resolved.
+
+### Batch D - terminal and lookbook adapters
+
+Move the partial-init-safe Crossterm session, event conversion, story protocol, terminal browser, SVG backend, and catalog generator. The lookbook is a consumer of public `termrock`; it must not access crate-private widget helpers just to produce previews.
+
+### Batch E - consumer-only composition
+
+Keep or rebuild locally:
+
+- `jackin❯` wordmark and launch/closing animations;
+- container/debug information constructors;
+- exit/data-loss confirmation wording;
+- Capsule menu/status policies and host ownership atomics;
+- role, mount, source, scope, agent, workspace, and OnePassword components;
+- direct output, diagnostics routing, URL-opening, OSC emission policy, and async task spawning.
+
+## History extraction
+
+Create the repository through a history-preserving filter, then make debranding and API cleanup as new reviewable commits. The filter should include the two donor crate paths, selected neutral helpers currently under `jackin-core`, generic lookbook documentation, committed SVG seeds, and only the relevant design history. Record the exact donor revision and command in `provenance.toml`.
+
+[`git-filter-repo`](https://github.com/newren/git-filter-repo) is the maintained history-rewriting tool referenced by the plan. Run it on a dedicated clone, never on the active jackin❯ workspace. Verify authors, timestamps, file licenses, tags, and the source-revision mapping before publishing the new default branch.
+
+No TablePro, TablePlus, Zedis, or other reference-project source belongs in this history. Those projects may inform product concepts in other repositories; `termrock` contains only Tailrocks-owned/donor code and compatible dependencies with reviewed licenses.
+
+## Cross-repository change graph
+
+```text
+termrock bootstrap/history PR
+        |
+        v
+termrock neutralization/API PRs
+        |
+        v
+termrock immutable preview revision
+        |
+        +---------------------------+
+        v                           v
+jackin❯ migration PRs          minimal example consumer
+        |
+        v
+jackin❯ donor deletion/docs transfer
+        |
+        v
+Holla adoption + gap feedback
+        |
+        v
+termrock first compatibility tag
+```
+
+During development a `jackin❯` branch may point at a trusted `termrock` feature branch or fork. Before a consumer PR becomes durable, replace that pointer with the tested full commit in Cargo's `rev` field and commit <RepoFile path="Cargo.lock" />. Cargo's [Git dependency syntax](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#specifying-dependencies-from-git-repositories) supports both iteration pointers and exact revisions; the exact revision is the reviewed build identity.
+
+Do not add `pub use termrock::*` as a compatibility facade in `jackin-tui`, and do not retain duplicated types under old paths. jackin❯ is pre-release: migrate each consumer batch to the new owning path, then remove the corresponding donor item in the same branch. The old donor can coexist only for not-yet-migrated modules, with no type duplicated across both ownership boundaries.
+
+## `jackin❯` migration slices
+
+On 2026-07-15, `rg -l jackin_tui --glob '*.rs'` found 191 consumer files outside the donor/lookbook. Grouping paths by workspace package produced:
+
+| Consumer | Files |
+|---|---:|
+| `jackin-console` | 102 |
+| `jackin-capsule` | 41 |
+| `jackin-launch-tui` | 26 |
+| root `jackin` package | 11 |
+| `jackin-console-oppicker` | 4 |
+| `jackin-runtime` | 2 |
+| `jackin-diagnostics` | 2 |
+| `jackin-core` | 2 |
+| `jackin-host` | 1 |
+
+This is a file-reference inventory, not an estimate of edit size. Use it to order migration:
+
+1. migrate lower-level `jackin-core`/runtime definitions and remove dependency inversion;
+2. migrate the lookbook and launch TUI as bounded consumers;
+3. migrate console-op-picker and product-local picker facades;
+4. migrate the host console in vertical slices by shared component family;
+5. migrate Capsule after raw-byte-to-logical-key and bottom-chrome parity is explicit;
+6. remove the donor crates only when the inverse dependency query is empty.
+
+Each slice pins a tested `termrock` revision and runs the whole workspace because changing public Ratatui types can surface failures outside files that import `jackin_tui` directly.
+
+## Parity matrix
+
+| Concern | Evidence before move | Evidence after move |
+|---|---|---|
+| exact cells/styles | Ratatui `TestBackend` fixtures | same buffer assertions |
+| browser preview | 29 committed donor SVGs | neutral external SVG + product-local compositions |
+| key dispatch | keymap unit tests and hint derivation | logical action + adapter contract tests |
+| focus/hover | interaction unit tests | component state and hit-test parity |
+| Unicode | display-column tests | narrow/wide/grapheme corpus |
+| resize | current layout/render fixtures | min/normal/wide plus zero/tiny-area no-panic tests |
+| terminal cleanup | mode/guard tests | partial-init, explicit restore, drop fallback, PTY tests |
+| process policy | rich-surface/diagnostics tests | remains entirely in `jackin❯` |
+| dependency graph | donor Cargo tree | no product, Tokio, or Crossterm in base graph |
+| docs | jackin❯ generic lookbook pages | external catalog paths and component coverage |
+
+Every render fixture needs a stated purpose. Byte-identical parity is expected during the `jackin❯` migration. Intended visual changes occur only in later product PRs, never hidden inside the ownership move.
+
+## Performance gates
+
+Record a baseline before changing data ownership:
+
+- clean/default and all-feature compile time;
+- first interactive lookbook frame;
+- render time and allocations for tabs, 10/1,000/100,000-row list projections, long Unicode labels, and large diffs;
+- SVG catalog generation time and output size;
+- terminal restore latency and failure behavior.
+
+The new public component API should allow visible-window projection rather than require cloning every row per frame. Benchmark regressions are advisory during initial neutralization, then become budgeted once `jackin❯` parity is established. A faster implementation is not accepted if it changes clipping, selection, focus, or key behavior without a separate decision.
+
+## Completion gates
+
+### External repository ready
+
+- [ ] Provenance and REUSE checks pass for every extracted and generated file.
+- [ ] Base `termrock` builds with no product, Tokio, or Crossterm dependency.
+- [ ] Every public item is documented and present in the reviewed API report.
+- [ ] Every public component has neutral unit, buffer, story, SVG, docs, and edge-state coverage.
+- [ ] Render generation is byte-deterministic.
+- [ ] Default, all-feature, feature-powerset, MSRV, macOS, Linux, and declared Windows checks pass.
+- [ ] Partial terminal initialization and restoration paths pass PTY tests.
+- [ ] A minimal external program builds from a full Git revision.
+
+### `jackin❯` donor retired
+
+- [ ] The 191-file consumer inventory is regenerated and no old import remains.
+- [ ] No neutral helper remains duplicated in `jackin-core` or a product crate.
+- [ ] Console, Capsule, launch, picker, modal, mouse, Unicode, SVG, and terminal cleanup parity passes.
+- [ ] Product-specific widgets and policies have an explicit local owner.
+- [ ] Generic docs/previews point to the external catalog; product decisions remain in jackin❯ docs.
+- [ ] `jackin-tui` and `jackin-tui-lookbook` are deleted only after the above checks.
+
+### Reuse proven
+
+- [ ] Holla uses the public revision without depending on jackin❯ types or private helpers.
+- [ ] At least one Holla need feeds back through the normal component API without product vocabulary.
+- [ ] The compatibility matrix records both consumer revisions.
+- [ ] The first tag has semver, package, docs, license, and two-consumer smoke evidence.
+
+These gates make repository extraction reversible until the donor deletion, while preventing an indefinite dual implementation after ownership changes.

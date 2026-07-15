@@ -1,0 +1,217 @@
+---
+title: "07 - Repository Engineering"
+---
+
+# 07 - Repository Engineering
+
+`termrock` should inherit jackin❯'s engineering discipline, not the full complexity of a much larger application repository. The new repository needs strict Rust/library, render, documentation, provenance, and supply-chain gates from its first commit. It does not need Docker image construction, configuration-schema migration, application E2E, cross-compiled product archives, or other jackin❯-specific lanes.
+
+## Initial repository
+
+```text
+tailrocks/termrock/
+|- AGENTS.md
+|- CLAUDE.md -> AGENTS.md
+|- Cargo.toml
+|- Cargo.lock
+|- LICENSES/Apache-2.0.txt
+|- REUSE.toml
+|- deny.toml
+|- rust-toolchain.toml
+|- mise.toml
+|- nextest.toml
+|- crates/
+|  |- termrock/
+|  |  `- src/{input,interaction,layout,scroll,style,terminal,text,widgets}/
+|  `- termrock-lookbook/
+|     |- src/lib.rs
+|     `- src/bin/termrock-lookbook.rs
+|- examples/
+|  |- direct.rs
+|  |- tea.rs
+|  |- component.rs
+|  |- flux.rs
+|  `- buffer_only.rs
+|- catalog/
+|  `- catalog.toml
+|- fixtures/renders/
+|- docs/
+|  |- content/docs/
+|  `- public/component-previews/
+|- .github/
+|  |- pull_request_template.md
+|  `- workflows/
+|- CONTRIBUTING.md
+|- ENGINEERING.md
+|- PULL_REQUESTS.md
+|- SECURITY.md
+|- TESTING.md
+`- renovate.json
+```
+
+Commit <RepoFile path="Cargo.lock" /> because the workspace contains the `termrock-lookbook` executable and its generated output must be reproducible. Package manifests still declare compatible library dependency ranges; CI and the CLI use `--locked` after a deliberate dependency update.
+
+Start with the same current compatibility floor as the first consumer: Rust edition 2024, `rust-version = "1.95"`, and the tested toolchain pinned to `1.97.0`, matching <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> and <RepoFile path="rust-toolchain.toml">rust-toolchain.toml</RepoFile> at research time. Before repository creation, check Holla's MSRV. The shared crate may lower the floor to the lowest intended consumer only if all dependency versions and all feature combinations pass there. Cargo expects all targets and features promised by a package to work at its declared `rust-version`; see the [Cargo rust-version reference](https://doc.rust-lang.org/cargo/reference/rust-version.html).
+
+## Workspace policy
+
+Carry over the useful jackin❯ defaults:
+
+- resolver 3 and workspace-inherited package metadata/dependencies;
+- `unsafe_code = "forbid"`;
+- Rust idiom, unused-result, future-incompatibility, rustdoc-link, Clippy correctness/suspicious/performance, and selected pedantic lints;
+- edition and MSRV in one workspace package policy;
+- `debug = 1` in development and thin LTO for release binaries;
+- all tools pinned in <RepoFile path="mise.toml" />, with the lockfile enabled;
+- Conventional Commits, DCO sign-off, protected `main`, one PR per branch, and docs in the same PR as API changes;
+- action references pinned by full commit SHA, including checkout and REUSE.
+
+Do not copy the current dependency exception ledgers. Generate a new `deny.toml` from the small actual graph. Permit Apache-2.0 and MIT by policy, add an exception only with a reason, deny yanked crates and unknown registries/Git sources, and deny wildcard requirements. `cargo-deny` should also reject duplicate versions unless the repository records a narrow reviewed exception. This is especially important for `ratatui-core`: two incompatible copies in one process can make otherwise identical public types fail to interoperate.
+
+## Required pull-request jobs
+
+Use path classification and two required aggregators, `rust-required` and `docs-required`, so branch protection does not change when an expensive job is skipped. Every workflow has least-privilege permissions, a timeout, and PR concurrency cancellation.
+
+### Fast source gates
+
+| Job | Command or check | Purpose |
+|---|---|---|
+| `actionlint` | `actionlint` plus `shellcheck` for workflow scripts | workflow correctness |
+| `fmt` | `cargo fmt --all -- --check` | canonical Rust formatting |
+| `check-default` | `cargo check --workspace --all-targets --locked` | empty/default feature path |
+| `clippy-all` | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | complete compiled surface |
+| `doctest` | `cargo test --doc --workspace --locked` | examples remain executable |
+| `nextest` | `cargo nextest run --workspace --all-features --locked` | behavior and render unit tests |
+| `feature-powerset` | `cargo hack check --workspace --feature-powerset --all-targets --locked` | optional adapter remains additive |
+| `msrv` | `cargo check --workspace --all-targets --all-features --locked` on declared MSRV | compatibility floor |
+| `rustdoc` | `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --all-features --no-deps --locked` | public docs and links |
+| `examples` | check direct, TEA, component, Flux, and buffer-only examples through public APIs | application-pattern neutrality |
+
+The base crate must also pass `cargo check -p termrock --no-default-features` and a dependency assertion that finds no Tokio/Crossterm package in that graph. `buffer_only` is checked with no default features; terminal examples are checked with the declared Crossterm feature. The Crossterm feature receives a separate all-target check on Linux, macOS, and Windows if the project claims those platforms.
+
+### API and package gates
+
+- compare the current `termrock` API with the latest immutable tag using `cargo-semver-checks` after the first tag;
+- require `cargo package -p termrock --locked` and inspect `cargo package --list` in CI;
+- package `termrock-lookbook` only if it is intended for registry distribution; otherwise keep `publish = false` and build the CLI from Git;
+- verify package archives include license, readme, source, and required generated metadata but exclude target output and docs build caches;
+- reject missing public docs and unapproved new root re-exports;
+- upload an API diff artifact when a public API changes, even when the pre-1.0 version policy permits it.
+
+`cargo-semver-checks` is a release/API linter rather than a substitute for review; its current documentation describes checking a candidate release before publish. See [cargo-semver-checks](https://docs.rs/crate/cargo-semver-checks/latest).
+
+### Dependency and provenance gates
+
+| Job | Gate |
+|---|---|
+| `dependency-policy` | `cargo shear --deny-warnings`; `cargo deny check licenses bans sources` |
+| `advisories` | `cargo audit --deny warnings`, plus scheduled `cargo deny check advisories` |
+| `reuse` | `reuse lint` or the pinned REUSE action |
+| `dco` | every commit carries a valid `Signed-off-by` trailer |
+| `history-provenance` | extraction manifest names donor repository, source revision, paths, filter command, and retained copyright holders |
+
+REUSE requires comprehensive, machine-readable license and copyright information per file. Preserve existing SPDX headers during history extraction, put the Apache-2.0 text under `LICENSES/`, and annotate generated SVG/JSON assets through headers, sidecar files, or `REUSE.toml`. See the [REUSE 3.3 specification](https://reuse.software/spec/) and [REUSE FAQ](https://reuse.software/faq/).
+
+## Render and catalog gates
+
+The source of truth is a typed story registry in `termrock-lookbook`. It emits a machine-readable catalog consumed by the docs check. Do not maintain an unrelated hand-written list in TypeScript.
+
+Each public component descriptor includes:
+
+```text
+component id
+public Rust path
+documentation slug
+story ids
+canonical size set
+interaction capabilities
+theme roles
+```
+
+Required jobs:
+
+1. `termrock-lookbook list --format json` produces the catalog and validates unique IDs.
+2. `termrock-lookbook render --out <scratch>` renders every canonical story at declared sizes.
+3. A second render to another directory must be byte-identical, proving no timestamps, random values, host paths, locale, or unordered maps leak into output.
+4. `termrock-lookbook check --dir docs/public/component-previews` compares scratch output, committed SVGs, and the committed manifest.
+5. Coverage fails when a public catalog component lacks a story, docs page, keyboard contract, or canonical preview.
+6. Ratatui `TestBackend` buffer assertions cover exact cells/styles for behavior that SVG output could hide. Ratatui exposes `TestBackend::assert_buffer` specifically for deterministic buffer comparison; see the [TestBackend API](https://docs.rs/ratatui/0.30.2/ratatui/backend/struct.TestBackend.html#method.assert_buffer).
+
+Only one platform owns canonical render files, initially Linux with a fixed locale and Unicode-width dependency lock. Other platforms run buffer/behavior tests but do not rewrite fixtures. This prevents line-ending or font-tool differences from creating multiple authorities.
+
+The donor currently has 29 committed SVG previews and 18 Rust files using `TestBackend`, counted on 2026-07-15 with `find` and `rg -l`. They become the parity seed, not automatic public stories: product-specific agent, workspace, container, and role fixtures are replaced with neutral data before moving.
+
+## Documentation gates
+
+The same pull request that changes a public component changes its story, SVG, and Fumadocs page. Required docs jobs:
+
+- install with `bun install --frozen-lockfile` or `bun ci` from the committed Bun lock;
+- cache only Bun's download cache, not `node_modules` or generated site output;
+- generate Fumadocs metadata and run TypeScript with `--noEmit`;
+- run component/catalog unit tests;
+- build and prerender the static site;
+- validate internal repository links before the build;
+- run Lychee against the built site and scheduled deployed-site checks;
+- spell-check prose and public API names with a repository dictionary;
+- deploy Pages only from `main` after source, render, and docs aggregators pass.
+
+The catalog also contains an application-pattern section with compile-checked
+direct, TEA, component-oriented, Flux, and buffer-only integrations. These are
+different consumer compositions over the same public components, not separate
+TermRock runtime APIs.
+
+The current jackin❯ docs workflow in <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile> is the reference for source-path checks, frozen Bun installs, static link validation, Pages artifacts, deployment retries, and post-deploy verification. `termrock` should replace the product-specific brand/roadmap/research checks with catalog completeness and Rust-path checks.
+
+## Cache design
+
+Use caches only for reproducible inputs and rebuildable compiler output:
+
+```text
+registry cache key = OS + architecture + Cargo.lock + toolchain + cargo config
+target cache key   = job purpose + OS + architecture + feature lane + schema version
+Bun cache key      = OS + docs/bun.lock
+Lychee cache key   = OS + lychee config
+```
+
+Recommended flow:
+
+1. restore `~/.cargo/registry` and `~/.cargo/git/db`;
+2. run `cargo fetch --locked` with retry while network is allowed;
+3. set `CARGO_NET_OFFLINE=true` for compile/test jobs using the warmed registry;
+4. restore a Rust target cache scoped by job purpose, not by mutable branch name;
+5. upload timings and cache statistics while tuning;
+6. delete pull-request-scoped caches when the PR closes.
+
+GitHub searches the current branch cache first and then the default branch for compatible keys/restore keys. Cache entries must be treated as untrusted, and secrets must never be stored in them. See GitHub's [dependency caching reference](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching) and [cache security guidance](https://docs.github.com/en/actions/concepts/workflows-and-actions/dependency-caching#cache-security).
+
+Start with the pinned `Swatinem/rust-cache` pattern already used by jackin❯ and one target cache per meaningful lane. Do not copy the full jackin❯ matrix or enable `sccache` immediately. The new graph is small enough that extra service/configuration overhead may exceed the savings. Record clean and warm timings for at least 20 CI runs; add `sccache` only if dependency compilation remains a material share of required-lane time. If added, carry over `CARGO_INCREMENTAL=0`, stable base directories, stats artifacts, and no cache credentials on untrusted PRs.
+
+Never cache generated SVGs, API reports, packages, or docs output. Those are build artifacts: regenerate them, compare them, and upload them for review.
+
+## Scheduled hygiene
+
+Keep required PR latency bounded by moving broad but valuable checks to a scheduled workflow:
+
+- full feature powerset on every workspace package if the PR lane is scoped later;
+- advisory and yanked-dependency refresh;
+- render/performance benchmarks for large lists, Unicode clipping, diff view, and SVG generation;
+- test coverage and mutation testing for text/scroll/input kernels;
+- cache-usage report and stale cache cleanup;
+- deployed documentation link verification;
+- dependency lockfile maintenance through Renovate.
+
+Fuzzing is justified for terminal-control/ANSI parsing, display-width slicing, and raw-byte key decoding once those surfaces move. Do not add empty fuzz infrastructure merely to mirror jackin❯; add each target with a named parser invariant and a bounded scheduled run.
+
+## Release model
+
+The first adoption artifact is an immutable Git revision, not a binary release. A release workflow is still designed early so packaging rules do not emerge accidentally:
+
+- serialize releases with concurrency cancellation disabled;
+- require a clean main-branch revision and all required aggregators;
+- ensure the workspace version and tag agree;
+- run semver, package, license, docs, and consumer-smoke gates;
+- create annotated `v0.y.z` tags and a GitHub release with migration notes;
+- publish to crates.io only after an explicit operator decision and registry ownership check;
+- build standalone lookbook binaries only if users need installation without Cargo; do not inherit jackin❯'s unrelated cross-platform archive matrix by default.
+
+Every durable consumer pins either the immutable tag/release or a full Git SHA and commits its lockfile. Renovate may propose revision or release updates, but it never silently advances a branch dependency.

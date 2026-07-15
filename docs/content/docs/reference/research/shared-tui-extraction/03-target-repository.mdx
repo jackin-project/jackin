@@ -11,11 +11,15 @@ tailrocks/termrock
 |- Cargo.toml
 |- crates/
 |  |- termrock/
-|  |  |- components/
-|  |  |- input/
-|  |  |- layout/
-|  |  |- runtime/
-|  |  `- theme/
+|  |  `- src/
+|  |     |- input/
+|  |     |- interaction/
+|  |     |- layout/
+|  |     |- scroll/
+|  |     |- style/
+|  |     |- terminal/
+|  |     |- text/
+|  |     `- widgets/
 |  `- termrock-lookbook/
 |     |- src/lib.rs
 |     `- src/bin/termrock-lookbook.rs
@@ -23,6 +27,7 @@ tailrocks/termrock
 |  |- content/docs/components/
 |  `- public/component-previews/
 |- fixtures/renders/
+|- examples/{direct,tea,component,flux,buffer_only}.rs
 `- xtask or scripts for docs and render conformance
 ```
 
@@ -38,7 +43,7 @@ The Fumadocs application lives in the same repository. Component source, stories
 4. **Data-driven actions.** Tabs, buttons, hints, menus, and badges accept stable IDs, labels, state, and policy from the consumer.
 5. **Complete keyboard path.** Mouse interaction may mirror actions, but focus, keyboard activation, and visible hints remain complete.
 6. **Stable geometry.** Dynamic labels, hover, selection, loading, and errors cannot shift fixed controls unpredictably.
-7. **Executor restraint.** Widgets and state do not require Tokio. Optional runtime helpers have an explicit feature and value.
+7. **Executor restraint.** Widgets and state do not require Tokio. The initial base crate has no async-runtime dependency; add an adapter only after two consumers prove the same executor-neutral need.
 8. **Controlled dependencies.** MSRV and Ratatui/Crossterm support are published and tested.
 9. **Two-consumer graduation.** Product-local components remain local until a second concrete consumer needs the same neutral contract.
 10. **One renderer.** Public components target Ratatui directly; do not create a lowest-common-denominator renderer abstraction.
@@ -70,7 +75,17 @@ event -> Message -> pure update -> state + typed effects
                               consumer effect adapter
 ```
 
-The shared project may expose small executor-neutral contracts such as modal outcomes, subscriptions, focus ownership, and typed effect envelopes. It must not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree.
+The shared project may expose small executor-neutral contracts such as modal outcomes, focus ownership, and dirty/redraw state. It does not expose effect envelopes that can execute themselves, and it must not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree. Standard Ratatui `Widget`/`StatefulWidget` rendering remains usable without the optional component/update layer.
+
+The repository includes compile-checked direct, TEA, component-oriented, Flux,
+and buffer-only examples. Every example uses the same public widgets and
+interaction types while defining its own root state and routing, proving that
+TermRock supports application patterns instead of prescribing one.
+
+The base `termrock` crate depends on `ratatui-core`, following Ratatui's guidance for widget-library authors. Crossterm raw mode, alternate screen, mouse capture, event conversion, and restoration live behind an optional `crossterm` feature. The lookbook enables that feature; a buffer-only consumer does not compile a terminal backend. The initial library has no Tokio feature.
+
+See [06 - Public API and refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/) for the module graph, widget conventions, theme structure, terminal-session contract, and module-by-module refactoring ledger.
+See [09 - Component redesign catalog](/reference/research/shared-tui-extraction/09-component-redesign-catalog/) for the Ratatui TEA/component boundary and the replacement contract for every donor component file.
 
 ## Git-first consumption
 
@@ -153,3 +168,5 @@ API additions require:
 - dependency/license review.
 
 Consumers pin semver releases or immutable revisions. Branch dependencies are allowed for cross-repository iteration but are replaced by an exact revision before a consumer change becomes durable. The shared project publishes a compatibility matrix and does not coordinate adoption by requiring every Tailrocks repository to follow its default branch or wait for crates.io.
+
+Repository CI, caching, dependency policy, render/catalog coverage, and release automation are specified in [07 - Repository engineering](/reference/research/shared-tui-extraction/07-repository-engineering/). The generated extraction inventory and parity gates are specified in [08 - Migration evidence and gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/).

@@ -1,0 +1,407 @@
+---
+title: "09 - Component Redesign Catalog"
+---
+
+# 09 - Component Redesign Catalog
+
+TermRock must be a reusable Ratatui toolkit, not a relocated copy of the
+`jackin❯` application framework. A consumer should be able to render one
+TermRock button, list, input, or panel without adopting an agent model, root
+message enum, Tokio runtime, terminal loop, Tailrocks theme, or any other
+component. This chapter turns that constraint into a file-by-file redesign
+plan for the 24 current donor component implementation files and their shared
+support modules.
+
+## Ratatui architecture evidence
+
+Ratatui documents several valid application patterns rather than prescribing
+one framework:
+
+- [The Elm Architecture](https://ratatui.rs/concepts/application-patterns/the-elm-architecture/)
+  separates a model, messages, update logic, and a view. Events are mapped to
+  messages, updates perform state transitions, and the view should remain
+  side-effect free for a given state. Ratatui notes that Rust applications may
+  mutate a model in place where appropriate and that stateful widgets sometimes
+  require mutable presentation state while rendering.
+- [Component Architecture](https://ratatui.rs/concepts/application-patterns/component-architecture/)
+  co-locates component initialization, event handling, update, and rendering.
+  The published example uses application-specific event and action types. That
+  is useful inside an application, but it is not an appropriate required trait
+  for a cross-application widget library.
+- [Flux Architecture](https://ratatui.rs/concepts/application-patterns/flux-architecture/)
+  uses actions, a dispatcher, stores, and views/widgets in a unidirectional
+  flow. TermRock widgets can render borrowed store projections and return
+  typed outcomes without importing or implementing a dispatcher/store API.
+- Ratatui recommends implementing new reusable widgets by reference, using
+  stable `Widget for &T` or `StatefulWidget for &T` implementations. The
+  `WidgetRef` and `StatefulWidgetRef` traits are still unstable in Ratatui
+  0.30.2. See the [widget authoring guidance](https://docs.rs/ratatui/0.30.2/ratatui/widgets/index.html#authoring-custom-widgets).
+- Ratatui's [Builder Lite pattern](https://ratatui.rs/concepts/builder-lite-pattern/)
+  consumes and returns `self` for render configuration. TermRock should follow
+  this familiar construction style while keeping public fields private.
+- Ratatui recommends direct `Buffer` unit tests for focused widget behavior and
+  `TestBackend` for application integration. See
+  [`TestBackend`](https://docs.rs/ratatui/0.30.2/ratatui/backend/struct.TestBackend.html).
+
+The implication is not "put TEA into every widget." The implication is to
+preserve TEA-compatible boundaries without forcing one application
+architecture.
+
+## TermRock architecture decision
+
+TermRock exposes composable rendering and interaction building blocks. It does
+not expose a mandatory root `Application`, `Model`, `Message`, `Component`,
+`Subscription`, or `EffectExecutor` trait.
+
+```text
+backend event
+    |
+    v
+consumer adapter -> logical chord/pointer/resize
+    |
+    v
+consumer keymap -> component action
+    |
+    v
+pure component update(state, action) -> component outcome
+    |
+    v
+consumer maps outcome -> product message/effect/domain mutation
+
+borrowed render data + interaction state + theme
+    |
+    v
+Widget / StatefulWidget -> Buffer
+```
+
+This design supports both common application styles:
+
+- a direct immediate-mode consumer constructs borrowed widgets in its draw
+  function and updates its own state in its event loop;
+- a TEA consumer maps component outcomes into its root message enum and executes
+  effects after its root update;
+- a component-oriented consumer stores TermRock interaction state in its own
+  component and calls the same update/render functions;
+- a Flux consumer maps outcomes into actions handled by its own dispatcher and
+  stores, then projects store state back into the same widgets.
+
+Neither consumer is visible in the public TermRock API. The library never
+imports their event, action, model, error, telemetry, or runtime types.
+
+## Required architecture examples
+
+The new repository must demonstrate architectural neutrality with executable,
+compile-checked examples rather than a prose claim:
+
+```text
+examples/
+|- direct.rs
+|- tea.rs
+|- component.rs
+|- flux.rs
+`- buffer_only.rs
+```
+
+All five examples should present the same small neutral screen using the same
+public tabs, list, input, action, outcome, and theme types. Only application
+state ownership and message routing differ:
+
+| Example | Demonstrates | Must not imply |
+|---|---|---|
+| `direct.rs` | ordinary event loop plus immediate widget composition | a framework is required |
+| `tea.rs` | application model, root message enum, update, view, effect boundary | TermRock owns the root model or executor |
+| `component.rs` | consumer-defined component holding local state and routing events | TermRock's internal trait is mandatory |
+| `flux.rs` | consumer actions/store/dispatcher projecting into widgets | TermRock supplies a global store |
+| `buffer_only.rs` | no Crossterm/default features; render directly to a Ratatui buffer | a real terminal backend is required |
+
+Examples depend only on public API and contain no `#[cfg(test)]` access to
+internals. CI runs `cargo check --examples --no-default-features` for buffer
+examples and the declared feature set for terminal examples. The Fumadocs site
+adds an "Application patterns" section that explains these integrations and
+links each component page to small direct/TEA snippets where interaction is
+relevant. Examples are compatibility tests, not a third TermRock runtime crate.
+
+## Standard component anatomy
+
+Not every widget needs every type, but an interactive component should normally
+be decomposed into these roles:
+
+| Role | Responsibility | Examples |
+|---|---|---|
+| render data | borrowed, consumer-owned content | `Tabs<'a, Id>`, `ListRows<'a, Id>` |
+| interaction state | small persistent UI state only | selected ID, focus, scroll offset, cursor |
+| action | semantic operation understood by the component | next, previous, insert, delete, submit |
+| outcome | typed fact for the consumer to interpret | activated ID, changed, submitted, cancelled |
+| layout | pure geometry used by paint and hit testing | `TabsLayout<Id>`, `DialogAreas` |
+| widget | side-effect-free buffer rendering | `Widget for &Tabs`, `StatefulWidget for &List` |
+| adapter | optional backend conversion | Crossterm key/mouse to logical input |
+
+The contracts follow these rules:
+
+1. Domain records remain in the consumer. Render models contain only the text,
+   styles, IDs, capabilities, and state required to paint and interact.
+2. Stable caller-provided IDs cross selection, hover, activation, and hit-test
+   boundaries. Collection indices stay internal and ephemeral.
+3. Widget constructors borrow labels, rows, and theme data where practical.
+   They do not clone a full product collection every frame.
+4. Configuration uses private fields and Builder Lite methods. State mutation
+   uses named methods or pure update functions, not public fields.
+5. Rendering does not dispatch callbacks, emit terminal sequences, access the
+   clipboard, open URLs, log, spawn, poll, sleep, or mutate domain state.
+6. The function that calculates layout also returns the interactive regions.
+   Mouse routing never reconstructs geometry independently from rendering.
+7. Raw Crossterm events appear only in the optional adapter module. Components
+   accept logical actions so byte-decoded and test inputs use the same path.
+8. Visible hints are consumer-provided or derived from the same keymap that
+   dispatches actions. A widget does not hardcode `save`, `agent`, `run`, or
+   other product wording.
+9. Empty and tiny rectangles are valid inputs and must not panic. Content is
+   clipped by display width, not byte length or scalar-value count.
+10. Public components are useful independently. Rendering `Tabs` must not
+    require a TermRock status bar, terminal session, or root runtime.
+
+## Target module tree
+
+```text
+termrock/src/
+|- input/
+|  |- action.rs
+|  |- binding.rs
+|  |- chord.rs
+|  `- pointer.rs
+|- interaction/
+|  |- focus.rs
+|  |- hover.rs
+|  |- outcome.rs
+|  `- overlay_stack.rs
+|- layout/
+|  |- dialog.rs
+|  |- hit_region.rs
+|  `- slots.rs
+|- scroll/
+|  |- state.rs
+|  |- geometry.rs
+|  `- viewport.rs
+|- style/
+|  |- role.rs
+|  |- theme.rs
+|  `- tailrocks_phosphor.rs
+|- text/
+|  |- display_width.rs
+|  |- sanitize.rs
+|  `- window.rs
+|- widgets/
+|  |- action_bar.rs
+|  |- detail_table.rs
+|  |- dialog.rs
+|  |- diff.rs
+|  |- hint_bar.rs
+|  |- list.rs
+|  |- panel.rs
+|  |- status_bar.rs
+|  |- tabs.rs
+|  |- text_input.rs
+|  `- toast.rs
+`- terminal/                 # optional `crossterm` feature
+   |- event.rs
+   `- session.rs
+```
+
+This is an ownership map, not a requirement to create a file for every small
+type on day one. The important constraints are one canonical owner per
+primitive, no `components.rs` mega-facade, and no module named for a consumer
+workflow.
+
+## Foundation module decisions
+
+| Donor module | Decision | Required redesign |
+|---|---|---|
+| `geometry.rs` | split | Move display-width, clipping, fixed-prefix windows, and generic tab geometry; leave `agent_display_name` in jackin❯. Replace index-returning tab hit tests with stable IDs. |
+| `keymap.rs` | parameterize | Keep logical chords and binding dispatch. Feature-gate Crossterm conversion, separate the Capsule raw-byte decoder, make hint text caller data, and remove the global scroll-hint keymap. |
+| `scroll.rs` plus scroll helpers in `jackin-core` | consolidate | Create one canonical offset/axis/thumb/viewport implementation. Choose one integer policy, document saturation, and remove parallel `usize`/`u16` APIs unless the conversion is unavoidable at the Ratatui edge. |
+| `theme.rs` plus root RGB constants | reimplement | Replace public product constants with semantic `Theme` roles, private storage, builders, component overrides, and the optional Tailrocks phosphor preset. Capsule/debug/rain meanings stay local. |
+| `runtime.rs` | mostly remain | Do not publish the current Tokio-backed `Component<Ev, Msg>`, `View<Model>`, subscriptions, `drive_frame`, or fallback runtime. Promote only small executor-neutral outcomes after two consumers prove the same contract. |
+| `terminal_modes.rs` | reimplement | Replace two mouse helper functions with the scoped, partial-initialization-safe session described in chapter 06. Event polling and panic/signal policy remain application-owned. |
+| `ownership.rs` | remain | Rich-surface and host-screen atomics, title policy, and alternate-screen reassertion are jackin❯ process policy. None becomes TermRock global state. |
+| `ansi_text.rs` | extract | Keep pure ANSI-to-span parsing and stripping with malformed/control-sequence tests. Accept input and return data; perform no output. |
+| `ansi.rs` | split | Keep only proven generic encoding/sanitization helpers in a policy-neutral module. Brand banners, help/version output, and direct terminal emission remain local. Prefer typed regions/requests over raw overlay byte vectors. |
+| `url_text.rs` | remain initially | URL opening and log-redaction policy are not widget responsibilities. Promote pure parsing only after a second consumer proves an identical contract. |
+| `host_colors.rs` | optional adapter later | Host OSC color discovery performs terminal I/O and is not required to render a widget. Keep it in jackin❯ until independently demanded. |
+| `prune_output.rs`, `output.rs` | remain/split | Direct CLI output stays local. Promote only a pure bounded-lines projection if a second consumer needs the same behavior. |
+| `animation.rs` | remain | Digital rain, launch/exit timing, output, and host ownership encode product behavior. A future generic animation crate requires separate evidence. |
+
+## Component-by-component disposition
+
+### Extract after bounded parameterization
+
+| Donor component | Target | Required public contract |
+|---|---|---|
+| `bottom_chrome` | `layout::Slots` | Replace the fixed hint/spacer/footer policy with caller-supplied bottom slot heights. Keep saturating geometry and zero-height behavior. jackin❯ can provide its three-row preset locally. |
+| `button_strip` | `widgets::ActionBar<Id>` | Borrow items containing stable ID, label, enabled state, and optional style override. Store focused ID in state, return activated ID, derive hit regions from layout, and remove public line/style/rect helper duplication. |
+| `filter_input` | `widgets::TextInput` preset or `FilterField` | Render a consumer label/query with semantic input styles. Do not own filtering or assume a picker. Extract separately only if its behavior remains distinct after the text-input redesign. |
+| `hint_bar` | `widgets::HintBar` | Borrow typed hint descriptors containing chord display and caller label. Support wrapping and priority/visibility without owning a keymap or action wording. Keep display-width measurement. |
+| `hover_tracker` | `interaction::HoverState<Id>` | Track stable IDs over borrowed `HitRegion<Id>` values. Make pointer update pure and allocation-bounded; no callbacks or component names. |
+| `modal_backdrop` | `widgets::Backdrop` | Accept semantic style/character policy and implement `Widget for &Backdrop`; never assume black or the Tailrocks palette. |
+| `panel` | `widgets::Panel` | Use semantic focus/emphasis rather than phosphor constants. Accept a Ratatui `Block` or builder-lite title/border overrides; remove `modal_block` and `unfocused_block` policy helpers. |
+| `toast` | `widgets::Toast` | Borrow message, severity, anchor, and style. Geometry is pure; dismissal timer and queue live in the consumer. |
+| `tab_strip` | `widgets::Tabs<Id>` | Borrow stable-ID items with label/active/enabled state. Keep selected/hovered/focused state separate, expose hit regions keyed by ID, and implement by reference rather than consuming the widget. |
+
+### Reimplement before extraction
+
+| Donor component | Target | Why the current API cannot move | Replacement |
+|---|---|---|---|
+| `select_list` | `widgets::List<Id>` / `SelectList<Id>` | Owns `Vec<String>`, selection by index, fixed substring filtering, action labels, and mixed render helpers. | Borrow rows with stable IDs and selectable/separator roles; keep query/selection/scroll in state; accept a consumer-supplied visible projection or filtering strategy; use display-width windows; return activated ID; virtualize visible rows. |
+| `text_input` | `widgets::TextInput` + `TextInputState` | Mixes Crossterm events, duplicate-name policy, forbidden values, labels, save/cancel wording, cursor bytes, and rendering. | Maintain grapheme-safe editing state and horizontal viewport; accept logical edit actions; take external validation result and message; keep submit/cancel mapping in consumer; expose cursor placement as render metadata. |
+| `scrollable_panel` | `scroll::ViewportState` + list/paragraph widgets | Duplicates scroll math and publishes many low-level render functions with product styles. | Consolidate scrolling first; widgets borrow visible content or a row source, render through `StatefulWidget`, expose thumb/hit geometry, and avoid materializing large collections per frame. |
+| `dialog_layout` | `widgets::Dialog` + `layout::DialogSpec` | Combines shell rendering, scrolling, key hints, axes, and Capsule byte-wheel behavior. | Separate responsive geometry, scroll state, shell widget, and logical actions. Caller supplies title/body/footer/action bar; backend adapters translate wheel events. |
+| `modal_rects` | `layout::DialogSpec` | Public variants name role, auth, mount, source, scope, and operation workflows. | Use min/preferred/max width and height, placement, margins, and overflow rules. Product screens construct specs locally. |
+| `confirm_dialog` | `widgets::ChoiceDialog<Id>` | Hardcodes exit/data-loss constructors, yes/no policy, keymap labels, and focused indices. | Borrow title/body/warning/action descriptors; use stable action IDs; expose choice/cancel outcome; keep exit wording and destructive-action policy in jackin❯. |
+| `save_discard_dialog` | `ChoiceDialog<Id>` consumer preset | Encodes a particular dirty-exit workflow and direct Crossterm handling. | Implement `Save`, `Discard`, and `Cancel` as caller action data over the generic choice dialog. No dedicated public TermRock state is needed initially. |
+| `error_dialog` | `widgets::MessageDialog` composed with `DetailTable` | Mixes scrolling, product keymap hints, row copying, hyperlinks, and raw OSC overlay bytes. | Borrow message and neutral detail rows; return typed `Copy(Id)`/`ActivateLink(Id)` outcomes and hit regions. Consumer executes clipboard/OSC/URL policy. |
+| `container_info` | `widgets::DetailTable<Id>` | `DebugInfo` explicitly builds run, container, role, agent, version, diagnostics, and file-link rows. | Extract only label/value rows, selection, scrolling, wrapping, copy/link capabilities, and typed outcomes. Keep `DebugInfo` and all product row construction in jackin❯. |
+| `status_footer` | `widgets::StatusBar<Id>` | Names usage, container, run ID, debug chip, and fixed right-side order. | Borrow left/right slots with stable IDs, priority, minimum width, truncation rule, emphasis, and enabled state. Return hit regions/activated ID. jackin❯ decides slot order and meanings. |
+| `status_popup` | `MessageDialog` or `Toast` composition | Couples status presentation to a dedicated popup state and frame renderer without proving a distinct neutral primitive. | Fold into a generic message surface unless a second consumer demonstrates unique interaction/layout behavior. |
+| `diff_view` | `widgets::DiffView` + `DiffState` | Rendering takes mutable state, mixes projection/layout mutation, hardcoded hints, and theme constants. | Parse/project outside rendering; borrow immutable hunks/lines; keep only selection and scroll in state; use semantic added/removed roles; return no effect from render. |
+
+### Keep consumer-local unless reuse is proven
+
+| Donor component | Owner | Reason |
+|---|---|---|
+| `brand_header` | jackin❯ composition | It renders the literal jackin❯ wordmark and brand colors. Consumers can compose a generic panel/line today; a shared branded header is not yet a neutral primitive. |
+| `focus_owner` | split | Replace `ButtonFocus` and the tab/button-specific owner enum with generic `FocusState<Id>` or consumer state. Do not publish workflow-shaped focus enums. |
+| `modal_lifecycle` | split | Pure backdrop and inside/outside hit classification may move. The generic stack is small but becomes public only if two consumers need identical parent-chain semantics; application modal routing remains local. |
+
+No component is copied unchanged merely to preserve its current Rust path. The
+new repository should preserve useful implementation history, but neutralizing
+commits establish the new ownership and API before any immutable consumer pin
+is advertised.
+
+## Required redesign contracts
+
+### Selection and list projection
+
+The list API must not require TermRock to own arbitrary domain values or all
+rows. A suitable conceptual boundary is:
+
+```rust
+pub struct ListRow<'a, Id> {
+    id: Id,
+    label: Line<'a>,
+    role: RowRole,
+    enabled: bool,
+}
+
+pub struct ListState<Id> {
+    selected: Option<Id>,
+    hovered: Option<Id>,
+    scroll: ViewportState,
+}
+
+pub enum ListOutcome<Id> {
+    Ignored,
+    Changed,
+    Activated(Id),
+}
+```
+
+The exact signature remains an implementation decision. The invariant is that
+the consumer can project only the visible/filter-matched domain records into
+borrowed render rows and recover the original stable ID from an outcome.
+
+### Text editing
+
+`TextInputState` owns only text-editing mechanics: content, cursor boundary,
+selection if supported, and horizontal viewport. It does not own a list of
+forbidden project names or decide that Enter means "save." The consumer maps
+its chord to `EditAction::Submit`, evaluates its domain validation, and decides
+whether a `Submitted(String)` outcome changes application state or displays a
+validation message.
+
+Cursor movement and deletion need a declared Unicode policy. At minimum, the
+cursor never splits UTF-8 and its painted column uses terminal display width.
+Before release, decide whether editing operates on grapheme clusters or Unicode
+scalar boundaries; document and test combining marks, emoji sequences, CJK
+wide characters, zero-width characters, and horizontal clipping.
+
+### Layout and hit testing
+
+Every interactive widget should expose or internally reuse one pure layout
+calculation:
+
+```text
+layout(area, render data, state) -> visual areas + HitRegion<Id> values
+render(layout, data, state, buffer)
+pointer(position, regions) -> optional Id/action
+```
+
+This removes the current pattern where public `*_rect`, `*_hit`, render, and
+OSC-overlay helpers can drift. Layout results are frame-scoped values; widgets
+do not retain terminal coordinates across a resize.
+
+### Updates and effects
+
+TermRock component updates may mutate their small interaction state in place,
+which Ratatui explicitly permits as a practical TEA adaptation. They return
+data-only outcomes. They do not return boxed futures, Tokio channels, commands
+that can execute themselves, or consumer messages.
+
+```text
+component action -> update interaction state -> outcome
+consumer outcome -> root TEA message -> domain update + effect request
+consumer runtime -> execute effect -> new root message
+```
+
+This keeps clipboard writes, URL opening, command execution, terminal output,
+database calls, agent orchestration, CI operations, and telemetry completely
+outside TermRock while allowing every consumer to use the same testable
+interaction machinery.
+
+## API rejection checks
+
+The generated public API report and extraction ledger should fail review when
+any public TermRock signature or documentation contains:
+
+- a Tailrocks product domain noun such as agent, capsule, container, workspace,
+  role, run, database, trace, job, credential, or connection;
+- a dependency path from `jackin-*`, Holla, Velnor, Parallax, or a future
+  consumer crate;
+- `tokio`, `tracing`, filesystem, networking, process, clipboard, secrets, or
+  application configuration in the base crate;
+- Crossterm types outside the optional adapter;
+- public collection indices as durable selection/activation identity;
+- raw terminal escape bytes as a widget outcome;
+- hardcoded product action labels or key policy;
+- rendering that requires `&mut` only because it performs hidden projection,
+  layout caching, event dispatch, or effects;
+- duplicated free-render and widget APIs without a documented compatibility
+  reason;
+- a component that can only be tested or rendered through the lookbook's
+  private application state.
+
+Use a denylist as an audit aid, not as the proof of neutrality. Generic words
+can still hide product assumptions, and a legitimate example may use one of
+these nouns in consumer documentation. Human API review and the Holla reuse
+proof remain required.
+
+## Per-component conformance
+
+Every extracted public component needs:
+
+- direct buffer tests for default, focused, disabled, empty, overflow, tiny,
+  and off-origin rectangles;
+- update tests proving ignored actions do not mutate state and handled actions
+  return the documented outcome;
+- stable-ID tests across insertion, removal, sorting, and filtering;
+- layout/hit-test agreement at minimum, normal, and wide sizes;
+- Unicode/display-width cases appropriate to its content;
+- a non-color focus/selection/error cue;
+- a neutral lookbook story and deterministic SVG;
+- rustdoc showing standalone use without the terminal adapter or root runtime;
+- at least one compile-only example using a non-Tailrocks domain ID type.
+
+The repository-level direct, TEA, component, Flux, and buffer-only examples
+must also compile against every advertised Ratatui/MSRV compatibility cell.
+
+Composite consumer screens remain covered in their own repositories. TermRock
+proves that primitives are neutral and correct; jackin❯, Holla, Velnor, and
+Parallax prove that their product composition and effects are correct.
