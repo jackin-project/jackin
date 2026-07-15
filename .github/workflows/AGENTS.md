@@ -24,7 +24,7 @@ Apply these rules to every workflow under this directory. They define the reposi
 
 ## Runner Capacity
 
-- Automatic PR CI, Construct, and jackin-dev jobs use the Velnor runner lane; keep GitHub-hosted runners for `main` and explicit dispatch parity runs. This prevents independent PRs from competing for the hosted-runner quota while Velnor capacity is idle.
+- Construct PR builds use the Velnor runner lane, where the persistent BuildKit cache makes the two platform jobs fast. Keep the high-fan-out Rust CI matrix on GitHub-hosted runners unless Velnor capacity is scaled to match it; otherwise a small self-hosted pool serializes one PR's matrix.
 
 ## Publishing and Parity
 
