@@ -207,14 +207,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write_svgs(PathBuf::from(first))
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Lookbook binary's terminal-driver fn: runs the story catalog loop \
               that mounts each story as the active pane and dispatches key \
               events. Single-binary entry point — the inline shape is the \
               canonical lookbook runner."
 )]
-#[allow(
+#[expect(
     clippy::excessive_nesting,
     reason = "Same as too_many_lines: per-event / per-pane nested dispatch \
               through the catalog loop. Per-region helpers would obscure the \
@@ -703,12 +703,6 @@ impl Drop for TerminalGuard {
 #[cfg(test)]
 mod tests;
 
-#[allow(
-    clippy::excessive_nesting,
-    reason = "Lookbook binary's SVG writer: per-story + per-region nested loop. \
-              Extracting per-region helpers would require threading mutable \
-              state through fn calls and obscure the per-story rendering."
-)]
 fn write_svgs(out_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     for path in write_story_svgs(&out_dir)? {
         let mut stdout = io::stdout().lock();

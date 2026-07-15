@@ -5,7 +5,32 @@
 /// Multi-line migration and remediation text use [`ConfigError::Message`] so
 /// operator-facing wording stays byte-stable while still being typed.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ConfigError {
+    /// Filesystem operation failed.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    /// jackin❯ path initialization failed.
+    #[error(transparent)]
+    Paths(#[from] jackin_core::PathsError),
+    /// Workspace-name validation failed.
+    #[error(transparent)]
+    WorkspaceName(#[from] jackin_core::WorkspaceNameError),
+    /// TOML serialization failed.
+    #[error(transparent)]
+    TomlSerialize(#[from] toml::ser::Error),
+    /// TOML deserialization failed.
+    #[error(transparent)]
+    TomlDeserialize(#[from] toml::de::Error),
+    /// Editable TOML parsing failed.
+    #[error(transparent)]
+    TomlEdit(#[from] toml_edit::TomlError),
+    /// Workspace-collapse planning failed.
+    #[error(transparent)]
+    Collapse(#[from] crate::planner::CollapseError),
+    /// Lower-level config operation whose taxonomy has not yet been narrowed.
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
     /// Free-form operator-facing message (migrations, fixes, etc.).
     #[error("{0}")]
     Message(String),
@@ -67,6 +92,9 @@ pub enum ConfigError {
     #[error("no attempts made")]
     NoAttemptsMade,
 }
+
+/// Typed result returned by jackin-config public APIs.
+pub type ConfigResult<T> = Result<T, ConfigError>;
 
 impl ConfigError {
     /// Wrap a free-form message as [`ConfigError::Message`].

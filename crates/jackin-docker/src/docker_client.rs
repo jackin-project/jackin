@@ -337,6 +337,7 @@ impl DockerApi for BollardDockerClient {
 
     async fn inspect_container_state(&self, name: &str) -> ContainerState {
         jackin_diagnostics::debug_log!("docker", "inspect container {name}");
+        jackin_diagnostics::incr_docker_inspect();
         let result = self
             .inner
             .inspect_container(name, None::<InspectContainerOptions>)

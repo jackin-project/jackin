@@ -17,7 +17,7 @@ struct ResourceSample {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct ResourceMetricsSampler {
+pub(crate) struct ResourceMetricsSampler {
     previous: Option<ResourceSample>,
     pending: Option<JoinHandle<Option<ResourceSample>>>,
 }
@@ -74,8 +74,8 @@ impl Multiplexer {
         if !crate::logging::debug_enabled() {
             return;
         }
-        let session_count = self.sessions.len();
-        let tab_count = self.tabs.len();
+        let session_count = self.session_supervisor.sessions.len();
+        let tab_count = self.session_supervisor.tabs.len();
         let visible_panes = self.visible_pane_count();
         let pending_render = self.has_pending_render();
         match self.resource_metrics.poll().await {

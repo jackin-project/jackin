@@ -7,7 +7,7 @@ description: Contributor reference for instance identity, state, restore, and pa
 This page is for contributors working on jackin❯ itself. Operator-facing workflow guidance lives in [Parallel Agents](/guides/parallel-agents/), [load](/commands/load/), [hardline](/commands/hardline/), and [console](/commands/console/).
 </Aside>
 
-The runtime instance model is the source of truth for how jackin names containers, stores per-instance metadata, decides whether a launch should restore or start fresh, and exposes running instances to `hardline`, `eject`, `purge`, and the console.
+The runtime instance model is the source of truth for how jackin❯ names containers, stores per-instance metadata, decides whether a launch should restore or start fresh, and exposes running instances to `hardline`, `eject`, `purge`, and the console.
 
 ## Vocabulary
 
@@ -80,7 +80,7 @@ data/
 
 `instance.json` stores instance-level identity and lifecycle data: instance ID, container base, workspace name/label, workdir, host workdir fingerprint, role key, role display name, agent runtime, role source/ref, image tag, lifecycle status, last attach outcome, and Docker resource names.
 
-`instances.json` is a global lookup index. It stores enough data to find candidate instances by workspace/directory/role/agent without walking every state directory. If the index is missing, jackin rebuilds it by scanning manifests. The manifest remains canonical.
+`instances.json` is a global lookup index. It stores enough data to find candidate instances by workspace/directory/role/agent without walking every state directory. If the index is missing, jackin❯ rebuilds it by scanning manifests. The manifest remains canonical.
 
 `isolation.json` is mount-specific. It records materialized isolated mount state such as original source, mount destination, worktree/clone path, worktree scratch branch when applicable, base commit, selector key, container name, and preservation status. It is owned by the isolation subsystem, not the instance manifest.
 

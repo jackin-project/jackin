@@ -29,7 +29,7 @@ use crate::tui::components::dialog::{Dialog, GithubContextView};
 // the original call sites (parent + tests.rs `use super::*` glob, plus
 // `dialog::usage_info_required_height` + `dialog/usage.rs` callers).
 pub(crate) mod usage;
-#[allow(
+#[expect(
     unused_imports,
     reason = "re-exports consumed by tests + sibling modules"
 )]
@@ -107,7 +107,7 @@ pub(crate) enum DialogRatatuiSnapshot {
 impl Dialog {
     /// Build a fully-owned snapshot for Ratatui rendering. Called before
     /// the `ratatui_terminal.draw()` closure so there are no borrow conflicts.
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
         reason = "Dialog renderer snapshot builder carrying each dialog variant's \
                   per-row layout inline. Extracting per-variant bodies would \

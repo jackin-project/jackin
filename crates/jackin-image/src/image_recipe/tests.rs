@@ -7,8 +7,8 @@
 
 use super::*;
 use crate::derived_image::AgentInstall;
-use jackin_core::agent::Agent;
-use jackin_core::selector::RoleSelector;
+use jackin_core::Agent;
+use jackin_core::RoleSelector;
 use jackin_manifest::repo::CachedRepo;
 use std::collections::HashMap;
 

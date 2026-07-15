@@ -20,15 +20,3 @@ fn parse_telemetry_level_matrix() {
     assert_eq!(parse_telemetry_level("trace"), Some(TelemetryLevel::Trace));
     assert_eq!(parse_telemetry_level("nope"), None);
 }
-
-#[test]
-fn jackin_debug_alias_when_level_unset() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: exclusive test lock for process env.
-    // Workspace forbids unsafe — use param-style where possible.
-    // This test only asserts parse helpers remain stable; env matrix lives in
-    // observability otlp tests when env can be isolated.
-    assert_eq!(parse_telemetry_level("debug"), Some(TelemetryLevel::Debug));
-}

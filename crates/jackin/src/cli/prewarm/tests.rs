@@ -228,7 +228,8 @@ fn daemon_prewarm_records_plan_and_skipped_work() {
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
-        diagnostics.contains("\"kind\":\"launch_plan\""),
+        diagnostics.contains("\"event.name\":\"launch_plan\"")
+            || diagnostics.contains("\"kind\":\"launch_plan\""),
         "{diagnostics}"
     );
     assert!(diagnostics.contains("PrewarmOnly"), "{diagnostics}");

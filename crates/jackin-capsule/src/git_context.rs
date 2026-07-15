@@ -12,10 +12,8 @@
 //! slow repo cannot stall the daemon tick.
 
 use std::collections::{HashMap, HashSet};
-#[cfg(target_os = "linux")]
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -107,17 +105,14 @@ impl WorkdirContext {
 /// the executable exists, so treat it as available instead of freezing
 /// the feature off for the daemon lifetime.
 pub(crate) fn command_in_path(name: &str) -> bool {
-    let mut cmd = Command::new(name);
-    cmd.arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let mut child = match cmd.spawn() {
+    let request = jackin_process::ExecRequest::new(name, ["--version"])
+        .stdout_mode(jackin_process::StdioMode::Null)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    let mut child = match jackin_process::spawn_sync(&request) {
         Ok(child) => child,
         Err(e) => {
             crate::clog!(
-                "command_in_path[{name}]: spawn failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
-                e.raw_os_error()
+                "command_in_path[{name}]: spawn failed: {e}; treating as unavailable for the daemon lifetime"
             );
             return false;
         }
@@ -152,9 +147,13 @@ pub(crate) fn command_in_path(name: &str) -> bool {
 /// Bounded by `GIT_CONTEXT_COMMAND_TIMEOUT` so a stalled `git`
 /// subprocess against a network-mounted `.git` cannot block the daemon.
 pub(crate) fn git_capture_at_workdir(workdir: &Path, args: &[&str]) -> Option<String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C").arg(workdir).args(args);
-    command_stdout_trimmed_with_timeout(&mut cmd, GIT_CONTEXT_COMMAND_TIMEOUT)
+    let command_args = std::iter::once(OsStr::new("-C"))
+        .chain(std::iter::once(workdir.as_os_str()))
+        .chain(args.iter().map(OsStr::new));
+    let request = jackin_process::ExecRequest::new("git", command_args)
+        .stdout_mode(jackin_process::StdioMode::Capture)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    command_stdout_trimmed_with_timeout(&request, GIT_CONTEXT_COMMAND_TIMEOUT)
 }
 
 /// `git symbolic-ref --short refs/remotes/origin/HEAD` returns

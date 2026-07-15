@@ -72,7 +72,7 @@ The console resource panel (when open) would show "Last cleanup: 4m ago" in the 
 
 ## Open questions
 
-- **Default delay/interval values.** multicode uses 300s/900s. Are those sensible jackin defaults, or should roles be more conservative? Leaning toward matching multicode for V1 and tuning from feedback.
+- **Default delay/interval values.** multicode uses 300s/900s. Are those sensible jackin❯ defaults, or should roles be more conservative? Leaning toward matching multicode for V1 and tuning from feedback.
 - **Cleanup during foreground operator attach.** If the operator is actively `jackin hardline`'d into an idle session, should cleanup fire? multicode runs it regardless. Leaning toward suppressing when attached — the operator's about-to-type-something signal isn't visible to the status adapter.
 - **Recovery from a cleanup-broken container.** If `restart_after_cleanup` is true and the new container fails to come up, the operator's session is unrecoverable from cleanup alone. Leaning toward one retry, then mark the instance failed and surface it for operator intervention.
 

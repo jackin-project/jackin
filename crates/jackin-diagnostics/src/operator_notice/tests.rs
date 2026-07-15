@@ -1,4 +1,4 @@
-use jackin_core::operator_notice::OperatorNoticeSink;
+use jackin_core::OperatorNoticeSink;
 
 use super::DiagnosticsOperatorNotice;
 use crate::{

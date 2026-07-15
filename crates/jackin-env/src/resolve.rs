@@ -9,8 +9,8 @@ use crate::op_runner::{OpRunner, resolve_env_value};
 use crate::op_struct::OpStructRunner;
 use crate::parse_helpers::parse_host_ref;
 use jackin_config::AppConfig;
-use jackin_core::op_reference::parse_op_reference;
-use jackin_core::op_types::OpItem;
+use jackin_core::OpItem;
+use jackin_core::parse_op_reference;
 use jackin_core::{EnvValue, OpRef, WorkspaceName};
 
 /// Typed failures for operator-env validation and `op://` URI resolution.
@@ -111,7 +111,7 @@ pub fn validate_reserved_names(config: &AppConfig) -> Result<(), OperatorEnvErro
     let mut offenses: Vec<String> = Vec::new();
     let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, EnvValue>| {
         for key in env.keys() {
-            if jackin_core::env_model::is_reserved(key) {
+            if jackin_core::is_reserved(key) {
                 offenses.push(format!(
                     "  - {key:?} is reserved by the jackin runtime; declared in {layer}"
                 ));
@@ -208,7 +208,7 @@ pub fn resolve_op_uri_to_ref(
 
     // Item segment may carry [subtitle] filter — a display extension from jackin❯.
     // Nested condition makes map_or awkward; allow the if-let pattern here.
-    #[allow(
+    #[expect(
         clippy::option_if_let_else,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]
@@ -614,7 +614,7 @@ where
                 let timing_name = format!("operator_env:{key}");
                 let value_kind = ValueKind::of_env_value(value).as_timing_detail();
                 jackin_diagnostics::active_timing_started(
-                    "credentials",
+                    jackin_diagnostics::DiagnosticStage::Credentials,
                     &timing_name,
                     Some(value_kind),
                 );
@@ -623,7 +623,7 @@ where
                 match result {
                     Ok(value) => {
                         jackin_diagnostics::active_timing_done(
-                            "credentials",
+                            jackin_diagnostics::DiagnosticStage::Credentials,
                             &timing_name,
                             Some(value_kind),
                         );
@@ -631,7 +631,7 @@ where
                     }
                     Err(error) => {
                         jackin_diagnostics::active_timing_done(
-                            "credentials",
+                            jackin_diagnostics::DiagnosticStage::Credentials,
                             &timing_name,
                             Some("error"),
                         );

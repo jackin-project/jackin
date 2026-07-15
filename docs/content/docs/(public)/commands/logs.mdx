@@ -1,5 +1,5 @@
 ---
-title: jackin logs
+title: jackin❯ logs
 description: "Show or follow the jackin❯ Capsule log"
 ---
 
@@ -25,7 +25,7 @@ Show, follow, or bundle the jackin❯ Capsule log for a running or recently-run 
 | `--tail <N>` | Print the last N lines (default 200). Ignored when `--follow` is set. |
 | `--follow` | Follow the log as it grows (like `tail -f`). Ctrl+C to stop. |
 | `--bundle <PATH>` | Copy the last `--tail` lines (with a one-block header naming the source container, role, and path) into a fresh file at the given path. Existing file is overwritten. Designed for pasting into bug reports. |
-| `--debug` | Print every external command jackin issues and their captured output. Also enabled by `JACKIN_DEBUG=1`. |
+| `--debug` | Print every external command jackin❯ issues and their captured output. Also enabled by `JACKIN_DEBUG=1`. |
 
 `--path`, `--follow`, and `--bundle` are mutually exclusive.
 
@@ -67,7 +67,7 @@ Reader-task EOF and child-reaper events are both logged; the difference between 
 
 ## Bundling for bug reports
 
-`--bundle` is the supported way to share a log with the jackin maintainers. The header it writes pins the container base, the role, the workspace, the container status, and the source path, so the reader can correlate the trace with the rest of the bug context without a separate paste.
+`--bundle` is the supported way to share a log with the jackin❯ maintainers. The header it writes pins the container base, the role, the workspace, the container status, and the source path, so the reader can correlate the trace with the rest of the bug context without a separate paste.
 
 ```bash
 jackin logs the-architect --bundle /tmp/jackin-bug.txt --tail 500

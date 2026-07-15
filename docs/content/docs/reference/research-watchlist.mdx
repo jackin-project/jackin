@@ -19,7 +19,7 @@ Use this page before implementation work that touches agent orchestration, runti
 | [TUICommander](https://tuicommander.com/docs/user-guide/ai-agents.html) | Foreground process polling, status-line markers, session-binding environment variables, shell wrappers, terminal activity state machines, subtask counters, and completion deferral. | Parent/child agent roll-up, reporter launch environment, and completion safety. |
 | [Codemux agent status](https://docs.codemux.org/agent-status) and [tmux-agent-status](https://github.com/samleeney/tmux-agent-status) | Hook-driven lifecycle events, local status files, sidebar summaries, done-until-viewed UX, and hook-over-process authority. | Container-local hook reporters and acknowledgement semantics. |
 | [agent-deck](https://github.com/asheshgoplani/agent-deck), [claudeye](https://docs.rs/crate/claudeye/0.6.0), and [Codeman](https://github.com/Ark0N/Codeman) | Transition notifications, hook freshness windows, scratch config ownership, done sentinels, health scores, circuit breakers, AI idle-check fallbacks, and terminal classifier variants. | Adjacent ideas for status evidence, failure handling, stuck diagnostics, and notification throttling. |
-| [Zylos cursor-readiness research](https://zylos.ai/research/2026-04-01-ai-agent-input-ready-detection-cursor-vs-regex) | Cursor-position readiness probes, output-stability windows, and regex failure modes. | Input-ready and stuck-detection fallback design. |
+| [Zylos cursor-readiness research](https://zylos.ai/research/2026-04-01-ai-agent-input-ready-detection-cursor-vs-regex/) | Cursor-position readiness probes, output-stability windows, and regex failure modes. | Input-ready and stuck-detection fallback design. |
 | [VS Code terminal shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) and [Windows Terminal shell integration](https://learn.microsoft.com/en-us/windows/terminal/tutorials/shell-integration) | Prompt/command OSC markers, command-finished events, cwd reporting, and shell integration fallback semantics. | Shell prompt/execution boundaries inside Capsule PTYs. |
 | [Warp](https://www.warp.dev/) | Agent-in-terminal product shape, interactive command handoff, and terminal-first UX direction. | Product boundary for visible foreground agents instead of hidden workers. |
 | [Zellij](https://zellij.dev/) and [Ghostty](https://ghostty.org/) | Multiplexer UX, pane rendering, and screen-state representation. | Capsule multiplexer design and screen detector substrate. |
@@ -29,10 +29,10 @@ Use this page before implementation work that touches agent orchestration, runti
 | Reference | Watch for | Where it informs jackin❯ |
 |---|---|---|
 | [Orca](https://orcahq.ai/) and the [Orca research item](/reference/research/agent-orchestration/orca-ade/) | Agent development environment concepts, workspace/task handoff, and fleet orchestration UX. | Agent Orchestration Program and fleet-phase roadmap items. |
-| [Conductor](https://conductor.build/), [Contrabass](https://contrabass.dev/), and [agtx](https://github.com/fynnfluegge/agtx) | Multi-agent task routing, workspace grouping, and terminal/session control surfaces. | Agent workflow orchestration and console agent session control. |
+| [Conductor](https://www.conductor.build/), [Contrabass](https://www.contrabass.dev/), and [agtx](https://github.com/fynnfluegge/agtx) | Multi-agent task routing, workspace grouping, and terminal/session control surfaces. | Agent workflow orchestration and console agent session control. |
 | [Forge MCP](https://github.com/antinomyhq/forge) and [Forge Terminal MCP](https://forgemcp.dev/) | MCP-driven agent operations, terminal mediation, and command/action bridges. | Custom operator tools and task-source abstraction. |
 | MCO/Hive, Emdash, Vibe Kanban, Sandcastle, worktrunk, workmux, par, Optio, Sculptor, Handler.dev, Helmor, OpenClaw Code Agent, RuFlo, Ruah/Bernstein, Switchboard, and GitHub Agentic Workflows | Queue models, PR/task lifecycle, delegation semantics, agent fleets, and project-board-style operator surfaces. | [Agent workflow orchestration](/reference/research/agent-orchestration/workflow-systems/agent-workflow-orchestration/) and [Autonomous task queue](/roadmap/autonomous-task-queue/). Re-resolve project URLs from the roadmap item before use because this group changes quickly. |
-| [Agent Client Protocol](https://agentclientprotocol.com/) | Runtime-neutral agent/session protocol ideas and ecosystem convergence. | Future cross-runtime control contracts and custom agent integration. |
+| [Agent Client Protocol](https://agentclientprotocol.com/get-started/introduction) | Runtime-neutral agent/session protocol ideas and ecosystem convergence. | Future cross-runtime control contracts and custom agent integration. |
 
 ## Isolation, Security, And Runtime Backends
 
@@ -53,11 +53,19 @@ Use this page before implementation work that touches agent orchestration, runti
 | Apple Human Interface Guidelines, menu bar guidance, and Liquid Glass guidance | Native macOS menu bar behavior, status-item constraints, and visual-system expectations. | Desktop Agent Hub UX constraints. |
 | Microsoft APM | Native authentication/account management patterns for agent platforms. | [Native APM role support](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) and authentication UX. |
 
+## Shared TUI Platform
+
+| Reference | Watch for | Where it informs the program |
+|---|---|---|
+| <RepoFile path="crates/jackin-tui/Cargo.toml">`jackin-tui`</RepoFile> and <RepoFile path="crates/jackin-tui-lookbook/Cargo.toml">`jackin-tui-lookbook`</RepoFile> | Donor coupling, public API growth, product vocabulary, render fixtures, terminal lifecycle, dependencies, and history/attribution changes before extraction. | [Shared TUI extraction research](/reference/research/shared-tui-extraction/) and [roadmap](/roadmap/shared-tui-extraction/). |
+| [Holla](https://github.com/tailrocks/holla), [Velnor](https://github.com/tailrocks/velnor), and [Parallax](https://github.com/tailrocks/parallax) | Ratatui/Crossterm versions, concrete terminal workflows, duplicated mechanics, product-boundary drift, and evidence for the two-consumer graduation rule. | [Tailrocks consumer map](/reference/research/shared-tui-extraction/01-tailrocks-consumers/). |
+| [Ratatui](https://github.com/ratatui/ratatui) and [Crossterm](https://github.com/crossterm-rs/crossterm) | Version compatibility, MSRV, terminal restoration, input/mouse behavior, Unicode width, API migrations, advisories, and license changes. | [Target repository](/reference/research/shared-tui-extraction/03-target-repository/) and preview release matrix. |
+
 ## Supporting Infrastructure And Documentation Tools
 
 | Reference | Watch for | Where it informs jackin❯ |
 |---|---|---|
-| [1Password CLI](https://developer.1password.com/docs/cli/), [Doppler](https://docs.doppler.com/), and [Vault Agent](https://developer.hashicorp.com/vault/docs/agent-and-proxy/agent) | Secret injection patterns, env templating, lease/refresh semantics, and credential sidecar trade-offs. | [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) and credential-source pattern work. |
+| [1Password CLI](https://www.1password.dev/cli), [Doppler](https://docs.doppler.com/docs/start), and [Vault Agent](https://developer.hashicorp.com/vault/docs/agent-and-proxy/agent) | Secret injection patterns, env templating, lease/refresh semantics, and credential sidecar trade-offs. | [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) and credential-source pattern work. |
 | [rumdl](https://github.com/rvben/rumdl) | Fast Markdown linting, rule coverage, and docs CI ergonomics. | [Docs markdown linting](/roadmap/docs-markdown-linting/). |
 | [zot](https://zotregistry.dev/) | Local registry/cache behavior and OCI distribution mechanics. | [Workspace registry cache](/roadmap/workspace-registry-cache/). |
 | Git `interpret-trailers` and GitHub co-authored-by docs | Trailer parsing, attribution conventions, and generated commit metadata. | [Public attribution and project growth](/reference/research/product-growth/attribution/public-attribution-and-growth/). |

@@ -1,5 +1,5 @@
-# Residual production `"/jackin` string-literal ledger (shrink-only).
-# New container paths must go through jackin_core::container_paths.
+# Residual production `"/jackin` string-literal ledger + forbidden-root exceptions
+# (shrink-only). New container paths must go through jackin_core::container_paths.
 # Regenerate draft: cargo xtask lint container-paths --print-allowlist
 
 [[file]]
@@ -11,3 +11,67 @@ note = "the chokepoint module itself defines the canonical constants"
 path = "crates/jackin-image/src/derived_image.rs"
 literals = 4
 note = "Dockerfile template bodies embed shell path strings; values must stay byte-identical to the image contract"
+
+# Forbidden absolute roots in production string literals (host/Docker emitters).
+# Each entry is shrink-only: remove when the path is routed through the chokepoint
+# or no longer needed.
+
+[[forbidden-roots]]
+path = "/etc/hostname"
+file = "crates/jackin-capsule/src/container_context.rs"
+reason = "reads the container's kernel hostname path (host-visible /etc inside the capsule PID namespace)"
+
+[[forbidden-roots]]
+path = "/etc/hostname"
+file = "crates/jackin-capsule/src/container_context.rs"
+reason = "second Path::new site for the same host hostname file"
+
+[[forbidden-roots]]
+path = "/etc/sudoers.d/agent"
+file = "crates/jackin-capsule/src/sudo_provision.rs"
+reason = "installs the agent sudoers drop-in at the distro path inside the container"
+
+[[forbidden-roots]]
+path = "/run"
+file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
+reason = "tmpfs mount table for the container runtime profile (host Docker config, not a capsule path)"
+
+[[forbidden-roots]]
+path = "/var/run"
+file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
+reason = "tmpfs mount table for the container runtime profile"
+
+[[forbidden-roots]]
+path = "/var/tmp"
+file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
+reason = "tmpfs mount table for the container runtime profile"
+
+[[forbidden-roots]]
+path = "/var/cache"
+file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
+reason = "tmpfs mount table for the container runtime profile"
+
+[[forbidden-roots]]
+path = "/var/log"
+file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
+reason = "tmpfs mount table for the container runtime profile"
+
+[[forbidden-roots]]
+path = "/var/lib/apt/lists"
+file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
+reason = "tmpfs mount table for the container runtime profile"
+
+[[forbidden-roots]]
+path = "/var/cache/apt/archives"
+file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
+reason = "tmpfs mount table for the container runtime profile"
+
+[[forbidden-roots]]
+path = "/var/lib/dpkg"
+file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
+reason = "tmpfs mount table for the container runtime profile"
+
+[[forbidden-roots]]
+path = "/etc/sudoers.d:rw,nosuid,nodev,mode=0755"
+file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
+reason = "Docker tmpfs flag string for sudoers.d mount options (host Docker config)"

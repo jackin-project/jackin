@@ -54,7 +54,7 @@ impl From<Color> for ColorSnap {
 /// SGR text-attribute flags captured by the conformance snapshot.
 /// Bundled so `CellSnapshot` keeps the `struct_excessive_bools` clippy gate
 /// quiet while the assertion side reads the whole struct via `PartialEq`.
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal SGR bits (bold / italic / underline / inverse) — \
               the standard CSI SGR attribute set is intrinsically a 4-bit mask and \

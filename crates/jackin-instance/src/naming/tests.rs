@@ -3,8 +3,8 @@
 
 //! Tests for `naming`.
 use super::*;
+use jackin_core::RoleSelector;
 use jackin_core::WorkspaceName;
-use jackin_core::selector::RoleSelector;
 
 #[test]
 fn new_workspace_container_name_is_compact_dns_safe() {

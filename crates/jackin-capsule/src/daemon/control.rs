@@ -43,7 +43,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         },
         ClientMsg::Snapshot => ServerMsg::Snapshot {
             tabs: mux.tab_snapshots(),
-            active_tab: u32::try_from(mux.active_tab).unwrap_or(0),
+            active_tab: u32::try_from(mux.session_supervisor.active_tab).unwrap_or(0),
         },
         ClientMsg::Agents => ServerMsg::AgentRegistry {
             records: mux.agent_registry_snapshot(),
@@ -57,30 +57,22 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             event,
             payload,
         } => {
-            let session_known = mux.sessions.contains_key(&session_id);
-            if let Some(session) = mux.sessions.get_mut(&session_id) {
-                session.apply_runtime_event(
-                    &source_id,
-                    &runtime,
-                    &event,
-                    payload.as_deref(),
-                    Instant::now(),
-                );
-            } else {
-                crate::cdebug!("agent-status: runtime event for unknown session {session_id}");
-            }
-            // INV-D12: agent hooks never block — ACK even when session is unknown
-            // (port documents the always-ack policy at this call site).
-            use super::ports::{ControlPort, PORTS};
-            debug_assert!(
-                PORTS.should_ack_unknown_session_runtime_event(session_known),
-                "control port must ACK runtime events (session_known={session_known})"
-            );
-            ServerMsg::Ack
+            use super::ports::{ControlPort, PORTS, RuntimeEvent};
+            PORTS.report_runtime_event(
+                &mut mux.session_supervisor.sessions,
+                RuntimeEvent {
+                    session_id,
+                    source_id: &source_id,
+                    runtime: &runtime,
+                    event: &event,
+                    payload: payload.as_deref(),
+                    observed_at: Instant::now(),
+                },
+            )
         }
         // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
         ClientMsg::StatusCapture { session_id } => {
-            if let Some(session) = mux.sessions.get(&session_id) {
+            if let Some(session) = mux.session_supervisor.sessions.get(session_id) {
                 if let Err(e) = write_status_capture(session_id, session) {
                     crate::clog!("status.capture: session {session_id} failed: {e:#}");
                 }
@@ -99,7 +91,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             }
         }
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
-            accounts: mux.usage_cache.account_snapshot_views(),
+            accounts: mux.usage.cache().account_snapshot_views(),
         },
         ClientMsg::ExecCommand { .. } => {
             // Defensive only: `ExecCommand` is intercepted by the control loop
@@ -112,6 +104,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         }
         ClientMsg::TokenUsage { session_id } => ServerMsg::TokenUsage {
             summary: mux
+                .usage
                 .token_monitor
                 .totals(session_id)
                 .map(TokenTotals::to_summary),
@@ -138,7 +131,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::Input(bytes) => {
             // Debug-only input-path telemetry: every chunk from the
             // client and every parser event lands in the log when
-            // `JACKIN_DEBUG=1`. Production runs stay quiet — the macro
+            // debug telemetry. Production runs stay quiet — the macro
             // skips the format + write entirely. The pair is the
             // canonical trace for "key X did nothing" triage: chunk
             // line proves the byte reached the daemon, event line
@@ -148,15 +141,15 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 bytes.len(),
                 bytes
             );
-            let events = mux.input_parser.parse(&bytes);
+            let events = mux.control.input_parser.parse(&bytes);
             for event in events {
                 let mode = mux.mux_mode();
                 crate::ctrace_payload!("  -> InputEvent::{:?} mode={mode:?}", event,);
                 mux.handle_input(event);
             }
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
-            if mux.status_bar.prefix_mode != prefix_mode {
-                mux.status_bar.set_prefix_mode(prefix_mode);
+            if mux.status.status_bar.prefix_mode != prefix_mode {
+                mux.status.status_bar.set_prefix_mode(prefix_mode);
                 mux.invalidate(explicit_redraw_reason());
             }
         }
@@ -166,36 +159,40 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::ClipboardImage(image) => mux.stage_clipboard_image_response(image),
         ClientFrame::ClipboardImageStart(start) => {
             let size = start.size;
-            if let Err(err) = mux.clipboard_image_transfers.start(start) {
+            if let Err(err) = mux.clipboard.clipboard_image_transfers.start(start) {
                 log_clipboard_image_rejection("transfer-start", &err);
-                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
-            } else if mux.clipboard_image_insert_mode == ClipboardImageInsertMode::StageOnly {
+            } else if mux.clipboard.clipboard_image_insert_mode
+                == ClipboardImageInsertMode::StageOnly
+            {
                 mux.set_clipboard_image_notice(format!("Image staging: receiving {size} bytes"));
             } else {
                 mux.set_clipboard_image_notice(format!("Image paste: receiving {size} bytes"));
             }
         }
         ClientFrame::ClipboardImageChunk(chunk) => {
-            if let Err(err) = mux.clipboard_image_transfers.chunk(chunk) {
+            if let Err(err) = mux.clipboard.clipboard_image_transfers.chunk(chunk) {
                 log_clipboard_image_rejection("transfer-chunk", &err);
-                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         }
-        ClientFrame::ClipboardImageEnd(end) => match mux.clipboard_image_transfers.end(end) {
-            Ok(image) => mux.stage_clipboard_image_response(image),
-            Err(err) => {
-                log_clipboard_image_rejection("transfer-end", &err);
-                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
-                mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+        ClientFrame::ClipboardImageEnd(end) => {
+            match mux.clipboard.clipboard_image_transfers.end(end) {
+                Ok(image) => mux.stage_clipboard_image_response(image),
+                Err(err) => {
+                    log_clipboard_image_rejection("transfer-end", &err);
+                    mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                    mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+                }
             }
-        },
+        }
         ClientFrame::ClipboardImageError(error) => {
             let reason = error.reason_code();
             crate::clog!("clipboard-image: host request failed reason={reason}");
             crate::cdebug!("clipboard-image: host request failed detail={error}");
-            mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+            mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
             mux.set_clipboard_image_notice(format!("Image paste rejected: {error}"));
         }
         ClientFrame::HostNotice(message) => {
@@ -203,7 +200,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             mux.set_clipboard_image_notice(message);
         }
         ClientFrame::Detach => {
-            mux.detach_requested = true;
+            mux.client_registry.detach_requested = true;
         }
         ClientFrame::FocusIn => {
             // Forward only when no dialog is intercepting input AND
@@ -212,7 +209,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             // surface `[I` as literal text at the prompt.
             if !mux.dialog_captures_input()
                 && let Some(focused) = mux.active_focused_id()
-                && let Some(s) = mux.sessions.get(&focused)
+                && let Some(s) = mux.session_supervisor.sessions.get(focused)
                 && s.focus_events_enabled()
             {
                 s.send_input(b"\x1b[I");
@@ -221,7 +218,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::FocusOut => {
             if !mux.dialog_captures_input()
                 && let Some(focused) = mux.active_focused_id()
-                && let Some(s) = mux.sessions.get(&focused)
+                && let Some(s) = mux.session_supervisor.sessions.get(focused)
                 && s.focus_events_enabled()
             {
                 s.send_input(b"\x1b[O");

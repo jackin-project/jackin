@@ -31,10 +31,6 @@ use jackin_core::{FieldTarget, OpRef};
 /// - [`FakeOpWriter::tag_read_fails`] — `item_tags` returns `Err` so the
 ///   rotate-cleanup fail-safe path is exercised.
 #[derive(Debug)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "test fake — each bool is one independent behavioural toggle for rotate/revoke tests"
-)]
 pub struct FakeOpWriter {
     /// Recorded `(vault, title, field)` per `item_create` / `item_field_set`.
     pub last_create: RefCell<Option<(String, String, String)>>,
