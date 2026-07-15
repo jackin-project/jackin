@@ -1391,7 +1391,7 @@ pub(crate) fn record_operation_metric(
     otlp::record_operation_metric(name, value, attrs);
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(all(feature = "otlp", any(test, feature = "test-support")))]
 pub use otlp::{TestExport, test_capsule_layers};
 /// In-memory export rig for crate tests (operation facade, conformance).
 #[cfg(all(test, feature = "otlp"))]
