@@ -29,6 +29,13 @@ const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-publ
 
 static GITHUB_AUTH_TOKEN: OnceCell<Option<String>> = OnceCell::const_new();
 
+fn record_agent_binary_failure(error_type: &'static str, body: &'static str) {
+    let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
+    span.in_scope(|| {
+        jackin_diagnostics::operation_error("launch.prepare", error_type, body, &[]);
+    });
+}
+
 #[derive(Debug, Clone)]
 pub struct AgentBinary {
     pub agent: Agent,
@@ -141,11 +148,9 @@ async fn ensure_available_impl(
                 "agent_binary_failed",
                 &format!("{} resolve failed: {error:#}", agent.slug()),
             );
-            jackin_diagnostics::operation_error(
-                "launch.prepare",
+            record_agent_binary_failure(
                 "agent_binary_resolve_failed",
                 "agent binary release resolution failed",
-                &[],
             );
             return Err(error).with_context(|| format!("resolving latest {} binary", agent.slug()));
         }
@@ -311,12 +316,15 @@ async fn ensure_binary_for_release(
                 "agent_binary_failed",
                 &format!("{} download failed: {error:#}", agent.slug()),
             );
-            jackin_diagnostics::operation_error(
-                "launch.prepare",
-                "agent_binary_download_failed",
-                "agent binary download failed",
-                &[],
-            );
+            let error_type = if error
+                .chain()
+                .any(|cause| cause.to_string().contains("checksum mismatch"))
+            {
+                "agent_binary_checksum_mismatch"
+            } else {
+                "agent_binary_download_failed"
+            };
+            record_agent_binary_failure(error_type, "agent binary download failed");
         })?;
     record(
         "agent_binary_ready",

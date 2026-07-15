@@ -720,6 +720,49 @@ fn volatile_failure_evidence_does_not_split_fingerprint() {
 }
 
 #[test]
+fn failure_path_census_exports_typed_error_logs_and_error_spans() {
+    let cases = [
+        ("capsule.attach", "attach_socket_eof"),
+        ("capsule.attach", "attach_socket_read_failed"),
+        ("capsule.attach", "attach_socket_write_failed"),
+        ("usage.refresh", "usage_http_request_failed"),
+        ("usage.refresh", "usage_http_status"),
+        ("usage.refresh", "usage_rpc_failed"),
+        ("launch.prepare", "agent_binary_download_failed"),
+        ("launch.prepare", "agent_binary_checksum_mismatch"),
+        ("launch.prepare", "docker_run_failed"),
+        ("launch.prepare", "docker_inspect_failed"),
+        ("launch.prepare", "docker_wait_failed"),
+        ("launch.cleanup", "cleanup_teardown_failed"),
+        (crate::otel_events::PROCESS_EXECUTE, "process_spawn_error"),
+    ];
+    let export = export_after(false, "failure-census", || {
+        for (operation, error_type) in cases {
+            let span = crate::operation_span(operation, &[]);
+            span.in_scope(|| {
+                crate::operation_error(operation, error_type, "operation failed", &[]);
+            });
+        }
+    });
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    for (operation, error_type) in cases {
+        assert!(logs.iter().any(|log| {
+            log_attr(&log.record, "event.name").as_deref() == Some(operation)
+                && log_attr(&log.record, "event.outcome").as_deref() == Some("failure")
+                && log_attr(&log.record, "error.type").as_deref() == Some(error_type)
+        }));
+    }
+    let spans = export.spans.get_finished_spans().unwrap();
+    assert_eq!(spans.len(), cases.len());
+    assert!(
+        spans
+            .iter()
+            .all(|span| matches!(span.status, Status::Error { .. }))
+    );
+}
+
+#[test]
 fn direct_diagnostics_events_reach_otlp() {
     let logs = exported_logs!(false, "run1", || {
         let tmp = tempfile::tempdir().unwrap();

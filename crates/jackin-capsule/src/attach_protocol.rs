@@ -14,6 +14,13 @@ use crate::protocol::attach::{
 };
 use crate::socket;
 
+fn record_attach_failure(error_type: &'static str, body: &'static str) {
+    let span = jackin_diagnostics::operation_span("capsule.attach", &[]);
+    span.in_scope(|| {
+        jackin_diagnostics::operation_error("capsule.attach", error_type, body, &[]);
+    });
+}
+
 /// A validated attach handshake produced by `perform_handshake`. The
 /// main loop applies these — `client_permit` is kept alive until the
 /// spawned persistent attach task drops it.
@@ -302,11 +309,9 @@ pub(crate) async fn handle_attach_client(
                     } else {
                         // Operator-visible breadcrumb + typed OTLP failure.
                         crate::cerror!("attach client: socket read failed: {e}");
-                        jackin_diagnostics::operation_error(
-                            "capsule.attach",
+                        record_attach_failure(
                             "attach_socket_read_failed",
                             "attach socket read failed",
-                            &[],
                         );
                     }
                     break;
@@ -315,6 +320,10 @@ pub(crate) async fn handle_attach_client(
                     Ok(Some(frame)) => frame,
                     Ok(None) => {
                         crate::cwarn!("attach client: EOF mid-frame (tag={:#04x})", tag[0]);
+                        record_attach_failure(
+                            "attach_socket_eof",
+                            "attach socket closed mid-frame",
+                        );
                         break;
                     }
                     Err(e) => {
@@ -322,11 +331,9 @@ pub(crate) async fn handle_attach_client(
                             "attach client: frame decode failed (tag={:#04x}): {e}",
                             tag[0]
                         );
-                        jackin_diagnostics::operation_error(
-                            "capsule.attach",
+                        record_attach_failure(
                             "attach_frame_decode_failed",
                             "attach frame decode failed",
-                            &[],
                         );
                         break;
                     }
@@ -345,11 +352,9 @@ pub(crate) async fn handle_attach_client(
                         crate::cwarn!("attach client: socket write failed: {e}");
                     } else {
                         crate::cerror!("attach client: socket write failed: {e}");
-                        jackin_diagnostics::operation_error(
-                            "capsule.attach",
+                        record_attach_failure(
                             "attach_socket_write_failed",
                             "attach socket write failed",
-                            &[],
                         );
                     }
                     break;

@@ -18,9 +18,9 @@ pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn usage_refresh_error_type(error: &str) -> &'static str {
     if usage_error_is_rate_limited(error) {
-        "usage_http_rate_limited"
+        "usage_http_status"
     } else if error.to_ascii_lowercase().contains("http") {
-        "usage_http_failed"
+        "usage_http_request_failed"
     } else {
         "usage_provider_failed"
     }

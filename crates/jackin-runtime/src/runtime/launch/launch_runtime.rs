@@ -970,6 +970,17 @@ pub(crate) async fn launch_role_runtime(
             Some("error")
         },
     );
+    if run_role_result.is_err() {
+        let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
+        span.in_scope(|| {
+            jackin_diagnostics::operation_error(
+                "launch.prepare",
+                "docker_run_failed",
+                "role container start failed",
+                &[],
+            );
+        });
+    }
     run_role_result?;
 
     // Privileged post-run capsule steps, each run as root via `docker exec`

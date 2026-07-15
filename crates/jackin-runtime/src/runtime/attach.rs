@@ -146,6 +146,17 @@ pub(super) async fn wait_for_capsule_daemon(
             Some("error")
         },
     );
+    if wait_result.is_err() {
+        let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
+        span.in_scope(|| {
+            jackin_diagnostics::operation_error(
+                "launch.prepare",
+                "docker_wait_failed",
+                "container readiness wait failed",
+                &[],
+            );
+        });
+    }
     wait_result
 }
 
