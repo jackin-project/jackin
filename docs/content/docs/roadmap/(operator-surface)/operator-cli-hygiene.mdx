@@ -8,10 +8,10 @@ title: "Operator CLI Hygiene"
 
 The original CLI hygiene proposal has mostly landed. Durable operator docs live on the command/reference pages; this roadmap item now tracks only the remaining onboarding gap.
 
-- [jackin doctor](/commands/doctor/) runs host preflight checks and a lightweight subset now gates Docker-dependent commands before they fail deep in launch.
-- [jackin status](/commands/status/) and `jackin ps` provide fleet overview, workspace instance lists, and instance detail where data is available.
+- [jackin❯ doctor](/commands/doctor/) runs host preflight checks and a lightweight subset now gates Docker-dependent commands before they fail deep in launch.
+- [jackin❯ status](/commands/status/) and `jackin❯ ps` provide fleet overview, workspace instance lists, and instance detail where data is available.
 - `--format json` exists on `status`, `doctor`, `workspace list`, and `workspace show`; `jackin load --dry-run --format json` makes launch plans scriptable.
-- [jackin load](/commands/load/) supports `--dry-run`, resolving the plan without spawning containers.
+- [jackin❯ load](/commands/load/) supports `--dry-run`, resolving the plan without spawning containers.
 - <RepoFile path="crates/jackin/src/error.rs" /> defines structured `JackinError` variants (E001–E016) with remediation hints; top-level rendering downcasts known errors and falls back to full debug detail for unknown failures.
 
 ## Remaining work
@@ -45,4 +45,4 @@ Before implementation, design must answer:
 ## Cross-references
 
 - [Run Diagnostics](/reference/runtime/diagnostics/) — structured run evidence for operator failures.
-- [jackin join & Debug Export](/roadmap/jackin-join-and-debug-bundle/) — project onboarding and shareable debug bundle research.
+- [jackin❯ join & Debug Export](/roadmap/jackin-join-and-debug-bundle/) — project onboarding and shareable debug bundle research.

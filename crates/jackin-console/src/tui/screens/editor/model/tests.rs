@@ -486,7 +486,7 @@ fn editor_synthesizes_pending_workspace_for_auth_rows() {
     let mut editor = TestEditor::new_create();
     editor.pending_name = Some("draft".into());
     editor.pending.env.insert(
-        jackin_core::env_model::ZAI_API_KEY_ENV_NAME.into(),
+        jackin_core::ZAI_API_KEY_ENV_NAME.into(),
         jackin_config::EnvValue::Plain("zai".into()),
     );
     editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Zai);
@@ -562,10 +562,7 @@ fn editor_persist_auth_form_writes_workspace_layer() {
     );
 
     assert_eq!(
-        editor
-            .pending
-            .env
-            .get(jackin_core::env_model::ZAI_API_KEY_ENV_NAME),
+        editor.pending.env.get(jackin_core::ZAI_API_KEY_ENV_NAME),
         Some(&jackin_config::EnvValue::Plain("zai-key".into()))
     );
 }
@@ -762,7 +759,7 @@ fn editor_focused_auth_enter_plan_reads_current_row() {
 fn editor_clear_auth_row_at_cursor_clears_workspace_auth_layer() {
     let workspace = WorkspaceConfig {
         env: std::collections::BTreeMap::from([(
-            jackin_core::env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+            jackin_core::ZAI_API_KEY_ENV_NAME.to_owned(),
             jackin_config::EnvValue::Plain("zai".into()),
         )]),
         ..WorkspaceConfig::default()
@@ -776,7 +773,7 @@ fn editor_clear_auth_row_at_cursor_clears_workspace_auth_layer() {
         !editor
             .pending
             .env
-            .contains_key(jackin_core::env_model::ZAI_API_KEY_ENV_NAME)
+            .contains_key(jackin_core::ZAI_API_KEY_ENV_NAME)
     );
 }
 
@@ -784,7 +781,7 @@ fn editor_clear_auth_row_at_cursor_clears_workspace_auth_layer() {
 fn editor_clear_auth_row_at_cursor_clears_role_auth_layer() {
     let mut workspace = WorkspaceConfig::default();
     workspace.roles.entry("dev".into()).or_default().env.insert(
-        jackin_core::env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        jackin_core::ZAI_API_KEY_ENV_NAME.to_owned(),
         jackin_config::EnvValue::Plain("zai".into()),
     );
     let mut editor = TestEditor::new_edit("alpha".into(), workspace);
@@ -801,7 +798,7 @@ fn editor_clear_auth_row_at_cursor_clears_role_auth_layer() {
     assert!(
         !editor.pending.roles["dev"]
             .env
-            .contains_key(jackin_core::env_model::ZAI_API_KEY_ENV_NAME)
+            .contains_key(jackin_core::ZAI_API_KEY_ENV_NAME)
     );
 }
 
@@ -1512,14 +1509,14 @@ fn editor_delete_env_var_blocks_managed_claude_oauth_token() {
         sync_source_dir: None,
     });
     editor.pending.env.insert(
-        jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME.into(),
+        jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME.into(),
         jackin_config::EnvValue::Plain("token".into()),
     );
 
     let err = editor
         .delete_env_var(
             &super::SecretsScopeTag::Workspace,
-            jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME,
+            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME,
         )
         .unwrap_err();
 
@@ -1528,7 +1525,7 @@ fn editor_delete_env_var_blocks_managed_claude_oauth_token() {
         editor
             .pending
             .env
-            .contains_key(jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
+            .contains_key(jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
     );
 }
 

@@ -1,0 +1,127 @@
+---
+title: "Lint Policy Census"
+---
+
+Workspace Clippy policy for jackin❯: measured `allow` census, restriction-family decisions, blocked-surface inventory, and `#[allow]` carve-out rules. Counts were measured **2026-07-14** with:
+
+```sh
+cargo clippy --workspace --all-targets --all-features --locked -- \
+  -W clippy::<lint> 2>&1 | rg -c 'index\.html#<lint>'
+```
+
+Revisit triggers are concrete; re-measure when a trigger fires and update this table in the same PR as any level change.
+
+## Workspace policy
+
+| Control | Level | Notes |
+|---|---|---|
+| `allow_attributes_without_reason` | deny | every suppression needs `reason = "..."` |
+| `allow_attributes` | deny | prefer `#[expect]` so suppressions self-retire when the lint stops firing |
+| Bare `#[allow]` | **0** (2026-07-14) | all production/test suppressions use `#[expect]` (or `cfg_attr(…, expect(…))` when target-dependent) |
+
+Legitimate `#[allow]` carve-outs (roadmap): cfg/target-dependent firing, test-only instability, generated code. Prefer `#[cfg_attr(not(test), expect(…))]` over `#[allow]` when the lint fires on one target and not another. If a true `#[allow]` is required under `allow_attributes = deny`, pair it with a fulfilled `#[expect(clippy::allow_attributes, reason = "…")]` on the same item and name the removal trigger in the reason.
+
+## Workspace `allow` census (clippy)
+
+Every `[workspace.lints.clippy]` entry at `allow` as of this census. Level-decision is the workspace table value; counts are primary Clippy hits under `-W`.
+
+| Lint | Level | Count | Date | Rationale | Revisit trigger |
+|---|---|---:|---|---|---|
+| `needless_pass_by_value` | allow | 79 | 2026-07-14 | Dominant by-value state/view handoffs across TUI/runtime | re-measure when count changes >20% or after TUI state-pass refactor |
+| `large_futures` | allow | 113 | 2026-07-14 | Residual large futures in attach/runtime/capsule | re-measure after plan 016/017 pipeline splits |
+| `redundant_feature_names` | allow | 1 | 2026-07-14 | Single `test-support` feature naming | revisit at next feature rename pass |
+| `implicit_hasher` | allow | 11 | 2026-07-14 | HashMap defaults without explicit hasher noise | revisit at next toolchain major |
+| `similar_names` | allow | 7 | 2026-07-14 | Adjacent domain names (`rows`/`cols`, before/after) | re-measure when count >20 |
+| `assigning_clones` | allow | 17 | 2026-07-14 | usage/capsule/runtime clone assignments | re-measure when count changes >20% |
+| `match_same_arms` | allow | 45 | 2026-07-14 | capsule/console/lookbook match arms intentionally parallel | re-measure after dialog/action enum splits |
+| `drop_non_drop` | allow | 36 | 2026-07-14 | console-heavy drop patterns | re-measure when count changes >20% |
+| `format_push_string` | allow | 36 | 2026-07-14 | progressive string building in diagnostics/xtask | re-measure when count changes >20% |
+| `no_effect_underscore_binding` | allow | 7 | 2026-07-14 | intentional discard bindings | revisit at next toolchain major |
+| `items_after_statements` | allow | 47 | 2026-07-14 | local helpers after early returns in handlers | re-measure after handler extractions |
+| `unnecessary_wraps` | allow | 9 | 2026-07-14 | API symmetry returning `Result`/`Option` | re-measure when count changes >20% |
+| `option_option` | allow | 2 | 2026-07-14 | rare tri-state encoding | revisit when introducing a third site |
+| `verbose_bit_mask` | allow | 3 | 2026-07-14 | terminal attribute bit masks | revisit at next term attribute redesign |
+| `unreadable_literal` | allow | 17 | 2026-07-14 | large integer literals in tests/benches | revisit at next toolchain major |
+| `unnecessary_debug_formatting` | allow | 2 | 2026-07-14 | debug formatting in operator-facing paths | revisit when count >5 |
+| `struct_field_names` | allow | 3 | 2026-07-14 | domain field prefixes matching type names | revisit at next public API pass |
+| `missing_errors_doc` | allow | 356 | 2026-07-14 | docs backlog; not a safety gate | re-measure after docs campaign; promote when below 50 |
+| `missing_panics_doc` | allow | 9 | 2026-07-14 | small panics-doc backlog | re-measure when count changes >20% |
+| `must_use_candidate` | allow | 662 | 2026-07-14 | noise-dominant on pure getters | re-measure at next toolchain major only |
+| `module_name_repetitions` | allow | 376 | 2026-07-14 | intentional `foo::FooBar` domain naming | re-measure at next toolchain major only |
+| `future_not_send` | allow | 153 | 2026-07-14 | runner/trait object futures intentionally !Send in places | re-measure after async boundary ports (plan 017) |
+| `cast_possible_truncation` | allow | 172 | 2026-07-14 | terminal geometry and byte-width casts | re-measure after typed geometry newtypes (plan 020) |
+| `cast_possible_wrap` | allow | 16 | 2026-07-14 | signed/unsigned edge casts | re-measure with cast_possible_truncation |
+| `cast_precision_loss` | allow | 61 | 2026-07-14 | animation/layout float paths | re-measure after animation cleanup |
+| `cargo_common_metadata` | allow | 0 | 2026-07-14 | workspace metadata complete | promote to warn if any hit appears |
+| `multiple_crate_versions` | allow | 44 | 2026-07-14 | transitive duplicates (syn, thiserror, …); tracked via deny/cargo | re-measure after major dep upgrades |
+
+`cast_sign_loss` remains **deny** (precedent for the lossy-cast tier). `unused_self` / `unused_async` already **warn** at 0 hits.
+
+## Restriction family
+
+Denied today at crate roots: `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-protocol` (`string_slice`, `indexing_slicing`, `get_unwrap`, `unwrap_in_result`, `panic_in_result_fn`, `unchecked_time_subtraction`).
+
+### Per-crate indexing/slicing census (lib, 2026-07-14)
+
+| Crate | `indexing_slicing` | `string_slice` | Decision |
+|---|---:|---:|---|
+| `jackin-core` | 0 | 0 | **adopted** (deny at root) |
+| `jackin-config` | 0 | 0 | **adopted** |
+| `jackin-manifest` | 0 | 0 | **adopted** |
+| `jackin-protocol` | 0 | 0 | **adopted** |
+| `jackin-term` | 53 | 0 | **defer** — >50 sites (plan STOP bar); hot parser loops; adopt after targeted extraction |
+| `jackin-env` | 64 | 45 | **defer** — >50 indexing + large string_slice surface |
+| `jackin-tui` | 43 | 16 | **defer** — near bar; revisit after component splits |
+| `jackin-runtime` | 130 | 63 | **defer** — largest surface; couple with plan 015/016 |
+| `jackin-capsule` | 225 | 37 | **defer** — largest absolute; couple with plan 017 |
+| `jackin-usage` | 61 | 33 | **defer** |
+| `jackin-host` | 58 | 33 | **defer** |
+
+Adoption bar: production signal is actionable with &lt;50 site fixes per crate. Test escape valves stay in `clippy.toml` (`allow-indexing-slicing-in-tests`).
+
+### `map_err_ignore`
+
+| Count | Date | Decision |
+|---:|---|---|
+| 35 | 2026-07-14 | **defer** — non-zero; promote only with a named sweep PR |
+
+### Lossy-cast tier
+
+| Lint | Count | Decision |
+|---|---:|---|
+| `cast_possible_truncation` | 172 | **defer** (newtype work in plan 020) |
+| `cast_possible_wrap` | 16 | **defer** with truncation tier |
+| `cast_precision_loss` | 61 | **defer** |
+| `cast_sign_loss` | deny | already enforced |
+
+### Whole-category `clippy::restriction` pilot
+
+Piloted `#![warn(clippy::restriction)]` on `jackin-protocol` (smallest pure crate already on the slice/index family). Verdict: **reject whole-category posture**. Restriction is a mixed bag of style/perf/pedantic rules that flood actionable signal; continue allowlist-style adoption of named restriction lints (as today) rather than category-wide warn/deny. Experimental attribute not retained.
+
+## Blocked-surface inventory (`clippy.toml`)
+
+### Disallowed methods (enforced)
+
+| Path | Replacement |
+|---|---|
+| `std::process::Command::output` | async process helpers / `spawn_blocking` |
+| `std::thread::sleep` | async sleep, polling hooks, or owned OS thread |
+| `std::fs::File::open` | async file work or `spawn_blocking` |
+| `std::fs::OpenOptions::open` | async file work or `spawn_blocking` |
+
+### Disallowed types / macros
+
+No additional `disallowed-types` or `disallowed-macros` entries in this plan. Bans land only when a canonical replacement exists; evaluated and **not banned**:
+
+| Surface | Verdict |
+|---|---|
+| `std::sync::Mutex` / `RwLock` on async paths | Covered by `await_holding_lock` deny — no blanket type ban |
+| `Rc<RefCell<_>>` in async | Covered by `await_holding_refcell_ref` + Dylint `render_thread_purity` pilot (plan 012) |
+| Ring buffers / custom queues | No indiscriminate ban; prefer typed wrappers at domain boundaries (plan 020) |
+| Bare primitive payloads (`u16` rows/cols, raw path `String`s) | Evaluate via domain newtypes (plan 020); ban types only after newtypes land |
+
+## Maintenance
+
+- New workspace `allow` entries require a row in this table in the same PR.
+- Plan 027 may later generate the count column mechanically; keep this machine-friendly Markdown table.
+- <RepoFile path="Cargo.toml" /> comments point here; do not duplicate full rationales in-tree.

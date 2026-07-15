@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 
 use crate::policy::CPU_SAMPLE_WINDOW;
 

@@ -24,6 +24,7 @@ jackin-config      = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-protocol    = { workspace = true }
 jackin-docker      = { workspace = true }
+jackin-process     = { workspace = true }
 
 anyhow    = { workspace = true }
 thiserror = { workspace = true }

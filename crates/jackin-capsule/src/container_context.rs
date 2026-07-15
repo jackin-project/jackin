@@ -7,7 +7,7 @@
 //! Not responsible for: role/workspace config (see `config`) or attach-session
 //! state (see `attach_context`).
 
-use jackin_core::constants::instance_id_from_container_base as instance_id_from_container_name;
+use jackin_core::instance_id_from_container_base as instance_id_from_container_name;
 
 pub const JACKIN_CONTAINER_NAME_ENV: &str = "JACKIN_CONTAINER_NAME";
 pub const JACKIN_INSTANCE_ID_ENV: &str = "JACKIN_INSTANCE_ID";

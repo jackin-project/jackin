@@ -186,7 +186,7 @@ pub fn emit_image_decision(image: &str, reason: ImageInvalidationReason) {
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "image_cache_miss",
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             &format!("derived image {image} requires build"),
             Some(reason.as_str()),
         );
@@ -210,7 +210,7 @@ pub fn emit_image_reuse(image: &str) {
         .to_string();
         run.stage(
             "image_cache_hit",
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             &format!("reusing derived image {image}"),
             Some(&detail),
         );
@@ -222,7 +222,7 @@ pub fn emit_image_refresh_background(image: &str, reason: ImageInvalidationReaso
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "image_refresh_background",
-            "derived image",
+            jackin_diagnostics::DiagnosticStage::DerivedImage,
             &format!("reusing derived image {image}; background refresh pending"),
             Some(reason.as_str()),
         );

@@ -9,8 +9,8 @@
 //! operator came from. The result is "separate but connected traces": a
 //! backend renders one trace per screen and lets the operator jump along the
 //! links, while every screen of one invocation shares the `parallax.run.id`
-//! resource attribute (the cross-trace grouping glue). See the run-telemetry
-//! trace-model reference for the full picture.
+//! span attribute (the cross-trace grouping glue; never on the OTLP Resource).
+//! See the run-telemetry trace-model reference for the full picture.
 //!
 //! Spans live as long as the returned [`ScreenGuard`]. Because the host TUI is
 //! a single-threaded runtime that yields across `.await`, the screen span is
@@ -20,6 +20,10 @@
 //! which is sound only because host TUI navigation happens on one thread.
 
 use tracing::Span;
+
+#[cfg(feature = "otlp")]
+static CAPSULE_SCREEN_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(feature = "otlp")]
 use opentelemetry::trace::{SpanContext, TraceContextExt as _};
@@ -127,6 +131,10 @@ pub fn enter_screen(screen: Screen) -> ScreenGuard {
         // child of whatever span happened to be on the stack.
         drop(span.set_parent(Context::new()));
         span.set_attribute(otel_keys::SCREEN_NAME, screen.as_str());
+        span.set_attribute(otel_keys::COMPONENT, "host");
+        if let Some(run) = crate::active_run() {
+            span.set_attribute(otel_keys::RUN_ID, run.run_id().to_owned());
+        }
 
         let previous = CURRENT.with(|cell| cell.borrow().clone());
         // Link to the live previous screen, or — when there is none because the
@@ -170,20 +178,54 @@ pub fn set_workspace_kind(kind: &str) {
     set_current_attr(otel_keys::WORKSPACE_KIND, kind);
 }
 
-/// Tag the current screen span with the agent the operator selected.
+/// Record a feature-decision event for the selected agent (plan 007).
+/// Does **not** stamp agent identity onto generic span attributes.
 pub fn set_agent_selected(agent: &str) {
-    set_current_attr(otel_keys::AGENT_SELECTED, agent);
+    emit_feature_decision("agent.selected", agent, "selected");
 }
 
-/// Tag the current screen span with the providers/agents currently active
-/// (comma-joined; empty string when none).
+/// Record a feature-decision event for active agents (plan 007).
 pub fn set_agents_active(agents: &[&str]) {
-    set_current_attr(otel_keys::AGENTS_ACTIVE, &agents.join(","));
+    emit_feature_decision("agents.active", &agents.join(","), "active");
 }
 
-/// Tag the current screen span with the resolved provider.
+/// Record a feature-decision event for the resolved provider (plan 007).
+/// Does **not** stamp provider identity onto generic span attributes.
 pub fn set_provider(provider: &str) {
-    set_current_attr(otel_keys::PROVIDER, provider);
+    emit_feature_decision("provider.selected", provider, "selected");
+}
+
+/// Current screen name for stamping logs/metrics (`jackin.screen.name`).
+#[must_use]
+pub fn current_screen_name() -> Option<&'static str> {
+    #[cfg(feature = "otlp")]
+    {
+        CURRENT
+            .with(|cell| cell.borrow().as_ref().map(|link| link.name))
+            .or_else(|| {
+                CAPSULE_SCREEN_ACTIVE
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    .then_some(Screen::Capsule.as_str())
+            })
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        None
+    }
+}
+
+fn emit_feature_decision(key: &str, provider_or_agent: &str, variant: &str) {
+    tracing::event!(
+        target: "jackin_diagnostics",
+        tracing::Level::INFO,
+        "event.name" = "feature.decision",
+        "feature.key" = key,
+        "feature.provider" = provider_or_agent,
+        "feature.variant" = variant,
+        "jackin.component" = "host",
+        "event.outcome" = "success",
+        "feature decision"
+    );
 }
 
 /// Record a discrete operator action (selection, input, confirm, dismiss) as a
@@ -246,16 +288,36 @@ pub fn record_capsule_activity(label: &str, agent: Option<&str>) {
     {
         use opentelemetry::Context;
 
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+        CAPSULE_SCREEN_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
         let span = tracing::info_span!("capsule.tab", otel.name = "capsule:tab");
         drop(span.set_parent(Context::new()));
         span.set_attribute(otel_keys::TAB_LABEL, label.to_owned());
+        span.set_attribute(otel_keys::SCREEN_NAME, Screen::Capsule.as_str());
+        span.set_attribute(otel_keys::COMPONENT, "capsule");
+        // Agent identity is a feature-decision event, not a default span attr.
         if let Some(agent) = agent {
-            span.set_attribute(otel_keys::AGENT_SELECTED, agent.to_owned());
+            emit_feature_decision("agent.selected", agent, "tab");
         }
-        span.in_scope(|| tracing::info!(target: "jackin_capsule", "tab spawned: {label}"));
+        span.in_scope(|| {
+            tracing::event!(
+                target: "jackin_capsule",
+                tracing::Level::INFO,
+                "event.name" = "capsule.tab",
+                "jackin.component" = "capsule",
+                "jackin.screen.name" = Screen::Capsule.as_str(),
+                "event.outcome" = "success",
+                "tab spawned: {label}"
+            );
+        });
     }
     #[cfg(not(feature = "otlp"))]
     let _ = (label, agent);
+}
+
+#[cfg(all(test, feature = "otlp"))]
+pub(crate) fn reset_capsule_screen_for_test() {
+    CAPSULE_SCREEN_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Snapshot the current screen as the link target for the next screen entered

@@ -89,7 +89,7 @@ impl Story {
 }
 
 #[must_use]
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Lookbook story catalog: one entry per component, each constructing \
               its own Story. The flat shape is the canonical story list — \

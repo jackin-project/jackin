@@ -28,6 +28,6 @@ This roadmap item no longer repeats the shipped schema, resolver, console UX, la
 ## Known Future Questions
 
 - Should host-side `git_pull_on_entry` remain explicitly outside the scoped GitHub auth boundary, or move into a containerized path that can use the workspace token?
-- How should jackin communicate that in-container `gh auth login` changes are overwritten on the next `sync` launch?
+- How should jackin❯ communicate that in-container `gh auth login` changes are overwritten on the next `sync` launch?
 
 (Resolved: `GH_TOKEN` is now always mirrored to `GITHUB_TOKEN` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, so MCP servers and GitHub-Actions-style tooling that only read `GITHUB_TOKEN` work without extra config. This used to be a third open question here.)

@@ -1,21 +1,12 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 //! PTY transcript helpers: spawn per-stream pipe collectors that drain into
 //! `Arc<Mutex<Vec<u8>>>` buffers, plus substring / deadline-based waiters
 //! used by the `pty_runner` family.
 
+#![expect(
+    clippy::expect_used,
+    clippy::disallowed_methods,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
 use std::io::Read;
 use std::sync::{
     Arc, Mutex,

@@ -1,17 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 use super::*;
 use jackin::console::tui::state::{SecretsPickerTarget, TextInputTarget};
 use jackin_core::WorkspaceName;
@@ -1018,10 +1004,6 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
 /// is the bare `op://Vault/Item/Field` form (account scope is not
 /// encoded in the path).
 #[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 fn op_picker_multi_account_flow() -> Result<()> {
     use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
     use jackin_env::{OpAccount, OpField, OpItem, OpVault};

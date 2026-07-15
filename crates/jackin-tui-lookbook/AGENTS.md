@@ -1,6 +1,6 @@
 ## Hard rule: Use only jackin-tui public API (no exceptions)
 
-Every story and interactor **must** call the same public API the rest of the jackin ecosystem uses. Non-negotiable.
+Every story and interactor **must** call the same public API the rest of the jackin❯ ecosystem uses. Non-negotiable.
 
 **In practice:**
 - Call the same `render_*()` helper the console or capsule calls — not the underlying widget constructor.

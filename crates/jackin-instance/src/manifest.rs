@@ -10,14 +10,14 @@
 
 use anyhow::Context;
 use fs4::FileExt;
-use jackin_core::agent::Agent;
+use jackin_core::{Agent, ContainerId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
 // Pure index/session data types now live in `jackin-core` so that
 // `jackin-console` can use them without depending on `jackin-runtime`.
-pub use jackin_core::instance::{
+pub use jackin_core::{
     InstanceIndexEntry, InstanceQuery, InstanceStatus, SessionRecord, SessionStatus,
 };
 
@@ -67,6 +67,12 @@ pub enum BackendResources {
 }
 
 impl DockerResources {
+    /// Derive Docker resource names from an already validated container id.
+    #[must_use]
+    pub fn from_container_id(container_id: &ContainerId) -> Self {
+        Self::from_container_name(container_id.as_str())
+    }
+
     /// Derive all four Docker resource names from the role container name.
     ///
     /// Invariant: all derived names follow the same suffix conventions used
@@ -249,7 +255,7 @@ impl InstanceManifest {
     /// loss, console "found restorable" path).
     pub fn mark_restore_available(
         &mut self,
-        paths: &jackin_core::paths::JackinPaths,
+        paths: &jackin_core::JackinPaths,
     ) -> anyhow::Result<()> {
         self.mark_status(InstanceStatus::RestoreAvailable);
         let state_dir = paths.data_dir.join(&self.container_base);
@@ -335,7 +341,7 @@ impl InstanceManifest {
     pub fn write(&self, state_dir: &Path) -> anyhow::Result<()> {
         let path = state_dir.join(".jackin/instance.json");
         let body = serde_json::to_string_pretty(self)?;
-        jackin_config::atomic_write(&path, &body)
+        Ok(jackin_config::atomic_write(&path, &body)?)
     }
 }
 
@@ -600,7 +606,10 @@ impl InstanceIndex {
 
     fn write(&self, data_dir: &Path) -> anyhow::Result<()> {
         let body = serde_json::to_string_pretty(self)?;
-        jackin_config::atomic_write(&data_dir.join(INSTANCE_INDEX_FILE), &body)
+        Ok(jackin_config::atomic_write(
+            &data_dir.join(INSTANCE_INDEX_FILE),
+            &body,
+        )?)
     }
 
     fn sort(&mut self) {

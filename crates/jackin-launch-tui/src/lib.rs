@@ -12,7 +12,7 @@ pub mod tui;
 pub use launch_output::LaunchTuiOutputSink;
 pub use standalone_dialog_sink::install as install_standalone_dialog_sink;
 
-pub use jackin_core::launch_progress::{
+pub use jackin_core::{
     FailureCopyTarget, FileDiff, LaunchCancelled, LaunchCandidate, LaunchDiagnostics,
     LaunchDialogResult, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchOutputSink,
     LaunchStage, LaunchTargetKind, PromptContextLine, StageLabelTransition, StageStatus, StageView,

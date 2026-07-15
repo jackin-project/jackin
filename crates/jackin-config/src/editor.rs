@@ -73,7 +73,7 @@ impl ConfigEditor {
     /// on-disk result matches what `AppConfig::load_or_init` would produce.
     /// The recursion-when-missing branch covers the fresh-install case
     /// where the file does not yet exist.
-    pub fn open(paths: &JackinPaths) -> anyhow::Result<Self> {
+    pub fn open(paths: &JackinPaths) -> crate::ConfigResult<Self> {
         if paths.config_file.exists() {
             migrations::migrate_config_file_if_needed(&paths.config_file)?;
             let raw = std::fs::read_to_string(&paths.config_file)
@@ -108,16 +108,16 @@ impl ConfigEditor {
     /// Skips `load_or_init`'s builtin-role sync — the invariant is
     /// that `load_or_init` ran once at `open` time, so builtins are
     /// already in place.
-    pub fn save(self) -> anyhow::Result<AppConfig> {
+    pub fn save(self) -> crate::ConfigResult<AppConfig> {
         let global_contents = self.doc.to_string();
 
         let config: AppConfig = match validate_candidate(&global_contents, &self.workspace_docs) {
             Ok(cfg) => cfg,
             Err(err) => {
-                return Err(err.context(format!(
+                return Err(ConfigError::from(err.context(format!(
                     "rejecting candidate config (would have written to {})",
                     self.path.display()
-                )));
+                ))));
             }
         };
 
@@ -146,7 +146,7 @@ impl ConfigEditor {
         scope: &EnvScope,
         key: &str,
         value: EnvValue,
-    ) -> anyhow::Result<()> {
+    ) -> crate::ConfigResult<()> {
         use jackin_core::EnvValue;
         use toml_edit::{InlineTable, Item, Value, value as toml_value};
 
@@ -322,7 +322,11 @@ impl ConfigEditor {
     }
 
     /// Set a key under global `[github.env]`.
-    pub fn set_global_github_env_var(&mut self, key: &str, value: EnvValue) -> anyhow::Result<()> {
+    pub fn set_global_github_env_var(
+        &mut self,
+        key: &str,
+        value: EnvValue,
+    ) -> crate::ConfigResult<()> {
         self.set_env_var(&EnvScope::GlobalGithub, key, value)
     }
 
@@ -545,19 +549,19 @@ impl ConfigEditor {
         &mut self,
         old: &WorkspaceName,
         new: &WorkspaceName,
-    ) -> anyhow::Result<()> {
+    ) -> crate::ConfigResult<()> {
         if old == new {
             return Ok(());
         }
         if !self.workspace_docs.contains_key(old.as_str()) {
-            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()).into());
+            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()));
         }
         if self.workspace_docs.contains_key(new.as_str()) {
-            return Err(ConfigError::WorkspaceAlreadyExists(new.as_str().to_owned()).into());
+            return Err(ConfigError::WorkspaceAlreadyExists(new.as_str().to_owned()));
         }
 
         let Some(value) = self.workspace_docs.remove(old.as_str()) else {
-            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()).into());
+            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()));
         };
         self.workspace_docs.insert(new.as_str().to_owned(), value);
         self.removed_workspaces.insert(old.as_str().to_owned());
@@ -565,9 +569,9 @@ impl ConfigEditor {
     }
 
     /// Mark a workspace for deletion on the next [`Self::save`].
-    pub fn remove_workspace(&mut self, name: &WorkspaceName) -> anyhow::Result<()> {
+    pub fn remove_workspace(&mut self, name: &WorkspaceName) -> crate::ConfigResult<()> {
         if self.workspace_docs.remove(name.as_str()).is_none() {
-            return Err(ConfigError::WorkspaceNotFound(name.as_str().to_owned()).into());
+            return Err(ConfigError::WorkspaceNotFound(name.as_str().to_owned()));
         }
         self.removed_workspaces.insert(name.as_str().to_owned());
         Ok(())
@@ -578,7 +582,7 @@ impl ConfigEditor {
         &mut self,
         name: &WorkspaceName,
         ws: WorkspaceConfig,
-    ) -> anyhow::Result<()> {
+    ) -> crate::ConfigResult<()> {
         // Delegate to AppConfig::create_workspace's validated logic
         // (collision check, workdir / mount-destination relationship,
         // plan-collapse sanity) so the editor path behaves identically
@@ -609,7 +613,7 @@ impl ConfigEditor {
         &mut self,
         name: &WorkspaceName,
         edit: WorkspaceEdit,
-    ) -> anyhow::Result<()> {
+    ) -> crate::ConfigResult<()> {
         // Snapshot current on-disk state into an AppConfig.
         let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
             .context("re-parsing current docs into AppConfig for workspace edit")?;

@@ -3,7 +3,7 @@
 
 //! Tests for `auth_panel`.
 use super::*;
-use jackin_core::env_model;
+use jackin_core::ANTHROPIC_API_KEY_ENV_NAME;
 use ratatui::{Terminal, backend::TestBackend};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,7 +354,7 @@ fn form_with_unset_mode_hides_credential_block() {
     assert!(output.contains("Edit auth"));
     assert!(output.contains("Mode"));
     assert!(output.contains("(unset)"));
-    assert!(!output.contains(env_model::ANTHROPIC_API_KEY_ENV_NAME));
+    assert!(!output.contains(ANTHROPIC_API_KEY_ENV_NAME));
 }
 
 #[test]
@@ -364,7 +364,7 @@ fn form_with_api_key_literal_masks_value() {
     form.set_literal("sk-ant-test".into());
     let output = dump_form(&form);
     assert!(output.contains("api_key"));
-    assert!(output.contains(env_model::ANTHROPIC_API_KEY_ENV_NAME));
+    assert!(output.contains(ANTHROPIC_API_KEY_ENV_NAME));
     assert!(output.contains("●●●●●●●●●●●"));
 }
 

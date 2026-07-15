@@ -8,9 +8,12 @@ mod debug_log_adapter;
 pub mod logging;
 pub mod metrics;
 pub mod observability;
+#[cfg(feature = "test-support")]
+mod observability_test_support;
 pub mod operation;
 pub mod operator_notice;
 pub mod redact;
+pub mod registry;
 pub mod run;
 pub mod screen;
 pub mod secret_scrub;
@@ -32,8 +35,8 @@ pub use logging::{
     telemetry_level, telemetry_level_name,
 };
 pub use metrics::{
-    incr_accounts_refreshed, incr_errors, incr_mouse_events, incr_terminal_bytes_received,
-    record_frame, record_render,
+    incr_accounts_refreshed, incr_db_statement, incr_docker_inspect, incr_errors,
+    incr_mouse_events, incr_terminal_bytes_received, record_frame, record_render,
 };
 pub use observability::{
     ContainerOtlp, backend_query_hint, configured_endpoint, configured_endpoint_summary,
@@ -44,15 +47,23 @@ pub use operation::{
     OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,
     operation_metric, operation_record_exit_code, operation_set_i64_attr, operation_span,
 };
+pub use registry::{
+    AttrDef, AttrType, Cardinality, DiagnosticStage, EventDef, Outcome, Privacy, RegistryError,
+    Severity, SinkSet, lookup as lookup_event, validate as validate_event,
+};
+pub use run::jsonl_adapter::{
+    CanonicalEvent, PROHIBITED_TOP_LEVEL_KEYS, SCHEMA_V2, canonicalize_line, canonicalize_value,
+    has_no_prohibited_keys,
+};
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
     active_subprocess_done, active_timing_done, active_timing_started, install_host_panic_hook,
     mint_session_id, prune_all_runs, prune_old_runs,
 };
 pub use screen::{
-    Screen, ScreenGuard, carry_link_forward, current_traceparent, enter_screen, launch_trace,
-    record_action, record_capsule_activity, set_agent_selected, set_agents_active, set_provider,
-    set_workspace, set_workspace_kind,
+    Screen, ScreenGuard, carry_link_forward, current_screen_name, current_traceparent,
+    enter_screen, launch_trace, record_action, record_capsule_activity, set_agent_selected,
+    set_agents_active, set_provider, set_workspace, set_workspace_kind,
 };
 pub use secret_scrub::scrub_secrets;
 pub use summary::{

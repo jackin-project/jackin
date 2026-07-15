@@ -4,7 +4,7 @@
 //! In-container dirty assessment for the last-session-exit modal.
 //!
 //! Runs git synchronously via `std::process` (the capsule's tokio build carries
-//! no `process` feature) behind the shared [`jackin_core::runner::CommandRunner`]
+//! no `process` feature) behind the shared [`jackin_core::CommandRunner`]
 //! seam, so the modal's trigger uses the same detection vocabulary as host
 //! cleanup. Only the no-live-session exit path calls this, where briefly
 //! blocking the single-threaded runtime is acceptable.
@@ -18,11 +18,11 @@
 #[cfg(test)]
 mod tests;
 
-use jackin_core::runner::{CommandRunner, RunOptions};
-use jackin_core::worktree_dirty::{ChangedFile, changed_files, unpushed_commit_count};
+use jackin_core::{ChangedFile, changed_files, unpushed_commit_count};
+use jackin_core::{CommandRunner, RunOptions};
+use jackin_process::{ExecRequest, StdioMode};
 use jackin_protocol::{CapsuleConfig, EXIT_ACTION_PATH, ExitAction};
 use std::path::Path;
-use std::process::Stdio;
 
 /// One isolated worktree carrying uncommitted or unpushed work.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,19 +73,15 @@ impl CommandRunner for GitRunner {
         cwd: Option<&Path>,
         _opts: &RunOptions,
     ) -> anyhow::Result<()> {
-        let mut cmd = std::process::Command::new(program);
-        cmd.args(args);
+        let mut request = ExecRequest::new(program, args)
+            .stdout_mode(StdioMode::Null)
+            .stderr_mode(StdioMode::Null);
         if let Some(dir) = cwd {
-            cmd.current_dir(dir);
+            request = request.cwd(dir);
         }
-        let status = cmd
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?
-            .wait()?;
-        if !status.success() {
-            anyhow::bail!("{program} exited with {status}");
+        let result = jackin_process::exec_sync(&request)?;
+        if !result.success {
+            anyhow::bail!("{program} exited with code {:?}", result.code);
         }
         Ok(())
     }
@@ -96,18 +92,12 @@ impl CommandRunner for GitRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        let mut cmd = std::process::Command::new(program);
-        cmd.args(args);
+        let mut request = ExecRequest::new(program, args);
         if let Some(dir) = cwd {
-            cmd.current_dir(dir);
+            request = request.cwd(dir);
         }
-        let output = cmd
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?
-            .wait_with_output()?;
-        if !output.status.success() {
+        let output = jackin_process::exec_sync(&request)?;
+        if !output.success {
             anyhow::bail!(
                 "{program} {args:?} failed: {}",
                 String::from_utf8_lossy(&output.stderr).trim()

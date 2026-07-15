@@ -89,7 +89,7 @@ pub(super) async fn handle_load(
 
     let ad_hoc_mounts = mounts
         .iter()
-        .map(|value| parse_mount_spec_resolved(value))
+        .map(|value| parse_mount_spec_resolved(value).map_err(anyhow::Error::from))
         .collect::<Result<Vec<_>>>()?;
 
     let resolved_workspace =
@@ -159,10 +159,6 @@ pub(super) async fn handle_load(
     result
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "console command entry point: cwd/config/terminal setup + run-loop orchestration. Tracked for the root-jackin-integration decomposition slice (codebase-health)."
-)]
 pub(super) async fn handle_console(
     config: AppConfig,
     paths: JackinPaths,
@@ -232,95 +228,55 @@ pub(super) async fn handle_console(
     };
 
     let docker = connect_docker()?;
+    dispatch_console_outcome(
+        outcome,
+        ConsoleLaunchCtx {
+            paths: &paths,
+            config: &mut config,
+            docker: &docker,
+            runner: &mut runner,
+            console_entry: &mut console_entry,
+            debug,
+        },
+        screen,
+    )
+    .await
+}
+
+type ConsoleEntry = Option<(BollardDockerClient, runtime::EntryClaim)>;
+
+/// Shared handles for console outcome launch paths (keeps helpers under
+/// clippy argument limits).
+struct ConsoleLaunchCtx<'a> {
+    paths: &'a JackinPaths,
+    config: &'a mut AppConfig,
+    docker: &'a BollardDockerClient,
+    runner: &'a mut ShellRunner,
+    console_entry: &'a mut ConsoleEntry,
+    debug: bool,
+}
+
+async fn dispatch_console_outcome(
+    outcome: console::ConsoleOutcome,
+    mut ctx: ConsoleLaunchCtx<'_>,
+    screen: console::TerminalSession,
+) -> Result<()> {
     let (class, workspace, selected_agent) = match outcome {
         console::ConsoleOutcome::Launch(class, workspace, selected_agent) => {
             (class, workspace, selected_agent)
         }
         console::ConsoleOutcome::PrewarmNamed(name) => {
-            if let Some((docker, claim)) = &console_entry {
-                runtime::release_entry_if_idle(&paths, docker, claim).await;
-            }
-            drop(screen);
-            let args = crate::cli::PrewarmArgs {
-                agents: Vec::new(),
-                flags: crate::cli::prewarm::PrewarmFlags {
-                    image: true,
-                    daemon: false,
-                    roles: false,
-                    sidecar: false,
-                    sidecar_container: false,
-                    keep_sidecar_container: false,
-                    all_workspaces: false,
-                    all_roles: false,
-                },
-                role: None,
-                workspace: Some(name),
-                role_git: None,
-                role_branch: None,
-            };
-            return crate::cli::prewarm::run(&args, &paths, &config, debug).await;
+            return console_outcome_prewarm(name, &mut ctx, screen).await;
         }
         outcome @ console::ConsoleOutcome::InstanceAction { .. } => {
-            // The action owns the terminal with its own foreground
-            // process; hand it back the cooked screen.
-            if let Some((docker, claim)) = &console_entry {
-                runtime::release_entry_if_idle(&paths, docker, claim).await;
-            }
-            drop(screen);
-            return handle_console_instance_action(
-                &paths,
-                &mut config,
-                outcome,
-                &docker,
-                &mut runner,
-            )
-            .await;
+            return console_outcome_instance_action(outcome, &mut ctx, screen).await;
         }
         console::ConsoleOutcome::NewSessionWithProvider {
             container,
             agent,
             provider,
         } => {
-            let manifest =
-                instance::InstanceManifest::read(&paths.data_dir.join(&container))
-                    .with_context(|| {
-                        format!(
-                            "cannot start a new agent session in `{container}` because its instance manifest is missing"
-                        )
-                    })?;
-            runtime::reconcile_keep_awake_when_configured(
-                &paths,
-                &docker,
-                &mut runner,
-                any_keep_awake_enabled(&config),
-            )
-            .await;
-            // The token is backfilled inside the container by the
-            // daemon from `ZAI_API_KEY`, so pass overrides without it.
-            let result = runtime::spawn_agent_session(
-                &paths,
-                &container,
-                Some(&manifest),
-                agent,
-                Some(provider.label()),
-                &provider.env_overrides(None),
-                config.git.coauthor_trailer,
-                config.git.dco,
-                &docker,
-                &mut runner,
-            )
-            .await;
-            runtime::reconcile_keep_awake_when_configured(
-                &paths,
-                &docker,
-                &mut runner,
-                any_keep_awake_enabled(&config),
-            )
-            .await;
-            if let Some((docker, claim)) = &console_entry {
-                runtime::release_entry_if_idle(&paths, docker, claim).await;
-            }
-            return result;
+            return console_outcome_new_session(container, agent, provider, &mut ctx).await;
         }
         console::ConsoleOutcome::LaunchWithProvider {
             selector,
@@ -328,66 +284,172 @@ pub(super) async fn handle_console(
             agent,
             provider,
         } => {
-            let provider_label = provider.label();
-            let agent_slug = agent.slug();
-            let mut opts = runtime::LoadOptions::for_launch(debug);
-            opts.agent = Some(agent);
-            opts.provider = Some(provider);
-            runtime::reconcile_keep_awake_when_configured(
-                &paths,
-                &docker,
-                &mut runner,
-                any_keep_awake_enabled(&config),
+            return console_outcome_launch_with_provider(
+                selector, workspace, agent, provider, &mut ctx,
             )
             .await;
-            let result = jackin_diagnostics::launch_trace(
-                Some(&workspace.label),
-                Some(agent_slug),
-                Some(provider_label),
-                runtime::load_role(
-                    &paths,
-                    &mut config,
-                    &selector,
-                    &workspace,
-                    &docker,
-                    &mut runner,
-                    &opts,
-                ),
-            )
-            .await;
-            remember_last_agent(
-                &paths,
-                &mut config,
-                Some(&workspace.label),
-                &selector,
-                &result,
-            );
-            runtime::reconcile_keep_awake_when_configured(
-                &paths,
-                &docker,
-                &mut runner,
-                any_keep_awake_enabled(&config),
-            )
-            .await;
-            if let Some((docker, claim)) = &console_entry {
-                runtime::release_entry_if_idle(&paths, docker, claim).await;
-            }
-            return result;
         }
     };
 
-    let mut opts = runtime::LoadOptions::for_launch(debug);
+    console_outcome_launch(class, workspace, selected_agent, &mut ctx).await
+}
+
+async fn console_outcome_prewarm(
+    name: String,
+    ctx: &mut ConsoleLaunchCtx<'_>,
+    screen: console::TerminalSession,
+) -> Result<()> {
+    if let Some((docker, claim)) = ctx.console_entry {
+        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+    }
+    drop(screen);
+    let args = crate::cli::PrewarmArgs {
+        agents: Vec::new(),
+        flags: crate::cli::prewarm::PrewarmFlags {
+            image: true,
+            daemon: false,
+            roles: false,
+            sidecar: false,
+            sidecar_container: false,
+            keep_sidecar_container: false,
+            all_workspaces: false,
+            all_roles: false,
+        },
+        role: None,
+        workspace: Some(name),
+        role_git: None,
+        role_branch: None,
+    };
+    crate::cli::prewarm::run(&args, ctx.paths, ctx.config, ctx.debug).await
+}
+
+async fn console_outcome_instance_action(
+    outcome: console::ConsoleOutcome,
+    ctx: &mut ConsoleLaunchCtx<'_>,
+    screen: console::TerminalSession,
+) -> Result<()> {
+    // The action owns the terminal with its own foreground
+    // process; hand it back the cooked screen.
+    if let Some((docker, claim)) = ctx.console_entry {
+        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+    }
+    drop(screen);
+    handle_console_instance_action(ctx.paths, ctx.config, outcome, ctx.docker, ctx.runner).await
+}
+
+async fn console_outcome_new_session(
+    container: String,
+    agent: jackin_core::Agent,
+    provider: jackin_protocol::Provider,
+    ctx: &mut ConsoleLaunchCtx<'_>,
+) -> Result<()> {
+    let manifest = instance::InstanceManifest::read(&ctx.paths.data_dir.join(&container))
+        .with_context(|| {
+            format!(
+                "cannot start a new agent session in `{container}` because its instance manifest is missing"
+            )
+        })?;
+    runtime::reconcile_keep_awake_when_configured(
+        ctx.paths,
+        ctx.docker,
+        ctx.runner,
+        any_keep_awake_enabled(ctx.config),
+    )
+    .await;
+    // The token is backfilled inside the container by the
+    // daemon from `ZAI_API_KEY`, so pass overrides without it.
+    let result = runtime::spawn_agent_session(
+        ctx.paths,
+        &container,
+        Some(&manifest),
+        agent,
+        Some(provider.label()),
+        &provider.env_overrides(None),
+        ctx.config.git.coauthor_trailer,
+        ctx.config.git.dco,
+        ctx.docker,
+        ctx.runner,
+    )
+    .await;
+    runtime::reconcile_keep_awake_when_configured(
+        ctx.paths,
+        ctx.docker,
+        ctx.runner,
+        any_keep_awake_enabled(ctx.config),
+    )
+    .await;
+    if let Some((docker, claim)) = ctx.console_entry {
+        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+    }
+    result
+}
+
+async fn console_outcome_launch_with_provider(
+    selector: RoleSelector,
+    workspace: jackin_config::ResolvedWorkspace,
+    agent: jackin_core::Agent,
+    provider: jackin_protocol::Provider,
+    ctx: &mut ConsoleLaunchCtx<'_>,
+) -> Result<()> {
+    let provider_label = provider.label();
+    let agent_slug = agent.slug();
+    let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
+    opts.agent = Some(agent);
+    opts.provider = Some(provider);
+    runtime::reconcile_keep_awake_when_configured(
+        ctx.paths,
+        ctx.docker,
+        ctx.runner,
+        any_keep_awake_enabled(ctx.config),
+    )
+    .await;
+    let result = jackin_diagnostics::launch_trace(
+        Some(&workspace.label),
+        Some(agent_slug),
+        Some(provider_label),
+        runtime::load_role(
+            ctx.paths, ctx.config, &selector, &workspace, ctx.docker, ctx.runner, &opts,
+        ),
+    )
+    .await;
+    remember_last_agent(
+        ctx.paths,
+        ctx.config,
+        Some(&workspace.label),
+        &selector,
+        &result,
+    );
+    runtime::reconcile_keep_awake_when_configured(
+        ctx.paths,
+        ctx.docker,
+        ctx.runner,
+        any_keep_awake_enabled(ctx.config),
+    )
+    .await;
+    if let Some((docker, claim)) = ctx.console_entry {
+        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+    }
+    result
+}
+
+async fn console_outcome_launch(
+    class: RoleSelector,
+    workspace: jackin_config::ResolvedWorkspace,
+    selected_agent: Option<jackin_core::Agent>,
+    ctx: &mut ConsoleLaunchCtx<'_>,
+) -> Result<()> {
+    let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = selected_agent;
-    let entry_claim = if let Some((_entry_docker, claim)) = console_entry.take() {
+    let entry_claim = if let Some((_entry_docker, claim)) = ctx.console_entry.take() {
         claim
     } else {
-        play_construct_intro_if_needed(&paths, &docker).await
+        play_construct_intro_if_needed(ctx.paths, ctx.docker).await
     };
     runtime::reconcile_keep_awake_when_configured(
-        &paths,
-        &docker,
-        &mut runner,
-        any_keep_awake_enabled(&config),
+        ctx.paths,
+        ctx.docker,
+        ctx.runner,
+        any_keep_awake_enabled(ctx.config),
     )
     .await;
     let agent_slug = opts.agent.map(jackin_core::Agent::slug);
@@ -396,29 +458,28 @@ pub(super) async fn handle_console(
         agent_slug,
         None,
         runtime::load_role(
-            &paths,
-            &mut config,
-            &class,
-            &workspace,
-            &docker,
-            &mut runner,
-            &opts,
+            ctx.paths, ctx.config, &class, &workspace, ctx.docker, ctx.runner, &opts,
         ),
     )
     .await;
-    remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
+    remember_last_agent(
+        ctx.paths,
+        ctx.config,
+        Some(&workspace.label),
+        &class,
+        &result,
+    );
     if result.is_err() {
-        runtime::release_entry_if_idle(&paths, &docker, &entry_claim).await;
+        runtime::release_entry_if_idle(ctx.paths, ctx.docker, &entry_claim).await;
     }
     runtime::reconcile_keep_awake_when_configured(
-        &paths,
-        &docker,
-        &mut runner,
-        any_keep_awake_enabled(&config),
+        ctx.paths,
+        ctx.docker,
+        ctx.runner,
+        any_keep_awake_enabled(ctx.config),
     )
     .await;
-    // `screen` drops here, after any exit outro, restoring the
-    // terminal exactly once.
+    // Alternate-screen guard drops in the caller after this returns.
     result
 }
 
