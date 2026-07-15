@@ -554,7 +554,7 @@ pub type EditorModalOutcome = crate::tui::message::ConsoleEditorModalOutcome<
     jackin_core::OpRef,
 >;
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Editor-modal input dispatcher handling every per-modal-state key \
               binding inline. Each key-event arm carries its own focused state \

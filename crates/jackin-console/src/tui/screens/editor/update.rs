@@ -160,7 +160,7 @@ pub fn enter_editor_auth_kind_plan<K>(kind: K) -> EditorAuthKindPlan<K> {
     }
 }
 
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Four orthogonal UI state flags on the tab-select plan \
               (tab_bar_focused, workspace_mounts_scroll_focused, clear_auth_kind, \
@@ -541,17 +541,9 @@ pub fn toggle_allowed_role_at(
 }
 
 #[must_use]
-#[allow(
-    unfulfilled_lint_expectations,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-#[expect(
-    single_use_lifetimes,
-    reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
-)]
 pub fn add_role_to_workspace_editor<'a>(
     allowed_roles: &mut Vec<String>,
-    mut role_names: impl Iterator<Item = &'a String>,
+    mut role_names: impl Iterator<Item = &'a String> + 'a,
     key: &str,
 ) -> Option<usize> {
     if !allowed_roles.is_empty() && !allowed_roles.iter().any(|role| role == key) {
@@ -740,7 +732,7 @@ pub fn forbidden_secret_keys<R, V>(
     }
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

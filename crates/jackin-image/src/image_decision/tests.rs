@@ -10,9 +10,9 @@ use crate::naming::{
     LABEL_IMAGE_CAPSULE_VERSION, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_MANIFEST_VERSION,
     LABEL_IMAGE_RECIPE_HASH, LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA,
 };
-use jackin_core::agent::Agent;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
+use jackin_core::Agent;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 use jackin_manifest::repo::CachedRepo;
 use std::collections::HashMap;
 

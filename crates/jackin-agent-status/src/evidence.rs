@@ -65,7 +65,7 @@ pub struct ScreenEvidence {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Six orthogonal /proc-derived process signals (process_exited, \
               foreground_returned_to_shell, child_alive, root_is_agent, \
@@ -96,7 +96,7 @@ pub struct ActivityEvidence {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Ten orthogonal arbitrated-state flags (physics_sampled, \
               osc_progress_active, shell_integration, visible_blocker, \

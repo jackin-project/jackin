@@ -18,7 +18,6 @@
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -77,7 +76,7 @@ pub(crate) fn run(args: SchemaCheckArgs) -> Result<()> {
 
     // A clear error beats silently passing when the baseline is unfetched.
     let verify = git(&root, &["rev-parse", "--verify", "--quiet", &args.base])?;
-    if !verify.status.success() {
+    if !verify.success {
         bail!(
             "base ref `{}` not found — fetch it (e.g. `git fetch origin main`) or pass --base",
             args.base
@@ -198,15 +197,15 @@ fn git_show_version(
     const_name: &str,
 ) -> Result<Option<String>> {
     let out = git(root, &["show", &format!("{base}:{file}")])?;
-    if !out.status.success() {
+    if !out.success {
         return Ok(None);
     }
     let text = String::from_utf8_lossy(&out.stdout);
     Ok(parse_version(&text, const_name))
 }
 
-fn git(root: &Path, args: &[&str]) -> Result<std::process::Output> {
-    let mut cmd = Command::new("git");
+fn git(root: &Path, args: &[&str]) -> Result<jackin_process::ExecResult> {
+    let mut cmd = crate::cmd::command("git");
     cmd.arg("-C").arg(root).args(args);
     crate::cmd::output_raw(&mut cmd)
 }

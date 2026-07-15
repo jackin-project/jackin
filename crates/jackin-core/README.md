@@ -56,9 +56,18 @@ Because everything depends on `jackin-core`, it must stay dependency-free, side-
 
 ## Public API
 
-The crate is a vocabulary library: re-export the types/ports/constants you need from `jackin_core::…`. Higher crates implement the port traits defined here (e.g. `CommandRunner`) and pass the domain types through.
+Plan 019 surface: implementation modules are **private**; the intentional API is the **root re-export list** in [`lib.rs`](src/lib.rs) (`use jackin_core::{Agent, JackinPaths, …}`).
 
-Typed construction/parse errors (thiserror): `ParseProfileError`, `ParseMountIsolationError`, `ParseAgentError`, `SelectorError`, `EnvCycleError` (`env_model`), `PathsError`, `OpProbeError`.
+Remaining root `pub mod`s (individually justified):
+
+| Module | Why public |
+|---|---|
+| `container_paths` | Namespace for container-side `/jackin/` path constants (`use jackin_core::container_paths`) across runtime/capsule/usage |
+| `debug_log` | Hosts `debug_log!` macro + sink; `#[macro_export]` shares the `jackin_core::debug_log` path with the module name |
+
+Higher crates implement the port traits defined here (e.g. `CommandRunner`) and pass the domain types through.
+
+Typed construction/parse errors (thiserror): `ParseProfileError`, `ParseMountIsolationError`, `ParseAgentError`, `SelectorError`, `EnvCycleError`, `PathsError`, `OpProbeError`.
 
 ## How to verify
 

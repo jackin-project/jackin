@@ -61,7 +61,7 @@ Sessions inside the same instance share:
 - the current branch or worktree state for mounted repositories
 - the role's installed tools and shell setup
 - the same Docker-in-Docker sidecar
-- the credentials jackin forwarded for every supported runtime in that role
+- the credentials jackin❯ forwarded for every supported runtime in that role
 - the container's in-session environment
 
 Separate instances do not share those container runtime surfaces. They may still point at the same host project when a mount uses the default `shared` mode. Use `worktree` or `clone` mount isolation when each container should see its own checkout.

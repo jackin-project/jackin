@@ -1,4 +1,4 @@
-#![allow(
+#![expect(
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -10,7 +10,7 @@
 use crate::instance::InstanceManifest;
 use crate::runtime::attach::ContainerState;
 
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
 
 use super::restore::{
@@ -43,7 +43,7 @@ pub(crate) enum EarlyCurrentRestoreScan {
     /// Current-role candidates were scanned for a concrete agent (selected or
     /// the sole unselected agent). `None` means no attach/start/recreate hit.
     Scanned {
-        agent: jackin_core::agent::Agent,
+        agent: jackin_core::Agent,
         /// Stashed outcome for that agent. When present, later resolve reuses
         /// the typed hit without a second Docker inspect; when `None`, later
         /// resolve skips current-role inspect entirely for this agent.
@@ -61,7 +61,7 @@ pub(crate) enum EarlyCurrentRestoreScan {
 #[cfg(test)]
 pub(crate) fn early_scan_skips_current_inspect(
     early: &EarlyCurrentRestoreScan,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
 ) -> bool {
     matches!(early_scan_reused_current(early, agent), Some(None))
 }
@@ -71,7 +71,7 @@ pub(crate) fn early_scan_skips_current_inspect(
 /// `None` means the caller must re-run the Docker inspect path.
 pub(crate) fn early_scan_reused_current(
     early: &EarlyCurrentRestoreScan,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
 ) -> Option<Option<RestoreResolution>> {
     match early {
         EarlyCurrentRestoreScan::NotRun => None,
@@ -86,21 +86,18 @@ pub(crate) fn early_scan_reused_current(
 
 /// Full resolve without early-scan reuse (tests and callers that did not run
 /// the pre-role-repo current-role scan).
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-#[allow(
-    dead_code,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)] // re-exported for tests; production uses reusing_early
+#[cfg_attr(not(test), expect(dead_code, reason = "target-dependent"))]
 pub(crate) async fn resolve_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     docker: &impl DockerApi,
     progress: Option<&mut crate::runtime::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
@@ -120,7 +117,7 @@ pub(crate) async fn resolve_restore_candidate(
 
 /// Like [`resolve_restore_candidate`], but reuses an early current-role scan
 /// when the final agent matches so the common path does not re-inspect.
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -130,7 +127,7 @@ pub(crate) async fn resolve_restore_candidate_reusing_early(
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     docker: &impl DockerApi,
     progress: Option<&mut crate::runtime::progress::LaunchProgress>,
     early: &EarlyCurrentRestoreScan,
@@ -157,7 +154,11 @@ pub(crate) async fn resolve_restore_candidate_reusing_early(
 
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
     if let Some(run) = &active_run {
-        run.timing_started("restore", "related_restore_candidates", Some(role_key));
+        run.timing_started(
+            jackin_diagnostics::DiagnosticStage::Restore,
+            "related_restore_candidates",
+            Some(role_key),
+        );
     }
     let related_result = related_restore_candidates(
         paths,
@@ -173,7 +174,7 @@ pub(crate) async fn resolve_restore_candidate_reusing_early(
         Ok(related) => {
             if let Some(run) = &active_run {
                 run.timing_done(
-                    "restore",
+                    jackin_diagnostics::DiagnosticStage::Restore,
                     "related_restore_candidates",
                     Some(&format!("{} candidates", related.len())),
                 );
@@ -182,7 +183,11 @@ pub(crate) async fn resolve_restore_candidate_reusing_early(
         }
         Err(error) => {
             if let Some(run) = &active_run {
-                run.timing_done("restore", "related_restore_candidates", Some("error"));
+                run.timing_done(
+                    jackin_diagnostics::DiagnosticStage::Restore,
+                    "related_restore_candidates",
+                    Some("error"),
+                );
             }
             return Err(error);
         }
@@ -225,22 +230,22 @@ pub(crate) async fn resolve_restore_candidate_reusing_early(
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) async fn resolve_current_restore_candidate_timed(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<RestoreResolution>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
     if let Some(run) = &active_run {
-        run.timing_started("restore", "current_restore_candidate", Some(role_key));
+        run.timing_started(
+            jackin_diagnostics::DiagnosticStage::Restore,
+            "current_restore_candidate",
+            Some(role_key),
+        );
     }
     let result = resolve_current_restore_candidate(
         paths,
@@ -258,13 +263,21 @@ pub(crate) async fn resolve_current_restore_candidate_timed(
                 .as_ref()
                 .map_or("none", current_restore_timing_detail);
             if let Some(run) = &active_run {
-                run.timing_done("restore", "current_restore_candidate", Some(detail));
+                run.timing_done(
+                    jackin_diagnostics::DiagnosticStage::Restore,
+                    "current_restore_candidate",
+                    Some(detail),
+                );
             }
             Ok(current)
         }
         Err(error) => {
             if let Some(run) = &active_run {
-                run.timing_done("restore", "current_restore_candidate", Some("error"));
+                run.timing_done(
+                    jackin_diagnostics::DiagnosticStage::Restore,
+                    "current_restore_candidate",
+                    Some("error"),
+                );
             }
             Err(error)
         }
@@ -272,10 +285,6 @@ pub(crate) async fn resolve_current_restore_candidate_timed(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) async fn resolve_unselected_current_restore_candidate_timed(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -301,13 +310,9 @@ pub(crate) async fn resolve_unselected_current_restore_candidate_timed(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UnselectedCurrentRestoreResolution {
     pub resolution: RestoreResolution,
-    pub agent: jackin_core::agent::Agent,
+    pub agent: jackin_core::Agent,
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) async fn resolve_unselected_current_restore_candidate_with_agent_timed(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -319,7 +324,7 @@ pub(crate) async fn resolve_unselected_current_restore_candidate_with_agent_time
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
     if let Some(run) = &active_run {
         run.timing_started(
-            "restore",
+            jackin_diagnostics::DiagnosticStage::Restore,
             "current_restore_candidate_unselected_agent",
             Some(role_key),
         );
@@ -340,7 +345,7 @@ pub(crate) async fn resolve_unselected_current_restore_candidate_with_agent_time
             });
             if let Some(run) = &active_run {
                 run.timing_done(
-                    "restore",
+                    jackin_diagnostics::DiagnosticStage::Restore,
                     "current_restore_candidate_unselected_agent",
                     Some(detail),
                 );
@@ -350,7 +355,7 @@ pub(crate) async fn resolve_unselected_current_restore_candidate_with_agent_time
         Err(error) => {
             if let Some(run) = &active_run {
                 run.timing_done(
-                    "restore",
+                    jackin_diagnostics::DiagnosticStage::Restore,
                     "current_restore_candidate_unselected_agent",
                     Some("error"),
                 );
@@ -391,10 +396,6 @@ fn emit_launch_plan_scoped(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 async fn resolve_unselected_current_restore_candidate_with_agent(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -424,7 +425,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
         let agent = manifest.agent()?;
         if let Some(run) = &active_run {
             run.timing_started(
-                "restore",
+                jackin_diagnostics::DiagnosticStage::Restore,
                 "inspect_current_container",
                 Some(&manifest.container_base),
             );
@@ -434,7 +435,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             .await;
         if let Some(run) = &active_run {
             run.timing_done(
-                "restore",
+                jackin_diagnostics::DiagnosticStage::Restore,
                 "inspect_current_container",
                 Some(docker_state.short_label().as_str()),
             );
@@ -584,17 +585,13 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) async fn resolve_current_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<RestoreResolution>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
@@ -611,7 +608,7 @@ pub(crate) async fn resolve_current_restore_candidate(
         }
         if let Some(run) = &active_run {
             run.timing_started(
-                "restore",
+                jackin_diagnostics::DiagnosticStage::Restore,
                 "inspect_current_container",
                 Some(&manifest.container_base),
             );
@@ -621,7 +618,7 @@ pub(crate) async fn resolve_current_restore_candidate(
             .await;
         if let Some(run) = &active_run {
             run.timing_done(
-                "restore",
+                jackin_diagnostics::DiagnosticStage::Restore,
                 "inspect_current_container",
                 Some(docker_state.short_label().as_str()),
             );

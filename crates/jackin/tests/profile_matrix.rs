@@ -1,17 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::disallowed_methods,
-    clippy::manual_assert,
-    clippy::duration_suboptimal_units,
-    clippy::filter_map_next,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure,
-    unreachable_pub,
-    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
-)]
-
 //! WP0 — Acceptance test matrix harness: Tier 1 mechanism probes.
 //!
 //! For each Docker security profile (`locked`, `hardened`, `standard`, `compat`),
@@ -31,7 +17,6 @@
 //! Tier 1 is always-on within the `e2e` feature gate.
 
 #![cfg(feature = "e2e")]
-use std::process::Command;
 
 // ── image ─────────────────────────────────────────────────────────────────────
 
@@ -42,12 +27,10 @@ const PROBE_IMAGE: &str = "busybox:1.36";
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 fn docker_available() -> bool {
-    Command::new("docker")
-        .arg("info")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    let request = jackin_process::ExecRequest::new("docker", ["info"])
+        .stdout_mode(jackin_process::StdioMode::Null)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    jackin_process::exec_sync(&request).is_ok_and(|result| result.success)
 }
 
 fn require_docker() -> bool {
@@ -58,12 +41,13 @@ fn docker_run_bg(name: &str, extra_args: &[&str]) -> String {
     let mut args = vec!["run", "-d", "--name", name];
     args.extend_from_slice(extra_args);
     args.extend_from_slice(&[PROBE_IMAGE, "sh", "-c", "sleep 120"]);
-    let output = Command::new("docker")
-        .args(&args)
-        .output()
-        .expect("docker run must spawn");
+    let output = jackin_process::exec_sync(&jackin_process::ExecRequest::new("docker", &args));
+    assert!(output.is_ok(), "docker run must spawn: {output:?}");
+    let Ok(output) = output else {
+        return String::new();
+    };
     assert!(
-        output.status.success(),
+        output.success,
         "docker run failed for {name}: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -73,32 +57,28 @@ fn docker_run_bg(name: &str, extra_args: &[&str]) -> String {
 fn docker_exec_ok(container: &str, cmd: &[&str]) -> bool {
     let mut args = vec!["exec", container];
     args.extend_from_slice(cmd);
-    Command::new("docker")
-        .args(&args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    let request = jackin_process::ExecRequest::new("docker", &args)
+        .stdout_mode(jackin_process::StdioMode::Null)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    jackin_process::exec_sync(&request).is_ok_and(|result| result.success)
 }
 
 fn docker_exec_output(container: &str, cmd: &[&str]) -> String {
     let mut args = vec!["exec", container];
     args.extend_from_slice(cmd);
-    let output = Command::new("docker")
-        .args(&args)
-        .output()
-        .expect("docker exec must spawn");
+    let output = jackin_process::exec_sync(&jackin_process::ExecRequest::new("docker", &args));
+    assert!(output.is_ok(), "docker exec must spawn: {output:?}");
+    let Ok(output) = output else {
+        return String::new();
+    };
     String::from_utf8_lossy(&output.stdout).to_lowercase()
 }
 
 fn docker_rm(name: &str) {
-    drop(
-        Command::new("docker")
-            .args(["rm", "-f", name])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .output(),
-    );
+    let request = jackin_process::ExecRequest::new("docker", ["rm", "-f", name])
+        .stdout_mode(jackin_process::StdioMode::Null)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    drop(jackin_process::exec_sync(&request));
 }
 
 /// RAII guard that removes the container even if a test panics.

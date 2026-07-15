@@ -89,10 +89,6 @@ pub async fn run(args: &StatusArgs, paths: &JackinPaths) -> anyhow::Result<()> {
 
 // ── Level 0 — workspace summary ─────────────────────────────────────────────
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 async fn run_level0(
     args: &StatusArgs,
     paths: &JackinPaths,
@@ -342,10 +338,6 @@ async fn run_level1(
 
 // ── Level 2 — full instance detail ───────────────────────────────────────────
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 async fn run_level2(
     workspace: &str,
     instance_id: &str,
@@ -368,7 +360,7 @@ async fn run_level2(
     let is_running = matches!(state, ContainerState::Running);
 
     // Fetch agents registry (only when running).
-    #[allow(
+    #[expect(
         clippy::option_if_let_else,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]

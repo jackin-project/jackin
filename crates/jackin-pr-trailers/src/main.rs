@@ -1,13 +1,12 @@
 //! jackin-pr-trailers: PR trailer rewrite helper binary.
 //!
-//! **Architecture Invariant:** T0.
+//! **Architecture Invariant:** T1.
 //! Entry point: [`main`] — binary entry for trailer rewrites.
 
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
+use jackin_process::{ExecRequest, ExecResult, StdioMode};
 use std::collections::HashSet;
-use std::io::Write;
-use std::process::{Command, Output, Stdio};
 
 #[derive(Parser)]
 #[command(
@@ -67,7 +66,7 @@ fn commit_messages_for_args(args: &Args) -> Result<Vec<String>> {
 
 fn current_branch() -> Result<String> {
     let output = run_command(
-        Command::new("git").args(["rev-parse", "--abbrev-ref", "HEAD"]),
+        ExecRequest::new("git", ["rev-parse", "--abbrev-ref", "HEAD"]),
         None,
     )
     .context("failed to determine current branch")?;
@@ -83,16 +82,19 @@ fn current_branch() -> Result<String> {
 
 fn find_pr_for_branch(branch: &str) -> Result<Option<u64>> {
     let output = run_command(
-        Command::new("gh").args([
-            "pr",
-            "list",
-            "--head",
-            branch,
-            "--json",
-            "number",
-            "--jq",
-            ".[0].number // 0",
-        ]),
+        ExecRequest::new(
+            "gh",
+            [
+                "pr",
+                "list",
+                "--head",
+                branch,
+                "--json",
+                "number",
+                "--jq",
+                ".[0].number // 0",
+            ],
+        ),
         None,
     )
     .context("failed to find PR for current branch")?;
@@ -105,19 +107,19 @@ fn find_pr_for_branch(branch: &str) -> Result<Option<u64>> {
 }
 
 fn ensure_branch_in_sync(branch: &str) -> Result<()> {
-    let _fetch = run_command(Command::new("git").args(["fetch", "origin"]), None)
+    let _fetch = run_command(ExecRequest::new("git", ["fetch", "origin"]), None)
         .context("failed to fetch origin")?;
 
     let local = ensure_success(
-        run_command(Command::new("git").args(["rev-parse", "HEAD"]), None)
+        run_command(ExecRequest::new("git", ["rev-parse", "HEAD"]), None)
             .context("failed to get local HEAD")?,
         "git rev-parse HEAD",
     )?;
 
     let remote_ref = format!("origin/{branch}");
-    let remote_output = run_command(Command::new("git").args(["rev-parse", &remote_ref]), None)
+    let remote_output = run_command(ExecRequest::new("git", ["rev-parse", &remote_ref]), None)
         .context("failed to get remote HEAD")?;
-    if !remote_output.status.success() {
+    if !remote_output.success {
         return Err(anyhow!(
             "{}",
             sync_error_message(branch, SyncError::MissingRemote)
@@ -157,7 +159,10 @@ fn sync_error_message(branch: &str, error: SyncError) -> String {
 fn commit_messages_from_pr(pr: u64, repo: &str) -> Result<Vec<String>> {
     let pr_arg = pr.to_string();
     let output = run_command(
-        Command::new("gh").args(["pr", "view", &pr_arg, "--repo", repo, "--json", "commits"]),
+        ExecRequest::new(
+            "gh",
+            ["pr", "view", &pr_arg, "--repo", repo, "--json", "commits"],
+        ),
         None,
     )
     .context("failed to run gh pr view")?;
@@ -180,7 +185,7 @@ fn commit_messages_from_pr(pr: u64, repo: &str) -> Result<Vec<String>> {
 
 fn commit_messages_from_local_branch() -> Result<Vec<String>> {
     let merge_base = run_command(
-        Command::new("git").args(["merge-base", "origin/main", "HEAD"]),
+        ExecRequest::new("git", ["merge-base", "origin/main", "HEAD"]),
         None,
     )
     .context("failed to run git merge-base")?;
@@ -192,7 +197,7 @@ fn commit_messages_from_local_branch() -> Result<Vec<String>> {
 
     let range = format!("{base}..HEAD");
     let log_output = run_command(
-        Command::new("git").args(["log", "--format=%B%x00", &range]),
+        ExecRequest::new("git", ["log", "--format=%B%x00", &range]),
         None,
     )
     .context("failed to run git log")?;
@@ -226,12 +231,15 @@ fn trailer_block_from_messages(messages: Vec<String>) -> Result<String> {
 
 fn interpret_trailers(message: &str) -> Result<Vec<(String, String)>> {
     let output = run_command(
-        Command::new("git").args([
-            "interpret-trailers",
-            "--parse",
-            "--only-trailers",
-            "--unfold",
-        ]),
+        ExecRequest::new(
+            "git",
+            [
+                "interpret-trailers",
+                "--parse",
+                "--only-trailers",
+                "--unfold",
+            ],
+        ),
         Some(message),
     )
     .context("failed to run git interpret-trailers")?;
@@ -289,8 +297,8 @@ fn print_appended_message(path: &str) {
     eprintln!("Appended trailers to {path}");
 }
 
-fn ensure_success(output: Output, command: &str) -> Result<String> {
-    if output.status.success() {
+fn ensure_success(output: ExecResult, command: &str) -> Result<String> {
+    if output.success {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -298,31 +306,12 @@ fn ensure_success(output: Output, command: &str) -> Result<String> {
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "short-lived CLI; blocking process calls at the git/gh boundary"
-)]
-fn run_command(cmd: &mut Command, stdin: Option<&str>) -> Result<Output> {
+fn run_command(mut request: ExecRequest, stdin: Option<&str>) -> Result<ExecResult> {
     if let Some(stdin_text) = stdin {
-        let mut child = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("failed to spawn command")?;
-        let Some(mut child_stdin) = child.stdin.take() else {
-            return Err(anyhow!("failed to open command stdin"));
-        };
-        child_stdin
-            .write_all(stdin_text.as_bytes())
-            .context("failed to write command stdin")?;
-        drop(child_stdin);
-        child
-            .wait_with_output()
-            .context("failed to wait for command")
-    } else {
-        cmd.output().context("failed to run command")
+        request.stdin = Some(stdin_text.as_bytes().to_vec());
+        request.stdin_mode = StdioMode::Capture;
     }
+    jackin_process::exec_sync(&request).context("failed to run command")
 }
 
 #[cfg(test)]

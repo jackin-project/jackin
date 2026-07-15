@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
-use std::process::{Command as StdCommand, Stdio};
 
 use anyhow::{Context, Result};
 
@@ -27,15 +26,17 @@ pub fn open_host_file(path: &Path) -> Result<()> {
 }
 
 fn run_host_desktop_command(program: &str, args: Vec<String>, label: &str) -> Result<()> {
-    let status = StdCommand::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+    use jackin_process::{ExecRequest, StdioMode};
+    let request = ExecRequest::new(program, args)
+        .stdout_mode(StdioMode::Null)
+        .stderr_mode(StdioMode::Null);
+    let result = jackin_process::exec_sync(&request)
         .with_context(|| format!("running {label} command {program:?}"))?;
-    if !status.success() {
-        anyhow::bail!("{label} command {program:?} exited with {status}");
+    if !result.success {
+        anyhow::bail!(
+            "{label} command {program:?} exited with code {:?}",
+            result.code
+        );
     }
     Ok(())
 }
@@ -68,7 +69,7 @@ pub fn host_file_open_command(path: &Path) -> Option<(&'static str, Vec<String>)
 }
 
 pub fn host_open_command(url: &str) -> Option<(&'static str, Vec<String>)> {
-    let open_links = std::env::var(jackin_core::env_model::JACKIN_OPEN_LINKS_ENV_NAME).ok();
+    let open_links = std::env::var(jackin_core::JACKIN_OPEN_LINKS_ENV_NAME).ok();
     host_open_command_with_policy(url, open_links.as_deref())
 }
 
@@ -76,7 +77,7 @@ pub fn host_open_command_with_policy(
     url: &str,
     open_links: Option<&str>,
 ) -> Option<(&'static str, Vec<String>)> {
-    if !jackin_core::env_model::open_links_allowed(open_links) {
+    if !jackin_core::open_links_allowed(open_links) {
         return None;
     }
     if !jackin_tui::url_text::is_host_open_url(url) {

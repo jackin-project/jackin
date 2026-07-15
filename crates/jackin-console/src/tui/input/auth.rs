@@ -28,8 +28,6 @@ use crate::tui::state::{
     AuthForm, AuthFormFocus, EditorState, FileBrowserTarget, Modal, TextInputTarget,
 };
 use jackin_config::AppConfig;
-#[cfg(test)]
-use jackin_core::EnvValue;
 use jackin_env::OpCache;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

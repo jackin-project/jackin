@@ -3,7 +3,7 @@
 
 use super::*;
 use crossterm::event::{KeyEventKind, KeyEventState};
-use jackin_core::op_types::{OpAccount, OpItem};
+use jackin_core::{OpAccount, OpItem};
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {

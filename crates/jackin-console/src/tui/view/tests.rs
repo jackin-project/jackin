@@ -796,7 +796,7 @@ fn render_manager_buffer(
     terminal.backend().buffer().clone()
 }
 
-#[allow(
+#[expect(
     clippy::excessive_nesting,
     reason = "Green-border cluster flood-fill test helper: nested `while` + \
               `for next in neighbors` + `if seen.insert` + recursive stack push. \
@@ -1144,7 +1144,7 @@ fn host_console_list_detail_transitions_have_one_green_border_cluster() {
 }
 
 #[test]
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "Render-conformance test enumerating every modal-state × pane-tone \
               combination the green-border cluster invariant must hold for. \

@@ -4,12 +4,6 @@
 //! `regenerate_corpus` test. Exhaustive matches on `ClientFrame` /
 //! `ServerFrame` force a fixture when a new variant is added.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    reason = "integration corpus tests"
-)]
-
 use std::path::Path;
 
 use jackin_protocol::attach::{

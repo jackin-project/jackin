@@ -67,7 +67,7 @@ For every modal that has a `Filter:` input (the host role picker, the host op pi
 
 Equivalently: the filter starts at `box_row + 1`, the spacer at `box_row + 2`, and the first list row at `box_row + 3`. The natural box height is `items + 4` (top border + filter + spacer + items + bottom border). Both the host pickers (<RepoFile path="crates/jackin-console/src/tui/components/role_picker.rs">crates/jackin-console/src/tui/components/role_picker.rs</RepoFile> and <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile>) and the in-multiplexer pickers (<RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile>) honour this layout — an operator's eye must read identically across surfaces.
 
-Why this rule exists: a leading blank pad row pushes the filter one row down and visually disconnects it from the title in the top border. The eye reads it as "the filter is floating in the middle of the dialog," not as "type here to narrow the list" — a small but cumulative perceptual cost across the many dialogs jackin opens during a typical session. Drop the pad; keep the filter glued to the chrome.
+Why this rule exists: a leading blank pad row pushes the filter one row down and visually disconnects it from the title in the top border. The eye reads it as "the filter is floating in the middle of the dialog," not as "type here to narrow the list" — a small but cumulative perceptual cost across the many dialogs jackin❯ opens during a typical session. Drop the pad; keep the filter glued to the chrome.
 
 ### Dialog button spacing — symmetric leading and trailing spacers
 
@@ -162,7 +162,7 @@ Why this rule exists: confirms are the operator's "are you sure?" gate. They app
 
 ### Sub-dialogs push onto a stack — Esc walks back one step
 
-**Applies to every TUI surface jackin renders — host console (`src/console/`) and the in-container multiplexer (`crates/jackin-capsule/`).** Any modal that opens *another modal* as part of its flow MUST preserve the parent so a `Esc` press returns to it, not to the underlying screen. The operator's mental model is a breadcrumb chain; repeated `Esc` presses walk that chain one step at a time until the operator reaches the original surface (workspace list, secrets tab, focused pane).
+**Applies to every TUI surface jackin❯ renders — host console (`src/console/`) and the in-container multiplexer (`crates/jackin-capsule/`).** Any modal that opens *another modal* as part of its flow MUST preserve the parent so a `Esc` press returns to it, not to the underlying screen. The operator's mental model is a breadcrumb chain; repeated `Esc` presses walk that chain one step at a time until the operator reaches the original surface (workspace list, secrets tab, focused pane).
 
 Concrete obligations:
 
@@ -284,7 +284,7 @@ Copy feedback is the exception because copy does not navigate or otherwise chang
 
 The "Debug info" dialog is a single reusable component, not a per-surface reimplementation. Every surface that shows it — the console manager, the launch cockpit, and the in-container capsule — builds it from the shared `DebugInfo` model (<RepoFile path="crates/jackin-tui/src/components/container_info.rs">crates/jackin-tui/src/components/container_info.rs</RepoFile>) and renders it through `render_container_info`. The look, row order, labels, and copy affordances must be identical on every surface; a surface that hand-rolls its own rows or renderer is a violation.
 
-**The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin version, Run ID, diagnostics log path when one exists). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Run ID, Container ID, jackin version, jackin-capsule, Role, Agent, Target, Diagnostics log, Telemetry. If `Run ID` is present, it is always the first visible row — not merely the first debug-only row or first copy target — and the default Enter-copy target.
+**The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin❯ version, Run ID, diagnostics log path when one exists). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Run ID, Container ID, jackin❯ version, jackin-capsule, Role, Agent, Target, Diagnostics log, Telemetry. If `Run ID` is present, it is always the first visible row — not merely the first debug-only row or first copy target — and the default Enter-copy target.
 
 **Run ID is always the bare run id**, never the log file path. The diagnostics log path is a separate row, copyable and `file://`-hyperlinked. Conflating the two (showing the path in the Run ID row) is a bug.
 

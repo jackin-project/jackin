@@ -16,25 +16,44 @@ use clap::Args;
 
 use crate::arch::TIERS;
 use crate::docs::repo_root;
+use crate::report::{self, FormatArgs};
 
 const RERUN: &str = "cargo xtask lint headers";
 
 #[derive(Args, Debug)]
-pub(crate) struct LintHeadersArgs {}
+pub(crate) struct LintHeadersArgs {
+    #[command(flatten)]
+    output: FormatArgs,
+}
 
 #[expect(
     clippy::print_stdout,
     reason = "jackin-xtask is a CLI; the gate report is its output"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 pub(crate) fn enforce() -> Result<()> {
-    run(LintHeadersArgs {})
+    run(LintHeadersArgs {
+        output: FormatArgs::default(),
+    })
 }
 
-pub(crate) fn run(_args: LintHeadersArgs) -> Result<()> {
+pub(crate) fn run(args: LintHeadersArgs) -> Result<()> {
+    report::run_gate(
+        args.output.resolved(),
+        "headers",
+        "crates/",
+        "restore the ownership, architecture invariant, and entry-point header fields",
+        RERUN,
+        run_inner,
+    )
+}
+
+fn run_inner() -> Result<()> {
     let root = repo_root()?;
     let tier_map: std::collections::BTreeMap<&str, u8> = TIERS.iter().copied().collect();
     let roots = collect_roots(&root)?;
@@ -76,8 +95,7 @@ pub(crate) fn run(_args: LintHeadersArgs) -> Result<()> {
 fn collect_roots(root: &Path) -> Result<Vec<(String, PathBuf)>> {
     let crates = root.join("crates");
     let mut out = Vec::new();
-    for entry in fs::read_dir(&crates).with_context(|| format!("reading {}", crates.display()))? {
-        let entry = entry?;
+    for entry in crate::fs_util::read_dir_sorted(&crates)? {
         if !entry.file_type()?.is_dir() {
             continue;
         }

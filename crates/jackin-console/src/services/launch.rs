@@ -170,7 +170,13 @@ fn resolve_selected_workspace(
     choice: &WorkspaceChoice,
     role: &RoleSelector,
 ) -> anyhow::Result<ResolvedWorkspace> {
-    resolve_load_workspace(config, role, cwd, choice.input.clone(), &[])
+    Ok(resolve_load_workspace(
+        config,
+        role,
+        cwd,
+        choice.input.clone(),
+        &[],
+    )?)
 }
 
 /// Resolved committed-agent launch: all inputs needed to either launch

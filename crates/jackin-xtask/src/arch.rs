@@ -1,6 +1,6 @@
 //! Workspace dependency-direction check — tier-graph model.
 //!
-//! Workstream 4 of `codebase-health-enforcement`. Every workspace member
+//! Workstream 4 of the completed codebase-health track. Every workspace member
 //! has a declared tier (`TIERS`); production edges must point at a
 //! *strictly lower* tier, so a new crate gets a rule automatically by
 //! appearing in `TIERS`. Dev-dependencies may point anywhere except into
@@ -19,12 +19,12 @@
 //! ```
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
 
 use crate::docs::repo_root;
+use crate::report::{self, FormatArgs};
 
 /// Architecture tiers. Lower = more foundational. A production dependency
 /// must point at a strictly lower tier; dev-dependencies may point anywhere
@@ -34,12 +34,13 @@ use crate::docs::repo_root;
 /// `pub(crate)` so the headers gate (plan 016) can cross-check crate
 /// ownership headers against this table.
 pub(crate) const TIERS: &[(&str, u8)] = &[
-    ("jackin-build-meta", 0),
     ("jackin-core", 0),
     ("jackin-dev", 0),
-    ("jackin-pr-trailers", 0),
+    ("jackin-process", 0),
     ("jackin-term", 0),
-    ("jackin-xtask", 0),
+    ("jackin-build-meta", 1),
+    ("jackin-pr-trailers", 1),
+    ("jackin-xtask", 1),
     ("jackin-config", 1),
     ("jackin-protocol", 1),
     ("jackin-tui", 1),
@@ -74,6 +75,8 @@ const DEV_CYCLE_ALLOWLIST: &[(&str, &str)] = &[];
 
 #[derive(Args, Debug)]
 pub(crate) struct LintArchArgs {
+    #[command(flatten)]
+    output: FormatArgs,
     /// Print the parsed dep graph (with tier annotations) without checking
     /// the rules. Useful for debugging the gate and re-deriving `TIERS`.
     #[arg(long)]
@@ -90,20 +93,39 @@ pub(crate) struct LintArchArgs {
     reason = "jackin-xtask is a CLI; the gate report is its output"
 )]
 fn emit(line: &str) {
-    println!("{line}");
+    if report::human_output() {
+        println!("{line}");
+    }
 }
 
 /// Run the dependency-direction gate. `strict` fails on violations;
 /// non-strict reports and exits 0. The umbrella `cargo xtask lint` uses this.
 pub(crate) fn check(strict: bool) -> Result<()> {
     run(LintArchArgs {
+        output: FormatArgs::default(),
         dump: false,
         strict,
     })
 }
 
 pub(crate) fn run(args: LintArchArgs) -> Result<()> {
+    let format = args.output.resolved();
+    report::run_gate(
+        format,
+        "arch",
+        "Cargo.toml",
+        "restore the declared crate tiers and dependency direction invariants",
+        "cargo xtask lint arch --strict",
+        || run_inner(args),
+    )
+}
+
+fn run_inner(args: LintArchArgs) -> Result<()> {
     let root = repo_root()?;
+    // Turso sole-owner is an architecture boundary (roadmap item 8).
+    crate::container_paths_gate::check_turso_sole_owner(&root)?;
+    // Plan 019: env-pilot curated `pub mod` surface (grows as crates narrow).
+    crate::ratchet::check_curated_pub_mods(&root)?;
     let metadata = read_metadata(&root)?;
 
     let workspace_members: BTreeSet<String> = {
@@ -396,11 +418,11 @@ struct Dep {
 }
 
 fn read_metadata(root: &std::path::Path) -> Result<Metadata> {
-    let mut meta = Command::new("cargo");
+    let mut meta = crate::cmd::command("cargo");
     meta.args(["metadata", "--format-version=1"])
         .current_dir(root);
     let output = crate::cmd::output_raw(&mut meta).context("running cargo metadata")?;
-    if !output.status.success() {
+    if !output.success {
         bail!(
             "cargo metadata failed: {}",
             String::from_utf8_lossy(&output.stderr)

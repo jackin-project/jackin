@@ -1,8 +1,8 @@
 //! Explicit role-image prewarm entrypoint and result rows.
 
-use jackin_core::agent::Agent;
+use jackin_core::Agent;
 #[cfg(not(test))]
-use jackin_core::{paths::JackinPaths, selector::RoleSelector};
+use jackin_core::{JackinPaths, RoleSelector};
 
 /// Result status for one explicit role-image prewarm request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -335,7 +335,7 @@ impl InputParser {
     }
 
     /// Parse a chunk of client bytes into a stream of events.
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "ANSI-input parser: per-byte classification + per-event-type \
                   (Key / Mouse / Focus / Paste / Data) branches with state- \
