@@ -56,15 +56,270 @@ where
     }
 }
 
+struct FinalizeSession<'a, D, R> {
+    paths: &'a jackin_core::JackinPaths,
+    config: &'a jackin_config::AppConfig,
+    workspace_name: &'a Option<String>,
+    docker: &'a D,
+    runner: &'a mut R,
+    container_name: &'a str,
+    container_state: &'a std::path::Path,
+    instance_manifest: &'a mut InstanceManifest,
+    cleanup: &'a mut super::super::super::LoadCleanup,
+}
+
+async fn finalize_session<D, R>(
+    input: FinalizeSession<'_, D, R>,
+) -> anyhow::Result<SessionFinalized>
+where
+    D: DockerApi,
+    R: CommandRunner,
+{
+    let FinalizeSession {
+        paths,
+        config,
+        workspace_name,
+        docker,
+        runner,
+        container_name,
+        container_state,
+        instance_manifest,
+        cleanup,
+    } = input;
+    let finalize_result: anyhow::Result<crate::isolation::finalize::FinalizeDecision> = async {
+        super::super::super::write_instance_status(
+            paths,
+            container_state,
+            instance_manifest,
+            InstanceStatus::Running,
+        )?;
+        let interactive_finalize = true;
+        let mut prompt = crate::isolation::finalize::ExitActionPrompt {
+            state_dir: paths.data_dir.join(container_name).join("state"),
+        };
+        let dirty_exit_policy = config.resolve_dirty_exit_policy(
+            workspace_name
+                .as_deref()
+                .and_then(|name| config.workspaces.get(name)),
+        );
+        let outcome = super::super::super::inspect_attach_outcome(docker, container_name).await?;
+        super::super::super::write_instance_attach_outcome(
+            paths,
+            container_state,
+            instance_manifest,
+            outcome,
+        )?;
+        let mut decision = crate::isolation::finalize::finalize_foreground_session(
+            container_name,
+            &paths.data_dir.join(container_name),
+            outcome,
+            interactive_finalize,
+            dirty_exit_policy,
+            &mut prompt,
+            docker,
+            runner,
+        )
+        .await?;
+        super::super::super::write_preserved_status_if_applicable(
+            decision,
+            paths,
+            container_state,
+            instance_manifest,
+        )?;
+        if matches!(
+            decision,
+            crate::isolation::finalize::FinalizeDecision::ReturnToAgent
+        ) {
+            start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
+            let outcome =
+                super::super::super::inspect_attach_outcome(docker, container_name).await?;
+            super::super::super::write_instance_attach_outcome(
+                paths,
+                container_state,
+                instance_manifest,
+                outcome,
+            )?;
+            decision = crate::isolation::finalize::finalize_foreground_session(
+                container_name,
+                &paths.data_dir.join(container_name),
+                outcome,
+                interactive_finalize,
+                dirty_exit_policy,
+                &mut prompt,
+                docker,
+                runner,
+            )
+            .await?;
+            super::super::super::write_preserved_status_if_applicable(
+                decision,
+                paths,
+                container_state,
+                instance_manifest,
+            )?;
+        }
+        Ok(decision)
+    }
+    .await;
+    match finalize_result {
+        Ok(decision) => Ok(SessionFinalized { decision }),
+        Err(error) => {
+            cleanup.run(docker).await;
+            Err(error)
+        }
+    }
+}
+
+struct ClassifyCleanup<'a, D, R> {
+    paths: &'a jackin_core::JackinPaths,
+    docker: &'a D,
+    runner: &'a mut R,
+    container_name: &'a str,
+    container_state: &'a std::path::Path,
+    instance_manifest: &'a mut InstanceManifest,
+    cleanup: &'a mut super::super::super::LoadCleanup,
+    finalized: SessionFinalized,
+}
+
+async fn classify_cleanup<D, R>(
+    input: ClassifyCleanup<'_, D, R>,
+) -> anyhow::Result<CleanupClassified>
+where
+    D: DockerApi,
+    R: CommandRunner,
+{
+    let ClassifyCleanup {
+        paths,
+        docker,
+        runner,
+        container_name,
+        container_state,
+        instance_manifest,
+        cleanup,
+        finalized: SessionFinalized { decision },
+    } = input;
+    let is_preserved = matches!(
+        decision,
+        crate::isolation::finalize::FinalizeDecision::Preserved
+    );
+    let teardown_result: anyhow::Result<()> = async {
+        match docker.inspect_container_state(container_name).await {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                if is_preserved {
+                    let sessions =
+                        inspect_agent_sessions(docker, container_name, &ContainerState::Running)
+                            .await;
+                    if let AgentSessionInventory::Unavailable(ref reason) = sessions {
+                        jackin_diagnostics::debug_log!(
+                            "instance",
+                            "inspect_agent_sessions unavailable for {container_name}: {reason}; \
+                             treating conservatively as sessions-present (container preserved)",
+                        );
+                    }
+                    if matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty()) {
+                        super::super::super::write_instance_status(
+                            paths,
+                            container_state,
+                            instance_manifest,
+                            InstanceStatus::CleanExited,
+                        )?;
+                        cleanup.run(docker).await;
+                    } else {
+                        cleanup.disarm();
+                    }
+                } else {
+                    super::super::super::write_instance_status(
+                        paths,
+                        container_state,
+                        instance_manifest,
+                        InstanceStatus::CleanExited,
+                    )?;
+                    cleanup.run(docker).await;
+                }
+            }
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } if is_preserved => cleanup.run(docker).await,
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } => {
+                cleanup.run(docker).await;
+                purge_or_mark_clean_exited(
+                    paths,
+                    container_name,
+                    container_state,
+                    instance_manifest,
+                    docker,
+                    runner,
+                    "clean exit",
+                )
+                .await?;
+            }
+            ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead => {
+                super::super::super::write_instance_status(
+                    paths,
+                    container_state,
+                    instance_manifest,
+                    InstanceStatus::Crashed,
+                )?;
+                cleanup.run(docker).await;
+            }
+            ContainerState::InspectUnavailable(reason) => {
+                cleanup.disarm();
+                anyhow::bail!(
+                    "{}",
+                    crate::runtime::attach::docker_unavailable_msg(
+                        &format!("inspect container `{container_name}` after the session"),
+                        &reason,
+                    )
+                );
+            }
+            ContainerState::NotFound if is_preserved => {
+                jackin_diagnostics::debug_log!(
+                    "instance",
+                    "container {container_name} not found after session with Preserved decision; \
+                     removed externally during finalization — tearing down DinD/network, \
+                     preserved status on disk stands",
+                );
+                cleanup.run(docker).await;
+            }
+            ContainerState::NotFound => {
+                cleanup.run(docker).await;
+                purge_or_mark_clean_exited(
+                    paths,
+                    container_name,
+                    container_state,
+                    instance_manifest,
+                    docker,
+                    runner,
+                    "NotFound clean exit",
+                )
+                .await?;
+            }
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(error) = teardown_result {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
+    Ok(CleanupClassified {
+        container_name: container_name.to_owned(),
+    })
+}
+
 #[expect(
     clippy::too_many_lines,
-    reason = "Phase chain body: individual phases are typed tokens; further \
-              per-phase file split is follow-up once harness coverage is green."
+    reason = "remaining phase extraction is tracked by codebase-health plan 016"
 )]
 #[expect(
     clippy::cognitive_complexity,
-    reason = "Branching tracks the ten launch phases; typed handoffs already \
-              mark phase boundaries for the compiler."
+    reason = "remaining phase extraction is tracked by codebase-health plan 016"
 )]
 pub(super) async fn run_launch_phases<D, R>(ctx: LaunchCore<'_, D, R>) -> anyhow::Result<String>
 where
@@ -1108,255 +1363,29 @@ where
     // swept by the next explicit `jackin eject` / Purge.
     cleanup.keep_socket_dir();
 
-    // Post-success finalization: status writes, attach-outcome inspect, and
-    // foreground finalize. On any error reclaim DinD/network/certs while
-    // cleanup is still armed — bare `?` here used to return before the
-    // teardown match and orphan those resources.
-    let decision = {
-        let finalize_result: anyhow::Result<crate::isolation::finalize::FinalizeDecision> = async {
-            super::super::super::write_instance_status(
-                paths,
-                &container_state,
-                &mut instance_manifest,
-                InstanceStatus::Running,
-            )?;
-
-            // Finalize per-mount isolation worktrees BEFORE the container teardown
-            // decision below: clean exits without dirty/unpushed state get their
-            // worktrees swept; dirty state is preserved through the rich cleanup
-            // dialog. A `ReturnToAgent` choice restarts + re-attaches the container
-            // exactly once so the operator can address the dirty state inside the
-            // role, then the safe cleanup is retried.
-            let interactive_finalize = true;
-            // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
-            // recorded in exit-action.json; the host only executes it — no host dialog.
-            let mut prompt = crate::isolation::finalize::ExitActionPrompt {
-                state_dir: paths.data_dir.join(&container_name).join("state"),
-            };
-            let dirty_exit_policy = config.resolve_dirty_exit_policy(
-                workspace_name
-                    .as_deref()
-                    .and_then(|n| config.workspaces.get(n)),
-            );
-            let outcome =
-                super::super::super::inspect_attach_outcome(docker, &container_name).await?;
-            super::super::super::write_instance_attach_outcome(
-                paths,
-                &container_state,
-                &mut instance_manifest,
-                outcome,
-            )?;
-            let mut decision = crate::isolation::finalize::finalize_foreground_session(
-                &container_name,
-                &paths.data_dir.join(&container_name),
-                outcome,
-                interactive_finalize,
-                dirty_exit_policy,
-                &mut prompt,
-                docker,
-                runner,
-            )
-            .await?;
-            super::super::super::write_preserved_status_if_applicable(
-                decision,
-                paths,
-                &container_state,
-                &mut instance_manifest,
-            )?;
-            if matches!(
-                decision,
-                crate::isolation::finalize::FinalizeDecision::ReturnToAgent
-            ) {
-                // Restart detached, then attach through the jackin-capsule client
-                // socket. Attaching `docker start -ai` to PID 1 would only show
-                // daemon logs, not the multiplexer UI the operator needs to fix
-                // the preserved worktree. We do not loop further: if the operator
-                // still leaves dirty state, the second pass will fall back to
-                // Preserved and exit normally.
-                start_or_reconnect_capsule_client(paths, &container_name, docker, runner).await?;
-                let outcome2 =
-                    super::super::super::inspect_attach_outcome(docker, &container_name).await?;
-                super::super::super::write_instance_attach_outcome(
-                    paths,
-                    &container_state,
-                    &mut instance_manifest,
-                    outcome2,
-                )?;
-                decision = crate::isolation::finalize::finalize_foreground_session(
-                    &container_name,
-                    &paths.data_dir.join(&container_name),
-                    outcome2,
-                    interactive_finalize,
-                    dirty_exit_policy,
-                    &mut prompt,
-                    docker,
-                    runner,
-                )
-                .await?;
-                super::super::super::write_preserved_status_if_applicable(
-                    decision,
-                    paths,
-                    &container_state,
-                    &mut instance_manifest,
-                )?;
-            }
-            Ok(decision)
-        }
-        .await;
-
-        match finalize_result {
-            Ok(decision) => decision,
-            Err(err) => {
-                // A post-success finalization step failed. cleanup is still armed
-                // (the region never runs/disarms it); reclaim DinD/network/certs
-                // rather than orphaning them, consistent with the teardown arms.
-                cleanup.run(docker).await;
-                return Err(err);
-            }
-        }
-    };
-    let finalized: SessionFinalized = SessionFinalized { decision };
-    let SessionFinalized { decision } = finalized;
-
-    // Classify how the interactive session ended and tear down DinD/network
-    // unless the container is still running with active sessions (detach):
-    //  - Running + active sessions → user detached (Ctrl-B D). Keep DinD so
-    //                               `jackin hardline` can reconnect.
-    //  - Running + no sessions → agent exited; Capsule cleanup lag or stale socket.
-    //                            Tear down same as Stopped/0 regardless of
-    //                            preserved isolation state — worktrees live on
-    //                            the host and are accessible without DinD.
-    //  - Stopped / 0 → user exited cleanly. Tear down.
-    //  - Stopped / ≠0 or OOM-killed → crash. Tear down; DinD is no longer
-    //                                  needed once the container has exited.
-    //  - NotFound + Preserved → removed externally during finalization.
-    //                           Tear down DinD/network; status on disk stands.
-    //  - NotFound → removed externally. Tear down.
-    //  - InspectUnavailable → Docker unreachable; keep everything alive.
-    let is_preserved = matches!(
-        decision,
-        crate::isolation::finalize::FinalizeDecision::Preserved
-    );
-    let teardown_result: anyhow::Result<()> = async {
-        match docker.inspect_container_state(&container_name).await {
-            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-                if is_preserved {
-                    // Finalize saw sessions at check-time (detach). Re-check: sessions
-                    // may have ended in the interval between finalize and this inspect.
-                    let sessions =
-                        inspect_agent_sessions(docker, &container_name, &ContainerState::Running)
-                            .await;
-                    if let AgentSessionInventory::Unavailable(ref reason) = sessions {
-                        jackin_diagnostics::debug_log!(
-                            "instance",
-                            "inspect_agent_sessions unavailable for {container_name}: {reason}; \
-                             treating conservatively as sessions-present (container preserved)",
-                        );
-                    }
-                    let no_sessions =
-                        matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
-                    if no_sessions {
-                        super::super::super::write_instance_status(
-                            paths,
-                            &container_state,
-                            &mut instance_manifest,
-                            InstanceStatus::CleanExited,
-                        )?;
-                        cleanup.run(docker).await;
-                    } else {
-                        cleanup.disarm();
-                    }
-                } else {
-                    // Finalize already confirmed no sessions (Capsule still running after
-                    // clean exit). Skip the redundant re-query and tear down.
-                    super::super::super::write_instance_status(
-                        paths,
-                        &container_state,
-                        &mut instance_manifest,
-                        InstanceStatus::CleanExited,
-                    )?;
-                    cleanup.run(docker).await;
-                }
-            }
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
-            } if is_preserved => {
-                cleanup.run(docker).await;
-            }
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
-            } => {
-                cleanup.run(docker).await;
-                purge_or_mark_clean_exited(
-                    paths,
-                    &container_name,
-                    &container_state,
-                    &mut instance_manifest,
-                    docker,
-                    runner,
-                    "clean exit",
-                )
-                .await?;
-            }
-            ContainerState::Stopped { .. }
-            | ContainerState::Created
-            | ContainerState::Removing
-            | ContainerState::Dead => {
-                super::super::super::write_instance_status(
-                    paths,
-                    &container_state,
-                    &mut instance_manifest,
-                    InstanceStatus::Crashed,
-                )?;
-                cleanup.run(docker).await;
-            }
-            ContainerState::InspectUnavailable(reason) => {
-                cleanup.disarm();
-                anyhow::bail!(
-                    "{}",
-                    crate::runtime::attach::docker_unavailable_msg(
-                        &format!("inspect container `{container_name}` after the session"),
-                        &reason,
-                    )
-                );
-            }
-            ContainerState::NotFound if is_preserved => {
-                jackin_diagnostics::debug_log!(
-                    "instance",
-                    "container {container_name} not found after session with Preserved decision; \
-                     removed externally during finalization — tearing down DinD/network, \
-                     preserved status on disk stands",
-                );
-                cleanup.run(docker).await;
-            }
-            ContainerState::NotFound => {
-                cleanup.run(docker).await;
-                // D9: container already gone — purge local state inline.
-                purge_or_mark_clean_exited(
-                    paths,
-                    &container_name,
-                    &container_state,
-                    &mut instance_manifest,
-                    docker,
-                    runner,
-                    "NotFound clean exit",
-                )
-                .await?;
-            }
-        }
-        Ok(())
-    }
-    .await;
-    if let Err(error) = teardown_result {
-        cleanup.run(docker).await;
-        return Err(error);
-    }
-
-    let classified: CleanupClassified = CleanupClassified {
-        container_name: container_name.clone(),
-    };
+    let finalized = finalize_session(FinalizeSession {
+        paths,
+        config,
+        workspace_name: &workspace_name,
+        docker,
+        runner,
+        container_name: &container_name,
+        container_state: &container_state,
+        instance_manifest: &mut instance_manifest,
+        cleanup: &mut cleanup,
+    })
+    .await?;
+    let classified = classify_cleanup(ClassifyCleanup {
+        paths,
+        docker,
+        runner,
+        container_name: &container_name,
+        container_state: &container_state,
+        instance_manifest: &mut instance_manifest,
+        cleanup: &mut cleanup,
+        finalized,
+    })
+    .await?;
     let CleanupClassified { container_name } = classified;
     Ok(container_name)
 }
