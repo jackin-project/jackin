@@ -80,7 +80,7 @@ runs:
           done
         done < <(find crates -path '*/fuzz/Cargo.toml' -type f | sort)
     - name: Save Cargo registry
-      if: github.event_name != 'pull_request' && steps.restore.outputs.cache-hit != 'true' && steps.verify.outputs.ready != 'true'
+      if: github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true' && steps.verify.outputs.ready != 'true'
       continue-on-error: true
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
