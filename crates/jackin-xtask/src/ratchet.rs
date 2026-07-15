@@ -726,7 +726,7 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
     }
     let text = fs::read_to_string(&artifact).with_context(|| {
         format!(
-            "reading measured volume at {} — run `cargo nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'` first",
+            "reading measured volume at {} — run `cargo test -p jackin-diagnostics --all-features conformance_export_volume` first",
             artifact.display()
         )
     })?;
@@ -755,17 +755,15 @@ fn ensure_telemetry_volume_artifact(root: &Path) -> Result<()> {
     let mut command = crate::cmd::command("cargo");
     command
         .args([
-            "nextest",
-            "run",
+            "test",
             "-p",
             "jackin-diagnostics",
             "--all-features",
             "--locked",
-            "-E",
-            "test(conformance_export_volume)",
+            "conformance_export_volume",
         ])
         .current_dir(root);
-    crate::cmd::run(&mut command)
+    crate::cmd::output(&mut command)
         .context("failed to generate target/telemetry-volume.json via conformance_export_volume")?;
     let artifact = root.join("target/telemetry-volume.json");
     if !artifact.is_file() {
