@@ -740,14 +740,12 @@ fn handle_mouse_event<H, R>(
         active_run.is_some(),
     ) && let Some(run) = active_run
     {
-        let log_path = run.path().display().to_string();
         let _unused = crate::console::tui::update_manager(
             ms,
             crate::console::tui::ManagerMessage::OpenListContainerInfo {
                 state: jackin_console::tui::components::container_info::debug_run_info_state(
                     env!("JACKIN_VERSION"),
                     run.run_id(),
-                    log_path,
                 ),
             },
         );

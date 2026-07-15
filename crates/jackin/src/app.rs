@@ -276,23 +276,11 @@ fn record_run_error(result: &Result<()>) {
 }
 
 fn announce_run_teardown(diagnostics: &jackin_diagnostics::RunDiagnostics) {
-    let line = if diagnostics.persists() {
-        format!(
-            "telemetry: run {} - file {}",
-            diagnostics.run_id(),
-            diagnostics.path().display()
-        )
-    } else {
-        let backend = jackin_diagnostics::configured_endpoint_summary().map_or_else(
-            || "your OpenTelemetry backend".to_owned(),
-            |endpoint| format!("your OpenTelemetry backend ({endpoint})"),
-        );
-        format!(
-            "telemetry: run {} - query {backend} for parallax.run.id={}",
-            diagnostics.run_id(),
-            diagnostics.run_id()
-        )
-    };
+    let backend = jackin_diagnostics::configured_endpoint_summary().map_or_else(
+        || "OpenTelemetry export disabled".to_owned(),
+        |endpoint| format!("OpenTelemetry endpoint {endpoint}"),
+    );
+    let line = format!("telemetry: invocation {} - {backend}", diagnostics.run_id());
     jackin_diagnostics::emit_operator_notice(&line);
 }
 
@@ -319,33 +307,20 @@ const fn command_name(command: &Command) -> &'static str {
     }
 }
 
-/// In `--debug`, surface the diagnostics run id on the plain CLI before
+/// In `--debug`, surface the invocation id on the plain CLI before
 /// anything else runs — never through a rich TUI. This is identical for
 /// every command (CLI or TUI): print the run id the operator must keep to
-/// retrieve the run's diagnostics file later, then, on an interactive
+/// query the configured backend later, then, on an interactive
 /// terminal, gate on Enter so the id is read before the normal flow (rich
 /// or CLI, per terminal capability) takes over. Debug evidence itself is
-/// written only to the run file, never echoed here.
+/// exported only through governed OTLP, never echoed here.
 fn announce_debug_run(diagnostics: &jackin_diagnostics::RunDiagnostics) {
     use owo_colors::OwoColorize as _;
     use std::io::{IsTerminal, Write};
     let mut err = std::io::stderr();
     let _unused = writeln!(err);
-    let _unused = writeln!(
-        err,
-        "{} debug mode — save this run id to retrieve the run later:",
-        "[jackin]".bold()
-    );
+    let _unused = writeln!(err, "{} debug mode — invocation id:", "[jackin]".bold());
     let _unused = writeln!(err, "    {}", diagnostics.run_id());
-    if diagnostics.persists() {
-        let _unused = writeln!(err, "[jackin] diagnostics log:");
-        let _unused = writeln!(err, "    {}", diagnostics.path().display());
-    } else {
-        let _unused = writeln!(
-            err,
-            "[jackin] diagnostics file: off (OTLP active; set JACKIN_DIAGNOSTICS_FILE=1 to also write it)"
-        );
-    }
     match jackin_diagnostics::configured_endpoint_summary() {
         Some(endpoint) => {
             let _unused = writeln!(err, "[jackin] OTLP endpoint: {endpoint}");

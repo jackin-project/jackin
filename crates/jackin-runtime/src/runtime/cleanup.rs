@@ -585,10 +585,6 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
     )
 }
 
-pub fn prune_diagnostics(paths: &JackinPaths) -> anyhow::Result<()> {
-    jackin_diagnostics::prune_all_runs(paths)
-}
-
 pub fn prune_jackin_home(paths: &JackinPaths) {
     let _timing = cleanup_timing("runtime_home");
     prune_output::section("Runtime Home", "removing remaining runtime state");
