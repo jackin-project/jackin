@@ -7,22 +7,28 @@ title: "03 - Target Repository"
 ## Repository shape
 
 ```text
-tailrocks/tui
+tailrocks/<project-name>
 |- Cargo.toml
 |- crates/
-|  |- tailrocks-tui/
+|  |- <component-crate>/
 |  |  |- components/
 |  |  |- input/
 |  |  |- layout/
 |  |  |- runtime/
 |  |  `- theme/
-|  `- tailrocks-tui-lookbook/
+|  `- <lookbook-crate>/
+|     |- src/lib.rs
+|     `- src/bin/<lookbook-cli>.rs
 |- docs/
-|- fixtures/
-`- xtask or scripts for render conformance
+|  |- content/docs/components/
+|  `- public/component-previews/
+|- fixtures/renders/
+`- xtask or scripts for docs and render conformance
 ```
 
-Start with two crates. Add `tailrocks-tui-testing` only after two consumers require the same public `TestBackend`, event fixtures, or golden-render helpers.
+Start with two packages: the reusable component crate and a lookbook package that exposes the story/render library plus its CLI. Do not create a third CLI crate only to wrap the lookbook. Add a public testing crate only after two consumers require the same `TestBackend`, event fixtures, or golden-render helpers.
+
+The Fumadocs application lives in the same repository. Component source, stories, generated SVGs, docs pages, and their verification gate therefore advance in one PR and cannot drift across repositories.
 
 ## Public API rules
 
@@ -66,12 +72,38 @@ event -> Message -> pure update -> state + typed effects
 
 The shared project may expose small executor-neutral contracts such as modal outcomes, subscriptions, focus ownership, and typed effect envelopes. It must not prescribe one product's root `Model`, effect executor, persistence, daemon, or Tokio task tree.
 
+## Git-first consumption
+
+crates.io publication is not required before the first consumers migrate. Cargo supports direct Git dependencies by branch or exact revision; the dependency key below is illustrative until naming closes:
+
+```toml
+[dependencies]
+tailrocks-tui = { git = "https://github.com/tailrocks/<project-name>.git", rev = "<full-commit-sha>" }
+```
+
+```toml
+[dependencies]
+tailrocks-tui = { git = "https://github.com/tailrocks/<project-name>.git", branch = "feature/new-component" }
+```
+
+The branch form is a collaboration pointer: a consumer can develop a component fix on a trusted Tailrocks branch or fork and exercise it immediately. The exact commit is the build identity: long-lived consumer branches and default branches use `rev`, commit <RepoFile path="Cargo.lock" />, and change the revision through review. Cargo records the resolved Git commit in <RepoFile path="Cargo.lock" />, but a later update of a branch dependency can advance it; a branch name is therefore not the security or reproducibility boundary.
+
+The supported cross-repository loop is:
+
+1. create the component improvement on a branch in the shared repository or a trusted fork;
+2. test the consumer against that branch while iterating;
+3. pin the tested full commit SHA in the consumer before merging or deploying it;
+4. open the shared-project PR without waiting for a crate release;
+5. after the change lands upstream, repin the consumer to the canonical commit and remove any temporary fork dependency.
+
+This lets a product unblock itself without tracking mutable code. A temporary pin to an unmerged fork commit must name an owner and follow-up; untrusted forks, floating default branches, and automated branch advancement are not accepted dependency policies.
+
 ## Lookbook model
 
 The shared lookbook owns neutral canonical states for every public component. Consumers own composition stories:
 
 ```text
-tailrocks-tui-lookbook
+<lookbook-crate>
   panel, tabs, list, input, dialogs, status, theme states
 
 jackin❯ conformance
@@ -81,7 +113,33 @@ Holla conformance
   detected actions, task tabs, running output, command failures
 ```
 
-The harness supports an interactive browser and deterministic noninteractive renders. Releases exercise minimum, normal, and wide terminal sizes; long/wide Unicode; keyboard focus; non-color states; loading/empty/error/disabled variants; and terminal-control sanitization.
+The lookbook package exposes one documented CLI with stable conceptual operations:
+
+```text
+<lookbook-cli> terminal
+<lookbook-cli> list
+<lookbook-cli> render --out docs/public/component-previews
+<lookbook-cli> check --dir docs/public/component-previews
+```
+
+The exact command spelling follows the final project name. Extraction may preserve the donor flags temporarily, but the external project owns the long-term terminal, list, render, and check contract. The harness exercises minimum, normal, and wide terminal sizes; long/wide Unicode; keyboard focus; non-color states; loading/empty/error/disabled variants; and terminal-control sanitization.
+
+## Fumadocs component catalog
+
+The documentation site is a product surface of the shared project, not an afterthought. Use Fumadocs' current MDX composition model: MDX pages render through shared components, while generated SVG files are served as static assets and may use an image-preview wrapper for consistent sizing and zoom behavior.
+
+Every public component page includes:
+
+- purpose and appropriate use;
+- Rust API and focused usage examples;
+- keyboard, focus, mouse, non-color, Unicode, and narrow-terminal behavior;
+- theme tokens and consumer-owned inputs;
+- canonical default, focused, disabled, empty, loading, error, and edge-case SVG states where applicable;
+- the corresponding lookbook story ID and CLI commands for terminal preview and regeneration.
+
+The CLI generates a manifest alongside SVGs so docs navigation and component coverage can be checked mechanically. Generated previews are committed for static hosting and reviewable diffs. CI runs the lookbook check, docs build, type checks, tests, and internal-link checks; a public component without a neutral story, generated preview, and catalog page is incomplete.
+
+When `jackin❯` migrates, the external site becomes the canonical component API catalog. jackin❯ keeps only product-specific TUI design decisions, composition guidance, and conformance stories; it removes the generic lookbook CLI, neutral component pages, and duplicate generated SVG assets after parity passes.
 
 ## Governance
 
@@ -94,6 +152,4 @@ API additions require:
 - semver impact and migration notes;
 - dependency/license review.
 
-Consumers pin releases or immutable revisions. The shared project publishes a compatibility matrix and does not coordinate releases by requiring every Tailrocks repository to follow its default branch.
-
-Preliminary checks on 2026-07-15 returned no crate for `tailrocks-tui` in the [crates.io search](https://crates.io/search?q=tailrocks-tui). This is namespace evidence, not legal or trademark clearance.
+Consumers pin semver releases or immutable revisions. Branch dependencies are allowed for cross-repository iteration but are replaced by an exact revision before a consumer change becomes durable. The shared project publishes a compatibility matrix and does not coordinate adoption by requiring every Tailrocks repository to follow its default branch or wait for crates.io.

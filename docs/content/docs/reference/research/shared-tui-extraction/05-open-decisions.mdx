@@ -16,24 +16,45 @@ title: "05 - Open Decisions"
 | Second consumer | Holla reuse proof |
 | Domain boundary | no product models, effects, persistence, secrets, or telemetry ownership |
 | Component graduation | second concrete consumer or clearly foundational primitive |
+| Documentation | same-repository Fumadocs catalog backed by committed CLI-generated SVG previews |
+| Initial consumption | Git dependencies are sufficient; crates.io publication is optional |
+| Durable dependency identity | full commit revision or immutable release, never a moving branch head |
 
-## 1. Repository slug
+## 1. Project and repository naming
 
-**Question:** `tailrocks/tui` or `tailrocks/tailrocks-tui`?
+The name must cover more than a widget crate: it identifies the Ratatui library, lookbook CLI, generated visual catalog, and Fumadocs site. Repository, crate, binary, and site names should form one understandable family without embedding `jackin❯` or implying a general-purpose non-terminal UI framework.
 
-**Recommended default:** `tailrocks/tui`; published crates carry the explicit `tailrocks-tui` prefix.
+| Candidate | Example family | Strength | Concern |
+|---|---|---|---|
+| **TermRock** | `tailrocks/termrock`, `termrock`, `termrock-lookbook` | Memorable, connects terminal use with Tailrocks, and can name the library, CLI, and docs without repetition. | Coined name needs normal trademark/domain review and a short descriptor on first use. |
+| **Tailrocks TUI** | `tailrocks/tui`, `tailrocks-tui`, `tailrocks-tui-lookbook` | Literal, immediately understandable, and clearly organization-owned. | Reads as infrastructure rather than a distinct project and repeats the organization name in package references. |
+| **Clast TUI** | `tailrocks/clast`, `clast-tui`, `clast-lookbook` | A clast is a rock fragment, matching reusable building blocks; short crate names. | The geological term is obscure and does not communicate terminal UI without the suffix. |
+| **Quarry TUI** | `tailrocks/quarry`, `quarry-tui`, `quarry-lookbook` | Communicates a shared source of building blocks and fits extraction. | Generic name, and “quarry” describes where components come from more than the runtime library itself. |
+| **Rockface** | `tailrocks/rockface`, `rockface-tui`, `rockface-lookbook` | Strong visual/component metaphor and memorable documentation identity. | Does not signal terminal use, and the name already has substantial unrelated GitHub usage. |
+
+**Recommended default:** `TermRock`, with the descriptor “Ratatui components, lookbook, and documentation for Tailrocks applications.” If literal clarity is preferred over a standalone identity, keep `tailrocks/tui` as the fallback repository and `tailrocks-tui` as the crate.
+
+Preliminary GitHub and crates.io searches on 2026-07-15 found no exact `termrock`, `clast-tui`, `quarry-tui`, or `tailrocks-tui` crate match and no exact GitHub repository named `termrock`, `clast-tui`, or `quarry-tui`; `rockface` has many unrelated repositories. These checks are namespace evidence only, not legal, trademark, package-owner, or domain clearance.
 
 **Deadline:** before external repository creation.
 
-## 2. Preview publication
+## 2. Git dependency and publication policy
 
-**Question:** crates.io preview immediately or git revision first?
+**Question:** how can consumers test their own shared-component branches immediately without accepting mutable dependencies in durable builds?
 
-**Recommended default:** immutable git revision during debranding, then a crates.io preview before `jackin❯` removes the donor. Stable semver follows successful Holla use.
+**Recommended default:** use a trusted branch or fork only while iterating, then pin the tested full commit SHA through Cargo's `rev` dependency form and commit <RepoFile path="Cargo.lock" /> before the consumer change becomes durable. After upstream merge, repin temporary fork commits to the canonical repository. An immutable Git revision is enough for the first `jackin❯` and Holla migrations; crates.io preview publication is optional, and stable registry publication is reconsidered after two-consumer proof.
 
-**Deadline:** extraction Stage 3.
+**Deadline:** before the first external consumer branch.
 
-## 3. Tokio/runtime feature
+## 3. Lookbook CLI name and command contract
+
+**Question:** should the extracted CLI keep the donor's positional/flag interface or adopt named operations?
+
+**Recommended default:** the lookbook package owns a binary named from the final project and exposes explicit `terminal`, `list`, `render`, and `check` operations. Preserve donor behavior only long enough to validate parity; the external pre-release project does not need an indefinite compatibility shim.
+
+**Deadline:** before neutral lookbook freeze.
+
+## 4. Tokio/runtime feature
 
 **Question:** keep Tokio in the base crate?
 
@@ -41,7 +62,7 @@ title: "05 - Open Decisions"
 
 **Deadline:** first public manifest review.
 
-## 4. Brand API
+## 5. Brand API
 
 **Question:** one fixed Tailrocks header or consumer-defined identity?
 
@@ -49,7 +70,7 @@ title: "05 - Open Decisions"
 
 **Deadline:** before neutral lookbook freeze.
 
-## 5. History tooling
+## 6. History tooling
 
 **Question:** exact `git filter-repo` path strategy and documentation history set?
 
@@ -57,15 +78,15 @@ title: "05 - Open Decisions"
 
 **Deadline:** before extraction command execution.
 
-## 6. Testing crate
+## 7. Testing crate
 
-**Question:** publish `tailrocks-tui-testing` initially?
+**Question:** publish a `<project>-testing` crate initially?
 
 **Recommended default:** no. Keep lookbook/conformance helpers internal or inside the two initial crates until two consumers need a stable public testing API.
 
 **Deadline:** reconsider after Holla migration.
 
-## 7. Compatibility matrix
+## 8. Compatibility matrix
 
 **Question:** how many Ratatui/Crossterm versions should be supported?
 
@@ -73,7 +94,7 @@ title: "05 - Open Decisions"
 
 **Deadline:** before preview release.
 
-## 8. Theme stability
+## 9. Theme stability
 
 **Question:** are semantic token additions semver-sensitive?
 

@@ -8,8 +8,10 @@ This is a cross-repository program. Repository creation, commits, pushes, releas
 
 ## Stage 0 - Approve the contract
 
-- approve repository/crate names, Apache-2.0 ownership, DCO, security policy, MSRV, and release approach;
+- approve project/repository/crate/CLI names, Apache-2.0 ownership, DCO, security policy, MSRV, and release approach;
 - approve history-preserving extraction tooling and attribution handling;
+- approve exact-revision, temporary branch/fork, and crates.io publication policies;
+- freeze the lookbook CLI and Fumadocs component-page contracts;
 - freeze the extract/parameterize/remain ledger;
 - capture current `jackin❯` component tests, lookbook renders, key behavior, and terminal cleanup as parity evidence;
 - identify every consumer of `jackin-tui` and `jackin-core` compatibility helpers.
@@ -18,10 +20,11 @@ Exit gate: no ownership ambiguity remains and no external repository is created 
 
 ## Stage 1 - Create the external donor history
 
-- create `tailrocks/tui` with governance, CI, dependency/license gates, and release automation;
-- use `git filter-repo` or equivalent to retain the two donor paths and relevant neutral documentation/history;
+- create the named Tailrocks repository with the Rust workspace, Fumadocs application, governance, CI, dependency/license gates, and release automation;
+- use `git filter-repo` or equivalent to retain the two donor paths plus the neutral component pages, preview assets, and relevant TUI design history;
 - preserve authorship, timestamps where possible, SPDX headers, copyright, LICENSE, and NOTICE/attribution;
 - record the source repository and extraction revision;
+- move the interactive terminal lookbook, SVG generation/check behavior, and neutral story registry into the external lookbook package;
 - make debranding/reorganization reviewed commits in the new repository rather than copying a final anonymous snapshot.
 
 Exit gate: provenance can trace extracted code to donor commits and the new default branch is buildable.
@@ -37,22 +40,26 @@ Exit gate: provenance can trace extracted code to donor commits and the new defa
 
 Exit gate: `cargo tree` and source audit show no Tailrocks product dependency, and neutral tests/render fixtures pass.
 
-## Stage 3 - Establish release quality
+## Stage 3 - Establish revision-consumable quality
 
 - document components, state ownership, key/focus behavior, theming, and integration examples;
 - add neutral interactive stories for every public component/state;
 - add deterministic minimum/normal/wide render gates and terminal restoration tests;
+- build the Fumadocs component catalog from committed CLI-generated SVGs and a generated coverage manifest;
+- document and test terminal, list, render, and check CLI operations;
 - test the supported Rust/Ratatui/Crossterm matrix on macOS and Linux;
 - run formatting, lint, unit, docs, dependency, license, and supply-chain checks;
-- publish a preview version and immutable migration guide.
+- publish an immutable Git revision and migration guide; publishing a crates.io preview remains optional.
 
-Exit gate: an external minimal consumer can build and render without `jackin❯` code or a moving branch.
+Exit gate: an external minimal consumer can pin one full commit SHA, build and render without `jackin❯` code, open the Fumadocs catalog, and reproduce the committed previews.
 
 ## Stage 4 - Migrate `jackin❯`
 
-- depend on the preview release or immutable revision;
+- depend on an immutable Git revision, or a preview release if one exists;
 - replace imports incrementally without product redesign;
 - retain product components/stories locally;
+- move generic component documentation and neutral SVG previews to the external Fumadocs site, while retaining `jackin❯` composition and design-decision docs;
+- remove the local generic lookbook CLI only after equivalent external terminal/render/check workflows pass;
 - migrate every `jackin-core` compatibility caller before deleting duplicates;
 - compare console, Capsule, launch, input, mouse, modal, terminal-restoration, lookbook, and SVG fixtures;
 - update canonical TUI docs to identify shared versus `jackin❯` ownership;
@@ -74,21 +81,24 @@ Exit gate: the shared API supports a distinct application without `jackin❯` vo
 
 ## Stage 6 - Stabilize and expand carefully
 
-- publish a stable semver release after both consumers run the preview successfully;
+- publish stable Git tags after both consumers run pinned revisions successfully, and decide separately whether crates.io publication adds enough value;
 - maintain compatibility/migration notes and a consumer matrix;
+- keep branch/fork iteration available while requiring exact commit pins for durable consumer changes;
 - accept Velnor, Parallax, and other consumer needs through the two-consumer governance rule;
-- split `tailrocks-tui-testing` only after repeated public test-helper demand;
+- split a public testing crate only after repeated cross-consumer test-helper demand;
 - measure API churn, dependency weight, render performance, and maintenance load before broadening scope.
 
 ## Acceptance checklist
 
-- [ ] No Tailrocks product crate is a dependency of `tailrocks-tui`.
+- [ ] No Tailrocks product crate is a dependency of the shared component crate.
 - [ ] No public shared type contains a product domain model.
 - [ ] Donor history and license attribution are independently reviewed.
 - [ ] All public components have docs, tests, and neutral lookbook states.
+- [ ] The extracted CLI can interactively preview, list, render, and verify every neutral story.
+- [ ] The standalone Fumadocs site renders generated SVG states and fails verification when component docs, stories, or previews drift.
 - [ ] Keyboard, focus, non-color, Unicode, and terminal-size contracts pass.
 - [ ] Terminal mode restoration passes supported failure paths.
 - [ ] `jackin❯` parity passes before local donor deletion.
 - [ ] Holla proves second-consumer reuse.
-- [ ] Consumers pin immutable versions and can upgrade independently.
+- [ ] Consumers can iterate against trusted branches but pin immutable commits or releases for durable builds.
 - [ ] Roadmap and canonical docs name one owner for each component/policy.

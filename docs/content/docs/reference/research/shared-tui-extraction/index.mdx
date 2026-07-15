@@ -10,15 +10,18 @@ This is the only cross-product work that belongs in the `jackin❯` roadmap. Dat
 
 ## Decisions
 
-- **Repository:** tentative `tailrocks/tui`.
-- **Initial crates:** `tailrocks-tui` and `tailrocks-tui-lookbook`.
+- **Project name:** open; `TermRock` is the current recommendation, with `Tailrocks TUI`, `Clast TUI`, and `Quarry TUI` retained as alternatives until operator approval.
+- **Repository:** independent Tailrocks repository whose slug follows the final project name.
+- **Initial packages:** one reusable component crate and one lookbook package exposing its library plus preview CLI.
 - **Renderer:** Ratatui only. Do not design a renderer-neutral abstraction or support competing TUI frameworks.
 - **License:** Apache-2.0, preserving donor history, authorship, SPDX headers, copyright, and attribution.
+- **Documentation:** a Fumadocs component catalog in the same repository, backed by committed CLI-generated SVG previews.
 - **First consumer:** `jackin❯`, migrated without visible redesign.
 - **Second consumer:** Holla, proving that the API supports a different product and effect model.
 - **Later consumers:** Velnor runner/job TUI, justified Parallax interactive CLI workflows, and independent Tailrocks development tools.
 - **Boundary:** shared components, terminal lifecycle, theme, input/focus/layout, lookbook, and render-conformance only. No agent, job, trace, database, credential, command-execution, or telemetry models.
-- **Release:** consumers pin a semver release or immutable revision, never a moving default branch.
+- **Consumption:** branches and trusted forks support cross-repository iteration, while durable consumer changes pin a full Git commit SHA and commit <RepoFile path="Cargo.lock" />.
+- **Release:** crates.io is optional; consumers can adopt immutable Git revisions before any registry publication and may later pin semver releases.
 
 ## Read order
 
@@ -32,7 +35,7 @@ This is the only cross-product work that belongs in the `jackin❯` roadmap. Dat
 ## Intended dependency shape
 
 ```text
-                         tailrocks-tui
+                    shared TUI component crate
                               |
            +------------------+------------------+
            |                  |                  |

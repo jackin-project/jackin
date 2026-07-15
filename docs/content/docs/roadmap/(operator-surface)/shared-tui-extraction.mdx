@@ -8,12 +8,13 @@ title: "Shared TUI Extraction"
 
 ## Outcome
 
-Extract the neutral component, terminal-runtime, lookbook, and render-conformance foundation from `jackin-tui` and `jackin-tui-lookbook` into an independent Apache-2.0 Tailrocks repository, tentatively:
+Extract the neutral component, terminal-runtime, lookbook CLI, generated SVG catalog, Fumadocs component documentation, and render-conformance foundation from `jackin-tui`, `jackin-tui-lookbook`, and the generic component docs into an independent Apache-2.0 Tailrocks repository. Naming remains open; `TermRock` is the current research recommendation over the literal `Tailrocks TUI`.
 
 ```text
-Repository: tailrocks/tui
-Crates:     tailrocks-tui
-            tailrocks-tui-lookbook
+Repository: tailrocks/<project-name>
+Packages:   <component-crate>
+            <lookbook library and CLI>
+Docs:       same-repository Fumadocs catalog
 ```
 
 The shared project targets Ratatui only, using Crossterm where terminal backend integration is required. It does not add a renderer-neutral abstraction or support alternative TUI frameworks.
@@ -34,6 +35,20 @@ Current coupling prevents a direct publish:
 - `BrandHeader`, container/agent helpers, product modal geometry, and animations embed `jackin❯` concepts;
 - the lookbook harness is reusable, but many stories contain workspaces, roles, agents, containers, and product paths.
 
+## Design
+
+### Repository surfaces
+
+The external project owns four inseparable surfaces: the reusable Ratatui component crate, a lookbook library/CLI for interactive terminal preview and deterministic render/check operations, committed SVG component states, and a small Fumadocs catalog that documents every public component. Keeping them in one repository lets one PR change the API, story, preview, and documentation together. jackin❯ retains only product composition, interaction policy, and domain-specific conformance stories after migration.
+
+### Git-first consumption
+
+Initial adoption does not wait for crates.io. A consumer may point at a trusted feature branch or fork while developing a shared fix, but the branch is only an iteration pointer. Durable consumer changes pin the tested full commit SHA with Cargo's `rev` form and commit <RepoFile path="Cargo.lock" />; after upstream merge they repin to the canonical commit. This preserves the ability to unblock a consumer without making mutable branch heads the build or supply-chain boundary.
+
+### Registry publication
+
+An immutable Git revision is sufficient for the extraction preview and first migrations. Semver Git tags and crates.io publication remain later distribution decisions; neither blocks moving generic ownership out of jackin❯.
+
 ## Shared ownership
 
 The external project owns:
@@ -44,6 +59,8 @@ The external project owns:
 - panels, tabs, actions, dialogs, lists, inputs, hints, toasts, status surfaces, and diff presentation;
 - terminal lifecycle guards where they can remain executor-neutral;
 - interactive lookbook, deterministic renders, and conformance fixtures;
+- terminal/list/render/check CLI behavior and a generated preview manifest;
+- Fumadocs component API pages and committed neutral SVG previews;
 - public API docs, semver, MSRV, Ratatui/Crossterm compatibility, and releases.
 
 `jackin❯` retains:
@@ -73,6 +90,7 @@ The external project owns:
 - [ ] Classify each module/component as extract, parameterize, or remain local.
 - [ ] Capture current render fixtures, key behavior, and terminal-restoration tests as parity evidence.
 - [ ] Approve repository name, license/governance, MSRV, and compatibility policy.
+- [ ] Approve project, crate, CLI, and docs-site naming plus exact-revision/branch dependency policy.
 
 ### External extraction
 
@@ -83,7 +101,9 @@ The external project owns:
 - [ ] Parameterize semantic theme and product brand/header data.
 - [ ] Remove or relocate product-specific components, stories, modal helpers, and animations.
 - [ ] Establish neutral lookbook and deterministic minimum/normal/wide render gates.
-- [ ] Publish an immutable preview release.
+- [ ] Extract the terminal preview CLI and document terminal, list, render, and check operations.
+- [ ] Establish the standalone Fumadocs component catalog backed by committed generated SVGs.
+- [ ] Publish an immutable Git revision; crates.io preview publication is optional.
 
 ### `jackin❯` migration
 
@@ -92,6 +112,7 @@ The external project owns:
 - [ ] Remove duplicate compatibility definitions after all callers migrate.
 - [ ] Verify console, Capsule, launch, OnePassword, lookbook, SVG, mouse, focus, and terminal-restoration suites.
 - [ ] Update `/reference/tui/` pages to state shared versus product-local ownership.
+- [ ] Remove generic component catalog pages, preview assets, and the generic lookbook CLI from jackin❯ only after external parity passes.
 - [ ] Delete in-tree donor crates only after parity and dependency audits pass.
 
 ### Reuse proof and governance
@@ -104,11 +125,13 @@ The external project owns:
 ## Acceptance
 
 - the shared crate builds and tests without any Tailrocks product crate;
+- the lookbook CLI previews and verifies every public component, and the Fumadocs catalog renders the same generated SVG states;
 - `jackin❯` render and behavior parity passes before in-tree code is removed;
 - Holla proves the API supports a different product state/effect model;
 - no secret, agent, database, CI, or observability domain object crosses the shared API;
 - terminal cleanup works on supported exit/failure paths;
-- releases are reproducible, documented, licensed, attributed, and semver-versioned;
+- durable consumers pin immutable Git revisions or releases, while branch/fork references remain an explicit iteration mechanism;
+- releases and revision snapshots are reproducible, documented, licensed, and attributed;
 - roadmap and canonical documentation in both repositories state one owner for every component and policy.
 
 ## Risks

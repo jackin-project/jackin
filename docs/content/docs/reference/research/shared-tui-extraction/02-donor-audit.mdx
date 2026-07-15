@@ -20,7 +20,7 @@ The shared-looking crate imports from `jackin-core`:
 - `DialogBodyScroll` and status-footer hover state;
 - bottom-chrome geometry and constants.
 
-Some of these neutral types also exist as compatibility copies or lower-layer definitions, creating the wrong direction for an external component library. Move neutral ownership to `tailrocks-tui`, migrate callers, then remove duplicates. Product configuration and agent/container types remain outside.
+Some of these neutral types also exist as compatibility copies or lower-layer definitions, creating the wrong direction for an external component library. Move neutral ownership to the external component crate, migrate callers, then remove duplicates. Product configuration and agent/container types remain outside.
 
 ## Extract unchanged or with naming cleanup
 
@@ -32,7 +32,8 @@ Some of these neutral types also exist as compatibility copies or lower-layer de
 - output pruning and bounded output projection;
 - `Panel`, `TabStrip`, `ButtonStrip`, confirmation/error dialogs, filter input, hints, scrollable panel/list, selection list, text input, toast, status popup, and diff view;
 - modal backdrop/lifecycle and generic dialog layout;
-- lookbook registry, interactive driver, SVG/golden renderer, and fixture runner.
+- lookbook registry, interactive driver, SVG/golden renderer, and fixture runner;
+- neutral component catalog pages and the generated-preview workflow that feeds them.
 
 ## Parameterize before publishing
 
@@ -42,7 +43,8 @@ Some of these neutral types also exist as compatibility copies or lower-layer de
 - make bottom chrome, tabs, status, badges, hints, and actions data-driven;
 - replace use-case-specific modal rectangle functions with generic responsive dialog specifications;
 - isolate or feature-gate Tokio runtime helpers so widgets do not force an executor;
-- define public state IDs and callbacks/messages without consumer domain types.
+- define public state IDs and callbacks/messages without consumer domain types;
+- turn the preview binary into the external project's documented terminal/render/check CLI without retaining `jackin❯` paths or wording.
 
 ## Keep in `jackin❯`
 
@@ -51,7 +53,8 @@ Some of these neutral types also exist as compatibility copies or lower-layer de
 - OnePassword, role, scope, mount, and project-specific pickers;
 - file browser and application editors;
 - `jackin❯` brand composition and status policies;
-- lookbook stories and fixtures containing agents, roles, workspaces, containers, or product paths.
+- lookbook stories and fixtures containing agents, roles, workspaces, containers, or product paths;
+- `jackin❯` product interaction decisions and composition docs, which may link to the external component catalog rather than duplicate its generic API pages.
 
 ## Module-level review rule
 
@@ -61,6 +64,7 @@ The classification above is a starting point, not permission for a bulk move. Be
 - dependency graph and feature requirements;
 - product vocabulary or assumptions;
 - tests and render fixtures that define behavior;
+- component documentation, generated SVGs, and preview CLI behavior that must move with it;
 - target decision: extract, parameterize, remain local, or remove;
 - semver/API notes.
 
