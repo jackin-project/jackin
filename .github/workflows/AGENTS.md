@@ -24,7 +24,7 @@ Apply these rules to every workflow under this directory. They define the reposi
 
 ## Runner Capacity
 
-- GitHub-hosted runners are the default and required PR path. `velnor` is an explicit `workflow_dispatch` parity lane only; do not route automatic PR jobs there.
+- GitHub-hosted runners are the default and required PR path. Every runner-selectable pipeline exposes a `workflow_dispatch` `lanes` choice with `github`, `velnor`, and `both`; omitted input resolves to `github`. `velnor` runs only when explicitly selected, never from automatic PR or push triggers.
 
 ## Publishing and Parity
 
