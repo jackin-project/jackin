@@ -6,7 +6,7 @@ title: "Shared TUI Extraction"
 
 **Status**: Open - implementation-ready contract complete, execution not started
 
-> **Implementation source:** start with [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/). This roadmap records the goal and milestone status only. The [Decision Record](/reference/research/shared-tui-extraction/05-decision-record/) is the normative architecture, the [Extraction And Migration Plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/) owns the implementation steps, and [Migration Evidence And Gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/) decides when each ownership transition is complete. If roadmap prose and the dossier ever differ, reconcile them before implementation rather than choosing one silently.
+> **Implementation source:** start with [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/). This roadmap records the goal, scope, and milestone status; the dossier owns implementation detail. The [Decision Record](/reference/research/shared-tui-extraction/05-decision-record/) is the normative architecture, the [Extraction And Migration Plan](/reference/research/shared-tui-extraction/04-extraction-migration-plan/) owns the implementation steps, and [Migration Evidence And Gates](/reference/research/shared-tui-extraction/08-migration-evidence-and-gates/) decides when each ownership transition is complete. If roadmap prose and the dossier ever differ, reconcile them before implementation rather than choosing one silently.
 
 ## Goal
 
@@ -36,7 +36,7 @@ The complete boundary, item ledger, and replacement contracts live in the [Donor
 
 - [x] The TermRock repository/crate/CLI naming family is approved.
 - [x] Architecture, ownership, feature, runtime, terminal, Unicode, migration, compatibility, and release-policy decisions are closed in the research dossier.
-- [x] Delivery is approved as one future `jackin❯` implementation branch/PR, with TermRock created if absent, inherited donor commits preserved unchanged, and every new signed/buildable bootstrap commit pushed directly to its `main` without TermRock PRs.
+- [x] Delivery is approved as one future `jackin❯` implementation branch/PR, with TermRock created if absent, path-filtered donor provenance retained without retroactive DCO changes, and every new signed/buildable bootstrap commit pushed directly to its `main` without TermRock PRs.
 - [x] Final consistency review resolved history publication, inherited-commit/DCO boundaries, component dispositions, long-running branch drift, and first-tag sequencing; no design question blocks Stage 0.
 - [ ] The time-sensitive GitHub/crates.io namespaces, intended owners, and trademark disposition are revalidated and recorded during Stage 0.
 - [ ] Implementation has started.
