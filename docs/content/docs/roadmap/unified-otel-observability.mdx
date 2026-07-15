@@ -2,7 +2,7 @@
 title: "Unified OpenTelemetry observability"
 ---
 
-**Status**: Open — design settled with the operator; task planning pending. Consolidates the observability-format work previously scattered as fragments across other roadmap items into one cross-crate refactor
+**Status**: Open — design settled with the operator. Consolidates the observability-format work previously scattered as fragments across other roadmap items into one cross-crate refactor
 
 ## Problem
 
@@ -81,7 +81,7 @@ One-shot CLI commands keep the shipped model: one root span per invocation, name
 
 - **Short-term screens — one trace per screen visit.** The console intro, the workspace list, the workspace editor, workspace create, global settings, and the launch-progress surface each get their own trace per visit: the root span is the visit, and user actions, widget events, dialogs, and triggered operations are child spans inside it.
 - **Long-term surfaces — one trace per tab-focus interval.** The capsule interface can host agents for hours or days, so a per-screen trace is unrealistic there. Instead, each tab-focus interval is a trace: switching tab focus closes the current trace and starts the next one. Operator actions inside the focused tab are child spans; agent PTY output and status streams flow as logs/metrics stamped with session/tab attributes rather than spans, so trace size tracks operator interaction, not agent runtime.
-- **Rotation guard.** Any visit/focus trace that exceeds a duration or span-count cap rotates: the root closes, a successor trace starts with a link back — so a screen parked overnight can never grow an unbounded trace. Cap values are a planning-phase detail.
+- **Rotation guard.** Any visit/focus trace that exceeds a duration or span-count cap rotates: the root closes, a successor trace starts with a link back — so a screen parked overnight can never grow an unbounded trace. Cap values are deliberately not fixed in this item.
 - **Chaining.** Every boundary is span-level linked: the ending trace records a transition event carrying `jackin.screen.from`/`jackin.screen.to` and the successor trace id, and the successor's root span takes a creation-time span link back to that transition span. Walking the link chain from the newest trace reconstructs the full history — which screens, in what order, how long each visit took — without any single huge trace. `parallax.run.id` and `session.id` remain the query-side join across the whole run, and `TRACEPARENT` propagation into the capsule parents container-side work under the currently active trace.
 - **Crash/freeze evidence.** A visit root span is open while the screen is active; if the process freezes or dies, that root is lost — but logs and metrics flush independently of span end and carry the live trace/span ids, so the evidence trail (heartbeat gap plus the already-flushed records pointing into the unfinished trace) survives. The rotation guard bounds how much span data can ever be in flight.
 
@@ -163,10 +163,6 @@ The migration is a single coordinated track, not a long coexistence: the facade 
 - The diagnostics viewer/UX work (stays with [Launch Progress TUI](/roadmap/launch-progress-tui/)) and the redacted debug bundle (stays with [jackin❯ join & Debug Export](/roadmap/jackin-join-and-debug-bundle/)); both consume the unified stream.
 - Operator-facing CLI output redesign beyond consolidating it onto one output port (content/formatting of subcommand output is untouched).
 - Shipping or operating any collector/backend; jackin❯ emits, operators choose where it lands.
-
-## Tasks
-
-<!-- Filled in by planning. -->
 
 ## Related Files
 
