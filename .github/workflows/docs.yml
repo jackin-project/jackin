@@ -87,6 +87,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           working_directory: docs
           install_args: "rust lychee"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -147,6 +148,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           working_directory: docs
           install_args: "bun node lychee"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -212,6 +214,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
@@ -258,6 +261,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
