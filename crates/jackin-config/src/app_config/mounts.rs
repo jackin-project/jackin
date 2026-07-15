@@ -157,7 +157,7 @@ impl AppConfig {
     /// Expand tildes in named mounts and run full mount validation.
     pub fn expand_and_validate_named_mounts(
         mounts: &[(String, MountConfig)],
-    ) -> anyhow::Result<Vec<MountConfig>> {
+    ) -> crate::ConfigResult<Vec<MountConfig>> {
         let expanded: Vec<MountConfig> = mounts
             .iter()
             .map(|(_, mount)| MountConfig {
@@ -232,7 +232,7 @@ impl AppConfig {
     pub fn validate_effective_mount_destinations(
         workspace: &crate::schema::WorkspaceConfig,
         rows: &[GlobalMountRow],
-    ) -> anyhow::Result<()> {
+    ) -> crate::ConfigResult<()> {
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for mount in &workspace.mounts {
             if !seen.insert(mount.dst.as_str()) {
@@ -256,7 +256,7 @@ impl AppConfig {
     }
 
     /// Validate global mount rows: names, isolation, paths, and overlapping destinations.
-    pub fn validate_global_mount_rows(rows: &[GlobalMountRow]) -> anyhow::Result<()> {
+    pub fn validate_global_mount_rows(rows: &[GlobalMountRow]) -> crate::ConfigResult<()> {
         let mut seen_keys: BTreeSet<(Option<&str>, &str)> = BTreeSet::new();
         for row in rows {
             if row.name.trim().is_empty() {

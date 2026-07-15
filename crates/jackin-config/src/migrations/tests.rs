@@ -338,7 +338,7 @@ fn rejects_when_chain_overshoots_current() {
     clippy::unnecessary_wraps,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-fn alpha1_to_alpha2(doc: &mut DocumentMut) -> anyhow::Result<()> {
+fn alpha1_to_alpha2(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     doc["alpha1_to_alpha2"] = toml_edit::value(true);
     Ok(())
 }
@@ -346,7 +346,7 @@ fn alpha1_to_alpha2(doc: &mut DocumentMut) -> anyhow::Result<()> {
     clippy::unnecessary_wraps,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-fn alpha2_to_alpha3(doc: &mut DocumentMut) -> anyhow::Result<()> {
+fn alpha2_to_alpha3(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     doc["alpha2_to_alpha3"] = toml_edit::value(true);
     Ok(())
 }

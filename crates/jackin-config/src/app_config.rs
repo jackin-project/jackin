@@ -94,7 +94,7 @@ impl AppConfig {
     ///
     /// Preserves the "`OAuthToken` not supported" check formerly enforced by the
     /// per-agent serde newtypes.
-    pub fn validate_auth_modes(&self) -> anyhow::Result<()> {
+    pub fn validate_auth_modes(&self) -> crate::ConfigResult<()> {
         let pairs: &[(Agent, Option<&AgentAuthConfig>)] = &[
             (Agent::Codex, self.codex.as_ref()),
             (Agent::Amp, self.amp.as_ref()),

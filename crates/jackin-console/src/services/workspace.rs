@@ -95,7 +95,7 @@ pub fn unscoped_global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountCon
         })
         .collect::<Vec<_>>();
 
-    AppConfig::expand_and_validate_named_mounts(&mounts)
+    Ok(AppConfig::expand_and_validate_named_mounts(&mounts)?)
 }
 
 #[must_use]

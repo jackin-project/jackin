@@ -89,7 +89,7 @@ pub(super) async fn handle_load(
 
     let ad_hoc_mounts = mounts
         .iter()
-        .map(|value| parse_mount_spec_resolved(value))
+        .map(|value| parse_mount_spec_resolved(value).map_err(anyhow::Error::from))
         .collect::<Result<Vec<_>>>()?;
 
     let resolved_workspace =

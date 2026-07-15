@@ -9,21 +9,21 @@ Boundary decision record for Ownership item 4 (plan 020). Each named concept rec
 | Name | Type | Owner | Decision |
 |---|---|---|---|
 | `WorkspaceName` | `jackin_core::WorkspaceName` | core | **Adopted** — validated config-file stem (existing). |
-| `SessionId` | `jackin_core::SessionId` | core | **Adopted** — non-zero `u64`; thread at daemon/attach/protocol as call sites touch them. Internal daemon `HashMap<u64, Session>` may keep raw keys until a dedicated migration. |
-| `ContainerId` | `jackin_core::ContainerId` | core | **Adopted** — non-empty name without whitespace/path separators; thread at runtime/docker instance boundaries. |
+| `SessionId` | `jackin_core::SessionId` | core | **Adopted** — non-zero `u64`; designated daemon/session-supervisor and attach/control boundaries use the newtype, with raw `u64` retained only at the schema-preserving protocol edge. |
+| `ContainerId` | `jackin_core::ContainerId` | core | **Adopted** — non-empty name without whitespace/path separators; designated runtime/docker instance boundaries use the newtype, converting to `&str` only at Docker CLI/wire edges. |
 | `RoleRef` | — | core/manifest | **Primitive for now** (`String` / `RoleSelector`) — selector + namespaced key already exist; newtype deferred until a validation rule beyond selector parse is needed. |
 | `TokenCount` | — | usage | **Primitive for now** (`u64`) — usage/pricing paths already use domain structs; avoid double-wrapping until a cross-crate unit mismatch appears. |
 | `MountPath` | — | config/isolation | **Primitive for now** (`String`/`PathBuf`) — mount tables mix host absolute paths and container dst paths; a single newtype would blur that distinction. Prefer `host_src`/`container_dst` field names. |
 
 ## Error taxonomy pilot
 
-`jackin-config` remains the next thiserror pilot target (smallest public API with real fallible constructors). Runtime/capsule stay mostly `anyhow` at reporting boundaries until the config pilot measures adapter cost.
+`jackin-config` now exposes `ConfigResult<T>` from every public fallible function. `ConfigError` carries machine-matchable validation/lookup variants plus transparent source variants for IO, TOML, path, workspace-name, and collapse failures; internal orchestration may still use `anyhow`. The conversion changed public signatures but required adapters at fewer than 30% of implementation sites, so the pilot is positive: repeat this pattern at runtime/capsule library boundaries while retaining `anyhow` in top-level reporting flows. `remove_workspace_errors_when_missing` matches `UnknownWorkspace` directly as the caller proof.
 
 ## Adjunct decisions
 
 - **Result-first constructors**: newtypes use `Result` constructors (`SessionId::new`, `ContainerId::parse`, `WorkspaceName::parse`).
-- **`async fn` in trait Send**: survey deferred; no blanket `async_trait` expansion.
-- **`#[non_exhaustive]`**: public error enums that may grow should be `non_exhaustive` when first published; current newtype errors are closed.
+- **`async fn` in trait Send**: public port traits that cross spawned-task boundaries require `Send`; local-only traits document the absence. No blanket `async_trait` expansion is needed on the current stable compiler.
+- **`#[non_exhaustive]`**: extensible public taxonomies such as `ConfigError` are `#[non_exhaustive]`; the two newtype constructor errors are deliberately closed because validation has an exhaustive, stable rule set.
 
 ## Public-surface note (plan 019)
 

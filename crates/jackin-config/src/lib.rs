@@ -37,7 +37,7 @@ mod sensitive;
 mod validation;
 mod versions;
 
-pub use error::ConfigError;
+pub use error::{ConfigError, ConfigResult};
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

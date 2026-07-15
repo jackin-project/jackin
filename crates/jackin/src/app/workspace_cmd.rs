@@ -173,7 +173,7 @@ fn handle_workspace_create(paths: &JackinPaths, params: WorkspaceCreateParams) -
     let expanded_workdir = resolve_path(&workdir);
     let parsed_mounts = mounts
         .iter()
-        .map(|value| parse_mount_spec_resolved(value))
+        .map(|value| parse_mount_spec_resolved(value).map_err(anyhow::Error::from))
         .collect::<Result<Vec<_>>>()?;
     let mut plan = workspace::planner::plan_create(&parsed_mounts)?;
     workspace::planner::apply_isolation_overrides(&mut plan.final_mounts, &mount_isolation)?;
@@ -363,7 +363,7 @@ fn prepare_workspace_edit(
     let upsert_mounts = params
         .mounts
         .iter()
-        .map(|value| parse_mount_spec_resolved(value))
+        .map(|value| parse_mount_spec_resolved(value).map_err(anyhow::Error::from))
         .collect::<Result<Vec<_>>>()?;
 
     let current_ws = config

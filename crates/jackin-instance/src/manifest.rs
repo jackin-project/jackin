@@ -335,7 +335,7 @@ impl InstanceManifest {
     pub fn write(&self, state_dir: &Path) -> anyhow::Result<()> {
         let path = state_dir.join(".jackin/instance.json");
         let body = serde_json::to_string_pretty(self)?;
-        jackin_config::atomic_write(&path, &body)
+        Ok(jackin_config::atomic_write(&path, &body)?)
     }
 }
 
@@ -600,7 +600,10 @@ impl InstanceIndex {
 
     fn write(&self, data_dir: &Path) -> anyhow::Result<()> {
         let body = serde_json::to_string_pretty(self)?;
-        jackin_config::atomic_write(&data_dir.join(INSTANCE_INDEX_FILE), &body)
+        Ok(jackin_config::atomic_write(
+            &data_dir.join(INSTANCE_INDEX_FILE),
+            &body,
+        )?)
     }
 
     fn sort(&mut self) {

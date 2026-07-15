@@ -20,7 +20,7 @@ use crate::validation::validate_workspace_config;
 use jackin_core::WorkspaceName;
 
 /// Build an ad-hoc workspace whose workdir and sole mount are `cwd`.
-pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
+pub fn current_dir_workspace(cwd: &Path) -> crate::ConfigResult<WorkspaceConfig> {
     let cwd = cwd.canonicalize()?;
     let path = cwd.display().to_string();
 
@@ -97,7 +97,7 @@ pub fn resolve_load_workspace(
     cwd: &Path,
     input: LoadWorkspaceInput,
     ad_hoc_mounts: &[MountConfig],
-) -> anyhow::Result<ResolvedWorkspace> {
+) -> crate::ConfigResult<ResolvedWorkspace> {
     // Note on `keep_awake`: only `Saved` workspaces can opt in.
     // `CurrentDir` and `Path` build a fresh `WorkspaceConfig` from
     // defaults (`enabled = false`), so an ad-hoc load against a

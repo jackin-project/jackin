@@ -550,7 +550,7 @@ pub fn save_settings(
     editor_doc.set_git_coauthor_trailer(input.git_coauthor_trailer);
     editor_doc.set_git_dco(input.git_dco);
 
-    editor_doc.save()
+    Ok(editor_doc.save()?)
 }
 
 #[cfg(test)]

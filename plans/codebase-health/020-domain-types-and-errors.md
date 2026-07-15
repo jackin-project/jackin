@@ -79,7 +79,7 @@ Newtype unit tests (constructor validation, serde round-trip preserving schema â
 
 - [x] Census doc: all six names, per-boundary type-or-primitive decision recorded
 - [ ] `SessionId`/`ContainerId` exist, validated, serde-transparent, threaded at census-designated boundaries
-- [ ] `jackin-config` public API returns typed errors; one caller converted from string-matching; rollout verdict recorded
+- [x] `jackin-config` public API returns typed errors; one caller converted from string-matching; rollout verdict recorded
 - [x] Adjunct decisions (Result-first, Send, non_exhaustive) recorded
 - [ ] `cargo xtask ci --fast` exits 0; status row updated
 
@@ -95,3 +95,8 @@ Newtype unit tests (constructor validation, serde round-trip preserving schema â
 - `RoleRef`/`TokenCount`/`MountPath` adoption proceeds boundary-by-boundary using the same recipe when their census rows justify it.
 
 **Index deviation (audit 2026-07-15)**: demoted from DONE to IN PROGRESS â€” Done criteria not fully met; see implementer audit rollup.
+
+## Execution notes
+
+- Every public fallible `jackin-config` function now returns `ConfigResult<T>`. `ConfigError` is non-exhaustive and retains specific lookup/validation variants plus transparent source variants; internal helpers may use `anyhow` and convert at the public boundary.
+- The workspace missing-removal test now matches `ConfigError::UnknownWorkspace` instead of string-matching. The workspace-wide all-target/all-feature compile proves downstream reporting boundaries convert explicitly. The adapter rate stayed below the plan's 30% stop threshold, so the census records a positive rollout verdict.

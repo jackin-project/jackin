@@ -14,7 +14,7 @@ use crate::schema::{MountConfig, WorkspaceConfig, validate_mount_specs};
 /// Two rules enforced:
 /// 1. No nested isolated mounts (inner dst inside outer dst).
 /// 2. No same-host-repo worktree siblings (same src canonicalized).
-pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
+pub fn validate_isolation_layout(mounts: &[MountConfig]) -> crate::ConfigResult<()> {
     let isolated: Vec<(usize, &MountConfig, &str)> = mounts
         .iter()
         .enumerate()
@@ -60,7 +60,7 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
 pub fn validate_workspace_config(
     name: &WorkspaceName,
     workspace: &WorkspaceConfig,
-) -> anyhow::Result<()> {
+) -> crate::ConfigResult<()> {
     // Use Debug of the stem string (not Debug of the newtype) so operator
     // messages stay `workspace "foo"` rather than `WorkspaceName("foo")`.
     let name = name.as_str();

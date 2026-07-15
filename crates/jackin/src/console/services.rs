@@ -62,7 +62,7 @@ pub(super) mod config {
     ) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
         editor_doc.upsert_agent_source(key, source);
-        editor_doc.save()
+        Ok(editor_doc.save()?)
     }
 
     pub(crate) fn start_role_source_persist(
@@ -94,7 +94,7 @@ pub(super) mod config {
     fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
         editor_doc.remove_workspace(&WorkspaceName::parse(name).map_err(anyhow::Error::from)?)?;
-        editor_doc.save()
+        Ok(editor_doc.save()?)
     }
 
     pub(crate) fn start_remove_workspace(
@@ -124,7 +124,7 @@ pub(super) mod config {
         for row in pending {
             editor_doc.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
         }
-        editor_doc.save()
+        Ok(editor_doc.save()?)
     }
 
     pub(crate) enum WorkspaceSaveMode {
