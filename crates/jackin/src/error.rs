@@ -53,6 +53,29 @@ impl ErrorCode {
             Self::E016 => "E016",
         }
     }
+
+    /// Stable semantic-convention `error.type` for this operator error.
+    pub const fn telemetry_error_type(self) -> &'static str {
+        use jackin_telemetry::schema::enums::ErrorType;
+        match self {
+            Self::E001 => ErrorType::DockerDaemonUnreachable.as_str(),
+            Self::E002 => ErrorType::DockerVersionTooOld.as_str(),
+            Self::E003 => ErrorType::OutOfDiskSpace.as_str(),
+            Self::E004 => ErrorType::RoleManifestInvalid.as_str(),
+            Self::E005 => ErrorType::RoleManifestVersionUnsupported.as_str(),
+            Self::E006 => ErrorType::RoleSourceNotTrusted.as_str(),
+            Self::E007 => ErrorType::WorkspaceNotFound.as_str(),
+            Self::E008 => ErrorType::WorkspaceConfigVersionUnsupported.as_str(),
+            Self::E009 => ErrorType::ContainerNameConflict.as_str(),
+            Self::E010 => ErrorType::DindHealthCheckFailed.as_str(),
+            Self::E011 => ErrorType::DindPortConflict.as_str(),
+            Self::E012 => ErrorType::GhAuthFailed.as_str(),
+            Self::E013 => ErrorType::OpNotSignedIn.as_str(),
+            Self::E014 => ErrorType::CapsuleDownloadFailed.as_str(),
+            Self::E015 => ErrorType::WorktreeConflict.as_str(),
+            Self::E016 => ErrorType::UnsupportedOtlpProtocol.as_str(),
+        }
+    }
 }
 
 /// Structured hint for fixing a `JackinError`.

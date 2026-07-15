@@ -17,7 +17,7 @@ Execute in the order below unless the dependency graph says otherwise. Each exec
 | [005](005-async-spawn-helpers.md) | Spawn ownership helpers (joined/detached/cycle/stream) + spawn lint | P1 | M | 004 | IN PROGRESS |
 | [006](006-cross-process-propagation.md) | Versioned W3C envelopes on all protocols; CLIENT/SERVER RPC spans | P1 | L | 004, 005 | IN PROGRESS |
 | [007](007-identity-lifecycle-roots.md) | `cli.invocation.id`, `session.id`, command/startup/shutdown roots | P1 | L | 004, 006 | IN PROGRESS |
-| [008](008-execution-boundaries.md) | Launch, subprocess, Docker, provider HTTP, usage DB, connections | P1 | L | 004, 005, 007 | TODO |
+| [008](008-execution-boundaries.md) | Launch, subprocess, Docker, provider HTTP, usage DB, connections | P1 | L | 004, 005, 007 | IN PROGRESS |
 | [009](009-tui-screens-actions.md) | Screen lifecycle events, `ui.action` roots, widget focus, render health | P1 | L | 004, 007 | TODO |
 | [010](010-capsule-cycles-agents-jobs.md) | Capsule cycles, agent state, PTY lifecycle, streams, prewarm jobs | P1 | L | 005, 006, 007, 009 | TODO |
 | [011](011-legacy-callsite-migration.md) | Classify + migrate every `debug_log!`/capsule-macro/diagnostic-print site | P1 | L | 004, 008, 009, 010 | TODO |
