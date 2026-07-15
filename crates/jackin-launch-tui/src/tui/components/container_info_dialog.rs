@@ -5,7 +5,7 @@
 
 use jackin_tui::components::{
     ContainerInfoRow, ContainerInfoState, DebugInfo, container_info_required_height,
-    dialog_scroll_axes, render_container_info,
+    render_container_info,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -14,11 +14,11 @@ use termrock::HintSpan;
 
 use crate::LaunchView;
 use crate::tui::components::dialog::{
-    donor_dialog_scroll, percent_dialog_rect, render_dialog_backdrop,
+    dialog_scroll_axes, donor_dialog_scroll, percent_dialog_rect, render_dialog_backdrop,
 };
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
-fn debug_info_hint_spans(axes: jackin_tui::components::ScrollAxes) -> Vec<HintSpan<'static>> {
+fn debug_info_hint_spans(axes: termrock::scroll::ScrollAxes) -> Vec<HintSpan<'static>> {
     let mut spans = Vec::new();
     if axes.vertical {
         spans.extend([HintSpan::Key("↑↓/j/k"), HintSpan::Text("scroll")]);

@@ -54,6 +54,24 @@ pub fn percent_dialog_rect(
     )
 }
 
+#[must_use]
+pub fn dialog_scroll_axes(
+    content_width: usize,
+    content_height: usize,
+    rect: Rect,
+) -> termrock::scroll::ScrollAxes {
+    termrock::scroll::ScrollAxes {
+        vertical: termrock::scroll::is_scrollable(
+            content_height,
+            usize::from(rect.height.saturating_sub(2)),
+        ),
+        horizontal: termrock::scroll::is_scrollable(
+            content_width,
+            usize::from(rect.width.saturating_sub(2)),
+        ),
+    }
+}
+
 pub fn donor_dialog_scroll(
     scroll: &termrock::scroll::DialogScroll,
 ) -> jackin_tui::components::DialogBodyScroll {

@@ -10,9 +10,9 @@ use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use jackin_tui::ModalOutcome;
-use jackin_tui::components::{ModalClickResult, ScrollAxes, classify_click};
 use ratatui::layout::Rect;
 use termrock::keymap::KeyChord;
+use termrock::scroll::ScrollAxes;
 use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::build_log_dialog::{
@@ -22,6 +22,7 @@ use crate::tui::components::build_log_dialog::{
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state,
 };
+use crate::tui::components::dialog::dialog_scroll_axes;
 use crate::tui::components::failure_dialog::{
     failure_copy_payload, failure_copy_target_at, failure_popup_block_rect,
     failure_popup_body_metrics,
@@ -102,13 +103,6 @@ struct CockpitContext<'a> {
     jackin_version: &'static str,
 }
 
-const fn neutral_axes(axes: ScrollAxes) -> termrock::scroll::ScrollAxes {
-    termrock::scroll::ScrollAxes {
-        vertical: axes.vertical,
-        horizontal: axes.horizontal,
-    }
-}
-
 /// Clamp the Debug-info dialog scroll to its content so over-scrolling cannot
 /// accumulate (which would make the opposite key/wheel feel dead while it
 /// unwinds). Called after every scroll key/wheel on the dialog.
@@ -174,7 +168,7 @@ fn apply_failure_body_wheel_scroll(
     let axes = failure_body_scroll_axes(view, ctx);
     if view
         .failure_scroll
-        .handle_mouse(kind.into(), modifiers.into(), neutral_axes(axes))
+        .handle_mouse(kind.into(), modifiers.into(), axes)
     {
         clamp_failure_scroll(view, ctx);
     }
@@ -203,7 +197,7 @@ fn apply_failure_body_key_scroll(
         viewport_h,
         usize::MAX,
         usize::MAX,
-        neutral_axes(axes),
+        axes,
     );
     clamp_failure_scroll(view, ctx);
 }
@@ -238,9 +232,9 @@ fn update_build_log_mouse_scroll(
     modifiers: KeyModifiers,
 ) -> bool {
     refresh_build_log_layout(view, area, false);
-    let Some(delta) = jackin_tui::components::mouse_scroll_delta(
-        kind,
-        modifiers,
+    let Some(delta) = termrock::scroll::mouse_scroll_delta(
+        kind.into(),
+        modifiers.into(),
         build_log_scroll_axes(view, area),
     ) else {
         return false;
@@ -326,7 +320,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.jackin_version,
         );
         let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
-        if classify_click(rect, col, row) == ModalClickResult::OutsideDismiss {
+        if !rect.contains(ratatui::layout::Position { x: col, y: row }) {
             // Click outside the dialog → dismiss (Defect 11).
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoClosed);
         } else if let Some((copy_row, payload)) =
@@ -348,33 +342,30 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         let failure_scroll = v.failure_scroll.clone();
         let popup_rect =
             failure_popup_block_rect(ctx.area, failure, ctx.run_id, ctx.terminal.is_debug_mode());
-        match classify_click(popup_rect, col, row) {
-            ModalClickResult::OutsideDismiss => {
-                let _dirty = update_launch_view(v, LaunchMessage::FailureAcknowledged);
-                ctx.terminal.set_pointer_shape(false);
-            }
-            ModalClickResult::InsideHit => {
-                if let Some(target) = failure_copy_target_at(
-                    ctx.area,
-                    failure,
-                    ctx.run_id,
-                    ctx.terminal.is_debug_mode(),
-                    col,
-                    row,
-                    Some(failure_scroll),
-                ) && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
-                {
-                    if ctx.terminal.copy_to_clipboard(&payload) {
-                        let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
-                    } else {
-                        ctx.terminal.emit_compact_line(
-                            "failure-popup-copy",
-                            "OSC 52 clipboard write failed — badge suppressed",
-                        );
-                    }
+        if !popup_rect.contains(ratatui::layout::Position { x: col, y: row }) {
+            let _dirty = update_launch_view(v, LaunchMessage::FailureAcknowledged);
+            ctx.terminal.set_pointer_shape(false);
+        } else {
+            if let Some(target) = failure_copy_target_at(
+                ctx.area,
+                failure,
+                ctx.run_id,
+                ctx.terminal.is_debug_mode(),
+                col,
+                row,
+                Some(failure_scroll),
+            ) && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
+            {
+                if ctx.terminal.copy_to_clipboard(&payload) {
+                    let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
+                } else {
+                    ctx.terminal.emit_compact_line(
+                        "failure-popup-copy",
+                        "OSC 52 clipboard write failed — badge suppressed",
+                    );
                 }
-                // Inside non-target click → swallowed (no overlay behavior).
             }
+            // Inside non-target click → swallowed (no overlay behavior).
         }
     } else if v.build_log_open {
         refresh_build_log_layout(v, ctx.area, false);
@@ -655,15 +646,12 @@ pub fn handle_cockpit_input(
                             &state,
                             ctx.terminal.is_debug_mode(),
                         );
-                        let axes = jackin_tui::components::dialog_scroll_axes(
-                            state.content_width(),
-                            state.content_height(),
-                            rect,
-                        );
+                        let axes =
+                            dialog_scroll_axes(state.content_width(), state.content_height(), rect);
                         if v.container_info_scroll.handle_mouse(
                             kind.into(),
                             m.modifiers.into(),
-                            neutral_axes(axes),
+                            axes,
                         ) {
                             clamp_container_info_scroll(&mut v, ctx);
                         }
@@ -693,18 +681,14 @@ pub fn handle_cockpit_input(
                 );
                 let rect =
                     launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
-                let axes = jackin_tui::components::dialog_scroll_axes(
-                    state.content_width(),
-                    state.content_height(),
-                    rect,
-                );
+                let axes = dialog_scroll_axes(state.content_width(), state.content_height(), rect);
                 let _consumed = v.container_info_scroll.handle_key_for_axes(
                     k.into(),
                     state.content_height(),
                     usize::from(rect.height.saturating_sub(2)),
                     state.content_width(),
                     usize::from(rect.width.saturating_sub(2)),
-                    neutral_axes(axes),
+                    axes,
                 );
                 clamp_container_info_scroll(&mut v, ctx);
             }
