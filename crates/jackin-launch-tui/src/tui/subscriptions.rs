@@ -324,7 +324,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             // Click outside the dialog → dismiss (Defect 11).
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoClosed);
         } else if let Some((copy_row, payload)) =
-            jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
+            crate::tui::components::container_info::copy_payload_at(rect, &state, col, row)
         {
             // Click inside on a copyable value → copy.
             if ctx.terminal.copy_to_clipboard(&payload) {
@@ -405,7 +405,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.jackin_version,
         );
         let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
-        let hover = jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
+        let hover = crate::tui::components::container_info::copy_payload_at(rect, &state, col, row)
             .map(|(idx, _)| idx);
         if hover != v.container_info_hover {
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoHovered(hover));

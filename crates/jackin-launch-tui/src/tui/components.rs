@@ -6,6 +6,7 @@
 pub mod build_log_dialog;
 pub(crate) mod cells;
 pub mod chrome;
+pub mod container_info;
 pub mod container_info_dialog;
 pub mod dialog;
 pub mod failure_dialog;

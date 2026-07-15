@@ -3,9 +3,9 @@
 
 //! Launch container-info dialog helpers.
 
-use jackin_tui::components::{
-    ContainerInfoRow, ContainerInfoState, DebugInfo, container_info_required_height,
-    render_container_info,
+use crate::tui::components::container_info::{
+    ContainerInfoRow, ContainerInfoState, DebugInfo, render_container_info,
+    required_height as container_info_required_height,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -14,7 +14,7 @@ use termrock::HintSpan;
 
 use crate::LaunchView;
 use crate::tui::components::dialog::{
-    dialog_scroll_axes, donor_dialog_scroll, percent_dialog_rect, render_dialog_backdrop,
+    dialog_scroll, dialog_scroll_axes, percent_dialog_rect, render_dialog_backdrop,
 };
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
@@ -94,7 +94,7 @@ pub fn launch_container_info_state(
         state.mark_copied(row);
     }
     state.set_hovered_row(view.container_info_hover);
-    state.scroll = donor_dialog_scroll(&view.container_info_scroll);
+    state.scroll = dialog_scroll(&view.container_info_scroll);
     state
 }
 

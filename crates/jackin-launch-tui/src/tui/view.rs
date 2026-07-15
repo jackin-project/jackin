@@ -162,7 +162,7 @@ fn launch_container_info_hyperlink_overlay_bytes(
     }
     let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
     let rect = launch_container_info_rect(area, &state, debug_mode);
-    jackin_tui::components::container_info_hyperlink_overlay(rect, &state)
+    crate::tui::components::container_info::hyperlink_overlay(rect, &state)
 }
 
 fn failure_popup_hyperlink_overlay_bytes(

@@ -84,13 +84,13 @@ impl LaunchHostTerminal for RecordingTerminal {
 
 fn hit_point_for_payload(
     area: Rect,
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info::ContainerInfoState,
     payload: &str,
 ) -> (u16, u16) {
     let rect = launch_container_info_rect(area, state, true);
     for row in rect.y..rect.y.saturating_add(rect.height) {
         for col in rect.x..rect.x.saturating_add(rect.width) {
-            if jackin_tui::components::container_info_copy_payload_at(rect, state, col, row)
+            if crate::tui::components::container_info::copy_payload_at(rect, state, col, row)
                 .is_some_and(|(_, candidate)| candidate == payload)
             {
                 return (col, row);

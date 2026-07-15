@@ -72,10 +72,10 @@ pub fn dialog_scroll_axes(
     }
 }
 
-pub fn donor_dialog_scroll(
+pub fn dialog_scroll(
     scroll: &termrock::scroll::DialogScroll,
-) -> jackin_tui::components::DialogBodyScroll {
-    jackin_tui::components::DialogBodyScroll {
+) -> termrock::components::DialogBodyScroll {
+    termrock::components::DialogBodyScroll {
         scroll_x: scroll.scroll_x,
         scroll_y: scroll.scroll_y,
     }
