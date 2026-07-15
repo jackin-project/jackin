@@ -79,9 +79,5 @@ criterion = { workspace = true, features = ["html_reports"] }
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace", "logs", "metrics"] }
 tempfile = { workspace = true }
 
-[[bench]]
-name = "summarize_jsonl"
-harness = false
-
 [lints]
 workspace = true

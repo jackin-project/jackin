@@ -17,7 +17,6 @@ use crate::run::{
     external_run_id_from_resource_attributes, flag_is_truthy, mint_run_id, normalize_stage_name,
     prune_old_runs_in_dir, prune_runs_preserving, run_dir,
 };
-use crate::summary::summarize_reader;
 use crate::terminal::{
     host_screen_owned, rich_surface_active, set_host_screen_owned, set_rich_surface_active,
 };
@@ -791,117 +790,6 @@ fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     assert!(
         jsonl.contains("hidden while host owns raw screen"),
         "{jsonl}"
-    );
-}
-
-#[test]
-fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
-    let jsonl = r##"
-{"ts_ms":1000,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"run","message":"command load started"}
-{"ts_ms":1100,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"stage_done","message":"resolved","stage":"credentials","detail":"{\"duration_ms\":55,\"detail\":\"resolved\"}"}
-{"ts_ms":1200,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"timing_done","message":"operator_env done","stage":"credentials","detail":"{\"name\":\"operator_env\",\"duration_ms\":34,\"detail\":\"2 vars\"}"}
-{"ts_ms":1250,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"timing_done","message":"manifest_env done","stage":"credentials","detail":"{\"name\":\"manifest_env\",\"duration_ms\":1,\"detail\":\"skipped\"}"}
-{"ts_ms":1300,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_cache_hit","message":"reusing derived image jk_role","stage":"derived image","detail":"recipe_hash_match"}
-{"ts_ms":1350,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_refresh_background","message":"reusing derived image jk_role; background refresh pending","stage":"derived image","detail":"published_image_stale"}
-{"ts_ms":1375,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"selected_image_refresh_started","message":"refreshing selected runtime image in background","stage":"derived image","detail":"claude:published_image_stale"}
-{"ts_ms":1380,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_build_source","message":"derived image build source selected","stage":"derived image","detail":"{\"source\":\"workspace_dockerfile\",\"reason\":\"missing_local_image\",\"base_image\":null,\"pull_base_image\":false}"}
-{"ts_ms":1400,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"build_context_snapshot","message":"derived workspace build context snapshot","stage":"derived image","detail":"{\"source\":\"workspace\",\"files\":12,\"bytes\":4096,\"context_dir\":\"/tmp/jackin-context\"}"}
-{"ts_ms":1500,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"docker_build_step","message":"docker build step #6 RUN thing","stage":"derived image","detail":"{\"step\":\"#6\",\"label\":\"RUN thing\",\"duration_ms\":8500,\"cached\":false}"}
-{"ts_ms":1600,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan_rejected","message":"launch plan rejected","stage":"restore","detail":"{\"plan\":\"AttachExisting\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\",\"state\":\"not_found\"}"}
-{"ts_ms":1700,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan","message":"launch plan selected","stage":"restore","detail":"{\"plan\":\"CreateFromValidImage\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\"}"}
-{"ts_ms":1750,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"prewarmed_dind_adoption","message":"adopted","stage":"sidecar","detail":"ready_ms=12;source=state;state_age_ms=34;prewarm_ready_ms=56"}
-{"ts_ms":1800,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"stage_started","message":"opening","stage":"hardline"}
-{"ts_ms":3000,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"debug","message":"operator session still attached"}
-"##;
-
-    let summary = summarize_reader(std::io::Cursor::new(jsonl)).unwrap();
-
-    assert_eq!(summary.run_id.as_deref(), Some("jk-run-test"));
-    assert_eq!(summary.event_count, 15);
-    assert_eq!(summary.wall_duration_ms(), Some(2000));
-    assert_eq!(summary.startup_duration_ms(), Some(800));
-    assert_eq!(
-        summary
-            .stage_durations_ms
-            .get("credentials")
-            .map(Vec::as_slice),
-        Some(&[55][..])
-    );
-    assert_eq!(
-        summary
-            .timing_durations_ms
-            .get("credentials/operator_env")
-            .map(Vec::as_slice),
-        Some(&[34][..])
-    );
-    assert_eq!(summary.skipped_timings.len(), 1);
-    assert_eq!(summary.skipped_timings[0].stage, "credentials");
-    assert_eq!(summary.skipped_timings[0].name, "manifest_env");
-    assert_eq!(summary.skipped_timings[0].detail, "skipped");
-    assert_eq!(summary.cache_hits(), 1);
-    assert_eq!(summary.cache_misses(), 0);
-    assert_eq!(summary.cache_events.len(), 3);
-    assert_eq!(summary.cache_events[1].kind, "image_refresh_background");
-    assert_eq!(
-        summary.cache_events[1].detail.as_deref(),
-        Some("published_image_stale")
-    );
-    assert_eq!(
-        summary.cache_events[2].kind,
-        "selected_image_refresh_started"
-    );
-    assert_eq!(
-        summary.cache_events[2].detail.as_deref(),
-        Some("claude:published_image_stale")
-    );
-    assert_eq!(summary.build_context_snapshots.len(), 1);
-    assert_eq!(
-        summary.build_context_snapshots[0].source.as_deref(),
-        Some("workspace")
-    );
-    assert_eq!(summary.build_context_snapshots[0].files, 12);
-    assert_eq!(summary.build_context_snapshots[0].bytes, 4096);
-    assert_eq!(
-        summary.build_context_snapshots[0].context_dir.as_deref(),
-        Some("/tmp/jackin-context")
-    );
-    assert_eq!(summary.image_build_sources.len(), 1);
-    assert_eq!(
-        summary.image_build_sources[0].source.as_deref(),
-        Some("workspace_dockerfile")
-    );
-    assert_eq!(
-        summary.image_build_sources[0].reason.as_deref(),
-        Some("missing_local_image")
-    );
-    assert!(!summary.image_build_sources[0].pull_base_image);
-    assert_eq!(summary.docker_build_steps.len(), 1);
-    assert_eq!(summary.docker_build_steps[0].duration_ms, Some(8500));
-    assert!(!summary.docker_build_steps[0].cached);
-    assert_eq!(summary.launch_plan_events.len(), 2);
-    assert_eq!(
-        summary.launch_plan_events[0].plan.as_deref(),
-        Some("AttachExisting")
-    );
-    assert_eq!(
-        summary.launch_plan_events[1].reason.as_deref(),
-        Some("current_role_container_missing")
-    );
-    assert_eq!(summary.prewarmed_dind_adoptions.len(), 1);
-    assert_eq!(summary.prewarmed_dind_adoptions[0].outcome, "adopted");
-    assert_eq!(
-        summary.prewarmed_dind_adoptions[0].detail.as_deref(),
-        Some("ready_ms=12;source=state;state_age_ms=34;prewarm_ready_ms=56")
-    );
-    assert_eq!(summary.prewarmed_dind_adoptions[0].ready_ms, Some(12));
-    assert_eq!(
-        summary.prewarmed_dind_adoptions[0].source.as_deref(),
-        Some("state")
-    );
-    assert_eq!(summary.prewarmed_dind_adoptions[0].state_age_ms, Some(34));
-    assert_eq!(
-        summary.prewarmed_dind_adoptions[0].prewarm_ready_ms,
-        Some(56)
     );
 }
 

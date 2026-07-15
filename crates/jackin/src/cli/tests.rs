@@ -362,30 +362,6 @@ fn parses_prewarm_image_all_workspaces() {
 }
 
 #[test]
-fn parses_diagnostics_compare_labels() {
-    let cli = Cli::try_parse_from([
-        "jackin",
-        "diagnostics",
-        "compare",
-        "jk-run-cold",
-        "jk-run-warm",
-        "--label",
-        "cold-before",
-        "--label",
-        "warm-after",
-        "--format",
-        "json",
-    ])
-    .unwrap();
-    assert!(matches!(
-        cli.command,
-        Some(Command::Diagnostics(DiagnosticsCommand::Compare(ref args)))
-            if args.labels == ["cold-before", "warm-after"]
-                && args.format == diagnostics::DiagnosticsCompareFormat::Json
-    ));
-}
-
-#[test]
 fn rejects_prewarm_image_workspace_with_role() {
     let err = Cli::try_parse_from([
         "jackin",

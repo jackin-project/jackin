@@ -17,7 +17,6 @@ pub mod registry;
 pub mod run;
 pub mod screen;
 pub mod secret_scrub;
-pub mod summary;
 pub mod terminal;
 
 // Single debug_log! definition lives in jackin-core (port-based).
@@ -68,11 +67,6 @@ pub use screen::{
     set_agents_active, set_provider, set_workspace, set_workspace_kind,
 };
 pub use secret_scrub::scrub_secrets;
-pub use summary::{
-    BuildContextSnapshotSummary, CacheEventSummary, DiagnosticsSummary, DockerBuildStepSummary,
-    ImageBuildSourceSummary, LaunchPlanEventSummary, PrewarmedDindAdoptionSummary,
-    SkippedTimingSummary, summarize_reader, summarize_run_file,
-};
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
     set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,

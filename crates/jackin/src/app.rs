@@ -204,7 +204,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
         }
         Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
-        Command::Diagnostics(command) => crate::cli::diagnostics::run(&command, &paths),
+        Command::Diagnostics(command) => crate::cli::diagnostics::run(&command),
         Command::Status(args) => crate::cli::status::run(&args, &paths).await,
         Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
         Command::Help { .. } => {
@@ -313,7 +313,6 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Daemon(_) => "daemon",
         Command::Doctor(_) => "doctor",
         Command::Diagnostics(crate::cli::DiagnosticsCommand::Validate) => "diagnostics.validate",
-        Command::Diagnostics(_) => "diagnostics",
         Command::Status(_) => "status",
         Command::Usage(_) => "usage",
         Command::Help { .. } => "help",
