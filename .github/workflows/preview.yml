@@ -275,6 +275,7 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
@@ -371,6 +372,7 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
