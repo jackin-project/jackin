@@ -85,6 +85,64 @@ pub fn end_session(id: SessionId) {
     }
 }
 
+/// Emits paired lifecycle events and clears ambient session correlation on drop.
+#[derive(Debug)]
+pub struct SessionGuard {
+    context: SessionContext,
+    owns: bool,
+}
+
+impl SessionGuard {
+    #[must_use]
+    pub fn begin() -> Self {
+        let context = begin_session();
+        emit_session_event(&crate::event::SESSION_START, context);
+        Self {
+            context,
+            owns: true,
+        }
+    }
+
+    /// Reuse an enclosing interactive session, or mint one when none exists.
+    #[must_use]
+    pub fn begin_or_reuse() -> Self {
+        current_session().map_or_else(Self::begin, |context| Self {
+            context,
+            owns: false,
+        })
+    }
+
+    #[must_use]
+    pub const fn context(&self) -> SessionContext {
+        self.context
+    }
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        if self.owns {
+            emit_session_event(&crate::event::SESSION_END, self.context);
+            end_session(self.context.current);
+        }
+    }
+}
+
+fn emit_session_event(def: &'static crate::event::EventDef, context: SessionContext) {
+    let current = context.current.to_string();
+    let previous = context.previous.map(|id| id.to_string());
+    let mut attrs = vec![crate::Attr {
+        key: crate::schema::attrs::std_attrs::SESSION_ID,
+        value: crate::Value::Str(&current),
+    }];
+    if let Some(previous) = previous.as_deref() {
+        attrs.push(crate::Attr {
+            key: crate::schema::attrs::std_attrs::SESSION_PREVIOUS_ID,
+            value: crate::Value::Str(previous),
+        });
+    }
+    let _ = crate::emit_event(def, crate::FieldSet::new(&attrs, None));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

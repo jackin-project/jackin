@@ -96,6 +96,7 @@ pub(super) async fn run_host_attach_session(
     focus_session: Option<u64>,
     env_overrides: &[(String, String)],
 ) -> Result<()> {
+    let _session = jackin_telemetry::identity::SessionGuard::begin_or_reuse();
     let request = HostAttachRequest {
         spawn_request,
         focus_session,

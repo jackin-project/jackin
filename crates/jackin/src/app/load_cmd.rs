@@ -164,6 +164,7 @@ pub(super) async fn handle_console(
     paths: JackinPaths,
     debug: bool,
 ) -> Result<()> {
+    let _session = jackin_telemetry::identity::SessionGuard::begin();
     let cwd = std::env::current_dir()?;
     let mut runner = ShellRunner { debug };
     let mut in_place = ConsoleInPlaceHandler {
