@@ -239,7 +239,7 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
     }
 
     let default_style = Style::default().fg(Color::Gray).bg(DIALOG_SURFACE);
-    let spans = jackin_tui::ansi_text::styled_spans(line.trim_end(), default_style);
+    let spans = termrock::ansi_text::styled_spans(line.trim_end(), default_style);
     wrap_build_log_spans(spans, width)
 }
 
