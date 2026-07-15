@@ -13,13 +13,13 @@ use crate::paths::{expand_tilde, resolve_path};
 use crate::schema::MountConfig;
 
 /// Parse a CLI `src[:dst][:ro]` mount string with tilde expansion only.
-pub fn parse_mount_spec(spec: &str) -> anyhow::Result<MountConfig> {
+pub fn parse_mount_spec(spec: &str) -> crate::ConfigResult<MountConfig> {
     Ok(parse_mount_spec_inner(spec, false))
 }
 
 /// Like [`parse_mount_spec`] but also resolves relative paths to absolute.
 /// Use this for CLI arguments where the user may pass relative paths.
-pub fn parse_mount_spec_resolved(spec: &str) -> anyhow::Result<MountConfig> {
+pub fn parse_mount_spec_resolved(spec: &str) -> crate::ConfigResult<MountConfig> {
     Ok(parse_mount_spec_inner(spec, true))
 }
 

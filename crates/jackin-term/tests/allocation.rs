@@ -11,13 +11,23 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 #[test]
 fn focused_process_dirty_patch_path_allocates_zero_after_warmup() {
     let mut grid = DamageGrid::new(24, 80, 1_000);
-    grid.process(b"A");
-    drop(grid.dump_dirty_patch());
+    // Warm the exact measured path twice so first-touch setup (parsers,
+    // scratch buffers) is not charged to the zero-alloc window. CI runners
+    // otherwise sometimes report a single residual block.
+    for byte in [b"A", b"B"] {
+        grid.process(byte);
+        let patch = grid.dump_dirty_patch();
+        let changed_cells = patch
+            .changed_spans()
+            .map(|(_, _, cells)| cells.iter().filter(|cell| cell.has_contents()).count())
+            .sum::<usize>();
+        std::hint::black_box(changed_cells);
+    }
 
     let _profiler = dhat::Profiler::builder().testing().build();
     let before = dhat::HeapStats::get();
 
-    grid.process(b"B");
+    grid.process(b"C");
     let patch = grid.dump_dirty_patch();
     let changed_cells = patch
         .changed_spans()

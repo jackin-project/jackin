@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-process"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Shared subprocess transport: capture, timeout, retry, exit status. No redaction, env policy, or telemetry."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+[lib]
+name = "jackin_process"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["process", "time", "io-util", "rt", "macros"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
+
+[lints]
+workspace = true

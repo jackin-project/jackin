@@ -282,7 +282,7 @@ pub fn global_rows_for_selected_row(
 }
 
 pub fn workspace_active_count(
-    instances: &[jackin_core::instance::InstanceIndexEntry],
+    instances: &[jackin_core::InstanceIndexEntry],
     workspace_name: Option<&str>,
     workspace_label: &str,
     workdir: &str,
@@ -299,8 +299,7 @@ pub fn workspace_active_count(
             workdir: entry.workdir.as_str(),
             active: matches!(
                 entry.status,
-                jackin_core::instance::InstanceStatus::Active
-                    | jackin_core::instance::InstanceStatus::Running
+                jackin_core::InstanceStatus::Active | jackin_core::InstanceStatus::Running
             ),
         }),
         query,

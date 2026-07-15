@@ -15,7 +15,7 @@ Two approaches were evaluated:
 
 ### Option A: tui-term
 
-The [`tui-term`](https://docs.rs/tui-term/) crate provides a `PseudoTerminal` widget that renders a terminal screen into a Ratatui `Buffer`.
+The [`tui-term`](https://docs.rs/tui-term/latest/tui_term/) crate provides a `PseudoTerminal` widget that renders a terminal screen into a Ratatui `Buffer`.
 
 **Incompatibility discovered during evaluation**: tui-term 0.3.4 implements its screen trait for third-party terminal models, but jackin❯ now owns its terminal model and needs typed passthrough events, dirty patches, and capsule-specific geometry. Using tui-term would add a widget adapter without removing the need for jackin-term.
 

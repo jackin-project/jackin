@@ -123,7 +123,7 @@ pub(super) async fn wait_for_capsule_daemon(
     const MAX_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
     jackin_diagnostics::active_timing_started(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "wait_capsule_socket",
         Some(container_name),
     );
@@ -138,7 +138,7 @@ pub(super) async fn wait_for_capsule_daemon(
     .await
     .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"));
     jackin_diagnostics::active_timing_done(
-        "capsule",
+        jackin_diagnostics::DiagnosticStage::Capsule,
         "wait_capsule_socket",
         if wait_result.is_ok() {
             Some("ready")
@@ -146,6 +146,17 @@ pub(super) async fn wait_for_capsule_daemon(
             Some("error")
         },
     );
+    if wait_result.is_err() {
+        let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
+        span.in_scope(|| {
+            jackin_diagnostics::operation_error(
+                "launch.prepare",
+                "docker_wait_failed",
+                "container readiness wait failed",
+                &[],
+            );
+        });
+    }
     wait_result
 }
 
@@ -190,7 +201,7 @@ fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> 
 
 #[cfg(test)]
 use crate::instance::InstanceIndex;
-use jackin_core::paths::JackinPaths;
+use jackin_core::JackinPaths;
 pub use jackin_docker::docker_client::ContainerState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -350,13 +361,10 @@ fn insert_run_as_user<'a>(args: &mut Vec<&'a str>, run_as_user: Option<&'a str>)
 fn git_policy_env_pairs(coauthor_trailer: bool, dco: bool) -> Vec<(&'static str, &'static str)> {
     let mut pairs = Vec::with_capacity(2);
     if coauthor_trailer {
-        pairs.push((
-            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME,
-            "1",
-        ));
+        pairs.push((jackin_core::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, "1"));
     }
     if dco {
-        pairs.push((jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME, "1"));
+        pairs.push((jackin_core::JACKIN_GIT_DCO_ENV_NAME, "1"));
     }
     pairs
 }
@@ -394,7 +402,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         args.push(id);
     }
     jackin_diagnostics::active_timing_started(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "capsule_client_exec",
         Some(container_name),
     );
@@ -410,7 +418,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         )
         .await;
     jackin_diagnostics::active_timing_done(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "capsule_client_exec",
         if outcome.is_ok() {
             Some("detached")
@@ -438,15 +446,23 @@ pub(super) async fn start_or_reconnect_capsule_client(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    jackin_diagnostics::active_timing_started("capsule", "restore_inspect", Some(container_name));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Capsule,
+        "restore_inspect",
+        Some(container_name),
+    );
     let inspect = docker.inspect_container_state(container_name).await;
     let inspect_label = inspect.short_label();
-    jackin_diagnostics::active_timing_done("capsule", "restore_inspect", Some(&inspect_label));
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Capsule,
+        "restore_inspect",
+        Some(&inspect_label),
+    );
     match inspect {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
         ContainerState::Stopped { .. } | ContainerState::Created => {
             jackin_diagnostics::active_timing_started(
-                "capsule",
+                jackin_diagnostics::DiagnosticStage::Capsule,
                 "restore_start_container",
                 Some(container_name),
             );
@@ -455,7 +471,7 @@ pub(super) async fn start_or_reconnect_capsule_client(
                 .await
                 .with_context(|| format!("starting role container {container_name}"));
             jackin_diagnostics::active_timing_done(
-                "capsule",
+                jackin_diagnostics::DiagnosticStage::Capsule,
                 "restore_start_container",
                 if start_result.is_ok() {
                     Some("started")
@@ -595,7 +611,7 @@ pub async fn spawn_shell_session(
         args.insert(1, flag);
     }
     jackin_diagnostics::active_timing_started(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "shell_session_exec",
         Some(container_name),
     );
@@ -611,7 +627,7 @@ pub async fn spawn_shell_session(
         )
         .await;
     jackin_diagnostics::active_timing_done(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "shell_session_exec",
         if result.is_ok() {
             Some("detached")
@@ -633,7 +649,7 @@ pub async fn spawn_shell_session(
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Spawning a single agent session requires every caller-supplied \
               parameter (paths, container_name, manifest, agent, provider_label, \
@@ -646,7 +662,7 @@ pub async fn spawn_agent_session(
     paths: &JackinPaths,
     container_name: &str,
     manifest: Option<&InstanceManifest>,
-    agent: jackin_core::agent::Agent,
+    agent: jackin_core::Agent,
     provider_label: Option<&str>,
     env_overrides: &[(String, String)],
     git_coauthor_trailer: bool,
@@ -725,7 +741,11 @@ pub async fn spawn_agent_session(
         exec_args.insert(1, flag);
     }
     let timing_name = format!("new_{}_session_exec", agent.slug());
-    jackin_diagnostics::active_timing_started("hardline", &timing_name, Some(container_name));
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Hardline,
+        &timing_name,
+        Some(container_name),
+    );
     let result = runner
         .run(
             "docker",
@@ -738,7 +758,7 @@ pub async fn spawn_agent_session(
         )
         .await;
     jackin_diagnostics::active_timing_done(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         &timing_name,
         if result.is_ok() {
             Some("detached")
@@ -809,14 +829,14 @@ pub(crate) async fn hardline_docker_agent_with_focus(
     // too late. Firing here, while the container is observably running, ensures
     // caffeinate spawns for the duration of the re-attached session.
     jackin_diagnostics::active_timing_started(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "hardline_container_inspect",
         Some(container_name),
     );
     let container_state = docker.inspect_container_state(container_name).await;
     let container_state_label = container_state.short_label();
     jackin_diagnostics::active_timing_done(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "hardline_container_inspect",
         Some(&container_state_label),
     );
@@ -896,7 +916,7 @@ pub(crate) async fn finalize_reconnected_foreground_session(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     jackin_diagnostics::active_timing_started(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "post_attach_outcome_inspect",
         Some(container_name),
     );
@@ -904,7 +924,7 @@ pub(crate) async fn finalize_reconnected_foreground_session(
         crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
     let outcome_label = outcome.as_label();
     jackin_diagnostics::active_timing_done(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "post_attach_outcome_inspect",
         Some(&outcome_label),
     );
@@ -916,7 +936,7 @@ pub(crate) async fn finalize_reconnected_foreground_session(
         state_dir: paths.data_dir.join(container_name).join("state"),
     };
     jackin_diagnostics::active_timing_started(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "foreground_session_finalize",
         Some(container_name),
     );
@@ -932,7 +952,7 @@ pub(crate) async fn finalize_reconnected_foreground_session(
     )
     .await?;
     jackin_diagnostics::active_timing_done(
-        "hardline",
+        jackin_diagnostics::DiagnosticStage::Hardline,
         "foreground_session_finalize",
         Some(decision.as_str()),
     );
@@ -943,20 +963,20 @@ pub(crate) async fn finalize_reconnected_foreground_session(
     ) {
         start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
         jackin_diagnostics::active_timing_started(
-            "hardline",
+            jackin_diagnostics::DiagnosticStage::Hardline,
             "post_attach_outcome_inspect",
             Some(container_name),
         );
         outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
         let outcome_label = outcome.as_label();
         jackin_diagnostics::active_timing_done(
-            "hardline",
+            jackin_diagnostics::DiagnosticStage::Hardline,
             "post_attach_outcome_inspect",
             Some(&outcome_label),
         );
         super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
         jackin_diagnostics::active_timing_started(
-            "hardline",
+            jackin_diagnostics::DiagnosticStage::Hardline,
             "foreground_session_finalize",
             Some(container_name),
         );
@@ -972,7 +992,7 @@ pub(crate) async fn finalize_reconnected_foreground_session(
         )
         .await?;
         jackin_diagnostics::active_timing_done(
-            "hardline",
+            jackin_diagnostics::DiagnosticStage::Hardline,
             "foreground_session_finalize",
             Some(decision.as_str()),
         );

@@ -5,8 +5,8 @@
 //!
 //! Architecture Invariant: depends only on `jackin-core`.
 
+use jackin_core::RoleSelector;
 use jackin_core::runtime_slug;
-use jackin_core::selector::RoleSelector;
 
 /// Prefix for jackin-managed Docker image names.
 ///

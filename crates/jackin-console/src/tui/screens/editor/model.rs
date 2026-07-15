@@ -7,7 +7,7 @@
 //! Not responsible for: event handling (see `update`) or rendering (see
 //! `view`).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::marker::PhantomData;
 
 use jackin_config::WorkspaceConfig;

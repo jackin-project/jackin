@@ -93,7 +93,7 @@ impl AppConfig {
         WorkspaceGlobalMountRows::Ambiguous { candidates }
     }
 
-    #[allow(
+    #[expect(
         clippy::excessive_nesting,
         reason = "Mount-row resolution: per-mount, per-scope (None / Scope / \
                   Multi-Scope), and per-mount-type (Mount / WorkspaceRef) branches \
@@ -157,7 +157,7 @@ impl AppConfig {
     /// Expand tildes in named mounts and run full mount validation.
     pub fn expand_and_validate_named_mounts(
         mounts: &[(String, MountConfig)],
-    ) -> anyhow::Result<Vec<MountConfig>> {
+    ) -> crate::ConfigResult<Vec<MountConfig>> {
         let expanded: Vec<MountConfig> = mounts
             .iter()
             .map(|(_, mount)| MountConfig {
@@ -232,35 +232,34 @@ impl AppConfig {
     pub fn validate_effective_mount_destinations(
         workspace: &crate::schema::WorkspaceConfig,
         rows: &[GlobalMountRow],
-    ) -> anyhow::Result<()> {
+    ) -> crate::ConfigResult<()> {
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for mount in &workspace.mounts {
             if !seen.insert(mount.dst.as_str()) {
                 return Err(ConfigError::msg(format!(
                     "duplicate mount destination: {}",
                     mount.dst
-                ))
-                .into());
+                )));
             }
         }
         for row in rows {
             if !seen.insert(row.mount.dst.as_str()) {
                 let scope = row.scope.as_deref().unwrap_or("global");
-                return Err(ConfigError::msg(format!("global mount destination conflicts with workspace destination: {} (from global mount {} [{}])",
-                    row.mount.dst,
-                    row.name,
-                    scope)).into());
+                return Err(ConfigError::msg(format!(
+                    "global mount destination conflicts with workspace destination: {} (from global mount {} [{}])",
+                    row.mount.dst, row.name, scope
+                )));
             }
         }
         Ok(())
     }
 
     /// Validate global mount rows: names, isolation, paths, and overlapping destinations.
-    pub fn validate_global_mount_rows(rows: &[GlobalMountRow]) -> anyhow::Result<()> {
+    pub fn validate_global_mount_rows(rows: &[GlobalMountRow]) -> crate::ConfigResult<()> {
         let mut seen_keys: BTreeSet<(Option<&str>, &str)> = BTreeSet::new();
         for row in rows {
             if row.name.trim().is_empty() {
-                return Err(ConfigError::msg("global mount name cannot be empty").into());
+                return Err(ConfigError::msg("global mount name cannot be empty"));
             }
             // Two rows with the same (scope, name) silently collapse on
             // wire-write because `add_mount` keys the BTreeMap by name —
@@ -270,16 +269,14 @@ impl AppConfig {
                 return Err(ConfigError::msg(format!(
                     "duplicate global mount entry: {} [{}]",
                     row.name, scope
-                ))
-                .into());
+                )));
             }
             if !matches!(row.mount.isolation, MountIsolation::Shared) {
                 return Err(ConfigError::msg(format!(
                     "global mount {} cannot use isolation {}; global mounts are always shared",
                     row.name,
                     row.mount.isolation.as_str()
-                ))
-                .into());
+                )));
             }
             let expanded = MountConfig {
                 src: expand_tilde(&row.mount.src),
@@ -299,8 +296,7 @@ impl AppConfig {
                     return Err(ConfigError::msg(format!(
                         "duplicate global mount destination in overlapping scope: {}",
                         left.mount.dst
-                    ))
-                    .into());
+                    )));
                 }
             }
         }

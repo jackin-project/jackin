@@ -37,7 +37,7 @@ mod refresh;
 mod view;
 mod zai;
 
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -45,12 +45,8 @@ pub(crate) use self::amp::{
     AmpApiUsage, AmpCliUsage, amp_free_reset_label, amp_snapshot, fetch_amp_api_usage,
     fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
 };
-#[allow(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub use self::claude::ClaudeUsageDiagnostic;
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -65,18 +61,10 @@ pub(crate) use self::claude::{
     load_claude_account_email, normalize_claude_spend, push_claude_dollar_windows,
 };
 #[cfg(test)]
-#[allow(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) use self::claude::{load_claude_oauth_credentials, load_claude_organization_type};
 #[cfg(test)]
-#[allow(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) use self::codex::load_codex_oauth_credentials;
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -93,7 +81,7 @@ pub(crate) use self::codex::{
     fetch_codex_rpc_usage, push_codex_window, refresh_codex_access_token, resolve_codex_base_url,
     resolve_codex_reset_credits_url, resolve_codex_usage_url,
 };
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -106,7 +94,7 @@ pub(crate) use self::grok::{
     grok_snapshot, grok_snapshot_from_rpc_result, grpc_web_data_frames,
     parse_grok_web_billing_response, scan_protobuf,
 };
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -115,7 +103,7 @@ pub(crate) use self::kimi::{
     kimi_bucket, kimi_local_token_from_value, kimi_snapshot, kimi_window_seconds,
     load_kimi_local_token, load_kimi_local_token_from_home,
 };
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -125,7 +113,7 @@ pub(crate) use self::minimax::{
     minimax_is_general_model, minimax_remains_host, minimax_reset_epoch, minimax_snapshot,
     minimax_usage_count_line, resolve_minimax_remains_urls, resolve_minimax_remains_urls_from,
 };
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -141,7 +129,7 @@ pub(crate) use self::refresh::{
     usage_error_is_unauthorized, usage_rate_limit_delay, write_materialized_usage_accounts,
     write_shared_usage_cooldown_marker, write_shared_usage_snapshot,
 };
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -155,7 +143,7 @@ pub(crate) use self::view::{
     status_bar_headline_for_surface, status_bar_label, status_bar_quota_labels, surface_from_text,
     timed_bucket, usage_tab_source_label, usage_tab_status_label, usage_view, with_status_slot,
 };
-#[allow(
+#[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

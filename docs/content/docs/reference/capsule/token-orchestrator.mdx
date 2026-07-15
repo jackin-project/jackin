@@ -178,7 +178,7 @@ The orchestrator stamps a `YYYY-MM-DD` file under `<cache_dir>/claude-token-expi
 
 The function returns `Result<Option<i64>>` precisely so a malformed stamp surfaces a one-shot warning to the operator instead of silently degrading to "no expiry known". The launch site explicitly matches the `Err` arm rather than `.ok().flatten()`-ing it — collapsing the error variant defeats the design.
 
-The `--reuse` setup path does **not** write a stamp. jackin did not mint the token in that flow, so the issuance date is unknown and any stamp would mislead the operator.
+The `--reuse` setup path does **not** write a stamp. jackin❯ did not mint the token in that flow, so the issuance date is unknown and any stamp would mislead the operator.
 
 `revoke` removes the stamp so the launch banner stops showing a countdown for a workspace whose managed token source is gone.
 
@@ -200,7 +200,7 @@ The `--reuse` setup path does **not** write a stamp. jackin did not mint the tok
 
 1. Read the prior slot for the scope being rotated (workspace-level, or the per-role slot when `--role` is passed) via `prior_token_slot`, so a role-scoped token wired by `setup --role` is found and its item is the one reused/deleted. A flag-supplied `--role` is validated against the workspace's allowed roles first. If the slot holds an `op://` reference, default `--vault` to the prior item's vault — without this, the documented `rotate <ws>` form would hard-error inside `create_op_item` *after* the operator completes the PTY token capture. See `vault_for_rotate` for the precedence rule.
 2. Run `run_setup` end-to-end. Validation, config persistence, and the new expiry stamp all complete first.
-3. `delete_prior_op_item(prior, &report.op_ref, account)` — parses the prior `op://`, then **only deletes an item jackin created**. It calls `item_tags` on the prior item and proceeds with `item_delete` only when the item carries the `JACKIN_TAG`. An item the operator adopted (`--reuse` or interactive edit-in-place) has no jackin tag and may hold the operator's other fields, so it is left untouched with a printed note; a tag-read error also fails safe (skip the delete) rather than risk destroying a shared item.
+3. `delete_prior_op_item(prior, &report.op_ref, account)` — parses the prior `op://`, then **only deletes an item jackin❯ created**. It calls `item_tags` on the prior item and proceeds with `item_delete` only when the item carries the `JACKIN_TAG`. An item the operator adopted (`--reuse` or interactive edit-in-place) has no jackin❯ tag and may hold the operator's other fields, so it is left untouched with a printed note; a tag-read error also fails safe (skip the delete) rather than risk destroying a shared item.
 4. If the delete fails, the rotate exits non-zero with a copy-pasteable `op item delete <id> --vault <vault>` recovery command. The new item is wired and live; the orphan needs hand-removal.
 5. The same-ref guard (`prior_ref.op == new_ref.op`) prevents rotate from deleting the new item it just created if a deeper bug ever causes them to match. The guard's eprintln tells the operator the situation is unexpected and to run `doctor` to verify.
 

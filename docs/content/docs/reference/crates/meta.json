@@ -21,6 +21,7 @@
     "jackin-lints",
     "jackin-manifest",
     "jackin-pr-trailers",
+    "jackin-process",
     "jackin-protocol",
     "jackin-runtime",
     "jackin-term",

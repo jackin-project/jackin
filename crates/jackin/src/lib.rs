@@ -3,7 +3,7 @@
 //! **Architecture Invariant:** T6.
 //! Entry point: [`main`] — host CLI binary entry.
 
-#![allow(
+#![expect(
     clippy::redundant_pub_crate,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]

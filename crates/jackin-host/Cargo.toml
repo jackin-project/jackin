@@ -24,6 +24,7 @@ jackin-diagnostics = { workspace = true }
 jackin-docker = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-tui = { workspace = true }
+jackin-process = { workspace = true }
 anyhow = { workspace = true }
 fs4 = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "fs", "io-util", "sync"] }
@@ -33,5 +34,6 @@ url = { workspace = true }
 workspace = true
 
 [dev-dependencies]
+jackin-test-support = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }

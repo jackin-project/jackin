@@ -32,7 +32,13 @@ fn init_test_tracing() {
 
 fn event_detail_json(line: &str) -> serde_json::Value {
     let event: serde_json::Value = serde_json::from_str(line).unwrap();
-    serde_json::from_str(event["detail"].as_str().unwrap()).unwrap()
+    // v2 writer uses `jackin.detail`; accept v1 `detail` for fixture lines.
+    let detail = event
+        .get("jackin.detail")
+        .or_else(|| event.get("detail"))
+        .and_then(|v| v.as_str())
+        .expect("detail field");
+    serde_json::from_str(detail).unwrap()
 }
 
 // ── run.rs tests ─────────────────────────────────────────────────────────────
@@ -123,14 +129,14 @@ fn writes_jsonl_events() {
     run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
-    assert!(contents.contains("\"run_id\""));
+    assert!(contents.contains("\"parallax.run.id\""));
     assert!(contents.contains("\"hello\""));
     if debug_written {
         assert!(contents.contains("\"debug\""));
     }
     let event: serde_json::Value = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"breadcrumb\""))
+        .find(|line| line.contains("\"event.name\":\"breadcrumb\""))
         .map(serde_json::from_str)
         .transpose()
         .unwrap()
@@ -207,7 +213,10 @@ fn error_events_flush_immediately() {
     run.error("attach_error", "capsule attach failed");
 
     let contents = fs::read_to_string(run.path()).unwrap();
-    assert!(contents.contains("\"kind\":\"attach_error\""), "{contents}");
+    assert!(
+        contents.contains("\"event.name\":\"attach_error\""),
+        "{contents}"
+    );
     assert!(contents.contains("capsule attach failed"), "{contents}");
 }
 
@@ -238,15 +247,23 @@ fn run_summary_includes_metrics_surface() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
-    run.stage("stage_started", "build", "building", None);
+    run.stage(
+        "stage_started",
+        crate::DiagnosticStage::Build,
+        "building",
+        None,
+    );
     run.compact("agent_binary_cache_hit", "metadata cache hit");
-    run.stage("stage_done", "build", "built", None);
+    run.stage("stage_done", crate::DiagnosticStage::Build, "built", None);
     run.emit_run_summary();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let summary = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .find(|line| {
+            line.contains("\"event.name\":\"run.summary\"")
+                || line.contains("\"event.name\":\"run_summary\"")
+        })
         .unwrap();
     assert!(
         summary.contains("stage_duration_histograms_ms"),
@@ -264,17 +281,28 @@ fn timing_events_include_nested_duration_summary() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
-    run.timing_started("credentials", "operator_env", Some("layers"));
-    run.timing_done("credentials", "operator_env", Some("2 vars"));
+    run.timing_started(
+        crate::DiagnosticStage::Credentials,
+        "operator_env",
+        Some("layers"),
+    );
+    run.timing_done(
+        crate::DiagnosticStage::Credentials,
+        "operator_env",
+        Some("2 vars"),
+    );
     run.emit_run_summary();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let timing_done = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"timing_done\""))
+        .find(|line| {
+            line.contains("\"event.name\":\"timing.done\"")
+                || line.contains("\"event.name\":\"timing_done\"")
+        })
         .unwrap();
     assert!(
-        timing_done.contains("\"stage\":\"credentials\""),
+        timing_done.contains("\"jackin.stage\":\"credentials\""),
         "{timing_done}"
     );
     assert!(timing_done.contains("operator_env"), "{timing_done}");
@@ -282,7 +310,10 @@ fn timing_events_include_nested_duration_summary() {
 
     let summary = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .find(|line| {
+            line.contains("\"event.name\":\"run.summary\"")
+                || line.contains("\"event.name\":\"run_summary\"")
+        })
         .unwrap();
     assert!(
         summary.contains("timing_duration_histograms_ms"),
@@ -298,14 +329,14 @@ fn run_summary_reports_and_clears_unclosed_timing_keys() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
-    run.timing_started("credentials", "operator_env", None);
+    run.timing_started(crate::DiagnosticStage::Credentials, "operator_env", None);
     run.emit_run_summary();
     run.emit_run_summary();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let diagnostics = contents
         .lines()
-        .filter(|line| line.contains("\"kind\":\"diagnostics\""))
+        .filter(|line| line.contains("\"event.name\":\"diagnostics\""))
         .collect::<Vec<_>>();
     assert_eq!(diagnostics.len(), 1, "{contents}");
     assert!(
@@ -322,15 +353,18 @@ fn duration_histograms_cap_samples_and_count_drops() {
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
     for _ in 0..2000 {
-        run.timing_started("credentials", "operator_env", None);
-        run.timing_done("credentials", "operator_env", None);
+        run.timing_started(crate::DiagnosticStage::Credentials, "operator_env", None);
+        run.timing_done(crate::DiagnosticStage::Credentials, "operator_env", None);
     }
     run.emit_run_summary();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let summary = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .find(|line| {
+            line.contains("\"event.name\":\"run.summary\"")
+                || line.contains("\"event.name\":\"run_summary\"")
+        })
         .unwrap();
     let detail = event_detail_json(summary);
     let samples = detail["timing_duration_histograms_ms"]["credentials/operator_env"]
@@ -356,9 +390,12 @@ fn docker_build_step_event_records_structured_detail() {
     let contents = fs::read_to_string(run.path()).unwrap();
     let event = contents
         .lines()
-        .find(|line| line.contains("\"kind\":\"docker_build_step\""))
+        .find(|line| line.contains("\"event.name\":\"docker_build_step\""))
         .unwrap();
-    assert!(event.contains("\"stage\":\"derived image\""), "{event}");
+    assert!(
+        event.contains("\"jackin.stage\":\"derived image\""),
+        "{event}"
+    );
     assert!(event.contains("\\\"step\\\":\\\"12\\\""), "{event}");
     assert!(event.contains("\\\"label\\\":\\\"DONE\\\""), "{event}");
     assert!(event.contains("\\\"duration_ms\\\":76500"), "{event}");
@@ -372,15 +409,30 @@ fn stage_events_reuse_one_stage_span_id() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
-    run.stage("stage_started", "derived image", "building", None);
-    run.stage("stage_progress", "derived image", "still building", None);
-    run.stage("stage_done", "derived image", "built", None);
+    run.stage(
+        "stage_started",
+        crate::DiagnosticStage::DerivedImage,
+        "building",
+        None,
+    );
+    run.stage(
+        "stage_progress",
+        crate::DiagnosticStage::DerivedImage,
+        "still building",
+        None,
+    );
+    run.stage(
+        "stage_done",
+        crate::DiagnosticStage::DerivedImage,
+        "built",
+        None,
+    );
     run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let span_ids = contents
         .lines()
-        .filter(|line| line.contains("\"stage\":\"derived image\""))
+        .filter(|line| line.contains("\"jackin.stage\":\"derived image\""))
         .map(serde_json::from_str::<serde_json::Value>)
         .collect::<Result<Vec<_>, _>>()
         .unwrap()
@@ -710,7 +762,7 @@ fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
     run.flush_writer();
 
     let jsonl = fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("\"kind\":\"warning\""), "{jsonl}");
+    assert!(jsonl.contains("\"event.name\":\"warning\""), "{jsonl}");
     assert!(jsonl.contains("hidden by cockpit"), "{jsonl}");
     set_rich_surface_active(false);
     set_host_screen_owned(false);
@@ -735,7 +787,7 @@ fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     run.flush_writer();
 
     let jsonl = fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
+    assert!(jsonl.contains("\"event.name\":\"operator_env\""), "{jsonl}");
     assert!(
         jsonl.contains("hidden while host owns raw screen"),
         "{jsonl}"
@@ -877,14 +929,68 @@ fn rich_terminal_owned_combines_both_flags() {
 const MAX_DEBUG_LOGS: usize = 64;
 #[cfg(feature = "otlp")]
 const MAX_SPANS: usize = 48;
+#[cfg(feature = "otlp")]
+const CONFORMANCE_ARGV_CANARY: &str = "--password=conformance-argv-secret";
+#[cfg(feature = "otlp")]
+const CONFORMANCE_URL_CANARY: &str = "https://example.invalid/api?token=conformance-query-secret";
+#[cfg(feature = "otlp")]
+const CONFORMANCE_INSPECT_CANARY: &str =
+    r#"{"Config":{"Env":["TOKEN=conformance-inspect-secret"]}}"#;
+#[cfg(feature = "otlp")]
+const CONFORMANCE_TERMINAL_CANARY: &str = "\u{1b}[31mconformance-terminal-bytes\u{1b}[0m";
+
+/// Combined host + capsule export from the dual-bootstrap conformance scenario.
+#[cfg(feature = "otlp")]
+struct ConformanceExport {
+    host: crate::observability::TestExport,
+    capsule: crate::observability::TestExport,
+}
 
 #[cfg(feature = "otlp")]
-fn drive_standard_conformance_scenario() -> crate::observability::TestExport {
-    use crate::operation::{OperationLevel, operation_log, operation_span};
+impl ConformanceExport {
+    fn all_logs(&self) -> Vec<opentelemetry_sdk::logs::in_memory_exporter::LogDataWithResource> {
+        let mut logs = self.host.logs.get_emitted_logs().unwrap_or_default();
+        logs.extend(self.capsule.logs.get_emitted_logs().unwrap_or_default());
+        logs
+    }
+
+    fn all_spans(&self) -> Vec<opentelemetry_sdk::trace::SpanData> {
+        let mut spans = self.host.spans.get_finished_spans().unwrap_or_default();
+        spans.extend(self.capsule.spans.get_finished_spans().unwrap_or_default());
+        spans
+    }
+}
+
+/// Workspace `target/telemetry-volume.json` (plan 009 measured export-volume).
+#[cfg(feature = "otlp")]
+fn telemetry_volume_artifact_path() -> std::path::PathBuf {
+    // nextest CWD is the package dir; always write to the workspace target so
+    // `cargo xtask lint ratchet` (repo root) consumes the same file.
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/telemetry-volume.json")
+}
+
+/// Dual-bootstrap host→capsule conformance scenario (plan 009).
+///
+/// Host phase: host `test_layers` + run/stage/process facades.
+/// Capsule phase: separate `test_capsule_layers` bootstrap (no host JSONL layer)
+/// driving production [`emit_session_start_for_test`] plus capsule-target
+/// breadcrumbs — not synthetic events on the host subscriber.
+#[cfg(feature = "otlp")]
+fn drive_standard_conformance_scenario() -> ConformanceExport {
+    use crate::operation::{OperationLevel, operation_error, operation_log, operation_span};
     use crate::screen::{Screen, enter_screen};
 
-    let (export, subscriber) = crate::observability::test_layers(true, "conformance-run");
-    tracing::subscriber::with_default(subscriber, || {
+    const RUN_ID: &str = "conformance-run";
+    const SESSION_ID: &str = "conformance-session";
+
+    assert!(
+        crate::metrics::ensure_hot_path_test_rig(),
+        "conformance scenario must own the in-memory metric exporter"
+    );
+
+    // ── Host bootstrap ──────────────────────────────────────────────────
+    let (host, host_sub) = crate::observability::test_layers(false, RUN_ID);
+    tracing::subscriber::with_default(host_sub, || {
         let tmp = tempfile::tempdir().expect("tempdir");
         let paths = JackinPaths::for_tests(tmp.path());
         let run = RunDiagnostics::start(&paths, true, "conformance").expect("run start");
@@ -899,17 +1005,22 @@ fn drive_standard_conformance_scenario() -> crate::observability::TestExport {
                 "list entered",
                 &[],
             );
+            operation_log(
+                OperationLevel::Warn,
+                "conformance.op",
+                "docker",
+                "process retry exhausted",
+                &[],
+            );
         });
         drop(list);
 
         let launch = enter_screen(Screen::Launch);
         launch.in_scope(|| {
-            run.stage("stage_started", "prepare", "preparing", None);
-            run.stage("stage_done", "prepare", "ready", None);
-            run.stage("stage_started", "derived image", "building", None);
-            run.stage("stage_done", "derived image", "built", None);
-            run.stage("stage_started", "start container", "starting", None);
-            run.stage("stage_done", "start container", "started", None);
+            run.stage("stage_started", crate::DiagnosticStage::Prepare, "preparing", None);
+            run.stage("stage_done", crate::DiagnosticStage::Prepare, "ready", None);
+            run.stage("stage_started", crate::DiagnosticStage::DerivedImage, "building", None);
+            run.stage("stage_done", crate::DiagnosticStage::DerivedImage, "built", None);
 
             let span = operation_span(
                 crate::otel_events::PROCESS_EXECUTE,
@@ -925,12 +1036,14 @@ fn drive_standard_conformance_scenario() -> crate::observability::TestExport {
             );
             drop(guard);
 
-            run.error_typed(
-                "E_CONFORM",
-                "forced failure for conformance",
-                Some("conformance_error"),
+            // Representative host failure; the actual attach failure seam is
+            // asserted in jackin-capsule's conformance test.
+            operation_error(
+                "error.typed",
+                "conformance_error",
+                "forced attach failure for conformance",
+                &[],
             );
-            run.compact(crate::otel_events::SESSION_DETACH, "operator detached");
 
             for _ in 0..100 {
                 crate::metrics::record_frame(32, 1, 4);
@@ -941,15 +1054,57 @@ fn drive_standard_conformance_scenario() -> crate::observability::TestExport {
                 OperationLevel::Info,
                 "conformance.secret",
                 "security",
-                "token=abc123FAKE_not_a_real_secret",
+                &format!(
+                    "argv={CONFORMANCE_ARGV_CANARY} url={CONFORMANCE_URL_CANARY} inspect={CONFORMANCE_INSPECT_CANARY}"
+                ),
                 &[],
             );
         });
         drop(launch);
     });
-    drop(export.logger_provider.force_flush());
-    drop(export.tracer_provider.force_flush());
-    export
+    drop(host.logger_provider.force_flush());
+    drop(host.tracer_provider.force_flush());
+
+    // ── Capsule bootstrap (separate provider, production session-start) ─
+    let (capsule, capsule_sub) = crate::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(capsule_sub, || {
+        // Same code path as init_capsule → emit_session_start after attach.
+        crate::observability::emit_session_start_for_test(SESSION_ID, Some(RUN_ID), None);
+
+        let attach = operation_span("capsule.attach", &[]);
+        let _attach_guard = attach.enter();
+
+        // Capsule breadcrumb through the capsule target/bridge shape (plan 004).
+        // Emitted under the capsule subscriber, not the host facade.
+        tracing::event!(
+            target: "jackin_capsule",
+            tracing::Level::INFO,
+            "event.name" = "capsule.log",
+            "jackin.category" = "capsule",
+            "jackin.component" = "capsule",
+            "event.outcome" = "success",
+            "session.id" = SESSION_ID,
+            "parallax.run.id" = RUN_ID,
+            "capsule breadcrumb"
+        );
+
+        // Expected detach (not a failure): registry-validated session.detach.
+        tracing::event!(
+            target: "jackin_capsule",
+            tracing::Level::INFO,
+            "event.name" = "capsule.session.detach",
+            "jackin.category" = "capsule",
+            "jackin.component" = "capsule",
+            "event.outcome" = "expected_close",
+            "session.id" = SESSION_ID,
+            "parallax.run.id" = RUN_ID,
+            "operator detached"
+        );
+    });
+    drop(capsule.logger_provider.force_flush());
+    drop(capsule.tracer_provider.force_flush());
+
+    ConformanceExport { host, capsule }
 }
 
 #[cfg(feature = "otlp")]
@@ -985,7 +1140,7 @@ fn conformance_exported_bodies_have_no_bracket_prefix() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    for log in export.logs.get_emitted_logs().unwrap() {
+    for log in export.all_logs() {
         if let Some(body) = conformance_log_body(&log.record) {
             assert!(
                 !body.contains("[jackin debug") && !body.contains("[jackin-capsule"),
@@ -997,16 +1152,68 @@ fn conformance_exported_bodies_have_no_bracket_prefix() {
 
 #[cfg(feature = "otlp")]
 #[test]
-fn conformance_export_scrubs_token_shaped_values() {
+fn conformance_records_have_complete_otlp_shape() {
+    use opentelemetry::logs::Severity;
+
     let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let logs = export.logs.get_emitted_logs().unwrap();
+    let logs = export.all_logs();
+    let mut observed = std::collections::BTreeSet::new();
+    for log in logs.iter().filter(|log| {
+        matches!(
+            conformance_log_attr(&log.record, "event.name").as_deref(),
+            Some("conformance.op" | "error.typed" | "capsule.session.detach")
+        )
+    }) {
+        let event_name = log.record.event_name().expect("top-level EventName");
+        assert_eq!(
+            conformance_log_attr(&log.record, "event.name").as_deref(),
+            Some(event_name)
+        );
+        assert!(
+            log.record.timestamp().is_some() || log.record.observed_timestamp().is_some(),
+            "{event_name} must carry a timestamp"
+        );
+        assert!(log.record.severity_number().is_some());
+        assert!(log.record.severity_text().is_some());
+        assert!(conformance_log_body(&log.record).is_some());
+        let trace = log.record.trace_context().expect("active trace context");
+        assert_ne!(trace.trace_id, opentelemetry::TraceId::INVALID);
+        assert_ne!(trace.span_id, opentelemetry::SpanId::INVALID);
+        assert!(trace.trace_flags.is_some());
+        observed.insert(log.record.severity_number().unwrap());
+    }
+    assert!(observed.contains(&Severity::Info));
+    assert!(observed.contains(&Severity::Warn));
+    assert!(observed.contains(&Severity::Error));
+}
+
+#[cfg(feature = "otlp")]
+#[test]
+fn conformance_export_invokes_sensitive_boundary_canary_gate() {
+    let _lock = DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let export = drive_standard_conformance_scenario();
+    let logs = export.all_logs();
     let dump = format!("{logs:?}");
-    assert!(
-        !dump.contains("abc123FAKE_not_a_real_secret"),
-        "synthetic secret must not appear in export: {dump}"
+    for canary in [
+        CONFORMANCE_ARGV_CANARY,
+        CONFORMANCE_URL_CANARY,
+        CONFORMANCE_INSPECT_CANARY,
+        CONFORMANCE_TERMINAL_CANARY,
+    ] {
+        assert!(
+            !dump.contains(canary),
+            "sensitive-boundary canary leaked into export: {canary:?}"
+        );
+    }
+    assert_eq!(
+        crate::redact::redact_text("token=conformance-direct-canary"),
+        "<redacted>",
+        "matrix must invoke the production redaction helper"
     );
 }
 
@@ -1019,7 +1226,7 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let logs = export.logs.get_emitted_logs().unwrap();
+    let logs = export.all_logs();
     let errors: Vec<_> = logs
         .iter()
         .filter(|log| log.record.severity_number() == Some(Severity::Error))
@@ -1030,9 +1237,28 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
             || conformance_log_attr(&log.record, "error.type").as_deref()
                 == Some("conformance_error")
     }));
-    assert!(logs.iter().any(|log| {
-        conformance_log_attr(&log.record, "kind").as_deref() == Some("session_detach")
-    }));
+    // Detach is emitted on the capsule bootstrap, not the host facade.
+    assert!(
+        logs.iter().any(|log| {
+            conformance_log_attr(&log.record, "event.name").as_deref()
+                == Some("capsule.session.detach")
+                && conformance_log_attr(&log.record, "event.outcome").as_deref()
+                    == Some("expected_close")
+        }),
+        "expected_close detach must come from capsule bootstrap"
+    );
+    assert!(
+        export
+            .capsule
+            .logs
+            .get_emitted_logs()
+            .unwrap()
+            .iter()
+            .any(|log| {
+                conformance_log_attr(&log.record, "event.name").as_deref() == Some("capsule.log")
+            }),
+        "capsule bootstrap must export capsule.log breadcrumbs"
+    );
 }
 
 #[cfg(feature = "otlp")]
@@ -1042,12 +1268,29 @@ fn conformance_waterfall_has_distinct_rows() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let spans = export.spans.get_finished_spans().unwrap();
+    let spans = export.all_spans();
     let names: std::collections::BTreeSet<_> =
         spans.iter().map(|span| span.name.to_string()).collect();
     assert!(
         names.len() >= 3,
         "expected at least three span names: {names:?}"
+    );
+    // Capsule session-start span must appear on the capsule exporter only.
+    assert!(
+        export
+            .capsule
+            .spans
+            .get_finished_spans()
+            .unwrap()
+            .iter()
+            .any(|span| {
+                span.name.as_ref().contains("session")
+                    || span.attributes.iter().any(|a| {
+                        a.key.as_str() == crate::otel_keys::COMPONENT
+                            && format!("{}", a.value) == "capsule"
+                    })
+            }),
+        "capsule bootstrap must export a session-start span"
     );
 }
 
@@ -1058,8 +1301,8 @@ fn conformance_logs_correlate_to_traces() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let spans = export.spans.get_finished_spans().unwrap();
-    let logs = export.logs.get_emitted_logs().unwrap();
+    let spans = export.all_spans();
+    let logs = export.all_logs();
     assert!(!spans.is_empty(), "scenario must export spans");
     assert!(
         logs.iter()
@@ -1077,10 +1320,72 @@ fn conformance_export_volume_stays_within_budget() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let logs = export.logs.get_emitted_logs().unwrap();
-    let spans = export.spans.get_finished_spans().unwrap();
+    let logs = export.all_logs();
+    let spans = export.all_spans();
+    let metrics = crate::metrics::collect_hot_path_metric_count()
+        .expect("collect conformance metric streams");
+    // In-test guardrails only (not ratchet input — plan 009 measured path).
     assert!(logs.len() <= MAX_DEBUG_LOGS);
     assert!(spans.len() <= MAX_SPANS);
+    // Measured volume artifact for the export-volume ratchet. Only measured
+    // counts — no MAX_* ceilings (those stay as test-local guardrails above).
+    let volume = serde_json::json!({
+        "default_mode_logs": logs.len(),
+        "default_mode_spans": spans.len(),
+        "default_mode_metrics": metrics,
+    });
+    let path = telemetry_volume_artifact_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("create target/ for volume artifact");
+    }
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&volume).expect("serialize volume"),
+    )
+    .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    // Dropped attribute counts must stay zero under the configured limits.
+    for span in &spans {
+        assert_eq!(
+            span.dropped_attributes_count, 0,
+            "span {} dropped attributes",
+            span.name
+        );
+    }
+}
+
+#[cfg(feature = "otlp")]
+#[test]
+fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
+    let _lock = DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let export = drive_standard_conformance_scenario();
+    for log in export.all_logs() {
+        if let Some(body) = conformance_log_body(&log.record) {
+            assert!(!body.starts_with('['), "body has bracket prefix: {body}");
+        }
+        for key in crate::PROHIBITED_TOP_LEVEL_KEYS {
+            assert!(
+                conformance_log_attr(&log.record, key).is_none(),
+                "prohibited key {key} on log"
+            );
+        }
+        // Resource excludes run/session/component (plan 002) on host and capsule.
+        assert!(
+            log.resource
+                .get(&opentelemetry::Key::from_static_str(
+                    crate::otel_keys::RUN_ID
+                ))
+                .is_none()
+        );
+        assert!(
+            log.resource
+                .get(&opentelemetry::Key::from_static_str(
+                    crate::otel_keys::COMPONENT
+                ))
+                .is_none()
+        );
+    }
 }
 
 #[cfg(feature = "otlp")]
@@ -1090,7 +1395,7 @@ fn conformance_screen_dimension_is_stamped() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let spans = export.spans.get_finished_spans().unwrap();
+    let spans = export.all_spans();
     assert!(spans.iter().any(|span| {
         span.attributes
             .iter()
@@ -1105,7 +1410,7 @@ fn conformance_derived_image_stage_links_to_launch() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
-    let spans = export.spans.get_finished_spans().unwrap();
+    let spans = export.all_spans();
     let derived = spans
         .iter()
         .find(|span| span.name.as_ref() == "launch.derived_image")

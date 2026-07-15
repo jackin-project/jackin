@@ -9,7 +9,7 @@
 //! Re-exported at the `runtime::image` module's edge so existing
 //! `crate::runtime::image::X` call sites compile unchanged.
 
-use jackin_core::selector::RoleSelector;
+use jackin_core::RoleSelector;
 
 pub use jackin_image::naming::{
     HOST_IDENTITY_STRATEGY, IMAGE_PREFIX, LABEL_IMAGE_AGENT_VERSION_PREFIX,

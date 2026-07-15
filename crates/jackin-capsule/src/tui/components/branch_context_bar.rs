@@ -54,7 +54,7 @@ fn chunk_region(chunk: Option<&StatusRightChunk>) -> Option<ColRange> {
     chunk.and_then(|chunk| ColRange::new(chunk.start, chunk.end))
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
@@ -129,7 +129,7 @@ pub(crate) enum BranchContextBarHit {
     DebugChip,
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
