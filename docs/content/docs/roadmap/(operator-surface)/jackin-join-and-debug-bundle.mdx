@@ -12,7 +12,7 @@ jackin❯ currently writes diagnostics JSONL for runs and exposes reveal/open af
 
 ### 1. Redacted debug bundle
 
-Add a diagnostic export command, name still open (`jackin debug export` or similar), that packages a local `.tar.zst` bundle containing redacted workspace config, redacted role manifest, redacted env/auth summary, jackin❯ and Capsule versions, OS info, container/runtime state, and exporter configuration/health with endpoint credentials removed. An optional run id may be recorded as a backend correlation reference, but the bundle never queries the backend or contains logs, traces, metrics, OTLP payloads, or another telemetry serialization.
+Add a diagnostic export command, name still open (`jackin debug export` or similar), that packages a local `.tar.zst` bundle containing redacted workspace config, redacted role manifest, redacted env/auth summary, jackin❯ and Capsule versions, OS info, container/runtime state, and sanitized static exporter configuration. Live exporter health is not persisted. An optional run id may be recorded as a backend correlation reference, but the bundle never queries the backend or contains logs, traces, metrics, OTLP payloads, or another telemetry serialization.
 
 Redaction must hide token/API-key values and 1Password vault/item/field specifics while preserving enough structure to debug resolution failures. Bundles stay local; no upload service and no import/replay command in this item.
 

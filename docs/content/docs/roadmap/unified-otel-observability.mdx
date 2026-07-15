@@ -8,7 +8,7 @@ title: "Unified OpenTelemetry observability"
 
 Establish one governed, typed observability contract across every jackin❯ product crate, producing correlated OpenTelemetry logs, traces, and metrics across host and Capsule boundaries with bounded volume, explicit context propagation, and no telemetry leakage into operator output. "One contract" means one legal call-site facade and one semantic-conventions registry; internally, each signal uses its native OpenTelemetry API.
 
-The resulting platform view must let an operator filter by `parallax.run.id` and reconstruct the work causally owned by one invocation or console run: host and Capsule operations, the ordered chain of bounded screen/focus traces, named interaction and lifecycle events, correlated failures, subprocess and Docker boundaries, and health metrics. Autonomous long-lived daemon work that belongs to no invocation remains queryable by its stable process identity and must never inherit a stale run id.
+The resulting platform view must let an operator filter logs and traces by `parallax.run.id` and reconstruct the work causally owned by one invocation or console run: host and Capsule operations, the ordered chain of bounded screen/focus traces, named interaction and lifecycle events, correlated failures, and subprocess and Docker boundaries. Stable low-cardinality metrics describe product and exporter health; trace exemplars may link a measurement to a sampled operation where the SDK and backend support them. Autonomous long-lived daemon work that belongs to no invocation remains queryable by its stable process identity and must never inherit a stale run id.
 
 ## Problem
 
@@ -49,7 +49,7 @@ The current split creates several concrete failures:
 
 This item owns the cross-crate API, signal semantics, context propagation, OTLP runtime, migration, and enforcement. It supersedes the observability-format fragments in the following items:
 
-- [Launch Progress TUI](/roadmap/launch-progress-tui/) may consume trace evidence from the operator's configured backend, but jackin❯ does not provide a generic backend query API because OTLP is an export protocol, not a query protocol.
+- [Launch Progress TUI](/roadmap/launch-progress-tui/) keeps current-run application state and the correlation run id visible; historical traces and cross-run comparison remain in the operator's configured backend because OTLP is an export protocol, not a query protocol.
 - [Console resource panel](/roadmap/console-resource-panel/) may render live product state or separately queried backend data; it does not read a local telemetry artifact.
 - [jackin❯ join & Debug Export](/roadmap/jackin-join-and-debug-bundle/) cannot automatically package telemetry after this cutover. A debug bundle may include non-telemetry diagnostics and redacted configuration, while telemetry remains in the operator's backend.
 - [Sensitive-boundary code health](/roadmap/sensitive-boundary-code-health/) supplies the negative privacy assertions and issue-fingerprint policy consumed by the unified facade and OTLP conformance lane.
@@ -75,7 +75,9 @@ Settled with the operator on 2026-07-15. These decisions resolve the call-site A
 
 ### 1. OTLP is the only production telemetry output
 
-The product binaries compile the OpenTelemetry API, SDK, and OTLP/gRPC exporters as baseline dependencies. Logs, traces, and metrics have separate SDK providers and processors but one runtime configuration and one OTLP destination contract. Only OTLP/gRPC export is supported; file, stdout, stderr, console, JSONL, and TUI telemetry exporters do not exist. `OTEL_EXPORTER_OTLP_ENDPOINT` and the standard per-signal endpoint variables configure delivery, and a non-gRPC `OTEL_EXPORTER_OTLP_PROTOCOL` is rejected explicitly. Headers used for authentication are never included in telemetry or operator-facing error details. *Why:* one wire protocol and no local telemetry schema removes the split-brain format, reader, retention, and redaction problem entirely.
+The product binaries compile the OpenTelemetry API, SDK, and OTLP/gRPC exporters as baseline dependencies. Logs, traces, and metrics have separate SDK providers and processors but one runtime configuration contract. Only OTLP/gRPC export is supported; file, stdout, stderr, console, JSONL, TUI, and persistent queue/spool exporters do not exist. Delivery buffers are bounded and memory-only.
+
+`OTEL_EXPORTER_OTLP_ENDPOINT` supplies the base endpoint for all three signals. A standard per-signal endpoint overrides that base for its signal; when no base is set, all three per-signal endpoints must be present, so a partially configured signal set fails initialization instead of silently omitting logs, traces, or metrics. The base and per-signal protocol variables, when set, must all resolve to `grpc`; conflicts or any other value are rejected. Standard headers and per-signal header overrides are supported, but authentication header names and values are never included in telemetry or operator-facing error details. *Why:* one wire protocol and no local telemetry schema removes the split-brain format, reader, retention, and redaction problem entirely, while an explicit configuration contract prevents accidental partial observability.
 
 When no endpoint is configured, normal product flows use no-op providers and create no telemetry files. Commands that explicitly promise telemetry, including `--debug` and telemetry inspection/validation commands, fail before doing work and explain how to configure an OTLP endpoint. Runtime unreachability after successful configuration does not fail or block the product operation; it updates bounded in-memory exporter health and may produce one non-recursive operator notice. *Why:* optional observability must not become a product availability dependency, but an explicit request must never pretend capture succeeded.
 
@@ -190,7 +192,7 @@ Initial SDK budgets are explicit implementation constants: 4,096 queued log reco
 
 Invalid endpoint, protocol, TLS, or header configuration fails initialization when the operator explicitly configured telemetry. Once initialized, exporter retries follow the OTLP exporter implementation and remain bounded by SDK queues and timeouts; product work does not wait for retry exhaustion. Duplicate delivery is accepted as an OTLP property. Partial success, rejected records, queue drops, last successful export time, and flush timeout are reflected in a process-local `TelemetryHealth` snapshot and exported as self-observability metrics whenever the endpoint is healthy.
 
-`jackin diagnostics status` becomes a live configuration/health command rather than a local-run reader: it reports whether OTLP is configured, which signals are active, sanitized endpoint identity, protocol, queue limits, and health available in the current process/control connection. It does not promise post-exit history or query the backend. A TUI defers the one operator failure notice to its owned notice surface; telemetry never writes directly to the terminal. *Why:* OTLP-only delivery necessarily gives the backend ownership of retention and query, while jackin❯ still needs a non-recursive way to expose current exporter health.
+`jackin diagnostics status` becomes a live configuration/health command rather than a local-run reader: it reports whether OTLP is configured, which signals are active, sanitized endpoint identity, protocol, queue limits, and health available in the current process/control connection. The health snapshot is never persisted, does not promise post-exit history, and does not query the backend. A TUI defers the one operator failure notice to its owned notice surface; telemetry never writes directly to the terminal. *Why:* OTLP-only delivery necessarily gives the backend ownership of retention and query, while jackin❯ still needs a non-recursive way to expose current exporter health.
 
 ### 16. Redaction happens before every provider
 
@@ -209,8 +211,8 @@ Clippy `disallowed-macros`, existing print lints, grep backstops for macro blind
 The item is complete only when all of the following are true:
 
 - Product builds contain the OTel API/SDK and OTLP/gRPC exporters without an `otlp` compile-time escape hatch; endpoint presence controls runtime activation.
-- With no endpoint, normal product flows succeed with no-op providers and no telemetry files; explicit `--debug` and telemetry validation flows fail early with an actionable configuration error.
-- With a test OTLP collector, host and Capsule export logs, traces, and metrics over gRPC, and no production file/stdout/stderr/TUI exporter is installed.
+- With no endpoint, normal product flows succeed with no-op providers and no telemetry files; explicit `--debug` and telemetry validation flows fail early with an actionable configuration error. Partial per-signal endpoint configuration and non-gRPC protocol configuration also fail early.
+- With a test OTLP collector, host and Capsule export logs, traces, and metrics over gRPC, and no production file/stdout/stderr/TUI exporter or persistent telemetry queue is installed.
 - Each facade event arrives once as an OTel log with top-level `EventName`, typed attributes, instrumentation scope, and current trace context, with no corresponding OTel span event.
 - Resources contain only stable process/entity attributes. Run and operator-session ids are absent from Resources and metric dimensions.
 - Launch, reattach, concurrent control requests, and later attaches to a persistent Capsule carry the correct request-scoped run/session/trace context; autonomous daemon work carries no stale run id.
