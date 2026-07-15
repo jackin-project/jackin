@@ -229,14 +229,14 @@ fn hint_row_sits_between_one_blank_row_above_and_below() {
         &mut buf,
         area,
         &[
-            jackin_tui::HintSpan::Key("A"),
-            jackin_tui::HintSpan::Text("alpha"),
-            jackin_tui::HintSpan::GroupSep,
-            jackin_tui::HintSpan::Key("B"),
-            jackin_tui::HintSpan::Text("bravo"),
-            jackin_tui::HintSpan::GroupSep,
-            jackin_tui::HintSpan::Key("C"),
-            jackin_tui::HintSpan::Text("charlie"),
+            termrock::HintSpan::Key("A"),
+            termrock::HintSpan::Text("alpha"),
+            termrock::HintSpan::GroupSep,
+            termrock::HintSpan::Key("B"),
+            termrock::HintSpan::Text("bravo"),
+            termrock::HintSpan::GroupSep,
+            termrock::HintSpan::Key("C"),
+            termrock::HintSpan::Text("charlie"),
         ],
     );
 
@@ -265,8 +265,8 @@ fn dynamic_key_hint_uses_key_style() {
         &mut buf,
         area,
         &[
-            jackin_tui::HintSpan::DynKey("Ctrl-\\".to_owned()),
-            jackin_tui::HintSpan::Text("menu"),
+            termrock::HintSpan::DynKey("Ctrl-\\".to_owned()),
+            termrock::HintSpan::Text("menu"),
         ],
     );
 
@@ -291,11 +291,11 @@ fn separator_hint_uses_shared_border_gray() {
         &mut buf,
         area,
         &[
-            jackin_tui::HintSpan::Key("A"),
-            jackin_tui::HintSpan::Text("alpha"),
-            jackin_tui::HintSpan::Sep,
-            jackin_tui::HintSpan::Key("B"),
-            jackin_tui::HintSpan::Text("bravo"),
+            termrock::HintSpan::Key("A"),
+            termrock::HintSpan::Text("alpha"),
+            termrock::HintSpan::Sep,
+            termrock::HintSpan::Key("B"),
+            termrock::HintSpan::Text("bravo"),
         ],
     );
 

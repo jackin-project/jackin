@@ -27,7 +27,9 @@ impl Dialog {
         }
     }
 
-    pub(crate) fn usage_state(&self) -> Option<jackin_tui::components::ContainerInfoState> {
+    pub(crate) fn usage_state(
+        &self,
+    ) -> Option<crate::tui::components::container_info_surface::ContainerInfoState> {
         let Self::Usage {
             view,
             selected,
@@ -42,48 +44,57 @@ impl Dialog {
         }
         let mut rows = Vec::new();
         rows.extend([
-            jackin_tui::components::ContainerInfoRow::new(
+            crate::tui::components::container_info_surface::ContainerInfoRow::new(
                 "Focused",
                 Self::usage_focused_label(view),
             ),
-            jackin_tui::components::ContainerInfoRow::new(
+            crate::tui::components::container_info_surface::ContainerInfoRow::new(
                 "Header",
                 Self::usage_provider_header_label(&view.account.provider_label),
             ),
-            jackin_tui::components::ContainerInfoRow::new(
+            crate::tui::components::container_info_surface::ContainerInfoRow::new(
                 "Provider",
                 view.account.provider_label.clone(),
             ),
-            jackin_tui::components::ContainerInfoRow::new(
+            crate::tui::components::container_info_surface::ContainerInfoRow::new(
                 "Account",
                 view.account.account_label.clone(),
             ),
-            jackin_tui::components::ContainerInfoRow::new(
+            crate::tui::components::container_info_surface::ContainerInfoRow::new(
                 "Status",
                 Self::usage_status_label(view.status),
             ),
-            jackin_tui::components::ContainerInfoRow::new("Updated", view.updated_label.clone()),
+            crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                "Updated",
+                view.updated_label.clone(),
+            ),
         ]);
         if let Some(username) = &view.account.username {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Username",
-                username.clone(),
-            ));
+            rows.push(
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Username",
+                    username.clone(),
+                ),
+            );
         }
         if let Some(plan) = &view.account.plan_label {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Plan",
-                plan.clone(),
-            ));
+            rows.push(
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Plan",
+                    plan.clone(),
+                ),
+            );
         }
         if let Some(origin) = &view.account.credential_origin {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Auth",
-                origin.clone(),
-            ));
+            rows.push(
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Auth",
+                    origin.clone(),
+                ),
+            );
         }
         for bucket in &view.buckets {
-            let mut row = jackin_tui::components::ContainerInfoRow::new(
+            let mut row = crate::tui::components::container_info_surface::ContainerInfoRow::new(
                 bucket.label.clone(),
                 Self::usage_bucket_value(bucket),
             );
@@ -93,26 +104,31 @@ impl Dialog {
             rows.push(row);
         }
         if let Some(error) = &view.last_error {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Detail",
-                error.clone(),
-            ));
+            rows.push(
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Detail",
+                    error.clone(),
+                ),
+            );
         }
-        let mut state = jackin_tui::components::ContainerInfoState::new("Usage", rows);
+        let mut state =
+            crate::tui::components::container_info_surface::ContainerInfoState::new("Usage", rows);
         state.scroll = scroll.clone();
         Some(state)
     }
 
     fn usage_overview_state(
         view: &jackin_protocol::control::FocusedUsageView,
-        scroll: jackin_tui::components::DialogBodyScroll,
-    ) -> jackin_tui::components::ContainerInfoState {
+        scroll: termrock::components::DialogBodyScroll,
+    ) -> crate::tui::components::container_info_surface::ContainerInfoState {
         let mut rows = Vec::new();
         if view.tabs.is_empty() {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Providers",
-                "usage unavailable",
-            ));
+            rows.push(
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Providers",
+                    "usage unavailable",
+                ),
+            );
         } else {
             for tab in &view.tabs {
                 // One quota-focused line per provider, matching the Overview
@@ -126,13 +142,16 @@ impl Dialog {
                     tab.status_label.trim()
                 };
                 let value = quota.to_owned();
-                rows.push(jackin_tui::components::ContainerInfoRow::new(
-                    Self::usage_provider_header_label(&tab.label),
-                    value,
-                ));
+                rows.push(
+                    crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                        Self::usage_provider_header_label(&tab.label),
+                        value,
+                    ),
+                );
             }
         }
-        let mut state = jackin_tui::components::ContainerInfoState::new("Usage", rows);
+        let mut state =
+            crate::tui::components::container_info_surface::ContainerInfoState::new("Usage", rows);
         state.scroll = scroll;
         state
     }
@@ -340,7 +359,7 @@ impl Dialog {
             selected,
             tab_bar_focused: true,
             hovered_tab: None,
-            scroll: jackin_tui::components::DialogBodyScroll::new(),
+            scroll: termrock::components::DialogBodyScroll::new(),
         }
     }
 }

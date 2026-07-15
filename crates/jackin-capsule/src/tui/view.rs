@@ -9,8 +9,8 @@ use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialo
 use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::layout::{self, Tab};
 use crate::tui::model::{HoverTarget, VisiblePane};
-use jackin_tui::components::FocusOwner;
 use ratatui::{Frame, layout::Rect as RatatuiRect, style::Modifier};
+use termrock::components::FocusOwner;
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
     match target {
@@ -71,9 +71,9 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) instance_id_label: &'a str,
     pub(crate) hover_target: Option<HoverTarget>,
     pub(crate) scrollback_active: bool,
-    pub(crate) main_scroll_axes: jackin_tui::scroll::ScrollAxes,
+    pub(crate) main_scroll_axes: termrock::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
-    pub(crate) dialog_hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
+    pub(crate) dialog_hint_spans: Option<&'a [termrock::HintSpan<'a>]>,
     /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
     /// Forwarded to the hint builder so the palette-key glyph reflects the
     /// operator's `JACKIN_PALETTE_KEY` setting.
@@ -103,13 +103,13 @@ fn apply_pane_scrollbar(frame: &mut Frame<'_>, pane: &VisiblePane, offset: usize
         width: pane.outer.cols,
         height: pane.outer.rows,
     };
-    let track = jackin_tui::components::vertical_scrollbar_area(border_area);
+    let track = termrock::components::vertical_scrollbar_area(border_area);
     let interior_rows = usize::from(track.height);
     let content_len = filled.saturating_add(interior_rows);
     let top_offset = termrock::scroll::TailScroll::new(offset)
         .to_top_offset(content_len, interior_rows)
         .min(usize::from(u16::MAX)) as u16;
-    jackin_tui::components::render_vertical_scrollbar_in_area(
+    termrock::components::render_vertical_scrollbar_in_area(
         frame,
         track,
         content_len,
@@ -281,10 +281,10 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         apply_selection_highlight(frame.buffer_mut(), &sel, filled, offset);
     }
     if view.selection_copied {
-        jackin_tui::components::render_toast(
+        crate::tui::components::toast::render_toast(
             frame,
             selection_toast_area(&view),
-            jackin_tui::components::Toast::new("Selection copied"),
+            crate::tui::components::toast::Toast::new("Selection copied"),
         );
     }
     render_clipboard_image_notice(frame, &view);
@@ -323,10 +323,10 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
 
 fn render_clipboard_image_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_>) {
     if let Some(notice) = view.clipboard_image_notice {
-        jackin_tui::components::render_toast(
+        crate::tui::components::toast::render_toast(
             frame,
             selection_toast_area(view),
-            jackin_tui::components::Toast::new(notice),
+            crate::tui::components::toast::Toast::new(notice),
         );
     }
 }
@@ -336,10 +336,10 @@ fn render_link_hover_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_
         return;
     }
     if let Some(notice) = view.link_hover_notice {
-        jackin_tui::components::render_toast(
+        crate::tui::components::toast::render_toast(
             frame,
             selection_toast_area(view),
-            jackin_tui::components::Toast::new(notice),
+            crate::tui::components::toast::Toast::new(notice),
         );
     }
 }

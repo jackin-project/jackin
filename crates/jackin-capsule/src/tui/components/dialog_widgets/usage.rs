@@ -15,7 +15,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::components::tab_strip::TabStrip;
+use termrock::components::tab_strip::TabStrip;
 use termrock::style::{DIM, PHOSPHOR_GREEN, WHITE};
 
 pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
@@ -93,7 +93,7 @@ pub(crate) fn usage_tab_strip_width(tabs: &[(String, bool)]) -> usize {
 /// `Usage: <provider>` (matching the narrow preview); the wide layout and the
 /// Overview/Instance panels keep their own titles.
 pub(crate) fn usage_panel_title(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
     width: u16,
 ) -> String {
     let base = state.title();
@@ -114,7 +114,7 @@ pub(crate) fn usage_panel_title(
 }
 
 pub(crate) fn usage_info_required_height(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
 ) -> u16 {
     // Add the fixed chrome rows that frame the content (borders, title, and
     // padding) on top of the content-line count, then keep a 7-row floor so the
@@ -154,7 +154,7 @@ pub(crate) fn usage_body_rect(box_rect: Rect) -> Rect {
 /// the true body viewport — box minus border minus tab strip — is what clamps).
 pub(crate) fn usage_scroll_inputs(
     box_rect: Rect,
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
 ) -> (usize, usize, Rect) {
     let body = usage_body_rect(box_rect);
     let lines = usage_info_lines_for_width(state, body.width);
@@ -168,7 +168,7 @@ pub(crate) fn usage_scroll_inputs(
 }
 
 pub(crate) fn usage_info_lines(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
 ) -> Vec<Line<'static>> {
     // Width 0 disables right-alignment so content-size/height measurement
     // reflects the intrinsic line width, not a padded-to-panel width.
@@ -176,7 +176,7 @@ pub(crate) fn usage_info_lines(
 }
 
 pub(crate) fn usage_info_lines_for_width(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
     width: u16,
 ) -> Vec<Line<'static>> {
     // Below 64 cols the two-column rows can no longer right-align without the
@@ -185,7 +185,7 @@ pub(crate) fn usage_info_lines_for_width(
 }
 
 pub(crate) fn usage_info_lines_impl(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
     list_layout: bool,
     width: u16,
 ) -> Vec<Line<'static>> {
@@ -251,14 +251,14 @@ pub(crate) fn usage_meter_char(ch: char) -> bool {
 }
 
 pub(crate) fn usage_row_value<'a>(
-    state: &'a jackin_tui::components::ContainerInfoState,
+    state: &'a crate::tui::components::container_info_surface::ContainerInfoState,
     label: &str,
 ) -> Option<&'a str> {
     state
         .rows()
         .iter()
         .find(|row| row.label() == label)
-        .map(jackin_tui::components::ContainerInfoRow::value)
+        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
 }
 
 pub(crate) fn usage_line_width(line: &Line<'_>) -> usize {

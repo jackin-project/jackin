@@ -23,13 +23,13 @@ impl Dialog {
             diagnostics,
             copied_row: None,
             hovered_row: None,
-            scroll: jackin_tui::components::DialogBodyScroll::new(),
+            scroll: termrock::components::DialogBodyScroll::new(),
         }
     }
 
-    /// Build the shared [`ContainerInfoState`](jackin_tui::components::ContainerInfoState)
+    /// Build the shared [`ContainerInfoState`](crate::tui::components::container_info_surface::ContainerInfoState)
     /// for the `ContainerInfo` ("Debug info") dialog from the accumulating
-    /// [`DebugInfo`](jackin_tui::components::DebugInfo) model — the single
+    /// [`DebugInfo`](crate::tui::components::container_info_surface::DebugInfo) model — the single
     /// source of rows/order/labels/copy-affordances shared with the host
     /// console and launch cockpit. Returns `None` for other dialog variants.
     ///
@@ -38,14 +38,14 @@ impl Dialog {
     /// --version` strings.
     pub(crate) fn container_info_state(
         &self,
-    ) -> Option<jackin_tui::components::ContainerInfoState> {
+    ) -> Option<crate::tui::components::container_info_surface::ContainerInfoState> {
         self.container_info_state_with_debug(crate::logging::debug_enabled())
     }
 
     pub(crate) fn container_info_state_with_debug(
         &self,
         debug_enabled: bool,
-    ) -> Option<jackin_tui::components::ContainerInfoState> {
+    ) -> Option<crate::tui::components::container_info_surface::ContainerInfoState> {
         let Self::ContainerInfo {
             container_name,
             role,
@@ -61,7 +61,7 @@ impl Dialog {
         };
         let agent_label = focused_agent
             .as_deref()
-            .and_then(jackin_tui::agent_display_name)
+            .and_then(crate::tui::components::agent_display_name)
             .or(focused_agent.as_deref())
             .unwrap_or("(shell)")
             .to_owned();
@@ -75,7 +75,7 @@ impl Dialog {
                 .and_then(|href| href.strip_prefix("file://"))
                 .map(str::to_owned)
         });
-        let mut state = jackin_tui::components::DebugInfo {
+        let mut state = crate::tui::components::container_info_surface::DebugInfo {
             jackin_version: Some(diagnostics.host_version.clone()),
             capsule_version: Some(env!("JACKIN_CAPSULE_VERSION").to_owned()),
             container_id: Some(container_name.clone()),
@@ -88,17 +88,19 @@ impl Dialog {
         .into_state();
         if debug && let Some(href) = diagnostics.run_log_href.as_deref() {
             state.push_row(
-                jackin_tui::components::ContainerInfoRow::new(
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
                     "Reveal diagnostics",
                     diagnostics.run_log_display.clone(),
                 )
                 .hyperlink(href.to_owned()),
             );
         } else if debug && !diagnostics.run_id.is_empty() {
-            state.push_row(jackin_tui::components::ContainerInfoRow::new(
-                "Telemetry",
-                diagnostics.run_log_display.clone(),
-            ));
+            state.push_row(
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Telemetry",
+                    diagnostics.run_log_display.clone(),
+                ),
+            );
         }
         if let Some(row) = *copied_row {
             state.mark_copied(row);
@@ -127,8 +129,10 @@ impl Dialog {
             height,
         };
         let hit = self.container_info_state().and_then(|state| {
-            jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
-                .map(|(idx, _)| idx)
+            crate::tui::components::container_info_surface::container_info_copy_payload_at(
+                area, &state, col, row,
+            )
+            .map(|(idx, _)| idx)
         });
         if let Self::ContainerInfo { hovered_row, .. } = self
             && *hovered_row != hit

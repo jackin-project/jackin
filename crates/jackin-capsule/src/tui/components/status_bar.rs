@@ -32,7 +32,7 @@
 /// Layout columns come from `termrock::lay_out_tabs`, so the
 /// console TUI and the multiplexer cannot drift on cell sizing /
 /// click-region maths.
-use jackin_tui::components::TabStrip;
+use termrock::components::TabStrip;
 
 use crate::tui::layout::Tab;
 use crate::tui::model::{MuxMode, VisibleAgentState};

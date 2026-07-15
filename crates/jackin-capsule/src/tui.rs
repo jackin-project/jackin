@@ -7,9 +7,10 @@
 //! terminal UI lives here, per the TUI source-location convention in
 //! `tui-design-decisions.mdx`.
 
+pub mod ansi;
 pub mod components;
 pub mod effect;
-pub(crate) mod host_colors;
+pub mod host_colors;
 pub mod input;
 pub(crate) mod keymap;
 pub mod layout;
@@ -24,4 +25,5 @@ pub mod subscriptions;
 pub mod terminal;
 pub mod title;
 pub mod update;
+pub mod url_text;
 pub mod view;

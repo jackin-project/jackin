@@ -17,9 +17,8 @@ use ratatui::{
 
 use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
 
-use jackin_tui::components::{
-    FooterLeft, Panel, PanelFocus, StatusFooter, StatusRightGroup, tab_cell_style,
-};
+use crate::tui::components::status_footer::{FooterLeft, StatusFooter, StatusRightGroup};
+use termrock::components::{Panel, PanelFocus, tab_cell_style};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
@@ -202,7 +201,7 @@ impl Widget for PaneBorderWidget {
     }
 }
 
-pub use jackin_tui::components::ModalBackdrop as DialogBackdrop;
+pub use termrock::components::ModalBackdrop as DialogBackdrop;
 
 /// Bottom chrome (branch/PR bar, hint row, debug chip) as a widget. Replaces
 /// the raw-ANSI append + byte cache: the rows ride the Ratatui cell buffer
@@ -216,7 +215,7 @@ pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) instance_id_label: &'a str,
     pub(crate) hover_target: Option<crate::tui::model::HoverTarget>,
     pub(crate) scrollback_active: bool,
-    pub(crate) scroll_axes: jackin_tui::scroll::ScrollAxes,
+    pub(crate) scroll_axes: termrock::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
     /// When the operator has pressed the prefix key and the multiplexer is
     /// awaiting a command chord, the hint bar switches to a prefix-command
@@ -260,7 +259,7 @@ pub(crate) struct DialogBottomChromeWidget<'a> {
     pub(crate) pull_request_loading: bool,
     pub(crate) debug_run_id: Option<&'a str>,
     pub(crate) instance_id_label: &'a str,
-    pub(crate) hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
+    pub(crate) hint_spans: Option<&'a [termrock::HintSpan<'a>]>,
 }
 
 impl Widget for DialogBottomChromeWidget<'_> {
@@ -348,7 +347,7 @@ fn render_branch_bar_row(
 
 /// The pane and footer chrome need one spacer each, so hints stay visually
 /// separate from both the agent border and the branch context bar.
-fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::HintSpan<'_>]) {
+fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::HintSpan<'_>]) {
     use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
     use crate::tui::layout::{
         CAPSULE_HINT_BAR_ROWS, CAPSULE_HINT_SEPARATOR_ROWS, CAPSULE_HINT_TOP_SEPARATOR_ROWS,
@@ -362,7 +361,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
         return;
     }
     let available = area.width.saturating_sub(4); // 2 col padding each side
-    let lines = jackin_tui::components::wrapped_lines(spans, available);
+    let lines = termrock::components::wrapped_lines(spans, available);
     let hint_rows = usize::from(CAPSULE_HINT_BAR_ROWS);
     if lines.is_empty() {
         return;

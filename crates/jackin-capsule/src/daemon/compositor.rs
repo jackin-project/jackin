@@ -204,11 +204,11 @@ impl Multiplexer {
         // that drives pane-border focus and cursor visibility. Otherwise the
         // owner follows the focused pane.
         let focus_owner = if self.render.tab_bar_focused {
-            jackin_tui::components::FocusOwner::TabBar
+            termrock::components::FocusOwner::TabBar
         } else {
             focused_id.map_or(
-                jackin_tui::components::FocusOwner::TabBar,
-                jackin_tui::components::FocusOwner::Content,
+                termrock::components::FocusOwner::TabBar,
+                termrock::components::FocusOwner::Content,
             )
         };
         let zoomed = self.active_zoomed_id().is_some();
@@ -290,7 +290,7 @@ impl Multiplexer {
         // overflows — the hint and the dialog scrollbar are measured the same
         // way and never disagree.
         let github_view_for_hint = self.github_context_view();
-        let dialog_hint_spans: Option<Vec<jackin_tui::HintSpan<'static>>> =
+        let dialog_hint_spans: Option<Vec<termrock::HintSpan<'static>>> =
             dialog_snapshot.as_ref().and_then(|(snapshot, rect)| {
                 self.dialog_top().map(|dialog| {
                     let block = ratatui::layout::Rect {
@@ -312,13 +312,13 @@ impl Multiplexer {
             .and_then(|id| {
                 let pane = panes.iter().find(|pane| pane.id == id)?;
                 let (_, offset, filled) = pane_scrollbars.iter().find(|(sid, _, _)| *sid == id)?;
-                let vertical = jackin_tui::scroll::tail_vertical_thumb(
+                let vertical = termrock::scroll::tail_vertical_thumb(
                     pane.outer.rows.saturating_sub(2),
                     *filled,
                     *offset,
                 )
                 .is_some();
-                Some(jackin_tui::components::ScrollAxes {
+                Some(termrock::components::ScrollAxes {
                     vertical,
                     horizontal: false,
                 })
@@ -364,7 +364,7 @@ impl Multiplexer {
                     .iter()
                     .find(|(id, _, _)| *id == pane.id)
                     .map_or((0, 0), |(_, offset, filled)| (*offset, *filled));
-                let thumb = jackin_tui::scroll::tail_vertical_thumb(
+                let thumb = termrock::scroll::tail_vertical_thumb(
                     pane.outer.rows.saturating_sub(2),
                     reported.1,
                     reported.0,
@@ -448,7 +448,9 @@ impl Multiplexer {
                     width: *width,
                     height: *height,
                 };
-                jackin_tui::components::container_info_hyperlink_regions(area, state)
+                crate::tui::components::container_info_surface::container_info_hyperlink_regions(
+                    area, state,
+                )
             } else {
                 Vec::new()
             };

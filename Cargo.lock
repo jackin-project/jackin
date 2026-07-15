@@ -2828,7 +2828,6 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-term",
- "jackin-tui",
  "jackin-usage",
  "nix 0.31.3",
  "portable-pty",

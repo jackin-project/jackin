@@ -18,9 +18,9 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
-use jackin_tui::components::TabStrip;
-use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
-use jackin_tui::components::filter_input::render_filter_input;
+use termrock::components::TabStrip;
+use termrock::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
+use termrock::components::filter_input::render_filter_input;
 use termrock::style::PHOSPHOR_GREEN;
 
 use crate::tui::components::dialog::{Dialog, GithubContextView};
@@ -86,18 +86,18 @@ pub(crate) enum DialogRatatuiSnapshot {
         cursor: usize,
     },
     /// Shared error popup used for capsule-owned modal errors.
-    ErrorPopup(jackin_tui::components::ErrorPopupState),
+    ErrorPopup(termrock::components::ErrorPopupState),
     /// The "Debug info" dialog, rendered through the shared jackin-tui
     /// `ContainerInfoState` so its rows, copy affordances, focused shell,
     /// spacing, link styling, and hover behaviour are identical to the host
     /// console and launch cockpit. GitHub context uses the same variant with
     /// GitHub-specific rows.
-    DebugInfo(jackin_tui::components::ContainerInfoState),
+    DebugInfo(crate::tui::components::container_info_surface::ContainerInfoState),
     /// Usage overlay, rendered from the same scrollable row model as `DebugInfo`
     /// but laid out as CodexBar-style sections instead of generic key/value
     /// diagnostics.
     UsageInfo {
-        state: jackin_tui::components::ContainerInfoState,
+        state: crate::tui::components::container_info_surface::ContainerInfoState,
         tabs: Vec<(String, bool)>,
         tab_bar_focused: bool,
         hovered_tab: Option<usize>,
@@ -189,8 +189,8 @@ impl Dialog {
                     .iter()
                     .enumerate()
                     .filter_map(|(i, slug)| {
-                        let label =
-                            jackin_tui::agent_display_name(slug.as_str()).unwrap_or(slug.as_str());
+                        let label = crate::tui::components::agent_display_name(slug.as_str())
+                            .unwrap_or(slug.as_str());
                         if needle.is_empty() || label.to_ascii_lowercase().contains(&needle) {
                             Some((i, label))
                         } else {
@@ -288,7 +288,7 @@ impl Dialog {
             } => {
                 let title = agent
                     .as_deref()
-                    .and_then(jackin_tui::agent_display_name)
+                    .and_then(crate::tui::components::agent_display_name)
                     .map_or_else(|| "Provider".into(), |n| format!("Provider: {n}"));
                 let items: Vec<PickerItem> = providers
                     .iter()
@@ -400,9 +400,9 @@ impl DialogRatatuiSnapshot {
     /// scroll. Measured the same way `render_scrollable_dialog_body` measures,
     /// so a hint built from this advertises exactly the axes whose scrollbar is
     /// drawn — the hint and the scrollbar never disagree.
-    pub(crate) fn scroll_axes(&self, block_area: Rect) -> jackin_tui::components::ScrollAxes {
+    pub(crate) fn scroll_axes(&self, block_area: Rect) -> termrock::components::ScrollAxes {
         match self {
-            Self::DebugInfo(state) => jackin_tui::components::dialog_scroll_axes(
+            Self::DebugInfo(state) => termrock::components::dialog_scroll_axes(
                 state.content_width(),
                 state.content_height(),
                 block_area,
@@ -415,9 +415,9 @@ impl DialogRatatuiSnapshot {
                 let (content_width, content_height, scroll_rect) =
                     usage_scroll_inputs(block_area, state);
                 let width = content_width.max(usage_tab_strip_width(tabs));
-                jackin_tui::components::dialog_scroll_axes(width, content_height, scroll_rect)
+                termrock::components::dialog_scroll_axes(width, content_height, scroll_rect)
             }
-            _ => jackin_tui::components::ScrollAxes::none(),
+            _ => termrock::components::ScrollAxes::none(),
         }
     }
 }
@@ -471,7 +471,7 @@ pub(crate) fn render_dialog_ratatui(
             value,
             cursor,
         } => {
-            jackin_tui::components::render_labeled_text_input_dialog(
+            termrock::components::render_labeled_text_input_dialog(
                 frame,
                 area,
                 dialog_title,
@@ -481,10 +481,12 @@ pub(crate) fn render_dialog_ratatui(
             );
         }
         DialogRatatuiSnapshot::ErrorPopup(state) => {
-            jackin_tui::components::render_error_dialog_in(frame, area, state);
+            termrock::components::render_error_dialog_in(frame, area, state);
         }
         DialogRatatuiSnapshot::DebugInfo(state) => {
-            jackin_tui::components::render_container_info(frame, area, state);
+            crate::tui::components::container_info_surface::render_container_info(
+                frame, area, state,
+            );
         }
         DialogRatatuiSnapshot::UsageInfo {
             state,
@@ -512,7 +514,7 @@ fn render_confirm_action(
     // Exit uses the shared data-loss variant (prompt + warning notes); every
     // other confirm keeps the plain title+body prompt. Same widget either way.
     let mut state = if data_loss {
-        jackin_tui::components::exit_confirm_state_with_data_loss()
+        crate::tui::components::exit_confirm_state_with_data_loss()
     } else {
         ConfirmState::new(format!("{title}\n\n{body}"))
     };
@@ -525,17 +527,17 @@ fn render_confirm_action(
 fn render_usage_info(
     frame: &mut Frame<'_>,
     area: Rect,
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
     tabs: &[(String, bool)],
     tab_bar_focused: bool,
     hovered_tab: Option<usize>,
 ) {
     let title = usage_panel_title(state, area.width);
-    let inner = jackin_tui::components::render_dialog_shell(
+    let inner = termrock::components::render_dialog_shell(
         frame,
         area,
         Some(title.as_str()),
-        jackin_tui::components::DialogBorder::Default,
+        termrock::components::DialogBorder::Default,
     );
     if inner.height == 0 {
         return;
@@ -558,7 +560,7 @@ fn render_usage_info(
     let body = usage_body_rect(area);
     let lines = usage_info_lines_for_width(state, body.width);
     let mut scroll = state.scroll.clone();
-    jackin_tui::components::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll);
+    termrock::components::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll);
 }
 
 fn render_filter_picker(
@@ -573,9 +575,9 @@ fn render_filter_picker(
     // Reuse the shared modal panel so the menu/pickers match every other
     // jackin❯ dialog: PHOSPHOR_GREEN focused border + bold-white title.
     let title_str = format!(" {title} ");
-    let block = jackin_tui::components::Panel::new()
+    let block = termrock::components::Panel::new()
         .title(&title_str)
-        .focus(jackin_tui::components::PanelFocus::Focused)
+        .focus(termrock::components::PanelFocus::Focused)
         .block();
     let inner = block.inner(area);
     Clear.render(area, frame.buffer_mut());
@@ -610,20 +612,17 @@ fn render_filter_picker(
 
     // Section rows are full-width centered dividers drawn by render_picker_list;
     // item rows are white and let the shared highlight paint the selected row.
-    let rows: Vec<jackin_tui::components::PickerRow<'_>> = items
+    let rows: Vec<termrock::components::PickerRow<'_>> = items
         .iter()
         .map(|item| match item {
-            PickerItem::Section(label) => {
-                jackin_tui::components::PickerRow::Separator(label.clone())
+            PickerItem::Section(label) => termrock::components::PickerRow::Separator(label.clone()),
+            PickerItem::Item(label) => {
+                termrock::components::PickerRow::Item(ratatui::widgets::ListItem::new(Line::from(
+                    Span::styled(label.clone(), Style::default().fg(PHOSPHOR_GREEN)),
+                )))
             }
-            PickerItem::Item(label) => jackin_tui::components::PickerRow::Item(
-                ratatui::widgets::ListItem::new(Line::from(Span::styled(
-                    label.clone(),
-                    Style::default().fg(PHOSPHOR_GREEN),
-                ))),
-            ),
         })
         .collect();
 
-    jackin_tui::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
+    termrock::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
 }

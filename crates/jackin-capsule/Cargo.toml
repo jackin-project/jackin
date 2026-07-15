@@ -55,9 +55,8 @@ url = { workspace = true }
 unicode-width = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 sha2 = { workspace = true }
-jackin-tui = { workspace = true }
 ratatui = { workspace = true }
-termrock = { workspace = true }
+termrock = { workspace = true, features = ["crossterm"] }
 hex = { workspace = true }
 dhat = { workspace = true, optional = true }
 # tui-term was evaluated for pane-body rendering (see ADR-004) but did not fit

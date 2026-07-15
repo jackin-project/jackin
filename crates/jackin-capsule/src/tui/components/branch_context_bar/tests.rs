@@ -37,7 +37,7 @@ fn widget_bar(
         instance_id_label: container,
         hover_target: hover,
         scrollback_active: false,
-        scroll_axes: jackin_tui::scroll::ScrollAxes::none(),
+        scroll_axes: termrock::scroll::ScrollAxes::none(),
         debug_run_id: None,
         prefix_awaiting: false,
         palette_key: 0x1C,

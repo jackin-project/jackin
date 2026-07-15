@@ -4,7 +4,7 @@
 //! G0 shared-runtime wiring for the capsule TUI.
 //!
 //! The shared TEA `Component<Ev, Msg>` and `View<Model>` contracts live in
-//! `jackin_tui::runtime`. This module is the capsule's implementation of
+//! `termrock::runtime`. This module is the capsule's implementation of
 //! those traits over its surface types. `CapsuleView` is the production
 //! adapter: `daemon/compositor.rs` routes the Ratatui frame through
 //! [`termrock::runtime::drive_frame`] (plan 021). Render still

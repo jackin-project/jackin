@@ -37,3 +37,10 @@ CI/CD observation is deferred until the final aggregate verification phase.
 
 - Terminal ownership/title policy and raw ANSI brand output now live in root `jackin`; the digital-rain color ramp consumes TermRock palette tokens while remaining product composition.
 - `rg -l 'jackin_tui' crates/jackin/src --glob '*.rs'` is empty, the root donor dependency is removed, and `cargo check -p jackin` passed.
+
+## Capsule
+
+- Capsule generic panels, dialogs, focus/hover, scroll, tabs, keymaps, text input, hints, and palette tokens now resolve through TermRock.
+- Raw-byte input enters through a Capsule-local decoder boundary and emits TermRock logical chords; the existing decoder corpus remains the parity oracle.
+- Capsule keeps its hand-painted bottom chrome and locally owns status-footer composition, modal sizing, container/debug information, URL safety, host-color probing, product wording, and raw ANSI overlays.
+- `rg -l 'jackin_tui' crates/jackin-capsule --glob '*.rs'` is empty, the donor dependency is removed, and all 788 Capsule library tests passed.

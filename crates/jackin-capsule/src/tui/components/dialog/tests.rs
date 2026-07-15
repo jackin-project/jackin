@@ -32,13 +32,13 @@ fn palette() -> Dialog {
 
 #[test]
 fn spawn_failure_popup_uses_error_popup_hints_and_dismiss_keys() {
-    let mut dialog = Dialog::SpawnFailure(jackin_tui::components::ErrorPopupState::new(
+    let mut dialog = Dialog::SpawnFailure(termrock::components::ErrorPopupState::new(
         "Spawn failed",
         "shell: cap hit",
     ));
     assert_eq!(
-        dialog.footer_hint_spans(None, jackin_tui::components::ScrollAxes::none()),
-        jackin_tui::components::error_popup_hint_spans()
+        dialog.footer_hint_spans(None, termrock::components::ScrollAxes::none()),
+        termrock::components::error_popup_hint_spans()
     );
     assert_eq!(dialog.handle_key(b"x", None), DialogAction::Redraw);
     assert_eq!(dialog.handle_key(b"\x1b", None), DialogAction::Dismiss);
@@ -376,7 +376,7 @@ fn picker_enter_with_empty_filtered_list_is_redraw_noop() {
 fn rename_tab_empty_input_clears_label() {
     let mut d = Dialog::RenameTab {
         tab_idx: 3,
-        input: jackin_tui::TextField::new("").with_allow_empty(true),
+        input: termrock::components::TextField::new("").with_allow_empty(true),
     };
     match d.handle_key(b"\r", None) {
         DialogAction::RenameTab { tab_idx, label } => {
@@ -391,7 +391,7 @@ fn rename_tab_empty_input_clears_label() {
 fn rename_tab_backspace_removes_last_char() {
     let mut d = Dialog::RenameTab {
         tab_idx: 0,
-        input: jackin_tui::TextField::new("abc"),
+        input: termrock::components::TextField::new("abc"),
     };
     assert_eq!(d.handle_key(b"\x7f", None), DialogAction::Redraw);
     let Dialog::RenameTab { input, .. } = d else {
@@ -404,7 +404,7 @@ fn rename_tab_backspace_removes_last_char() {
 fn rename_tab_esc_dismisses() {
     let mut d = Dialog::RenameTab {
         tab_idx: 0,
-        input: jackin_tui::TextField::new("abc"),
+        input: termrock::components::TextField::new("abc"),
     };
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
 }
@@ -416,7 +416,7 @@ fn rename_tab_consumes_q_as_input_not_dismiss() {
     // operators can't type the letter into their tab name.
     let mut d = Dialog::RenameTab {
         tab_idx: 0,
-        input: jackin_tui::TextField::new("a"),
+        input: termrock::components::TextField::new("a"),
     };
     assert_eq!(d.handle_key(b"q", None), DialogAction::Redraw);
     let Dialog::RenameTab { input, .. } = d else {
@@ -434,7 +434,7 @@ fn container_info_fixture() -> Dialog {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     }
 }
 
@@ -456,12 +456,12 @@ fn container_info_with_diagnostics_fixture() -> Dialog {
         },
         copied_row: None,
         hovered_row: None,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     }
 }
 
 fn visible_cell_for_value(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
     term_rows: u16,
     term_cols: u16,
     area: Rect,
@@ -471,7 +471,9 @@ fn visible_cell_for_value(
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            jackin_tui::components::render_container_info(frame, area, state);
+            crate::tui::components::container_info_surface::render_container_info(
+                frame, area, state,
+            );
         })
         .unwrap();
     let buf = terminal.backend().buffer();
@@ -521,7 +523,7 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
     let rows = state.rows();
     assert_eq!(
         rows.first()
-            .map(jackin_tui::components::ContainerInfoRow::value),
+            .map(crate::tui::components::container_info_surface::ContainerInfoRow::value),
         Some("jk-run-b93735"),
         "Run ID must stay the first Debug info row even when capsule knows container/session facts"
     );
@@ -570,7 +572,7 @@ fn container_info_state_backend_only_shows_telemetry_without_reveal() {
         },
         copied_row: None,
         hovered_row: None,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     };
     let state = d
         .container_info_state_with_debug(true)
@@ -655,7 +657,8 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
         .container_info_state_with_debug(true)
         .expect("container info state should be available");
     let (_, col, _, width) = source.box_rect(term_rows, term_cols);
-    let height = jackin_tui::components::container_info_required_height(&state);
+    let height =
+        crate::tui::components::container_info_surface::container_info_required_height(&state);
     let area = Rect {
         x: col,
         y: 4,
@@ -680,7 +683,7 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
             .position(|row| row.value() == expected_payload)
             .expect("expected payload should be in Debug-info state");
         assert_eq!(
-            jackin_tui::components::container_info_copy_payload_at(
+            crate::tui::components::container_info_surface::container_info_copy_payload_at(
                 area, &state, screen_col, screen_row
             ),
             Some((expected_row, expected_payload.to_owned())),
@@ -819,7 +822,7 @@ fn container_info_clear_copy_feedback_hides_badge() {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     };
     assert!(d.clear_copy_feedback());
     let Dialog::ContainerInfo { copied_row, .. } = d else {
@@ -843,7 +846,7 @@ fn github_context_enter_copies_pr_url_and_shows_feedback() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     };
 
     match d.handle_key(b"\r", Some(&view)) {
@@ -861,7 +864,7 @@ fn github_context_o_opens_pr_url() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     };
 
     match d.handle_key(b"o", Some(&view)) {
@@ -883,7 +886,7 @@ fn github_context_c_opens_ci_url_when_available() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     };
 
     match d.handle_key(b"c", Some(&view)) {
@@ -903,7 +906,7 @@ fn github_context_url_click_copies_pr_url() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -928,7 +931,7 @@ fn github_context_open_rows_click_open_urls() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -958,7 +961,7 @@ fn github_context_unavailable_ci_row_is_not_clickable() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -983,7 +986,7 @@ fn github_context_uses_shared_focused_info_dialog() {
     let pr = pull_request_fixture();
     let d = Dialog::GitHubContext {
         copied: false,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     };
 
     let view = github_view_for_fixture(&pr);
@@ -1516,7 +1519,7 @@ fn usage_dialog_renders_bucket_status_rows_for_error_states() {
     let values: Vec<&str> = state
         .rows()
         .iter()
-        .map(jackin_tui::components::ContainerInfoRow::value)
+        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
         .collect();
 
     assert!(values.iter().any(|value| value.contains("needs login")));
@@ -1532,7 +1535,7 @@ fn usage_dialog_rows_render_provider_quota_snapshot() {
     let values: Vec<&str> = state
         .rows()
         .iter()
-        .map(jackin_tui::components::ContainerInfoRow::value)
+        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
         .collect();
 
     assert_eq!(state.rows()[0].label(), "Focused");
@@ -1652,7 +1655,7 @@ fn usage_dialog_renders_deficit_and_runout_quota_labels() {
     let values: Vec<&str> = state
         .rows()
         .iter()
-        .map(jackin_tui::components::ContainerInfoRow::value)
+        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
         .collect();
 
     assert!(values.iter().any(|value| {
@@ -1806,7 +1809,7 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
     let values: Vec<&str> = state
         .rows()
         .iter()
-        .map(jackin_tui::components::ContainerInfoRow::value)
+        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
         .collect();
 
     assert!(values.iter().any(|value| {
@@ -1870,7 +1873,7 @@ fn usage_dialog_renders_dollar_budget_window() {
     let values: Vec<&str> = state
         .rows()
         .iter()
-        .map(jackin_tui::components::ContainerInfoRow::value)
+        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
         .collect();
     assert!(
         values
@@ -1887,7 +1890,7 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
     let values: Vec<&str> = state
         .rows()
         .iter()
-        .map(jackin_tui::components::ContainerInfoRow::value)
+        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
         .collect();
     let rows_debug = format!("{:?}", state.rows());
 
@@ -2289,7 +2292,7 @@ fn github_context_clamp_body_scroll_reduces_overscroll() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: jackin_tui::components::DialogBodyScroll {
+        scroll: termrock::components::DialogBodyScroll {
             scroll_x: u16::MAX,
             scroll_y: u16::MAX,
         },
