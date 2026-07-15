@@ -43,48 +43,24 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Build and package archive
-      id: package
+    - name: Build release binary
       shell: bash
       env:
         PACKAGE: ${{ inputs.package }}
-        TARGET: ${{ inputs.target }}
         ZIGBUILD_TARGET: ${{ inputs.zigbuild-target }}
         JACKIN_VERSION_OVERRIDE: ${{ inputs.version }}
-        ARCHIVE_BASENAME: ${{ inputs.archive-basename }}
-        SOURCE_DATE_EPOCH: "0"
       run: |
         set -euo pipefail
 
-        archive="${ARCHIVE_BASENAME}.tar.gz"
-        target_dir="${CARGO_TARGET_DIR:-target}"
         export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/zig-global-cache}"
         export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/zig-local-cache}"
         mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
         case "$PACKAGE" in
           jackin)
             cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"
-            tar --sort=name \
-              --mtime="@${SOURCE_DATE_EPOCH}" \
-              --owner=0 \
-              --group=0 \
-              --numeric-owner \
-              -cf - \
-              -C "${target_dir}/${TARGET}/release" \
-              jackin jackin-role |
-              gzip -n > "$archive"
             ;;
           jackin-capsule)
             cargo zigbuild --timings --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
-            tar --sort=name \
-              --mtime="@${SOURCE_DATE_EPOCH}" \
-              --owner=0 \
-              --group=0 \
-              --numeric-owner \
-              -cf - \
-              -C "${target_dir}/${TARGET}/release" \
-              jackin-capsule |
-              gzip -n > "$archive"
             ;;
           *)
             echo "::error::unsupported release archive package: ${PACKAGE}"
@@ -92,13 +68,54 @@ runs:
             ;;
         esac
 
+    - name: Package deterministic archive
+      id: package
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        TARGET: ${{ inputs.target }}
+        ARCHIVE_BASENAME: ${{ inputs.archive-basename }}
+        SOURCE_DATE_EPOCH: "0"
+      run: |
+        set -euo pipefail
+
+        archive="${ARCHIVE_BASENAME}.tar.gz"
+        target_dir="${CARGO_TARGET_DIR:-target}"
+        case "$PACKAGE" in
+          jackin) binaries=(jackin jackin-role) ;;
+          jackin-capsule) binaries=(jackin-capsule) ;;
+          *)
+            echo "::error::unsupported release archive package: ${PACKAGE}"
+            exit 1
+            ;;
+        esac
+
+        tar --sort=name \
+          --mtime="@${SOURCE_DATE_EPOCH}" \
+          --owner=0 \
+          --group=0 \
+          --numeric-owner \
+          -cf - \
+          -C "${target_dir}/${TARGET}/release" \
+          "${binaries[@]}" |
+          gzip -n > "$archive"
+
         if [ "$target_dir" != "target" ] && [ -d "${target_dir}/cargo-timings" ]; then
           mkdir -p target/cargo-timings
           cp -a "${target_dir}/cargo-timings/." target/cargo-timings/
         fi
 
-        sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
         echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+    - name: Write archive checksum
+      shell: bash
+      env:
+        ARCHIVE: ${{ steps.package.outputs.archive }}
+      run: |
+        set -euo pipefail
+
+        archive="$ARCHIVE"
+        sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
 
     - name: Upload cargo timings
       if: always()

@@ -33,7 +33,7 @@ jobs:
   matrix-setup:
     name: Select runner lane
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     outputs:
       configs: ${{ steps.set.outputs.configs }}
       has_github: ${{ steps.set.outputs.has_github }}
@@ -65,7 +65,7 @@ jobs:
 
   check-version:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -151,6 +151,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
@@ -161,10 +162,10 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # Only main saves, preserving limited cache quota for reusable entries.
       - run: rustup target add ${{ matrix.target.triple }}
       - name: Cache macOS SDK
         if: contains(matrix.target.triple, 'apple')
@@ -240,6 +241,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
@@ -250,10 +252,10 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # Only main saves, preserving limited cache quota for reusable entries.
       - run: rustup target add ${{ matrix.target.triple }}
       - name: Build signed capsule archive
         uses: ./.github/actions/build-release-archive
