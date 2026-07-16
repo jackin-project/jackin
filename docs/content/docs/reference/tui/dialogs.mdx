@@ -91,7 +91,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 **Wheel routing is per-surface but uses one neutral handler.** Each surface has its own input loop, so each must decode terminal events and call TermRock `DialogScroll::handle_mouse` (or the product adapter `jackin_core::tui_scroll_input` when the backend still holds raw SGR/bytes). Shared widget state never parses escape sequences. Two non-obvious requirements that this rule exists to enforce:
 
 - **A dialog must not swallow wheel events.** The capsule's input dispatch previously dropped every non-left-click press while a dialog was open, eating the wheel before it could scroll the body; the dialog-open guard must let wheel buttons through to the scroll handler.
-- **Every surface that opens a scrollable dialog wires the wheel.** All three input loops route the wheel to the open dialog's scroll state: the console manager (<RepoFile path="crates/jackin-console/src/tui/input/mouse.rs">crates/jackin-console/src/tui/input/mouse.rs</RepoFile>), the launch cockpit (<RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs">crates/jackin-launch/src/tui/subscriptions.rs</RepoFile>), and the capsule daemon (<RepoFile path="crates/jackin-capsule/src/daemon/input_dispatch.rs">crates/jackin-capsule/src/daemon/input_dispatch.rs</RepoFile>). Adding a new surface that hosts a scrollable dialog means wiring its wheel the same way.
+- **Every surface that opens a scrollable dialog wires the wheel.** All three input loops route the wheel to the open dialog's scroll state: the console manager (<RepoFile path="crates/jackin-console/src/tui/input/mouse.rs">crates/jackin-console/src/tui/input/mouse.rs</RepoFile>), the launch cockpit (<RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs">crates/jackin-launch/src/tui/subscriptions.rs</RepoFile>), and the capsule daemon (<RepoFile path="crates/jackin-capsule/src/tui/daemon/input_dispatch.rs">crates/jackin-capsule/src/tui/daemon/input_dispatch.rs</RepoFile>). Adding a new surface that hosts a scrollable dialog means wiring its wheel the same way.
 
 `DialogScroll::handle_mouse` treats `ScrollLeft`/`ScrollRight` as horizontal **and** `Shift`+`ScrollUp`/`ScrollDown` as horizontal, because some terminals map a horizontal trackpad swipe onto a shifted vertical wheel rather than emitting native horizontal-wheel events.
 
@@ -99,7 +99,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 ### Debug info dialog contract
 
-`DebugInfo::into_state()` in <RepoFile path="crates/jackin-core/src/operator_info.rs">the product facade</RepoFile> is the only row-order and row-label source for Debug info. It projects into TermRock `DetailTable`, the single neutral renderer for shell, values, copy/link capabilities, hover styling, visible regions, and both-axis scroll. No surface may fork either layer.
+`DebugInfo::into_state()` in <RepoFile path="crates/jackin-tui/src/operator_info.rs">the product facade</RepoFile> is the only row-order and row-label source for Debug info. It projects into TermRock `DetailTable`, the single neutral renderer for shell, values, copy/link capabilities, hover styling, visible regions, and both-axis scroll. No surface may fork either layer.
 
 The canonical row order is:
 
@@ -282,7 +282,7 @@ Copy feedback is the exception because copy does not navigate or otherwise chang
 
 ## Debug info dialog — one shared, accumulating component
 
-The "Debug info" dialog has one product facade and one neutral renderer. <RepoFile path="crates/jackin-core/src/operator_info.rs">jackin❯ operator info</RepoFile> owns `DebugInfo`, row order, labels, diagnostics policy, clipboard/open effects, and final OSC emission. TermRock `DetailTable` and `Panel` own rendering, scrolling, copy/link capabilities, hover, copied affordances, and typed hit regions. Console, launch, and Capsule only supply the facts available at their lifecycle stage.
+The "Debug info" dialog has one product facade and one neutral renderer. <RepoFile path="crates/jackin-tui/src/operator_info.rs">jackin❯ operator info</RepoFile> owns `DebugInfo`, row order, labels, diagnostics policy, clipboard/open effects, and final OSC emission. TermRock `DetailTable` and `Panel` own rendering, scrolling, copy/link capabilities, hover, copied affordances, and typed hit regions. Console, launch, and Capsule only supply the facts available at their lifecycle stage.
 
 **The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin❯ version, Run ID, diagnostics log path when one exists). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Run ID, Container ID, jackin❯ version, jackin-capsule, Role, Agent, Target, Diagnostics log, Telemetry. If `Run ID` is present, it is always the first visible row — not merely the first debug-only row or first copy target — and the default Enter-copy target.
 
