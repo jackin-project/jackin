@@ -12,10 +12,8 @@
 //! summarized values only. Free-text `body` is redacted before emission.
 //!
 //! Dynamic attributes are stamped on the current span (tracing macros require
-//! static field names). Registry validation runs fail-closed before emit.
-//!
-//! Operation / event names must come from the event registry
-//! (`registry::lookup` / `otel_events`), never as inline literals at call sites.
+//! static field names). Definitions come from the Weaver-validated telemetry
+//! schema rather than a second runtime registry.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -23,7 +21,7 @@ use tracing::Span;
 
 use crate::logging::{emit_compact_line, emit_debug_line};
 use crate::redact::redact_text;
-use crate::registry::Outcome;
+use jackin_telemetry::schema::enums::OutcomeValue as Outcome;
 
 /// Severity for [`operation_log`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,7 +90,10 @@ impl OperationGuard {
                     error_type.to_owned(),
                 );
             }
-            if matches!(outcome, Outcome::Failure | Outcome::Timeout) {
+            if matches!(
+                outcome,
+                Outcome::Failure | Outcome::Error | Outcome::Timeout
+            ) {
                 self.span.set_status(Status::error(outcome.as_str()));
             }
         }
@@ -102,7 +103,7 @@ impl OperationGuard {
 impl Drop for OperationGuard {
     fn drop(&mut self) {
         if !self.completed.load(Ordering::SeqCst) {
-            self.record_completion(Outcome::Cancelled, None);
+            self.record_completion(Outcome::Cancellation, None);
         }
     }
 }
@@ -160,7 +161,7 @@ pub fn operation_log_with_outcome(
     let default_outcome = match level {
         OperationLevel::Info | OperationLevel::Debug => Outcome::Success,
         // Warnings must never export success (contract).
-        OperationLevel::Warn => Outcome::Cancelled,
+        OperationLevel::Warn => Outcome::Cancellation,
         OperationLevel::Error => Outcome::Failure,
     };
     let outcome = outcome.unwrap_or(default_outcome);

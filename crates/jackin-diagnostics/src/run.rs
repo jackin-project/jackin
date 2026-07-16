@@ -683,7 +683,7 @@ fn timing_key(stage: &str, name: &str) -> String {
 fn launch_stage_span(stage: crate::DiagnosticStage) -> tracing::Span {
     // Registered span names only (plan 007) — free-form stage strings cannot
     // invent unbounded `launch.{token}` names.
-    let otel_name = crate::registry::launch_stage_span_name(stage);
+    let otel_name = stage.span_name();
     let span = tracing::info_span!(
         "launch_stage",
         "launch.stage.name" = stage.as_str(),

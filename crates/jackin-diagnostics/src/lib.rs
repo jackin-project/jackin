@@ -13,10 +13,10 @@ mod observability_test_support;
 pub mod operation;
 pub mod operator_notice;
 pub mod redact;
-pub mod registry;
 pub mod run;
 pub mod screen;
 pub mod secret_scrub;
+mod stage;
 pub mod terminal;
 
 // Single debug_log! definition lives in jackin-core (port-based).
@@ -48,10 +48,6 @@ pub use operation::{
     OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,
     operation_metric, operation_record_exit_code, operation_set_i64_attr, operation_span,
 };
-pub use registry::{
-    AttrDef, AttrType, Cardinality, DiagnosticStage, EventDef, Outcome, Privacy, RegistryError,
-    Severity, SinkSet, lookup as lookup_event, validate as validate_event,
-};
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
     active_subprocess_done, active_timing_done, active_timing_started, install_host_panic_hook,
@@ -59,6 +55,7 @@ pub use run::{
 };
 pub use screen::current_screen_name;
 pub use secret_scrub::scrub_secrets;
+pub use stage::DiagnosticStage;
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
     set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,
