@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use super::{TokenSession, json_u64};
+use super::{PollStatus, TokenSession, json_u64};
 
 /// Per-line token fields from Claude JSONL.
 #[derive(Debug, Default)]
@@ -60,9 +60,9 @@ fn find_jsonl_files() -> Vec<PathBuf> {
     )
 }
 
-pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
+pub(crate) fn poll_session(session: &mut TokenSession) -> PollStatus {
     let files = find_jsonl_files();
-    let Some(acc) = super::recompute_spend(&files, |text, acc| {
+    let acc = match super::recompute_spend(&files, |text, acc| {
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
@@ -89,15 +89,17 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
             }
             acc.seen = true;
         }
-    }) else {
-        return false;
+    }) {
+        Ok(Some(acc)) => acc,
+        Ok(None) => return PollStatus::Unchanged,
+        Err(super::ProviderReadDegraded) => return PollStatus::Degraded,
     };
 
     let changed = acc.commit(&mut session.totals);
     if changed && session.totals.window_start.is_none() {
         session.totals.window_start = Some(SystemTime::now());
     }
-    changed
+    PollStatus::from_changed(changed)
 }
 
 #[cfg(test)]

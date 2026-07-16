@@ -5,13 +5,13 @@
 //!
 //! Reads `~/.local/share/amp/threads/*.json`.
 
-use super::{TokenSession, json_u64};
+use super::{PollStatus, TokenSession, json_u64};
 
-pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
+pub(crate) fn poll_session(session: &mut TokenSession) -> PollStatus {
     // Amp keeps thread files flat directly under `threads/` — top level only
     // (max_depth 0), so unrelated nested JSON never inflates the spend total.
     let files = super::find_provider_files(&["/home/agent/.local/share/amp/threads"], "json", 0);
-    super::recompute_spend(&files, |content, acc| {
+    match super::recompute_spend(&files, |content, acc| {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(content) else {
             return;
         };
@@ -38,8 +38,11 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
                 acc.model = Some(model.to_owned());
             }
         }
-    })
-    .is_some_and(|acc| acc.commit(&mut session.totals))
+    }) {
+        Ok(Some(acc)) => PollStatus::from_changed(acc.commit(&mut session.totals)),
+        Ok(None) => PollStatus::Unchanged,
+        Err(super::ProviderReadDegraded) => PollStatus::Degraded,
+    }
 }
 
 #[cfg(test)]

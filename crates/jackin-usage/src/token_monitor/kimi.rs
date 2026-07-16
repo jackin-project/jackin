@@ -34,9 +34,9 @@ fn find_wire_files() -> Vec<PathBuf> {
     paths
 }
 
-pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
+pub(crate) fn poll_session(session: &mut TokenSession) -> super::PollStatus {
     let files = find_wire_files();
-    super::recompute_spend(&files, |text, acc| {
+    match super::recompute_spend(&files, |text, acc| {
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
@@ -56,8 +56,11 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
                 acc.seen = true;
             }
         }
-    })
-    .is_some_and(|acc| acc.commit(&mut session.totals))
+    }) {
+        Ok(Some(acc)) => super::PollStatus::from_changed(acc.commit(&mut session.totals)),
+        Ok(None) => super::PollStatus::Unchanged,
+        Err(super::ProviderReadDegraded) => super::PollStatus::Degraded,
+    }
 }
 
 #[cfg(test)]

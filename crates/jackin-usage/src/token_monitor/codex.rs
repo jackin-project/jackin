@@ -91,7 +91,7 @@ fn apply_line(line: &str, acc: &mut Acc) {
     }
 }
 
-pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
+pub(crate) fn poll_session(session: &mut TokenSession) -> super::PollStatus {
     let files = find_jsonl_files();
     // Aggregate ACROSS files (one rollout per session; codex retains several).
     // Each session file is monotonic-cumulative XOR headless-per-call, so take
@@ -99,7 +99,7 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     // to the running aggregate. A single `Acc` across all files would instead let
     // the last-walked file's cumulative overwrite the rest. Codex carries no
     // cache-write dimension, so `SpendAcc.cache_write` stays 0.
-    super::recompute_spend(&files, |text, total| {
+    match super::recompute_spend(&files, |text, total| {
         let mut acc = Acc::default();
         for line in text.lines() {
             if !line.trim().is_empty() {
@@ -122,8 +122,11 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
         if acc.model.is_some() {
             total.model = acc.model;
         }
-    })
-    .is_some_and(|total| total.commit(&mut session.totals))
+    }) {
+        Ok(Some(total)) => super::PollStatus::from_changed(total.commit(&mut session.totals)),
+        Ok(None) => super::PollStatus::Unchanged,
+        Err(super::ProviderReadDegraded) => super::PollStatus::Degraded,
+    }
 }
 
 #[cfg(test)]

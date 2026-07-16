@@ -48,7 +48,7 @@ fn bench_reread(c: &mut Criterion) {
                     acc.input += text.lines().filter(|l| !l.is_empty()).count() as u64;
                     acc.seen = true;
                 });
-                black_box(acc);
+                drop(black_box(acc));
             });
         });
     }

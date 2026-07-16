@@ -859,6 +859,29 @@ fn emit_agent_state_change(
     }
 }
 
+fn provider_probe_attrs() -> [jackin_telemetry::Attr<'static>; 1] {
+    [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::BACKGROUND_CYCLE_NAME,
+        value: jackin_telemetry::Value::Str(
+            jackin_telemetry::schema::enums::BackgroundCycleName::ProviderProbe.as_str(),
+        ),
+    }]
+}
+
+fn record_skipped_provider_probe() {
+    let attrs = [
+        provider_probe_attrs()[0],
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::OutcomeValue::Skip.as_str(),
+            ),
+        },
+    ];
+    let _metric =
+        jackin_telemetry::counter(&jackin_telemetry::metric::BACKGROUND_CYCLES).add(1, &attrs);
+}
+
 async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePackRegistry>) {
     mux.record_resource_metrics().await;
     mux.maybe_spawn_pull_request_context_lookup(Instant::now());
@@ -911,7 +934,26 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
     // Returned changed-id list is unused for now (no live event stream yet);
     // the poll updates the cached per-session totals that
     // `ClientMsg::TokenUsage` reads.
-    drop(mux.usage.token_monitor.poll_due_sessions().await);
+    if mux.usage.token_monitor.due_session_count() == 0 {
+        record_skipped_provider_probe();
+    } else {
+        let cycle = jackin_telemetry::autonomous_root_operation(
+            &jackin_telemetry::operation::BACKGROUND_CYCLE,
+            &provider_probe_attrs(),
+        )
+        .ok();
+        let report = mux.usage.token_monitor.poll_due_sessions().await;
+        if let Some(cycle) = cycle {
+            if report.degraded == 0 {
+                cycle.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+            } else {
+                cycle.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Success,
+                    Some(jackin_telemetry::schema::enums::ErrorType::RecoveredDegradation),
+                );
+            }
+        }
+    }
     // Snapshot visible agent state, refresh, snapshot again. The ticker's only
     // time-based effect is Working→Idle transitions; tab labels derive from
     // state and the status bar has no per-second counter, so when state is

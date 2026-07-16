@@ -109,6 +109,30 @@ fn token_monitor_poll_due_respects_interval() {
     assert!(!session.poll_due());
 }
 
+#[tokio::test]
+async fn due_poll_report_distinguishes_attempted_unchanged_work() {
+    let mut monitor = TokenMonitor::new();
+    monitor.register_session(1, Agent::Grok);
+    monitor.sessions.get_mut(&1).unwrap().last_polled = Instant::now()
+        .checked_sub(std::time::Duration::from_secs(31))
+        .unwrap();
+
+    let report = monitor.poll_due_sessions().await;
+
+    assert_eq!(report.attempted, 1);
+    assert_eq!(report.changed, 0);
+    assert_eq!(report.degraded, 0);
+}
+
+#[test]
+fn recompute_spend_preserves_a_real_read_degradation() {
+    let directory = tempfile::tempdir().expect("temporary provider directory");
+    assert!(matches!(
+        recompute_spend(&[directory.path().to_owned()], |_, _| {}),
+        Err(ProviderReadDegraded)
+    ));
+}
+
 #[test]
 fn session_info_includes_token_usage_when_available() {
     let totals = TokenTotals {

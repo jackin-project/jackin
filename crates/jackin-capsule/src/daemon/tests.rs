@@ -5,6 +5,16 @@
 //! tab lifecycle, git context, status-bar rendering, and PTY session behavior.
 use super::*;
 
+#[test]
+fn provider_probe_noop_tick_exports_no_span() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    record_skipped_provider_probe();
+    drop(guard);
+    export.force_flush();
+    assert!(export.finished_spans().is_empty());
+}
+
 fn serialized_control_spans(
     context: jackin_protocol::TelemetryContext,
 ) -> (bool, Vec<jackin_diagnostics::TestSpanSnapshot>) {

@@ -25,6 +25,33 @@ use jackin_telemetry::ResultTelemetryExt as _;
 
 use jackin_protocol::control::TokenUsageSummary;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PollStatus {
+    Changed,
+    Unchanged,
+    Degraded,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProviderReadDegraded;
+
+impl PollStatus {
+    const fn from_changed(changed: bool) -> Self {
+        if changed {
+            Self::Changed
+        } else {
+            Self::Unchanged
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PollReport {
+    pub attempted: usize,
+    pub changed: usize,
+    pub degraded: usize,
+}
+
 /// Aggregated token totals for one session.
 #[derive(Debug, Clone, Default)]
 pub struct TokenTotals {
@@ -134,8 +161,8 @@ impl TokenSession {
         self.last_polled.elapsed().as_secs() >= self.poll_interval_secs()
     }
 
-    /// Poll for new token data. Returns `true` when totals changed.
-    pub async fn poll(&mut self) -> bool {
+    /// Poll for new token data while preserving adapter degradation.
+    pub(crate) async fn poll(&mut self) -> PollStatus {
         self.last_polled = Instant::now();
         let changed = match self.agent {
             Agent::Claude => claude::poll_session(self),
@@ -145,9 +172,9 @@ impl TokenSession {
             Agent::Opencode => opencode::poll_session(self).await,
             Agent::Amp => amp::poll_session(self),
             // No token-spend reader for Grok yet.
-            Agent::Grok => false,
+            Agent::Grok => PollStatus::Unchanged,
         };
-        if changed {
+        if changed == PollStatus::Changed {
             self.silent_polls = 0;
             // Fill cost from the static pricing table when the provider's own
             // stream did not carry a precomputed cost. Key on the wire model when
@@ -163,7 +190,7 @@ impl TokenSession {
                     self.totals.cache_write_tokens,
                 );
             }
-        } else {
+        } else if changed == PollStatus::Unchanged {
             self.silent_polls = self.silent_polls.saturating_add(1);
         }
         changed
@@ -235,15 +262,13 @@ pub fn read_file_text(path: &Path) -> std::io::Result<Option<String>> {
 /// each file's text into a `SpendAcc` via `fold`. This is the outer shape every
 /// adapter shares; only `fold` (the per-file parse) differs.
 ///
-/// Returns `None` — meaning "do not change the session totals" — in both the
-/// no-file-contributed case and on a real read failure. Both collapse to the
-/// same caller action: keep the prior totals rather than SET a partial
-/// recompute that could regress a monotonic counter. `Some(acc)` is a complete
-/// pass the caller commits.
+/// An empty successful pass returns `Ok(None)`. A real read failure returns
+/// `Err(ProviderReadDegraded)`, allowing the caller to preserve prior totals
+/// while reporting the degraded provider probe.
 pub fn recompute_spend(
     files: &[std::path::PathBuf],
     mut fold: impl FnMut(&str, &mut SpendAcc),
-) -> Option<SpendAcc> {
+) -> Result<Option<SpendAcc>, ProviderReadDegraded> {
     let mut acc = SpendAcc::default();
     for path in files {
         match read_file_text(path)
@@ -251,10 +276,10 @@ pub fn recompute_spend(
         {
             Ok(Some(text)) => fold(&text, &mut acc),
             Ok(None) => {}
-            Err(_) => return None,
+            Err(_) => return Err(ProviderReadDegraded),
         }
     }
-    acc.seen.then_some(acc)
+    Ok(acc.seen.then_some(acc))
 }
 
 /// The token monitor manages per-session polling.
@@ -301,23 +326,36 @@ impl TokenMonitor {
         }
     }
 
-    /// Poll all sessions that are due. Returns session IDs whose totals changed.
-    pub async fn poll_due_sessions(&mut self) -> Vec<u64> {
+    /// Count work due under the same back-off predicate used by polling.
+    pub fn due_session_count(&self) -> usize {
+        self.sessions
+            .values()
+            .filter(|session| session.poll_due())
+            .count()
+    }
+
+    /// Poll all due sessions and retain whether any adapter degraded.
+    pub async fn poll_due_sessions(&mut self) -> PollReport {
         let due: Vec<u64> = self
             .sessions
             .iter()
             .filter(|(_, session)| session.poll_due())
             .map(|(id, _)| *id)
             .collect();
-        let mut changed = Vec::new();
+        let mut report = PollReport {
+            attempted: due.len(),
+            ..PollReport::default()
+        };
         for id in due {
-            if let Some(session) = self.sessions.get_mut(&id)
-                && session.poll().await
-            {
-                changed.push(id);
+            if let Some(session) = self.sessions.get_mut(&id) {
+                match session.poll().await {
+                    PollStatus::Changed => report.changed += 1,
+                    PollStatus::Degraded => report.degraded += 1,
+                    PollStatus::Unchanged => {}
+                }
             }
         }
-        changed
+        report
     }
 
     /// Get current totals for a session.
