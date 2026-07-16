@@ -32,7 +32,7 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 | [`readme_freshness.rs`](src/readme_freshness.rs) · [`readme_freshness/`](src/readme_freshness) | structural src change ⇒ README same-PR gate | [`tests.rs`](src/readme_freshness/tests.rs) |
 | [`test_layout.rs`](src/test_layout.rs) · [`test_layout/`](src/test_layout) | test-layout gate | [`tests.rs`](src/test_layout/tests.rs) |
 | [`schema.rs`](src/schema.rs) · [`schema/`](src/schema) | schema check | [`tests.rs`](src/schema/tests.rs) |
-| [`docs.rs`](src/docs.rs) · [`docs/`](src/docs) | docs repo-links / brand / specs / roadmap / research | [`tests.rs`](src/docs/tests.rs), brand/specs unit tests |
+| [`docs.rs`](src/docs.rs) · [`docs/`](src/docs) | docs repo-links / brand / specs / roadmap / research and semantic CI cache contracts | [`tests.rs`](src/docs/tests.rs), contract/brand/specs unit tests |
 | [`pr.rs`](src/pr.rs) · [`pr/`](src/pr) | PR tooling | [`tests.rs`](src/pr/tests.rs) |
 | [`profile_matrix.rs`](src/profile_matrix.rs) | feature-profile matrix | — |
 | [`pty_fixture.rs`](src/pty_fixture.rs) · [`pty_fixture/`](src/pty_fixture) | PTY fixture extraction | [`tests.rs`](src/pty_fixture/tests.rs) |

@@ -255,6 +255,15 @@ skips an input-identical crate job entirely. During v5-to-v6 population, a v6
 miss may resolve the known input-identical v5 artifact directly from the same
 source key; it never follows or republishes a v5 latest-target pointer.
 
+Docs link proofs now invalidate on the rendered link surface rather than every
+prose byte. Route paths, headings and fragments, imports, link-bearing MDX,
+generated crate-page inputs, docs tooling, and public assets remain in the
+contract. A prose-only change can therefore migrate a recent base proof and
+publish the new semantic marker without rebuilding the site; any link-surface
+change still runs the complete site build and Lychee check. The prepared Rust
+`jackin-xtask` binary calculates these contracts; CI does not interpret the
+documentation tree with a Bash script.
+
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses
 for all 26 crates. The crate-test contract now retains the last validated
