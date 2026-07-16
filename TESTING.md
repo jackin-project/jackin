@@ -110,7 +110,9 @@ still consume the same contracts and run the same per-crate workflow; the
 central selector only decides which independently attributable crate jobs
 exist. It also resolves target-artifact metadata once for every selected miss,
 so GitHub and Velnor do not repeat the same repository API search before
-restoring identical target parts.
+restoring identical target parts. Both lanes download those parts through the
+same GitHub REST artifact path; target transport does not depend on a
+runner-specific Results Service action adapter.
 
 An exact target-key miss first restores that crate's latest successful target
 as a seed. Cargo still validates every fingerprint and rebuilds changed

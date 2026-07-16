@@ -298,6 +298,14 @@ The workflow now passes the complete JSON value unchanged and selects the
 package with `jq` inside the shared shell step, removing another runner-specific
 expression evaluation boundary.
 
+Run `29516792935` then showed both lanes selecting the same v4 target, but
+Velnor failed inside the official artifact-download action while GitHub began
+the transfer. This is the same Results Service incompatibility previously seen
+on large uploads, not a cache-key difference. Crate targets now use one shared
+REST downloader: it lists artifacts from the already-resolved owning run,
+downloads matching parts concurrently through `gh api`, extracts them
+concurrently, and applies the same validation and restore path on both lanes.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the
