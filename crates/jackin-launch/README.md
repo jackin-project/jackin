@@ -1,4 +1,4 @@
-# jackin-launch-tui
+# jackin-launch
 
 Launch cockpit TUI — the presentation surface for `jackin load`. Renders build/launch progress, launch output, and standalone dialogs during the container bootstrap flow.
 
@@ -29,6 +29,6 @@ The launch-cockpit entry point consumed by `jackin-runtime`'s launch flow. It co
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-launch-tui
-cargo clippy -p jackin-launch-tui --all-targets -- -D warnings
+cargo nextest run -p jackin-launch
+cargo clippy -p jackin-launch --all-targets -- -D warnings
 ```

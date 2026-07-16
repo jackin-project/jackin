@@ -57,7 +57,7 @@ mode = "enforce"
 key = "clippy::await_holding_lock@jackin-docker"
 bound = 1
 [[family.entry]]
-key = "clippy::cast_precision_loss@jackin-launch-tui"
+key = "clippy::cast_precision_loss@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
@@ -66,7 +66,7 @@ bound = 6
 key = "clippy::cast_sign_loss@jackin-console"
 bound = 1
 [[family.entry]]
-key = "clippy::cast_sign_loss@jackin-launch-tui"
+key = "clippy::cast_sign_loss@jackin-launch"
 bound = 10
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
@@ -144,7 +144,7 @@ bound = 2
 key = "clippy::excessive_nesting@jackin-core"
 bound = 1
 [[family.entry]]
-key = "clippy::excessive_nesting@jackin-launch-tui"
+key = "clippy::excessive_nesting@jackin-launch"
 bound = 5
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-runtime"
@@ -171,7 +171,7 @@ bound = 1
 key = "clippy::expect_used@jackin-config"
 bound = 2
 [[family.entry]]
-key = "clippy::expect_used@jackin-console-oppicker"
+key = "clippy::expect_used@jackin-oppicker"
 bound = 3
 [[family.entry]]
 key = "clippy::expect_used@jackin-diagnostics"
@@ -219,7 +219,7 @@ bound = 1
 key = "clippy::missing_const_for_fn@jackin-console"
 bound = 1
 [[family.entry]]
-key = "clippy::missing_const_for_fn@jackin-console-oppicker"
+key = "clippy::missing_const_for_fn@jackin-oppicker"
 bound = 1
 [[family.entry]]
 key = "clippy::needless_collect@jackin"
@@ -318,13 +318,13 @@ bound = 4
 key = "clippy::struct_excessive_bools@jackin-console"
 bound = 14
 [[family.entry]]
-key = "clippy::struct_excessive_bools@jackin-console-oppicker"
+key = "clippy::struct_excessive_bools@jackin-oppicker"
 bound = 3
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-core"
 bound = 1
 [[family.entry]]
-key = "clippy::struct_excessive_bools@jackin-launch-tui"
+key = "clippy::struct_excessive_bools@jackin-launch"
 bound = 2
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-protocol"
@@ -336,7 +336,7 @@ bound = 3
 key = "clippy::struct_excessive_bools@jackin-xtask"
 bound = 1
 [[family.entry]]
-key = "clippy::suboptimal_flops@jackin-launch-tui"
+key = "clippy::suboptimal_flops@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-capsule"
@@ -357,7 +357,7 @@ bound = 2
 key = "clippy::too_many_arguments@jackin-isolation"
 bound = 1
 [[family.entry]]
-key = "clippy::too_many_arguments@jackin-launch-tui"
+key = "clippy::too_many_arguments@jackin-launch"
 bound = 2
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
@@ -381,7 +381,7 @@ bound = 1
 key = "clippy::too_many_lines@jackin-isolation"
 bound = 2
 [[family.entry]]
-key = "clippy::too_many_lines@jackin-launch-tui"
+key = "clippy::too_many_lines@jackin-launch"
 bound = 2
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-protocol"
@@ -399,7 +399,7 @@ bound = 1
 key = "clippy::type_complexity@jackin-test-support"
 bound = 1
 [[family.entry]]
-key = "clippy::type_complexity@jackin-launch-tui"
+key = "clippy::type_complexity@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::unnecessary_wraps@jackin-config"
@@ -477,7 +477,7 @@ bound = 1
 key = "missing_debug_implementations@jackin-instance"
 bound = 1
 [[family.entry]]
-key = "missing_debug_implementations@jackin-launch-tui"
+key = "missing_debug_implementations@jackin-launch"
 bound = 3
 [[family.entry]]
 key = "missing_debug_implementations@jackin-runtime"
@@ -547,7 +547,7 @@ bound = 6292
 key = "crates/jackin-config/README.md"
 bound = 2745
 [[family.entry]]
-key = "crates/jackin-console-oppicker/README.md"
+key = "crates/jackin-oppicker/README.md"
 bound = 1625
 [[family.entry]]
 key = "crates/jackin-console/README.md"
@@ -580,7 +580,7 @@ bound = 1807
 key = "crates/jackin-isolation/README.md"
 bound = 2155
 [[family.entry]]
-key = "crates/jackin-launch-tui/README.md"
+key = "crates/jackin-launch/README.md"
 bound = 1762
 [[family.entry]]
 key = "crates/jackin-lints/README.md"
@@ -684,7 +684,7 @@ bound = 1
 key = "jackin-console"
 bound = 7
 [[family.entry]]
-key = "jackin-console-oppicker"
+key = "jackin-oppicker"
 bound = 3
 [[family.entry]]
 key = "jackin-core"
@@ -711,7 +711,7 @@ bound = 2
 key = "jackin-isolation"
 bound = 6
 [[family.entry]]
-key = "jackin-launch-tui"
+key = "jackin-launch"
 bound = 7
 [[family.entry]]
 key = "jackin-manifest"
@@ -830,7 +830,7 @@ bound = 28
 key = "jackin-isolation"
 bound = 23
 [[family.entry]]
-key = "jackin-launch-tui"
+key = "jackin-launch"
 bound = 41
 [[family.entry]]
 key = "jackin-lints"

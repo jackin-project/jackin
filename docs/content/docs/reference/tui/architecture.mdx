@@ -5,7 +5,7 @@ description: "Elm Architecture layers, source code locations, typed effects flow
 
 ## Architecture — Model / Update / View
 
-Every jackin❯ terminal surface uses Ratatui with The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and terminal/run-loop wiring. This is a **hard requirement** for `jackin-console`, `jackin-launch-tui`, `jackin-capsule`, and every new TUI path. It keeps the update layer testable, the render layer pure, and external work outside the visual boundary.
+Every jackin❯ terminal surface uses Ratatui with The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and terminal/run-loop wiring. This is a **hard requirement** for `jackin-console`, `jackin-launch`, `jackin-capsule`, and every new TUI path. It keeps the update layer testable, the render layer pure, and external work outside the visual boundary.
 
 Each layer has a strict scope:
 
@@ -52,7 +52,7 @@ crates/<surface-crate>/src/tui/
 
 2. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop wiring. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
 
-**Single-screen crate layout** (`jackin-capsule`, `jackin-launch-tui`):
+**Single-screen crate layout** (`jackin-capsule`, `jackin-launch`):
 ```
 src/
 ├── lib.rs

@@ -188,7 +188,7 @@ const APPROVED_TEST_SUPPORT_PARENTS: &[&str] = &[
     "crates/jackin-config/src/lib.rs",
     "crates/jackin-console/src/tui/input.rs",
     "crates/jackin-env/src/lib.rs",
-    "crates/jackin-launch-tui/src/lib.rs",
+    "crates/jackin-launch/src/lib.rs",
     "crates/jackin-runtime/src/runtime.rs",
     "crates/jackin/src/console/tui.rs",
 ];

@@ -10,7 +10,7 @@ Concrete Docker daemon client and subprocess shell runner for jackin❯. The wor
 
 ## Architecture tier and allowed dependencies
 
-**L2 infrastructure.** Allowed workspace dependencies: `jackin-core`, `jackin-diagnostics`, `jackin-build-meta`. Must NOT depend on presentation (`jackin-launch-tui`, `jackin-console`, TermRock) — Docker access is infrastructure, consumed by orchestration above.
+**L2 infrastructure.** Allowed workspace dependencies: `jackin-core`, `jackin-diagnostics`, `jackin-build-meta`. Must NOT depend on presentation (`jackin-launch`, `jackin-console`, TermRock) — Docker access is infrastructure, consumed by orchestration above.
 
 ## Structure
 

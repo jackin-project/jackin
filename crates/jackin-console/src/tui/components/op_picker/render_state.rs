@@ -43,7 +43,7 @@ impl OpPickerRenderState for crate::tui::op_picker::OpPickerState {
         selected_entity_label_or_empty(self.selected_item.as_ref(), |item| item.subtitle.as_str())
     }
 
-    fn naming_stage_input(&self) -> Option<&jackin_console_oppicker::TextInputState<'static>> {
+    fn naming_stage_input(&self) -> Option<&jackin_oppicker::TextInputState<'static>> {
         Self::naming_stage_input(self)
     }
 

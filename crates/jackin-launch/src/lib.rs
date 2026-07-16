@@ -1,4 +1,4 @@
-//! jackin-launch-tui: launch-progress presentation TUI.
+//! jackin-launch: launch-progress presentation TUI.
 //!
 //! **Architecture Invariant:** T3.
 //! Entry point: [`LaunchTui`] — launch progress UI.

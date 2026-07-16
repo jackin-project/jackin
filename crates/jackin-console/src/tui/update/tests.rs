@@ -809,9 +809,7 @@ fn create_op_picker_plan_routes_create_mode_outcomes() {
         field_label: "field".to_owned(),
     };
     assert_eq!(
-        create_op_picker_plan(jackin_console_oppicker::ModalOutcome::Commit(
-            new_item.clone()
-        )),
+        create_op_picker_plan(jackin_oppicker::ModalOutcome::Commit(new_item.clone())),
         CreateOpPickerPlan::Commit(new_item)
     );
 
@@ -823,27 +821,31 @@ fn create_op_picker_plan_routes_create_mode_outcomes() {
         field: "field",
     };
     assert_eq!(
-        create_op_picker_plan(jackin_console_oppicker::ModalOutcome::Commit(
-            edit_existing.clone()
-        )),
+        create_op_picker_plan(jackin_oppicker::ModalOutcome::Commit(edit_existing.clone())),
         CreateOpPickerPlan::Commit(edit_existing)
     );
 
     assert_eq!(
-        create_op_picker_plan(jackin_console_oppicker::ModalOutcome::Commit(
-            OpPickerSelection::<&str, &str, &str, &str, &str>::Existing("ref")
-        )),
+        create_op_picker_plan(jackin_oppicker::ModalOutcome::Commit(OpPickerSelection::<
+            &str,
+            &str,
+            &str,
+            &str,
+            &str,
+        >::Existing(
+            "ref"
+        ))),
         CreateOpPickerPlan::Dismiss
     );
     assert_eq!(
         create_op_picker_plan::<&str, &str, &str, &str, &str>(
-            jackin_console_oppicker::ModalOutcome::Cancel
+            jackin_oppicker::ModalOutcome::Cancel
         ),
         CreateOpPickerPlan::Dismiss
     );
     assert_eq!(
         create_op_picker_plan::<&str, &str, &str, &str, &str>(
-            jackin_console_oppicker::ModalOutcome::Continue
+            jackin_oppicker::ModalOutcome::Continue
         ),
         CreateOpPickerPlan::Continue
     );

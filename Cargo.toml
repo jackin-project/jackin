@@ -9,7 +9,7 @@ members = [
     "crates/jackin-capsule",
     "crates/jackin-config",
     "crates/jackin-console",
-    "crates/jackin-console-oppicker",
+    "crates/jackin-oppicker",
     "crates/jackin-core",
     "crates/jackin-dev",
     "crates/jackin-diagnostics",
@@ -20,7 +20,7 @@ members = [
     "crates/jackin-manifest",
     "crates/jackin-process",
     "crates/jackin-protocol",
-    "crates/jackin-launch-tui",
+    "crates/jackin-launch",
     "crates/jackin-runtime",
     "crates/jackin-term",
     "crates/jackin-xtask",
@@ -66,7 +66,7 @@ jackin-build-meta = { version = "0.6.0-dev", path = "crates/jackin-build-meta" }
 jackin-agent-status = { version = "0.6.0-dev", path = "crates/jackin-agent-status" }
 jackin-config = { version = "0.6.0-dev", path = "crates/jackin-config" }
 jackin-console = { version = "0.6.0-dev", path = "crates/jackin-console" }
-jackin-console-oppicker = { version = "0.6.0-dev", path = "crates/jackin-console-oppicker" }
+jackin-oppicker = { version = "0.6.0-dev", path = "crates/jackin-oppicker" }
 jackin-core = { version = "0.6.0-dev", path = "crates/jackin-core" }
 jackin-diagnostics = { version = "0.6.0-dev", path = "crates/jackin-diagnostics" }
 jackin-docker = { version = "0.6.0-dev", path = "crates/jackin-docker" }
@@ -75,7 +75,7 @@ jackin-host = { version = "0.6.0-dev", path = "crates/jackin-host" }
 jackin-image = { version = "0.6.0-dev", path = "crates/jackin-image" }
 jackin-instance = { version = "0.6.0-dev", path = "crates/jackin-instance" }
 jackin-isolation = { version = "0.6.0-dev", path = "crates/jackin-isolation" }
-jackin-launch-tui = { version = "0.6.0-dev", path = "crates/jackin-launch-tui" }
+jackin-launch = { version = "0.6.0-dev", path = "crates/jackin-launch" }
 jackin-manifest = { version = "0.6.0-dev", path = "crates/jackin-manifest" }
 jackin-process = { version = "0.6.0-dev", path = "crates/jackin-process" }
 jackin-protocol = { version = "0.6.0-dev", path = "crates/jackin-protocol" }

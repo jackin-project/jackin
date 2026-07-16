@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "jackin-launch-tui"
+name = "jackin-launch"
 version = "0.6.0-dev"
 edition.workspace = true
 rust-version.workspace = true

@@ -6,7 +6,7 @@
 //! `jackin_core::error_popup` / `jackin_core::exit_dialog_with_inspect`
 //! route through a global port-trait sink. The sink impl forwards to the
 //! same standalone dialog renderers that `jackin_runtime::progress`
-//! historically called directly. Keeping the impl in `jackin-launch-tui`
+//! historically called directly. Keeping the impl in `jackin-launch`
 //! preserves the L0 (port) → L3 (impl) Branch-by-Abstraction layout that
 //! the rest of the codebase applies to `BuildLogSink`, `DebugLogSink`,
 //! and `OperatorNoticeSink`.

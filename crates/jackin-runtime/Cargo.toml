@@ -25,7 +25,7 @@ jackin-manifest = { workspace = true }
 jackin-docker = { workspace = true }
 jackin-image = { workspace = true }
 jackin-diagnostics = { workspace = true }
-jackin-launch-tui = { workspace = true }
+jackin-launch = { workspace = true }
 jackin-host = { workspace = true }
 jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }

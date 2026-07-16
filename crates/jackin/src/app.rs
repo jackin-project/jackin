@@ -133,7 +133,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     // work in the completed codebase-health track.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
     jackin_diagnostics::install_debug_log_sink();
-    jackin_launch_tui::install_standalone_dialog_sink();
+    jackin_launch::install_standalone_dialog_sink();
     if debug {
         announce_debug_run(&diagnostics);
     }

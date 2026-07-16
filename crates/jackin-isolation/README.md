@@ -10,7 +10,7 @@ Mount isolation subsystem. Materializes per-workspace isolated git worktree moun
 
 ## Architecture tier and allowed dependencies
 
-**Application/integration crate** sitting between orchestration and the Docker/git substrate. Allowed production dependencies (inward only): `jackin-core`, `jackin-config`, `jackin-diagnostics`, `jackin-protocol`, `jackin-docker`, `jackin-runtime`. Must NOT depend on `jackin-launch-tui`, `jackin-console`, or TermRock presentation crates.
+**Application/integration crate** sitting between orchestration and the Docker/git substrate. Allowed production dependencies (inward only): `jackin-core`, `jackin-config`, `jackin-diagnostics`, `jackin-protocol`, `jackin-docker`, `jackin-runtime`. Must NOT depend on `jackin-launch`, `jackin-console`, or TermRock presentation crates.
 
 ## Structure
 

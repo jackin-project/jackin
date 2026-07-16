@@ -1,4 +1,4 @@
-# jackin-console-oppicker
+# jackin-oppicker
 
 Pure model and planning helpers for the 1Password picker — the side-effect-free half of the operator secret-selection flow. Holds picker state, input handling, and load planning with zero `op` CLI calls.
 
@@ -31,6 +31,6 @@ Picker state + planning consumed by `jackin-console` (and the side-effect adapte
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-console-oppicker
-cargo clippy -p jackin-console-oppicker --all-targets -- -D warnings
+cargo nextest run -p jackin-oppicker
+cargo clippy -p jackin-oppicker --all-targets -- -D warnings
 ```

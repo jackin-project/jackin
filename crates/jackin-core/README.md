@@ -11,7 +11,7 @@ Shared jackin❯ vocabulary and pure cross-surface projections. This L0 leaf has
 
 ## Architecture tier and allowed dependencies
 
-**L0 leaf/domain + pure projections.** No workspace dependencies or effects. TermRock and Ratatui types are limited to pure product projections (Debug-info facts, brand/domain color tokens, Role accessors). Presentation layout, hover builders, terminal-protocol scroll decode, and surface widgets live in `jackin-console` / `jackin-capsule` / `jackin-launch-tui` — not here.
+**L0 leaf/domain + pure projections.** No workspace dependencies or effects. TermRock and Ratatui types are limited to pure product projections (Debug-info facts, brand/domain color tokens, Role accessors). Presentation layout, hover builders, terminal-protocol scroll decode, and surface widgets live in `jackin-console` / `jackin-capsule` / `jackin-launch` — not here.
 
 ## Structure
 

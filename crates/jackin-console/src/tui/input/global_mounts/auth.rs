@@ -353,7 +353,7 @@ pub fn handle_settings_auth_modal(
 fn handle_settings_token_generate_pick(
     auth: &mut crate::tui::state::SettingsAuthState,
     pending_token_generate: &mut Option<crate::tui::state::PendingTokenGenerate>,
-    outcome: jackin_console_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
+    outcome: jackin_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
     modal: SettingsModal<'static>,
 ) {
     use crate::tui::op_picker::OpPickerSelection;

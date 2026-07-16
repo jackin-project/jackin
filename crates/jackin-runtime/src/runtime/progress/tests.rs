@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jackin_diagnostics::RunDiagnostics;
-use jackin_launch_tui::tui::components::chrome::bottom_chrome_areas;
-use jackin_launch_tui::tui::components::footer::StatusFooterHover;
+use jackin_launch::tui::components::chrome::bottom_chrome_areas;
+use jackin_launch::tui::components::footer::StatusFooterHover;
 use ratatui::backend::TestBackend;
 
 fn test_diagnostics() -> Arc<RunDiagnostics> {

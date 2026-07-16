@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use jackin_console_oppicker::BlockingSubscription;
 use jackin_env::OpStructRunner;
+use jackin_oppicker::BlockingSubscription;
 
 use super::model::{OpPickerLoadRequest, OpPickerLoadResult};
 use super::{LoadResult, OpPickerState};
@@ -27,11 +27,12 @@ pub fn start_load(
     runner: Arc<dyn OpStructRunner + Send + Sync>,
 ) -> BlockingSubscription<LoadResult> {
     match cached {
-        Some(result) => jackin_console_oppicker::ready_blocking_subscription(result),
-        None => jackin_console_oppicker::spawn_named_blocking_subscription(
-            "jackin-op-picker-load",
-            move || execute_load_request(runner, request),
-        ),
+        Some(result) => jackin_oppicker::ready_blocking_subscription(result),
+        None => {
+            jackin_oppicker::spawn_named_blocking_subscription("jackin-op-picker-load", move || {
+                execute_load_request(runner, request)
+            })
+        }
     }
 }
 
