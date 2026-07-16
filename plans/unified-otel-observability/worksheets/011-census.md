@@ -11,7 +11,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-capsule/src/clipboard.rs` | 0 | 2 | 1 | 0 | 0 | 0 | PARTIAL — cleanup failures emit bodyless `io_error`, non-file recovery emits one governed warning, and path narration is removed; stale-transfer DEBUG still requires classification |
 | `crates/jackin-capsule/src/container_context.rs` | 0 | 3 | 0 | 0 | 0 | 0 | COMPLETE — identity-source and expected-absence fallback narration deleted; container identity is prohibited telemetry data |
 | `crates/jackin-capsule/src/daemon.rs` | 0 | 21 | 4 | 0 | 0 | 0 | COMPLETE — registered agent-state signals own transitions; final daemon errors and handled degradations are typed; raw workdir/terminal/session/PTY/clipboard/error detail and duplicate lifecycle/debug narration are removed |
-| `crates/jackin-capsule/src/daemon/compositor.rs` | 0 | 2 | 5 | 2 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail; structural counts only; raw payload removed |
+| `crates/jackin-capsule/src/daemon/compositor.rs` | 0 | 2 | 5 | 2 | 0 | 0 | COMPLETE — Ratatui draw failure emits one bodyless `io_error` at the rendering owner; duplicate failure narration and per-frame pane/session firehose are deleted; registered render metrics own duration and volume |
 | `crates/jackin-capsule/src/daemon/context_mgmt.rs` | 0 | 6 | 8 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/daemon/control.rs` | 0 | 6 | 2 | 2 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail; structural counts only; raw payload removed |
 | `crates/jackin-capsule/src/daemon/file_export.rs` | 0 | 2 | 2 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |

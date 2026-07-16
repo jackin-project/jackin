@@ -5,27 +5,9 @@
 //!
 //! Normal capsule builds compile these helpers to no-ops. A capsule built with
 //! `--features dhat-heap` and launched with `JACKIN_DHAT_ALLOC_LOG=1` starts a
-//! DHAT heap profile guard in testing mode, allowing selected hot paths to log
-//! per-frame allocation deltas to stderr without writing profile
-//! artifacts on process exit.
-
-#[cfg(feature = "dhat-heap")]
-use std::sync::atomic::{AtomicBool, Ordering};
-
-#[cfg(feature = "dhat-heap")]
-static ENABLED: AtomicBool = AtomicBool::new(false);
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct HeapSnapshot {
-    total_blocks: u64,
-    total_bytes: u64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct HeapDelta {
-    pub(crate) blocks: u64,
-    pub(crate) bytes: u64,
-}
+//! DHAT heap profile guard in testing mode without writing profile artifacts
+//! on process exit. Allocation assertions live in the dedicated integration
+//! test so production rendering does not sample or narrate heap state.
 
 #[cfg(feature = "dhat-heap")]
 pub(crate) type LiveProfiler = dhat::Profiler;
@@ -43,44 +25,12 @@ pub(crate) fn init_from_env() -> Option<LiveProfiler> {
 
 #[cfg(feature = "dhat-heap")]
 fn init_enabled_profiler() -> Option<LiveProfiler> {
-    let profiler = dhat::Profiler::builder().testing().build();
-    ENABLED.store(true, Ordering::Relaxed);
-    Some(profiler)
+    Some(dhat::Profiler::builder().testing().build())
 }
 
 #[cfg(not(feature = "dhat-heap"))]
 fn init_enabled_profiler() -> Option<LiveProfiler> {
     None
-}
-
-pub(crate) fn snapshot() -> Option<HeapSnapshot> {
-    snapshot_enabled()
-}
-
-#[cfg(feature = "dhat-heap")]
-fn snapshot_enabled() -> Option<HeapSnapshot> {
-    if !ENABLED.load(Ordering::Relaxed) {
-        return None;
-    }
-    let stats = dhat::HeapStats::get();
-    Some(HeapSnapshot {
-        total_blocks: stats.total_blocks,
-        total_bytes: stats.total_bytes,
-    })
-}
-
-#[cfg(not(feature = "dhat-heap"))]
-fn snapshot_enabled() -> Option<HeapSnapshot> {
-    None
-}
-
-pub(crate) fn delta_since(before: Option<HeapSnapshot>) -> Option<HeapDelta> {
-    let before = before?;
-    let after = snapshot()?;
-    Some(HeapDelta {
-        blocks: after.total_blocks.saturating_sub(before.total_blocks),
-        bytes: after.total_bytes.saturating_sub(before.total_bytes),
-    })
 }
 
 fn env_truthy(name: &str) -> bool {
@@ -91,6 +41,3 @@ fn env_truthy(name: &str) -> bool {
         )
     })
 }
-
-#[cfg(test)]
-mod tests;
