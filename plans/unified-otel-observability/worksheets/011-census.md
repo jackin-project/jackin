@@ -63,7 +63,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-isolation/src/finalize.rs` | 6 | 0 | 0 | 0 | 0 | 0 | DELETE — finalizer decision owns semantics; container/mount names and shared diagnostic prose prohibited |
 | `crates/jackin-isolation/src/materialize.rs` | 27 | 0 | 0 | 0 | 0 | 0 | DELETE — incidental materialization chatter; launch/isolation boundary owns semantics; paths, workspace/container names, branches, commits, and URLs prohibited |
 | `crates/jackin-isolation/src/state.rs` | 4 | 0 | 0 | 0 | 0 | 0 | DELETE — persistence return value owns semantics; state paths and mount names prohibited |
-| `crates/jackin-launch-tui/src/progress.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-launch-tui/src/progress.rs` | 1 | 0 | 0 | 0 | 0 | 0 | DELETE — recovered lock poison has no operator action; returned acknowledgement state owns behavior |
 | `crates/jackin-runtime/src/apple_container_client.rs` | 7 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/exec_host.rs` | 8 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/host_daemon.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production census after the isolation, instance, host, and image-fallback deletion passes: 158 `telemetry_info!`, 267 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 439 sites remain open.
+Current production census after the isolation, instance, host, image-fallback, and launch-TUI deletion passes: 158 `telemetry_info!`, 266 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 438 sites remain open.
