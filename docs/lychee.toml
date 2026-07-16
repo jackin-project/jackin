@@ -7,8 +7,8 @@
 #   cd docs
 #   bun run check:links:fresh
 
-# Cache is enabled locally and in CI. The CI workflow restores `.lycheecache`
-# with actions/cache so broad PR coverage does not refetch every external URL.
+# Cache is enabled locally. CI records a successful semantic link contract so
+# unchanged generated sites do not repeat the multi-minute external scan.
 cache = true
 
 # 429 is accepted to keep CI useful under external rate limits. GitHub requests

@@ -372,26 +372,10 @@ jobs:
                  ! git fetch --no-tags --depth=1 origin "$source_sha"; then
                 continue
               fi
-              source_lychee=$(
-                {
-                  git rev-parse "$source_sha:docs/lychee.toml"
-                  git show "$source_sha:mise.toml" | sed -n -e '/^lychee = /p'
-                  git show "$source_sha:mise.lock" | sed -n \
-                    -e '/^\[\[tools\.lychee\]\]/,/^\[\[tools\./p'
-                } | sha256sum | cut -d ' ' -f 1
-              )
-              current_lychee=$(
-                {
-                  git rev-parse HEAD:docs/lychee.toml
-                  sed -n -e '/^lychee = /p' mise.toml
-                  sed -n \
-                    -e '/^\[\[tools\.lychee\]\]/,/^\[\[tools\./p' \
-                    mise.lock
-                } | sha256sum | cut -d ' ' -f 1
-              )
               if [ "$(scripts/ci/docs-site-contract.sh "$source_sha")" = \
                    "$(scripts/ci/docs-site-contract.sh)" ] && \
-                 [ "$source_lychee" = "$current_lychee" ]; then
+                 [ "$(scripts/ci/docs-lychee-contract.sh "$source_sha")" = \
+                   "$(scripts/ci/docs-lychee-contract.sh)" ]; then
                 echo "::notice::promoting a successful link result from identical semantic inputs"
                 artifact_id=$candidate_id
                 created_at=$candidate_created_at

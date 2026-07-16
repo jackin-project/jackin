@@ -9,9 +9,6 @@ ref=${1:-HEAD}
 {
   printf 'docs-link-contract-v1\n'
   scripts/ci/docs-site-contract.sh "$ref"
-  git rev-parse "$ref:docs/lychee.toml"
+  scripts/ci/docs-lychee-contract.sh "$ref"
   git rev-parse "$ref:scripts/ci/docs-link-check.sh"
-  git show "$ref:mise.toml" | sed -n -e '/^lychee = /p'
-  git show "$ref:mise.lock" | sed -n \
-    -e '/^\[\[tools\.lychee\]\]/,/^\[\[tools\./p'
 } | sha256sum | cut -d ' ' -f 1
