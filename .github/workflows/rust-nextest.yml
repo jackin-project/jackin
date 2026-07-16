@@ -64,7 +64,7 @@ jobs:
         env:
           ALL_FEATURES: ${{ inputs.all-features }}
           CACHE_KEY: ${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}
-          COMMON_CONTRACT_KEY: ${{ hashFiles('.github/workflows/rust-nextest.yml', '.config/nextest.toml', 'flaky-tests.toml', 'ratchet.toml', 'mise.toml', 'mise.lock', 'scripts/ci/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**') }}
+          COMMON_CONTRACT_KEY: ${{ hashFiles('.github/workflows/rust-nextest.yml', '.config/nextest.toml', 'clippy.toml', 'flaky-tests.toml', 'ratchet.toml', 'mise.toml', 'mise.lock', 'scripts/ci/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**') }}
           CONSTRUCT_IMAGE_CHANGED: ${{ inputs.construct-image-changed }}
           DOCKER_CONTRACT_KEY: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
           DOCKER_E2E: ${{ inputs.docker-e2e }}
