@@ -268,20 +268,25 @@ jobs:
           if [ -n "$artifact_id" ]; then
             exact=true
           else
-            latest=$(
+            candidates=$(
               gh api "repos/${REPOSITORY}/actions/artifacts?per_page=100" \
-                --jq '[.artifacts[] | select(.expired == false and (.name | startswith("docs-site-v3-")))][0] | [.id, .workflow_run.head_sha] | @tsv'
+                --jq '.artifacts[] | select(.expired == false and (.name | startswith("docs-site-v3-"))) | [.id, .workflow_run.head_sha] | @tsv'
             )
-            latest_id=${latest%%$'\t'*}
-            source_sha=${latest#*$'\t'}
-            if [ -n "$latest_id" ] && [ -n "$source_sha" ]; then
-              git fetch --no-tags --depth=1 origin "$source_sha"
+            while IFS=$'\t' read -r candidate_id source_sha; do
+              if [ -z "$candidate_id" ] || [ -z "$source_sha" ]; then
+                continue
+              fi
+              if ! git cat-file -e "$source_sha^{commit}" 2>/dev/null && \
+                 ! git fetch --no-tags --depth=1 origin "$source_sha"; then
+                continue
+              fi
               if [ "$(scripts/ci/docs-site-contract.sh "$source_sha")" = \
                    "$(scripts/ci/docs-site-contract.sh)" ]; then
                 echo "::notice::promoting a site built from identical semantic inputs"
-                artifact_id=$latest_id
+                artifact_id=$candidate_id
+                break
               fi
-            fi
+            done <<< "$candidates"
           fi
           if [ -n "$artifact_id" ]; then
             mkdir -p docs/.output/public
@@ -351,17 +356,22 @@ jobs:
                 '[.artifacts[] | select(.expired == false and .workflow_run.head_repository_id == $repository_id)] | sort_by(.created_at) | last // {}'
           )
           artifact_id=$(jq -r '.id // empty' <<< "$artifact")
+          created_at=$(jq -r '.created_at // empty' <<< "$artifact")
           promoted=false
           if [ -z "$artifact_id" ]; then
-            artifact=$(
+            candidates=$(
               gh api "repos/${REPOSITORY}/actions/artifacts?per_page=100" \
-                | jq -c --argjson repository_id "$REPOSITORY_ID" \
-                  '[.artifacts[] | select(.expired == false and (.name | startswith("docs-result-v1-")) and .workflow_run.head_repository_id == $repository_id)] | sort_by(.created_at) | last // {}'
+                | jq -r --argjson repository_id "$REPOSITORY_ID" \
+                  '.artifacts[] | select(.expired == false and (.name | startswith("docs-result-v1-")) and .workflow_run.head_repository_id == $repository_id) | [.id, .workflow_run.head_sha, .created_at] | @tsv'
             )
-            legacy_id=$(jq -r '.id // empty' <<< "$artifact")
-            source_sha=$(jq -r '.workflow_run.head_sha // empty' <<< "$artifact")
-            if [ -n "$legacy_id" ] && [ -n "$source_sha" ]; then
-              git fetch --no-tags --depth=1 origin "$source_sha"
+            while IFS=$'\t' read -r candidate_id source_sha candidate_created_at; do
+              if [ -z "$candidate_id" ] || [ -z "$source_sha" ]; then
+                continue
+              fi
+              if ! git cat-file -e "$source_sha^{commit}" 2>/dev/null && \
+                 ! git fetch --no-tags --depth=1 origin "$source_sha"; then
+                continue
+              fi
               source_lychee=$(
                 {
                   git rev-parse "$source_sha:docs/lychee.toml"
@@ -383,15 +393,16 @@ jobs:
                    "$(scripts/ci/docs-site-contract.sh)" ] && \
                  [ "$source_lychee" = "$current_lychee" ]; then
                 echo "::notice::promoting a successful link result from identical semantic inputs"
-                artifact_id=$legacy_id
+                artifact_id=$candidate_id
+                created_at=$candidate_created_at
                 promoted=true
+                break
               fi
-            fi
+            done <<< "$candidates"
           fi
           verified=false
           refresh=true
           if [ -n "$artifact_id" ]; then
-            created_at=$(jq -r '.created_at' <<< "$artifact")
             created_epoch=$(date -u -d "$created_at" +%s)
             if [ $(( $(date -u +%s) - created_epoch )) -lt 259200 ]; then
               verified=true
