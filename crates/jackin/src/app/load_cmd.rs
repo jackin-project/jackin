@@ -45,6 +45,7 @@ pub(super) async fn handle_load(
     config: &mut AppConfig,
     paths: &JackinPaths,
     debug: bool,
+    lifecycle: &mut crate::lifecycle::InvocationTelemetry,
     runner: &mut ShellRunner,
     connect_docker: impl FnOnce() -> Result<BollardDockerClient>,
 ) -> Result<()> {
@@ -94,6 +95,7 @@ pub(super) async fn handle_load(
 
     let resolved_workspace =
         resolve_load_workspace(config, &class, &cwd, workspace_input, &ad_hoc_mounts)?;
+    lifecycle.ready();
 
     if dry_run {
         return print_dry_run_plan(
@@ -174,8 +176,6 @@ pub(super) async fn handle_console(
     let _session = jackin_telemetry::identity::SessionGuard::begin(
         jackin_telemetry::identity::SessionKind::Console,
     )?;
-    lifecycle.ready();
-
     let connect_docker = || BollardDockerClient::connect();
 
     let (mut console_entry, startup_error) = match connect_docker() {
@@ -198,6 +198,7 @@ pub(super) async fn handle_console(
     let startup_error_exit = startup_error
         .as_ref()
         .map(|(_, message)| anyhow::anyhow!(message.clone()));
+    lifecycle.ready();
 
     let op_available = console::effects::op_cli_available();
     let (outcome, console_config) = console::run_console(
@@ -506,6 +507,7 @@ pub(super) async fn handle_hardline(
     config: AppConfig,
     paths: JackinPaths,
     debug: bool,
+    lifecycle: &mut crate::lifecycle::InvocationTelemetry,
     connect_docker: impl FnOnce() -> Result<BollardDockerClient>,
 ) -> Result<()> {
     let HardlineArgs {
@@ -556,6 +558,7 @@ pub(super) async fn handle_hardline(
     if action == HardlineAction::Cancel {
         return Ok(());
     }
+    lifecycle.ready();
     if action == HardlineAction::NewSession {
         let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container))
             .with_context(|| {

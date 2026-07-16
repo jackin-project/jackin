@@ -152,12 +152,12 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     let result = async {
         match command {
             Command::Load(args) => {
-                invocation.ready();
                 load_cmd::handle_load(
                     args,
                     &mut config,
                     &paths,
                     debug,
+                    &mut invocation,
                     &mut runner,
                     connect_docker,
                 )
@@ -167,8 +167,15 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
                 load_cmd::handle_console(config, paths, debug, &mut invocation).await
             }
             Command::Hardline(args) => {
-                invocation.ready();
-                load_cmd::handle_hardline(args, config, paths, debug, connect_docker).await
+                load_cmd::handle_hardline(
+                    args,
+                    config,
+                    paths,
+                    debug,
+                    &mut invocation,
+                    connect_docker,
+                )
+                .await
             }
             Command::Eject(args) => {
                 load_cmd::handle_eject(args, &paths, debug, connect_docker).await
