@@ -24,6 +24,8 @@ pub const PERFORMANCE_SLOW_FOREGROUND_WAIT: &str = "performance.slow.foreground.
 pub const CAPSULE_SESSION_DETACH: &str = "capsule.session.detach";
 pub const CAPSULE_SESSION_CLEAN_SHUTDOWN: &str = "capsule.session.clean.shutdown";
 pub const ERROR_TYPED: &str = "error.typed";
+pub const OPERATION_LOG: &str = "operation.log";
+pub const OPERATION_WARN: &str = "operation.warn";
 
 pub const ALL: &[&str] = &[
     SESSION_START,
@@ -48,4 +50,6 @@ pub const ALL: &[&str] = &[
     CAPSULE_SESSION_DETACH,
     CAPSULE_SESSION_CLEAN_SHUTDOWN,
     ERROR_TYPED,
+    OPERATION_LOG,
+    OPERATION_WARN,
 ];

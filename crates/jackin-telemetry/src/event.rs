@@ -135,6 +135,8 @@ event_def!(
     Info
 );
 event_def!(ERROR_TYPED, ERROR_TYPED, Error);
+event_def!(OPERATION_LOG, OPERATION_LOG, Info);
+event_def!(OPERATION_WARN, OPERATION_WARN, Warn);
 
 fn validate(def: &'static EventDef, fields: &FieldSet<'_>) -> Result<(), Rejection> {
     if !schema::events::ALL.contains(&def.name) {
@@ -233,6 +235,8 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
             emit_named!("capsule.session.clean.shutdown", def.severity, fields)
         }
         schema::events::ERROR_TYPED => emit_named!("error.typed", def.severity, fields),
+        schema::events::OPERATION_LOG => emit_named!("operation.log", def.severity, fields),
+        schema::events::OPERATION_WARN => emit_named!("operation.warn", def.severity, fields),
         _ => unreachable!("validated closed event registry"),
     }
     Ok(())

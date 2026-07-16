@@ -21,3 +21,5 @@ groups:
   - { id: event.capsule.session.detach, type: event, name: capsule.session.detach, brief: Operator detached from a capsule session., stability: development, attributes: [] }
   - { id: event.capsule.session.clean.shutdown, type: event, name: capsule.session.clean.shutdown, brief: Capsule session shut down cleanly., stability: development, attributes: [] }
   - { id: event.error.typed, type: event, name: error.typed, brief: Typed product error occurred., stability: development, attributes: [] }
+  - { id: event.operation.log, type: event, name: operation.log, brief: Bounded operation breadcrumb., stability: development, attributes: [] }
+  - { id: event.operation.warn, type: event, name: operation.warn, brief: Bounded operation warning., stability: development, attributes: [] }
