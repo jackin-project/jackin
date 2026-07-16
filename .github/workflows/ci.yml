@@ -357,9 +357,9 @@ jobs:
                 (github.event_name == 'pull_request' &&
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           install_args: >-
-            cargo-binstall rust
+            rust
             ${{ steps.ci-tools-cache.outputs.cache-hit != 'true' &&
-                'cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
+                'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
