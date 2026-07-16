@@ -196,8 +196,10 @@ publish-versus-rehearsal mode, and requested runner lanes. An unrelated commit
 therefore does not rebuild unchanged amd64/arm64 images, while any construct
 input or lane-mode change runs the complete platform matrix.
 
-The repository policy set has a one-day component marker keyed by the exact
-base revision, Rust/policy inputs, and requested lanes. A hit skips schema,
+The repository policy set has a one-day component marker keyed by the semantic
+base revision, Rust/policy inputs, and requested lanes. Pull requests use their
+base SHA and the matching post-merge `main` push uses its `before` SHA, so the
+same successful proof crosses the squash-merge boundary. A hit skips schema,
 ratchet, dependency-policy, README-freshness, and audit jobs while actionlint,
 formatting, tool warmup, affected-crate selection, and the required-status gate
 still execute. This is not a whole-pipeline result: crate/tool producers remain
@@ -211,14 +213,13 @@ Docs prepares the pinned `codebook-lsp` binary once and publishes a seven-day
 platform/tool-contract artifact. The docs and source spell jobs download that
 same binary instead of each invoking Cargo through mise; only a genuinely new
 Codebook version or platform may take the source-build fallback.
-The built static site is cached by its workflow, docs sources, generated crate
-README inputs, dependency lock, and build configuration. An exact hit installs
-only lychee and skips Bun/Node setup, dependency installation, and site build;
-the miss path rebuilds and repopulates the same output for link checking and
-Pages upload. GitHub scopes pull-request caches to the pull request's merge ref,
-so warm validation must use a later normal PR run; a branch
-`workflow_dispatch` has a different cache scope and is intentionally a cold
-comparison.
+The built static site is published as a seven-day repository artifact keyed by
+its workflow, docs sources, generated crate README inputs, dependency lock, and
+build configuration. Unlike a GitHub Actions cache, the artifact is not scoped
+to a pull-request merge ref, so the matching `main` push can reuse the PR build.
+An exact hit installs only lychee and skips Bun/Node setup, dependency
+installation, and site build; the miss path rebuilds and republishes the same
+output for link checking and Pages upload.
 The repository-link job restores the same prepared `jackin-xtask` artifact as
 CI and installs only lychee, so it does not maintain a second Rust build/cache
 path for identical source inputs. Because Docs and CI are independent workflows

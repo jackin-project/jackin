@@ -195,7 +195,9 @@ Image run `29505190527` independently reused its input-identical result and
 finished successfully in about 18 seconds without either platform build.
 
 Repository policy checks now use their own one-day component result keyed by
-the base revision, complete Rust/policy input set, and requested lanes. This
+the semantic base revision, complete Rust/policy input set, and requested lanes.
+Pull requests use the base SHA while the matching post-merge push uses its
+`before` SHA, allowing the same proof to cross the squash boundary. This
 removes the remaining warm two-phase tail: actionlint, formatting, the tool
 warmup, affected-crate selection, and the required gate still run, but unchanged
 schema, ratchet, dependency, README-freshness, and audit results do not allocate
@@ -235,10 +237,13 @@ link scan itself needed only 4 seconds; nearly all remaining time was the docs
 site build. Site-build/result reuse is therefore the next Docs-specific
 sub-minute boundary rather than more link-check parallelism.
 
-The Docs link job now caches `docs/.output/public` by the complete site-build
-contract: workflow, docs sources/configuration, dependency lock, and generated
-crate README inputs. Exact hits install only lychee and proceed directly to the
-four-second link scan; misses retain the full build and repopulate the output.
+The Docs link job publishes `docs/.output/public` as a repository artifact keyed
+by the complete site-build contract: workflow, docs sources/configuration,
+dependency lock, and generated crate README inputs. Repository artifacts avoid
+the pull-request-ref isolation of GitHub Actions caches, so the post-merge
+`main` run can reuse the successful PR build. Exact hits install only lychee and
+proceed directly to the four-second link scan; misses retain the full build and
+repopulate the output.
 
 The first shared-xtask consumer run, `29505456750`, exposed an accidental
 compile path and was cancelled instead of waiting for it. The prepared tool set

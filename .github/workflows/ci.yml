@@ -276,13 +276,17 @@ jobs:
         if: steps.route.outputs.rust == 'true'
         shell: bash
         env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           GH_TOKEN: ${{ github.token }}
           LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
-          base=$(git rev-parse refs/remotes/origin/main)
+          base=${BASE_SHA:-}
+          if [ -z "$base" ] || [[ "$base" =~ ^0+$ ]]; then
+            git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+            base=$(git merge-base HEAD refs/remotes/origin/main)
+          fi
           digest=$(
             {
               printf 'contract=ci-policy-v1\nbase=%s\n' "$base"
