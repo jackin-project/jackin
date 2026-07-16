@@ -4,13 +4,13 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
 use crate::pull_request::PullRequestInfo;
-use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
+use crate::tui::components::chrome::{PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::layout::{self, Tab};
 use crate::tui::model::{HoverTarget, VisiblePane};
 use ratatui::{Frame, layout::Rect as RatatuiRect, style::Modifier};
-use termrock::components::FocusOwner;
+use termrock::interaction::FocusOwner;
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
     match target {
@@ -103,13 +103,13 @@ fn apply_pane_scrollbar(frame: &mut Frame<'_>, pane: &VisiblePane, offset: usize
         width: pane.outer.cols,
         height: pane.outer.rows,
     };
-    let track = termrock::components::vertical_scrollbar_area(border_area);
+    let track = termrock::scroll::vertical_scrollbar_area(border_area);
     let interior_rows = usize::from(track.height);
     let content_len = filled.saturating_add(interior_rows);
     let top_offset = termrock::scroll::TailScroll::new(offset)
         .to_top_offset(content_len, interior_rows)
         .min(usize::from(u16::MAX)) as u16;
-    termrock::components::render_vertical_scrollbar_in_area(
+    termrock::scroll::render_vertical_scrollbar_in_area(
         frame,
         track,
         content_len,
@@ -198,7 +198,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
                 .term_rows
                 .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS),
         };
-        frame.render_widget(DialogBackdrop, backdrop_area);
+        frame.render_widget(&termrock::widgets::Backdrop::default(), backdrop_area);
         if let Some((snapshot, rect)) = view.dialog_snapshot {
             render_dialog_ratatui(frame, *rect, snapshot);
         }

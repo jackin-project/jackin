@@ -74,8 +74,8 @@ pub fn dialog_scroll_axes(
 
 pub fn dialog_scroll(
     scroll: &termrock::scroll::DialogScroll,
-) -> termrock::components::DialogBodyScroll {
-    termrock::components::DialogBodyScroll {
+) -> termrock::layout::DialogBodyScroll {
+    termrock::layout::DialogBodyScroll {
         scroll_x: scroll.scroll_x,
         scroll_y: scroll.scroll_y,
     }

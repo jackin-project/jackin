@@ -6,9 +6,8 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::Block;
 use termrock::interaction::HitRegion;
-use termrock::widgets::{StatusBar, StatusSlot};
+use termrock::widgets::{StatusBar, StatusBarState, StatusSlot};
 
 use crate::LaunchView;
 use crate::tui::components::chrome::{BottomChromeAreas, bottom_chrome_areas};
@@ -48,6 +47,7 @@ pub fn footer_regions(
         min_width: 0,
         enabled: true,
         style: Style::default(),
+        hover_style: None,
     }];
     let right = [
         StatusSlot {
@@ -57,6 +57,7 @@ pub fn footer_regions(
             min_width: 0,
             enabled: !instance.is_empty(),
             style: Style::default(),
+            hover_style: None,
         },
         StatusSlot {
             id: FooterSlot::RunId,
@@ -65,11 +66,14 @@ pub fn footer_regions(
             min_width: 0,
             enabled: run_id.is_some_and(|value| !value.is_empty()),
             style: Style::default(),
+            hover_style: None,
         },
     ];
     StatusBar {
         left: &left,
         right: &right,
+        style: Style::default(),
+        alpha: 1.0,
     }
     .regions(area)
 }
@@ -116,15 +120,6 @@ pub fn render_footer(
     let run = debug_chip
         .map(|value| format!(" {value} "))
         .unwrap_or_default();
-    let faded = termrock::style::faded;
-    frame.render_widget(
-        Block::default().style(
-            Style::default()
-                .bg(faded(termrock::style::WHITE, alpha))
-                .fg(termrock::style::INK),
-        ),
-        area,
-    );
     let left = [StatusSlot {
         id: FooterSlot::Activity,
         content: &activity,
@@ -132,16 +127,14 @@ pub fn render_footer(
         min_width: 0,
         enabled: true,
         style: Style::default()
-            .bg(faded(termrock::style::WHITE, alpha))
-            .fg(faded(
-                if view.footer_hover.left {
-                    termrock::style::LINK_BLUE
-                } else {
-                    termrock::style::INK
-                },
-                alpha,
-            ))
+            .bg(termrock::style::WHITE)
+            .fg(if view.footer_hover.left {
+                termrock::style::LINK_BLUE
+            } else {
+                termrock::style::INK
+            })
             .add_modifier(Modifier::BOLD),
+        hover_style: None,
     }];
     let right = [
         StatusSlot {
@@ -151,16 +144,14 @@ pub fn render_footer(
             min_width: 0,
             enabled: !instance.is_empty(),
             style: Style::default()
-                .bg(faded(termrock::style::WHITE, alpha))
-                .fg(faded(
-                    if view.footer_hover.right {
-                        termrock::style::DEBUG_AMBER
-                    } else {
-                        termrock::style::LINK_BLUE
-                    },
-                    alpha,
-                ))
+                .bg(termrock::style::WHITE)
+                .fg(if view.footer_hover.right {
+                    termrock::style::DEBUG_AMBER
+                } else {
+                    termrock::style::LINK_BLUE
+                })
                 .add_modifier(Modifier::BOLD),
+            hover_style: None,
         },
         StatusSlot {
             id: FooterSlot::RunId,
@@ -169,31 +160,34 @@ pub fn render_footer(
             min_width: 0,
             enabled: debug_chip.is_some_and(|value| !value.is_empty()),
             style: Style::default()
-                .bg(faded(
-                    if view.footer_hover.right_debug {
-                        termrock::style::WHITE
-                    } else {
-                        termrock::style::DANGER_RED
-                    },
-                    alpha,
-                ))
-                .fg(faded(
-                    if view.footer_hover.right_debug {
-                        termrock::style::DANGER_RED
-                    } else {
-                        termrock::style::WHITE
-                    },
-                    alpha,
-                ))
+                .bg(if view.footer_hover.right_debug {
+                    termrock::style::WHITE
+                } else {
+                    termrock::style::DANGER_RED
+                })
+                .fg(if view.footer_hover.right_debug {
+                    termrock::style::DANGER_RED
+                } else {
+                    termrock::style::WHITE
+                })
                 .add_modifier(Modifier::BOLD),
+            hover_style: None,
         },
     ];
-    frame.render_widget(
+    frame.render_stateful_widget(
         &StatusBar {
             left: &left,
             right: &right,
+            style: Style::default()
+                .bg(termrock::style::WHITE)
+                .fg(termrock::style::INK),
+            alpha,
         },
         area,
+        &mut StatusBarState {
+            hovered: None,
+            regions: Vec::new(),
+        },
     );
 }
 

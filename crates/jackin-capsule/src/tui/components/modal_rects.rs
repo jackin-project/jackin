@@ -240,15 +240,6 @@ pub fn role_picker_rect_for_count(outer: Rect, filtered_len: usize) -> Rect {
 }
 
 #[must_use]
-pub fn confirm_rect(outer: Rect, state: &termrock::components::ConfirmState) -> Rect {
-    centered_rect_fixed(
-        outer,
-        termrock::components::confirm_width_pct(state),
-        termrock::components::confirm_required_height(state),
-    )
-}
-
-#[must_use]
 pub fn mount_choice_rect(outer: Rect) -> Rect {
     // 2 borders + 1 leading + 1 question + 1 path + 1 spacer + 1 buttons + 1 trailing = 8
     let w = outer.width.min(80);

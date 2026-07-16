@@ -29,6 +29,7 @@ fn startup_error_opens_list_error_dialog() {
 
 use crate::services::file_browser::listing_from_home;
 use crate::tui::components::file_browser::FileBrowserState;
+use crate::tui::components::{ConfirmState, TextInputState};
 use crate::tui::console::{ConsoleStage, ConsoleState, new_console_state};
 use crate::tui::debug::console_location_debug;
 use crate::tui::debug::key_debug_name_for_input;
@@ -44,7 +45,6 @@ use crate::tui::state::{
 use jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_core::{Agent, RoleSelector};
 use termrock::ModalOutcome;
-use termrock::components::{ConfirmState, TextInputState};
 
 fn fresh_state() -> ConsoleState {
     let cwd = std::env::temp_dir();

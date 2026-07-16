@@ -39,7 +39,7 @@ use jackin_launch_tui::tui::components::progress_rail::{
 };
 #[cfg(test)]
 use jackin_launch_tui::tui::components::prompts::{
-    draw_confirm, draw_error_popup, draw_text_prompt,
+    PromptConfirm, PromptError, PromptText, draw_confirm, draw_error_popup, draw_text_prompt,
 };
 #[cfg(test)]
 use jackin_launch_tui::tui::view::render_launch_frame as render_launch_frame_view;
@@ -54,10 +54,6 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 #[cfg(test)]
 use ratatui::style::Color;
-#[cfg(test)]
-use termrock::components::ConfirmState;
-#[cfg(test)]
-use termrock::components::{ErrorPopupState, TextInputState};
 #[cfg(test)]
 use termrock::style::DANGER_RED;
 

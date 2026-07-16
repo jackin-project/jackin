@@ -12,7 +12,6 @@ use ratatui::{
 };
 
 use termrock::ModalOutcome;
-use termrock::components::panel::{Panel, PanelFocus};
 use termrock::layout::{
     DialogBodyScroll, DialogBorder, render_dialog_shell, render_scrollable_dialog_body,
 };
@@ -220,11 +219,8 @@ impl ContainerInfoState {
         if let Some(dialog_rect) = self.viewport {
             let content_height = self.content_height();
             let content_width = self.content_width();
-            let axes = termrock::components::dialog_scroll_axes(
-                content_width,
-                content_height,
-                dialog_rect,
-            );
+            let axes =
+                termrock::layout::dialog_scroll_axes(content_width, content_height, dialog_rect);
             let viewport_width = usize::from(dialog_rect.width.saturating_sub(2));
             let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
             return self.handle_scroll_key(key, viewport_height, viewport_width, axes);
@@ -235,7 +231,7 @@ impl ContainerInfoState {
             key,
             0,
             0,
-            termrock::components::ScrollAxes {
+            termrock::layout::ScrollAxes {
                 vertical: true,
                 horizontal: true,
             },
@@ -256,7 +252,7 @@ impl ContainerInfoState {
         key: KeyEvent,
         viewport_height: usize,
         viewport_width: usize,
-        axes: termrock::components::ScrollAxes,
+        axes: termrock::layout::ScrollAxes,
     ) -> ModalOutcome<()> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
@@ -396,9 +392,9 @@ pub fn clamp_dialog_scroll(
 /// `// UNREGISTERABLE` annotation per the keymap/hint-bar enforcement rule.
 #[must_use]
 pub fn debug_info_hint_spans(
-    axes: termrock::components::ScrollAxes,
+    axes: termrock::layout::ScrollAxes,
 ) -> Vec<termrock::HintSpan<'static>> {
-    let mut spans = termrock::components::scroll_hint_spans(axes);
+    let mut spans = termrock::layout::scroll_hint_spans(axes);
     if axes.any() {
         spans.push(termrock::HintSpan::GroupSep);
     }
@@ -604,7 +600,10 @@ fn value_placements(area: Rect, state: &ContainerInfoState) -> Vec<ValuePlacemen
     if area.width < 20 || area.height < 5 {
         return Vec::new();
     }
-    let inner = Panel::new().focus(PanelFocus::Focused).block().inner(area);
+    let theme = termrock::Theme::default();
+    let inner = termrock::widgets::Panel::new(&theme)
+        .emphasis(termrock::widgets::PanelEmphasis::Focused)
+        .inner(area);
     let label_width = state.label_width();
     let value_col = INDENT_COLS + label_width + SEP_COLS;
     let content_height = state.rows.len().saturating_add(1);

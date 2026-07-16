@@ -4,7 +4,7 @@
 //! Pure sidebar rectangle allocation for the workspace list preview pane.
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use termrock::components::ScrollAxes;
+use termrock::layout::ScrollAxes;
 
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::mount_display::{

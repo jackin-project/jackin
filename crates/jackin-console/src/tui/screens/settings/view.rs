@@ -474,7 +474,7 @@ fn trust_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingToken, 
         PendingOpCommit,
     >,
     body_area: Rect,
-) -> termrock::components::ScrollAxes {
+) -> termrock::layout::ScrollAxes {
     let content = crate::tui::screens::settings::update::trust_content_width(&state.trust);
     crate::tui::list_geometry::horizontal_scroll_axes(
         !state.trust.pending.is_empty(),
@@ -500,7 +500,7 @@ fn global_mount_scroll_axes<
         PendingOpCommit,
     >,
     body_area: Rect,
-) -> termrock::components::ScrollAxes {
+) -> termrock::layout::ScrollAxes {
     let content_width =
         crate::tui::mount_display::settings_global_config_mounts_content_width_with_cache(
             &state.mounts.pending,
@@ -543,7 +543,7 @@ pub fn render_global_mount_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_
         crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
         SettingsModal::MountText { state, .. } => {
-            termrock::components::render_text_input(frame, area, state);
+            crate::tui::components::render_text_input(frame, area, state);
         }
         SettingsModal::MountFileBrowser { state } => {
             crate::tui::components::file_browser::render(frame, area, state);
@@ -558,7 +558,7 @@ pub fn render_global_mount_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_
             crate::tui::components::role_picker::render(frame, area, state);
         }
         SettingsModal::MountConfirm { state, .. } => {
-            termrock::components::render_confirm_dialog(frame, area, state);
+            crate::tui::components::render_confirm_dialog(frame, area, state);
         }
         SettingsModal::MountPreviewSave { state } => {
             crate::tui::components::confirm_save::render(frame, area, state);
@@ -572,7 +572,7 @@ pub fn render_settings_env_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_
         crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
         SettingsModal::EnvText { state, .. } => {
-            termrock::components::render_text_input(frame, area, state);
+            crate::tui::components::render_text_input(frame, area, state);
         }
         SettingsModal::EnvSourcePicker { state, .. } => {
             crate::tui::components::source_picker::render(frame, area, state);
@@ -587,7 +587,7 @@ pub fn render_settings_env_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_
             crate::tui::components::scope_picker::render(frame, area, state);
         }
         SettingsModal::EnvConfirm { state, .. } => {
-            termrock::components::render_confirm_dialog(frame, area, state);
+            crate::tui::components::render_confirm_dialog(frame, area, state);
         }
         _ => unreachable!("env renderer received a non-env settings modal"),
     }
@@ -604,7 +604,7 @@ pub fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'
             crate::tui::components::source_picker::render(frame, area, state);
         }
         SettingsModal::AuthTextInput { state } => {
-            termrock::components::render_text_input(frame, area, state);
+            crate::tui::components::render_text_input(frame, area, state);
         }
         SettingsModal::AuthSourceFolderPicker { state } => {
             crate::tui::components::file_browser::render(frame, area, state);

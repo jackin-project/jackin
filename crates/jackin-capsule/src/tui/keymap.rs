@@ -321,7 +321,7 @@ pub(crate) static FILTER_LIST_KEYMAP: Keymap<FilterListAction> = Keymap::new(&[
 /// Actions for the rename-tab text-input dialog.
 ///
 /// Printable `Char` input is absent — it falls through (the `None` arm) to
-/// `TextField` insertion. Backspace is `Internal`: it edits the field rather
+/// canonical text-input insertion. Backspace is `Internal`: it edits the field rather
 /// than being advertised.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RenameAction {

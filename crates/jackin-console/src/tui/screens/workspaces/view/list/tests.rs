@@ -245,7 +245,7 @@ fn background_list_names_under_modal_hide_selected_cursor() {
             scope: SecretsScopeTag::Workspace,
             key: "TOKEN".into(),
         },
-        state: termrock::components::ConfirmState::new("Delete TOKEN?"),
+        state: crate::tui::components::ConfirmState::new("Delete TOKEN?"),
     });
 
     let backend = TestBackend::new(70, 24);

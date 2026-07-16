@@ -15,7 +15,6 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use termrock::components::tab_strip::TabStrip;
 use termrock::style::{DIM, PHOSPHOR_GREEN, WHITE};
 
 pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
@@ -54,7 +53,13 @@ pub(crate) fn usage_tab_strip_index_at(
         .iter()
         .map(|(label, active)| (label.as_str(), *active))
         .collect::<Vec<_>>();
-    TabStrip::new(&tab_refs).hit_index_at(tab_area, col, tab_area.y)
+    termrock::lay_out_tabs(&tab_refs, tab_area.x)
+        .iter()
+        .position(|cell| {
+            col >= cell.start_col
+                && col < cell.start_col.saturating_add(cell.cell_cols)
+                && tab_area.height > 0
+        })
 }
 
 pub(crate) fn usage_tab_strip_labels(

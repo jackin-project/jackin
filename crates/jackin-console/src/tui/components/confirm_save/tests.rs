@@ -6,7 +6,6 @@ use super::*;
 use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
 use termrock::{
     HintSpan,
-    components::ButtonFocus,
     keymap::{KeyChord, LogicalKey},
 };
 

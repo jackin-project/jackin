@@ -17,14 +17,14 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use termrock::components::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
+use termrock::layout::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
 use termrock::scroll::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };
 use termrock::{
     HintSpan, ModalOutcome,
-    components::ButtonFocus,
     keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, SCROLL_HINT_KEYMAP, Visibility},
+    widgets::{Action, ActionBar, ActionBarState},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,8 +134,17 @@ pub enum ConfirmSaveFocus {
     Cancel,
 }
 
-impl ButtonFocus for ConfirmSaveFocus {
-    const RING: &'static [Self] = &[Self::Save, Self::Cancel];
+impl ConfirmSaveFocus {
+    const fn next(self) -> Self {
+        match self {
+            Self::Save => Self::Cancel,
+            Self::Cancel => Self::Save,
+        }
+    }
+
+    const fn prev(self) -> Self {
+        self.next()
+    }
 }
 
 /// State for the `ConfirmSave` modal. The caller pre-builds the content
@@ -282,17 +291,30 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
 
     render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
 
-    let items = [
-        termrock::components::ButtonStripItem::new("Save"),
-        termrock::components::ButtonStripItem::new("Cancel"),
+    let actions = [
+        Action {
+            id: ConfirmSaveFocus::Save,
+            label: "Save",
+            enabled: true,
+            style: None,
+        },
+        Action {
+            id: ConfirmSaveFocus::Cancel,
+            label: "Cancel",
+            enabled: true,
+            style: None,
+        },
     ];
-    let focused = match state.focus {
-        ConfirmSaveFocus::Save => 0,
-        ConfirmSaveFocus::Cancel => 1,
-    };
-    frame.render_widget(
-        termrock::components::ButtonStrip::new(&items).focused(focused),
+    frame.render_stateful_widget(
+        &ActionBar {
+            actions: &actions,
+            gap: " ",
+        },
         chunks[3],
+        &mut ActionBarState {
+            focused: Some(state.focus),
+            regions: Vec::new(),
+        },
     );
 }
 

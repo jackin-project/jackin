@@ -158,7 +158,7 @@ fn dialog_backdrop_fills_with_black() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(DialogBackdrop, frame.area());
+            frame.render_widget(&termrock::widgets::Backdrop::default(), frame.area());
         })
         .unwrap();
     let buf = terminal.backend().buffer();
@@ -206,7 +206,13 @@ fn unfocused_pane_border_uses_shared_panel_palette() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    assert_eq!(buf[(0, 0)].fg, termrock::style::PHOSPHOR_DARK);
+    assert_eq!(
+        buf[(0, 0)].fg,
+        Theme::default()
+            .style(termrock::style::Role::Border)
+            .fg
+            .expect("border role must define a foreground")
+    );
 }
 
 // ── wrapped hint rows ─────────────────────────────────────────────────────────

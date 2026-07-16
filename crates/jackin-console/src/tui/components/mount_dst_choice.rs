@@ -19,8 +19,9 @@ use ratatui::{
 
 use jackin_core::shorten_home;
 use termrock::ModalOutcome;
-use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::layout::{DialogBorder, render_dialog_shell};
 use termrock::style::PHOSPHOR_DIM;
+use termrock::widgets::{Action, ActionBar, ActionBarState};
 
 /// Outcome of the mount-destination modal.
 ///
@@ -133,19 +134,36 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         chunks[2],
     );
 
-    let items = [
-        termrock::components::ButtonStripItem::new("Mount at same path"),
-        termrock::components::ButtonStripItem::new("Edit destination"),
-        termrock::components::ButtonStripItem::new("Cancel"),
+    let actions = [
+        Action {
+            id: MountDstFocus::SamePath,
+            label: "Mount at same path",
+            enabled: true,
+            style: None,
+        },
+        Action {
+            id: MountDstFocus::Edit,
+            label: "Edit destination",
+            enabled: true,
+            style: None,
+        },
+        Action {
+            id: MountDstFocus::Cancel,
+            label: "Cancel",
+            enabled: true,
+            style: None,
+        },
     ];
-    let focused = match state.focus {
-        MountDstFocus::SamePath => 0,
-        MountDstFocus::Edit => 1,
-        MountDstFocus::Cancel => 2,
-    };
-    frame.render_widget(
-        termrock::components::ButtonStrip::new(&items).focused(focused),
+    frame.render_stateful_widget(
+        &ActionBar {
+            actions: &actions,
+            gap: " ",
+        },
         chunks[4],
+        &mut ActionBarState {
+            focused: Some(state.focus),
+            regions: Vec::new(),
+        },
     );
 }
 

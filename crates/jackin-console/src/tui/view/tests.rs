@@ -537,7 +537,7 @@ fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
 /// Build and render the `SaveDiscardCancel` modal into a full-area
 /// buffer. Returns (buffer, area).
 fn render_save_discard() -> (Buffer, Rect) {
-    use termrock::components::{SaveDiscardState, render_save_discard_dialog as render};
+    use crate::tui::components::{SaveDiscardState, render_save_discard_dialog as render};
     let area = Rect::new(0, 0, 70, 7);
     let state = SaveDiscardState::new("Save changes?");
     let buf = draw(area.width, area.height, |f| render(f, area, &state));
@@ -545,7 +545,7 @@ fn render_save_discard() -> (Buffer, Rect) {
 }
 
 fn render_confirm() -> (Buffer, Rect) {
-    use termrock::components::{ConfirmState, render_confirm_dialog as render};
+    use crate::tui::components::{ConfirmState, render_confirm_dialog as render};
     let area = Rect::new(0, 0, 60, 7);
     let state = ConfirmState::new("Delete workspace?");
     let buf = draw(area.width, area.height, |f| render(f, area, &state));
@@ -561,7 +561,7 @@ fn render_mount_dst() -> (Buffer, Rect) {
 }
 
 fn render_text_input() -> (Buffer, Rect) {
-    use termrock::components::{TextInputState, render_text_input as render};
+    use crate::tui::components::{TextInputState, render_text_input as render};
     let area = Rect::new(0, 0, 60, 6);
     let state = TextInputState::new("Name this workspace", "demo");
     let buf = draw(area.width, area.height, |f| render(f, area, &state));
@@ -1165,7 +1165,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     let mut confirm_delete = ManagerState::from_config(&config, &cwd);
     confirm_delete.stage = ManagerStage::ConfirmDelete {
         name: "ws".to_owned(),
-        state: termrock::components::ConfirmState::new("Delete workspace?"),
+        state: crate::tui::components::ConfirmState::new("Delete workspace?"),
     };
     cases.push(("list confirm delete", confirm_delete));
 
@@ -1179,7 +1179,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
                     scope: crate::tui::state::SecretsScopeTag::Workspace,
                     key: "TOKEN".into(),
                 },
-                state: termrock::components::ConfirmState::new("Delete TOKEN?"),
+                state: crate::tui::components::ConfirmState::new("Delete TOKEN?"),
             },
         ),
     ));
@@ -1190,7 +1190,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &config,
             &cwd,
             Modal::SaveDiscardCancel {
-                state: termrock::components::SaveDiscardState::new("Save changes?"),
+                state: crate::tui::components::SaveDiscardState::new("Save changes?"),
             },
         ),
     ));
@@ -1201,7 +1201,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &config,
             &cwd,
             Modal::StatusPopup {
-                state: termrock::components::StatusPopupState::new("Loading", "Resolving role"),
+                state: crate::tui::components::StatusPopupState::new("Loading", "Resolving role"),
             },
         ),
     ));
@@ -1315,7 +1315,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     editor.set_tab_content_scroll_focused(true);
     editor.modal = Some(Modal::TextInput {
         target: crate::tui::state::TextInputTarget::Name,
-        state: termrock::components::TextInputState::new("Name", "ws"),
+        state: crate::tui::components::TextInputState::new("Name", "ws"),
     });
     editor_text.stage = ManagerStage::Editor(editor);
     cases.push(("editor text input", editor_text));
@@ -1395,7 +1395,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     settings.set_active_content_focused(true);
     settings.mounts.modal = Some(SettingsModal::MountConfirm {
         action: GlobalMountConfirm::Remove,
-        state: termrock::components::ConfirmState::new("Remove mount?"),
+        state: crate::tui::components::ConfirmState::new("Remove mount?"),
     });
     settings_mounts_confirm.stage = ManagerStage::Settings(settings);
     cases.push(("settings mounts confirm", settings_mounts_confirm));
@@ -1407,7 +1407,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &cwd,
             SettingsModal::MountText {
                 target: crate::tui::state::GlobalMountTextTarget::AddName,
-                state: Box::new(termrock::components::TextInputState::new(
+                state: Box::new(crate::tui::components::TextInputState::new(
                     "Mount name",
                     "repo",
                 )),
@@ -1490,7 +1490,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             scope: SettingsEnvScope::Global,
         },
         pending_value: None,
-        state: Box::new(termrock::components::TextInputState::new(
+        state: Box::new(crate::tui::components::TextInputState::new(
             "Environment key",
             "TOKEN",
         )),
@@ -1560,7 +1560,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &cwd,
             SettingsModal::EnvConfirm {
                 action: crate::tui::state::SettingsEnvConfirm::Delete,
-                state: termrock::components::ConfirmState::new("Delete env var?"),
+                state: crate::tui::components::ConfirmState::new("Delete env var?"),
             },
         ),
     ));
@@ -1570,7 +1570,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     settings.active_tab = crate::tui::state::SettingsTab::Auth;
     settings.set_active_content_focused(true);
     settings.auth.modal = Some(SettingsModal::AuthTextInput {
-        state: Box::new(termrock::components::TextInputState::new(
+        state: Box::new(crate::tui::components::TextInputState::new(
             "Credential",
             "token",
         )),

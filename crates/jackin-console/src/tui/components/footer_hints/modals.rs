@@ -4,7 +4,8 @@
 //! Modal footer dispatcher + the per-modal-mode hint-span builders
 //! (auth form, confirm save, container info, status popup, op picker).
 
-use termrock::components::{ScrollAxes, error_popup_hint_spans, save_discard_hint_spans};
+use crate::tui::components::{error_popup_hint_spans, save_discard_hint_spans};
+use termrock::layout::ScrollAxes;
 use termrock::{HintSpan, keymap::glyph};
 
 use crate::tui::components::auth_panel;
@@ -153,7 +154,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
             items
         }
         ModalFooterMode::ConfirmDismiss | ModalFooterMode::OpNamingTextInput => {
-            termrock::components::text_input_hint_spans()
+            crate::tui::components::text_input_hint_spans()
         }
         ModalFooterMode::FileBrowser => Vec::new(),
         ModalFooterMode::MountDestination => super::settings::mount_destination_footer_items(),
@@ -175,7 +176,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
             include_refresh,
             include_collapse,
         } => super::settings::filtered_picker_footer_items(include_refresh, include_collapse),
-        ModalFooterMode::YesNo => termrock::components::confirm_hint_spans(),
+        ModalFooterMode::YesNo => crate::tui::components::confirm_hint_spans(),
     }
 }
 
@@ -187,7 +188,7 @@ pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'stati
 /// Hint spans for inline yes/no confirm modals (`Modal::Confirm`,
 /// `SettingsModal::MountConfirm`, `SettingsModal::EnvConfirm`).
 ///
-/// Delegates to [`termrock::components::confirm_hint_spans`] so this matches
+/// Delegates to [`crate::tui::components::confirm_hint_spans`] so this matches
 #[must_use]
 pub fn save_discard_cancel_footer_items() -> Vec<HintSpan<'static>> {
     save_discard_hint_spans()
@@ -217,7 +218,7 @@ pub fn container_info_footer_items_for_dialog(
     content_height: usize,
     dialog_rect: ratatui::layout::Rect,
 ) -> Vec<HintSpan<'static>> {
-    let axes = termrock::components::dialog_scroll_axes(content_width, content_height, dialog_rect);
+    let axes = termrock::layout::dialog_scroll_axes(content_width, content_height, dialog_rect);
     container_info_footer_items(axes)
 }
 

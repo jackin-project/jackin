@@ -36,7 +36,7 @@ fn format_key_glyph(byte: u8) -> String {
 pub(crate) fn main_view_hint(
     scrollback_active: bool,
     palette_key: u8,
-    axes: termrock::components::ScrollAxes,
+    axes: termrock::layout::ScrollAxes,
     prefix_awaiting: bool,
 ) -> Vec<HintSpan<'static>> {
     if prefix_awaiting {
@@ -49,7 +49,7 @@ pub(crate) fn main_view_hint(
         return spans;
     }
     if scrollback_active {
-        let mut spans = termrock::components::scroll_hint_spans(axes);
+        let mut spans = termrock::layout::scroll_hint_spans(axes);
         if !spans.is_empty() {
             spans.push(HintSpan::GroupSep);
         }
@@ -67,7 +67,7 @@ pub(crate) fn main_view_hint(
             HintSpan::DynKey(format_key_glyph(palette_key)),
             HintSpan::Text("menu"),
         ];
-        let scroll = termrock::components::scroll_hint_spans(axes);
+        let scroll = termrock::layout::scroll_hint_spans(axes);
         if !scroll.is_empty() {
             spans.push(HintSpan::GroupSep);
             spans.extend(scroll);
@@ -149,11 +149,11 @@ pub(super) fn export_file_hint() -> Vec<HintSpan<'static>> {
 /// `GitHubContext`, which differ only in their copy label.
 pub(super) fn info_dialog_hint(
     copy_label: &'static str,
-    axes: termrock::components::ScrollAxes,
+    axes: termrock::layout::ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
     // UNREGISTERABLE(info-dialog-copy): Enter selects the active copy target inline; no InfoDialog keymap registered.
     let mut spans = vec![HintSpan::Key("↵"), HintSpan::Text(copy_label)];
-    let scroll = termrock::components::scroll_hint_spans(axes);
+    let scroll = termrock::layout::scroll_hint_spans(axes);
     if !scroll.is_empty() {
         spans.push(HintSpan::GroupSep);
         spans.extend(scroll);
@@ -166,7 +166,7 @@ pub(super) fn info_dialog_hint(
     spans
 }
 
-pub(super) fn usage_hint(axes: termrock::components::ScrollAxes) -> Vec<HintSpan<'static>> {
+pub(super) fn usage_hint(axes: termrock::layout::ScrollAxes) -> Vec<HintSpan<'static>> {
     let mut spans = vec![
         HintSpan::Key(glyph::LEFT_RIGHT),
         HintSpan::Text("switch provider"),
@@ -177,7 +177,7 @@ pub(super) fn usage_hint(axes: termrock::components::ScrollAxes) -> Vec<HintSpan
         HintSpan::Key("r"),
         HintSpan::Text("refresh"),
     ];
-    let scroll = termrock::components::scroll_hint_spans(axes);
+    let scroll = termrock::layout::scroll_hint_spans(axes);
     if !scroll.is_empty() {
         spans.push(HintSpan::GroupSep);
         spans.extend(scroll);
@@ -195,7 +195,19 @@ pub(super) fn read_only_hint() -> Vec<HintSpan<'static>> {
 }
 
 pub(super) fn confirm_hint() -> Vec<HintSpan<'static>> {
-    termrock::components::confirm_hint_spans()
+    vec![
+        HintSpan::Key("↵"),
+        HintSpan::Text("confirm"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Y"),
+        HintSpan::Text("yes"),
+        HintSpan::GroupSep,
+        HintSpan::Key("N/Esc"),
+        HintSpan::Text("no"),
+        HintSpan::GroupSep,
+        HintSpan::Key("⇥"),
+        HintSpan::Text("focus"),
+    ]
 }
 
 #[cfg(test)]

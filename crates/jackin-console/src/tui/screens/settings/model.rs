@@ -42,7 +42,7 @@ use crate::tui::components::modal_rects::{
     ModalAuthFormState, ModalConfirmSavePrepareState, ModalConfirmSaveState, ModalConfirmState,
     ModalOpPickerState, ModalRectMode, ModalRolePickerState,
 };
-use termrock::components::{FocusOwner, ModalStack};
+use termrock::interaction::{FocusOwner, ModalStack};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
@@ -314,7 +314,7 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 }
 
 impl<Mounts, Env, Auth, Trust, PendingToken>
-    SettingsState<Mounts, Env, Auth, Trust, termrock::components::ErrorPopupState, PendingToken>
+    SettingsState<Mounts, Env, Auth, Trust, crate::tui::components::ErrorPopupState, PendingToken>
 {
     pub fn open_error_popup(&mut self, title: impl Into<String>, message: impl Into<String>) {
         self.error_popup = Some(crate::tui::components::error_popup::error_popup_state(

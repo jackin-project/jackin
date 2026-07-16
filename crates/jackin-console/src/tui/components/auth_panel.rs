@@ -18,13 +18,13 @@ use ratatui::{
 use crate::tui::auth::{
     AuthKind, AuthMode, auth_mode_requires_credential, auth_mode_supports_source_folder,
 };
+use crate::tui::components::TextInputState;
 use crate::tui::components::editor_rows::{
     AuthSourceFolderDisplay, AuthSourceFolderKind, cursor_span,
 };
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
-use termrock::components::TextInputState;
 use termrock::style::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 // Structural exception: auth panels are multi-field credential forms with
@@ -372,11 +372,11 @@ pub fn render_form<V: AuthCredential>(
     form: &AuthForm<V>,
     focus: AuthFormFocus,
 ) {
-    let inner = termrock::components::render_dialog_shell(
+    let inner = termrock::layout::render_dialog_shell(
         frame,
         area,
         Some("Edit auth"),
-        termrock::components::DialogBorder::Default,
+        termrock::layout::DialogBorder::Default,
     );
 
     for (idx, row) in build_form_lines(form, focus).into_iter().enumerate() {

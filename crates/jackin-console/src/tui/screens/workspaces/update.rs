@@ -140,14 +140,14 @@ pub enum SelectedInstancePurgeConfirmPlan {
 #[derive(Debug, Clone)]
 pub struct WorkspaceDeleteConfirmPlan {
     pub name: String,
-    pub state: termrock::components::ConfirmState,
+    pub state: crate::tui::components::ConfirmState,
 }
 
 #[derive(Debug, Clone)]
 pub struct InstancePurgeConfirmPlan {
     pub container: String,
     pub label: String,
-    pub state: termrock::components::ConfirmState,
+    pub state: crate::tui::components::ConfirmState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -744,7 +744,7 @@ pub fn workspace_list_hover_row_at_position(
         return None;
     }
 
-    let mut tracker = termrock::components::HoverTracker::new();
+    let mut tracker = termrock::interaction::HoverTracker::new();
     for (visual_idx, row_value) in visual_rows.iter().enumerate() {
         let Some(row_value) = row_value else {
             continue;
@@ -1090,13 +1090,13 @@ pub fn workspace_list_select_row_plan(
 }
 
 #[must_use]
-pub fn workspace_delete_confirm_state(name: &str) -> termrock::components::ConfirmState {
-    termrock::components::ConfirmState::new(format!("Delete \"{name}\"?"))
+pub fn workspace_delete_confirm_state(name: &str) -> crate::tui::components::ConfirmState {
+    crate::tui::components::ConfirmState::new(format!("Delete \"{name}\"?"))
 }
 
 #[must_use]
-pub fn instance_purge_confirm_state(label: &str) -> termrock::components::ConfirmState {
-    termrock::components::ConfirmState::new(format!(
+pub fn instance_purge_confirm_state(label: &str) -> crate::tui::components::ConfirmState {
+    crate::tui::components::ConfirmState::new(format!(
         "Purge \"{label}\"?\nRemoves the role container, DinD sidecar, volume, network, and local recovery state."
     ))
 }

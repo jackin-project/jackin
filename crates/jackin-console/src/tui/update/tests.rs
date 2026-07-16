@@ -60,11 +60,11 @@ fn role_resolution_status_overlay_plan_names_role() {
 
 #[derive(Default)]
 struct TestStatusOverlay {
-    overlay: Option<termrock::components::StatusPopupState>,
+    overlay: Option<crate::tui::components::StatusPopupState>,
 }
 
 impl StatusOverlayState for TestStatusOverlay {
-    fn set_status_overlay(&mut self, overlay: Option<termrock::components::StatusPopupState>) {
+    fn set_status_overlay(&mut self, overlay: Option<crate::tui::components::StatusPopupState>) {
         self.overlay = overlay;
     }
 }
@@ -93,7 +93,7 @@ impl ListModalState for TestListModal {
         self.opened = Some("container-info");
     }
 
-    fn open_error_popup_modal(&mut self, _state: termrock::components::ErrorPopupState) {
+    fn open_error_popup_modal(&mut self, _state: crate::tui::components::ErrorPopupState) {
         self.opened = Some("error-popup");
     }
 
@@ -737,7 +737,7 @@ fn mount_dst_choice_plan_routes_choice_outcomes() {
 
 #[test]
 fn save_discard_modal_plan_routes_save_discard_outcomes() {
-    use termrock::components::SaveDiscardChoice;
+    use crate::tui::components::SaveDiscardChoice;
 
     assert_eq!(
         save_discard_modal_plan(termrock::ModalOutcome::Commit(SaveDiscardChoice::Save)),

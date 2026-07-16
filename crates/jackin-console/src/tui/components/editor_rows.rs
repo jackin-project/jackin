@@ -190,11 +190,29 @@ pub fn render_tab_strip(
     tab_bar_focused: bool,
     hovered: Option<usize>,
 ) {
-    frame.render_widget(
-        termrock::components::TabStrip::new(labels)
-            .focused(tab_bar_focused)
-            .hovered(hovered),
+    let tabs = labels
+        .iter()
+        .enumerate()
+        .map(|(id, (label, active))| termrock::widgets::Tab {
+            id,
+            label,
+            glyph: None,
+            active: *active,
+            enabled: true,
+        })
+        .collect::<Vec<_>>();
+    frame.render_stateful_widget(
+        &termrock::widgets::Tabs {
+            tabs: &tabs,
+            gap: termrock::TAB_GAP,
+        },
         area,
+        &mut termrock::widgets::TabsState {
+            selected: tabs.iter().find(|tab| tab.active).map(|tab| tab.id),
+            hovered,
+            focused: tab_bar_focused,
+            regions: Vec::new(),
+        },
     );
 }
 

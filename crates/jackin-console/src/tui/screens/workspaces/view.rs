@@ -8,12 +8,29 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, ListItem, Paragraph},
+    widgets::{Block, Borders, Paragraph},
 };
 
 use crate::tui::components::editor_rows::{action_row_style, cursor_gutter};
 use crate::tui::mount_display::MountDisplayRow;
 use crate::tui::screens::workspaces::model::ManagerListRow;
+
+fn panel<'a>(
+    theme: &'a termrock::Theme,
+    title: Option<&'a str>,
+    focused: bool,
+) -> termrock::widgets::Panel<'a> {
+    let panel = termrock::widgets::Panel::new(theme).emphasis(if focused {
+        termrock::widgets::PanelEmphasis::Focused
+    } else {
+        termrock::widgets::PanelEmphasis::Normal
+    });
+    if let Some(title) = title {
+        panel.title(title)
+    } else {
+        panel
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disclosure {
@@ -472,13 +489,8 @@ pub fn render_list_names_block(
     let viewport_h = termrock::scroll::viewport_height(area);
     let h_scrollable = termrock::scroll::is_scrollable(content_width, viewport_w);
     let v_scrollable = termrock::scroll::is_scrollable(content_height, viewport_h);
-    let block = termrock::components::Panel::new()
-        .focus(if focused {
-            termrock::components::PanelFocus::Focused
-        } else {
-            termrock::components::PanelFocus::Unfocused
-        })
-        .block();
+    let theme = termrock::Theme::default();
+    let block = panel(&theme, None, focused).block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -644,8 +656,8 @@ fn push_tree_instance_line(
 #[must_use]
 pub fn create_prelude_mount_destination_input_state<'a>(
     current: impl Into<String>,
-) -> termrock::components::TextInputState<'a> {
-    termrock::components::TextInputState::new("Destination", current)
+) -> crate::tui::components::TextInputState<'a> {
+    crate::tui::components::TextInputState::new("Destination", current)
 }
 
 #[must_use]
@@ -656,8 +668,8 @@ pub fn create_prelude_mount_destination_default(src_display: Option<&str>) -> St
 #[must_use]
 pub fn create_prelude_workspace_name_input_state<'a>(
     current: impl Into<String>,
-) -> termrock::components::TextInputState<'a> {
-    termrock::components::TextInputState::new("Name this workspace", current)
+) -> crate::tui::components::TextInputState<'a> {
+    crate::tui::components::TextInputState::new("Name this workspace", current)
 }
 
 #[must_use]
@@ -733,10 +745,8 @@ pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
         .constraints([Constraint::Length(5), Constraint::Min(9)])
         .split(area);
 
-    let intro_block = termrock::components::Panel::new()
-        .title(" What is a workspace? ")
-        .focus(termrock::components::PanelFocus::Unfocused)
-        .block();
+    let theme = termrock::Theme::default();
+    let intro_block = panel(&theme, Some(" What is a workspace? "), false).block();
     let intro_lines = vec![
         Line::from(Span::styled(
             "  A workspace saves a project boundary once so you",
@@ -753,10 +763,7 @@ pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
     ];
     frame.render_widget(Paragraph::new(intro_lines).block(intro_block), rows[0]);
 
-    let why_block = termrock::components::Panel::new()
-        .title(" Why create one? ")
-        .focus(termrock::components::PanelFocus::Unfocused)
-        .block();
+    let why_block = panel(&theme, Some(" Why create one? "), false).block();
     let bullet_style = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
     let bullets = [
         "Name a project once, launch from any cwd",
@@ -788,31 +795,28 @@ pub fn render_picker_sidebar(
     selected: Option<usize>,
     focused: bool,
 ) {
-    let block = termrock::components::Panel::new()
-        .title(title)
-        .focus(if focused {
-            termrock::components::PanelFocus::Focused
-        } else {
-            termrock::components::PanelFocus::Unfocused
-        })
-        .block();
+    let theme = termrock::Theme::default();
+    let block = panel(&theme, Some(title), focused).block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let items: Vec<ListItem<'_>> = labels
+    let rows = labels
         .into_iter()
-        .map(|label| ListItem::new(Line::from(label)))
-        .collect();
-    let mut list = termrock::components::ScrollableList::new(items)
-        .style(Style::default().fg(termrock::style::PHOSPHOR_GREEN))
-        .highlight_style(
-            Style::default()
-                .bg(termrock::style::PHOSPHOR_GREEN)
-                .fg(Color::Black),
-        )
-        .selected(selected)
-        .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
-    list = list.highlight_symbol(if focused { "▸ " } else { "  " });
-    frame.render_widget(list, inner);
+        .enumerate()
+        .map(|(id, label)| termrock::widgets::ListRow {
+            id,
+            label: Line::from(label),
+            role: termrock::widgets::RowRole::Item,
+            enabled: true,
+        })
+        .collect::<Vec<_>>();
+    frame.render_stateful_widget(
+        &termrock::widgets::List {
+            rows: &rows,
+            theme: &theme,
+        },
+        inner,
+        &mut termrock::widgets::ListState::new(focused.then_some(selected).flatten()),
+    );
 }
 
 pub fn render_provider_picker_sidebar(
@@ -871,10 +875,8 @@ pub fn render_agent_picker_sidebar<A: crate::tui::components::agent_choice::Agen
 }
 
 pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_display: &str) {
-    let block = termrock::components::Panel::new()
-        .title(" General ")
-        .focus(termrock::components::PanelFocus::Unfocused)
-        .block();
+    let theme = termrock::Theme::default();
+    let block = panel(&theme, Some(" General "), false).block();
     let lines = vec![Line::from(vec![
         Span::raw("  "),
         Span::styled("Working dir ", Style::default().fg(termrock::style::WHITE)),
@@ -924,10 +926,8 @@ pub fn render_environments_subpanel(
     area: Rect,
     mut rows: Vec<WorkspaceEnvRow>,
 ) {
-    let block = termrock::components::Panel::new()
-        .title(" Environments ")
-        .focus(termrock::components::PanelFocus::Unfocused)
-        .block();
+    let theme = termrock::Theme::default();
+    let block = panel(&theme, Some(" Environments "), false).block();
 
     rows.sort_by(|a, b| {
         a.name
@@ -1267,14 +1267,8 @@ pub fn render_instance_details_pane(
     pane: &WorkspaceInstancePane,
 ) {
     let instance_title = format!(" Instance: {} ", pane.instance_id);
-    let block = termrock::components::Panel::new()
-        .title(&instance_title)
-        .focus(if pane.focused {
-            termrock::components::PanelFocus::Focused
-        } else {
-            termrock::components::PanelFocus::Unfocused
-        })
-        .block();
+    let theme = termrock::Theme::default();
+    let block = panel(&theme, Some(&instance_title), pane.focused).block();
     let lines = instance_detail_lines(&pane.content);
     frame.render_widget(
         Paragraph::new(lines)

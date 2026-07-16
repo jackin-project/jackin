@@ -11,7 +11,7 @@
 
 use ratatui::text::{Line, Span};
 
-use termrock::scroll::max_line_width;
+use termrock::scroll::rendered_max_line_width as max_line_width;
 
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::components::mount_rows::{

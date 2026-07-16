@@ -94,9 +94,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use termrock::components::render_picker_lines;
-use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::layout::{DialogBorder, render_dialog_shell};
 use termrock::style::{PHOSPHOR_DIM, WHITE};
+use termrock::widgets::{List, ListRow, ListState as CanonicalListState, RowRole};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
     let inner = render_dialog_shell(frame, area, Some("Open in GitHub"), DialogBorder::Default);
@@ -130,31 +130,38 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         .unwrap_or(0)
         .max(10);
 
-    let lines: Vec<Line<'_>> = state
+    let items: Vec<ListRow<'_, usize>> = state
         .choices
         .iter()
         .enumerate()
         .map(|(i, c)| {
             let display = &displays[i];
             let pad = path_w.saturating_sub(display.chars().count());
-            Line::from(vec![
-                Span::styled(display.to_owned(), Style::default().fg(WHITE)),
-                Span::raw(format!("{}  ", " ".repeat(pad))),
-                Span::styled(
-                    format!("github \u{b7} {}", c.branch),
-                    Style::default()
-                        .fg(PHOSPHOR_DIM)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ])
+            ListRow {
+                id: i,
+                label: Line::from(vec![
+                    Span::styled(display.to_owned(), Style::default().fg(WHITE)),
+                    Span::raw(format!("{}  ", " ".repeat(pad))),
+                    Span::styled(
+                        format!("github \u{b7} {}", c.branch),
+                        Style::default()
+                            .fg(PHOSPHOR_DIM)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                ]),
+                role: RowRole::Item,
+                enabled: true,
+            }
         })
         .collect();
-
-    render_picker_lines(
+    let theme = termrock::Theme::default();
+    frame.render_stateful_widget(
+        &List {
+            rows: &items,
+            theme: &theme,
+        },
         rows[1],
-        frame.buffer_mut(),
-        lines,
-        state.list_state.selected,
+        &mut CanonicalListState::new(state.list_state.selected),
     );
 }
 

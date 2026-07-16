@@ -7,7 +7,7 @@ expression: "render_usage_dialog_snapshot(60, 18, UsageDialogTab::Provider)"
 
   ┌ Usage: OpenAI ───────────────────────────────────────┐
   │ Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Ki│
-  │           ━━━━━━━━                                   │
+  │                                                      │
   │                                                      │
   │  OpenAI                          alexey@example.com  │
   │  Updated just now                           Pro 20x  │

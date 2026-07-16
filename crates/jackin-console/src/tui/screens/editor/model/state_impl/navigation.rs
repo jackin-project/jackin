@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::marker::PhantomData;
 
 use jackin_config::WorkspaceConfig;
-use termrock::components::FocusOwner;
+use termrock::interaction::FocusOwner;
 
 use super::super::{
     EditorErrorPopupModal, EditorFocusTarget, EditorHoverTarget, EditorMode,

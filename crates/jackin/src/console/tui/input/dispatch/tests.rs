@@ -123,7 +123,7 @@ fn settings_error_popup_dismissed_by_enter() {
     let mut config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = SettingsState::from_config(&config);
-    settings.error_popup = Some(termrock::components::ErrorPopupState::new(
+    settings.error_popup = Some(jackin_console::tui::components::ErrorPopupState::new(
         "Test", "details",
     ));
     state.stage = ManagerStage::Settings(settings);
@@ -158,7 +158,7 @@ fn settings_error_popup_unrelated_key_does_not_dismiss() {
     let mut config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = SettingsState::from_config(&config);
-    settings.error_popup = Some(termrock::components::ErrorPopupState::new(
+    settings.error_popup = Some(jackin_console::tui::components::ErrorPopupState::new(
         "Test", "details",
     ));
     state.stage = ManagerStage::Settings(settings);

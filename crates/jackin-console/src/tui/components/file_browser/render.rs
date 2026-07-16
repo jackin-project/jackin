@@ -8,15 +8,13 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{HighlightSpacing, ListItem, Paragraph},
+    widgets::Paragraph,
 };
 
 use super::git_prompt::render_git_prompt;
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_GREEN, WHITE};
-use termrock::components::{
-    Panel, PanelFocus, ScrollableList, cursor_follow_offset, viewport_height,
-};
+use termrock::widgets::{List, ListRow, ListState, Panel, PanelEmphasis, RowRole};
 
 /// Vertical-layout constraints used by `render` and by the geometry-only
 /// helpers consumed by the mouse-click hit-tester. Keep these in sync.
@@ -93,31 +91,32 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     // child dialog (Git repo prompt) is stacked on top, the file browser becomes
     // a background modal and must use the inactive border so exactly one bright
     // border is visible (Defect 9 — one-bright-border rule).
-    let block = if state.pending_git_prompt.is_some() {
-        termrock::components::unfocused_block()
-            .title(Span::styled(title.clone(), termrock::style::BOLD_WHITE))
-    } else {
-        Panel::new()
-            .title(title.as_str())
-            .focus(PanelFocus::Focused)
-            .block()
-    };
+    let theme = termrock::Theme::default();
+    let panel = Panel::new(&theme)
+        .title(&title)
+        .emphasis(if state.pending_git_prompt.is_some() {
+            PanelEmphasis::Normal
+        } else {
+            PanelEmphasis::Focused
+        });
+    let inner = panel.inner(area);
+    frame.render_widget(&panel, area);
 
-    let selected = state.list_state.selected;
-    let cursor_symbol = if state.pending_git_prompt.is_some() {
-        "  "
-    } else {
-        "\u{25b8} "
-    };
+    let selected = state
+        .pending_git_prompt
+        .is_none()
+        .then_some(state.list_state.selected)
+        .flatten();
     let base_style = Style::default().fg(WHITE);
     let git_suffix_style = Style::default()
         .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
 
-    let items: Vec<ListItem<'_>> = state
+    let rows: Vec<ListRow<'_, usize>> = state
         .entries
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(id, e)| {
             let name_slash = if e.is_parent {
                 "../".to_owned()
             } else {
@@ -131,21 +130,31 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
             } else {
                 Line::from(Span::styled(name_slash, base_style))
             };
-            ListItem::new(line)
+            ListRow {
+                id,
+                label: line,
+                role: RowRole::Item,
+                enabled: true,
+            }
         })
         .collect();
-    let offset = cursor_follow_offset(
-        selected.unwrap_or(0),
-        state.entries.len(),
-        viewport_height(area),
-        0,
+    let mut list_state = ListState::new(selected);
+    let scrollbar_gutter = u16::from(state.entries.len() > usize::from(inner.height));
+    let list_area = Rect {
+        width: inner
+            .width
+            .saturating_add(scrollbar_gutter)
+            .min(area.right().saturating_sub(inner.x)),
+        ..inner
+    };
+    frame.render_stateful_widget(
+        &List {
+            rows: &rows,
+            theme: &theme,
+        },
+        list_area,
+        &mut list_state,
     );
-    let list = ScrollableList::new(items)
-        .highlight_spacing(HighlightSpacing::Always)
-        .highlight_symbol(cursor_symbol)
-        .offset(offset)
-        .selected(selected);
-    list.render_with_block(area, frame.buffer_mut(), block);
 }
 
 #[cfg(test)]

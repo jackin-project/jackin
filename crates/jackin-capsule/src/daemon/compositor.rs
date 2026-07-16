@@ -204,11 +204,11 @@ impl Multiplexer {
         // that drives pane-border focus and cursor visibility. Otherwise the
         // owner follows the focused pane.
         let focus_owner = if self.render.tab_bar_focused {
-            termrock::components::FocusOwner::TabBar
+            termrock::interaction::FocusOwner::TabBar
         } else {
             focused_id.map_or(
-                termrock::components::FocusOwner::TabBar,
-                termrock::components::FocusOwner::Content,
+                termrock::interaction::FocusOwner::TabBar,
+                termrock::interaction::FocusOwner::Content,
             )
         };
         let zoomed = self.active_zoomed_id().is_some();
@@ -318,7 +318,7 @@ impl Multiplexer {
                     *offset,
                 )
                 .is_some();
-                Some(termrock::components::ScrollAxes {
+                Some(termrock::layout::ScrollAxes {
                     vertical,
                     horizontal: false,
                 })

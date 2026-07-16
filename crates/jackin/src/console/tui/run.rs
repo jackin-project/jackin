@@ -183,7 +183,7 @@ struct ConsoleLoopInputs<'a, H, R> {
 struct ConsoleMouseState {
     last_event_at: Option<std::time::Instant>,
     pointer_shape: termrock::PointerShape,
-    chrome_hover_tracker: termrock::components::HoverTracker<ConsoleChromeHover>,
+    chrome_hover_tracker: termrock::interaction::HoverTracker<ConsoleChromeHover>,
     chrome_hover: Option<ConsoleChromeHover>,
 }
 
@@ -192,7 +192,7 @@ impl ConsoleMouseState {
         Self {
             last_event_at: None,
             pointer_shape: termrock::PointerShape::Default,
-            chrome_hover_tracker: termrock::components::HoverTracker::new(),
+            chrome_hover_tracker: termrock::interaction::HoverTracker::new(),
             chrome_hover: None,
         }
     }
@@ -283,11 +283,11 @@ where
             };
             jackin_console::tui::view::render_modal_backdrop(frame, body);
             let area = quit_confirm_area(body, confirm);
-            termrock::components::render_confirm_dialog(frame, area, confirm);
-            termrock::components::render_hint_bar(
+            jackin_console::tui::components::render_confirm_dialog(frame, area, confirm);
+            termrock::widgets::render_hint_bar(
                 frame,
                 hint_row,
-                &termrock::components::confirm_hint_spans(),
+                &jackin_console::tui::components::confirm_hint_spans(),
             );
         }
         mouse_state.chrome_hover_tracker.clear();

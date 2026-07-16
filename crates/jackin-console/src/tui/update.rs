@@ -16,12 +16,12 @@ pub type ConsoleUpdate<E> = UpdateResult<E>;
 
 #[derive(Debug, Clone)]
 pub enum StatusOverlayPlan {
-    Open(termrock::components::StatusPopupState),
+    Open(crate::tui::components::StatusPopupState),
     Dismiss,
 }
 
 pub trait StatusOverlayState {
-    fn set_status_overlay(&mut self, overlay: Option<termrock::components::StatusPopupState>);
+    fn set_status_overlay(&mut self, overlay: Option<crate::tui::components::StatusPopupState>);
 }
 
 pub fn apply_status_overlay_plan(state: &mut impl StatusOverlayState, plan: StatusOverlayPlan) {
@@ -34,7 +34,7 @@ pub fn apply_status_overlay_plan(state: &mut impl StatusOverlayState, plan: Stat
 #[derive(Debug)]
 pub enum ListModalPlan {
     ContainerInfo(crate::tui::components::container_info_surface::ContainerInfoState),
-    ErrorPopup(termrock::components::ErrorPopupState),
+    ErrorPopup(crate::tui::components::ErrorPopupState),
     GithubPicker(crate::tui::components::github_picker::GithubPickerState),
     Dismiss,
 }
@@ -44,7 +44,7 @@ pub trait ListModalState {
         &mut self,
         state: crate::tui::components::container_info_surface::ContainerInfoState,
     );
-    fn open_error_popup_modal(&mut self, state: termrock::components::ErrorPopupState);
+    fn open_error_popup_modal(&mut self, state: crate::tui::components::ErrorPopupState);
     fn open_github_picker_modal(
         &mut self,
         state: crate::tui::components::github_picker::GithubPickerState,
@@ -684,13 +684,13 @@ pub const fn mount_dst_choice_plan(
 
 #[must_use]
 pub const fn save_discard_modal_plan(
-    outcome: termrock::ModalOutcome<termrock::components::SaveDiscardChoice>,
+    outcome: termrock::ModalOutcome<crate::tui::components::SaveDiscardChoice>,
 ) -> SaveDiscardModalPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(termrock::components::SaveDiscardChoice::Save) => {
+        termrock::ModalOutcome::Commit(crate::tui::components::SaveDiscardChoice::Save) => {
             SaveDiscardModalPlan::Save
         }
-        termrock::ModalOutcome::Commit(termrock::components::SaveDiscardChoice::Discard) => {
+        termrock::ModalOutcome::Commit(crate::tui::components::SaveDiscardChoice::Discard) => {
             SaveDiscardModalPlan::Discard
         }
         termrock::ModalOutcome::Cancel => SaveDiscardModalPlan::Dismiss,
@@ -860,7 +860,7 @@ pub fn selected_index_plan(selected: usize, row_count: usize) -> usize {
 #[must_use]
 pub const fn unclamped_scroll_plan(current_scroll: u16, delta: i16) -> u16 {
     let mut scroll = current_scroll;
-    termrock::components::apply_scroll_delta_unclamped(&mut scroll, delta);
+    termrock::scroll::apply_scroll_delta_unclamped(&mut scroll, delta);
     scroll
 }
 
@@ -872,7 +872,7 @@ pub fn term_width_scroll_plan(
     content_width: usize,
 ) -> u16 {
     let mut scroll_x = current_scroll_x;
-    termrock::components::apply_term_width_scroll_delta(
+    termrock::scroll::apply_term_width_scroll_delta(
         &mut scroll_x,
         delta,
         term_width,

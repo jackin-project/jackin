@@ -119,7 +119,7 @@ impl Dialog {
 
     fn usage_overview_state(
         view: &jackin_protocol::control::FocusedUsageView,
-        scroll: termrock::components::DialogBodyScroll,
+        scroll: termrock::layout::DialogBodyScroll,
     ) -> crate::tui::components::container_info_surface::ContainerInfoState {
         let mut rows = Vec::new();
         if view.tabs.is_empty() {
@@ -359,7 +359,7 @@ impl Dialog {
             selected,
             tab_bar_focused: true,
             hovered_tab: None,
-            scroll: termrock::components::DialogBodyScroll::new(),
+            scroll: termrock::layout::DialogBodyScroll::new(),
         }
     }
 }

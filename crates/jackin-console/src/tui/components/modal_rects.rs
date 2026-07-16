@@ -82,13 +82,13 @@ pub trait ModalConfirmState {
     fn required_height(&self) -> u16;
 }
 
-impl ModalConfirmState for termrock::components::ConfirmState {
+impl ModalConfirmState for crate::tui::components::ConfirmState {
     fn width_pct(&self) -> u16 {
-        termrock::components::confirm_width_pct(self)
+        self.width_pct()
     }
 
     fn required_height(&self) -> u16 {
-        termrock::components::confirm_required_height(self)
+        self.required_height()
     }
 }
 
@@ -146,9 +146,9 @@ pub trait ModalErrorPopupState {
     fn required_height(&self, inner_width: u16, max_rows: u16) -> u16;
 }
 
-impl ModalErrorPopupState for termrock::components::ErrorPopupState {
+impl ModalErrorPopupState for crate::tui::components::ErrorPopupState {
     fn required_height(&self, inner_width: u16, max_rows: u16) -> u16 {
-        termrock::components::error_dialog::required_height(self, inner_width, max_rows)
+        self.required_height(inner_width, max_rows)
     }
 }
 
@@ -341,12 +341,8 @@ pub fn role_picker_rect_for_count(outer: Rect, filtered_len: usize) -> Rect {
 }
 
 #[must_use]
-pub fn confirm_rect(outer: Rect, state: &termrock::components::ConfirmState) -> Rect {
-    centered_rect_fixed(
-        outer,
-        termrock::components::confirm_width_pct(state),
-        termrock::components::confirm_required_height(state),
-    )
+pub fn confirm_rect(outer: Rect, state: &crate::tui::components::ConfirmState) -> Rect {
+    centered_rect_fixed(outer, state.width_pct(), state.required_height())
 }
 
 #[must_use]

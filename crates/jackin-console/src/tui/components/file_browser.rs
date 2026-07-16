@@ -43,5 +43,5 @@ pub use state::FileBrowserState;
 pub fn page_rows_for_modal(term_size: ratatui::layout::Rect, state: &FileBrowserState) -> u16 {
     let modal_area = rect_for_mode(term_size, ModalRectMode::FileBrowser);
     let listing_area = listing_rect(modal_area, state.rejected_reason.is_some());
-    u16::try_from(termrock::components::viewport_height(listing_area)).unwrap_or(u16::MAX)
+    u16::try_from(termrock::scroll::viewport_height(listing_area)).unwrap_or(u16::MAX)
 }

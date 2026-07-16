@@ -28,15 +28,3 @@ pub(crate) fn agent_display_name(slug: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-
-pub(crate) fn exit_confirm_state_with_data_loss() -> termrock::components::ConfirmState {
-    termrock::components::ConfirmState::details(
-        "Confirm",
-        "Exit jackin❯?",
-        Vec::new(),
-        vec![
-            "Exiting force-stops the container immediately.".into(),
-            "Work not saved outside the container will be lost.".into(),
-        ],
-    )
-}

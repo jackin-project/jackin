@@ -144,7 +144,7 @@ fn role_load_input_state_names_registry_guard() {
 fn secret_delete_confirm_state_uses_key_prompt() {
     let state = secret_delete_confirm_state("TOKEN");
 
-    let termrock::components::ConfirmKind::Default { prompt } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Default { prompt } = state.kind() else {
         panic!("expected default confirm");
     };
     assert_eq!(prompt, "Delete environment variable TOKEN?");
@@ -156,7 +156,7 @@ fn role_trust_confirm_state_names_role_and_repository() {
         role_trust_confirm_state("alpha".to_owned(), "https://example.test/role".to_owned());
 
     assert_eq!(state.title(), "Trust role source");
-    let termrock::components::ConfirmKind::Details { prompt, rows, .. } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Details { prompt, rows, .. } = state.kind() else {
         panic!("expected detail confirm");
     };
     assert_eq!(prompt, "Trust this role source?");
@@ -170,7 +170,7 @@ fn role_trust_confirm_state_names_role_and_repository() {
 fn isolated_state_save_confirm_state_lists_containers() {
     let state = isolated_state_save_confirm_state(&["one".to_owned(), "two".to_owned()]);
 
-    let termrock::components::ConfirmKind::Default { prompt } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Default { prompt } = state.kind() else {
         panic!("expected default confirm");
     };
     assert!(prompt.contains("2 stopped container(s)"));

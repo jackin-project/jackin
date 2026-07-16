@@ -493,7 +493,7 @@ fn console_manager_stage_routes_by_variant() {
     assert_eq!(
         ConsoleManagerStage::<(), (), ()>::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: termrock::components::ConfirmState::new("Delete?"),
+            state: crate::tui::components::ConfirmState::new("Delete?"),
         }
         .route(),
         ConsoleManagerStageRoute::ConfirmDelete
@@ -502,7 +502,7 @@ fn console_manager_stage_routes_by_variant() {
         ConsoleManagerStage::<(), (), ()>::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: termrock::components::ConfirmState::new("Purge?"),
+            state: crate::tui::components::ConfirmState::new("Purge?"),
         }
         .route(),
         ConsoleManagerStageRoute::ConfirmInstancePurge
@@ -585,7 +585,7 @@ fn console_manager_stage_reports_modal_facts() {
     assert_eq!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: termrock::components::ConfirmState::new("Delete?"),
+            state: crate::tui::components::ConfirmState::new("Delete?"),
         }
         .modal_facts(),
         ConsoleStageModalFacts {
@@ -656,14 +656,14 @@ fn console_manager_stage_takes_pending_token_generate_from_editor_or_settings() 
 
     let mut delete = Stage::ConfirmDelete {
         name: "workspace".to_owned(),
-        state: termrock::components::ConfirmState::new("Delete?"),
+        state: crate::tui::components::ConfirmState::new("Delete?"),
     };
     assert_eq!(delete.take_pending_token_generate(), None);
 
     let mut purge = Stage::ConfirmInstancePurge {
         container: "container".to_owned(),
         label: "label".to_owned(),
-        state: termrock::components::ConfirmState::new("Purge?"),
+        state: crate::tui::components::ConfirmState::new("Purge?"),
     };
     assert_eq!(purge.take_pending_token_generate(), None);
 }
@@ -686,7 +686,7 @@ fn console_manager_stage_polls_pending_role_load_from_editor_only() {
     assert!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: termrock::components::ConfirmState::new("Delete?"),
+            state: crate::tui::components::ConfirmState::new("Delete?"),
         }
         .poll_pending_role_load()
         .is_none()
@@ -695,7 +695,7 @@ fn console_manager_stage_polls_pending_role_load_from_editor_only() {
         Stage::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: termrock::components::ConfirmState::new("Purge?"),
+            state: crate::tui::components::ConfirmState::new("Purge?"),
         }
         .poll_pending_role_load()
         .is_none()
@@ -726,7 +726,7 @@ fn console_manager_stage_polls_pending_drift_check_from_editor_only() {
     assert!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: termrock::components::ConfirmState::new("Delete?"),
+            state: crate::tui::components::ConfirmState::new("Delete?"),
         }
         .poll_pending_drift_check()
         .is_none()
@@ -735,7 +735,7 @@ fn console_manager_stage_polls_pending_drift_check_from_editor_only() {
         Stage::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: termrock::components::ConfirmState::new("Purge?"),
+            state: crate::tui::components::ConfirmState::new("Purge?"),
         }
         .poll_pending_drift_check()
         .is_none()
@@ -768,7 +768,7 @@ fn console_manager_stage_polls_pending_isolation_cleanup_from_editor_only() {
     assert!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: termrock::components::ConfirmState::new("Delete?"),
+            state: crate::tui::components::ConfirmState::new("Delete?"),
         }
         .poll_pending_isolation_cleanup()
         .is_none()
@@ -777,7 +777,7 @@ fn console_manager_stage_polls_pending_isolation_cleanup_from_editor_only() {
         Stage::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: termrock::components::ConfirmState::new("Purge?"),
+            state: crate::tui::components::ConfirmState::new("Purge?"),
         }
         .poll_pending_isolation_cleanup()
         .is_none()
@@ -821,7 +821,7 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
     assert!(
         Stage::ConfirmDelete {
             name: "workspace".to_owned(),
-            state: termrock::components::ConfirmState::new("Delete?"),
+            state: crate::tui::components::ConfirmState::new("Delete?"),
         }
         .poll_pending_op_commit()
         .is_none()
@@ -830,7 +830,7 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
         Stage::ConfirmInstancePurge {
             container: "container".to_owned(),
             label: "label".to_owned(),
-            state: termrock::components::ConfirmState::new("Purge?"),
+            state: crate::tui::components::ConfirmState::new("Purge?"),
         }
         .poll_pending_op_commit()
         .is_none()
@@ -1221,7 +1221,7 @@ impl ModalConfirmSaveState for TestConfirmSave {
 impl ModalConfirmSaveFooterState for TestConfirmSave {
     fn footer_mode(&self) -> ModalFooterMode {
         ModalFooterMode::ConfirmSave {
-            scroll_axes: termrock::components::ScrollAxes::none(),
+            scroll_axes: termrock::layout::ScrollAxes::none(),
         }
     }
 }
@@ -1592,7 +1592,7 @@ fn console_manager_stage_ticks_editor_and_settings_only() {
 
     let mut delete = Stage::ConfirmDelete {
         name: "workspace".to_owned(),
-        state: termrock::components::ConfirmState::new("Delete?"),
+        state: crate::tui::components::ConfirmState::new("Delete?"),
     };
     assert!(!delete.tick_active_animation());
 }

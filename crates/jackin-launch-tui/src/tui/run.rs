@@ -14,12 +14,13 @@ use ratatui::backend::Backend as _;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use termrock::ModalOutcome;
-use termrock::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
+use termrock::interaction::Outcome;
+use termrock::widgets::{ListOutcome, TextInputOutcome};
 use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::prompts::{
-    draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
+    PromptConfirm, PromptError, PromptPicker, PromptText, draw_confirm, draw_error_popup,
+    draw_select, draw_text_prompt,
 };
 use crate::tui::input::{LaunchInput, restore_renderer_terminal_for_process_exit};
 use crate::tui::message::LaunchMessage;
@@ -225,11 +226,11 @@ enum ErrorPromptMessage {
     Key(KeyEvent),
 }
 
-fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) -> Option<usize> {
+fn update_forced_select(picker: &mut PromptPicker, msg: SelectLoopMessage) -> Option<usize> {
     match msg {
         SelectLoopMessage::Key(key) => {
             // Esc reports Cancel; ignored here so the choice is forced.
-            if let ModalOutcome::Commit(index) = picker.handle_key(key.into()) {
+            if let ListOutcome::Activated(index) = picker.handle_key(key) {
                 Some(index)
             } else {
                 None
@@ -238,57 +239,56 @@ fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) ->
     }
 }
 
-fn update_error_prompt(state: &mut ErrorPopupState, msg: ErrorPromptMessage) -> Option<()> {
+fn update_error_prompt(state: &mut PromptError, msg: ErrorPromptMessage) -> Option<()> {
     match msg {
-        ErrorPromptMessage::Key(key) => match state.handle_key(key.into()) {
-            ModalOutcome::Cancel => Some(()),
-            ModalOutcome::Continue => None,
-            ModalOutcome::Commit(()) => unreachable!("error popup never commits"),
+        ErrorPromptMessage::Key(key) => match state.handle_key(key) {
+            Outcome::Cancelled => Some(()),
+            Outcome::Ignored | Outcome::Changed | Outcome::Activated(()) => None,
         },
     }
 }
 
-fn update_confirm_prompt(state: &mut ConfirmState, msg: ConfirmPromptMessage) -> Option<bool> {
+fn update_confirm_prompt(state: &mut PromptConfirm, msg: ConfirmPromptMessage) -> Option<bool> {
     match msg {
-        ConfirmPromptMessage::Key(key) => match state.handle_key(key.into()) {
-            ModalOutcome::Commit(confirmed) => Some(confirmed),
-            ModalOutcome::Cancel => Some(false),
-            ModalOutcome::Continue => None,
+        ConfirmPromptMessage::Key(key) => match state.handle_key(key) {
+            Outcome::Activated(confirmed) => Some(confirmed),
+            Outcome::Cancelled => Some(false),
+            Outcome::Ignored | Outcome::Changed => None,
         },
     }
 }
 
 fn update_text_prompt(
-    input: &mut TextInputState<'_>,
+    input: &mut PromptText,
     skippable: bool,
     msg: TextPromptMessage,
 ) -> Option<anyhow::Result<PromptResult>> {
     match msg {
-        TextPromptMessage::Key(key) => match input.handle_key(key.into()) {
-            ModalOutcome::Commit(value) if value.is_empty() && skippable => {
+        TextPromptMessage::Key(key) => match input.handle_key(key) {
+            TextInputOutcome::Submitted(value) if value.is_empty() && skippable => {
                 Some(Ok(PromptResult::Skipped))
             }
-            ModalOutcome::Commit(value) => Some(Ok(PromptResult::Value(value))),
-            ModalOutcome::Cancel => Some(Err(crate::LaunchCancelled::err())),
-            ModalOutcome::Continue => None,
+            TextInputOutcome::Submitted(value) => Some(Ok(PromptResult::Value(value))),
+            TextInputOutcome::Cancelled => Some(Err(crate::LaunchCancelled::err())),
+            TextInputOutcome::Ignored | TextInputOutcome::Changed => None,
         },
     }
 }
 
 fn update_select_prompt(
-    picker: &mut SelectListState,
+    picker: &mut PromptPicker,
     options: &[String],
     skippable: bool,
     msg: SelectPromptMessage,
 ) -> Option<anyhow::Result<PromptResult>> {
     match msg {
-        SelectPromptMessage::Key(key) => match picker.handle_key(key.into()) {
-            ModalOutcome::Commit(index) if skippable && index == options.len() => {
+        SelectPromptMessage::Key(key) => match picker.handle_key(key) {
+            ListOutcome::Activated(index) if skippable && index == options.len() => {
                 Some(Ok(PromptResult::Skipped))
             }
-            ModalOutcome::Commit(index) => Some(Ok(PromptResult::Value(options[index].clone()))),
-            ModalOutcome::Cancel => Some(Err(crate::LaunchCancelled::err())),
-            ModalOutcome::Continue => None,
+            ListOutcome::Activated(index) => Some(Ok(PromptResult::Value(options[index].clone()))),
+            ListOutcome::Cancelled => Some(Err(crate::LaunchCancelled::err())),
+            ListOutcome::Ignored | ListOutcome::Changed => None,
         },
     }
 }
@@ -475,10 +475,10 @@ impl RichRenderer {
         context: &[Line<'_>],
         items: Vec<String>,
     ) -> anyhow::Result<usize> {
-        let mut picker = SelectListState::new(items);
+        let mut picker = PromptPicker::new(items);
         loop {
             termrock::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_select(frame, title, context, &picker);
+                draw_select(frame, title, context, &mut picker);
             })
             .context("rendering launch picker")?;
             if let Some(index) = update_forced_select(
@@ -511,13 +511,13 @@ impl RichRenderer {
         skippable: bool,
     ) -> anyhow::Result<PromptResult> {
         let mut input = if skippable {
-            TextInputState::new_allow_empty(title, initial)
+            PromptText::new_allow_empty(title, initial)
         } else {
-            TextInputState::new(title, initial)
+            PromptText::new(title, initial)
         };
         loop {
             termrock::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_text_prompt(frame, &input, skippable);
+                draw_text_prompt(frame, &mut input, skippable);
             })
             .context("rendering launch env text prompt")?;
             if let Some(result) = update_text_prompt(
@@ -556,7 +556,7 @@ impl RichRenderer {
         if skippable {
             items.push("(skip)".to_owned());
         }
-        let mut picker = SelectListState::new(items);
+        let mut picker = PromptPicker::new(items);
         if let Some(default) = default
             && let Some(index) = options.iter().position(|option| option == default)
         {
@@ -564,7 +564,7 @@ impl RichRenderer {
         }
         loop {
             termrock::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_select(frame, title, &[], &picker);
+                draw_select(frame, title, &[], &mut picker);
             })
             .context("rendering launch env select prompt")?;
             if let Some(result) = update_select_prompt(
@@ -582,7 +582,7 @@ impl RichRenderer {
     }
 
     pub fn confirm_prompt(&mut self, prompt: impl Into<String>) -> anyhow::Result<bool> {
-        self.confirm(ConfirmState::new(prompt))
+        self.confirm(PromptConfirm::new(prompt))
     }
 
     pub fn confirm_role_trust(
@@ -593,13 +593,13 @@ impl RichRenderer {
         self.confirm(role_trust_confirm_state(role.into(), repository.into()))
     }
 
-    pub fn confirm(&mut self, mut state: ConfirmState) -> anyhow::Result<bool> {
+    pub fn confirm(&mut self, mut state: PromptConfirm) -> anyhow::Result<bool> {
         self.with_raw_mode("entering raw mode for launch confirmation", |renderer| {
             renderer.confirm_loop(&mut state)
         })
     }
 
-    fn confirm_loop(&mut self, state: &mut ConfirmState) -> anyhow::Result<bool> {
+    fn confirm_loop(&mut self, state: &mut PromptConfirm) -> anyhow::Result<bool> {
         loop {
             termrock::runtime::drive_render(&mut self.terminal, |frame| {
                 draw_confirm(frame, state);
@@ -618,10 +618,10 @@ impl RichRenderer {
     }
 
     fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
-        let mut state = ErrorPopupState::new(title, message);
+        let mut state = PromptError::new(title, message);
         loop {
             termrock::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_error_popup(frame, &state);
+                draw_error_popup(frame, &mut state);
             })
             .context("rendering launch error popup")?;
             if update_error_prompt(
@@ -665,12 +665,11 @@ impl RichRenderer {
     ) -> anyhow::Result<crate::LaunchDialogResult> {
         use crate::tui::components::dialog::{dialog_backdrop, percent_dialog_rect};
         use termrock::HintSpan;
-        use termrock::components::{ConfirmState, render_confirm_dialog};
 
         // Item 0 = "Start new session"; items 1..=N = candidates.
         let mut labels = vec!["Start new session".to_owned()];
         labels.extend(candidates.iter().map(|c| c.label.clone()));
-        let mut picker = SelectListState::new(labels);
+        let mut picker = PromptPicker::new(labels);
 
         enum Mode {
             Picker,
@@ -706,8 +705,13 @@ impl RichRenderer {
                             let height = rows.clamp(6, box_area.height.saturating_sub(2).max(6));
                             percent_dialog_rect(box_area, 80, 40.min(box_area.width), 2, 2, height)
                         };
-                        use termrock::components::render_select_list;
-                        render_select_list(frame, picker_rect, &picker, title, &[]);
+                        crate::tui::components::prompts::render_picker(
+                            frame,
+                            picker_rect,
+                            title,
+                            &[],
+                            &mut picker,
+                        );
                         termrock::widgets::render_hint_bar(frame, hint_area, hint_normal);
                     })
                     .context("rendering launch dialog")?;
@@ -739,7 +743,7 @@ impl RichRenderer {
                         }
                         continue;
                     }
-                    if let ModalOutcome::Commit(index) = picker.handle_key(key.into()) {
+                    if let ListOutcome::Activated(index) = picker.handle_key(key) {
                         return Ok(if index == 0 {
                             crate::LaunchDialogResult::StartFresh
                         } else {
@@ -750,23 +754,11 @@ impl RichRenderer {
                 Mode::ConfirmDelete(ci) => {
                     let ci = *ci;
                     let label = &candidates[ci].label;
-                    let mut confirm = ConfirmState::new(format!(
+                    let mut confirm = PromptConfirm::new(format!(
                         "Delete {label}?\n\nAny uncommitted changes will be lost."
                     ));
                     termrock::runtime::drive_render(&mut self.terminal, |frame| {
-                        let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-                        use crate::tui::components::prompts::confirm_hint_spans;
-                        use termrock::components::{confirm_required_height, confirm_width_pct};
-                        let rect = percent_dialog_rect(
-                            box_area,
-                            confirm_width_pct(&confirm),
-                            0,
-                            2,
-                            2,
-                            confirm_required_height(&confirm),
-                        );
-                        render_confirm_dialog(frame, rect, &confirm);
-                        termrock::widgets::render_hint_bar(frame, hint_area, &confirm_hint_spans());
+                        draw_confirm(frame, &mut confirm);
                     })
                     .context("rendering delete confirm")?;
                     let key = read_pressed_key(&self.input, "reading delete confirm input")?;
@@ -794,10 +786,8 @@ impl RichRenderer {
         use crate::tui::components::dialog::dialog_backdrop;
         use ratatui::layout::{Constraint, Direction, Layout};
         use termrock::HintSpan;
-        use termrock::components::{
-            DiffViewState, SelectListState, SinglePaneKind, render_diff_view, render_select_list,
-        };
         use termrock::keymap::glyph;
+        use termrock::widgets::{DiffKind, DiffLine, DiffState, DiffView};
 
         if worktrees.is_empty() {
             return Ok(());
@@ -828,23 +818,35 @@ impl RichRenderer {
         } else {
             InspFocus::Files
         };
-        let mut diff_scroll_y: u16 = 0;
+        let mut diff_scroll_y: usize = 0;
 
-        let build_diff = |wt: &crate::WorktreeInspect, fi: usize| -> Option<DiffViewState> {
+        #[derive(Clone)]
+        struct InspectDiff {
+            lines: Vec<(String, DiffKind)>,
+            state: DiffState,
+        }
+
+        let build_diff = |wt: &crate::WorktreeInspect, fi: usize| -> Option<InspectDiff> {
             let file = wt.files.get(fi)?;
-            Some(match (file.before.as_deref(), file.after.as_deref()) {
-                (Some(before), Some(after)) => {
-                    DiffViewState::side_by_side(before, after, "HEAD", "working")
-                }
-                (None, Some(after)) => {
-                    DiffViewState::single_pane(after, SinglePaneKind::Added, &file.path)
-                }
-                (Some(before), None) => {
-                    DiffViewState::single_pane(before, SinglePaneKind::Deleted, &file.path)
-                }
-                (None, None) => {
-                    DiffViewState::single_pane("", SinglePaneKind::Untracked, &file.path)
-                }
+            let mut lines = vec![(format!("--- HEAD/{}", file.path), DiffKind::Context)];
+            if let Some(before) = file.before.as_deref() {
+                lines.extend(
+                    before
+                        .lines()
+                        .map(|line| (format!("- {line}"), DiffKind::Removed)),
+                );
+            }
+            lines.push((format!("+++ working/{}", file.path), DiffKind::Context));
+            if let Some(after) = file.after.as_deref() {
+                lines.extend(
+                    after
+                        .lines()
+                        .map(|line| (format!("+ {line}"), DiffKind::Added)),
+                );
+            }
+            Some(InspectDiff {
+                lines,
+                state: DiffState::default(),
             })
         };
 
@@ -894,29 +896,54 @@ impl RichRenderer {
                 // Mark the Tab-focused pane with the ▸ selection glyph so the
                 // operator sees which pane Up/Down/PageUp drive.
                 if let Some(repos_area) = repos_area {
-                    let mut repos_state = SelectListState::new(wt_labels.clone());
+                    let mut repos_state = PromptPicker::new(wt_labels.clone());
                     repos_state.select_index(wt_sel_c);
                     let title = if matches!(focus_c, InspFocus::Repos) {
                         "▸ Repos"
                     } else {
                         "Repos"
                     };
-                    render_select_list(frame, repos_area, &repos_state, title, &[]);
+                    crate::tui::components::prompts::render_picker(
+                        frame,
+                        repos_area,
+                        title,
+                        &[],
+                        &mut repos_state,
+                    );
                 }
 
-                let mut files_state = SelectListState::new(file_labels.clone());
+                let mut files_state = PromptPicker::new(file_labels.clone());
                 files_state.select_index(file_sel_c);
                 let files_title = if matches!(focus_c, InspFocus::Files) {
                     "▸ Changed files"
                 } else {
                     "Changed files"
                 };
-                render_select_list(frame, files_area, &files_state, files_title, &[]);
+                crate::tui::components::prompts::render_picker(
+                    frame,
+                    files_area,
+                    files_title,
+                    &[],
+                    &mut files_state,
+                );
 
                 if let Some(diff) = diff_cloned.as_mut() {
-                    diff.set_scroll_y(diff_scroll_y);
-                    render_diff_view(frame, diff_area, diff);
-                    diff_scroll_y = diff.scroll_y();
+                    diff.state.offset = diff_scroll_y.min(diff.lines.len().saturating_sub(1));
+                    let lines = diff
+                        .lines
+                        .iter()
+                        .map(|(text, kind)| DiffLine { text, kind: *kind })
+                        .collect::<Vec<_>>();
+                    frame.render_stateful_widget(
+                        &DiffView {
+                            lines: &lines,
+                            added_style: Style::default().fg(termrock::style::PHOSPHOR_GREEN),
+                            removed_style: Style::default().fg(termrock::style::DANGER_RED),
+                        },
+                        diff_area,
+                        &mut diff.state,
+                    );
+                    diff_scroll_y = diff.state.offset;
                 }
             })
             .context("rendering inspect surface")?;
@@ -951,8 +978,8 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            let _outcome = d.handle_key(key.into());
-                            diff_scroll_y = d.scroll_y();
+                            d.state.offset = d.state.offset.saturating_sub(1);
+                            diff_scroll_y = d.state.offset;
                         }
                     }
                 },
@@ -975,15 +1002,26 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            let _outcome = d.handle_key(key.into());
-                            diff_scroll_y = d.scroll_y();
+                            d.state.offset = d
+                                .state
+                                .offset
+                                .saturating_add(1)
+                                .min(d.lines.len().saturating_sub(1));
+                            diff_scroll_y = d.state.offset;
                         }
                     }
                 },
                 KeyCode::PageUp | KeyCode::PageDown => {
                     if let Some(d) = diff_state.as_mut() {
-                        let _outcome = d.handle_key(key.into());
-                        diff_scroll_y = d.scroll_y();
+                        d.state.offset = if key.code == KeyCode::PageUp {
+                            d.state.offset.saturating_sub(10)
+                        } else {
+                            d.state
+                                .offset
+                                .saturating_add(10)
+                                .min(d.lines.len().saturating_sub(1))
+                        };
+                        diff_scroll_y = d.state.offset;
                     }
                 }
                 _ => {}
@@ -1017,11 +1055,11 @@ impl RichRenderer {
     ) -> anyhow::Result<usize> {
         use crate::tui::components::prompts::draw_select;
 
-        let mut picker = SelectListState::new(options);
+        let mut picker = PromptPicker::new(options);
 
         loop {
             termrock::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_select(frame, title, context, &picker);
+                draw_select(frame, title, context, &mut picker);
             })
             .context("rendering exit dialog")?;
 
@@ -1042,15 +1080,15 @@ impl RichRenderer {
                 continue;
             }
 
-            if let ModalOutcome::Commit(index) = picker.handle_key(key.into()) {
+            if let ListOutcome::Activated(index) = picker.handle_key(key) {
                 return Ok(index);
             }
         }
     }
 }
 
-fn role_trust_confirm_state(role: String, repository: String) -> ConfirmState {
-    ConfirmState::details(
+fn role_trust_confirm_state(role: String, repository: String) -> PromptConfirm {
+    PromptConfirm::details(
         "Trust role source",
         "Trust this role source?",
         vec![("Role".into(), role), ("Repository".into(), repository)],

@@ -134,10 +134,11 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use termrock::components::render_filter_input;
-use termrock::components::render_picker_lines;
-use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::layout::{DialogBorder, render_dialog_shell};
 use termrock::style::WHITE;
+use termrock::widgets::{
+    List, ListRow, ListState as CanonicalListState, RowRole, TextInput, TextInputState, Validation,
+};
 
 pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
     let inner = render_dialog_shell(frame, area, Some("Select Role"), DialogBorder::Default);
@@ -151,7 +152,26 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         ])
         .split(inner);
 
-    render_filter_input(frame, rows[0], &state.filter);
+    let theme = termrock::Theme::default();
+    let mut filter = TextInputState::new(&state.filter).with_allow_empty(true);
+    let filter_columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(8), Constraint::Min(1)])
+        .split(rows[0]);
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new("Filter: "),
+        filter_columns[0],
+    );
+    frame.render_stateful_widget(
+        &TextInput {
+            label: "Filter",
+            placeholder: "░░░",
+            validation: Validation::Valid,
+            theme: &theme,
+        },
+        filter_columns[1],
+        &mut filter,
+    );
 
     // List body. When the filter narrows the visible set to nothing, show
     // a dim centered placeholder so the operator knows the list is empty,
@@ -167,16 +187,24 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         );
         return;
     }
-    let lines: Vec<Line<'_>> = state
+    let items: Vec<ListRow<'_, usize>> = state
         .filtered
         .iter()
-        .map(|role| Line::from(vec![Span::styled(role.key(), Style::default().fg(WHITE))]))
+        .enumerate()
+        .map(|(id, role)| ListRow {
+            id,
+            label: Line::from(vec![Span::styled(role.key(), Style::default().fg(WHITE))]),
+            role: RowRole::Item,
+            enabled: true,
+        })
         .collect();
-    render_picker_lines(
+    frame.render_stateful_widget(
+        &List {
+            rows: &items,
+            theme: &theme,
+        },
         rows[2],
-        frame.buffer_mut(),
-        lines,
-        state.list_state.selected,
+        &mut CanonicalListState::new(state.list_state.selected),
     );
 }
 

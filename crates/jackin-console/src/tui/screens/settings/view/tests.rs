@@ -100,7 +100,7 @@ fn global_mount_confirm_state_uses_settings_prompt() {
     let state = global_mount_confirm_state(GlobalMountConfirm::Discard);
 
     assert_eq!(state.title(), "Confirm");
-    let termrock::components::ConfirmKind::Default { prompt } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Default { prompt } = state.kind() else {
         panic!("expected default confirm state");
     };
     assert_eq!(prompt, "Discard unsaved global mount changes?");
@@ -201,7 +201,7 @@ fn settings_env_source_picker_state_names_key() {
 fn settings_env_delete_confirm_state_uses_key_prompt() {
     let state = settings_env_delete_confirm_state("TOKEN");
 
-    let termrock::components::ConfirmKind::Default { prompt } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Default { prompt } = state.kind() else {
         panic!("expected default confirm state");
     };
     assert_eq!(prompt, "Delete environment variable TOKEN?");

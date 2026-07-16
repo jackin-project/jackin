@@ -32,13 +32,13 @@ fn palette() -> Dialog {
 
 #[test]
 fn spawn_failure_popup_uses_error_popup_hints_and_dismiss_keys() {
-    let mut dialog = Dialog::SpawnFailure(termrock::components::ErrorPopupState::new(
-        "Spawn failed",
-        "shell: cap hit",
-    ));
+    let mut dialog = Dialog::SpawnFailure(SpawnFailureState::new("Spawn failed", "shell: cap hit"));
     assert_eq!(
-        dialog.footer_hint_spans(None, termrock::components::ScrollAxes::none()),
-        termrock::components::error_popup_hint_spans()
+        dialog.footer_hint_spans(None, termrock::layout::ScrollAxes::none()),
+        vec![
+            termrock::HintSpan::Key("↵/Esc"),
+            termrock::HintSpan::Text("dismiss"),
+        ]
     );
     assert_eq!(dialog.handle_key(b"x", None), DialogAction::Redraw);
     assert_eq!(dialog.handle_key(b"\x1b", None), DialogAction::Dismiss);
@@ -376,7 +376,7 @@ fn picker_enter_with_empty_filtered_list_is_redraw_noop() {
 fn rename_tab_empty_input_clears_label() {
     let mut d = Dialog::RenameTab {
         tab_idx: 3,
-        input: termrock::components::TextField::new("").with_allow_empty(true),
+        input: termrock::widgets::TextInputState::new("").with_allow_empty(true),
     };
     match d.handle_key(b"\r", None) {
         DialogAction::RenameTab { tab_idx, label } => {
@@ -391,7 +391,7 @@ fn rename_tab_empty_input_clears_label() {
 fn rename_tab_backspace_removes_last_char() {
     let mut d = Dialog::RenameTab {
         tab_idx: 0,
-        input: termrock::components::TextField::new("abc"),
+        input: termrock::widgets::TextInputState::new("abc"),
     };
     assert_eq!(d.handle_key(b"\x7f", None), DialogAction::Redraw);
     let Dialog::RenameTab { input, .. } = d else {
@@ -404,7 +404,7 @@ fn rename_tab_backspace_removes_last_char() {
 fn rename_tab_esc_dismisses() {
     let mut d = Dialog::RenameTab {
         tab_idx: 0,
-        input: termrock::components::TextField::new("abc"),
+        input: termrock::widgets::TextInputState::new("abc"),
     };
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
 }
@@ -416,7 +416,7 @@ fn rename_tab_consumes_q_as_input_not_dismiss() {
     // operators can't type the letter into their tab name.
     let mut d = Dialog::RenameTab {
         tab_idx: 0,
-        input: termrock::components::TextField::new("a"),
+        input: termrock::widgets::TextInputState::new("a"),
     };
     assert_eq!(d.handle_key(b"q", None), DialogAction::Redraw);
     let Dialog::RenameTab { input, .. } = d else {
@@ -434,7 +434,7 @@ fn container_info_fixture() -> Dialog {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     }
 }
 
@@ -456,7 +456,7 @@ fn container_info_with_diagnostics_fixture() -> Dialog {
         },
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     }
 }
 
@@ -572,7 +572,7 @@ fn container_info_state_backend_only_shows_telemetry_without_reveal() {
         },
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     };
     let state = d
         .container_info_state_with_debug(true)
@@ -822,7 +822,7 @@ fn container_info_clear_copy_feedback_hides_badge() {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     };
     assert!(d.clear_copy_feedback());
     let Dialog::ContainerInfo { copied_row, .. } = d else {
@@ -846,7 +846,7 @@ fn github_context_enter_copies_pr_url_and_shows_feedback() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     };
 
     match d.handle_key(b"\r", Some(&view)) {
@@ -864,7 +864,7 @@ fn github_context_o_opens_pr_url() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     };
 
     match d.handle_key(b"o", Some(&view)) {
@@ -886,7 +886,7 @@ fn github_context_c_opens_ci_url_when_available() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     };
 
     match d.handle_key(b"c", Some(&view)) {
@@ -906,7 +906,7 @@ fn github_context_url_click_copies_pr_url() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -931,7 +931,7 @@ fn github_context_open_rows_click_open_urls() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -961,7 +961,7 @@ fn github_context_unavailable_ci_row_is_not_clickable() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -986,7 +986,7 @@ fn github_context_uses_shared_focused_info_dialog() {
     let pr = pull_request_fixture();
     let d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::components::DialogBodyScroll::new(),
+        scroll: termrock::layout::DialogBodyScroll::new(),
     };
 
     let view = github_view_for_fixture(&pr);
@@ -1614,9 +1614,10 @@ fn usage_dialog_provider_tab_hover_uses_shared_tab_hover_color() {
         })
         .unwrap();
 
-    assert_eq!(
-        terminal.backend().buffer()[(tab_col, tab_row)].bg,
-        termrock::style::TAB_BG_INACTIVE_HOVER
+    assert!(
+        terminal.backend().buffer()[(tab_col, tab_row)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
     );
 }
 
@@ -2292,7 +2293,7 @@ fn github_context_clamp_body_scroll_reduces_overscroll() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::components::DialogBodyScroll {
+        scroll: termrock::layout::DialogBodyScroll {
             scroll_x: u16::MAX,
             scroll_y: u16::MAX,
         },

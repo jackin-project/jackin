@@ -6,7 +6,7 @@ use super::{
     BTreeMap, SettingsEnvConfig, SettingsEnvScope, SettingsModalSlot, SettingsPanelChangeCount,
     SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved, SettingsPanelTakeError,
 };
-use termrock::components::ModalStack;
+use termrock::interaction::ModalStack;
 
 pub fn settings_env_config_from_app_config(
     config: &jackin_config::AppConfig,

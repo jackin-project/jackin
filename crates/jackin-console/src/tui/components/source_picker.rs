@@ -6,6 +6,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use termrock::ModalOutcome;
+use termrock::widgets::{Action, ActionBar, ActionBarState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceChoice {
@@ -78,7 +79,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::layout::{DialogBorder, render_dialog_shell};
 use termrock::style::PHOSPHOR_DARK;
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
@@ -94,21 +95,30 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
         ])
         .split(inner);
 
-    let items = [
-        termrock::components::ButtonStripItem::new("Plain text"),
-        if state.op_available {
-            termrock::components::ButtonStripItem::new("1Password")
-        } else {
-            termrock::components::ButtonStripItem::disabled("1Password")
+    let actions = [
+        Action {
+            id: SourceChoice::Plain,
+            label: "Plain text",
+            enabled: true,
+            style: None,
+        },
+        Action {
+            id: SourceChoice::Op,
+            label: "1Password",
+            enabled: state.op_available,
+            style: None,
         },
     ];
-    let focused = match state.focused {
-        SourceChoice::Plain => 0,
-        SourceChoice::Op => 1,
-    };
-    frame.render_widget(
-        termrock::components::ButtonStrip::new(&items).focused(focused),
+    frame.render_stateful_widget(
+        &ActionBar {
+            actions: &actions,
+            gap: " ",
+        },
         chunks[1],
+        &mut ActionBarState {
+            focused: Some(state.focused),
+            regions: Vec::new(),
+        },
     );
 
     if !state.op_available {

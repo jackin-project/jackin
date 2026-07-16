@@ -10,7 +10,7 @@ use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use ratatui::layout::Rect;
-use termrock::ModalOutcome;
+use termrock::interaction::Outcome;
 use termrock::keymap::KeyChord;
 use termrock::scroll::ScrollAxes;
 use tokio_util::sync::CancellationToken;
@@ -74,16 +74,16 @@ fn apply_quit_confirm_key(view: &mut LaunchView, key: event::KeyEvent) -> QuitCo
     let Some(confirm) = view.quit_confirm.as_mut() else {
         return QuitConfirmOutcome::Pending;
     };
-    match confirm.handle_key(key.into()) {
-        ModalOutcome::Commit(true) => {
+    match confirm.handle_key(key) {
+        Outcome::Activated(true) => {
             view.quit_confirm = None;
             QuitConfirmOutcome::Confirmed
         }
-        ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
+        Outcome::Activated(false) | Outcome::Cancelled => {
             view.quit_confirm = None;
             QuitConfirmOutcome::Dismissed
         }
-        ModalOutcome::Continue => QuitConfirmOutcome::Pending,
+        Outcome::Ignored | Outcome::Changed => QuitConfirmOutcome::Pending,
     }
 }
 
@@ -581,8 +581,10 @@ pub fn handle_cockpit_input(
                         .dispatch(KeyChord::from(termrock::crossterm::key(k)))
                         == Some(crate::tui::keymap::CockpitAction::OpenQuitConfirm) =>
             {
-                v.quit_confirm =
-                    Some(termrock::components::ConfirmState::new("Exit jackin❯?").with_focus_yes());
+                v.quit_confirm = Some(
+                    crate::tui::components::prompts::PromptConfirm::new("Exit jackin❯?")
+                        .with_focus_yes(),
+                );
                 return CockpitOutcome::Continue;
             }
             Event::Mouse(m) => {

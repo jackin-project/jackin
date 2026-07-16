@@ -903,7 +903,7 @@ pub(crate) static AUTH_EDIT_SOURCE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding
 /// folds in runtime context the table cannot carry (list-scroll focus, the
 /// selected row's type) to produce the final `WorkspaceListKeyPlan`. Footer
 /// builders pull each advertised key's glyph from this same table via
-/// [`termrock::components::Keymap::glyph_for`], so an advertised key cannot
+/// [`crate::tui::components::Keymap::glyph_for`], so an advertised key cannot
 /// drift from the dispatched key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkspaceListAction {

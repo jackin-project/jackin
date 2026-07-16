@@ -18,10 +18,13 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
-use termrock::components::TabStrip;
-use termrock::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
-use termrock::components::filter_input::render_filter_input;
+use termrock::Theme;
 use termrock::style::PHOSPHOR_GREEN;
+use termrock::widgets::{
+    Action, ChoiceDialog, ChoiceDialogState, DetailTableState, Dialog as MessageShell, List,
+    ListRow, ListState, MessageDialog, Panel, PanelEmphasis, RowRole, Tab, Tabs, TabsState,
+    TextInput, TextInputState, Validation,
+};
 
 use crate::tui::components::dialog::{Dialog, GithubContextView};
 
@@ -86,7 +89,7 @@ pub(crate) enum DialogRatatuiSnapshot {
         cursor: usize,
     },
     /// Shared error popup used for capsule-owned modal errors.
-    ErrorPopup(termrock::components::ErrorPopupState),
+    ErrorPopup(crate::tui::components::dialog::SpawnFailureState),
     /// The "Debug info" dialog, rendered through the shared jackin-tui
     /// `ContainerInfoState` so its rows, copy affordances, focused shell,
     /// spacing, link styling, and hover behaviour are identical to the host
@@ -307,7 +310,7 @@ impl Dialog {
                 dialog_title: "Rename tab".into(),
                 label: "Name".into(),
                 value: input.value().to_owned(),
-                cursor: input.cursor(),
+                cursor: input.cursor_byte(),
             },
             Dialog::ExportFile {
                 input,
@@ -323,7 +326,7 @@ impl Dialog {
                 },
                 label: "Path".into(),
                 value: input.value().to_owned(),
-                cursor: input.cursor(),
+                cursor: input.cursor_byte(),
             },
             Dialog::SpawnFailure(state) => DialogRatatuiSnapshot::ErrorPopup(state.clone()),
 
@@ -400,9 +403,9 @@ impl DialogRatatuiSnapshot {
     /// scroll. Measured the same way `render_scrollable_dialog_body` measures,
     /// so a hint built from this advertises exactly the axes whose scrollbar is
     /// drawn — the hint and the scrollbar never disagree.
-    pub(crate) fn scroll_axes(&self, block_area: Rect) -> termrock::components::ScrollAxes {
+    pub(crate) fn scroll_axes(&self, block_area: Rect) -> termrock::layout::ScrollAxes {
         match self {
-            Self::DebugInfo(state) => termrock::components::dialog_scroll_axes(
+            Self::DebugInfo(state) => termrock::layout::dialog_scroll_axes(
                 state.content_width(),
                 state.content_height(),
                 block_area,
@@ -415,9 +418,9 @@ impl DialogRatatuiSnapshot {
                 let (content_width, content_height, scroll_rect) =
                     usage_scroll_inputs(block_area, state);
                 let width = content_width.max(usage_tab_strip_width(tabs));
-                termrock::components::dialog_scroll_axes(width, content_height, scroll_rect)
+                termrock::layout::dialog_scroll_axes(width, content_height, scroll_rect)
             }
-            _ => termrock::components::ScrollAxes::none(),
+            _ => termrock::layout::ScrollAxes::none(),
         }
     }
 }
@@ -471,17 +474,27 @@ pub(crate) fn render_dialog_ratatui(
             value,
             cursor,
         } => {
-            termrock::components::render_labeled_text_input_dialog(
-                frame,
-                area,
-                dialog_title,
-                label,
-                value,
-                *cursor,
-            );
+            render_text_input_dialog(frame, area, dialog_title, label, value, *cursor);
         }
         DialogRatatuiSnapshot::ErrorPopup(state) => {
-            termrock::components::render_error_dialog_in(frame, area, state);
+            let theme = Theme::default();
+            frame.render_stateful_widget(
+                &MessageDialog {
+                    dialog: MessageShell {
+                        title: &state.title,
+                        body: ratatui::text::Text::from(state.message.as_str()),
+                        style: Style::default(),
+                        theme: &theme,
+                        emphasis: PanelEmphasis::Focused,
+                    },
+                    details: &[],
+                    label_width: 0,
+                    wrap: true,
+                    theme: &theme,
+                },
+                area,
+                &mut DetailTableState::<usize>::default(),
+            );
         }
         DialogRatatuiSnapshot::DebugInfo(state) => {
             crate::tui::components::container_info_surface::render_container_info(
@@ -511,17 +524,43 @@ fn render_confirm_action(
     selected_yes: bool,
     data_loss: bool,
 ) {
+    let theme = Theme::default();
     // Exit uses the shared data-loss variant (prompt + warning notes); every
     // other confirm keeps the plain title+body prompt. Same widget either way.
-    let mut state = if data_loss {
-        crate::tui::components::exit_confirm_state_with_data_loss()
+    let body = if data_loss {
+        "Exit jackin❯?\n\n! Exiting force-stops the container immediately.\n! Work not saved outside the container will be lost.".to_owned()
     } else {
-        ConfirmState::new(format!("{title}\n\n{body}"))
+        format!("{title}\n\n{body}")
     };
-    if selected_yes {
-        state = state.with_focus_yes();
-    }
-    render_confirm_dialog(frame, area, &state);
+    let actions = [
+        Action {
+            id: true,
+            label: "Yes",
+            enabled: true,
+            style: None,
+        },
+        Action {
+            id: false,
+            label: "No",
+            enabled: true,
+            style: None,
+        },
+    ];
+    frame.render_stateful_widget(
+        &ChoiceDialog {
+            dialog: MessageShell {
+                title: "Confirm",
+                body: ratatui::text::Text::from(body),
+                style: Style::default(),
+                theme: &theme,
+                emphasis: PanelEmphasis::Focused,
+            },
+            actions: &actions,
+            gap: " ",
+        },
+        area,
+        &mut ChoiceDialogState::new(Some(selected_yes)),
+    );
 }
 
 fn render_usage_info(
@@ -533,25 +572,42 @@ fn render_usage_info(
     hovered_tab: Option<usize>,
 ) {
     let title = usage_panel_title(state, area.width);
-    let inner = termrock::components::render_dialog_shell(
+    let inner = termrock::layout::render_dialog_shell(
         frame,
         area,
         Some(title.as_str()),
-        termrock::components::DialogBorder::Default,
+        termrock::layout::DialogBorder::Default,
     );
     if inner.height == 0 {
         return;
     }
     let tab_area = usage_tab_strip_area(inner, tabs);
-    let tab_refs = tabs
+    let canonical_tabs = tabs
         .iter()
-        .map(|(label, active)| (label.as_str(), *active))
+        .enumerate()
+        .map(|(id, (label, active))| Tab {
+            id,
+            label,
+            glyph: None,
+            active: *active,
+            enabled: true,
+        })
         .collect::<Vec<_>>();
-    frame.render_widget(
-        TabStrip::new(&tab_refs)
-            .focused(tab_bar_focused)
-            .hovered(hovered_tab),
+    frame.render_stateful_widget(
+        &Tabs {
+            tabs: &canonical_tabs,
+            gap: termrock::TAB_GAP,
+        },
         tab_area,
+        &mut TabsState {
+            selected: canonical_tabs
+                .iter()
+                .find(|tab| tab.active)
+                .map(|tab| tab.id),
+            hovered: hovered_tab,
+            focused: tab_bar_focused,
+            regions: Vec::new(),
+        },
     );
     // Body geometry comes from the shared `usage_body_rect`, the same source the
     // scroll-bound path uses, so the rendered viewport and the scroll clamp can
@@ -560,7 +616,7 @@ fn render_usage_info(
     let body = usage_body_rect(area);
     let lines = usage_info_lines_for_width(state, body.width);
     let mut scroll = state.scroll.clone();
-    termrock::components::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll);
+    termrock::layout::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll);
 }
 
 fn render_filter_picker(
@@ -574,10 +630,10 @@ fn render_filter_picker(
 ) {
     // Reuse the shared modal panel so the menu/pickers match every other
     // jackin❯ dialog: PHOSPHOR_GREEN focused border + bold-white title.
-    let title_str = format!(" {title} ");
-    let block = termrock::components::Panel::new()
-        .title(&title_str)
-        .focus(termrock::components::PanelFocus::Focused)
+    let theme = Theme::default();
+    let block = Panel::new(&theme)
+        .title(title)
+        .emphasis(PanelEmphasis::Focused)
         .block();
     let inner = block.inner(area);
     Clear.render(area, frame.buffer_mut());
@@ -593,7 +649,17 @@ fn render_filter_picker(
     // the filter — keep the two in lockstep or the list clips.
     let list_area = if show_filter {
         let filter_area = Rect { height: 1, ..inner };
-        render_filter_input(frame, filter_area, filter);
+        let mut filter_state = TextInputState::new(filter).with_allow_empty(true);
+        frame.render_stateful_widget(
+            &TextInput {
+                label: "Filter",
+                placeholder: "Filter",
+                validation: Validation::Valid,
+                theme: &theme,
+            },
+            filter_area,
+            &mut filter_state,
+        );
         if inner.height < 3 {
             return;
         }
@@ -612,17 +678,72 @@ fn render_filter_picker(
 
     // Section rows are full-width centered dividers drawn by render_picker_list;
     // item rows are white and let the shared highlight paint the selected row.
-    let rows: Vec<termrock::components::PickerRow<'_>> = items
+    let rows = items
         .iter()
-        .map(|item| match item {
-            PickerItem::Section(label) => termrock::components::PickerRow::Separator(label.clone()),
-            PickerItem::Item(label) => {
-                termrock::components::PickerRow::Item(ratatui::widgets::ListItem::new(Line::from(
-                    Span::styled(label.clone(), Style::default().fg(PHOSPHOR_GREEN)),
-                )))
-            }
+        .enumerate()
+        .map(|(id, item)| match item {
+            PickerItem::Section(label) => ListRow {
+                id,
+                label: Line::from(label.clone()),
+                role: RowRole::Separator,
+                enabled: false,
+            },
+            PickerItem::Item(label) => ListRow {
+                id,
+                label: Line::from(Span::styled(
+                    label.clone(),
+                    Style::default().fg(PHOSPHOR_GREEN),
+                )),
+                role: RowRole::Item,
+                enabled: true,
+            },
         })
-        .collect();
+        .collect::<Vec<_>>();
+    frame.render_stateful_widget(
+        &List {
+            rows: &rows,
+            theme: &theme,
+        },
+        list_area,
+        &mut ListState::new(Some(selected)),
+    );
+}
 
-    termrock::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
+fn render_text_input_dialog(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    dialog_title: &str,
+    label: &str,
+    value: &str,
+    cursor: usize,
+) {
+    let theme = Theme::default();
+    let panel = Panel::new(&theme)
+        .title(dialog_title)
+        .emphasis(PanelEmphasis::Focused);
+    let inner = panel.inner(area);
+    frame.render_widget(&panel, area);
+    if inner.height < 2 {
+        return;
+    }
+    frame.render_widget(ratatui::widgets::Paragraph::new(format!("{label}:")), inner);
+    let mut state = TextInputState::new(value).with_allow_empty(true);
+    assert!(
+        state.set_cursor_byte(cursor),
+        "text-input snapshot cursor must remain on a grapheme boundary"
+    );
+    frame.render_stateful_widget(
+        &TextInput {
+            label,
+            placeholder: "",
+            validation: Validation::Valid,
+            theme: &theme,
+        },
+        Rect {
+            y: inner.y.saturating_add(1),
+            height: 1,
+            ..inner
+        },
+        &mut state,
+    );
 }

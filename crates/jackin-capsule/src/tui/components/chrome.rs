@@ -18,7 +18,8 @@ use ratatui::{
 use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
 
 use crate::tui::components::status_footer::{FooterLeft, StatusFooter, StatusRightGroup};
-use termrock::components::{Panel, PanelFocus, tab_cell_style};
+use termrock::Theme;
+use termrock::widgets::{Panel, PanelEmphasis};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
@@ -54,6 +55,21 @@ impl StatusBarWidget<'_> {
             let glyph_x = x.saturating_add(name_cols).saturating_add(2);
             buf.set_string(glyph_x, area.y, glyph_char.to_string(), glyph_style);
         }
+    }
+}
+
+fn tab_cell_style(active: bool, hovered: bool) -> Style {
+    let background = match (active, hovered) {
+        (true, true) => termrock::style::TAB_BG_ACTIVE_HOVER,
+        (true, false) => termrock::style::TAB_BG_ACTIVE,
+        (false, true) => termrock::style::TAB_BG_INACTIVE_HOVER,
+        (false, false) => termrock::style::TAB_BG_INACTIVE,
+    };
+    let style = Style::default().bg(background).fg(termrock::style::WHITE);
+    if active {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style
     }
 }
 
@@ -191,17 +207,19 @@ pub struct PaneBorderWidget {
 
 impl Widget for PaneBorderWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let focus = if self.focused {
-            PanelFocus::Focused
+        let emphasis = if self.focused {
+            PanelEmphasis::Focused
         } else {
-            PanelFocus::Unfocused
+            PanelEmphasis::Normal
         };
-        let block = Panel::new().title(&self.title).focus(focus).block();
+        let theme = Theme::default();
+        let block = Panel::new(&theme)
+            .title(&self.title)
+            .emphasis(emphasis)
+            .block();
         block.render(area, buf);
     }
 }
-
-pub use termrock::components::ModalBackdrop as DialogBackdrop;
 
 /// Bottom chrome (branch/PR bar, hint row, debug chip) as a widget. Replaces
 /// the raw-ANSI append + byte cache: the rows ride the Ratatui cell buffer
@@ -361,7 +379,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::HintSp
         return;
     }
     let available = area.width.saturating_sub(4); // 2 col padding each side
-    let lines = termrock::components::wrapped_lines(spans, available);
+    let lines = termrock::widgets::wrapped_hint_lines(spans, available);
     let hint_rows = usize::from(CAPSULE_HINT_BAR_ROWS);
     if lines.is_empty() {
         return;

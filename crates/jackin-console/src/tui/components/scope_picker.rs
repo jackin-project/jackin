@@ -6,6 +6,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use termrock::ModalOutcome;
+use termrock::widgets::{Action, ActionBar, ActionBarState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeChoice {
@@ -71,7 +72,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
-use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::layout::{DialogBorder, render_dialog_shell};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
     let inner = render_dialog_shell(frame, area, Some(state.title), DialogBorder::Default);
@@ -85,17 +86,30 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
             Constraint::Length(1), // bottom blank
         ])
         .split(inner);
-    let items = [
-        termrock::components::ButtonStripItem::new("All roles"),
-        termrock::components::ButtonStripItem::new("Specific role"),
+    let actions = [
+        Action {
+            id: ScopeChoice::AllAgents,
+            label: "All roles",
+            enabled: true,
+            style: None,
+        },
+        Action {
+            id: ScopeChoice::SpecificAgent,
+            label: "Specific role",
+            enabled: true,
+            style: None,
+        },
     ];
-    let focused = match state.focused {
-        ScopeChoice::AllAgents => 0,
-        ScopeChoice::SpecificAgent => 1,
-    };
-    frame.render_widget(
-        termrock::components::ButtonStrip::new(&items).focused(focused),
+    frame.render_stateful_widget(
+        &ActionBar {
+            actions: &actions,
+            gap: " ",
+        },
         chunks[1],
+        &mut ActionBarState {
+            focused: Some(state.focused),
+            regions: Vec::new(),
+        },
     );
 }
 
