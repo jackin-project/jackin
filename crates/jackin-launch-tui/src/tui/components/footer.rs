@@ -100,7 +100,7 @@ pub fn render_footer(
     debug_mode: bool,
 ) {
     let instance = footer_instance(view);
-    // The run id rides the status bar only in --debug, in amber, so the
+    // The invocation id rides the status bar only in --debug, in amber, so the
     // operator is never unsure whether they are in a debug run; the blue
     // instance-id chip always shows once the container is named.
     let debug_chip = debug_mode.then_some(run_id);

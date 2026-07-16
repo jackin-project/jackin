@@ -30,7 +30,7 @@ pub fn normalize_size(rows: u16, cols: u16) -> (u16, u16) {
 /// client entered its own alternate screen.
 ///
 /// Leads with SGR reset: the last composed frame leaves its final colors
-/// asserted on the outer terminal (in `--debug` runs, the red run-id chip
+/// asserted on the outer terminal (in `--debug` runs, the invocation-id chip
 /// painted bottom-right), and without `\x1b[0m` everything the host prints
 /// after detach fills with that background via BCE — the whole post-exit
 /// screen turned red.

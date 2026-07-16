@@ -6,8 +6,8 @@
 //! Runtime-gated on the OTLP endpoint env the host injects
 //! (`OTEL_EXPORTER_OTLP_ENDPOINT`); a no-op when unset. When active, the
 //! session's telemetry carries a `session.id` (grouping the whole session into
-//! one timeline) and a link back to the launch trace via W3C propagation. Capsule
-//! All emitted signals pass through the shared governed facade.
+//! one timeline) and a link back to the launch trace via W3C propagation. All
+//! emitted signals pass through the shared governed facade.
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,8 +22,8 @@ struct SessionContext {
     traceparent: Option<String>,
 }
 
-/// Capsule session correlation context captured by [`init`], for local sinks
-/// (for example, the compact startup banner).
+/// Capsule session correlation context captured by [`init`] for local operator
+/// output, such as the compact startup banner.
 #[must_use]
 pub fn session_context() -> Option<(String, Option<String>)> {
     SESSION_CONTEXT
@@ -31,7 +31,7 @@ pub fn session_context() -> Option<(String, Option<String>)> {
         .map(|ctx| (ctx.session_id.clone(), ctx.traceparent.clone()))
 }
 
-/// Initialise capsule OTLP export. Reads the session/run identity and launch
+/// Initialise capsule OTLP export. Reads the session/invocation identity and launch
 /// traceparent from the env the host injected. Call once at daemon start; hold
 /// the returned guard for the daemon's lifetime so the session tail flushes on
 /// every graceful exit path.

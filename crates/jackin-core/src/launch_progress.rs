@@ -172,7 +172,7 @@ impl LaunchTargetKind {
 /// Clipboard targets offered on the failure surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureCopyTarget {
-    /// Copy the diagnostics run id.
+    /// Copy the invocation correlation id.
     RunId,
 }
 
@@ -278,9 +278,9 @@ impl LaunchCancelled {
 
 // --- Port traits ---
 
-/// Diagnostics sink for a single launch run (paths, compact log, stage events).
+/// Launch progress and correlation port for one invocation.
 pub trait LaunchDiagnostics: Send + Sync {
-    /// Stable run identifier for this launch.
+    /// Stable invocation identifier for this launch.
     fn run_id(&self) -> &str;
     /// Emit a compact always-on log line.
     fn compact(&self, kind: &str, message: &str);

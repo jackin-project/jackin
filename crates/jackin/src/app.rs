@@ -123,9 +123,8 @@ pub async fn run(cli: Cli) -> Result<()> {
     let mut config = AppConfig::load_or_init(&paths)?;
     apply_telemetry_config(&config);
     let command_name = command_name(&command);
-    // Installs the global tracing subscriber (Defect 47.1 foundation) with
-    // the freshly minted run id, so OTLP export (when configured) stamps the
-    // id on every span and log record.
+    // Install the global tracing subscriber after minting the invocation
+    // identity so governed OTLP signals carry `cli.invocation.id`.
     let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
     let _diagnostics_guard = diagnostics.activate();
     let interactive = matches!(
@@ -158,10 +157,9 @@ pub async fn run(cli: Cli) -> Result<()> {
     let command_entered = command_operation
         .as_ref()
         .map(|operation| operation.span().enter());
-    // Wire the jackin-diagnostics operator-notice sink to the
-    // jackin-core::operator_notice port-trait dispatcher so domain
-    // crates (L0) can call `jackin_core::emit_compact_line` without
-    // depending on the L2 diagnostics layer.
+    // Wire compact operator output to the jackin-core port dispatcher so
+    // domain crates can call `jackin_core::emit_compact_line` without
+    // depending on the diagnostics implementation.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
     jackin_launch_tui::install_standalone_dialog_sink();
     if debug {
