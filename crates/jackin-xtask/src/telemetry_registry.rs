@@ -375,6 +375,7 @@ struct SourcePolicyScanner<'a> {
     spawn_aliases: BTreeSet<String>,
     spawn_module_aliases: BTreeMap<String, String>,
     spawn_receivers: BTreeSet<String>,
+    spawn_type_aliases: BTreeMap<String, String>,
     spawn_fields: BTreeSet<String>,
     spawn_factories: BTreeSet<String>,
 }
@@ -388,6 +389,7 @@ impl<'a> SourcePolicyScanner<'a> {
             spawn_aliases: BTreeSet::new(),
             spawn_module_aliases: BTreeMap::new(),
             spawn_receivers: BTreeSet::new(),
+            spawn_type_aliases: declarations.aliases,
             spawn_fields: declarations.fields,
             spawn_factories: declarations.factories,
         }
@@ -441,8 +443,8 @@ impl<'a> SourcePolicyScanner<'a> {
             .map_or_else(|| name.to_owned(), |module| format!("{module}::{tail}"))
     }
 
-    fn typed_spawn_receiver(pat: &syn::Pat, ty: &syn::Type) -> Option<String> {
-        if !spawn_receiver_type(ty) {
+    fn typed_spawn_receiver(&self, pat: &syn::Pat, ty: &syn::Type) -> Option<String> {
+        if !spawn_receiver_type(ty, &self.spawn_type_aliases) {
             return None;
         }
         match pat {
@@ -589,7 +591,7 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
 
     fn visit_local(&mut self, node: &'ast syn::Local) {
         if let syn::Pat::Type(typed) = &node.pat
-            && let Some(receiver) = Self::typed_spawn_receiver(&typed.pat, &typed.ty)
+            && let Some(receiver) = self.typed_spawn_receiver(&typed.pat, &typed.ty)
         {
             self.spawn_receivers.insert(receiver);
         }
@@ -615,7 +617,7 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
     fn visit_signature(&mut self, node: &'ast syn::Signature) {
         for input in &node.inputs {
             if let syn::FnArg::Typed(typed) = input
-                && let Some(receiver) = Self::typed_spawn_receiver(&typed.pat, &typed.ty)
+                && let Some(receiver) = self.typed_spawn_receiver(&typed.pat, &typed.ty)
             {
                 self.spawn_receivers.insert(receiver);
             }
