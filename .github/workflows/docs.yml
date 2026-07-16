@@ -82,6 +82,7 @@ jobs:
               - '.github/actions/check-deployed-docs/**'
               - 'scripts/ci/docs-xtask-contract.sh'
               - 'scripts/ci/docs-site-contract.sh'
+              - 'scripts/ci/codebook-contract.sh'
               - 'docs/**'
             source:
               - 'crates/**'
@@ -91,6 +92,7 @@ jobs:
               - '.github/workflows/docs.yml'
               - 'scripts/ci/docs-xtask-contract.sh'
               - 'scripts/ci/docs-site-contract.sh'
+              - 'scripts/ci/codebook-contract.sh'
 
       - name: Find input-identical successful Docs result
         id: docs-result
@@ -133,7 +135,8 @@ jobs:
                   'mise.lock' \
                   'mise.toml' \
                   'scripts/ci/docs-xtask-contract.sh' \
-                  'scripts/ci/docs-site-contract.sh'
+                  'scripts/ci/docs-site-contract.sh' \
+                  'scripts/ci/codebook-contract.sh'
               )
             } | sha256sum | cut -d ' ' -f 1
           )
@@ -404,10 +407,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          contract=$(
-            { grep -F '"cargo:codebook-lsp"' mise.toml; sed -n '/\[\[tools\."cargo:codebook-lsp"\]\]/,/^$/p' mise.lock; } \
-              | sha256sum | cut -d ' ' -f 1
-          )
+          contract=$(scripts/ci/codebook-contract.sh)
           name="codebook-lsp-v1-${RUNNER_OS}-${RUNNER_ARCH}-${contract}"
           mkdir -p .ci-codebook
           artifact_id=
@@ -466,14 +466,6 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-      - name: Upload Codebook binary for spell checks
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: codebook-lsp
-          path: .ci-codebook/codebook-lsp
-          compression-level: 0
-          retention-days: 1
-
   spell-check-docs:
     needs: [changes, prepare-codebook]
     if: >-
@@ -487,10 +479,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Download prepared Codebook binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: codebook-lsp
-          path: .ci-codebook
+        uses: ./.github/actions/download-codebook
 
       - name: Run Codebook docs spell check
         shell: bash
@@ -535,10 +524,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Download prepared Codebook binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: codebook-lsp
-          path: .ci-codebook
+        uses: ./.github/actions/download-codebook
 
       - name: Run Codebook source spell check
         shell: bash
