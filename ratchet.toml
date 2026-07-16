@@ -366,7 +366,7 @@ key = "clippy::too_many_lines@jackin-launch-tui"
 bound = 2
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-protocol"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime"
 bound = 7
