@@ -157,8 +157,10 @@ fn connection_build_count(path: &Path) -> Result<usize, String> {
 }
 
 async fn initialize_schema(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch(
-        "
+    store_backend::operation(
+        DbOperation::Update,
+        conn.execute_batch(
+            "
         PRAGMA foreign_keys = ON;
 
         CREATE TABLE IF NOT EXISTS _meta (
@@ -197,14 +199,18 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
         );
 
         ",
+        ),
     )
     .await
     .map_err(|err| format!("initialize usage snapshot store schema failed: {err}"))?;
     ensure_account_snapshot_columns(conn).await?;
-    conn.execute(
-        "INSERT INTO _meta (key, value) VALUES ('schema_version', ?1)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [SCHEMA_VERSION],
+    store_backend::operation(
+        DbOperation::Upsert,
+        conn.execute(
+            "INSERT INTO _meta (key, value) VALUES ('schema_version', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [SCHEMA_VERSION],
+        ),
     )
     .await
     .map_err(|err| format!("record usage snapshot store schema version failed: {err}"))?;
@@ -269,7 +275,7 @@ async fn ensure_account_snapshot_columns(conn: &Connection) -> Result<(), String
         ),
     ] {
         if !columns.contains(name) {
-            conn.execute(ddl, ())
+            store_backend::operation(DbOperation::Update, conn.execute(ddl, ()))
                 .await
                 .map_err(|err| format!("upgrade telemetry snapshot schema failed: {err}"))?;
         }
@@ -375,13 +381,16 @@ async fn upsert_account_snapshot_rows(
         {
             // Roll the whole batch back so a mid-batch failure never leaves a
             // partially-written snapshot set; surface the original row error.
-            if let Err(rollback_err) = conn.execute("ROLLBACK", ()).await {
+            if let Err(rollback_err) =
+                store_backend::operation(DbOperation::Rollback, conn.execute("ROLLBACK", ()))
+                    .await
+            {
                 jackin_diagnostics::telemetry_debug!("capsule", "telemetry snapshot rollback failed: {rollback_err}");
             }
             return Err(format!("upsert telemetry account snapshot failed: {err}"));
         }
     }
-    conn.execute("COMMIT", ())
+    store_backend::operation(DbOperation::Commit, conn.execute("COMMIT", ()))
         .await
         .map_err(|err| format!("commit telemetry snapshot transaction failed: {err}"))?;
     Ok(())

@@ -612,7 +612,9 @@ pub const DB_CLIENT_OPERATION_DURATION_DEF: super::MetricMetadata = super::Metri
         name: "db.operation.name",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
-        allowed_values: &[],
+        allowed_values: &[
+            "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete",
+        ],
     }],
 };
 // registry: instrument=counter; unit={reuse}; attributes=

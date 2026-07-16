@@ -3,7 +3,7 @@
 //! `opencode.db`'s `message` table incrementally by `rowid`.
 
 use super::TokenSession;
-use crate::store_backend::{connect_local, params};
+use crate::store_backend::{self, DbOperation, connect_local, params};
 
 const DB_PATH: &str = "/home/agent/.local/share/opencode/opencode.db";
 
@@ -21,7 +21,12 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> bool {
     };
 
     let query = "SELECT rowid, input, output, cost FROM message WHERE rowid > ? ORDER BY rowid ASC LIMIT 1000";
-    let Ok(mut rows) = conn.query(query, params![session.last_rowid]).await else {
+    let Ok(mut rows) = store_backend::operation(
+        DbOperation::Select,
+        conn.query(query, params![session.last_rowid]),
+    )
+    .await
+    else {
         // Pre-v1.2 OpenCode stored messages as JSON files, not SQLite; a missing
         // `message` table lands here. Reading that legacy format is not yet
         // implemented — treat as "no new data".

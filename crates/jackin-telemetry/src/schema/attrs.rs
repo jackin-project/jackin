@@ -301,7 +301,9 @@ pub const DB_OPERATION_NAME_DEF: super::AttributeMetadata = super::AttributeMeta
     name: DB_OPERATION_NAME,
     description: "Database operation name.",
     value_type: super::ValueType::String,
-    allowed_values: &["begin", "select", "insert", "upsert", "update", "delete"],
+    allowed_values: &[
+        "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete",
+    ],
 };
 // registry-type: enum
 pub const DIND_MODE: &str = "dind.mode";
