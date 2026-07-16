@@ -113,10 +113,6 @@ pub fn apply() -> Result<()> {
 
     if entries.is_empty() {
         // network=allowlist with no hosts is fail-closed (no egress), not open.
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "firewall: JACKIN_ALLOWED_HOSTS is empty; DROP-only policy (no IPv4/IPv6 egress)"
-        );
         return Ok(());
     }
 
@@ -126,7 +122,7 @@ pub fn apply() -> Result<()> {
     iptables(&["-A", "OUTPUT", "-p", "tcp", "--dport", "53", "-j", "ACCEPT"])?;
 
     // Resolve every entry to its IPv4 destinations, deduped. Non-IPv4 entries
-    // and unresolvable hosts are skipped loudly: one bad/IPv6 member would abort
+    // and unresolvable hosts are skipped with a governed warning: one bad/IPv6 member would abort
     // the whole `ipset restore` batch, and a silently-dropped host reads as a
     // mysterious connectivity failure later.
     let mut members: BTreeSet<String> = BTreeSet::new();
@@ -136,11 +132,7 @@ pub fn apply() -> Result<()> {
                 if enforceable_ipv4(&net) {
                     members.insert(net);
                 } else {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "firewall: WARNING: allowlist entry {net:?} is not an enforceable \
-                         IPv4 address/CIDR; skipping (IPv6 egress is not filtered)"
-                    );
+                    let _warning = jackin_telemetry::record_recovered_degradation();
                 }
             }
             Entry::Domain(domain) => {
@@ -150,11 +142,7 @@ pub fn apply() -> Result<()> {
                     .map(|ip| ip.to_string())
                     .collect();
                 if v4.is_empty() {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "firewall: WARNING: {domain} resolved to no IPv4 address; \
-                         not allowlisted (host will be unreachable)"
-                    );
+                    let _warning = jackin_telemetry::record_recovered_degradation();
                 }
                 members.extend(v4);
             }
@@ -175,11 +163,6 @@ pub fn apply() -> Result<()> {
         "ACCEPT",
     ])?;
 
-    jackin_diagnostics::telemetry_info!(
-        "capsule",
-        "firewall: OUTPUT allowlist active: {} IPv4 entries; IPv6 egress denied",
-        members.len()
-    );
     Ok(())
 }
 

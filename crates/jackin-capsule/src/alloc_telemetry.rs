@@ -45,19 +45,11 @@ pub(crate) fn init_from_env() -> Option<LiveProfiler> {
 fn init_enabled_profiler() -> Option<LiveProfiler> {
     let profiler = dhat::Profiler::builder().testing().build();
     ENABLED.store(true, Ordering::Relaxed);
-    jackin_diagnostics::telemetry_info!(
-        "capsule",
-        "dhat allocation telemetry enabled: direct-grid-patch frames log encoder and frame allocation deltas"
-    );
     Some(profiler)
 }
 
 #[cfg(not(feature = "dhat-heap"))]
 fn init_enabled_profiler() -> Option<LiveProfiler> {
-    jackin_diagnostics::telemetry_info!(
-        "capsule",
-        "JACKIN_DHAT_ALLOC_LOG ignored: jackin-capsule was not built with --features dhat-heap"
-    );
     None
 }
 

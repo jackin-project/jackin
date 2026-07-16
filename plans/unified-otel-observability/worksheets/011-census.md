@@ -4,7 +4,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 | File | `debug_log` | info | debug | trace | warn | error | Landed classification |
 |---|---:|---:|---:|---:|---:|---:|---|
-| `crates/jackin-capsule/src/alloc_telemetry.rs` | 0 | 2 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
+| `crates/jackin-capsule/src/alloc_telemetry.rs` | 0 | 2 | 0 | 0 | 0 | 0 | COMPLETE — developer-only DHAT state stays outside production telemetry and emits no generic lifecycle log |
 | `crates/jackin-capsule/src/attach_protocol.rs` | 0 | 17 | 1 | 0 | 2 | 3 | COMPLETE — detached handshake/control failures automatically emit one bodyless typed error from `DetachedCompletion`; persistent attach failures retain one owning `rpc_error`; expected shutdown/channel closure is silent; timeout and join failures use bounded types |
 | `crates/jackin-capsule/src/client.rs` | 0 | 1 | 0 | 0 | 0 | 0 | COMPLETE — swallowed hook-report failures emit one bodyless `rpc_error` through `ResultTelemetryExt` |
 | `crates/jackin-capsule/src/client_writer.rs` | 0 | 1 | 0 | 2 | 0 | 0 | PARTIAL — expected receiver closure is silent; structural DEBUG firehose still requires classification |
@@ -22,8 +22,8 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-capsule/src/daemon/ports.rs` | 0 | 0 | 1 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-capsule/src/daemon/resource_metrics.rs` | 0 | 0 | 3 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-capsule/src/daemon/session_lifecycle.rs` | 0 | 8 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
-| `crates/jackin-capsule/src/debug_panic.rs` | 0 | 1 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
-| `crates/jackin-capsule/src/firewall.rs` | 0 | 4 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
+| `crates/jackin-capsule/src/debug_panic.rs` | 0 | 1 | 0 | 0 | 0 | 0 | COMPLETE — the shared panic hook owns one registered `app.crash`; pre-panic narration is deleted |
+| `crates/jackin-capsule/src/firewall.rs` | 0 | 4 | 0 | 0 | 0 | 0 | COMPLETE — selected policy is owned by the isolation event; invalid/unresolvable allowlist members emit typed recovered-degradation WARN; raw hosts and counts are omitted |
 | `crates/jackin-capsule/src/git_context.rs` | 0 | 12 | 5 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/lib.rs` | 0 | 1 | 1 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/pid1.rs` | 0 | 8 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, attach/client/clipboard/context, and recovered-degradation migration passes: 100 `telemetry_info!` and 243 `telemetry_debug!` sites. The generic macro machinery and these 343 sites remain open; `telemetry_warn!` and `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.
+Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, attach/client/clipboard/context/firewall, and recovered-degradation migration passes: 93 `telemetry_info!` and 243 `telemetry_debug!` sites. The generic macro machinery and these 336 sites remain open; `telemetry_warn!` and `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.

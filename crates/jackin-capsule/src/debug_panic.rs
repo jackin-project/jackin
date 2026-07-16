@@ -16,10 +16,6 @@ pub(crate) fn panic_if_requested_from_env() {
         return;
     }
 
-    jackin_diagnostics::telemetry_info!(
-        "capsule",
-        "{ENV_FORCE_PANIC}=1 requested; forcing capsule diagnostics panic"
-    );
     panic!("{ENV_FORCE_PANIC}=1 forced capsule diagnostics panic");
 }
 
