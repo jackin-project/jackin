@@ -23,9 +23,8 @@ test-support = ["opentelemetry_sdk/testing"]
 
 [dependencies]
 jackin-core = { workspace = true }
-jackin-telemetry = { path = "../jackin-telemetry" }
+jackin-telemetry = { workspace = true }
 jackin-tui = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 rand = { workspace = true }
 anyhow = { workspace = true }
@@ -33,15 +32,10 @@ regex = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
-# Inlined from `jackin_core::ansi_text` (A3) and `jackin_core::prune_output`
-# (A3) so this crate (L1, depended on by 8 L0/L1/L2 crates) does not need
-# to pull `jackin-tui` (L3) for the two small helpers `prune_all_runs` uses.
-anstyle-parse = { workspace = true }
-owo-colors = { workspace = true, features = ["supports-colors"] }
 # OTLP/gRPC is a baseline runtime capability. Provider construction remains
 # runtime-gated by standard OTEL environment configuration.
 opentelemetry = { workspace = true }
-opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true, features = ["semconv_experimental"] }
 # gRPC/tonic is the ONLY transport. It is the reference backend's (Parallax)
 # default and what `parallax run` injects (`OTEL_EXPORTER_OTLP_ENDPOINT` ->
 # :4317, `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`). One transport keeps the export
@@ -76,8 +70,7 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
-criterion = { workspace = true, features = ["html_reports"] }
-jackin-otlp-testbed = { path = "../jackin-otlp-testbed" }
+jackin-otlp-testbed = { workspace = true }
 opentelemetry-proto = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace", "logs", "metrics"] }
 tempfile = { workspace = true }

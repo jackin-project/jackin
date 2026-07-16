@@ -29,11 +29,10 @@ jackin-launch-tui = { workspace = true }
 jackin-host = { workspace = true }
 jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
-jackin-telemetry = { path = "../jackin-telemetry" }
+jackin-telemetry = { workspace = true }
 jackin-isolation = { workspace = true }
 jackin-instance = { workspace = true }
 
-tracing = { workspace = true }
 tokio = { workspace = true, features = ["rt", "process", "io-util", "io-std", "net", "signal", "sync", "macros", "time", "fs"] }
 futures-util = { workspace = true }
 anyhow = { workspace = true }
@@ -50,7 +49,6 @@ fs4 = { workspace = true }
 directories = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
-tabled = { workspace = true }
 tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]

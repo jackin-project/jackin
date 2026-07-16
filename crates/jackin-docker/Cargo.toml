@@ -20,7 +20,7 @@ path = "src/lib.rs"
 [dependencies]
 jackin-core = { workspace = true }
 jackin-diagnostics = { workspace = true }
-jackin-telemetry = { path = "../jackin-telemetry" }
+jackin-telemetry = { workspace = true }
 bollard = { version = "0.21", features = ["aws-lc-rs"] }
 tokio = { workspace = true, features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 futures-util = { workspace = true }

@@ -81,9 +81,11 @@ jackin-instance = { version = "0.6.0-dev", path = "crates/jackin-instance" }
 jackin-isolation = { version = "0.6.0-dev", path = "crates/jackin-isolation" }
 jackin-launch-tui = { version = "0.6.0-dev", path = "crates/jackin-launch-tui" }
 jackin-manifest = { version = "0.6.0-dev", path = "crates/jackin-manifest" }
+jackin-otlp-testbed = { version = "0.6.0-dev", path = "crates/jackin-otlp-testbed" }
 jackin-process = { version = "0.6.0-dev", path = "crates/jackin-process" }
 jackin-protocol = { version = "0.6.0-dev", path = "crates/jackin-protocol" }
 jackin-runtime = { version = "0.6.0-dev", path = "crates/jackin-runtime" }
+jackin-telemetry = { version = "0.6.0-dev", path = "crates/jackin-telemetry" }
 jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
 jackin-test-support = { version = "0.6.0-dev", path = "crates/jackin-test-support" }
 jackin-tui = { version = "0.6.0-dev", path = "crates/jackin-tui" }

@@ -2978,9 +2978,7 @@ dependencies = [
 name = "jackin-diagnostics"
 version = "0.6.0-dev"
 dependencies = [
- "anstyle-parse",
  "anyhow",
- "criterion",
  "jackin-core",
  "jackin-otlp-testbed",
  "jackin-telemetry",
@@ -2991,10 +2989,8 @@ dependencies = [
  "opentelemetry-proto",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
- "owo-colors 4.3.0",
  "rand 0.10.2",
  "regex",
- "serde",
  "serde_json",
  "sysinfo",
  "tempfile",
@@ -3117,7 +3113,6 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.18",
- "tracing",
 ]
 
 [[package]]
@@ -3247,13 +3242,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "tabled",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml",
  "toml_edit",
- "tracing",
 ]
 
 [[package]]
@@ -3263,7 +3256,6 @@ dependencies = [
  "criterion",
  "dhat",
  "opentelemetry",
- "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "tokio",
  "tracing",
@@ -3341,8 +3333,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
- "tracing",
- "tracing-subscriber",
  "turso",
  "url",
 ]

@@ -21,7 +21,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = { workspace = true }
 jackin-core = { workspace = true }
-jackin-telemetry = { path = "../jackin-telemetry" }
+jackin-telemetry = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "net", "rt", "time"] }

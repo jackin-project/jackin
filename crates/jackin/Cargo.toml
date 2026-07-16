@@ -43,7 +43,7 @@ jackin-console = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-usage = { workspace = true }
 jackin-process = { workspace = true }
-jackin-telemetry = { path = "../jackin-telemetry" }
+jackin-telemetry = { workspace = true }
 clap = { workspace = true, features = ["derive", "color", "env"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -71,7 +71,7 @@ assert_cmd = { workspace = true }
 jackin-config = { workspace = true, features = ["test-support"] }
 jackin-env = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
-jackin-otlp-testbed = { path = "../jackin-otlp-testbed" }
+jackin-otlp-testbed = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 predicates = { workspace = true }
 syn = { workspace = true }

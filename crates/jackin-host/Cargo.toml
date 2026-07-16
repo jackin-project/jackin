@@ -25,7 +25,7 @@ jackin-docker = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-tui = { workspace = true }
 jackin-process = { workspace = true }
-jackin-telemetry = { path = "../jackin-telemetry" }
+jackin-telemetry = { workspace = true }
 anyhow = { workspace = true }
 fs4 = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "fs", "io-util", "sync"] }

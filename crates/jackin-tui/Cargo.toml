@@ -22,7 +22,7 @@ anstyle-parse = { workspace = true }
 base64 = { workspace = true }
 crossterm = { workspace = true }
 jackin-core = { workspace = true }
-jackin-telemetry = { path = "../jackin-telemetry" }
+jackin-telemetry = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
 ratatui = { workspace = true }
 similar = { workspace = true }

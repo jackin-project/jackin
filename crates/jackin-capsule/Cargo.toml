@@ -40,7 +40,7 @@ jackin-core = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
-jackin-telemetry = { path = "../jackin-telemetry" }
+jackin-telemetry = { workspace = true }
 jackin-usage = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

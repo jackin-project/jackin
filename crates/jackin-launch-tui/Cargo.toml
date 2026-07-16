@@ -15,7 +15,7 @@ anyhow = { workspace = true }
 crossterm = { workspace = true }
 jackin-core = { workspace = true }
 jackin-diagnostics = { workspace = true }
-jackin-telemetry = { path = "../jackin-telemetry" }
+jackin-telemetry = { workspace = true }
 jackin-tui = { workspace = true }
 ratatui = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
