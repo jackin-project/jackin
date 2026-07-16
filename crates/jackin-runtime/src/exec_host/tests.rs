@@ -330,12 +330,24 @@ async fn unapproved_source_is_rejected() {
     )
     .await;
     assert!(reply.get("values").is_none());
-    assert!(
-        reply["error"]
-            .as_str()
-            .unwrap()
-            .contains("not in the approved binding set")
-    );
+    assert_eq!(reply["error"], "credential reference is not approved");
+}
+
+#[tokio::test]
+async fn resolution_failure_reply_does_not_echo_the_credential_source() {
+    let secret_source = "not-an-op-uri/private-vault/private-item/private-field";
+    let allowed = vec![ExecBinding {
+        name: "TOKEN".into(),
+        kind: ExecKind::Op,
+        source: secret_source.into(),
+    }];
+    let reply = roundtrip(
+        allowed,
+        serde_json::json!([{ "name": "TOKEN", "kind": "op", "source": secret_source }]),
+    )
+    .await;
+    assert_eq!(reply["error"], "credential resolution failed");
+    assert!(!reply.to_string().contains(secret_source));
 }
 
 #[tokio::test]

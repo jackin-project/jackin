@@ -218,10 +218,7 @@ async fn handle_connection(
                 "rejected unauthorized credential reference"
             );
             let reply = CredReply::Error {
-                error: format!(
-                    "credential {:?} is not in the approved binding set for this session",
-                    r.name
-                ),
+                error: "credential reference is not approved".to_owned(),
             };
             let write_result = stream.write_all(&frame(&reply)).await;
             if let Some(operation) = operation {
@@ -243,8 +240,8 @@ async fn handle_connection(
 
     let reply = match resolve_all(&req.refs).await {
         Ok(values) => CredReply::Ok { values },
-        Err(e) => CredReply::Error {
-            error: format!("{e:#}"),
+        Err(_) => CredReply::Error {
+            error: "credential resolution failed".to_owned(),
         },
     };
     // Reuse the canonical control-socket encoder so both ends of host.sock
