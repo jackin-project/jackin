@@ -211,7 +211,7 @@ jobs:
       # Scoped to the build job only. Setting it workflow-wide leaks
       # into `publish-manifest`, which has no buildx builder and would
       # then fail with `ERROR: no builder "jackin-construct" found`.
-      BUILDX_BUILDER: jackin-construct
+      BUILDX_BUILDER: jackin-construct-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       # `mise run` activates the whole mise.toml tool set and, by default,
       # installs every missing one before the task. This job only needs the
       # rust toolchain mise-action already installed to compile `cargo xtask`;

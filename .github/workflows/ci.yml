@@ -965,7 +965,7 @@ jobs:
     timeout-minutes: 60
     name: construct E2E image (${{ matrix.config.lane }})
     env:
-      BUILDX_BUILDER: jackin-construct
+      BUILDX_BUILDER: jackin-construct-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       CARGO_NET_OFFLINE: "true"
       CARGO_TERM_COLOR: always
       LOCAL_REGISTRY_IMAGE: projectjackin/construct

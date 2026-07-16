@@ -239,6 +239,14 @@ not populate. Both selector call sites now receive `${{ github.sha }}` through
 the same explicit `SOURCE_SHA` environment entry on every lane. No lane-specific
 test or cache path was added.
 
+The follow-up concurrent CI/Construct parity attempt exposed shared-Docker
+state that hosted VMs had hidden: every build job used the fixed Buildx builder
+name `jackin-construct`. GitHub jobs have isolated daemons, while concurrent
+Velnor slots can reach the same trusted daemon and therefore contended for one
+builder container. Both workflows now derive the builder name from the run ID,
+attempt, and matrix job index on every lane. The build commands and registry
+cache remain identical; only cross-job daemon ownership is isolated.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the
