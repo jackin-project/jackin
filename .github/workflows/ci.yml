@@ -994,7 +994,7 @@ jobs:
         run: |
           cd "${{ matrix.target.dir }}"
           cargo fetch --locked --offline
-          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu \
+          "$CI_CARGO_FUZZ" fuzz run --sanitizer none --target x86_64-unknown-linux-gnu \
             "${{ matrix.target.fuzz }}" -- -max_total_time=20
   bench-build:
     # Stable package shards keep release-profile linking below the job budget
