@@ -273,6 +273,64 @@ url = "https://github.com/sigstore/cosign/releases/download/v3.1.1/cosign-darwin
 url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/442899292"
 provenance = "cosign"
 
+[[tools."github:open-telemetry/weaver"]]
+version = "0.24.2"
+backend = "github:open-telemetry/weaver"
+
+[tools."github:open-telemetry/weaver"."platforms.linux-arm64"]
+checksum = "sha256:0c7f762246211e5bb636baddb288c7171fef5a7c4c4cf5b8998f47a4b2959c5e"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-aarch64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827160"
+provenance = "github-attestations"
+
+[tools."github:open-telemetry/weaver"."platforms.linux-arm64-musl"]
+checksum = "sha256:e1f3ae2382dc1cf14005f198f2aaa5eebd166569e769110f8ef5f7195cb304af"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-aarch64-unknown-linux-musl.tar.xz"
+url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827165"
+provenance = "github-attestations"
+
+[tools."github:open-telemetry/weaver"."platforms.linux-x64"]
+checksum = "sha256:e5508316149b01cac325bd3b2c72c83ffea4cfcb554cac2906ff80df6edafc0e"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827179"
+provenance = "github-attestations"
+
+[tools."github:open-telemetry/weaver"."platforms.linux-x64-baseline"]
+checksum = "sha256:e5508316149b01cac325bd3b2c72c83ffea4cfcb554cac2906ff80df6edafc0e"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827179"
+provenance = "github-attestations"
+
+[tools."github:open-telemetry/weaver"."platforms.linux-x64-musl"]
+checksum = "sha256:546ae8bf94764b3e9c0dd570ea66738b66fc6e5221d250081c3ffb027cd5da4a"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-unknown-linux-musl.tar.xz"
+url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827182"
+provenance = "github-attestations"
+
+[tools."github:open-telemetry/weaver"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:546ae8bf94764b3e9c0dd570ea66738b66fc6e5221d250081c3ffb027cd5da4a"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-unknown-linux-musl.tar.xz"
+url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827182"
+provenance = "github-attestations"
+
+[tools."github:open-telemetry/weaver"."platforms.macos-arm64"]
+checksum = "sha256:4268071b0662c1235bac32944c2355d78b3ebe6e5c720e3c2fd6e6378581076f"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-aarch64-apple-darwin.tar.xz"
+url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827141"
+provenance = "github-attestations"
+
+[tools."github:open-telemetry/weaver"."platforms.macos-x64"]
+checksum = "sha256:14d1658a1e59ee2874bef30f3bc4cf963306e4d23f639c2287a9bec1a2562453"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-apple-darwin.tar.xz"
+url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827170"
+provenance = "github-attestations"
+
+[tools."github:open-telemetry/weaver"."platforms.macos-x64-baseline"]
+checksum = "sha256:14d1658a1e59ee2874bef30f3bc4cf963306e4d23f639c2287a9bec1a2562453"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-apple-darwin.tar.xz"
+url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827170"
+provenance = "github-attestations"
+
 [[tools.hyperfine]]
 version = "1.20.0"
 backend = "aqua:sharkdp/hyperfine"
@@ -462,55 +520,6 @@ url_api = "https://api.github.com/repos/anchore/syft/releases/assets/458512854"
 checksum = "sha256:5c983db13533de02e5331aae88091116f25365840741f86234084a30166672a7"
 url = "https://github.com/anchore/syft/releases/download/v1.46.0/syft_1.46.0_darwin_amd64.tar.gz"
 url_api = "https://api.github.com/repos/anchore/syft/releases/assets/458512854"
-
-[[tools."ubi:open-telemetry/weaver"]]
-version = "0.24.2"
-backend = "ubi:open-telemetry/weaver"
-
-[tools."ubi:open-telemetry/weaver"."platforms.linux-arm64-weaver"]
-checksum = "sha256:0c7f762246211e5bb636baddb288c7171fef5a7c4c4cf5b8998f47a4b2959c5e"
-url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-aarch64-unknown-linux-gnu.tar.xz"
-url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827160"
-
-[tools."ubi:open-telemetry/weaver"."platforms.linux-arm64-musl-weaver"]
-checksum = "sha256:e1f3ae2382dc1cf14005f198f2aaa5eebd166569e769110f8ef5f7195cb304af"
-url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-aarch64-unknown-linux-musl.tar.xz"
-url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827165"
-
-[tools."ubi:open-telemetry/weaver"."platforms.linux-x64-weaver"]
-checksum = "sha256:e5508316149b01cac325bd3b2c72c83ffea4cfcb554cac2906ff80df6edafc0e"
-url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-unknown-linux-gnu.tar.xz"
-url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827179"
-
-[tools."ubi:open-telemetry/weaver"."platforms.linux-x64-baseline-weaver"]
-checksum = "sha256:e5508316149b01cac325bd3b2c72c83ffea4cfcb554cac2906ff80df6edafc0e"
-url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-unknown-linux-gnu.tar.xz"
-url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827179"
-
-[tools."ubi:open-telemetry/weaver"."platforms.linux-x64-musl-weaver"]
-checksum = "sha256:546ae8bf94764b3e9c0dd570ea66738b66fc6e5221d250081c3ffb027cd5da4a"
-url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-unknown-linux-musl.tar.xz"
-url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827182"
-
-[tools."ubi:open-telemetry/weaver"."platforms.linux-x64-musl-baseline-weaver"]
-checksum = "sha256:546ae8bf94764b3e9c0dd570ea66738b66fc6e5221d250081c3ffb027cd5da4a"
-url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-unknown-linux-musl.tar.xz"
-url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827182"
-
-[tools."ubi:open-telemetry/weaver"."platforms.macos-arm64-weaver"]
-checksum = "sha256:4268071b0662c1235bac32944c2355d78b3ebe6e5c720e3c2fd6e6378581076f"
-url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-aarch64-apple-darwin.tar.xz"
-url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827141"
-
-[tools."ubi:open-telemetry/weaver"."platforms.macos-x64-weaver"]
-checksum = "sha256:14d1658a1e59ee2874bef30f3bc4cf963306e4d23f639c2287a9bec1a2562453"
-url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-apple-darwin.tar.xz"
-url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827170"
-
-[tools."ubi:open-telemetry/weaver"."platforms.macos-x64-baseline-weaver"]
-checksum = "sha256:14d1658a1e59ee2874bef30f3bc4cf963306e4d23f639c2287a9bec1a2562453"
-url = "https://github.com/open-telemetry/weaver/releases/download/v0.24.2/weaver-x86_64-apple-darwin.tar.xz"
-url_api = "https://api.github.com/repos/open-telemetry/weaver/releases/assets/455827170"
 
 [[tools.zig]]
 version = "0.16.0"

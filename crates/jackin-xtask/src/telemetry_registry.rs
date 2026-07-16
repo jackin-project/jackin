@@ -898,6 +898,7 @@ fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
             generate_signal_constants(
                 &header,
                 &local_groups,
+                attributes,
                 "name",
                 SignalKind::Event,
                 &metadata,
@@ -909,13 +910,21 @@ fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
         ),
         (
             "crates/jackin-telemetry/src/schema/spans.rs".to_owned(),
-            generate_signal_constants(&header, &local_groups, "id", SignalKind::Span, &metadata)?,
+            generate_signal_constants(
+                &header,
+                &local_groups,
+                attributes,
+                "id",
+                SignalKind::Span,
+                &metadata,
+            )?,
         ),
         (
             "crates/jackin-telemetry/src/schema/metrics.rs".to_owned(),
             generate_signal_constants(
                 &header,
                 &local_groups,
+                attributes,
                 "metric_name",
                 SignalKind::Metric,
                 &metadata,
@@ -1116,6 +1125,7 @@ fn emit_enum(
 fn generate_signal_constants(
     header: &str,
     groups: &[YamlValue],
+    registry_attributes: &[YamlValue],
     name_key: &str,
     kind: SignalKind,
     rust_metadata: &RustRegistryMetadata,
@@ -1185,11 +1195,18 @@ fn generate_signal_constants(
         output.push_str("    attributes: &[\n");
         for attribute in group_attributes {
             let attribute_name = yaml_string(attribute, "name")?;
+            let attribute_type = registry_attributes
+                .iter()
+                .find(|candidate| {
+                    candidate.get("name").and_then(YamlValue::as_str) == Some(attribute_name)
+                })
+                .and_then(|candidate| candidate.get("type"))
+                .unwrap_or(yaml_required(attribute, "type")?);
             output.push_str("        super::AttributeRequirement {\n");
             output.push_str(&format!("            name: {attribute_name:?},\n"));
             output.push_str(&format!(
                 "            value_type: super::ValueType::{},\n",
-                value_type_variant(yaml_required(attribute, "type")?)?
+                value_type_variant(attribute_type)?
             ));
             output.push_str(&format!(
                 "            requirement: super::RequirementLevel::{},\n",
@@ -1197,7 +1214,7 @@ fn generate_signal_constants(
             ));
             output.push_str(&format!(
                 "            allowed_values: {},\n",
-                allowed_values(yaml_required(attribute, "type")?)?
+                allowed_values(attribute_type)?
             ));
             output.push_str("        },\n");
         }
@@ -1582,21 +1599,21 @@ fn validate_weaver_platform_matrix(root: &Path) -> Result<()> {
     let lock: toml::Value = toml::from_str(&fs::read_to_string(root.join("mise.lock"))?)?;
     let weaver = lock
         .get("tools")
-        .and_then(|value| value.get("ubi:open-telemetry/weaver"))
+        .and_then(|value| value.get("github:open-telemetry/weaver"))
         .and_then(toml::Value::as_array)
         .and_then(|entries| entries.first())
         .and_then(toml::Value::as_table)
         .ok_or_else(|| anyhow::anyhow!("mise.lock has no Weaver platform matrix"))?;
     let expected = [
-        "linux-arm64-weaver",
-        "linux-arm64-musl-weaver",
-        "linux-x64-weaver",
-        "linux-x64-baseline-weaver",
-        "linux-x64-musl-weaver",
-        "linux-x64-musl-baseline-weaver",
-        "macos-arm64-weaver",
-        "macos-x64-weaver",
-        "macos-x64-baseline-weaver",
+        "linux-arm64",
+        "linux-arm64-musl",
+        "linux-x64",
+        "linux-x64-baseline",
+        "linux-x64-musl",
+        "linux-x64-musl-baseline",
+        "macos-arm64",
+        "macos-x64",
+        "macos-x64-baseline",
     ];
     let platforms = weaver
         .iter()
