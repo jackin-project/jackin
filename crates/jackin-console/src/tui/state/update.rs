@@ -92,23 +92,7 @@ pub type ManagerUpdate = crate::tui::update::ConsoleUpdate<ManagerEffect>;
 )]
 pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> ManagerUpdate {
     let action = action_of(&message);
-    let action_guard = action.and_then(|name| {
-        let mut attrs = vec![jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
-            value: jackin_telemetry::Value::Str(name.as_str()),
-        }];
-        attrs.push(jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
-            value: jackin_telemetry::Value::Str(telemetry_screen(state).as_str()),
-        });
-        if let Some(widget) = telemetry_widget(state) {
-            attrs.push(jackin_telemetry::Attr {
-                key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_ID,
-                value: jackin_telemetry::Value::Str(widget),
-            });
-        }
-        jackin_telemetry::root_operation(&jackin_telemetry::operation::UI_ACTION, &attrs).ok()
-    });
+    let action_guard = action.and_then(|name| start_manager_action(state, name));
     let action_span = action_guard.as_ref().map(|guard| guard.span().enter());
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
@@ -331,6 +315,29 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             jackin_telemetry::counter(&jackin_telemetry::metric::UI_ACTIONS).add(1, &attrs);
     }
     ManagerUpdate::redraw()
+}
+
+fn start_manager_action(
+    state: &ManagerState<'_>,
+    action: jackin_telemetry::schema::enums::UiActionName,
+) -> Option<jackin_telemetry::operation::OperationGuard> {
+    let mut attrs = vec![
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
+            value: jackin_telemetry::Value::Str(action.as_str()),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
+            value: jackin_telemetry::Value::Str(telemetry_screen(state).as_str()),
+        },
+    ];
+    if let Some(widget) = telemetry_widget(state) {
+        attrs.push(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_ID,
+            value: jackin_telemetry::Value::Str(widget),
+        });
+    }
+    jackin_telemetry::root_operation(&jackin_telemetry::operation::UI_ACTION, &attrs).ok()
 }
 
 fn telemetry_screen(state: &ManagerState<'_>) -> jackin_telemetry::schema::enums::ScreenId {
