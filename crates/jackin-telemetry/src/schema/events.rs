@@ -11,6 +11,8 @@ pub const UI_WIDGET_UNFOCUSED: &str = "ui.widget.unfocused";
 pub const APP_JANK: &str = "app.jank";
 pub const APP_CRASH: &str = "app.crash";
 pub const AGENT_STATE_CHANGED: &str = "agent.state.changed";
+pub const PTY_SPAWN: &str = "pty.spawn";
+pub const PTY_EXIT: &str = "pty.exit";
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 pub const LAUNCH_STAGE_STARTED: &str = "launch.stage.started";
 pub const LAUNCH_STAGE_DONE: &str = "launch.stage.done";
@@ -38,6 +40,8 @@ pub const ALL: &[&str] = &[
     APP_JANK,
     APP_CRASH,
     AGENT_STATE_CHANGED,
+    PTY_SPAWN,
+    PTY_EXIT,
     TELEMETRY_VALIDATE,
     LAUNCH_STAGE_STARTED,
     LAUNCH_STAGE_DONE,

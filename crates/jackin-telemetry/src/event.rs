@@ -104,6 +104,14 @@ pub const AGENT_STATE_CHANGED: EventDef = EventDef {
     name: schema::events::AGENT_STATE_CHANGED,
     severity: Severity::Info,
 };
+pub const PTY_SPAWN: EventDef = EventDef {
+    name: schema::events::PTY_SPAWN,
+    severity: Severity::Info,
+};
+pub const PTY_EXIT: EventDef = EventDef {
+    name: schema::events::PTY_EXIT,
+    severity: Severity::Info,
+};
 pub const TELEMETRY_VALIDATE: EventDef = EventDef {
     name: schema::events::TELEMETRY_VALIDATE,
     severity: Severity::Info,
@@ -168,6 +176,12 @@ macro_rules! emit_named {
         let transition_reason = $fields.str(schema::attrs::UI_TRANSITION_REASON);
         let widget_id = $fields.str(schema::attrs::std_attrs::APP_WIDGET_ID);
         let agent_name = $fields.str(schema::attrs::std_attrs::GEN_AI_AGENT_NAME);
+        let conversation_id = $fields.str(schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID);
+        let pty_exit_reason = $fields.str(schema::attrs::PTY_EXIT_REASON);
+        let process_exit_code = $fields.attrs.iter().find_map(|attr| match attr {
+            Attr { key: schema::attrs::std_attrs::PROCESS_EXIT_CODE, value: Value::I64(value) } => Some(*value),
+            _ => None,
+        });
         let agent_state = $fields.str(schema::attrs::AGENT_STATE);
         let agent_status_source = $fields.str(schema::attrs::AGENT_STATUS_SOURCE);
         let agent_status_confidence = $fields.str(schema::attrs::AGENT_STATUS_CONFIDENCE);
@@ -184,7 +198,7 @@ macro_rules! emit_named {
         match $level {
             Severity::Trace => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
             Severity::Debug => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "error.type" = error_type, message = body),
-            Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "gen_ai.agent.name" = agent_name, "agent.state" = agent_state, "agent.status.source" = agent_status_source, "agent.status.confidence" = agent_status_confidence, "agent.status.stuck" = agent_status_stuck, "error.type" = error_type, message = body),
+            Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "gen_ai.agent.name" = agent_name, "gen_ai.conversation.id" = conversation_id, "agent.state" = agent_state, "agent.status.source" = agent_status_source, "agent.status.confidence" = agent_status_confidence, "agent.status.stuck" = agent_status_stuck, "pty.exit.reason" = pty_exit_reason, "process.exit.code" = process_exit_code, "error.type" = error_type, message = body),
             Severity::Warn => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
             Severity::Error => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
         }
@@ -220,6 +234,8 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
         schema::events::AGENT_STATE_CHANGED => {
             emit_named!("agent.state.changed", def.severity, fields)
         }
+        schema::events::PTY_SPAWN => emit_named!("pty.spawn", def.severity, fields),
+        schema::events::PTY_EXIT => emit_named!("pty.exit", def.severity, fields),
         schema::events::TELEMETRY_VALIDATE => {
             emit_named!("telemetry.validate", def.severity, fields)
         }

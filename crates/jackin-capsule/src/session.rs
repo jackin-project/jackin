@@ -133,6 +133,7 @@ pub struct StatusTick {
 pub struct Session {
     pub label: String,
     pub agent: Option<String>,
+    pub conversation_id: Option<String>,
     pub provider: Option<SessionProvider>,
     /// Published effective state. Authored solely by evidence arbitration on the
     /// daemon tick (see `agent_status`); kept in sync with `status.effective`.
@@ -416,6 +417,7 @@ impl Session {
         event_tx: mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<(Self, u64)> {
         let label = label.into();
+        let conversation_id = agent.as_ref().map(|_| uuid::Uuid::new_v4().to_string());
         // Per-tab trace: each pane/agent spawn is its own short trace on the
         // session timeline (shares the resource session.id).
         let rows = terminal.rows;
@@ -457,6 +459,7 @@ impl Session {
         let event_tx_output = event_tx.clone();
         let event_tx_exit = event_tx.clone();
         let event_tx_writer_err = event_tx.clone();
+        emit_pty_spawn(agent.as_deref(), conversation_id.as_deref());
 
         // PTY writer task. take_writer / lock failures emit Exited so the
         // daemon reaps the half-initialised session instead of leaving a
@@ -618,8 +621,15 @@ impl Session {
         // remove the pane immediately; the reader task (still
         // blocked on master) becomes a leak that ends when the
         // multiplexer process itself exits.
+        let exit_agent = agent.clone();
+        let exit_conversation_id = conversation_id.clone();
         jackin_telemetry::spawn::stream_blocking("pty.wait", move || {
             let status = child.wait();
+            emit_pty_exit(
+                exit_agent.as_deref(),
+                exit_conversation_id.as_deref(),
+                status.as_ref(),
+            );
             if let Some(pid) = child_pid {
                 crate::pid1::unregister_managed_child(pid);
                 crate::pid1::reap_zombies();
@@ -646,6 +656,7 @@ impl Session {
             Session {
                 label,
                 agent,
+                conversation_id,
                 provider,
                 state: AgentState::Unknown,
                 status: SessionStatus::new(),
@@ -1525,6 +1536,82 @@ fn capture_pty_fixture_bytes(bytes: &[u8]) {
     }
 }
 
+fn emit_pty_spawn(agent: Option<&str>, conversation_id: Option<&str>) {
+    use jackin_telemetry::{Attr, FieldSet, Value};
+    let mut attrs = Vec::with_capacity(2);
+    if let Some(agent) = agent {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent),
+        });
+    }
+    if let Some(conversation_id) = conversation_id {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID,
+            value: Value::Str(conversation_id),
+        });
+    }
+    let _ = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::PTY_SPAWN,
+        FieldSet::new(&attrs, None),
+    );
+}
+
+fn emit_pty_exit(
+    agent: Option<&str>,
+    conversation_id: Option<&str>,
+    status: Result<&portable_pty::ExitStatus, &std::io::Error>,
+) {
+    use jackin_telemetry::{Attr, FieldSet, Value};
+    let reason = pty_exit_reason(status, false);
+    let mut attrs = vec![Attr {
+        key: jackin_telemetry::schema::attrs::PTY_EXIT_REASON,
+        value: Value::Str(reason.as_str()),
+    }];
+    if let Some(status) = status.ok()
+        && !status.success()
+        && status.signal().is_none()
+    {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+            value: Value::I64(i64::from(status.exit_code())),
+        });
+    }
+    if let Some(agent) = agent {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent),
+        });
+    }
+    if let Some(conversation_id) = conversation_id {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID,
+            value: Value::Str(conversation_id),
+        });
+    }
+    let _ = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::PTY_EXIT,
+        FieldSet::new(&attrs, None),
+    );
+}
+
+fn pty_exit_reason(
+    status: Result<&portable_pty::ExitStatus, &std::io::Error>,
+    cancelled: bool,
+) -> jackin_telemetry::schema::enums::PtyExitReason {
+    if cancelled {
+        return jackin_telemetry::schema::enums::PtyExitReason::Cancelled;
+    }
+    match status {
+        Ok(status) if status.success() => jackin_telemetry::schema::enums::PtyExitReason::Clean,
+        Ok(status) if status.signal().is_some() => {
+            jackin_telemetry::schema::enums::PtyExitReason::Signal
+        }
+        Ok(_) => jackin_telemetry::schema::enums::PtyExitReason::NonzeroExit,
+        Err(_) => jackin_telemetry::schema::enums::PtyExitReason::WaitFailed,
+    }
+}
+
 fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>) -> Option<String> {
     match status {
         Ok(status) if status.success() => None,
@@ -1558,6 +1645,7 @@ impl Session {
         Self {
             label,
             agent,
+            conversation_id: None,
             provider,
             state: AgentState::Unknown,
             status: SessionStatus::new(),

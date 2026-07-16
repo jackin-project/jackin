@@ -4,7 +4,7 @@
 //! Tests for `session`.
 use super::{
     AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,
-    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe,
+    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe, pty_exit_reason,
     validate_agent_slug,
 };
 
@@ -1173,6 +1173,27 @@ fn child_exit_reason_wait_error_reports_failure() {
     let reason = child_exit_reason(Err(&err)).expect("a wait error must yield a reason");
     assert!(reason.starts_with("session process wait failed:"));
     assert!(reason.contains("boom"));
+}
+
+#[test]
+fn pty_exit_reason_covers_the_closed_registry() {
+    use jackin_telemetry::schema::enums::PtyExitReason;
+
+    let clean = portable_pty::ExitStatus::with_exit_code(0);
+    let nonzero = portable_pty::ExitStatus::with_exit_code(7);
+    let signal = portable_pty::ExitStatus::with_signal("SIGTERM");
+    let wait_error = std::io::Error::other("wait failed");
+    assert_eq!(pty_exit_reason(Ok(&clean), false), PtyExitReason::Clean);
+    assert_eq!(
+        pty_exit_reason(Ok(&nonzero), false),
+        PtyExitReason::NonzeroExit
+    );
+    assert_eq!(pty_exit_reason(Ok(&signal), false), PtyExitReason::Signal);
+    assert_eq!(
+        pty_exit_reason(Err(&wait_error), false),
+        PtyExitReason::WaitFailed
+    );
+    assert_eq!(pty_exit_reason(Ok(&clean), true), PtyExitReason::Cancelled);
 }
 
 // ── diagnostic tail ───────────────────────────────────────────────────────

@@ -2835,6 +2835,7 @@ dependencies = [
  "tracing",
  "unicode-width 0.2.2",
  "url",
+ "uuid",
 ]
 
 [[package]]
