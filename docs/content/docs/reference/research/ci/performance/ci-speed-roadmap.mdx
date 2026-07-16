@@ -194,6 +194,15 @@ is orchestration work, not repeated dependency or crate compilation. Construct
 Image run `29505190527` independently reused its input-identical result and
 finished successfully in about 18 seconds without either platform build.
 
+Repository policy checks now use their own one-day component result keyed by
+the base revision, complete Rust/policy input set, and requested lanes. This
+removes the remaining warm two-phase tail: actionlint, formatting, the tool
+warmup, affected-crate selection, and the required gate still run, but unchanged
+schema, ratchet, dependency, README-freshness, and audit results do not allocate
+another runner wave. Unlike the rejected whole-pipeline marker, this component
+result never skips crate/tool producers and cannot prevent artifact
+repopulation.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the

@@ -196,6 +196,13 @@ publish-versus-rehearsal mode, and requested runner lanes. An unrelated commit
 therefore does not rebuild unchanged amd64/arm64 images, while any construct
 input or lane-mode change runs the complete platform matrix.
 
+The repository policy set has a one-day component marker keyed by the exact
+base revision, Rust/policy inputs, and requested lanes. A hit skips schema,
+ratchet, dependency-policy, README-freshness, and audit jobs while actionlint,
+formatting, tool warmup, affected-crate selection, and the required-status gate
+still execute. This is not a whole-pipeline result: crate/tool producers remain
+able to repopulate their artifacts on every normal run.
+
 Docs prepares the pinned `codebook-lsp` binary once and publishes a seven-day
 platform/tool-contract artifact. The docs and source spell jobs download that
 same binary instead of each invoking Cargo through mise; only a genuinely new
