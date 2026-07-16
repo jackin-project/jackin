@@ -306,15 +306,19 @@ fn drain_background_messages(
     }
 }
 
+struct DrawConsoleContext<'a> {
+    config: &'a AppConfig,
+    cwd: &'a std::path::Path,
+    mouse_state: &'a mut ConsoleMouseState,
+    container_info_overlay_active: &'a mut bool,
+    action_parent: Option<&'a jackin_telemetry::ui::ActionParent>,
+    jank_monitor: &'a mut jackin_telemetry::ui::JankMonitor,
+}
+
 fn draw_console_frame<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    mouse_state: &mut ConsoleMouseState,
-    container_info_overlay_active: &mut bool,
-    action_parent: Option<&jackin_telemetry::ui::ActionParent>,
-    jank_monitor: &mut jackin_telemetry::ui::JankMonitor,
+    context: DrawConsoleContext<'_>,
 ) -> anyhow::Result<()>
 where
     B: ratatui::backend::Backend,
@@ -328,16 +332,16 @@ where
         // `View<ConsoleState>` dispatch below needs an immutable borrow of
         // the whole `state` (G0 spike, plan 053).
         let ConsoleStage::Manager(ms) = &mut state.stage;
-        if *container_info_overlay_active
+        if *context.container_info_overlay_active
             && !matches!(
                 ms.list_modal,
                 Some(crate::console::tui::state::Modal::ContainerInfo { .. })
             )
         {
             terminal.clear()?;
-            *container_info_overlay_active = false;
+            *context.container_info_overlay_active = false;
         }
-        crate::console::tui::prepare_for_render(ms, config, cwd, main_area);
+        crate::console::tui::prepare_for_render(ms, context.config, context.cwd, main_area);
     }
 
     // Route the primary render through the shared `View<ConsoleState>`
@@ -347,7 +351,10 @@ where
     // contract — it stays an `overlay` closure that `drive_frame` runs
     // against the same in-progress frame, unchanged from before.
     let view = jackin_console::tui::runtime::ConsoleView {
-        context: jackin_console::tui::runtime::ConsoleViewContext { config, cwd },
+        context: jackin_console::tui::runtime::ConsoleViewContext {
+            config: context.config,
+            cwd: context.cwd,
+        },
     };
     let confirm_state = state.quit_confirm.as_ref();
     let screen = screen_of(state);
@@ -356,7 +363,7 @@ where
         key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
         value: jackin_telemetry::Value::Str(screen.as_str()),
     }];
-    let render_operation = action_parent.and_then(|parent| {
+    let render_operation = context.action_parent.and_then(|parent| {
         parent.in_scope(|| {
             jackin_telemetry::operation(&jackin_telemetry::operation::UI_RENDER, &render_attrs).ok()
         })
@@ -384,7 +391,7 @@ where
                     &termrock::Theme::default(),
                 );
             }
-            mouse_state.chrome_hover_tracker.clear();
+            context.mouse_state.chrome_hover_tracker.clear();
             if let Some(bar_area) = debug_bar_area {
                 let active_run = jackin_diagnostics::active_run();
                 let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
@@ -412,8 +419,9 @@ where
                     ),
                 }];
                 let mut status_state = termrock::widgets::StatusBarState {
-                    hovered: (mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip))
-                        .then_some(ConsoleChromeHover::DebugChip),
+                    hovered: (context.mouse_state.chrome_hover
+                        == Some(ConsoleChromeHover::DebugChip))
+                    .then_some(ConsoleChromeHover::DebugChip),
                     regions: Vec::new(),
                 };
                 let theme = termrock::Theme::default().with_role(
@@ -428,7 +436,8 @@ where
                     &mut status_state,
                 );
                 for region in status_state.regions {
-                    mouse_state
+                    context
+                        .mouse_state
                         .chrome_hover_tracker
                         .register(region.area, region.id);
                 }
@@ -448,7 +457,9 @@ where
         );
     }
     render_result?;
-    jank_monitor.record_frame(screen, render_started.elapsed().as_secs_f64());
+    context
+        .jank_monitor
+        .record_frame(screen, render_started.elapsed().as_secs_f64());
 
     let ConsoleStage::Manager(ms) = &state.stage;
     if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
@@ -462,7 +473,7 @@ where
             drop(std::io::Write::write_all(&mut out, &overlay));
             drop(std::io::Write::flush(&mut out));
         }
-        *container_info_overlay_active = true;
+        *context.container_info_overlay_active = true;
     }
     Ok(())
 }
@@ -915,6 +926,33 @@ fn handle_mouse_event<H, R>(
     Ok(ConsoleLoopFlow::Continue)
 }
 
+async fn next_event_batch(
+    event_stream: &mut crossterm::event::EventStream,
+    animation_tick: &mut tokio::time::Interval,
+) -> anyhow::Result<(Vec<crossterm::event::Event>, bool)> {
+    use futures_util::{FutureExt as _, StreamExt as _};
+
+    let mut tick_fired = false;
+    let first = tokio::select! {
+        event = event_stream.next() => event.map(|result| result.map_err(anyhow::Error::from)),
+        _ = animation_tick.tick() => {
+            tick_fired = true;
+            None
+        },
+    };
+    let mut events = Vec::new();
+    if let Some(first_event) = first {
+        events.push(first_event?);
+        while events.len() < MAX_EVENTS_PER_TICK {
+            let Some(Some(event)) = event_stream.next().now_or_never() else {
+                break;
+            };
+            events.push(event?);
+        }
+    }
+    Ok((events, tick_fired))
+}
+
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
     paths: &JackinPaths,
@@ -926,7 +964,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     use std::time::Duration;
 
     use crossterm::event::{Event, KeyEventKind};
-    use futures_util::{FutureExt as _, StreamExt as _};
 
     let startup_error_pending = options.startup_error.is_some();
     let mut state = jackin_console::tui::console::new_console_state_with_startup_error(
@@ -1022,12 +1059,14 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             draw_console_frame(
                 &mut terminal,
                 &mut state,
-                &config,
-                cwd,
-                &mut mouse_state,
-                &mut container_info_overlay_active,
-                action_parent.as_ref(),
-                &mut jank_monitor,
+                DrawConsoleContext {
+                    config: &config,
+                    cwd,
+                    mouse_state: &mut mouse_state,
+                    container_info_overlay_active: &mut container_info_overlay_active,
+                    action_parent: action_parent.as_ref(),
+                    jank_monitor: &mut jank_monitor,
+                },
             )?;
             needs_redraw = false;
         }
@@ -1038,30 +1077,10 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         // terminal event arrives or the animation tick fires. This frees
         // the reactor between events so background tasks can progress
         // instead of blocking for up to TICK_MS.
-        let mut tick_fired = false;
-        let first = tokio::select! {
-            event = event_stream.next() => event.map(|r| r.map_err(anyhow::Error::from)),
-            _ = animation_tick.tick() => {
-                tick_fired = true;
-                None
-            },
-        };
+        let (event_batch, tick_fired) =
+            next_event_batch(&mut event_stream, &mut animation_tick).await?;
         if tick_fired && let ConsoleStage::Manager(ms) = &mut state.stage {
             needs_redraw |= ms.tick_active_animation();
-        }
-        // Collect the first event then drain any stream-ready events
-        // non-blocking (same batch-up-to-256 behavior as the previous
-        // poll loop, so a burst of key/mouse events still coalesces into
-        // one render rather than one render per event).
-        let mut event_batch: Vec<Event> = Vec::new();
-        if let Some(first_event) = first {
-            event_batch.push(first_event?);
-            while event_batch.len() < MAX_EVENTS_PER_TICK {
-                let Some(Some(event)) = event_stream.next().now_or_never() else {
-                    break;
-                };
-                event_batch.push(event?);
-            }
         }
         needs_redraw |= !event_batch.is_empty();
         for event in event_batch {

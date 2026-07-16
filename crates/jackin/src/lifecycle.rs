@@ -159,11 +159,14 @@ pub struct InvocationTelemetry {
 #[derive(Debug)]
 enum InvocationRoots {
     OneShot(Option<jackin_telemetry::operation::OperationGuard>),
-    Interactive {
-        attrs: RootAttrs,
-        startup: Option<jackin_telemetry::operation::OperationGuard>,
-        shutdown: Option<jackin_telemetry::operation::OperationGuard>,
-    },
+    Interactive(Box<InteractiveRoots>),
+}
+
+#[derive(Debug)]
+struct InteractiveRoots {
+    attrs: RootAttrs,
+    startup: Option<jackin_telemetry::operation::OperationGuard>,
+    shutdown: Option<jackin_telemetry::operation::OperationGuard>,
 }
 
 #[derive(Clone, Debug)]
@@ -195,7 +198,7 @@ impl InvocationTelemetry {
             invocation: lifecycle.invocation_id.to_string(),
         };
         let roots = if app_mode == AppMode::Interactive {
-            InvocationRoots::Interactive {
+            InvocationRoots::Interactive(Box::new(InteractiveRoots {
                 startup: jackin_telemetry::root_operation(
                     &jackin_telemetry::operation::APP_STARTUP,
                     &attrs.values(),
@@ -203,7 +206,7 @@ impl InvocationTelemetry {
                 .ok(),
                 shutdown: None,
                 attrs,
-            }
+            }))
         } else {
             InvocationRoots::OneShot(
                 jackin_telemetry::root_operation(
@@ -226,27 +229,25 @@ impl InvocationTelemetry {
             InvocationRoots::OneShot(operation) => operation
                 .as_ref()
                 .map_or_else(tracing::Span::none, |operation| operation.span().clone()),
-            InvocationRoots::Interactive { .. } => tracing::Span::none(),
+            InvocationRoots::Interactive(_) => tracing::Span::none(),
         }
     }
 
     pub fn ready(&mut self) {
-        if let InvocationRoots::Interactive { startup, .. } = &mut self.roots
-            && let Some(startup) = startup.take()
+        if let InvocationRoots::Interactive(roots) = &mut self.roots
+            && let Some(startup) = roots.startup.take()
         {
             startup.complete(OutcomeValue::Success, None);
         }
     }
 
     pub fn exit_requested(&mut self) {
-        if let InvocationRoots::Interactive {
-            attrs, shutdown, ..
-        } = &mut self.roots
-            && shutdown.is_none()
+        if let InvocationRoots::Interactive(roots) = &mut self.roots
+            && roots.shutdown.is_none()
         {
-            *shutdown = jackin_telemetry::root_operation(
+            roots.shutdown = jackin_telemetry::root_operation(
                 &jackin_telemetry::operation::APP_SHUTDOWN,
-                &attrs.values(),
+                &roots.attrs.values(),
             )
             .ok();
         }
@@ -260,22 +261,18 @@ impl InvocationTelemetry {
                     complete_root(operation, classification);
                 }
             }
-            InvocationRoots::Interactive {
-                attrs,
-                startup,
-                shutdown,
-            } => {
-                if let Some(startup) = startup.take() {
+            InvocationRoots::Interactive(roots) => {
+                if let Some(startup) = roots.startup.take() {
                     complete_root(startup, classification);
                 }
-                if shutdown.is_none() {
-                    *shutdown = jackin_telemetry::root_operation(
+                if roots.shutdown.is_none() {
+                    roots.shutdown = jackin_telemetry::root_operation(
                         &jackin_telemetry::operation::APP_SHUTDOWN,
-                        &attrs.values(),
+                        &roots.attrs.values(),
                     )
                     .ok();
                 }
-                if let Some(shutdown) = shutdown.take() {
+                if let Some(shutdown) = roots.shutdown.take() {
                     complete_root(shutdown, classification);
                 }
             }

@@ -63,7 +63,7 @@ Exception: explicit operator instruction to hold.
 
 - Prefer maintained crates over hand-rolled parsers / serializers / format handlers / crypto.
 - Reuse before writing (DRY). Extend or parameterise; symmetric variants share one body.
-- Telemetry is registry-first and emits only through the governed event, operation, metric, or spawn facade → [ENGINEERING.md](ENGINEERING.md).
+- Telemetry is registry-first; emit only through the governed event, operation, metric, or spawn facade → [ENGINEERING.md](ENGINEERING.md).
 - Comments: non-obvious WHY only — never narrate WHAT.
 
 Rust workspace specifics (module layout, lint baseline, supply-chain) apply under `crates/`.

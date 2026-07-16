@@ -8,7 +8,8 @@
 )]
 use super::*;
 use crate::runtime::launch::launch_runtime::{
-    capsule_export_coverage, debug_runtime_envs, telemetry_runtime_envs_for,
+    CapsuleAuth, CapsuleEndpoint, CapsuleNetwork, capsule_export_coverage, debug_runtime_envs,
+    telemetry_runtime_envs_for,
 };
 
 #[test]
@@ -16,27 +17,51 @@ fn capsule_otlp_fails_closed_for_network_endpoint_and_auth() {
     use jackin_diagnostics::CapsuleExportCoverage;
 
     assert_eq!(
-        capsule_export_coverage(true, true, true, false, false),
+        capsule_export_coverage(
+            CapsuleNetwork::Disabled,
+            CapsuleEndpoint::Safe,
+            CapsuleAuth::Complete,
+        ),
         CapsuleExportCoverage::DisabledNetworkNone
     );
     assert_eq!(
-        capsule_export_coverage(false, false, true, false, false),
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Missing,
+            CapsuleAuth::Complete,
+        ),
         CapsuleExportCoverage::DisabledNoEndpoint
     );
     assert_eq!(
-        capsule_export_coverage(false, true, false, false, false),
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Unclassified,
+            CapsuleAuth::Complete,
+        ),
         CapsuleExportCoverage::DisabledUnclassifiedEndpoint
     );
     assert_eq!(
-        capsule_export_coverage(false, true, true, true, false),
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Safe,
+            CapsuleAuth::HostOnly,
+        ),
         CapsuleExportCoverage::DisabledUnclassifiedAuth
     );
     assert_eq!(
-        capsule_export_coverage(false, true, true, true, true),
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Safe,
+            CapsuleAuth::Complete,
+        ),
         CapsuleExportCoverage::Enabled
     );
     assert_eq!(
-        capsule_export_coverage(false, true, true, false, false),
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Safe,
+            CapsuleAuth::Complete,
+        ),
         CapsuleExportCoverage::Enabled
     );
 }

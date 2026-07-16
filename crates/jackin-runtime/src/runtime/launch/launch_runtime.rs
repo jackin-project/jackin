@@ -702,11 +702,15 @@ pub(crate) async fn launch_role_runtime(
         .ok()
         .filter(|value| !value.trim().is_empty());
     let capsule_export = capsule_export_coverage(
-        network_disabled,
-        jackin_diagnostics::otlp_endpoint_configured(),
-        capsule_otlp_safe,
-        jackin_diagnostics::otlp_auth_configured(),
-        capsule_otlp_headers.is_some(),
+        CapsuleNetwork::classify(network_disabled),
+        CapsuleEndpoint::classify(
+            jackin_diagnostics::otlp_endpoint_configured(),
+            capsule_otlp_safe,
+        ),
+        CapsuleAuth::classify(
+            jackin_diagnostics::otlp_auth_configured(),
+            capsule_otlp_headers.is_some(),
+        ),
     );
     env_strings.push(format!(
         "{}={}",
@@ -1276,22 +1280,71 @@ pub(crate) fn run_runtime_envs() -> Vec<String> {
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CapsuleNetwork {
+    Disabled,
+    Enabled,
+}
+
+impl CapsuleNetwork {
+    const fn classify(disabled: bool) -> Self {
+        if disabled {
+            Self::Disabled
+        } else {
+            Self::Enabled
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CapsuleEndpoint {
+    Missing,
+    Unclassified,
+    Safe,
+}
+
+impl CapsuleEndpoint {
+    const fn classify(configured: bool, safe: bool) -> Self {
+        if !configured {
+            Self::Missing
+        } else if safe {
+            Self::Safe
+        } else {
+            Self::Unclassified
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CapsuleAuth {
+    HostOnly,
+    Complete,
+}
+
+impl CapsuleAuth {
+    const fn classify(host_configured: bool, capsule_configured: bool) -> Self {
+        if host_configured && !capsule_configured {
+            Self::HostOnly
+        } else {
+            Self::Complete
+        }
+    }
+}
+
 pub(crate) const fn capsule_export_coverage(
-    network_disabled: bool,
-    endpoint_configured: bool,
-    endpoint_classified_safe: bool,
-    host_auth_configured: bool,
-    capsule_auth_configured: bool,
+    network: CapsuleNetwork,
+    endpoint: CapsuleEndpoint,
+    auth: CapsuleAuth,
 ) -> jackin_diagnostics::CapsuleExportCoverage {
     use jackin_diagnostics::CapsuleExportCoverage;
 
-    if network_disabled {
+    if matches!(network, CapsuleNetwork::Disabled) {
         CapsuleExportCoverage::DisabledNetworkNone
-    } else if !endpoint_configured {
+    } else if matches!(endpoint, CapsuleEndpoint::Missing) {
         CapsuleExportCoverage::DisabledNoEndpoint
-    } else if !endpoint_classified_safe {
+    } else if matches!(endpoint, CapsuleEndpoint::Unclassified) {
         CapsuleExportCoverage::DisabledUnclassifiedEndpoint
-    } else if host_auth_configured && !capsule_auth_configured {
+    } else if matches!(auth, CapsuleAuth::HostOnly) {
         CapsuleExportCoverage::DisabledUnclassifiedAuth
     } else {
         CapsuleExportCoverage::Enabled

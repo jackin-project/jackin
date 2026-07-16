@@ -19,7 +19,10 @@ cap = 1850
 mode = "enforce"
 [[family.entry]]
 key = "crates/jackin-diagnostics/src/observability.rs"
-bound = 2052
+bound = 1983
+[[family.entry]]
+key = "crates/jackin-xtask/src/telemetry_registry.rs"
+bound = 1866
 
 [[family]]
 id = "file-size-test"
@@ -54,9 +57,6 @@ provider = "expect_per_lint_crate"
 cap = 0
 mode = "enforce"
 [[family.entry]]
-key = "clippy::await_holding_lock@jackin-docker"
-bound = 1
-[[family.entry]]
 key = "clippy::cast_precision_loss@jackin-launch-tui"
 bound = 1
 [[family.entry]]
@@ -73,7 +73,7 @@ key = "clippy::cast_sign_loss@jackin-usage"
 bound = 12
 [[family.entry]]
 key = "clippy::cognitive_complexity@jackin-runtime"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
 bound = 11
@@ -89,9 +89,6 @@ bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-dev"
 bound = 1
-[[family.entry]]
-key = "clippy::disallowed_methods@jackin-diagnostics"
-bound = 6
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-docker"
 bound = 1
@@ -109,13 +106,13 @@ key = "clippy::disallowed_methods@jackin-instance"
 bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
-bound = 11
+bound = 6
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-term"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage"
-bound = 5
+bound = 4
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
 bound = 1
@@ -173,9 +170,6 @@ bound = 2
 [[family.entry]]
 key = "clippy::expect_used@jackin-console-oppicker"
 bound = 3
-[[family.entry]]
-key = "clippy::expect_used@jackin-diagnostics"
-bound = 1
 [[family.entry]]
 key = "clippy::expect_used@jackin-image"
 bound = 3
@@ -274,7 +268,7 @@ key = "clippy::print_stderr@jackin-pr-trailers"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-runtime"
-bound = 8
+bound = 7
 [[family.entry]]
 key = "clippy::print_stderr@jackin-xtask"
 bound = 2
@@ -289,9 +283,6 @@ key = "clippy::print_stdout@jackin-dev"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stdout@jackin-pr-trailers"
-bound = 1
-[[family.entry]]
-key = "clippy::print_stdout@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stdout@jackin-term"
@@ -358,7 +349,7 @@ key = "clippy::too_many_arguments@jackin-isolation"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-launch-tui"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
 bound = 11
@@ -372,9 +363,6 @@ bound = 8
 key = "clippy::too_many_lines@jackin-console"
 bound = 7
 [[family.entry]]
-key = "clippy::too_many_lines@jackin-diagnostics"
-bound = 1
-[[family.entry]]
 key = "clippy::too_many_lines@jackin-env"
 bound = 1
 [[family.entry]]
@@ -385,7 +373,7 @@ key = "clippy::too_many_lines@jackin-launch-tui"
 bound = 2
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-protocol"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime"
 bound = 7
@@ -406,9 +394,6 @@ key = "clippy::unnecessary_wraps@jackin-config"
 bound = 2
 [[family.entry]]
 key = "clippy::unnecessary_wraps@jackin-runtime"
-bound = 1
-[[family.entry]]
-key = "clippy::unused_self@jackin-diagnostics"
 bound = 1
 [[family.entry]]
 key = "clippy::unwrap_used@jackin"
@@ -437,9 +422,6 @@ bound = 1
 [[family.entry]]
 key = "dead_code@jackin-core"
 bound = 4
-[[family.entry]]
-key = "dead_code@jackin-diagnostics"
-bound = 2
 [[family.entry]]
 key = "dead_code@jackin-env"
 bound = 3
@@ -527,10 +509,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 6151
+bound = 6150
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 6151
+bound = 6150
 [[family.entry]]
 key = "crates/AGENTS.md"
 bound = 14742
@@ -542,7 +524,7 @@ key = "crates/jackin-build-meta/README.md"
 bound = 628
 [[family.entry]]
 key = "crates/jackin-capsule/README.md"
-bound = 6292
+bound = 6223
 [[family.entry]]
 key = "crates/jackin-config/README.md"
 bound = 2745
@@ -554,13 +536,13 @@ key = "crates/jackin-console/README.md"
 bound = 2549
 [[family.entry]]
 key = "crates/jackin-core/README.md"
-bound = 5389
+bound = 5194
 [[family.entry]]
 key = "crates/jackin-dev/README.md"
 bound = 1199
 [[family.entry]]
 key = "crates/jackin-diagnostics/README.md"
-bound = 3548
+bound = 1988
 [[family.entry]]
 key = "crates/jackin-docker/README.md"
 bound = 1681
@@ -694,13 +676,13 @@ key = "jackin-console-oppicker"
 bound = 3
 [[family.entry]]
 key = "jackin-core"
-bound = 4
+bound = 3
 [[family.entry]]
 key = "jackin-diagnostics"
-bound = 13
+bound = 11
 [[family.entry]]
 key = "jackin-telemetry"
-bound = 12
+bound = 13
 [[family.entry]]
 key = "jackin-docker"
 bound = 3
@@ -727,7 +709,7 @@ key = "jackin-manifest"
 bound = 5
 [[family.entry]]
 key = "jackin-protocol"
-bound = 5
+bound = 6
 [[family.entry]]
 key = "jackin-runtime"
 bound = 7
@@ -810,13 +792,13 @@ mode = "enforce"
 cap = 20
 [[family.entry]]
 key = "jackin"
-bound = 28
+bound = 27
 [[family.entry]]
 key = "jackin-agent-status"
 bound = 26
 [[family.entry]]
 key = "jackin-capsule"
-bound = 88
+bound = 85
 [[family.entry]]
 key = "jackin-config"
 bound = 22
@@ -825,7 +807,10 @@ key = "jackin-console"
 bound = 73
 [[family.entry]]
 key = "jackin-diagnostics"
-bound = 28
+bound = 24
+[[family.entry]]
+key = "jackin-docker"
+bound = 24
 [[family.entry]]
 key = "jackin-env"
 bound = 29
@@ -846,10 +831,10 @@ key = "jackin-lints"
 bound = 27
 [[family.entry]]
 key = "jackin-protocol"
-bound = 77
+bound = 80
 [[family.entry]]
 key = "jackin-runtime"
-bound = 96
+bound = 90
 [[family.entry]]
 key = "jackin-term"
 bound = 66

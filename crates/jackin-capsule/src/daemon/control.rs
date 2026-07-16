@@ -104,7 +104,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         ClientMsg::TelemetryHealth => {
             let health = jackin_diagnostics::telemetry_health_snapshot();
             ServerMsg::TelemetryHealth {
-                report: telemetry_health_report(health),
+                report: Box::new(telemetry_health_report(health)),
             }
         }
         ClientMsg::Status => ServerMsg::SessionList {

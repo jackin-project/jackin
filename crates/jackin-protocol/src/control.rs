@@ -135,7 +135,7 @@ pub enum ServerMsg {
     /// Current jackin❯-owned exporter and facade health observations.
     TelemetryHealth {
         /// Typed process-local health report.
-        report: TelemetryHealthReport,
+        report: Box<TelemetryHealthReport>,
     },
     /// Current session inventory.
     SessionList {

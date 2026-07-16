@@ -4,11 +4,11 @@
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-struct PanicDisplay;
+struct RejectingDisplay;
 
-impl std::fmt::Display for PanicDisplay {
+impl std::fmt::Display for RejectingDisplay {
     fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        panic!("disabled telemetry formatted its body")
+        Err(std::fmt::Error)
     }
 }
 
@@ -52,7 +52,7 @@ fn disabled_alloc_facade_fast_paths_allocate_nothing() {
     jackin_telemetry::emit_event_display(
         &jackin_telemetry::event::TELEMETRY_VALIDATE,
         &[],
-        &PanicDisplay,
+        &RejectingDisplay,
     )
     .expect("disabled display event");
     let operation =

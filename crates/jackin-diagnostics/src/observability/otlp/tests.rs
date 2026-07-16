@@ -47,14 +47,15 @@ fn expired_budget_skips_flush_work() {
 #[test]
 fn flush_timeout_returns_without_joining_hung_worker() {
     let started = std::time::Instant::now();
-    let task = super::FlushTask::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+    let task = super::FlushTask::spawn(move || {
+        release_rx.recv().expect("release flush worker");
         Ok(())
     });
     let result = task.finish_before(started + std::time::Duration::from_millis(20));
     assert_eq!(result, Err("telemetry flush budget exhausted".to_owned()));
     assert!(started.elapsed() < std::time::Duration::from_millis(80));
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    release_tx.send(()).expect("release flush worker");
     super::reap_flush_workers();
 }
 
@@ -381,7 +382,7 @@ fn crash_event_exports_complete_bounded_private_shape() {
             _ => None,
         })
         .expect("crash UUID");
-    assert!(uuid::Uuid::parse_str(crash_id).is_ok());
+    uuid::Uuid::parse_str(crash_id).expect("valid crash UUID");
     assert_eq!(
         log_attribute(record, "session.id"),
         Some(&AnyValue::String(expected_session.into()))
