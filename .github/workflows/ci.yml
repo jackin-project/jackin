@@ -623,7 +623,7 @@ jobs:
             -xf target/.ci-restore/target.tar.zst
           rm -rf target/.ci-restore
           git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
-      - name: Check prepared Rust toolchains
+      - name: Restore prepared Rust toolchains
         id: toolchain-lookup
         if: steps.prepared-inputs.outputs.ready != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -632,25 +632,17 @@ jobs:
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
-          lookup-only: true
+          restore-keys: rustup-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the minimal Rust CI profile
         if: >-
           steps.prepared-inputs.outputs.ready != 'true' &&
           steps.toolchain-lookup.outputs.cache-hit != 'true'
         run: rustup set profile minimal
-      - name: Bootstrap missing Rust toolchains
-        id: toolchain-cache
-        if: steps.prepared-inputs.outputs.ready != 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        if: steps.prepared-inputs.outputs.ready != 'true'
+        if: >-
+          steps.prepared-inputs.outputs.ready != 'true' &&
+          (steps.toolchain-lookup.outputs.cache-hit != 'true' ||
+           steps.ci-tools-artifact.outputs.hit != 'true')
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
@@ -680,6 +672,17 @@ jobs:
             mise install "rust@$version"
           fi
           scripts/ci/activate-installed-rust-toolchain.sh "$version"
+      - name: Save prepared Rust toolchain
+        if: >-
+          steps.prepared-inputs.outputs.ready != 'true' &&
+          steps.toolchain-lookup.outputs.cache-hit != 'true' &&
+          matrix.config.cache_writer
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
       - id: cargo-registry-cache
         if: >-
           steps.ci-xtask-artifact.outputs.hit != 'true' &&
