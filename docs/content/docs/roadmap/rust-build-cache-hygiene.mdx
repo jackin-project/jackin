@@ -56,7 +56,7 @@ The original design proposal named only `sccache`. Since then, a newer tool — 
 
 ### sccache — strengths and limits
 
-[sccache](https://github.com/mozilla/sccache) (Mozilla, Apache-2.0) is a mature ccache-like compiler wrapper for Rust, C/C++, CUDA, and HIP. It is already installed via jackin❯'s `mise.toml` (`cargo:sccache = "0.16.0"`) and wired as `RUSTC_WRAPPER` with `CARGO_INCREMENTAL=0` across all CI workflows.
+[sccache](https://github.com/mozilla/sccache) (Mozilla, Apache-2.0) is a mature ccache-like compiler wrapper for Rust, C/C++, CUDA, and HIP. It is already installed via jackin❯'s <RepoFile path="mise.toml" /> (`cargo:sccache = "0.16.0"`) and wired as `RUSTC_WRAPPER` with `CARGO_INCREMENTAL=0` across all CI workflows.
 
 **Strengths for jackin❯:**
 
@@ -154,7 +154,7 @@ The disk savings from any build cache depend heavily on the filesystem. This mat
 - **sccache** ([mozilla/sccache](https://github.com/mozilla/sccache), 7.5k stars, Apache-2.0) is a ccache-like compiler wrapper for Rust and C/C++. It stores compiler results on local disk or remote backends (Redis, S3, GCS, Azure, GHA, Memcached, WebDAV, OSS, COS). Local disk storage has explicit controls: `SCCACHE_DIR` changes the cache location, `SCCACHE_CACHE_SIZE` caps size (default 10 GB). Multi-level cache chains (`disk,redis,s3`) with automatic backfill are supported. Path normalization across checkouts is via `SCCACHE_BASEDIRS`. sccache documents that incrementally compiled crates cannot be cached — `CARGO_INCREMENTAL=0` is required. See the [sccache README](https://github.com/mozilla/sccache) and [Configuration reference](https://github.com/mozilla/sccache/blob/main/docs/Configuration.md).
 - **kache** ([kunobi-ninja/kache](https://github.com/kunobi-ninja/kache), v0.10.0, Apache-2.0) is a zero-copy, content-addressed build cache for Rust and C/C++. Cache keys are blake3 hashes of normalized compiler inputs (rustc version, crate name, source content, dependencies, flags, target triple, compile-time env). Local hits restore zero-copy: reflink (copy-on-write) on APFS/btrfs/XFS-with-reflink, hardlink for immutable artifacts (`.rlib`/`.rmeta`) on other filesystems, copy for mutable outputs (`bin`/`dylib`/`proc-macro`). The store is content-addressed — identical blobs stored once, shared across all cache entries. Incremental compilation is disabled automatically while kache wraps rustc. `kache init` configures `RUSTC_WRAPPER` + daemon; `kache clean` finds target/ dirs with cache breakdown; `kache gc` provides LRU/age-based eviction; `kache doctor` diagnoses setup; `kache monitor` is a live TUI dashboard. S3 sync (AWS, R2, Ceph, MinIO) for remote cache. Available via mise (`mise use -g github:kunobi-ninja/kache@latest`), Homebrew, cargo-binstall, APT, winget, AUR. See the [kache docs](https://kunobi.ninja/docs/kache) and [deduplication reference](https://kunobi.ninja/docs/kache/deduplication).
 - **Incremental compilation** (`-C incremental`) is Cargo's per-session optimization for fast rebuilds after small source changes. It creates per-session directories under `target/debug/incremental/` that are never garbage-collected. Concurrent cargo invocations each create their own session directories, multiplying the cache. Disabling it (`CARGO_INCREMENTAL=0`) eliminates this class of disk growth at the cost of slower iterative development — but sccache/kache artifact caching compensates by making full rebuilds fast. See the [Cargo profiles reference](https://doc.rust-lang.org/cargo/reference/profiles.html#incremental).
-- **APFS clonefile** (`clonefile(2)`, `FICLONE` ioctl) creates a copy-on-write clone of a file — zero disk cost until one side modifies the data. kache uses this on APFS to restore cached artifacts into `target/` without duplicating blocks. Multiple target dirs sharing the same compiled crate consume disk only once. Apple documents `clonefile` in the [APFS reference](https://developer.apple.com/documentation/foundation/filemanager/1410865-copyitem).
+- **APFS clonefile** (`clonefile(2)`, `FICLONE` ioctl) creates a copy-on-write clone of a file — zero disk cost until one side modifies the data. kache uses this on APFS to restore cached artifacts into `target/` without duplicating blocks. Multiple target dirs sharing the same compiled crate consume disk only once. See kache's [deduplication reference](https://kunobi.ninja/docs/kache/deduplication).
 - The Rust project has explicitly discussed cache cleaning as an ongoing Cargo concern, including global cache cleanup and future target-directory tracking work. See the [Rust Blog cache-cleaning post](https://blog.rust-lang.org/2023/12/11/cargo-cache-cleaning/).
 
 ### Proposed direction
@@ -193,7 +193,7 @@ This follows the construct image's AGENTS.md rule: prefer the official package-m
 
 **Option B — sccache (fallback, already in mise.toml):**
 
-sccache is already pinned in `mise.toml` as `cargo:sccache = "0.16.0"`. No Dockerfile change needed — mise installs it. But the env vars must be set (see below).
+sccache is already pinned in <RepoFile path="mise.toml" /> as `cargo:sccache = "0.16.0"`. No Dockerfile change needed — mise installs it. But the env vars must be set (see below).
 
 #### Container environment
 
