@@ -1519,10 +1519,6 @@ impl Session {
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "explicit test-only fixture capture opens its dedicated output once"
-)]
 fn capture_pty_fixture_bytes(bytes: &[u8]) {
     use std::io::Write as _;
     use std::sync::OnceLock;
@@ -1530,12 +1526,7 @@ fn capture_pty_fixture_bytes(bytes: &[u8]) {
     static CAPTURE: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
     let capture = CAPTURE.get_or_init(|| {
         let path = std::env::var_os("JACKIN_PTY_FIXTURE_CAPTURE")?;
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(path)
-            .ok()?;
+        let file = std::fs::File::create(path).ok()?;
         Some(Mutex::new(file))
     });
     if let Some(capture) = capture

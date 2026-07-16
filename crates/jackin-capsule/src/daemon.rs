@@ -1026,6 +1026,21 @@ fn screen_detection_disabled_message(error: &anyhow::Error) -> String {
     format!("Agent status screen detection is off: {error:#}")
 }
 
+fn configured_escape_time() -> Duration {
+    let Ok(raw) = std::env::var(ENV_ESCAPE_TIME) else {
+        return DEFAULT_ESCAPE_TIME;
+    };
+    let Ok(ms) = raw.parse::<u64>() else {
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "{ENV_ESCAPE_TIME}={raw:?} ignored (not a positive integer); using default {} ms",
+            DEFAULT_ESCAPE_TIME.as_millis()
+        );
+        return DEFAULT_ESCAPE_TIME;
+    };
+    Duration::from_millis(ms)
+}
+
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 #[expect(
     clippy::too_many_lines,
@@ -1034,10 +1049,6 @@ fn screen_detection_disabled_message(error: &anyhow::Error) -> String {
               its own focused init + handoff. Body extraction follows the same \
               deferred-parallel-pass plan as the launch fns — the inline shape \
               preserves captured-runtime state across stages."
-)]
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "daemon startup keeps lifecycle and shutdown ownership in one entry point"
 )]
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
     crate::pid1::install_sigchld_reaper();
@@ -1113,21 +1124,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // would be wasted syscalls. A present-but-unparseable env var
     // emits a debug line so the operator sees their config rejected
     // rather than silently falling back to the default.
-    let escape_time = match std::env::var(ENV_ESCAPE_TIME) {
-        Ok(raw) => {
-            if let Ok(ms) = raw.parse::<u64>() {
-                Duration::from_millis(ms)
-            } else {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "{ENV_ESCAPE_TIME}={raw:?} ignored (not a positive integer); using default {} ms",
-                    DEFAULT_ESCAPE_TIME.as_millis()
-                );
-                DEFAULT_ESCAPE_TIME
-            }
-        }
-        Err(_) => DEFAULT_ESCAPE_TIME,
-    };
+    let escape_time = configured_escape_time();
 
     // Persistent escape-time deadline. Set when the parser first
     // enters `EscStart` (one Esc with no follow-up yet). Cleared once

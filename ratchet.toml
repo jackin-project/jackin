@@ -556,7 +556,7 @@ key = "crates/jackin-dev/README.md"
 bound = 1199
 [[family.entry]]
 key = "crates/jackin-diagnostics/README.md"
-bound = 3548
+bound = 2130
 [[family.entry]]
 key = "crates/jackin-docker/README.md"
 bound = 1681
@@ -591,11 +591,17 @@ bound = 1882
 key = "crates/jackin-process/README.md"
 bound = 780
 [[family.entry]]
+key = "crates/jackin-otlp-testbed/README.md"
+bound = 1122
+[[family.entry]]
 key = "crates/jackin-protocol/README.md"
 bound = 1046
 [[family.entry]]
 key = "crates/jackin-runtime/README.md"
 bound = 3515
+[[family.entry]]
+key = "crates/jackin-telemetry/README.md"
+bound = 1963
 [[family.entry]]
 key = "crates/jackin-term/README.md"
 bound = 2915
@@ -610,7 +616,7 @@ key = "crates/jackin-tui/README.md"
 bound = 1033
 [[family.entry]]
 key = "crates/jackin-usage/README.md"
-bound = 2272
+bound = 2312
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
 bound = 5038
@@ -637,7 +643,7 @@ key = "default_mode_metrics"
 bound = 5
 [[family.entry]]
 key = "default_mode_spans"
-bound = 7
+bound = 5
 
 # dhat allocation ceilings (source: jackin-capsule perf_budgets).
 # iai-callgrind: PINNED — project CI images do not ship valgrind; re-evaluate
@@ -690,13 +696,13 @@ key = "jackin-console-oppicker"
 bound = 3
 [[family.entry]]
 key = "jackin-core"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "jackin-diagnostics"
-bound = 13
+bound = 11
 [[family.entry]]
 key = "jackin-telemetry"
-bound = 1
+bound = 11
 [[family.entry]]
 key = "jackin-docker"
 bound = 3
@@ -723,7 +729,7 @@ key = "jackin-manifest"
 bound = 5
 [[family.entry]]
 key = "jackin-protocol"
-bound = 5
+bound = 6
 [[family.entry]]
 key = "jackin-runtime"
 bound = 7
@@ -809,22 +815,22 @@ mode = "enforce"
 cap = 20
 [[family.entry]]
 key = "jackin"
-bound = 28
+bound = 30
 [[family.entry]]
 key = "jackin-agent-status"
 bound = 26
 [[family.entry]]
 key = "jackin-capsule"
-bound = 88
+bound = 85
 [[family.entry]]
 key = "jackin-config"
 bound = 22
 [[family.entry]]
 key = "jackin-console"
-bound = 73
+bound = 74
 [[family.entry]]
 key = "jackin-diagnostics"
-bound = 28
+bound = 24
 [[family.entry]]
 key = "jackin-env"
 bound = 29
@@ -845,10 +851,10 @@ key = "jackin-lints"
 bound = 27
 [[family.entry]]
 key = "jackin-protocol"
-bound = 77
+bound = 80
 [[family.entry]]
 key = "jackin-runtime"
-bound = 96
+bound = 90
 [[family.entry]]
 key = "jackin-term"
 bound = 66

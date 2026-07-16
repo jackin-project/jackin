@@ -822,10 +822,16 @@ fn handle_mouse_event<H, R>(
     Ok(ConsoleLoopFlow::Continue)
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "console lifecycle teardown must remain visibly paired with setup"
-)]
+fn enter_console_screen(
+    parent: Option<&TerminalSession>,
+) -> anyhow::Result<Option<TerminalSession>> {
+    if parent.is_some_and(TerminalSession::is_active) {
+        Ok(None)
+    } else {
+        Ok(Some(TerminalSession::enter(host_console_terminal())?))
+    }
+}
+
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
     paths: &JackinPaths,
@@ -849,14 +855,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // When the launch flow in `app` already owns the host screen, draw into it
     // and leave teardown to that guard; otherwise own the screen here for the
     // lifetime of the console (standalone `jackin console` with no launch).
-    let owned_screen = if options
-        .parent_session
-        .is_some_and(TerminalSession::is_active)
-    {
-        None
-    } else {
-        Some(TerminalSession::enter(host_console_terminal())?)
-    };
+    let owned_screen = enter_console_screen(options.parent_session)?;
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
     let mut mouse_state = ConsoleMouseState::new();
