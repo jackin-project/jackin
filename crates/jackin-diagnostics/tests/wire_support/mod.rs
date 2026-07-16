@@ -125,7 +125,7 @@ pub(crate) fn assert_three_signal_delivery(
                 .filter_map(|batch| batch.resource.as_ref()),
         )
     {
-        assert_resource_contract(resource, identity.service_name);
+        assert_resource_contract(resource, identity.service_name());
     }
     jackin_diagnostics::shutdown_capsule_tracing();
     let shutdown = jackin_diagnostics::telemetry_health_snapshot();

@@ -797,7 +797,7 @@ fn telemetry_health_report() -> TelemetryHealthReport {
             sampler: std::env::var("OTEL_TRACES_SAMPLER")
                 .unwrap_or_else(|_| "parentbased_always_on".to_owned()),
             active_signals: health.active_signals,
-            service_name: "jackin-host-daemon".to_owned(),
+            service_name: "jackin-daemon".to_owned(),
             app_mode: "daemon".to_owned(),
         },
         health: TelemetryHealthSnapshot {

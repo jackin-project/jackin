@@ -90,8 +90,8 @@ pub fn validate_delivery() -> Result<ValidationReport, ValidationFailure> {
 /// [`RunDiagnostics`](crate::RunDiagnostics) keeps product execution fail-open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServiceIdentity {
-    pub service_name: &'static str,
-    pub app_mode: jackin_telemetry::schema::enums::AppMode,
+    service_name: &'static str,
+    app_mode: jackin_telemetry::schema::enums::AppMode,
 }
 
 impl ServiceIdentity {
@@ -115,6 +115,16 @@ impl ServiceIdentity {
         service_name: "jackin-role",
         app_mode: jackin_telemetry::schema::enums::AppMode::OneShot,
     };
+
+    #[must_use]
+    pub const fn service_name(self) -> &'static str {
+        self.service_name
+    }
+
+    #[must_use]
+    pub const fn app_mode(self) -> jackin_telemetry::schema::enums::AppMode {
+        self.app_mode
+    }
 }
 
 pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<bool> {
