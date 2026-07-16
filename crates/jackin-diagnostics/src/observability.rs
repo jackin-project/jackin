@@ -75,14 +75,12 @@ pub fn validate_delivery() -> Result<ValidationReport, ValidationFailure> {
     })
 }
 
-/// Install the global `tracing` subscriber.
+/// Install the global subscriber and direct OTLP exporters when configured.
 ///
-/// Default build: installs the JSONL diagnostics layer and no terminal sink.
-/// With `--features otlp` and a standard OTLP endpoint configured
-/// (`OTEL_EXPORTER_OTLP_ENDPOINT`, or the per-signal endpoint vars),
-/// installs OTLP span, log, and metric export beside the JSONL layer, with the
-/// diagnostics run id stamped on the OTLP resource so an external backend
-/// (e.g. Parallax) can answer "show me run `<id>`".
+/// Without an endpoint this installs only the governed subscriber; telemetry
+/// remains in memory and no local telemetry artifact is created. With a
+/// standard OTLP endpoint, spans, logs, and metrics are exported directly and
+/// correlated by governed invocation and session attributes.
 ///
 /// Returns `Ok(true)` when OTLP export was installed (the backend is the active
 /// sink), `Ok(false)` when only the JSONL diagnostics layer is installed (no

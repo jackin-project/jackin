@@ -1,146 +1,39 @@
 ---
 title: Run Telemetry
-description: Stream every jackin❯ run — logs, stage timings, lifecycle events — to a local OpenTelemetry backend such as Parallax
+description: Send governed traces, events, and metrics directly to an OTLP backend
 ---
 
-Every `jackin` command can record its full story — logs, lifecycle events, and per-stage timings — keyed by a **run id** (printed again at run exit). It goes to one of two sinks: a live external view streamed to any OpenTelemetry (OTLP) backend, or a local diagnostics file. Set one environment variable to stream to a backend; with none configured, jackin❯ falls back to the file. See [Where the run is recorded](#where-the-run-is-recorded) for how the two relate.
+jackin❯ can send traces, structured events, and metrics directly to an OpenTelemetry backend such as Parallax. The backend owns telemetry history; jackin❯ keeps only bounded current-invocation progress in memory and never creates local telemetry or log artifacts.
 
-## Turn it on
+## Configure delivery
 
 ```sh
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
-jackin console --debug
+jackin diagnostics validate
 ```
 
-That is the whole setup. With the variable unset, nothing changes — no network connections, no new behavior. jackin❯ exports over **OTLP/gRPC** and reads the standard OpenTelemetry variables: `OTEL_EXPORTER_OTLP_ENDPOINT` for a single base that every signal derives from, and the per-signal `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` when you want to point a signal somewhere else. OTLP-aware wrappers that set these are honoured as-is.
+jackin❯ uses OTLP/gRPC. `OTEL_EXPORTER_OTLP_ENDPOINT` configures all three signals, while `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` can override individual destinations. Leave the protocol unset or set it to `grpc`; another protocol stops startup with [E016](/reference/errors/E016/).
 
-jackin❯ speaks gRPC only. If `OTEL_EXPORTER_OTLP_PROTOCOL` (or a per-signal variant) is set to anything other than `grpc` while an endpoint is configured, jackin❯ stops at startup with error `E016` instead of sending telemetry that would silently never arrive — set it to `grpc`, or leave it unset.
+`jackin diagnostics validate` emits one governed marker for each signal, flushes the exporters, and exits successfully only when traces, logs, and metrics reach the configured endpoint. It reports a non-zero exit when delivery is disabled, unconfigured, inactive, or unsuccessful.
 
-## Where the run is recorded
+Set `OTEL_SDK_DISABLED=true` to disable OpenTelemetry explicitly. With no endpoint, normal product work continues without export or local fallback files.
 
-The backend and the file are alternatives, not duplicates:
+## Correlate activity
 
-- **No OTLP endpoint configured** → jackin❯ writes the run to a local diagnostics file at `~/.jackin/data/diagnostics/runs/<run-id>.jsonl`. The file is the fallback sink.
-- **An OTLP endpoint configured** → the backend is the sink and no file is written. Set `JACKIN_DIAGNOSTICS_FILE=1` to additionally write the file and see the run on both sides at once.
+Each command receives a `cli.invocation.id`. Interactive attachments also receive a `session.id`; reconnecting creates a new session and records the preceding session id when known. Use these fields in the backend to group bounded operation traces, lifecycle events, and metrics.
 
-`--debug` controls how much detail is recorded (see [Severity and category controls](#severity-and-category-controls)) — not whether the file is written. For telemetry-only overrides, set `JACKIN_TELEMETRY_LEVEL=info|debug|trace` and optionally `JACKIN_TELEMETRY_CATEGORIES=docker,launch`. If an export is configured but can't be delivered, jackin❯ surfaces a notice and falls back to writing the file so the run is never lost silently.
+Long-lived processes do not create lifetime spans. Startup, shutdown, commands, UI actions, RPC calls, subprocesses, connections, cycles, and detached jobs are bounded operations. Detached work uses span links instead of pretending the work remained a child of an operation that already ended.
 
-At exit, jackin❯ prints the run id and the active sink. File-mode runs include the JSONL path. Backend-mode runs tell you to query the backend for `parallax.run.id=<run-id>`; debug dialogs and failure popups only show a `Diagnostics log` / reveal row when that local file actually exists.
+## Detail controls
 
-## What you can see in the backend
+The default `info` level contains lifecycle, state-transition, outcome, and health signals. `JACKIN_TELEMETRY_LEVEL=debug` enables governed diagnostic detail, and `trace` enables the most detailed allowlisted signals. `JACKIN_TELEMETRY_CATEGORIES` narrows debug categories.
 
-Telemetry arrives under the service name `jackin`, and every span, log record,
-and metric carries the run id of the invocation that produced it (resource
-attribute `parallax.run.id`, which a backend such as Parallax promotes to a
-queryable column). One run id is the thread that ties the whole invocation
-together — even though, as below, it is split across several traces on purpose.
-Diagnostics log records also carry `event.name`, `event.outcome`,
-`jackin.component`, `jackin.operation`, and `jackin.category`, so backend
-queries do not need to parse console prefixes or freeform bodies.
+`--debug` controls operator-facing troubleshooting output. It is not a telemetry transport switch and does not create a diagnostics file.
 
-### Each screen is its own trace, linked to the next
+## Privacy and reliability
 
-Rather than one giant trace, jackin❯ emits **one trace per screen** and links
-them, so you can follow the operator's path and jump between the steps:
+Telemetry attributes are allowlist-first and schema-validated. Paths, workspace and container names, URLs with queries, raw arguments, credentials, tokens, tab labels, PTY content, rendered frames, input payloads, and mouse coordinates are not telemetry fields. Redaction remains defense in depth, not permission to emit arbitrary content.
 
-- the workspace list, settings, edit-workspace, and create-workspace screens
-  each open their own trace, tagged `jackin.screen.name` and carrying a
-  `navigate` event when the operator moves between them;
-- the **launch** is its own trace, linked back to the list it started from,
-  with every launch stage as a child span — so "how long did each thing take"
-  and "where did the operator wait" read as a waterfall instead of JSON
-  spelunking;
-- the in-container **capsule session** is its own trace too, linked back to the
-  launch (see [cross-container](#following-a-run-into-the-container)).
+Export uses bounded queues and timeouts. An unavailable or slow endpoint can make telemetry incomplete, but it does not block product work or create a local fallback artifact. Point the exporter only at a backend you trust.
 
-Because all of these share `parallax.run.id`, a backend that understands run ids
-— Parallax is the reference target — still answers "show me everything for run
-`<id>`" while letting you walk the links from screen to screen.
-
-### Tags on the traces
-
-Spans are tagged so you can filter and group by what the operator was doing:
-the selected workspace and how it was chosen, the selected agent, the resolved
-provider, and the screen each span belongs to. Selections, confirmations, and
-launches are recorded as timestamped events on the screen they happened on.
-
-### Logs and metrics
-
-- **All logs** — the same event stream as the diagnostics file: lifecycle
-  breadcrumbs, container start/exit/crash events, and (in `--debug`) the
-  external `docker`/`git` command firehose after diagnostics redaction. With
-  `JACKIN_TELEMETRY_LEVEL=trace`, raw PTY bytes, rendered frame bytes, and
-  decoded keystroke/input payloads are captured at TRACE. When OTLP is active
-  they go to the backend and are not mirrored to `multiplexer.log`; without
-  OTLP they fall back to the local capsule log. The OTLP transport's own logs
-  are filtered out, so the export is jackin❯ story, not its plumbing.
-- **Run state** — the end-of-run summary (stage durations, event counts,
-  cache hits/misses) arrives as a structured log record.
-- **Process metrics** — while the process runs, metrics export every 5
-  seconds: `process.cpu.utilization`, `process.memory.usage`, and the tokio
-  runtime counters `tokio.runtime.workers`, `tokio.runtime.alive.tasks`, and
-  `tokio.runtime.global.queue.depth`. The same run-id resource attribute rides
-  on every point, so CPU and memory line up with the run's traces and logs on
-  one timeline.
-- **Run-domain metrics** — the active run exports low-cardinality counters such
-  as `jackin.diagnostics.events` (tagged by `kind`), `jackin.cache.hits`, and
-  `jackin.cache.misses`. Dependency-internal storage spans such as Turso VM
-  internals stay out of the default export; use workflow/domain counters and
-  the allowlisted jackin❯ targets for normal analysis.
-
-## Following a run into the container
-
-When a backend endpoint is configured, the launch hands the container the trace
-context and a container-reachable endpoint, so the in-container session exports
-too. Its telemetry carries a standard `session.id` (grouping the whole session
-into one timeline) and the same `parallax.run.id`, and the session links back to
-the launch trace — so you can follow a single run from the first screen, through
-the launch, and into the container as a chain of connected traces. The session
-is exported as it happens (per activity), so even a container that is killed
-still leaves everything up to the moment of failure in the backend.
-
-The container reaches a backend running on the host loopback (`127.0.0.1`/`localhost`) automatically: jackin❯ rewrites the endpoint to `host.docker.internal` and wires it to the host gateway. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at an already-routable address and it is passed through unchanged.
-
-## Severity and category controls
-
-Without `--debug`, the export is compact: lifecycle events, stage
-boundaries, and errors. With `--debug`, the export includes the
-DEBUG-severity firehose — the same two-tier rule the diagnostics file
-follows, so an exported run is never noisier than the flag you launched
-with.
-
-`JACKIN_TELEMETRY_LEVEL` can override the telemetry side without changing the
-CLI's existing debug UI behavior:
-
-- `info` exports compact lifecycle telemetry.
-- `debug` exports debug-category diagnostics.
-- `trace` raises the OTLP allowlist to TRACE for jackin❯ targets and enables
-  debug-category diagnostics plus raw capsule PTY/frame/input payload records.
-
-Set `JACKIN_TELEMETRY_CATEGORIES` to a comma-separated allowlist such as
-`docker,launch` to keep unrelated debug categories out of JSONL and OTLP. Use
-`*` to allow every category.
-
-## Viewing a run in Parallax
-
-Start Parallax on the same machine (`parallax serve` — it listens for OTLP
-on `4317`/`4318` and serves its UI on `http://127.0.0.1:4000`), launch any
-jackin❯ command with the endpoint set, and note the run id jackin❯ prints.
-Then:
-
-```sh
-parallax logs --run 8b4766
-```
-
-or open the Parallax UI and look up the run's traces. The same id also names
-the local file at `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` when one is
-written (see [Where the run is recorded](#where-the-run-is-recorded)) — share
-whichever surface fits the conversation.
-
-## Scope and trust
-
-The exporter sends to the endpoint you configure and nowhere else; the
-expected setup is a backend on `127.0.0.1`. Everything the diagnostics file
-captures can appear in the export — including external-command output that
-may contain whatever the commands printed — so point it only at a backend
-you run yourself.
+For the complete schema, identity, propagation, and health contract, see [Application observability](/reference/runtime/diagnostics/).
