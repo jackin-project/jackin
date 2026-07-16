@@ -70,27 +70,31 @@ exclude_path = ["(^|/)404\\.html$"]
 # `format` controls the final report shape. `mode` controls terminal display.
 format = "compact"
 index_files = ["index.html"]
-max_concurrency = 32
+# Lychee defaults to 128. Keep that throughput for the generated site: it
+# contains thousands of repeated local links, while per-host limits below
+# independently protect remote services.
+max_concurrency = 128
 max_redirects = 10
 
-# GitHub issue pages occasionally return transient 5xx responses during broad
-# docs checks. Prefer slower retries over accepting server errors as valid.
-max_retries = 5
+# A semantic successful-result artifact handles reuse across runs. Keep a small
+# in-run retry budget for transient failures without turning one slow host into
+# a multi-minute pipeline.
+max_retries = 2
 mode = "plain"
 no_progress = true
-retry_wait_time = 5
-timeout = 20
+retry_wait_time = 1
+timeout = 10
 user_agent = "jackin-docs-link-checker"
 
 include_mail = true
 scheme = ["https", "http", "file", "mailto"]
 
 [hosts."github.com"]
-concurrency = 4
-request_interval = "500ms"
+concurrency = 16
+request_interval = "50ms"
 
-# blob→API remaps hit api.github.com; mirror the same throttle so the
-# GitHub secondary rate limit is not triggered by the default concurrency=32.
+# blob→API remaps hit api.github.com; retain a tighter host-specific limit so
+# the broader global concurrency does not trigger GitHub's secondary limit.
 [hosts."api.github.com"]
-concurrency = 4
-request_interval = "500ms"
+concurrency = 8
+request_interval = "100ms"
