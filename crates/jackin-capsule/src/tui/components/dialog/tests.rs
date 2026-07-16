@@ -549,9 +549,7 @@ fn container_info_state_has_no_local_telemetry_affordance() {
     let rows = state.rows();
 
     assert!(
-        rows.iter().all(|row| row.label() != "Diagnostics log"
-            && row.label() != "Reveal diagnostics"
-            && row.href().is_none()),
+        rows.iter().all(|row| row.href().is_none()),
         "backend-only runs must not expose a fabricated diagnostics path"
     );
 }
@@ -654,13 +652,13 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
 }
 
 #[test]
-fn container_info_r_reveals_host_diagnostics_log_path() {
+fn container_info_r_has_no_local_artifact_action() {
     let mut d = container_info_with_diagnostics_fixture();
     assert_eq!(d.handle_key(b"r", None), DialogAction::Redraw);
 }
 
 #[test]
-fn container_info_o_reveals_host_diagnostics_log_path() {
+fn container_info_o_has_no_local_artifact_action() {
     let mut d = container_info_with_diagnostics_fixture();
     assert_eq!(d.handle_key(b"o", None), DialogAction::Redraw);
 }
@@ -674,13 +672,13 @@ fn container_info_o_does_not_open_github_context_url() {
 }
 
 #[test]
-fn container_info_r_without_diagnostics_log_redraws() {
+fn container_info_r_redraws() {
     let mut d = container_info_fixture();
     assert_eq!(d.handle_key(b"r", None), DialogAction::Redraw);
 }
 
 #[test]
-fn container_info_o_without_diagnostics_log_redraws() {
+fn container_info_o_redraws() {
     let mut d = container_info_fixture();
     assert_eq!(d.handle_key(b"o", None), DialogAction::Redraw);
 }

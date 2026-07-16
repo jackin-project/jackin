@@ -5,15 +5,6 @@
 use super::*;
 use std::time::Instant;
 
-fn ambient_telemetry_disables_debug() -> bool {
-    std::env::var("JACKIN_TELEMETRY_LEVEL").is_ok_and(|value| {
-        !matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "debug" | "trace"
-        )
-    })
-}
-
 #[cfg(unix)]
 #[tokio::test]
 async fn run_capture_stderr_returns_hint_after_streaming_stderr() {
@@ -242,61 +233,6 @@ async fn capture_secret_omits_stderr_from_error_on_failure() {
         "stderr must not appear in error message: {msg}"
     );
     assert!(msg.contains("sh"), "program name must appear: {msg}");
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn debug_run_captures_noncapturing_command_into_diagnostics() {
-    if ambient_telemetry_disables_debug() {
-        return;
-    }
-    // A non-quiet, non-capturing `run` would inherit the terminal and
-    // stream straight to the screen. Under --debug it must capture both
-    // streams and route them to the diagnostics run file instead — never
-    // to the terminal (which would flood a rich TUI).
-    let dir = tempfile::tempdir().unwrap();
-    let paths = jackin_core::JackinPaths::for_tests(dir.path());
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "test").unwrap();
-    let _active = run.activate();
-    let mut runner = ShellRunner { debug: true };
-    runner
-        .run(
-            "sh",
-            &["-c", "echo hello-from-cmd"],
-            None,
-            &RunOptions::default(),
-        )
-        .await
-        .unwrap();
-    let contents = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        contents.contains("hello-from-cmd"),
-        "non-capturing command stdout must be captured into the run file under --debug: {contents}"
-    );
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn debug_run_scrubs_captured_command_output() {
-    if ambient_telemetry_disables_debug() {
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let token_file = dir.path().join("token.txt");
-    std::fs::write(&token_file, "token=ghp_1234567890abcdef\n").unwrap();
-    let script = format!("cat '{}'", token_file.display());
-    let paths = jackin_core::JackinPaths::for_tests(dir.path());
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "test").unwrap();
-    let _active = run.activate();
-    let mut runner = ShellRunner { debug: true };
-    runner
-        .run("sh", &["-c", &script], None, &RunOptions::default())
-        .await
-        .unwrap();
-
-    let contents = std::fs::read_to_string(run.path()).unwrap();
-    assert!(!contents.contains("ghp_1234567890abcdef"));
-    assert!(contents.contains("<redacted>"));
 }
 
 #[test]

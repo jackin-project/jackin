@@ -180,42 +180,6 @@ async fn newest_cached_executable_release_async_finds_newest_binary() {
 }
 
 #[tokio::test]
-#[cfg(any())]
-async fn ensure_available_uses_stale_cached_executable_without_foreground_resolve() {
-    let dir = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(dir.path());
-    let release = release_fixture();
-
-    write_cached_release(&paths, &release).unwrap();
-    let latest_path = metadata_cache_path(&paths, Agent::Claude);
-    let stale = SystemTime::now() - Duration::from_hours(2);
-    filetime::set_file_mtime(&latest_path, filetime::FileTime::from_system_time(stale)).unwrap();
-    write_version_release(&paths, &release).unwrap();
-    let binary_path = cached_binary_path(&paths, &release);
-    std::fs::write(&binary_path, b"cached").unwrap();
-    chmod_executable(&binary_path).unwrap();
-
-    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
-    let _guard = diagnostics.activate();
-
-    let binary = ensure_available_impl(&paths, Agent::Claude, false)
-        .await
-        .expect("stale metadata should still use cached executable");
-
-    assert_eq!(binary.path, binary_path);
-    assert_eq!(binary.version.as_deref(), Some(release.version.as_str()));
-    let diagnostics_log = std::fs::read_to_string(diagnostics.path()).unwrap();
-    assert!(
-        diagnostics_log.contains("agent_binary_cache_hit"),
-        "{diagnostics_log}"
-    );
-    assert!(
-        !diagnostics_log.contains("agent_binary_resolve_started"),
-        "foreground path must not resolve before using stale cached executable: {diagnostics_log}"
-    );
-}
-
-#[tokio::test]
 async fn ensure_binary_or_cached_fallback_uses_cached_binary_when_primary_download_fails() {
     let dir = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(dir.path());
@@ -254,38 +218,6 @@ async fn ensure_binary_or_cached_fallback_uses_cached_binary_when_primary_downlo
 }
 
 #[cfg(unix)]
-#[tokio::test]
-#[cfg(any())]
-async fn ensure_binary_for_release_repairs_non_executable_cached_binary() {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    let dir = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(dir.path());
-    let release = AgentRelease {
-        url: "not-a-valid-url".to_owned(),
-        ..release_fixture()
-    };
-    let cached = cached_binary_path(&paths, &release);
-    std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
-    std::fs::write(&cached, b"cached").unwrap();
-    let mut permissions = std::fs::metadata(&cached).unwrap().permissions();
-    permissions.set_mode(0o644);
-    std::fs::set_permissions(&cached, permissions).unwrap();
-
-    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
-    let _guard = diagnostics.activate();
-
-    let binary = ensure_binary_for_release(Agent::Claude, &release, &cached)
-        .await
-        .expect("cached binary mode should be repaired without download");
-
-    assert_eq!(binary.path, cached);
-    assert_eq!(binary.version.as_deref(), Some(release.version.as_str()));
-    assert!(is_executable_file(&binary.path));
-    let diagnostics_log = std::fs::read_to_string(diagnostics.path()).unwrap();
-    assert!(diagnostics_log.contains("agent_binary_cache_repaired"));
-}
-
 #[tokio::test]
 async fn ensure_binary_or_cached_fallback_surfaces_error_when_no_cache_exists() {
     let dir = tempfile::tempdir().unwrap();

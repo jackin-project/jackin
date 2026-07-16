@@ -1040,6 +1040,7 @@ async fn reuse_staleness_reason(
               that requires restructuring the image-build path. Named-arg reads \
               match the per-input propagation idiom."
 )]
+#[cfg(not(test))]
 async fn prewarm_agent_image_from_validated_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -1174,6 +1175,7 @@ async fn prewarm_agent_image_from_validated_repo(
     reason = "Background refresh needs the full build-agent-image context plus \
               the confirmed staleness reason."
 )]
+#[cfg(not(test))]
 async fn refresh_agent_image_from_validated_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -1223,6 +1225,7 @@ async fn refresh_agent_image_from_validated_repo(
     })
 }
 
+#[cfg(not(test))]
 fn prewarm_launch_plan_reason(decision: &ImageDecision) -> String {
     match decision {
         ImageDecision::Reuse { .. } => "image_reuse:recipe_hash_match".to_owned(),

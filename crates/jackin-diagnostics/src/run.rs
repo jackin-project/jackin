@@ -707,27 +707,6 @@ fn launch_stage_span(stage: crate::DiagnosticStage) -> tracing::Span {
     span
 }
 
-/// Normalize a free-form stage label for offline tooling / tests.
-/// Launch span names use [`crate::registry::launch_stage_span_name`] instead.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "offline/tooling helper retained for tests")
-)]
-pub(crate) fn normalize_stage_name(stage: &str) -> String {
-    let mut normalized = String::with_capacity(stage.len());
-    let mut last_was_separator = false;
-    for ch in stage.chars() {
-        if ch.is_ascii_alphanumeric() {
-            normalized.push(ch.to_ascii_lowercase());
-            last_was_separator = false;
-        } else if (ch.is_whitespace() || ch == '-' || ch == '_') && !last_was_separator {
-            normalized.push('_');
-            last_was_separator = true;
-        }
-    }
-    normalized.trim_matches('_').to_owned()
-}
-
 /// A `slow_foreground_wait` diagnostic ready to emit. Named fields instead of a
 /// `(String, String)` tuple so the operator message and the JSON detail — both
 /// `String` — can't be transposed at the call site.

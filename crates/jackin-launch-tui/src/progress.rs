@@ -57,7 +57,6 @@ impl LaunchProgress {
             rich,
             Arc::clone(&view),
             diagnostics.run_id().to_owned(),
-            None,
             host,
             jackin_version,
             cancel_token.clone(),

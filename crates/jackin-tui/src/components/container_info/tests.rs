@@ -8,13 +8,10 @@ use ratatui::{Terminal, backend::TestBackend};
 use super::*;
 
 #[test]
-fn debug_info_keeps_run_id_bare_and_diagnostics_path_separate() {
+fn debug_info_exposes_copyable_run_id_without_local_artifacts() {
     let state = DebugInfo {
         jackin_version: Some("0.6.0-test".to_owned()),
         run_id: Some("jk-run-b93735".to_owned()),
-        diagnostics_log_path: Some(
-            "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
-        ),
         ..Default::default()
     }
     .into_state();
@@ -31,19 +28,7 @@ fn debug_info_keeps_run_id_bare_and_diagnostics_path_separate() {
     );
     assert!(run_row.is_copyable());
 
-    let log_row = rows
-        .iter()
-        .find(|row| row.label == "Diagnostics log")
-        .expect("Diagnostics log row present");
-    assert_eq!(
-        log_row.value(),
-        "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl"
-    );
-    assert_eq!(
-        log_row.href(),
-        Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
-    );
-    assert!(log_row.is_copyable());
+    assert!(rows.iter().all(|row| row.href().is_none()));
 }
 
 #[test]
@@ -56,7 +41,6 @@ fn debug_info_puts_run_id_first_when_available() {
         agent: Some("Codex".to_owned()),
         target: Some("/workspace".to_owned()),
         run_id: Some("jk-run-top".to_owned()),
-        diagnostics_log_path: Some("/tmp/jk-run-top.jsonl".to_owned()),
     }
     .into_state();
 
@@ -80,7 +64,7 @@ fn keyboard_copy_payload_uses_first_copyable_row() {
         vec![
             ContainerInfoRow::new("jackin version", "0.6.0-dev"),
             ContainerInfoRow::new("Run ID", "jk-run-123").copyable(),
-            ContainerInfoRow::new("Diagnostics log", "/tmp/jk-run-123.jsonl").copyable(),
+            ContainerInfoRow::new("Container ID", "jk-container-123").copyable(),
         ],
     );
 
@@ -170,11 +154,8 @@ fn copy_payload_at_follows_horizontal_and_vertical_scroll() {
             ContainerInfoRow::new("Role", "hidden-role"),
             ContainerInfoRow::new("Agent", "hidden-agent"),
             ContainerInfoRow::new("Target", "hidden-target"),
-            ContainerInfoRow::new(
-                "Diagnostics log",
-                "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl",
-            )
-            .copyable(),
+            ContainerInfoRow::new("Endpoint", "https://telemetry.example.test/v1/traces")
+                .copyable(),
         ],
     );
     state.scroll.scroll_x = 16;
@@ -183,10 +164,7 @@ fn copy_payload_at_follows_horizontal_and_vertical_scroll() {
 
     assert_eq!(
         copy_payload_at(area, &state, 5, 3),
-        Some((
-            5,
-            "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned()
-        )),
+        Some((5, "https://telemetry.example.test/v1/traces".to_owned())),
         "copy hit-test must follow the value after both axes scroll"
     );
     assert_eq!(
@@ -243,14 +221,9 @@ fn hyperlink_overlay_follows_horizontal_and_vertical_scroll() {
             ContainerInfoRow::new("Role", "hidden-role"),
             ContainerInfoRow::new("Agent", "hidden-agent"),
             ContainerInfoRow::new("Target", "hidden-target"),
-            ContainerInfoRow::new(
-                "Diagnostics log",
-                "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl",
-            )
-            .copyable()
-            .hyperlink(
-                "file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl",
-            ),
+            ContainerInfoRow::new("Endpoint", "https://telemetry.example.test/v1/traces")
+                .copyable()
+                .hyperlink("https://telemetry.example.test/v1/traces"),
         ],
     );
     state.scroll.scroll_x = 58;
@@ -264,15 +237,13 @@ fn hyperlink_overlay_follows_horizontal_and_vertical_scroll() {
         .and_then(|tail| tail.split("\x1b]8;;\x1b\\").next())
         .expect("overlay should include one visible linked text span");
 
-    assert!(overlay.contains(
-        "\u{1b}]8;;file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl\u{1b}\\"
-    ));
+    assert!(overlay.contains("\u{1b}]8;;https://telemetry.example.test/v1/traces\u{1b}\\"));
     assert!(
-        visible.contains("jk-run-b93735.jsonl"),
-        "overlay must contain the horizontally visible diagnostics-log tail"
+        visible.contains("/v1/traces"),
+        "overlay must contain the horizontally visible endpoint tail"
     );
     assert!(
-        !visible.contains("/Users/donbeave"),
+        !visible.contains("https://telemetry"),
         "overlay must not link text that has scrolled off the left edge"
     );
 }
@@ -281,10 +252,11 @@ fn hyperlink_overlay_follows_horizontal_and_vertical_scroll() {
 fn long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail() {
     // A value far wider than the dialog must not silently clip: a horizontal
     // scrollbar appears and scrolling right reveals the tail.
-    let long = "/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/diagnostics/runs/jk-run-8e27f0.jsonl";
+    let long =
+        "https://telemetry.example.test/tenant/very-long-service-name/v1/traces?region=test-region";
     let mut state = ContainerInfoState::new(
         "Debug info",
-        vec![ContainerInfoRow::new("Diagnostics log", long).copyable()],
+        vec![ContainerInfoRow::new("Endpoint", long).copyable()],
     );
     let backend = TestBackend::new(50, 8);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -298,11 +270,11 @@ fn long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail() {
         "horizontal scrollbar `━` must appear on overflow"
     );
     assert!(
-        at_start.contains("/Users/donbeave"),
+        at_start.contains("https://telemetry"),
         "head visible at scroll 0"
     );
     assert!(
-        !at_start.contains("jk-run-8e27f0"),
+        !at_start.contains("region=test-region"),
         "tail hidden at scroll 0"
     );
 
@@ -313,7 +285,7 @@ fn long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail() {
         .unwrap();
     let scrolled = format!("{:?}", terminal.backend().buffer());
     assert!(
-        scrolled.contains("jk-run-8e27f0"),
+        scrolled.contains("region=test-region"),
         "tail revealed after horizontal scroll"
     );
 }

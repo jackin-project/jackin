@@ -72,7 +72,6 @@ pub(crate) use jackin_docker::docker_client::DockerApi;
 pub(crate) use std::path::Path;
 
 #[cfg(test)]
-pub(crate) use launch_pipeline::emit_auth_provision_launch_plan;
 #[cfg(test)]
 pub(crate) use launch_pipeline::load_role_with;
 #[cfg(test)]
@@ -233,14 +232,12 @@ pub use load_cleanup::LoadCleanup;
 pub(crate) use load_cleanup::write_if_changed_atomic;
 
 mod restore_resolve;
+#[cfg(test)]
+pub(crate) use restore_resolve::resolve_restore_candidate;
 pub(crate) use restore_resolve::{
     EarlyCurrentRestoreScan, RestoreResolution, UnselectedCurrentRestoreResolution,
     resolve_current_restore_candidate_timed, resolve_restore_candidate_reusing_early,
     resolve_unselected_current_restore_candidate_with_agent_timed,
-};
-#[cfg(test)]
-pub(crate) use restore_resolve::{
-    resolve_restore_candidate, resolve_unselected_current_restore_candidate_timed,
 };
 
 mod launch_runtime;
@@ -254,7 +251,6 @@ mod launch_runtime;
 pub(crate) use launch_runtime::{
     LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,
     SidecarPrewarmReplenish, host_runtime_passthrough_env, launch_role_runtime,
-    spawn_sibling_auth_prewarm,
 };
 
 /// Present the stale-instance decision. "Start fresh" is always the

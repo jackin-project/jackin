@@ -132,11 +132,8 @@ pub struct DebugInfo {
     pub agent: Option<String>,
     /// Working directory / target label.
     pub target: Option<String>,
-    /// Bare run id — never the log path.
+    /// Opaque invocation id.
     pub run_id: Option<String>,
-    /// Absolute path to the run's diagnostics JSONL. Rendered copyable with a
-    /// `file://` hyperlink; the bare run id goes in [`Self::run_id`] instead.
-    pub diagnostics_log_path: Option<String>,
 }
 
 impl DebugInfo {
@@ -164,14 +161,6 @@ impl DebugInfo {
         }
         if let Some(target) = self.target {
             rows.push(ContainerInfoRow::new("Target", target));
-        }
-        if let Some(path) = self.diagnostics_log_path {
-            let href = format!("file://{path}");
-            rows.push(
-                ContainerInfoRow::new("Diagnostics log", path)
-                    .copyable()
-                    .hyperlink(href),
-            );
         }
         ContainerInfoState::new("Debug info", rows)
     }

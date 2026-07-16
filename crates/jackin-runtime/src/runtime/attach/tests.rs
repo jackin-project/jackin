@@ -140,39 +140,6 @@ fn insert_run_as_user_is_noop_when_absent() {
 }
 
 #[tokio::test]
-#[cfg(any())]
-async fn wait_for_capsule_daemon_polls_socket_status_command() {
-    let (_tmp, paths) = test_paths();
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let guard = run.activate();
-    let docker = FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 1\n".to_owned()])),
-        ..Default::default()
-    };
-
-    wait_for_capsule_daemon(&paths, "jk-agent-smith", &docker)
-        .await
-        .unwrap();
-
-    let recorded = docker.recorded.borrow();
-    assert!(
-        recorded
-            .iter()
-            .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
-        "expected socket/status wait command; recorded: {recorded:?}"
-    );
-    drop(guard);
-    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        (diagnostics.contains("\"event.name\":\"timing.done\"")
-            || diagnostics.contains("\"kind\":\"timing_done\""))
-            && diagnostics.contains("wait_capsule_socket")
-            && diagnostics.contains("ready"),
-        "expected wait_capsule_socket timing in diagnostics: {diagnostics}"
-    );
-}
-
-#[tokio::test]
 async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
     let (_tmp, paths) = short_test_paths();
     let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");
@@ -189,67 +156,6 @@ async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
     assert!(
         docker.recorded.borrow().is_empty(),
         "direct socket readiness must not spawn docker exec"
-    );
-}
-
-#[tokio::test]
-#[cfg(any())]
-async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
-    let (_tmp, paths) = test_paths();
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let guard = run.activate();
-    let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
-            exit_code: 0,
-            oom_killed: false,
-        }])),
-        exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 1\n".to_owned()])),
-        ..Default::default()
-    };
-    let mut runner = FakeRunner::default();
-
-    start_or_reconnect_capsule_client(&paths, "jk-agent-smith", &docker, &mut runner)
-        .await
-        .unwrap();
-
-    let docker_recorded = docker.recorded.borrow();
-    assert!(
-        docker_recorded
-            .iter()
-            .any(|call| call == "start_container:jk-agent-smith"),
-        "expected detached Docker API start; recorded: {docker_recorded:?}"
-    );
-    assert!(
-        docker_recorded
-            .iter()
-            .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
-        "expected socket/status wait before client exec; recorded: {docker_recorded:?}"
-    );
-    assert!(
-        runner.recorded.iter().any(|call| {
-            call.contains("docker exec")
-                && call.contains("-it")
-                && call.contains("jk-agent-smith")
-                && call.contains("/jackin/runtime/jackin-capsule")
-        }),
-        "expected capsule client exec; recorded: {:?}",
-        runner.recorded
-    );
-    assert!(
-        !runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("docker start -ai")),
-        "restart path must not attach to PID 1; recorded: {:?}",
-        runner.recorded
-    );
-    drop(guard);
-    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        diagnostics.contains("restore_inspect")
-            && diagnostics.contains("restore_start_container")
-            && diagnostics.contains("started"),
-        "expected restore timing diagnostics: {diagnostics}"
     );
 }
 

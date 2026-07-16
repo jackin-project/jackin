@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::Cursor;
-use std::sync::Mutex;
 
 use jackin_protocol::attach::{
     ClientFrame, ClientTerminal, ClipboardImageFormat, ServerFrame, SpawnRequest, encode_server,
@@ -12,52 +11,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
 use super::*;
 
-static TERMINAL_STATE_TEST_LOCK: Mutex<()> = Mutex::new(());
-
 #[test]
 fn normalize_size_substitutes_zero_and_clamps_minimums() {
     assert_eq!(normalize_size(0, 0), (DEFAULT_ROWS, DEFAULT_COLS));
     assert_eq!(normalize_size(1, 1), (MIN_ROWS, MIN_COLS));
     assert_eq!(normalize_size(40, 120), (40, 120));
-}
-
-#[test]
-#[cfg(any())]
-fn clipboard_image_paste_compact_logs_are_captured_in_run_diagnostics() {
-    let _lock = TERMINAL_STATE_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    jackin_diagnostics::set_rich_surface_active(false);
-    jackin_diagnostics::set_host_screen_owned(false);
-
-    let temp = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
-
-    jackin_diagnostics::set_host_screen_owned(true);
-    log_clipboard_image_paste_trigger();
-    log_clipboard_image_no_image_forwarded();
-    jackin_diagnostics::set_host_screen_owned(false);
-
-    let jsonl = fs::read_to_string(run.path()).unwrap();
-    assert!(
-        jsonl.contains("\"event.name\":\"clipboard-image\"")
-            || jsonl.contains("\"kind\":\"clipboard-image\"")
-            || jsonl.contains("clipboard-image"),
-        "{jsonl}"
-    );
-    assert!(
-        jsonl.contains("clipboard-image: paste trigger source=clipboard"),
-        "{jsonl}"
-    );
-    assert!(
-        jsonl.contains("clipboard-image: no-image source=clipboard text-paste=forwarded"),
-        "{jsonl}"
-    );
-
-    jackin_diagnostics::set_rich_surface_active(false);
-    jackin_diagnostics::set_host_screen_owned(false);
 }
 
 #[tokio::test]
@@ -493,69 +451,6 @@ fn host_file_basename_omits_parent_directories() {
 }
 
 #[test]
-fn host_reveal_path_category_omits_full_paths() {
-    let diagnostics_dir = Path::new("/Users/operator/.jackin/data/diagnostics/runs");
-
-    assert_eq!(
-        host_reveal_path_category(
-            Path::new("/Users/operator/.jackin/data/diagnostics/runs/jk-run.jsonl"),
-            diagnostics_dir,
-        ),
-        "jackin-diagnostics"
-    );
-    assert_eq!(
-        host_reveal_path_category(Path::new("/Users/operator/private.jsonl"), diagnostics_dir),
-        "host-absolute"
-    );
-    assert_eq!(
-        host_reveal_path_category(Path::new("relative.jsonl"), diagnostics_dir),
-        "host-relative"
-    );
-}
-
-#[test]
-fn host_reveal_path_validation_accepts_diagnostics_jsonl() {
-    let root = tempfile::tempdir().unwrap();
-    let diagnostics_dir = root.path().join("data/diagnostics/runs");
-    fs::create_dir_all(&diagnostics_dir).unwrap();
-    let path = diagnostics_dir.join("jk-run-abc123.jsonl");
-    fs::write(&path, b"{}\n").unwrap();
-
-    assert_eq!(
-        validate_allowed_host_reveal_path(&path, &diagnostics_dir).unwrap(),
-        fs::canonicalize(&path).unwrap()
-    );
-}
-
-#[test]
-fn host_reveal_path_validation_rejects_non_diagnostics_paths() {
-    let root = tempfile::tempdir().unwrap();
-    let diagnostics_dir = root.path().join("data/diagnostics/runs");
-    let other_dir = root.path().join("data/other");
-    fs::create_dir_all(&diagnostics_dir).unwrap();
-    fs::create_dir_all(&other_dir).unwrap();
-    let path = other_dir.join("jk-run-abc123.jsonl");
-    fs::write(&path, b"{}\n").unwrap();
-
-    let err = validate_allowed_host_reveal_path(&path, &diagnostics_dir)
-        .expect_err("outside diagnostics dir should reject");
-    assert!(format!("{err:#}").contains("outside jackin diagnostics"));
-}
-
-#[test]
-fn host_reveal_path_validation_rejects_non_jsonl_file() {
-    let root = tempfile::tempdir().unwrap();
-    let diagnostics_dir = root.path().join("data/diagnostics/runs");
-    fs::create_dir_all(&diagnostics_dir).unwrap();
-    let path = diagnostics_dir.join("jk-run-abc123.txt");
-    fs::write(&path, b"{}\n").unwrap();
-
-    let err = validate_allowed_host_reveal_path(&path, &diagnostics_dir)
-        .expect_err("non-jsonl diagnostics path should reject");
-    assert!(format!("{err:#}").contains("not a diagnostics JSONL"));
-}
-
-#[test]
 fn host_file_export_start_does_not_overwrite_stale_temp_file() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("report.txt.part"), b"stale").unwrap();
@@ -603,7 +498,6 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
             ..ClientTerminal::default()
         },
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
 
     let server_task = tokio::spawn(async move {
@@ -670,7 +564,6 @@ async fn attach_protocol_forwards_terminal_input_as_input_frames() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
 
     let server_task = tokio::spawn(async move {
@@ -725,7 +618,6 @@ async fn attach_protocol_preserves_bracketed_paste_and_mouse_bytes() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     let raw_input = b"\x1b[200~/tmp/example.png\x1b[201~\x1b[<0;12;5M\x1b[<0;12;5m".to_vec();
 
@@ -782,7 +674,6 @@ async fn attach_protocol_auto_stages_bracketed_image_path_paste() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     let mut raw_input = b"\x1b[200~".to_vec();
     raw_input.extend_from_slice(image_path.display().to_string().as_bytes());
@@ -849,7 +740,6 @@ async fn attach_protocol_forwards_bytes_around_a_staged_paste() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     // A mouse report shares the read after the paste end marker.
     let mut raw_input = b"\x1b[200~".to_vec();
@@ -918,7 +808,6 @@ async fn attach_protocol_forwards_typed_prefix_before_a_staged_paste() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     // Type-ahead bytes precede the paste in the same read.
     let mut raw_input = b"ab\x1b[200~".to_vec();
@@ -987,7 +876,6 @@ async fn attach_protocol_forwards_prefix_image_suffix_in_wire_order() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     // Type-ahead before the paste and a mouse report after, all one read.
     let mut raw_input = b"ab\x1b[200~".to_vec();
@@ -1055,7 +943,6 @@ async fn attach_protocol_forwards_unresolved_image_path_paste_as_text() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     let mut raw_input = b"\x1b[200~".to_vec();
     raw_input.extend_from_slice(missing.display().to_string().as_bytes());
@@ -1112,7 +999,6 @@ async fn attach_protocol_forwards_initial_query_leftovers_as_input() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
 
     let server_task = tokio::spawn(async move {
@@ -1167,7 +1053,6 @@ async fn attach_protocol_writes_osc52_output_unchanged() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     let osc52 = b"\x1b]52;c;c2VsZWN0ZWQ=\x07".to_vec();
 

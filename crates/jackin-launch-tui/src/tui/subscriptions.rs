@@ -94,7 +94,6 @@ fn cockpit_outcome_for_quit_confirm(outcome: QuitConfirmOutcome) -> CockpitOutco
 struct CockpitContext<'a> {
     area: Rect,
     run_id: &'a str,
-    run_log_path: Option<&'a str>,
     terminal: &'a dyn LaunchHostTerminal,
     jackin_version: &'static str,
 }
@@ -106,7 +105,6 @@ fn clamp_container_info_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
     let state = launch_container_info_state(
         view,
         ctx.run_id,
-        ctx.run_log_path,
         ctx.terminal.is_debug_mode(),
         ctx.jackin_version,
     );
@@ -319,7 +317,6 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         let state = launch_container_info_state(
             v,
             ctx.run_id,
-            ctx.run_log_path,
             ctx.terminal.is_debug_mode(),
             ctx.jackin_version,
         );
@@ -407,7 +404,6 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         let state = launch_container_info_state(
             v,
             ctx.run_id,
-            ctx.run_log_path,
             ctx.terminal.is_debug_mode(),
             ctx.jackin_version,
         );
@@ -533,7 +529,6 @@ fn should_emit_dialog_mouse(
 pub fn handle_cockpit_input(
     view: &SharedView,
     run_id: &str,
-    run_log_path: Option<&str>,
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
     _cancel_token: &CancellationToken,
@@ -543,7 +538,6 @@ pub fn handle_cockpit_input(
     let ctx = CockpitContext {
         area,
         run_id,
-        run_log_path,
         terminal,
         jackin_version,
     };
@@ -640,7 +634,6 @@ pub fn handle_cockpit_input(
                         let state = launch_container_info_state(
                             &v,
                             ctx.run_id,
-                            ctx.run_log_path,
                             ctx.terminal.is_debug_mode(),
                             ctx.jackin_version,
                         );
@@ -679,7 +672,6 @@ pub fn handle_cockpit_input(
                 let state = launch_container_info_state(
                     &v,
                     ctx.run_id,
-                    ctx.run_log_path,
                     ctx.terminal.is_debug_mode(),
                     ctx.jackin_version,
                 );
@@ -707,7 +699,6 @@ pub fn handle_cockpit_input(
                         let state = launch_container_info_state(
                             &v,
                             ctx.run_id,
-                            ctx.run_log_path,
                             ctx.terminal.is_debug_mode(),
                             ctx.jackin_version,
                         );

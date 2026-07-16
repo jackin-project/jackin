@@ -220,7 +220,6 @@ fn render_launch_frame(
     frame: &mut Frame<'_>,
     view: &LaunchView,
     run_id: &str,
-    run_log_path: &str,
     no_motion: bool,
     rain: Option<&jackin_launch_tui::tui::components::rain::RainState>,
 ) {
@@ -228,7 +227,6 @@ fn render_launch_frame(
         frame,
         view,
         run_id,
-        Some(run_log_path),
         no_motion,
         rain,
         jackin_diagnostics::is_debug_mode(),

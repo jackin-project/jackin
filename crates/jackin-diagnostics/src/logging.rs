@@ -140,23 +140,6 @@ pub(crate) fn debug_capture_enabled(category: &str, legacy_debug: bool) -> bool 
     level >= TelemetryLevel::Debug && telemetry_category_enabled(category, categories.as_deref())
 }
 
-#[cfg(test)]
-pub(crate) fn debug_capture_enabled_with_env(
-    level_env: Option<&str>,
-    categories_env: Option<&str>,
-    category: &str,
-    legacy_debug: bool,
-) -> bool {
-    let level = level_env
-        .and_then(parse_telemetry_level)
-        .unwrap_or(if legacy_debug {
-            TelemetryLevel::Debug
-        } else {
-            TelemetryLevel::Info
-        });
-    level >= TelemetryLevel::Debug && telemetry_category_enabled(category, categories_env)
-}
-
 fn telemetry_category_enabled(category: &str, categories_env: Option<&str>) -> bool {
     categories_env
         .filter(|raw| !raw.trim().is_empty())

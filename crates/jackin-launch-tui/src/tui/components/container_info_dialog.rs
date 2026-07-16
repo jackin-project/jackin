@@ -20,7 +20,6 @@ use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer}
 pub fn launch_container_info_state(
     view: &LaunchView,
     run_id: &str,
-    run_log_path: Option<&str>,
     debug_mode: bool,
     jackin_version: &'static str,
 ) -> ContainerInfoState {
@@ -40,17 +39,10 @@ pub fn launch_container_info_state(
         agent: identity.map(|identity| identity.agent.clone()),
         target: identity.map(|identity| identity.target_label.clone()),
         run_id: debug_mode.then(|| run_id.to_owned()),
-        diagnostics_log_path: debug_mode
-            .then_some(run_log_path)
-            .flatten()
-            .map(str::to_owned),
         capsule_version: None,
     };
     let mut state = info.into_state();
-    if debug_mode && let Some(run_log_path) = run_log_path {
-        let href = format!("file://{run_log_path}");
-        state.push_row(ContainerInfoRow::new("Reveal diagnostics", run_log_path).hyperlink(href));
-    } else if debug_mode {
+    if debug_mode {
         let endpoint = jackin_diagnostics::configured_endpoint_summary()
             .unwrap_or_else(|| "OpenTelemetry backend".to_owned());
         state.push_row(ContainerInfoRow::new(
@@ -71,12 +63,11 @@ pub fn render_launch_container_info(
     area: Rect,
     view: &LaunchView,
     run_id: &str,
-    run_log_path: Option<&str>,
     debug_mode: bool,
     jackin_version: &'static str,
 ) {
     let chrome = launch_overlay_chrome_areas(area, debug_mode);
-    let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
+    let state = launch_container_info_state(view, run_id, debug_mode, jackin_version);
     let rect = launch_container_info_rect(area, &state, debug_mode);
     frame.render_widget(ModalBackdrop, chrome.body);
     render_container_info(frame, rect, &state);

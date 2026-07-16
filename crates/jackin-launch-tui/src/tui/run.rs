@@ -78,7 +78,6 @@ impl RichDriver {
         renderer: RichRenderer,
         view: SharedView,
         run_id: String,
-        run_log_path: Option<String>,
         host: &'static dyn LaunchHostTerminal,
         jackin_version: &'static str,
         cancel_token: CancellationToken,
@@ -103,7 +102,6 @@ impl RichDriver {
                     let outcome = handle_cockpit_input(
                         &view,
                         &run_id,
-                        run_log_path.as_deref(),
                         host,
                         jackin_version,
                         &cancel_token,
@@ -149,7 +147,7 @@ impl RichDriver {
                         }
                         Err(_) => continue,
                     };
-                    drop(rr.render(&snapshot, &run_id, run_log_path.as_deref()));
+                    drop(rr.render(&snapshot, &run_id));
                 }
             })
         };
@@ -367,12 +365,7 @@ impl RichRenderer {
         self.no_motion
     }
 
-    pub fn render(
-        &mut self,
-        view: &LaunchView,
-        run_id: &str,
-        run_log_path: Option<&str>,
-    ) -> anyhow::Result<()> {
+    pub fn render(&mut self, view: &LaunchView, run_id: &str) -> anyhow::Result<()> {
         let no_motion = self.no_motion;
         // Keep the rain engine sized to the terminal. Advance it every other
         // render so the rainfall reads at the calmer main-branch speed while
@@ -402,7 +395,6 @@ impl RichRenderer {
         let adapter = LaunchViewView {
             context: LaunchRenderContext {
                 run_id,
-                run_log_path,
                 no_motion,
                 rain,
                 debug_mode: self.host.is_debug_mode(),
@@ -419,7 +411,6 @@ impl RichRenderer {
                 Rect::new(0, 0, size.width, size.height),
                 view,
                 run_id,
-                run_log_path,
                 self.host.is_debug_mode(),
                 self.jackin_version,
             );

@@ -104,41 +104,6 @@ fn normalize_sigstore_v03_bundle_maps_current_cosign_fields() {
     assert!(cert.ends_with("-----END CERTIFICATE-----\n"));
 }
 
-#[cfg(unix)]
-#[tokio::test]
-#[cfg(any())]
-async fn ensure_available_repairs_non_executable_cached_capsule_binary() {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    let dir = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(dir.path());
-    let cached = cached_binary_path(
-        &paths.cache_dir,
-        &cache_key_version(REQUIRED_VERSION),
-        container_arch(),
-    );
-    std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
-    std::fs::write(&cached, b"cached").unwrap();
-    let mut permissions = std::fs::metadata(&cached).unwrap().permissions();
-    permissions.set_mode(0o644);
-    std::fs::set_permissions(&cached, permissions).unwrap();
-
-    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
-    let _guard = diagnostics.activate();
-
-    // Call the post-override resolver directly: CI exports JACKIN_CAPSULE_BIN
-    // for the whole nextest run, which would otherwise short-circuit
-    // `ensure_available` before the cache-repair path under test.
-    let binary = resolve_cached_or_fetch(&paths)
-        .await
-        .expect("cached capsule binary mode should be repaired without download");
-
-    assert_eq!(binary, cached);
-    assert!(is_executable_file(&binary));
-    let diagnostics_log = std::fs::read_to_string(diagnostics.path()).unwrap();
-    assert!(diagnostics_log.contains("capsule_binary_cache_repaired"));
-}
-
 #[test]
 fn packaged_binary_path_for_keg_uses_libexec_arch_dir() {
     let path = packaged_binary_path_for_keg(

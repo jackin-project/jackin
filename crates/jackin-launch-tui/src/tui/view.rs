@@ -30,7 +30,6 @@ pub fn render_launch_frame(
     frame: &mut Frame<'_>,
     view: &LaunchView,
     run_id: &str,
-    run_log_path: Option<&str>,
     no_motion: bool,
     rain: Option<&RainState>,
     debug_mode: bool,
@@ -90,15 +89,7 @@ pub fn render_launch_frame(
     if let Some(failure) = &view.failure {
         render_failure_popup(frame, area, view, failure, run_id, debug_mode);
     } else if view.container_info_open {
-        render_launch_container_info(
-            frame,
-            area,
-            view,
-            run_id,
-            run_log_path,
-            debug_mode,
-            jackin_version,
-        );
+        render_launch_container_info(frame, area, view, run_id, debug_mode, jackin_version);
     }
 }
 
@@ -133,7 +124,6 @@ pub fn launch_hyperlink_overlays(
     area: Rect,
     view: &LaunchView,
     run_id: &str,
-    run_log_path: Option<&str>,
     debug_mode: bool,
     jackin_version: &'static str,
 ) -> Vec<u8> {
@@ -142,7 +132,6 @@ pub fn launch_hyperlink_overlays(
         area,
         view,
         run_id,
-        run_log_path,
         debug_mode,
         jackin_version,
     ));
@@ -153,14 +142,13 @@ fn launch_container_info_hyperlink_overlay_bytes(
     area: Rect,
     view: &LaunchView,
     run_id: &str,
-    run_log_path: Option<&str>,
     debug_mode: bool,
     jackin_version: &'static str,
 ) -> Vec<u8> {
     if !view.container_info_open || view.failure.is_some() || view.build_log_open {
         return Vec::new();
     }
-    let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
+    let state = launch_container_info_state(view, run_id, debug_mode, jackin_version);
     let rect = launch_container_info_rect(area, &state, debug_mode);
     jackin_tui::components::container_info_hyperlink_overlay(rect, &state)
 }

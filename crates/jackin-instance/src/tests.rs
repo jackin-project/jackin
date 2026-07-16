@@ -235,65 +235,10 @@ plugins = []
 }
 
 #[test]
-fn prepare_emits_per_auth_slot_timings() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
-dockerfile = "Dockerfile"
-agents = ["claude", "codex"]
-
-[claude]
-plugins = []
-
-[codex]
-"#,
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:0.1-trixie\n",
-    )
-    .unwrap();
-    let manifest = load_role_manifest(temp.path()).unwrap();
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
-    let _active = run.activate();
-
-    RoleState::prepare(
-        &paths,
-        "jk-k7p9m2xq-agentsmith",
-        &manifest,
-        &ignoring_resolvers(),
-        &GithubAuthContext::default(),
-        temp.path(),
-        jackin_core::Agent::Claude,
-    )
-    .unwrap();
-
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("role_state_prepare:github_auth"), "{jsonl}");
-    assert!(jsonl.contains("role_state_prepare:claude_auth"), "{jsonl}");
-    assert!(jsonl.contains("role_state_prepare:codex_auth"), "{jsonl}");
-    assert!(
-        jsonl.contains("\"jackin.stage\":\"credentials\"")
-            || jsonl.contains("\"stage\":\"credentials\""),
-        "{jsonl}"
-    );
-    assert!(
-        !jsonl.contains("oauth_token:"),
-        "timing details must not include credential values: {jsonl}"
-    );
-}
-
-#[test]
 fn github_ignore_prepare_skips_absent_state() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let manifest = simple_manifest(&temp);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
-    let _active = run.activate();
 
     RoleState::prepare(
         &paths,
@@ -309,9 +254,6 @@ fn github_ignore_prepare_skips_absent_state() {
     )
     .unwrap();
 
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("role_state_prepare:github_auth"), "{jsonl}");
-    assert!(jsonl.contains("skipped_no_state"), "{jsonl}");
     assert!(
         !paths
             .data_dir

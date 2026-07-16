@@ -211,7 +211,6 @@ fn failure_popup_outside_click_acknowledges() {
     let ctx = CockpitContext {
         area,
         run_id: "jk-run-test",
-        run_log_path: Some("/tmp/jk-run-test.jsonl"),
         terminal: &terminal,
         jackin_version: "jackin 0.0.0-test",
     };
@@ -238,7 +237,6 @@ fn failure_popup_inside_non_target_click_is_swallowed() {
     let ctx = CockpitContext {
         area,
         run_id: "jk-run-test",
-        run_log_path: Some("/tmp/jk-run-test.jsonl"),
         terminal: &terminal,
         jackin_version: "jackin 0.0.0-test",
     };
@@ -279,7 +277,6 @@ fn build_log_body_click_is_swallowed() {
         CockpitContext {
             area,
             run_id: "jk-run-test",
-            run_log_path: Some("/tmp/jk-run-test.jsonl"),
             terminal,
             jackin_version: "jackin 0.0.0-test",
         },
@@ -292,35 +289,24 @@ fn build_log_body_click_is_swallowed() {
 }
 
 #[test]
-fn container_info_click_copies_real_run_id_and_log_path() {
+fn container_info_click_copies_real_run_id() {
     let mut view = crate::tui::update::initial_view();
     view.container_info_open = true;
     let area = Rect::new(0, 0, 96, 24);
     let run_id = "jk-run-test";
-    let run_log_path = "/tmp/jackin/runs/jk-run-test.jsonl";
     let terminal = RecordingTerminal::new();
     let ctx = CockpitContext {
         area,
         run_id,
-        run_log_path: Some(run_log_path),
         terminal: &terminal,
         jackin_version: "jackin 0.0.0-test",
     };
 
-    let state =
-        launch_container_info_state(&view, run_id, Some(run_log_path), true, "jackin 0.0.0-test");
+    let state = launch_container_info_state(&view, run_id, true, "jackin 0.0.0-test");
     let (run_col, run_row) = hit_point_for_payload(area, &state, run_id);
     handle_cockpit_mouse_down(&mut view, ctx, run_col, run_row);
 
-    let state =
-        launch_container_info_state(&view, run_id, Some(run_log_path), true, "jackin 0.0.0-test");
-    let (log_col, log_row) = hit_point_for_payload(area, &state, run_log_path);
-    handle_cockpit_mouse_down(&mut view, ctx, log_col, log_row);
-
-    assert_eq!(
-        terminal.copied(),
-        vec![run_id.to_owned(), run_log_path.to_owned()]
-    );
+    assert_eq!(terminal.copied(), vec![run_id.to_owned()]);
 }
 
 fn quit_confirm_view() -> crate::LaunchView {

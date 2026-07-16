@@ -41,43 +41,6 @@ async fn stage_failed_does_not_block_on_test_renderer() {
 }
 
 #[tokio::test]
-#[cfg(any())]
-async fn stage_failed_writes_full_detail_to_diagnostics() {
-    let tmp = tempfile::tempdir().unwrap();
-    let paths = jackin_core::JackinPaths::for_tests(tmp.path());
-    let run = RunDiagnostics::start(&paths, false, "load").unwrap();
-    let diagnostics: Arc<RunDiagnostics> = Arc::clone(&run);
-    let mut progress = LaunchProgress::for_test(diagnostics);
-
-    progress
-            .stage_failed(LaunchFailure {
-                title: "Launch failed".to_owned(),
-                summary: "preparing kimi binary".to_owned(),
-                detail: Some(
-                    "preparing kimi binary: resolving latest kimi binary: https://code.kimi.com/kimi-code/latest failed: curl: (28) Connection timed out after 30001 milliseconds".to_owned(),
-                ),
-                next_step: None,
-                stage: LaunchStage::DerivedImage,
-            })
-            .await;
-
-    let body = std::fs::read_to_string(run.path()).unwrap();
-    // Schema v2 may label the event as `event.name` rather than `kind`.
-    assert!(
-        body.contains("stage_failed") || body.contains("launch_failed"),
-        "expected failure diagnostic: {body}"
-    );
-    assert!(
-        body.contains("preparing kimi binary"),
-        "expected summary in diagnostics: {body}"
-    );
-    assert!(
-        body.contains("Connection timed out after 30001 milliseconds"),
-        "expected full detail in diagnostics: {body}"
-    );
-}
-
-#[tokio::test]
 async fn stage_failed_resets_prior_ack() {
     // A second failure must start un-acked: a stale ack left over from a
     // previously dismissed popup would otherwise auto-dismiss the new one.
@@ -656,14 +619,7 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     };
     terminal
         .draw(|frame| {
-            render_launch_frame(
-                frame,
-                &view,
-                "jk-run-42f9aa",
-                "/tmp/jk-run-42f9aa.jsonl",
-                true,
-                None,
-            );
+            render_launch_frame(frame, &view, "jk-run-42f9aa", true, None);
         })
         .unwrap();
 
@@ -682,14 +638,7 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     });
     terminal
         .draw(|frame| {
-            render_launch_frame(
-                frame,
-                &view,
-                "jk-run-42f9aa",
-                "/tmp/jk-run-42f9aa.jsonl",
-                true,
-                None,
-            );
+            render_launch_frame(frame, &view, "jk-run-42f9aa", true, None);
         })
         .unwrap();
     let rendered = format!("{:?}", terminal.backend().buffer());

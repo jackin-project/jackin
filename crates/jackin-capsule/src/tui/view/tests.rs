@@ -170,7 +170,6 @@ fn non_debug_dialog_hides_bottom_status_bar() {
         agent: Some("Codex".to_owned()),
         target: None,
         run_id: None,
-        diagnostics_log_path: None,
     }
     .into_state();
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
@@ -372,9 +371,6 @@ fn debug_dialog_keeps_status_bar_visible() {
         agent: Some("Codex".to_owned()),
         target: None,
         run_id: Some("jk-run-test".to_owned()),
-        diagnostics_log_path: Some(
-            "/home/agent/.jackin/data/diagnostics/runs/jk-run-test.jsonl".to_owned(),
-        ),
     }
     .into_state();
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
