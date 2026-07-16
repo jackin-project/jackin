@@ -39,6 +39,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
+use jackin_telemetry::ResultTelemetryExt as _;
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc;
 
@@ -470,59 +471,32 @@ impl Session {
         // the latter panics inside spawn_blocking on a current-thread
         // runtime ("Cannot block the current thread from within a runtime").
         jackin_telemetry::spawn::stream_blocking("pty.reader", move || {
-            let writer = match master_for_write.lock() {
-                Err(_) => {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "session {sid}: PTY master mutex poisoned; aborting writer task"
-                    );
-                    None
-                }
-                Ok(guard) => match guard.take_writer() {
-                    Ok(w) => Some(w),
-                    Err(e) => {
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "session {sid}: take_writer failed: {e}; aborting writer task"
-                        );
-                        None
-                    }
-                },
+            let writer = match master_for_write
+                .lock()
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::Panic)
+            {
+                Err(_) => None,
+                Ok(guard) => guard
+                    .take_writer()
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                    .ok(),
             };
             let Some(mut writer) = writer else {
-                if event_tx_writer_err
-                    .send(SessionEvent::Exited {
-                        session_id: sid,
-                        reason: Some("session PTY writer failed to initialize".to_owned()),
-                    })
-                    .is_err()
-                {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "session {sid}: event channel closed — daemon will not reap this half-initialised session"
-                    );
-                }
+                drop(event_tx_writer_err.send(SessionEvent::Exited {
+                    session_id: sid,
+                    reason: Some("session PTY writer failed to initialize".to_owned()),
+                }));
                 return;
             };
             while let Some(data) = input_rx.blocking_recv() {
-                if let Err(e) = std::io::Write::write_all(&mut writer, &data) {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "session {sid}: PTY write error: {e} (errno={:?}); aborting writer",
-                        e.raw_os_error()
-                    );
-                    if event_tx_writer_err
-                        .send(SessionEvent::Exited {
-                            session_id: sid,
-                            reason: Some(format!("session PTY write failed: {e}")),
-                        })
-                        .is_err()
-                    {
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "session {sid}: event channel closed — daemon will not reap this dead writer"
-                        );
-                    }
+                if std::io::Write::write_all(&mut writer, &data)
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                    .is_err()
+                {
+                    drop(event_tx_writer_err.send(SessionEvent::Exited {
+                        session_id: sid,
+                        reason: Some("session PTY write failed".to_owned()),
+                    }));
                     return;
                 }
                 record_terminal_bytes(
@@ -534,56 +508,31 @@ impl Session {
 
         let event_tx_reader_err = event_tx.clone();
         jackin_telemetry::spawn::stream_blocking("pty.writer", move || {
-            let reader = match master_for_read.lock() {
-                Err(_) => {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "session {sid}: PTY master mutex poisoned; aborting reader task"
-                    );
-                    None
-                }
-                Ok(guard) => match guard.try_clone_reader() {
-                    Ok(r) => Some(r),
-                    Err(e) => {
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "session {sid}: try_clone_reader failed: {e}; aborting reader task"
-                        );
-                        None
-                    }
-                },
+            let reader = match master_for_read
+                .lock()
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::Panic)
+            {
+                Err(_) => None,
+                Ok(guard) => guard
+                    .try_clone_reader()
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                    .ok(),
             };
             let Some(mut reader) = reader else {
-                if event_tx_reader_err
-                    .send(SessionEvent::Exited {
-                        session_id: sid,
-                        reason: Some("session PTY reader failed to initialize".to_owned()),
-                    })
-                    .is_err()
-                {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "session {sid}: event channel closed — daemon will not reap this half-initialised session"
-                    );
-                }
+                drop(event_tx_reader_err.send(SessionEvent::Exited {
+                    session_id: sid,
+                    reason: Some("session PTY reader failed to initialize".to_owned()),
+                }));
                 return;
             };
             let mut buf = [0u8; 4096];
             loop {
                 match std::io::Read::read(&mut reader, &mut buf) {
-                    Ok(0) => {
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "session {sid}: PTY read EOF"
-                        );
-                        break;
-                    }
-                    Err(e) => {
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "session {sid}: PTY read error: {e} (errno={:?})",
-                            e.raw_os_error()
-                        );
+                    Ok(0) => break,
+                    Err(error) => {
+                        drop(Err::<(), _>(error).record_telemetry_error(
+                            jackin_telemetry::schema::enums::ErrorType::IoError,
+                        ));
                         break;
                     }
                     Ok(n) => {
@@ -600,10 +549,6 @@ impl Session {
                             })
                             .is_err()
                         {
-                            jackin_diagnostics::telemetry_info!(
-                                "capsule",
-                                "session {sid}: event channel closed before PTY output drained; reader exiting"
-                            );
                             break;
                         }
                     }
@@ -646,22 +591,10 @@ impl Session {
                 crate::pid1::unregister_managed_child(pid);
                 crate::pid1::reap_zombies();
             }
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "session {sid}: child reaped: {status:?}"
-            );
-            if event_tx_exit
-                .send(SessionEvent::Exited {
-                    session_id: sid,
-                    reason: child_exit_reason(status.as_ref()),
-                })
-                .is_err()
-            {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "session {sid}: event channel closed — daemon will not see this child exit"
-                );
-            }
+            drop(event_tx_exit.send(SessionEvent::Exited {
+                session_id: sid,
+                reason: child_exit_reason(status.as_ref()),
+            }));
         });
 
         Ok((
@@ -1450,19 +1383,16 @@ impl Session {
 
     pub fn terminate(&self) {
         self.termination_requested.store(true, Ordering::Release);
-        match self.child_killer.lock() {
-            Ok(mut killer) => {
-                if let Err(e) = killer.kill() {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "session terminate: child kill failed: {e}"
-                    );
-                }
-            }
-            Err(e) => jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "session terminate: child killer mutex poisoned: {e}"
-            ),
+        if let Ok(mut killer) = self
+            .child_killer
+            .lock()
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::Panic)
+        {
+            drop(
+                killer
+                    .kill()
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError),
+            );
         }
     }
 
@@ -1494,31 +1424,21 @@ impl Session {
         }
         let rows = rows.max(1);
         let cols = cols.max(1);
-        // TIOCSWINSZ failure leaves the agent drawing at the old size
-        // while the screen renders at the new geometry — the operator
-        // sees mis-wrapped lines with no explanation. Log so --debug
-        // surfaces the divergence. Lock failure is logged too: a
-        // poisoned PTY mutex means an earlier writer/reader task
-        // panicked while holding it, and the session is effectively
-        // dead even if no Exited event has fired yet.
-        match self.pty_master.lock() {
-            Ok(master) => {
-                if let Err(e) = master.resize(PtySize {
-                    rows,
-                    cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                }) {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "session resize: TIOCSWINSZ failed for {rows}x{cols}: {e}"
-                    );
-                }
-            }
-            Err(e) => jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "session resize: PTY mutex poisoned: {e}"
-            ),
+        if let Ok(master) = self
+            .pty_master
+            .lock()
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::Panic)
+        {
+            drop(
+                master
+                    .resize(PtySize {
+                        rows,
+                        cols,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    })
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError),
+            );
         }
         self.shadow_grid.set_size(rows, cols);
         // Re-clamp through the grid: set_size may have shrunk the filled
