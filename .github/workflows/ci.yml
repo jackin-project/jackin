@@ -334,7 +334,6 @@ jobs:
     name: cargo registry warmup (${{ matrix.config.lane }})
     outputs:
       affected-packages: ${{ steps.affected-crates.outputs.packages }}
-      package-cache-keys: ${{ steps.affected-crates.outputs.cache-keys }}
     env:
       CARGO_TARGET_DIR: target/ci-xtask
       CARGO_TERM_COLOR: always
@@ -368,18 +367,6 @@ jobs:
           rm "$archive"
           chmod +x .ci-prebuilt-xtask/jackin-xtask
           echo "hit=true" >> "$GITHUB_OUTPUT"
-      - name: Cache prepared Rust toolchains
-        id: toolchain-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
-          restore-keys: |
-            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
-            rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-
-            rustup-${{ runner.os }}-${{ runner.arch }}-
       - id: ci-tools-artifact
         name: Restore resolved CI tool binaries
         shell: bash
@@ -405,8 +392,33 @@ jobs:
           rm "$archive"
           chmod +x .ci-prebuilt-tools/*
           echo "hit=true" >> "$GITHUB_OUTPUT"
+      - name: Check prepared Rust toolchains
+        id: toolchain-lookup
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+          lookup-only: true
+      - name: Bootstrap missing Rust toolchains
+        id: toolchain-cache
+        if: >-
+          steps.toolchain-lookup.outputs.cache-hit != 'true' ||
+          steps.ci-tools-artifact.outputs.hit != 'true' ||
+          steps.ci-xtask-artifact.outputs.hit != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+          restore-keys: |
+            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
+            rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        if: steps.toolchain-cache.outputs.cache-hit != 'true' || steps.ci-tools-artifact.outputs.hit != 'true'
+        if: steps.toolchain-lookup.outputs.cache-hit != 'true' || steps.ci-tools-artifact.outputs.hit != 'true'
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
@@ -422,11 +434,12 @@ jobs:
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Prepare clippy once for crate jobs
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        if: steps.toolchain-lookup.outputs.cache-hit != 'true'
         run: rustup component add clippy
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        if: steps.ci-xtask-artifact.outputs.hit != 'true'
         with:
           shared-key: ci-xtask-dev-v1
           cache-all-crates: "false"
@@ -468,21 +481,16 @@ jobs:
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             packages=$(target/ci-tools/jackin-xtask affected-crates --all)
-            cache_keys=$(target/ci-tools/jackin-xtask affected-crates --all --cache-keys)
           elif [ -n "$BASE_REF" ]; then
             git fetch --no-tags --depth=1 origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
             packages=$(target/ci-tools/jackin-xtask affected-crates --base "origin/$BASE_REF")
-            cache_keys=$(target/ci-tools/jackin-xtask affected-crates --base "origin/$BASE_REF" --cache-keys)
           elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
             packages=$(target/ci-tools/jackin-xtask affected-crates --base "$BEFORE_SHA")
-            cache_keys=$(target/ci-tools/jackin-xtask affected-crates --base "$BEFORE_SHA" --cache-keys)
           else
             packages=$(target/ci-tools/jackin-xtask affected-crates --all)
-            cache_keys=$(target/ci-tools/jackin-xtask affected-crates --all --cache-keys)
           fi
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
-          echo "cache-keys=$cache_keys" >> "$GITHUB_OUTPUT"
       - name: Publish resolved CI tool binaries
         if: >-
           steps.ci-tools-artifact.outputs.hit != 'true' &&
@@ -736,7 +744,6 @@ jobs:
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       packages-json: ${{ needs.cargo-registry-warmup.outputs.affected-packages }}
-      package-cache-keys-json: ${{ needs.cargo-registry-warmup.outputs.package-cache-keys }}
       all-features: true
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}

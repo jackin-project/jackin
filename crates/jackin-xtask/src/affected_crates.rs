@@ -172,12 +172,16 @@ impl WorkspaceGraph {
     }
 
     fn affected(&self, paths: &[PathBuf]) -> Vec<String> {
-        if paths.iter().any(|path| is_workspace_wide(path)) {
+        let relevant = paths
+            .iter()
+            .filter(|path| !is_documentation(path))
+            .collect::<Vec<_>>();
+        if relevant.iter().any(|path| is_workspace_wide(path)) {
             return self.all_names();
         }
 
         let mut selected = BTreeSet::new();
-        for path in paths {
+        for path in relevant {
             let Some((id, _)) = self
                 .roots
                 .iter()
@@ -287,6 +291,13 @@ fn is_workspace_wide(path: &Path) -> bool {
     ) || text.starts_with(".cargo/")
         || text.starts_with(".github/workflows/")
         || text.starts_with(".github/actions/")
+}
+
+fn is_documentation(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|extension| extension.to_str()),
+        Some("md" | "mdx")
+    )
 }
 
 #[cfg(test)]

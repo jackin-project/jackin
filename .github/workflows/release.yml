@@ -101,7 +101,6 @@ jobs:
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       all-features: false
-      cache-shared-key: nextest-default-workspace-v2
     secrets: inherit
 
   build:

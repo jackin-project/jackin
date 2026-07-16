@@ -15,11 +15,6 @@ on:
         required: false
         default: '["jackin","jackin-agent-status","jackin-build-meta","jackin-capsule","jackin-config","jackin-console","jackin-console-oppicker","jackin-core","jackin-dev","jackin-diagnostics","jackin-docker","jackin-env","jackin-host","jackin-image","jackin-instance","jackin-isolation","jackin-launch-tui","jackin-manifest","jackin-pr-trailers","jackin-process","jackin-protocol","jackin-runtime","jackin-term","jackin-test-support","jackin-usage","jackin-xtask"]'
         type: string
-      package-cache-keys-json:
-        description: JSON object mapping crate names to forward-dependency cache keys.
-        required: false
-        default: '{}'
-        type: string
       all-features:
         description: Run each package with all Cargo features enabled.
         required: true
@@ -77,11 +72,21 @@ jobs:
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+      - name: Derive exact crate target key
+        id: crate-target-key
+        shell: bash
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          set -euo pipefail
+          key=$("$CI_XTASK" affected-crates --all --cache-keys \
+            | jq -er --arg package "$PACKAGE" '.[$package]')
+          echo "key=$key" >> "$GITHUB_OUTPUT"
       - name: Restore input-identical crate target
         id: crate-target
         shell: bash
         env:
-          ARTIFACT_NAME: ci-crate-target-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] || github.sha }}
+          ARTIFACT_NAME: ci-crate-target-${{ inputs.all-features && 'v1' || 'default-v1' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -142,7 +147,7 @@ jobs:
           cargo fetch --locked --offline
           for fuzz_target in $targets; do
             "$CI_CARGO_FUZZ" fuzz run --sanitizer none --target x86_64-unknown-linux-gnu \
-              "$fuzz_target" -- -max_total_time=20
+              "$fuzz_target" -- -max_total_time=5
           done
       - name: Enforce telemetry volume ratchet
         if: matrix.package == 'jackin-diagnostics'
@@ -194,7 +199,7 @@ jobs:
                   print(f"- {seconds:g}s `{name}`", file=summary)
               print("", file=summary)
               print(
-                  f"Package-group wall time (sum of testcase times): {sum(seconds for seconds, _ in cases):.3f}s",
+                  f"Crate wall time (sum of testcase times): {sum(seconds for seconds, _ in cases):.3f}s",
                   file=summary,
               )
           PY
@@ -271,7 +276,7 @@ jobs:
             /*) echo "JACKIN_CAPSULE_BIN=$capsule_bin" >> "$GITHUB_ENV" ;;
             *) echo "JACKIN_CAPSULE_BIN=$PWD/$capsule_bin" >> "$GITHUB_ENV" ;;
           esac
-      - name: Run Docker E2E smoke tests
+      - name: Run Docker E2E smoke test
         if: matrix.package == 'jackin' && inputs.docker-e2e
         shell: bash
         run: |
@@ -280,6 +285,7 @@ jobs:
             export TMPDIR="$VELNOR_DOCKER_HOST_TEMP"
           fi
           cargo nextest run -p jackin --features e2e --profile docker-e2e \
+            -E 'test(jackin_load_ctrl_q_yes_exits_cold_build_quickly)' \
             --no-tests=pass --color=always --locked --offline
       - name: Upload Docker E2E junit + timing
         if: always() && matrix.package == 'jackin' && inputs.docker-e2e
@@ -337,7 +343,7 @@ jobs:
             github.event.pull_request.head.repo.full_name == github.repository))
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ci-crate-target-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] || github.sha }}
+          name: ci-crate-target-${{ inputs.all-features && 'v1' || 'default-v1' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
           path: target.tar.zst
           compression-level: 0
           retention-days: 7

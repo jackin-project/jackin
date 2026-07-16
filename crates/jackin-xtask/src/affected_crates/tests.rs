@@ -50,6 +50,23 @@ fn keeps_unrelated_crates_out() {
 }
 
 #[test]
+fn ignores_documentation_alongside_changed_crates() {
+    assert_eq!(
+        graph().affected(&[
+            PathBuf::from("crates/core/src/lib.rs"),
+            PathBuf::from("crates/core/README.md"),
+            PathBuf::from("docs/design.mdx"),
+        ]),
+        ["app", "core", "runtime"]
+    );
+    assert!(
+        graph()
+            .affected(&[PathBuf::from("docs/design.mdx")])
+            .is_empty()
+    );
+}
+
+#[test]
 fn selects_all_for_workspace_input_or_unknown_rust_path() {
     let expected = ["app", "core", "runtime", "tool"];
     assert_eq!(graph().affected(&[PathBuf::from("Cargo.lock")]), expected);

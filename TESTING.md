@@ -169,6 +169,17 @@ Does not apply to:
 
 CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate; it has no shards, multi-crate buckets, or second jobs for crate-specific MSRV, clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
+Required PR/main CI runs the real
+`jackin_load_ctrl_q_yes_exits_cold_build_quickly` Docker smoke inside the
+`jackin` crate job. Scheduled hygiene runs the complete serialized Docker E2E
+suite, including every chaos scenario. This keeps a real construct/launch path
+on every relevant change without placing the suite's measured four-minute
+runtime on the required pipeline.
+
+Affected crate jobs compile and smoke each owned fuzz target for five seconds.
+Scheduled hygiene retains the 120-300 second campaigns for the same targets,
+including the nightly AddressSanitizer run.
+
 Junit artifacts are named `nextest-junit-<crate>-<lane>` and seed the Phase 0 suite-wall-time baseline once measured.
 Each package job runs `cargo xtask lint ratchet --only suite-time`; it must not invoke
 the all-family ratchet because unrelated artifact providers can add hidden build
@@ -181,13 +192,13 @@ owning job instead of launching nested Cargo commands.
 
 | Target | Crate path | Smoke (PR / ci.yml) | Long (hygiene) |
 |---|---|---|---|
-| `damage_grid_process` | `crates/jackin-term/fuzz` | 20s `--sanitizer none` | 300s; ASan 300s |
-| `config_migrate` | `crates/jackin-config/fuzz` | 20s | 120s |
-| `workspace_migrate` | `crates/jackin-config/fuzz` | 20s | 120s |
-| `manifest_migrate` | `crates/jackin-manifest/fuzz` | 20s | 120s |
-| `manifest_validate` | `crates/jackin-manifest/fuzz` | 20s | 120s |
-| `env_resolve` | `crates/jackin-env/fuzz` | 20s | 120s |
-| `decode_frames` | `crates/jackin-protocol/fuzz` | 20s | 120s |
+| `damage_grid_process` | `crates/jackin-term/fuzz` | 5s `--sanitizer none` | 300s; ASan 300s |
+| `config_migrate` | `crates/jackin-config/fuzz` | 5s | 120s |
+| `workspace_migrate` | `crates/jackin-config/fuzz` | 5s | 120s |
+| `manifest_migrate` | `crates/jackin-manifest/fuzz` | 5s | 120s |
+| `manifest_validate` | `crates/jackin-manifest/fuzz` | 5s | 120s |
+| `env_resolve` | `crates/jackin-env/fuzz` | 5s | 120s |
+| `decode_frames` | `crates/jackin-protocol/fuzz` | 5s | 120s |
 
 Local smoke (nightly + cargo-fuzz via mise):
 
@@ -200,9 +211,10 @@ Committed seeds live under each fuzz crate's `corpus/<target>/` (fixture-derived
 
 Migration fixture harness ([`crates/jackin/tests/migration_fixtures.rs`](crates/jackin/tests/migration_fixtures.rs)) enforces golden equality against `after.toml` and second-pass idempotence for every config/workspace/manifest fixture.
 
-### DinD chaos lane (scheduled)
+### Full DinD E2E lane (scheduled)
 
-Hygiene job `dind-chaos` runs three seeded fault scenarios against real Docker
+Hygiene job `dind-chaos` runs the complete nine-test suite against real Docker,
+including the three seeded fault scenarios
 (`chaos_kill_container_mid_session`, `chaos_sigkill_capsule`, `chaos_drop_control_socket`).
 Replay: `JACKIN_CHAOS_SEED=<n> cargo nextest run -p jackin --features e2e --profile docker-e2e -E 'test(chaos_kill_container_mid_session)'`.
 Default seed is fixed (`0xc4a0_55eed`); `workflow_dispatch` input `chaos_seed` overrides.
