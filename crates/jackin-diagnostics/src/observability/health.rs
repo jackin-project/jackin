@@ -60,6 +60,50 @@ pub enum TelemetryFlushStatus {
     Failed,
 }
 
+/// Why a Capsule process can or cannot export directly to OTLP.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapsuleExportCoverage {
+    /// This process is not a Capsule.
+    NotApplicable,
+    /// Endpoint and authentication requirements are Capsule-safe.
+    Enabled,
+    /// No OTLP endpoint is configured on the host.
+    DisabledNoEndpoint,
+    /// The effective network policy forbids all egress.
+    DisabledNetworkNone,
+    /// The endpoint was not explicitly classified Capsule-safe.
+    DisabledUnclassifiedEndpoint,
+    /// Host authentication exists without a dedicated Capsule-safe carrier.
+    DisabledUnclassifiedAuth,
+}
+
+impl CapsuleExportCoverage {
+    pub const ENV_NAME: &'static str = "JACKIN_CAPSULE_OTLP_COVERAGE";
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotApplicable => "not_applicable",
+            Self::Enabled => "enabled",
+            Self::DisabledNoEndpoint => "disabled_no_endpoint",
+            Self::DisabledNetworkNone => "disabled_network_none",
+            Self::DisabledUnclassifiedEndpoint => "disabled_unclassified_endpoint",
+            Self::DisabledUnclassifiedAuth => "disabled_unclassified_auth",
+        }
+    }
+
+    fn from_env() -> Self {
+        match std::env::var(Self::ENV_NAME).as_deref() {
+            Ok("enabled") => Self::Enabled,
+            Ok("disabled_no_endpoint") => Self::DisabledNoEndpoint,
+            Ok("disabled_network_none") => Self::DisabledNetworkNone,
+            Ok("disabled_unclassified_endpoint") => Self::DisabledUnclassifiedEndpoint,
+            Ok("disabled_unclassified_auth") => Self::DisabledUnclassifiedAuth,
+            _ => Self::NotApplicable,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TelemetryHealth {
     pub active_signals: u8,
@@ -70,6 +114,7 @@ pub struct TelemetryHealth {
     pub logs: TelemetrySignalHealth,
     pub metrics: TelemetrySignalHealth,
     pub facade_rejections: u64,
+    pub capsule_export: CapsuleExportCoverage,
     pub flush: TelemetryFlushStatus,
     pub shutdown_completed: bool,
     pub shutdown_succeeded: bool,
@@ -91,6 +136,7 @@ pub fn telemetry_health_snapshot() -> TelemetryHealth {
         metrics: signal_snapshot(&METRIC_ATTEMPTS, &METRIC_SUCCESSES, &METRIC_FAILURES),
         facade_rejections: FACADE_REJECTIONS.load(Ordering::Relaxed)
             + facade_rejection_count(jackin_telemetry::facade_health()),
+        capsule_export: CapsuleExportCoverage::from_env(),
         flush: lifecycle.flush,
         shutdown_completed: lifecycle.shutdown_completed,
         shutdown_succeeded: lifecycle.shutdown_succeeded,

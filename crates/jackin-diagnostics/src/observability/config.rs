@@ -20,6 +20,21 @@ const PROTOCOL_VARS: [&str; 4] = [
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
 ];
 
+const AUTH_VARS: [&str; 12] = [
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+    "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+    "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+    "OTEL_EXPORTER_OTLP_CLIENT_KEY",
+    "OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY",
+    "OTEL_EXPORTER_OTLP_TRACES_CLIENT_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_LOGS_CLIENT_KEY",
+    "OTEL_EXPORTER_OTLP_LOGS_CLIENT_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_METRICS_CLIENT_KEY",
+    "OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OtlpConfig {
     pub traces_endpoint: String,
@@ -213,6 +228,12 @@ fn tls_config(
 
 pub(super) fn any_endpoint_configured(env: &impl Fn(&str) -> Option<String>) -> bool {
     ENDPOINT_VARS
+        .iter()
+        .any(|variable| nonempty(env(variable)).is_some())
+}
+
+pub(super) fn any_auth_configured(env: &impl Fn(&str) -> Option<String>) -> bool {
+    AUTH_VARS
         .iter()
         .any(|variable| nonempty(env(variable)).is_some())
 }

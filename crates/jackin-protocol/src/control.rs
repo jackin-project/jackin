@@ -214,6 +214,8 @@ pub struct TelemetryHealthSnapshot {
     pub metrics: TelemetrySignalHealth,
     /// Governed facade rejection count.
     pub facade_rejections: u64,
+    /// Whether direct Capsule export is safe and enabled.
+    pub capsule_export: CapsuleExportCoverage,
     /// Latest orderly flush outcome.
     pub flush: TelemetryFlushStatus,
     /// Whether orderly shutdown completed.
@@ -222,6 +224,24 @@ pub struct TelemetryHealthSnapshot {
     pub shutdown_succeeded: bool,
     /// Whether orderly shutdown exceeded its bounded deadline.
     pub shutdown_timed_out: bool,
+}
+
+/// Sanitized direct-export coverage for a Capsule process.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapsuleExportCoverage {
+    /// Endpoint and authentication requirements are Capsule-safe.
+    Enabled,
+    /// No host OTLP endpoint is configured.
+    DisabledNoEndpoint,
+    /// The effective network policy forbids all egress.
+    DisabledNetworkNone,
+    /// The endpoint lacks explicit Capsule-safe classification.
+    DisabledUnclassifiedEndpoint,
+    /// Authentication lacks a dedicated Capsule-safe carrier.
+    DisabledUnclassifiedAuth,
+    /// The reporting process is not classified as a Capsule.
+    NotApplicable,
 }
 
 /// Typed orderly-flush state exposed over control protocols.

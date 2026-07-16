@@ -5,6 +5,16 @@ use std::collections::HashMap;
 
 use super::*;
 
+#[test]
+fn authentication_detection_never_returns_material() {
+    let env = |key: &str| match key {
+        "OTEL_EXPORTER_OTLP_HEADERS" => Some("authorization=secret".to_owned()),
+        _ => None,
+    };
+    assert!(any_auth_configured(&env));
+    assert!(!any_auth_configured(&|_| None));
+}
+
 fn resolve(values: &[(&str, &str)]) -> Result<Option<OtlpConfig>, OtlpConfigError> {
     let values: HashMap<&str, &str> = values.iter().copied().collect();
     resolve_otlp_config(&|key| values.get(key).map(|value| (*value).to_owned()))

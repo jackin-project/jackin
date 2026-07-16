@@ -9,8 +9,8 @@ mod config;
 mod health;
 mod resource;
 pub use health::{
-    TelemetryFlushStatus, TelemetryHealth, TelemetrySignalHealth, record_telemetry_rejection,
-    telemetry_health_snapshot,
+    CapsuleExportCoverage, TelemetryFlushStatus, TelemetryHealth, TelemetrySignalHealth,
+    record_telemetry_rejection, telemetry_health_snapshot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -288,6 +288,13 @@ pub fn backend_query_hint(invocation_id: &str) -> Option<String> {
 #[must_use]
 pub fn otlp_endpoint_configured() -> bool {
     config::any_endpoint_configured(&|key| std::env::var(key).ok())
+}
+
+/// Whether host OTLP authentication material is configured. Values are never
+/// returned so launch policy cannot accidentally copy them into a Capsule.
+#[must_use]
+pub fn otlp_auth_configured() -> bool {
+    config::any_auth_configured(&|key| std::env::var(key).ok())
 }
 
 /// How a launched container should reach the host OTLP backend.

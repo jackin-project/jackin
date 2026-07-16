@@ -4,8 +4,8 @@
 //! Tests for observability setup.
 
 use super::{
-    TelemetryFlushStatus, TelemetryHealth, TelemetrySignalHealth, ValidationFailure,
-    rewrite_endpoint_for_container, validate_delivery_delta,
+    CapsuleExportCoverage, TelemetryFlushStatus, TelemetryHealth, TelemetrySignalHealth,
+    ValidationFailure, rewrite_endpoint_for_container, validate_delivery_delta,
 };
 
 #[test]
@@ -44,6 +44,7 @@ fn validation_health(successes: u64) -> TelemetryHealth {
         logs: signal,
         metrics: signal,
         facade_rejections: 0,
+        capsule_export: CapsuleExportCoverage::NotApplicable,
         flush: TelemetryFlushStatus::Succeeded,
         shutdown_completed: false,
         shutdown_succeeded: false,

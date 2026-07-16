@@ -326,6 +326,9 @@ fn facade_event_exports_native_event_name_once() {
 fn crash_event_exports_complete_bounded_private_shape() {
     use opentelemetry::logs::AnyValue;
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     let session = jackin_telemetry::identity::SessionGuard::claim(
         jackin_telemetry::identity::SessionKind::Console,
@@ -377,6 +380,9 @@ fn crash_event_exports_complete_bounded_private_shape() {
 fn jank_event_exports_once_per_active_crossing() {
     use opentelemetry::logs::AnyValue;
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let mut monitor = jackin_telemetry::ui::JankMonitor::default();
@@ -502,6 +508,9 @@ fn screen_transition_correlates_old_and_new_lifecycle_logs() {
 fn isolation_events_export_exact_private_shape() {
     use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         crate::operation::isolation_decision(

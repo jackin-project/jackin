@@ -597,6 +597,10 @@ fn control_reply_exposes_typed_telemetry_health() {
     };
     assert!(report.active_signals <= 3);
     assert_eq!(
+        report.capsule_export,
+        jackin_protocol::control::CapsuleExportCoverage::NotApplicable
+    );
+    assert_eq!(
         report.flush,
         jackin_protocol::control::TelemetryFlushStatus::Pending
     );

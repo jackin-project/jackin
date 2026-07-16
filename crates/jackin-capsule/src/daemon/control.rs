@@ -217,12 +217,33 @@ fn telemetry_health_snapshot(
             jackin_protocol::control::TelemetryFlushStatus::Failed
         }
     };
+    let capsule_export = match health.capsule_export {
+        jackin_diagnostics::CapsuleExportCoverage::Enabled => {
+            jackin_protocol::control::CapsuleExportCoverage::Enabled
+        }
+        jackin_diagnostics::CapsuleExportCoverage::DisabledNoEndpoint => {
+            jackin_protocol::control::CapsuleExportCoverage::DisabledNoEndpoint
+        }
+        jackin_diagnostics::CapsuleExportCoverage::DisabledNetworkNone => {
+            jackin_protocol::control::CapsuleExportCoverage::DisabledNetworkNone
+        }
+        jackin_diagnostics::CapsuleExportCoverage::DisabledUnclassifiedEndpoint => {
+            jackin_protocol::control::CapsuleExportCoverage::DisabledUnclassifiedEndpoint
+        }
+        jackin_diagnostics::CapsuleExportCoverage::DisabledUnclassifiedAuth => {
+            jackin_protocol::control::CapsuleExportCoverage::DisabledUnclassifiedAuth
+        }
+        jackin_diagnostics::CapsuleExportCoverage::NotApplicable => {
+            jackin_protocol::control::CapsuleExportCoverage::NotApplicable
+        }
+    };
     jackin_protocol::control::TelemetryHealthSnapshot {
         active_signals: health.active_signals,
         traces: signal(health.traces),
         logs: signal(health.logs),
         metrics: signal(health.metrics),
         facade_rejections: health.facade_rejections,
+        capsule_export,
         flush,
         shutdown_completed: health.shutdown_completed,
         shutdown_succeeded: health.shutdown_succeeded,

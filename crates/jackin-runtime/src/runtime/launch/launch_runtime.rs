@@ -698,7 +698,22 @@ pub(crate) async fn launch_role_runtime(
     // Computed once here so the WP1 allowlist (below) can include the OTLP
     // endpoint host; reused for OTLP propagation after env_strings is flushed.
     let capsule_otlp_safe = std::env::var("JACKIN_CAPSULE_OTLP_SAFE").as_deref() == Ok("1");
-    let container_otlp = capsule_otlp_allowed(network_disabled, capsule_otlp_safe)
+    let capsule_otlp_headers = std::env::var("JACKIN_CAPSULE_OTLP_HEADERS")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    let capsule_export = capsule_export_coverage(
+        network_disabled,
+        jackin_diagnostics::otlp_endpoint_configured(),
+        capsule_otlp_safe,
+        jackin_diagnostics::otlp_auth_configured(),
+        capsule_otlp_headers.is_some(),
+    );
+    env_strings.push(format!(
+        "{}={}",
+        jackin_diagnostics::CapsuleExportCoverage::ENV_NAME,
+        capsule_export.as_str()
+    ));
+    let container_otlp = (capsule_export == jackin_diagnostics::CapsuleExportCoverage::Enabled)
         .then(jackin_diagnostics::container_otlp)
         .flatten();
     // WP1: egress allowlist enforcement. Inject the assembled allowlist and the
@@ -797,6 +812,9 @@ pub(crate) async fn launch_role_runtime(
     let mut otlp_propagation: Vec<String> = Vec::new();
     if let Some(otlp) = &container_otlp {
         otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", otlp.endpoint));
+        if let Some(headers) = capsule_otlp_headers.as_deref() {
+            otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_HEADERS={headers}"));
+        }
         if let Some(traceparent) = jackin_telemetry::propagation::current_traceparent() {
             otlp_propagation.push(format!("TRACEPARENT={traceparent}"));
         }
@@ -1260,6 +1278,24 @@ pub(crate) fn run_runtime_envs() -> Vec<String> {
     })
 }
 
-pub(crate) const fn capsule_otlp_allowed(network_disabled: bool, classified_safe: bool) -> bool {
-    !network_disabled && classified_safe
+pub(crate) const fn capsule_export_coverage(
+    network_disabled: bool,
+    endpoint_configured: bool,
+    endpoint_classified_safe: bool,
+    host_auth_configured: bool,
+    capsule_auth_configured: bool,
+) -> jackin_diagnostics::CapsuleExportCoverage {
+    use jackin_diagnostics::CapsuleExportCoverage;
+
+    if network_disabled {
+        CapsuleExportCoverage::DisabledNetworkNone
+    } else if !endpoint_configured {
+        CapsuleExportCoverage::DisabledNoEndpoint
+    } else if !endpoint_classified_safe {
+        CapsuleExportCoverage::DisabledUnclassifiedEndpoint
+    } else if host_auth_configured && !capsule_auth_configured {
+        CapsuleExportCoverage::DisabledUnclassifiedAuth
+    } else {
+        CapsuleExportCoverage::Enabled
+    }
 }

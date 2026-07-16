@@ -8,15 +8,37 @@
 )]
 use super::*;
 use crate::runtime::launch::launch_runtime::{
-    capsule_otlp_allowed, debug_runtime_envs, telemetry_runtime_envs_for,
+    capsule_export_coverage, debug_runtime_envs, telemetry_runtime_envs_for,
 };
 
 #[test]
-fn capsule_otlp_fails_closed_for_network_none_and_unclassified_endpoints() {
-    assert!(!capsule_otlp_allowed(true, true));
-    assert!(!capsule_otlp_allowed(true, false));
-    assert!(!capsule_otlp_allowed(false, false));
-    assert!(capsule_otlp_allowed(false, true));
+fn capsule_otlp_fails_closed_for_network_endpoint_and_auth() {
+    use jackin_diagnostics::CapsuleExportCoverage;
+
+    assert_eq!(
+        capsule_export_coverage(true, true, true, false, false),
+        CapsuleExportCoverage::DisabledNetworkNone
+    );
+    assert_eq!(
+        capsule_export_coverage(false, false, true, false, false),
+        CapsuleExportCoverage::DisabledNoEndpoint
+    );
+    assert_eq!(
+        capsule_export_coverage(false, true, false, false, false),
+        CapsuleExportCoverage::DisabledUnclassifiedEndpoint
+    );
+    assert_eq!(
+        capsule_export_coverage(false, true, true, true, false),
+        CapsuleExportCoverage::DisabledUnclassifiedAuth
+    );
+    assert_eq!(
+        capsule_export_coverage(false, true, true, true, true),
+        CapsuleExportCoverage::Enabled
+    );
+    assert_eq!(
+        capsule_export_coverage(false, true, true, false, false),
+        CapsuleExportCoverage::Enabled
+    );
 }
 use jackin_config::AppConfig;
 use jackin_core::WorkspaceName;
