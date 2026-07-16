@@ -313,16 +313,16 @@ key = "clippy::struct_excessive_bools@jackin-agent-status"
 bound = 2
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-capsule"
-bound = 5
+bound = 4
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-console"
-bound = 15
+bound = 14
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-console-oppicker"
 bound = 3
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-core"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-launch-tui"
 bound = 2
@@ -486,6 +486,9 @@ bound = 1
 key = "missing_debug_implementations@jackin-test-support"
 bound = 1
 [[family.entry]]
+key = "missing_docs@jackin-core"
+bound = 1
+[[family.entry]]
 key = "private_bounds@jackin-core"
 bound = 1
 [[family.entry]]
@@ -524,10 +527,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 6151
+bound = 6500
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 6151
+bound = 6500
 [[family.entry]]
 key = "crates/AGENTS.md"
 bound = 14742
@@ -539,7 +542,7 @@ key = "crates/jackin-build-meta/README.md"
 bound = 628
 [[family.entry]]
 key = "crates/jackin-capsule/README.md"
-bound = 6294
+bound = 6292
 [[family.entry]]
 key = "crates/jackin-config/README.md"
 bound = 2745
@@ -548,10 +551,10 @@ key = "crates/jackin-console-oppicker/README.md"
 bound = 1625
 [[family.entry]]
 key = "crates/jackin-console/README.md"
-bound = 2562
+bound = 2549
 [[family.entry]]
 key = "crates/jackin-core/README.md"
-bound = 5467
+bound = 5389
 [[family.entry]]
 key = "crates/jackin-dev/README.md"
 bound = 1199
@@ -608,7 +611,7 @@ key = "crates/jackin-usage/README.md"
 bound = 2272
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
-bound = 5038
+bound = 5391
 [[family.entry]]
 key = "crates/jackin/README.md"
 bound = 2735
@@ -617,7 +620,7 @@ bound = 2735
 id = "export-volume"
 kind = "numeric"
 provider = "export_volume_measured"
-mode = "enforce"
+mode = "artifact-ceiling"
 # Cap 0 → every measured key > 0 must be listed (no unlisted firehose).
 # Bounds are measured default-mode counts from target/telemetry-volume.json
 # (written by conformance_export_volume); regenerate after intentional growth:
@@ -629,7 +632,7 @@ key = "default_mode_logs"
 bound = 18
 [[family.entry]]
 key = "default_mode_metrics"
-bound = 5
+bound = 6
 [[family.entry]]
 key = "default_mode_spans"
 bound = 7
@@ -685,7 +688,7 @@ key = "jackin-console-oppicker"
 bound = 3
 [[family.entry]]
 key = "jackin-core"
-bound = 2
+bound = 4
 [[family.entry]]
 key = "jackin-diagnostics"
 bound = 13

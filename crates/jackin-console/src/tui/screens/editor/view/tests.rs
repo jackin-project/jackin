@@ -144,7 +144,7 @@ fn role_load_input_state_names_registry_guard() {
 fn secret_delete_confirm_state_uses_key_prompt() {
     let state = secret_delete_confirm_state("TOKEN");
 
-    let termrock::components::ConfirmKind::Default { prompt } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Default { prompt } = state.kind() else {
         panic!("expected default confirm");
     };
     assert_eq!(prompt, "Delete environment variable TOKEN?");
@@ -156,7 +156,7 @@ fn role_trust_confirm_state_names_role_and_repository() {
         role_trust_confirm_state("alpha".to_owned(), "https://example.test/role".to_owned());
 
     assert_eq!(state.title(), "Trust role source");
-    let termrock::components::ConfirmKind::Details { prompt, rows, .. } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Details { prompt, rows, .. } = state.kind() else {
         panic!("expected detail confirm");
     };
     assert_eq!(prompt, "Trust this role source?");
@@ -170,7 +170,7 @@ fn role_trust_confirm_state_names_role_and_repository() {
 fn isolated_state_save_confirm_state_lists_containers() {
     let state = isolated_state_save_confirm_state(&["one".to_owned(), "two".to_owned()]);
 
-    let termrock::components::ConfirmKind::Default { prompt } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Default { prompt } = state.kind() else {
         panic!("expected default confirm");
     };
     assert!(prompt.contains("2 stopped container(s)"));
@@ -546,7 +546,7 @@ use jackin_config::WorkspaceConfig;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
-use termrock::components::scrollable_panel::viewport_width as scroll_viewport_width;
+use termrock::scroll::viewport_width as scroll_viewport_width;
 
 fn ws_with_allowed(names: &[&str]) -> WorkspaceConfig {
     WorkspaceConfig {
@@ -624,7 +624,7 @@ fn roles_tab_clamps_horizontal_scroll_with_shared_state() {
     let viewport = scroll_viewport_width(area);
     assert_eq!(
         editor.tab_scroll_x,
-        termrock::components::scrollable_panel::max_offset(editor.tab_content_width, viewport)
+        termrock::scroll::max_offset_u16(editor.tab_content_width, viewport)
     );
     assert!(editor.tab_scroll_x > 0);
 }
@@ -689,7 +689,7 @@ fn in_custom_mode_only_listed_agents_show_checked() {
 // Tests for `editor` contextual row items rendering.
 // Row-specific footer-hint composition for the editor tabs.
 use jackin_config::MountConfig;
-use termrock::HintSpan;
+use termrock::widgets::HintSpan;
 
 use crate::tui::screens::editor::view::editor_contextual_footer_items as contextual_row_items;
 
@@ -887,7 +887,7 @@ fn general_tab_clamps_horizontal_scroll_with_shared_scrollable_block() {
     let viewport = scroll_viewport_width(area);
     assert_eq!(
         editor.tab_scroll_x,
-        termrock::components::scrollable_panel::max_offset(editor.tab_content_width, viewport)
+        termrock::scroll::max_offset_u16(editor.tab_content_width, viewport)
     );
     assert!(editor.tab_scroll_x > 0);
 }

@@ -10,7 +10,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use termrock::style::WHITE;
+use jackin_core::tui_theme::WHITE;
 
 use super::{
     FieldDisplayRow, OpPickerAccountRef, OpPickerFatalState, OpPickerFieldDisplayRef,
@@ -19,7 +19,7 @@ use super::{
 
 /// `+ New X` creation row, styled like picker list rows.
 pub fn sentinel_line(text: &str, _is_selected: bool) -> Line<'static> {
-    Line::from(Span::styled(text.to_owned(), termrock::style::DIM))
+    Line::from(Span::styled(text.to_owned(), jackin_core::tui_theme::DIM))
 }
 
 pub fn account_lines<'a>(
@@ -32,7 +32,7 @@ pub fn account_lines<'a>(
             Line::from(vec![
                 Span::styled(account.email.to_owned(), Style::default().fg(WHITE)),
                 Span::raw("  "),
-                Span::styled(format!("({})", account.url), termrock::style::DIM),
+                Span::styled(format!("({})", account.url), jackin_core::tui_theme::DIM),
             ])
         })
         .collect()
@@ -68,7 +68,7 @@ pub fn item_choice_lines<'a>(
                         Style::default().fg(WHITE),
                     )];
                     if !item.subtitle.is_empty() {
-                        let dim = termrock::style::DIM;
+                        let dim = jackin_core::tui_theme::DIM;
                         spans.push(Span::styled(" (", dim));
                         spans.push(Span::styled(item.subtitle.to_owned(), dim));
                         spans.push(Span::styled(")", dim));
@@ -139,7 +139,7 @@ fn section_header_line(
     } else {
         "\u{25bc}"
     };
-    let style = termrock::style::DIM;
+    let style = jackin_core::tui_theme::DIM;
     let count_label = format!(
         "({} {})",
         field_count,
@@ -148,7 +148,7 @@ fn section_header_line(
     Line::from(vec![
         Span::styled(arrow, style),
         Span::styled(format!(" {name}  "), style),
-        Span::styled(count_label, termrock::style::DIM),
+        Span::styled(count_label, jackin_core::tui_theme::DIM),
     ])
 }
 
@@ -164,7 +164,7 @@ fn field_line(field: OpPickerFieldDisplayRef<'_>, label_w: usize) -> Line<'stati
     Line::from(vec![
         Span::styled(label, label_style),
         Span::raw(format!("{}  ", " ".repeat(pad))),
-        Span::styled(annotation, termrock::style::DIM),
+        Span::styled(annotation, jackin_core::tui_theme::DIM),
     ])
 }
 
@@ -223,52 +223,52 @@ pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
         OpPickerFatalState::NotInstalled => vec![
             Line::from(Span::styled(
                 "1Password CLI not found.",
-                termrock::style::BOLD_WHITE,
+                jackin_core::tui_theme::BOLD_WHITE,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Install: brew install 1password-cli (macOS)",
-                termrock::style::GREEN,
+                jackin_core::tui_theme::GREEN,
             )),
             Line::from(Span::styled(
                 "or visit 1password.com/downloads/command-line/",
-                termrock::style::GREEN,
+                jackin_core::tui_theme::GREEN,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "After install, run `op signin`, then press P to retry.",
-                termrock::style::DIM,
+                jackin_core::tui_theme::DIM,
             )),
         ],
         OpPickerFatalState::NotSignedIn => vec![
             Line::from(Span::styled(
                 "1Password CLI is not signed in.",
-                termrock::style::BOLD_WHITE,
+                jackin_core::tui_theme::BOLD_WHITE,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Run `op signin` in your shell, then retry.",
-                termrock::style::GREEN,
+                jackin_core::tui_theme::GREEN,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "jackin❯ uses your existing op session — there is no separate jackin❯ auth.",
-                termrock::style::DIM,
+                jackin_core::tui_theme::DIM,
             )),
         ],
         OpPickerFatalState::NoVaults => vec![
             Line::from(Span::styled(
                 "No vaults available.",
-                termrock::style::BOLD_WHITE,
+                jackin_core::tui_theme::BOLD_WHITE,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Check 1Password's app integration settings:",
-                termrock::style::GREEN,
+                jackin_core::tui_theme::GREEN,
             )),
             Line::from(Span::styled(
                 "Settings \u{2192} Developer \u{2192} CLI integration.",
-                termrock::style::GREEN,
+                jackin_core::tui_theme::GREEN,
             )),
         ],
         OpPickerFatalState::GenericFatal { message } => {
@@ -276,10 +276,10 @@ pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
             vec![
                 Line::from(Span::styled(
                     "1Password CLI error.",
-                    termrock::style::BOLD_WHITE,
+                    jackin_core::tui_theme::BOLD_WHITE,
                 )),
                 Line::from(""),
-                Line::from(Span::styled(truncated, termrock::style::DIM)),
+                Line::from(Span::styled(truncated, jackin_core::tui_theme::DIM)),
             ]
         }
     }

@@ -9,15 +9,13 @@ use super::hint::{
     read_only_hint, rename_hint, usage_hint,
 };
 use super::{Dialog, GithubContextView};
-use termrock::HintSpan;
+use termrock::widgets::HintSpan;
 
 impl Dialog {
     /// Mutable body-scroll state for the read-only info dialogs whose content
     /// can overflow (`ContainerInfo`, `GitHubContext`). `None` for dialogs that do
     /// not scroll. Lets the daemon route mouse-wheel events to the dialog body.
-    pub(crate) fn body_scroll_mut(
-        &mut self,
-    ) -> Option<&mut termrock::components::DialogBodyScroll> {
+    pub(crate) fn body_scroll_mut(&mut self) -> Option<&mut termrock::layout::DialogBodyScroll> {
         match self {
             Self::ContainerInfo { scroll, .. }
             | Self::GitHubContext { scroll, .. }
@@ -88,7 +86,7 @@ impl Dialog {
         term_rows: u16,
         term_cols: u16,
         github: Option<&GithubContextView<'_>>,
-    ) -> termrock::components::ScrollAxes {
+    ) -> termrock::layout::ScrollAxes {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
         let rect = ratatui::layout::Rect {
             x: box_col,
@@ -98,9 +96,9 @@ impl Dialog {
         };
         if matches!(self, Self::ContainerInfo { .. }) {
             let Some(state) = self.container_info_state() else {
-                return termrock::components::ScrollAxes::none();
+                return termrock::layout::ScrollAxes::none();
             };
-            return termrock::components::dialog_scroll_axes(
+            return termrock::layout::dialog_scroll_axes(
                 state.content_width(),
                 state.content_height(),
                 rect,
@@ -111,12 +109,12 @@ impl Dialog {
             let is_usage = matches!(self, Self::Usage { .. });
             let state = if matches!(self, Self::GitHubContext { .. }) {
                 let Some(state) = self.github_context_state(github) else {
-                    return termrock::components::ScrollAxes::none();
+                    return termrock::layout::ScrollAxes::none();
                 };
                 state
             } else {
                 let Some(state) = self.usage_state() else {
-                    return termrock::components::ScrollAxes::none();
+                    return termrock::layout::ScrollAxes::none();
                 };
                 state
             };
@@ -125,13 +123,9 @@ impl Dialog {
             } else {
                 (state.content_width(), state.content_height(), rect)
             };
-            return termrock::components::dialog_scroll_axes(
-                content_width,
-                content_height,
-                clamp_rect,
-            );
+            return termrock::layout::dialog_scroll_axes(content_width, content_height, clamp_rect);
         }
-        termrock::components::ScrollAxes::none()
+        termrock::layout::ScrollAxes::none()
     }
 
     /// Footer hint spans for this dialog. Rendered by the multiplexer
@@ -145,7 +139,7 @@ impl Dialog {
     pub(crate) fn footer_hint_spans(
         &self,
         github: Option<&GithubContextView<'_>>,
-        axes: termrock::components::ScrollAxes,
+        axes: termrock::layout::ScrollAxes,
     ) -> Vec<HintSpan<'static>> {
         match self {
             Self::CommandPalette { .. } => palette_hint(),
@@ -157,7 +151,7 @@ impl Dialog {
             Self::RenameTab { .. } => rename_hint(),
             Self::ExportFile { .. } => export_file_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
-            Self::SpawnFailure(_) => termrock::components::error_popup_hint_spans(),
+            Self::SpawnFailure(_) => vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")],
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {
                     let mut spans = info_dialog_hint("copy GitHub URL", axes);

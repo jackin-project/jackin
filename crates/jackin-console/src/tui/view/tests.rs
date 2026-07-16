@@ -375,8 +375,8 @@ fn list_vertical_clamp_uses_rendered_sidebar_height() {
     use crate::tui::state::ManagerState;
     use jackin_config::{AppConfig, MountConfig, MountIsolation, WorkspaceConfig};
     use ratatui::layout::Rect;
-    use termrock::components::scrollable_panel::{
-        max_offset as max_scroll_offset, viewport_height as scroll_viewport_height,
+    use termrock::scroll::{
+        max_offset_u16 as max_scroll_offset, viewport_height as scroll_viewport_height,
     };
 
     fn split_mount(idx: usize) -> MountConfig {
@@ -454,7 +454,7 @@ fn tui_header_uses_canonical_brand_wordmark() {
 
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
-use termrock::style::{PHOSPHOR_GREEN, WHITE};
+use jackin_core::tui_theme::{PHOSPHOR_GREEN, WHITE};
 
 /// Render a closure into a fresh `TestBackend` and return the resulting
 /// buffer. Size is chosen to comfortably fit every modal under test.
@@ -474,7 +474,7 @@ fn top_border_title(buf: &Buffer) -> String {
     let mut in_title = false;
     for x in 0..buf.area.width {
         let sym = buf[(x, 0)].symbol();
-        let is_border = matches!(sym, "┌" | "┐" | "─" | "│" | "╔" | "╗" | "═" | "║");
+        let is_border = matches!(sym, "┌" | "┐" | "─" | "│");
         if is_border {
             if in_title {
                 break;
@@ -497,6 +497,37 @@ fn top_border_title(buf: &Buffer) -> String {
 /// they're WHITE+BOLD). Modals are always the active/focused container
 /// when visible, so they always use the active border colour.
 fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
+    assert_eq!(buf[(area.x, area.y)].symbol(), "┌", "{widget}: top-left");
+    assert_eq!(
+        buf[(area.right() - 1, area.y)].symbol(),
+        "┐",
+        "{widget}: top-right"
+    );
+    assert_eq!(
+        buf[(area.x, area.bottom() - 1)].symbol(),
+        "└",
+        "{widget}: bottom-left"
+    );
+    assert_eq!(
+        buf[(area.right() - 1, area.bottom() - 1)].symbol(),
+        "┘",
+        "{widget}: bottom-right"
+    );
+    for x in area.x + 1..area.right() - 1 {
+        assert_eq!(
+            buf[(x, area.bottom() - 1)].symbol(),
+            "─",
+            "{widget}: bottom border at x={x}"
+        );
+    }
+    for y in area.y + 1..area.bottom() - 1 {
+        assert_eq!(buf[(area.x, y)].symbol(), "│", "{widget}: left at y={y}");
+        assert_eq!(
+            buf[(area.right() - 1, y)].symbol(),
+            "│",
+            "{widget}: right at y={y}"
+        );
+    }
     // Top border, skipping the title span.
     for x in area.x..area.x + area.width {
         let cell = &buf[(x, area.y)];
@@ -537,7 +568,7 @@ fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
 /// Build and render the `SaveDiscardCancel` modal into a full-area
 /// buffer. Returns (buffer, area).
 fn render_save_discard() -> (Buffer, Rect) {
-    use termrock::components::{SaveDiscardState, render_save_discard_dialog as render};
+    use crate::tui::components::{SaveDiscardState, render_save_discard_dialog as render};
     let area = Rect::new(0, 0, 70, 7);
     let state = SaveDiscardState::new("Save changes?");
     let buf = draw(area.width, area.height, |f| render(f, area, &state));
@@ -545,7 +576,7 @@ fn render_save_discard() -> (Buffer, Rect) {
 }
 
 fn render_confirm() -> (Buffer, Rect) {
-    use termrock::components::{ConfirmState, render_confirm_dialog as render};
+    use crate::tui::components::{ConfirmState, render_confirm_dialog as render};
     let area = Rect::new(0, 0, 60, 7);
     let state = ConfirmState::new("Delete workspace?");
     let buf = draw(area.width, area.height, |f| render(f, area, &state));
@@ -561,7 +592,7 @@ fn render_mount_dst() -> (Buffer, Rect) {
 }
 
 fn render_text_input() -> (Buffer, Rect) {
-    use termrock::components::{TextInputState, render_text_input as render};
+    use crate::tui::components::{TextInputState, render_text_input as render};
     let area = Rect::new(0, 0, 60, 6);
     let state = TextInputState::new("Name this workspace", "demo");
     let buf = draw(area.width, area.height, |f| render(f, area, &state));
@@ -731,7 +762,7 @@ fn dialog_button_rows_have_one_blank_row_above() {
             "{name} button row cannot be first row"
         );
         let before = row_text(&buf, button_y - 1);
-        let before_inner = before.trim_matches(['│', '║', ' ']);
+        let before_inner = before.trim_matches(['│', ' ']);
         assert!(
             before_inner.is_empty(),
             "{name} must have one blank row above buttons; got {before:?}",
@@ -847,11 +878,7 @@ fn neighbors(x: u16, y: u16, area: Rect) -> impl Iterator<Item = (u16, u16)> {
 
 fn is_green_border_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
     let cell = &buf[coord];
-    cell.fg == PHOSPHOR_GREEN
-        && matches!(
-            cell.symbol(),
-            "┌" | "┐" | "└" | "┘" | "─" | "│" | "╔" | "╗" | "╚" | "╝" | "═" | "║"
-        )
+    cell.fg == PHOSPHOR_GREEN && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
 }
 
 fn test_cwd() -> std::path::PathBuf {
@@ -1165,7 +1192,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     let mut confirm_delete = ManagerState::from_config(&config, &cwd);
     confirm_delete.stage = ManagerStage::ConfirmDelete {
         name: "ws".to_owned(),
-        state: termrock::components::ConfirmState::new("Delete workspace?"),
+        state: crate::tui::components::ConfirmState::new("Delete workspace?"),
     };
     cases.push(("list confirm delete", confirm_delete));
 
@@ -1179,7 +1206,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
                     scope: crate::tui::state::SecretsScopeTag::Workspace,
                     key: "TOKEN".into(),
                 },
-                state: termrock::components::ConfirmState::new("Delete TOKEN?"),
+                state: crate::tui::components::ConfirmState::new("Delete TOKEN?"),
             },
         ),
     ));
@@ -1190,7 +1217,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &config,
             &cwd,
             Modal::SaveDiscardCancel {
-                state: termrock::components::SaveDiscardState::new("Save changes?"),
+                state: crate::tui::components::SaveDiscardState::new("Save changes?"),
             },
         ),
     ));
@@ -1201,7 +1228,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &config,
             &cwd,
             Modal::StatusPopup {
-                state: termrock::components::StatusPopupState::new("Loading", "Resolving role"),
+                state: crate::tui::components::StatusPopupState::new("Loading", "Resolving role"),
             },
         ),
     ));
@@ -1315,7 +1342,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     editor.set_tab_content_scroll_focused(true);
     editor.modal = Some(Modal::TextInput {
         target: crate::tui::state::TextInputTarget::Name,
-        state: termrock::components::TextInputState::new("Name", "ws"),
+        state: crate::tui::components::TextInputState::new("Name", "ws"),
     });
     editor_text.stage = ManagerStage::Editor(editor);
     cases.push(("editor text input", editor_text));
@@ -1395,7 +1422,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     settings.set_active_content_focused(true);
     settings.mounts.modal = Some(SettingsModal::MountConfirm {
         action: GlobalMountConfirm::Remove,
-        state: termrock::components::ConfirmState::new("Remove mount?"),
+        state: crate::tui::components::ConfirmState::new("Remove mount?"),
     });
     settings_mounts_confirm.stage = ManagerStage::Settings(settings);
     cases.push(("settings mounts confirm", settings_mounts_confirm));
@@ -1407,7 +1434,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &cwd,
             SettingsModal::MountText {
                 target: crate::tui::state::GlobalMountTextTarget::AddName,
-                state: Box::new(termrock::components::TextInputState::new(
+                state: Box::new(crate::tui::components::TextInputState::new(
                     "Mount name",
                     "repo",
                 )),
@@ -1490,7 +1517,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             scope: SettingsEnvScope::Global,
         },
         pending_value: None,
-        state: Box::new(termrock::components::TextInputState::new(
+        state: Box::new(crate::tui::components::TextInputState::new(
             "Environment key",
             "TOKEN",
         )),
@@ -1560,7 +1587,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &cwd,
             SettingsModal::EnvConfirm {
                 action: crate::tui::state::SettingsEnvConfirm::Delete,
-                state: termrock::components::ConfirmState::new("Delete env var?"),
+                state: crate::tui::components::ConfirmState::new("Delete env var?"),
             },
         ),
     ));
@@ -1570,7 +1597,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     settings.active_tab = crate::tui::state::SettingsTab::Auth;
     settings.set_active_content_focused(true);
     settings.auth.modal = Some(SettingsModal::AuthTextInput {
-        state: Box::new(termrock::components::TextInputState::new(
+        state: Box::new(crate::tui::components::TextInputState::new(
             "Credential",
             "token",
         )),

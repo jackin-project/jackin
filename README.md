@@ -9,7 +9,7 @@
 
 Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.
 
-jackin❯ is the **ecosystem layer around** AI coding agents — not another agent itself. It runs many agents in parallel, each in its own container, with its own file access, tool profile, and credentials. Every agent runtime ([Claude Code](https://docs.anthropic.com/en/docs/claude-code) `--dangerously-skip-permissions`, [Codex](https://github.com/openai/codex) YOLO, [Amp](https://ampcode.com), Kimi, OpenCode, Grok, and the next ones to come) is most productive at full speed — and full speed against your host machine is risky. jackin❯ moves the boundary off the host, so the runtime can stay fast.
+jackin❯ is the **ecosystem layer around** AI coding agents — not another agent itself. It runs many agents in parallel, each in its own container, with its own file access, tool profile, and credentials. Every agent runtime ([Claude Code](https://claude.com/product/claude-code) `--dangerously-skip-permissions`, [Codex](https://github.com/openai/codex) YOLO, [Amp](https://ampcode.com), Kimi, OpenCode, Grok, and the next ones to come) is most productive at full speed — and full speed against your host machine is risky. jackin❯ moves the boundary off the host, so the runtime can stay fast.
 
 Documentation: <https://jackin.tailrocks.com/>
 

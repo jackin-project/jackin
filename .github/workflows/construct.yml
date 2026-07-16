@@ -81,8 +81,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      reuse: ${{ steps.construct-result.outputs.hit }}
+      exact-reuse: ${{ steps.construct-result.outputs.exact }}
+      result-name: ${{ steps.construct-result.outputs.name }}
       construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
       construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
+      registry-contract: ${{ steps.construct-result.outputs.registry-contract }}
+      rustup-contract: ${{ steps.construct-result.outputs.rustup-contract }}
       # Single source of truth for "should this run produce / publish
       # registry artifacts" — true on push-to-main and on
       # workflow_dispatch from main, false everywhere else (PRs,
@@ -96,9 +101,74 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Find input-identical successful construct result
+        id: construct-result
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          REGISTRY_CONTRACT: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          REPOSITORY: ${{ github.repository }}
+          RUSTUP_CONTRACT: ${{ hashFiles('rust-toolchain.toml') }}
+        run: |
+          set -euo pipefail
+          mode=rehearsal
+          if [ "$GITHUB_EVENT_NAME" = "push" ] || { [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; }; then
+            mode=publish
+          fi
+          name="construct-result-v2-$(scripts/ci/construct-result-contract.sh)-${mode}-${LANES}"
+          artifact_id=
+          exact=false
+          if ! artifact_id=$(
+            gh api "repos/${REPOSITORY}/actions/artifacts?name=${name}&per_page=10" \
+              --jq '.artifacts[] | select(.expired == false) | .id' \
+              | head -n 1
+          ); then
+            echo "::warning::construct-result lookup failed; running construct in full"
+            artifact_id=
+          fi
+          if [ -n "$artifact_id" ]; then
+            exact=true
+          else
+            latest=$(
+              gh api "repos/${REPOSITORY}/actions/artifacts?per_page=100" \
+                --jq '[.artifacts[] | select(.expired == false and (.name | startswith("construct-result-v1-") and endswith("-'"${mode}-${LANES}"'")))][0] | [.id, .workflow_run.head_sha] | @tsv'
+            )
+            latest_id=${latest%%$'\t'*}
+            source_sha=${latest#*$'\t'}
+            if [ -n "$latest_id" ] && [ -n "$source_sha" ]; then
+              git fetch --no-tags --depth=1 origin "$source_sha"
+              if git diff --quiet "$source_sha" HEAD -- \
+                .cargo Cargo.lock Cargo.toml 'crates/*/Cargo.toml' \
+                crates/jackin-process/src crates/jackin-xtask/src/cmd.rs \
+                crates/jackin-xtask/src/construct.rs crates/jackin-xtask/src/construct \
+                crates/jackin-xtask/src/main.rs docker-bake.hcl docker/construct \
+                rust-toolchain.toml; then
+                echo "::notice::promoting a Construct result with identical semantic inputs"
+                artifact_id=$latest_id
+              fi
+            fi
+          fi
+          if [ -n "$artifact_id" ]; then
+            echo "::notice::reusing input-identical successful construct result"
+          fi
+          {
+            echo "name=$name"
+            echo "exact=$exact"
+            echo "registry-contract=$REGISTRY_CONTRACT"
+            echo "rustup-contract=$RUSTUP_CONTRACT"
+            if [ -n "$artifact_id" ]; then
+              echo "hit=true"
+            else
+              echo "hit=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
       - name: Force construct=true on workflow_dispatch
         id: dispatch
-        if: github.event_name == 'workflow_dispatch'
+        if: >-
+          steps.construct-result.outputs.hit != 'true' &&
+          github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           echo "construct=true" >> "$GITHUB_OUTPUT"
@@ -110,10 +180,13 @@ jobs:
 
       - name: Classify changed paths
         id: filter
-        if: github.event_name != 'workflow_dispatch'
+        if: >-
+          steps.construct-result.outputs.hit != 'true' &&
+          github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         with:
-          token: ${{ github.token }}
+          token: ""
+          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           filters: |
             # Build the construct image when build plumbing changes, even if the
             # change should not publish a new immutable construct tag.
@@ -121,7 +194,11 @@ jobs:
               - '.github/workflows/construct.yml'
               - 'docker-bake.hcl'
               - 'docker/construct/**'
-              - 'crates/jackin-xtask/**'
+              - 'crates/jackin-xtask/Cargo.toml'
+              - 'crates/jackin-xtask/src/main.rs'
+              - 'crates/jackin-xtask/src/construct.rs'
+              - 'crates/jackin-xtask/src/construct/**'
+              - 'scripts/ci/construct-result-contract.sh'
             # Require an unpublished docker/construct/VERSION only when inputs
             # baked into the construct image changed.
             construct_image:
@@ -160,15 +237,15 @@ jobs:
       # Scoped to the build job only. Setting it workflow-wide leaks
       # into `publish-manifest`, which has no buildx builder and would
       # then fail with `ERROR: no builder "jackin-construct" found`.
-      BUILDX_BUILDER: jackin-construct
+      BUILDX_BUILDER: jackin-construct-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       # `mise run` activates the whole mise.toml tool set and, by default,
       # installs every missing one before the task. This job only needs the
       # rust toolchain mise-action already installed to compile `cargo xtask`;
       # without this, an unrelated tool's install (e.g. a flaky rustup
       # component download for cargo-zigbuild) reds the construct build.
       MISE_TASK_RUN_AUTO_INSTALL: "false"
-      DOCKERHUB_USERNAME: ${{ matrix.config.lane == 'GitHub' && secrets.DOCKERHUB_USERNAME || '' }}
-      DOCKERHUB_TOKEN: ${{ matrix.config.lane == 'GitHub' && secrets.DOCKERHUB_TOKEN || '' }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -183,7 +260,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
 
@@ -197,6 +274,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -225,9 +304,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: docker/construct/prebuilt
-          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ needs.changes.outputs.rustup-contract }}
       - name: Log in to Docker Hub
-        if: matrix.config.lane == 'GitHub' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
@@ -250,25 +329,12 @@ jobs:
       - name: Bootstrap buildx
         run: mise run construct-init-buildx
 
-      - name: Expose GitHub Actions cache runtime
-        if: matrix.config.lane == 'GitHub' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
-        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
-
-      - name: Build ${{ matrix.config.platform }} without push (GitHub)
-        if: matrix.config.lane == 'GitHub' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
+      - name: Build ${{ matrix.config.platform }} without push
+        if: matrix.config.lane != 'GitHub' || needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         env:
-          # Registry buildcache (written by main) is the primary warm source — avoids a cold
-          # GHA start when the scope is empty or evicted. GHA scope is secondary,
-          # so PR refs retain only final layers while main owns the full cache.
-          CACHE_FROM: |
-            type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
-            type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }}
-          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=min
-        run: mise run construct-build-platform ${{ matrix.config.platform }}
-
-      - name: Build ${{ matrix.config.platform }} without push (Velnor)
-        if: matrix.config.lane == 'Velnor' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
-        env:
+          # Both runner lanes restore the same durable cache written by main.
+          # Persistent BuildKit state on Velnor remains a transparent local
+          # accelerator; it does not change this workflow configuration.
           CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
         run: mise run construct-build-platform ${{ matrix.config.platform }}
 
@@ -311,7 +377,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
 
@@ -325,6 +391,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -395,7 +463,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
 
@@ -409,6 +477,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -462,3 +532,32 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: construct
+      - name: Audit every Construct job's performance
+        if: always()
+        env:
+          EXPECT_CLEAN: ${{ needs.changes.outputs.reuse == 'true' }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_LABEL: Construct
+        run: scripts/ci/audit-workflow-performance.sh
+      - name: Stage input-identical successful construct result
+        if: >-
+          needs.changes.outputs.exact-reuse != 'true' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        run: |
+          printf '%s\n' "source-sha=${GITHUB_SHA}" > construct-result.txt
+      - name: Publish input-identical successful construct result
+        if: >-
+          needs.changes.outputs.exact-reuse != 'true' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ needs.changes.outputs.result-name }}
+          path: construct-result.txt
+          compression-level: 0
+          retention-days: 7

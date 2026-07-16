@@ -18,6 +18,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "anstyle-parse"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7644824f0aa2c7b9384579234ef10eb7efb6a0deb83f9630a49594dd9c15c2"
+dependencies = [
+ "utf8parse",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -151,9 +160,9 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "cfg_aliases"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
+checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
 name = "compact_str"
@@ -692,12 +701,14 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "base64",
+ "crossterm",
  "directories",
  "hex",
  "owo-colors",
  "ratatui",
  "serde",
  "sha2 0.11.0",
+ "termrock",
  "thiserror 2.0.18",
 ]
 
@@ -1597,6 +1608,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "termrock"
+version = "0.10.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=5c4758b5167241ffef5f501f72bb76bc01e77aba#5c4758b5167241ffef5f501f72bb76bc01e77aba"
+dependencies = [
+ "anstyle-parse",
+ "base64",
+ "crossterm",
+ "ratatui-core",
+ "ratatui-crossterm",
+ "ratatui-widgets",
+ "tui-scrollbar",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "termwiz"
 version = "0.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1750,6 +1777,16 @@ name = "toml_writer"
 version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
+
+[[package]]
+name = "tui-scrollbar"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a495ec7eb64f1505a94d56bbb337792b15448394879552b09be2a1460846d99b"
+dependencies = [
+ "document-features",
+ "ratatui-core",
+]
 
 [[package]]
 name = "typenum"

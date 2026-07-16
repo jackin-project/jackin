@@ -16,12 +16,12 @@ pub type ConsoleUpdate<E> = UpdateResult<E>;
 
 #[derive(Debug, Clone)]
 pub enum StatusOverlayPlan {
-    Open(termrock::components::StatusPopupState),
+    Open(crate::tui::components::StatusPopupState),
     Dismiss,
 }
 
 pub trait StatusOverlayState {
-    fn set_status_overlay(&mut self, overlay: Option<termrock::components::StatusPopupState>);
+    fn set_status_overlay(&mut self, overlay: Option<crate::tui::components::StatusPopupState>);
 }
 
 pub fn apply_status_overlay_plan(state: &mut impl StatusOverlayState, plan: StatusOverlayPlan) {
@@ -34,7 +34,7 @@ pub fn apply_status_overlay_plan(state: &mut impl StatusOverlayState, plan: Stat
 #[derive(Debug)]
 pub enum ListModalPlan {
     ContainerInfo(crate::tui::components::container_info_surface::ContainerInfoState),
-    ErrorPopup(termrock::components::ErrorPopupState),
+    ErrorPopup(crate::tui::components::ErrorPopupState),
     GithubPicker(crate::tui::components::github_picker::GithubPickerState),
     Dismiss,
 }
@@ -44,7 +44,7 @@ pub trait ListModalState {
         &mut self,
         state: crate::tui::components::container_info_surface::ContainerInfoState,
     );
-    fn open_error_popup_modal(&mut self, state: termrock::components::ErrorPopupState);
+    fn open_error_popup_modal(&mut self, state: crate::tui::components::ErrorPopupState);
     fn open_github_picker_modal(
         &mut self,
         state: crate::tui::components::github_picker::GithubPickerState,
@@ -590,7 +590,7 @@ pub fn inline_provider_followup_plan<C, A, P>(
 pub fn inline_picker_shell_plan(key: KeyEvent, _exit_on_q: bool) -> InlinePickerShellPlan {
     use crate::tui::keymap::{INLINE_PICKER_SHELL_KEYMAP, InlinePickerShellAction};
     use termrock::keymap::KeyChord;
-    let chord = KeyChord::from(termrock::crossterm::key(key));
+    let chord = KeyChord::from(termrock::input::KeyEvent::from(key));
     match INLINE_PICKER_SHELL_KEYMAP.dispatch(chord) {
         Some(InlinePickerShellAction::ScrollLeft) => InlinePickerShellPlan::ScrollHorizontal(-8),
         Some(InlinePickerShellAction::ScrollRight) => InlinePickerShellPlan::ScrollHorizontal(8),
@@ -599,11 +599,11 @@ pub fn inline_picker_shell_plan(key: KeyEvent, _exit_on_q: bool) -> InlinePicker
 }
 
 #[must_use]
-pub fn inline_picker_plan<T>(outcome: termrock::ModalOutcome<T>) -> InlinePickerPlan<T> {
+pub fn inline_picker_plan<T>(outcome: jackin_core::ModalOutcome<T>) -> InlinePickerPlan<T> {
     match outcome {
-        termrock::ModalOutcome::Commit(value) => InlinePickerPlan::Commit(value),
-        termrock::ModalOutcome::Cancel => InlinePickerPlan::Dismiss,
-        termrock::ModalOutcome::Continue => InlinePickerPlan::Continue,
+        jackin_core::ModalOutcome::Commit(value) => InlinePickerPlan::Commit(value),
+        jackin_core::ModalOutcome::Cancel => InlinePickerPlan::Dismiss,
+        jackin_core::ModalOutcome::Continue => InlinePickerPlan::Continue,
     }
 }
 
@@ -668,59 +668,59 @@ pub fn auth_source_folder_picker_plan<T>(
 
 #[must_use]
 pub const fn mount_dst_choice_plan(
-    outcome: termrock::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
+    outcome: jackin_core::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
 ) -> MountDstChoicePlan {
     match outcome {
-        termrock::ModalOutcome::Commit(
+        jackin_core::ModalOutcome::Commit(
             crate::tui::components::mount_dst_choice::MountDstChoice::SamePath,
         ) => MountDstChoicePlan::CommitSamePath,
-        termrock::ModalOutcome::Commit(
+        jackin_core::ModalOutcome::Commit(
             crate::tui::components::mount_dst_choice::MountDstChoice::Edit,
         ) => MountDstChoicePlan::OpenEditInput,
-        termrock::ModalOutcome::Cancel => MountDstChoicePlan::Dismiss,
-        termrock::ModalOutcome::Continue => MountDstChoicePlan::Continue,
+        jackin_core::ModalOutcome::Cancel => MountDstChoicePlan::Dismiss,
+        jackin_core::ModalOutcome::Continue => MountDstChoicePlan::Continue,
     }
 }
 
 #[must_use]
 pub const fn save_discard_modal_plan(
-    outcome: termrock::ModalOutcome<termrock::components::SaveDiscardChoice>,
+    outcome: jackin_core::ModalOutcome<crate::tui::components::SaveDiscardChoice>,
 ) -> SaveDiscardModalPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(termrock::components::SaveDiscardChoice::Save) => {
+        jackin_core::ModalOutcome::Commit(crate::tui::components::SaveDiscardChoice::Save) => {
             SaveDiscardModalPlan::Save
         }
-        termrock::ModalOutcome::Commit(termrock::components::SaveDiscardChoice::Discard) => {
+        jackin_core::ModalOutcome::Commit(crate::tui::components::SaveDiscardChoice::Discard) => {
             SaveDiscardModalPlan::Discard
         }
-        termrock::ModalOutcome::Cancel => SaveDiscardModalPlan::Dismiss,
-        termrock::ModalOutcome::Continue => SaveDiscardModalPlan::Continue,
+        jackin_core::ModalOutcome::Cancel => SaveDiscardModalPlan::Dismiss,
+        jackin_core::ModalOutcome::Continue => SaveDiscardModalPlan::Continue,
     }
 }
 
 #[must_use]
 pub const fn confirm_save_modal_plan(
-    outcome: termrock::ModalOutcome<crate::tui::components::confirm_save::SaveChoice>,
+    outcome: jackin_core::ModalOutcome<crate::tui::components::confirm_save::SaveChoice>,
 ) -> ConfirmSaveModalPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(crate::tui::components::confirm_save::SaveChoice::Save) => {
-            ConfirmSaveModalPlan::Commit
-        }
-        termrock::ModalOutcome::Cancel => ConfirmSaveModalPlan::Dismiss,
-        termrock::ModalOutcome::Continue => ConfirmSaveModalPlan::Continue,
+        jackin_core::ModalOutcome::Commit(
+            crate::tui::components::confirm_save::SaveChoice::Save,
+        ) => ConfirmSaveModalPlan::Commit,
+        jackin_core::ModalOutcome::Cancel => ConfirmSaveModalPlan::Dismiss,
+        jackin_core::ModalOutcome::Continue => ConfirmSaveModalPlan::Continue,
     }
 }
 
 #[must_use]
 pub const fn bool_confirm_modal_plan(
-    outcome: termrock::ModalOutcome<bool>,
+    outcome: jackin_core::ModalOutcome<bool>,
 ) -> BoolConfirmModalPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(true) => BoolConfirmModalPlan::Confirm,
-        termrock::ModalOutcome::Commit(false) | termrock::ModalOutcome::Cancel => {
+        jackin_core::ModalOutcome::Commit(true) => BoolConfirmModalPlan::Confirm,
+        jackin_core::ModalOutcome::Commit(false) | jackin_core::ModalOutcome::Cancel => {
             BoolConfirmModalPlan::Dismiss
         }
-        termrock::ModalOutcome::Continue => BoolConfirmModalPlan::Continue,
+        jackin_core::ModalOutcome::Continue => BoolConfirmModalPlan::Continue,
     }
 }
 
@@ -761,61 +761,61 @@ pub fn create_op_picker_plan<Reference, Account, Vault, Item, FieldTarget>(
 
 #[must_use]
 pub const fn scope_picker_plan(
-    outcome: termrock::ModalOutcome<crate::tui::components::scope_picker::ScopeChoice>,
+    outcome: jackin_core::ModalOutcome<crate::tui::components::scope_picker::ScopeChoice>,
 ) -> ScopePickerPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(
+        jackin_core::ModalOutcome::Commit(
             crate::tui::components::scope_picker::ScopeChoice::AllAgents,
         ) => ScopePickerPlan::AllAgents,
-        termrock::ModalOutcome::Commit(
+        jackin_core::ModalOutcome::Commit(
             crate::tui::components::scope_picker::ScopeChoice::SpecificAgent,
         ) => ScopePickerPlan::SpecificAgent,
-        termrock::ModalOutcome::Cancel => ScopePickerPlan::Dismiss,
-        termrock::ModalOutcome::Continue => ScopePickerPlan::Continue,
+        jackin_core::ModalOutcome::Cancel => ScopePickerPlan::Dismiss,
+        jackin_core::ModalOutcome::Continue => ScopePickerPlan::Continue,
     }
 }
 
 #[must_use]
 pub const fn source_picker_plan(
-    outcome: termrock::ModalOutcome<crate::tui::components::source_picker::SourceChoice>,
+    outcome: jackin_core::ModalOutcome<crate::tui::components::source_picker::SourceChoice>,
 ) -> SourcePickerPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(
+        jackin_core::ModalOutcome::Commit(
             crate::tui::components::source_picker::SourceChoice::Plain,
         ) => SourcePickerPlan::Plain,
-        termrock::ModalOutcome::Commit(crate::tui::components::source_picker::SourceChoice::Op) => {
-            SourcePickerPlan::Op
-        }
-        termrock::ModalOutcome::Cancel => SourcePickerPlan::Dismiss,
-        termrock::ModalOutcome::Continue => SourcePickerPlan::Continue,
+        jackin_core::ModalOutcome::Commit(
+            crate::tui::components::source_picker::SourceChoice::Op,
+        ) => SourcePickerPlan::Op,
+        jackin_core::ModalOutcome::Cancel => SourcePickerPlan::Dismiss,
+        jackin_core::ModalOutcome::Continue => SourcePickerPlan::Continue,
     }
 }
 
 #[must_use]
-pub fn list_github_picker_plan(outcome: termrock::ModalOutcome<String>) -> ListGithubPickerPlan {
+pub fn list_github_picker_plan(outcome: jackin_core::ModalOutcome<String>) -> ListGithubPickerPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(url) => ListGithubPickerPlan::OpenUrl(url),
-        termrock::ModalOutcome::Cancel => ListGithubPickerPlan::Dismiss,
-        termrock::ModalOutcome::Continue => ListGithubPickerPlan::Continue,
+        jackin_core::ModalOutcome::Commit(url) => ListGithubPickerPlan::OpenUrl(url),
+        jackin_core::ModalOutcome::Cancel => ListGithubPickerPlan::Dismiss,
+        jackin_core::ModalOutcome::Continue => ListGithubPickerPlan::Continue,
     }
 }
 
 #[must_use]
-pub fn list_role_picker_plan<R>(outcome: termrock::ModalOutcome<R>) -> ListRolePickerPlan<R> {
+pub fn list_role_picker_plan<R>(outcome: jackin_core::ModalOutcome<R>) -> ListRolePickerPlan<R> {
     match outcome {
-        termrock::ModalOutcome::Commit(role) => ListRolePickerPlan::Launch(role),
-        termrock::ModalOutcome::Cancel => ListRolePickerPlan::Dismiss,
-        termrock::ModalOutcome::Continue => ListRolePickerPlan::Continue,
+        jackin_core::ModalOutcome::Commit(role) => ListRolePickerPlan::Launch(role),
+        jackin_core::ModalOutcome::Cancel => ListRolePickerPlan::Dismiss,
+        jackin_core::ModalOutcome::Continue => ListRolePickerPlan::Continue,
     }
 }
 
 #[must_use]
-pub fn dismissible_modal_plan<T>(outcome: termrock::ModalOutcome<T>) -> DismissibleModalPlan {
+pub fn dismissible_modal_plan<T>(outcome: jackin_core::ModalOutcome<T>) -> DismissibleModalPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(_) | termrock::ModalOutcome::Cancel => {
+        jackin_core::ModalOutcome::Commit(_) | jackin_core::ModalOutcome::Cancel => {
             DismissibleModalPlan::Dismiss
         }
-        termrock::ModalOutcome::Continue => DismissibleModalPlan::Continue,
+        jackin_core::ModalOutcome::Continue => DismissibleModalPlan::Continue,
     }
 }
 
@@ -860,7 +860,7 @@ pub fn selected_index_plan(selected: usize, row_count: usize) -> usize {
 #[must_use]
 pub const fn unclamped_scroll_plan(current_scroll: u16, delta: i16) -> u16 {
     let mut scroll = current_scroll;
-    termrock::components::apply_scroll_delta_unclamped(&mut scroll, delta);
+    termrock::scroll::apply_scroll_delta_unclamped(&mut scroll, delta);
     scroll
 }
 
@@ -872,7 +872,7 @@ pub fn term_width_scroll_plan(
     content_width: usize,
 ) -> u16 {
     let mut scroll_x = current_scroll_x;
-    termrock::components::apply_term_width_scroll_delta(
+    termrock::scroll::apply_term_width_scroll_delta(
         &mut scroll_x,
         delta,
         term_width,

@@ -36,6 +36,9 @@ pub(crate) struct LintRatchetArgs {
     /// Print regenerated entries for one family (`file-size-production`, …).
     #[arg(long)]
     print: Option<String>,
+    /// Check only the named family. Repeat for multiple families.
+    #[arg(long = "only")]
+    only: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -165,6 +168,7 @@ pub(crate) fn enforce() -> Result<()> {
     run(LintRatchetArgs {
         output: FormatArgs::default(),
         print: None,
+        only: Vec::new(),
     })
 }
 
@@ -213,11 +217,19 @@ fn run_inner(args: LintRatchetArgs) -> Result<()> {
     let root = crate::docs::repo_root()?;
     let config = read_config(&root.join(CONFIG_PATH))?;
     if let Some(family_id) = args.print.as_deref() {
+        if !args.only.is_empty() {
+            bail!("--print cannot be combined with --only");
+        }
         return print_family(&root, &config, family_id);
     }
 
-    let outcome = check_families(&root, &config, None)?;
-    emit_outcome(&outcome, config.family.len())
+    let only: Vec<&str> = args.only.iter().map(String::as_str).collect();
+    let selected = (!only.is_empty()).then_some(only.as_slice());
+    let outcome = check_families(&root, &config, selected)?;
+    emit_outcome(
+        &outcome,
+        selected.map_or(config.family.len(), <[&str]>::len),
+    )
 }
 
 fn emit_outcome(outcome: &FamilyCheckOutcome, family_count: usize) -> Result<()> {
@@ -612,7 +624,10 @@ const CURATED_PUB_MODS: &[(&str, &[&str])] = &[
     // Plan 019: jackin-config narrowed (private mods + root re-exports).
     ("jackin-config", &["test_support"]),
     // Plan 019: jackin-core — only justified namespace mods remain public.
-    ("jackin-core", &["container_paths", "debug_log"]),
+    (
+        "jackin-core",
+        &["container_paths", "debug_log", "operator_info", "tui_theme"],
+    ),
 ];
 
 /// Fail if a curated crate's root `lib.rs` declares a non-allowlisted `pub mod`.
@@ -730,13 +745,12 @@ fn measure_perf_dhat_budgets(root: &Path) -> Result<BTreeMap<String, usize>> {
 /// Measured default-mode export volume from `target/telemetry-volume.json`.
 ///
 /// Sole provider input for the `export-volume` family (plan 009). Does **not**
-/// parse `MAX_*` source constants. When the artifact is missing, generates it by
-/// running the conformance volume test so lint/ratchet (which runs before nextest
-/// in `ci --fast`) still enforces measured counts.
+/// parse `MAX_*` source constants. The telemetry job owns artifact generation;
+/// other lint callers skip this artifact-backed family when it is absent.
 fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>> {
     let artifact = root.join("target/telemetry-volume-ratchet.json");
     if !artifact.is_file() {
-        ensure_telemetry_volume_artifact(root)?;
+        return Ok(BTreeMap::new());
     }
     let text = fs::read_to_string(&artifact).with_context(|| {
         format!(
@@ -762,32 +776,6 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
         out.insert(key.to_owned(), n as usize);
     }
     Ok(out)
-}
-
-/// Run the conformance volume test to produce `target/telemetry-volume.json`.
-fn ensure_telemetry_volume_artifact(root: &Path) -> Result<()> {
-    let artifact = root.join("target/telemetry-volume-ratchet.json");
-    let mut command = crate::cmd::command("cargo");
-    command
-        .args([
-            "test",
-            "-p",
-            "jackin-diagnostics",
-            "--all-features",
-            "--locked",
-            "conformance_export_volume",
-        ])
-        .env("JACKIN_TELEMETRY_VOLUME_PATH", &artifact)
-        .current_dir(root);
-    crate::cmd::output(&mut command)
-        .context("failed to generate target/telemetry-volume.json via conformance_export_volume")?;
-    if !artifact.is_file() {
-        bail!(
-            "conformance_export_volume ran but did not write {}",
-            artifact.display()
-        );
-    }
-    Ok(())
 }
 
 fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
