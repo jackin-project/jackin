@@ -632,7 +632,7 @@ key = "default_mode_logs"
 bound = 18
 [[family.entry]]
 key = "default_mode_metrics"
-bound = 5
+bound = 6
 [[family.entry]]
 key = "default_mode_spans"
 bound = 7
@@ -688,7 +688,7 @@ key = "jackin-console-oppicker"
 bound = 3
 [[family.entry]]
 key = "jackin-core"
-bound = 3
+bound = 4
 [[family.entry]]
 key = "jackin-diagnostics"
 bound = 13
