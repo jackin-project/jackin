@@ -142,7 +142,7 @@ pub enum Command {
     /// Run pre-flight health checks for your jackin❯ setup
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Doctor(doctor::DoctorArgs),
-    /// Inspect run diagnostics artifacts
+    /// Validate direct OTLP telemetry delivery
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Diagnostics(DiagnosticsCommand),
     /// Show fleet status — workspaces, instances, and agents
