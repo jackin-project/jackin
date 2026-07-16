@@ -105,6 +105,7 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "off"
+      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
@@ -142,8 +143,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rustup-contract || hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-

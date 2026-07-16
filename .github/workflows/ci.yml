@@ -45,8 +45,8 @@ jobs:
           LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
         run: |
           github_writer='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","cache_writer":true}'
-          velnor_writer='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","cache_writer":true}'
-          velnor_reader='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","cache_writer":false}'
+          velnor_writer='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","rustup_home":"/opt/rustup","cache_writer":true}'
+          velnor_reader='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","rustup_home":"/opt/rustup","cache_writer":false}'
           case "$LANES" in
             velnor) configs="[$velnor_writer]" ;;
             both)   configs="[$github_writer,$velnor_reader]" ;;
@@ -473,6 +473,7 @@ jobs:
     name: cargo fmt (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
+      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
@@ -484,8 +485,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-
@@ -511,6 +512,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_TERM_COLOR: always
+      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - id: ci-xtask-artifact
@@ -588,8 +590,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the minimal Rust CI profile
@@ -652,8 +654,8 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
       - id: cargo-registry-cache
         if: >-
@@ -906,6 +908,7 @@ jobs:
     name: cargo dependency policy (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
+      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
@@ -917,8 +920,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-
@@ -974,6 +977,7 @@ jobs:
     name: cargo audit (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
+      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
@@ -985,8 +989,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-
