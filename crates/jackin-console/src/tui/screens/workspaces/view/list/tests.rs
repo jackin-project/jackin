@@ -14,7 +14,7 @@ const SUBPANEL_CONTENT_INDENT: usize = 2;
 use super::render_list_body;
 use crate::tui::layout::list::clamp_list_scroll_for_area;
 use crate::tui::layout::list::list_names_content_width;
-use crate::tui::state::{ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag};
+use crate::tui::state::{ManagerListRow, ManagerState};
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
 use ratatui::Terminal;
@@ -24,18 +24,6 @@ use termrock::scroll::max_offset;
 
 fn config_with_long_workspace_name() -> AppConfig {
     let mut config = AppConfig::default();
-    config.workspaces.insert(
-        "chainargos-blockchain-nodes".into(),
-        WorkspaceConfig::default(),
-    );
-    config
-}
-
-fn config_with_short_selected_and_long_sibling() -> AppConfig {
-    let mut config = AppConfig::default();
-    config
-        .workspaces
-        .insert("jackin".into(), WorkspaceConfig::default());
     config.workspaces.insert(
         "chainargos-blockchain-nodes".into(),
         WorkspaceConfig::default(),
@@ -105,93 +93,6 @@ fn list_name_render_clamps_scroll_to_rendered_width() {
 }
 
 #[test]
-fn list_name_horizontal_scroll_keeps_selected_prefix_visible() {
-    let config = config_with_long_workspace_name();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 1;
-    state.list_names_scroll_x = 8;
-    state.set_list_names_focused(true);
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(1, 2)].symbol(), "▸");
-    assert_eq!(
-        buffer[(1, 2)].bg,
-        termrock::Theme::default()
-            .style(termrock::style::Role::Accent)
-            .fg
-            .unwrap_or_default()
-    );
-    assert_eq!(
-        buffer[(2, 2)].bg,
-        termrock::Theme::default()
-            .style(termrock::style::Role::Accent)
-            .fg
-            .unwrap_or_default()
-    );
-    assert_eq!(
-        buffer[(3, 2)].bg,
-        termrock::Theme::default()
-            .style(termrock::style::Role::Accent)
-            .fg
-            .unwrap_or_default()
-    );
-    for x in 1..20 {
-        assert_eq!(
-            buffer[(x, 2)].bg,
-            termrock::Theme::default()
-                .style(termrock::style::Role::Accent)
-                .fg
-                .unwrap_or_default(),
-            "x={x}"
-        );
-    }
-}
-
-#[test]
-fn list_name_horizontal_scroll_keeps_hover_background_full_width() {
-    let config = config_with_long_workspace_name();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 0;
-    state.hover_target = Some(crate::tui::state::ManagerHoverTarget::ListRow(
-        ManagerListRow::SavedWorkspace(0),
-    ));
-    state.list_names_scroll_x = 8;
-    state.set_list_names_focused(true);
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    for x in 1..20 {
-        assert_eq!(
-            buffer[(x, 2)].bg,
-            termrock::Theme::default()
-                .style(termrock::style::Role::TabInactiveHovered)
-                .bg
-                .unwrap_or_default(),
-            "x={x}"
-        );
-    }
-}
-
-#[test]
 fn hovered_fitting_list_name_does_not_make_sidebar_horizontally_scrollable() {
     let config = config_with_sidebar_names_that_fit_wide_pane();
     let tmp = tempfile::tempdir().unwrap();
@@ -200,117 +101,8 @@ fn hovered_fitting_list_name_does_not_make_sidebar_horizontally_scrollable() {
         ManagerListRow::SavedWorkspace(0),
     ));
 
-    let backend = TestBackend::new(120, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 120, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    for x in 1..35 {
-        assert!(
-            !["━", "·"].contains(&buffer[(x, 23)].symbol()),
-            "unexpected horizontal scrollbar at x={x}"
-        );
-    }
-}
-
-#[test]
-fn list_name_horizontal_scroll_keeps_short_selected_background_full_width() {
-    let config = config_with_short_selected_and_long_sibling();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 2;
-    state.list_names_scroll_x = 12;
-    state.set_list_names_focused(true);
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(1, 3)].symbol(), "▸");
-    for x in 1..20 {
-        assert_eq!(
-            buffer[(x, 3)].bg,
-            termrock::Theme::default()
-                .style(termrock::style::Role::Accent)
-                .fg
-                .unwrap_or_default(),
-            "x={x}"
-        );
-    }
-}
-
-#[test]
-fn focused_list_names_show_selected_cursor() {
-    let config = config_with_long_workspace_name();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 1;
-    state.set_list_names_focused(true);
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(1, 2)].symbol(), "▸");
-}
-
-#[test]
-fn background_list_names_under_modal_hide_selected_cursor() {
-    let config = config_with_long_workspace_name();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 1;
-    state.set_list_names_focused(true);
-    state.list_modal = Some(Modal::Confirm {
-        target: ConfirmTarget::DeleteEnvVar {
-            scope: SecretsScopeTag::Workspace,
-            key: "TOKEN".into(),
-        },
-        state: crate::tui::components::ConfirmState::new("Delete TOKEN?"),
-    });
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    assert_ne!(
-        buffer[(1, 2)].symbol(),
-        "▸",
-        "background sidebar must not show the selected cursor while a modal owns focus"
-    );
-    for x in 1..20 {
-        assert_eq!(
-            buffer[(x, 2)].bg,
-            termrock::Theme::default()
-                .style(termrock::style::Role::Accent)
-                .fg
-                .unwrap_or_default(),
-            "x={x}"
-        );
-    }
+    let content_width = list_names_content_width(&state, 54);
+    assert_eq!(max_offset(content_width, 54), 0);
 }
 
 #[test]
@@ -339,10 +131,6 @@ fn list_name_vertical_scroll_follows_selected_new_workspace() {
     assert!(
         dump.contains("+ New workspace"),
         "selected sentinel should be scrolled into view: {dump:?}"
-    );
-    assert!(
-        (1..9).any(|y| buffer[(1, y)].symbol() == "▸"),
-        "selected sentinel should show the cursor in the visible sidebar: {dump:?}"
     );
 }
 

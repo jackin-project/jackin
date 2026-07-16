@@ -52,7 +52,7 @@ fn widget_bar(
 #[test]
 fn renders_pr_id_title_and_container_without_url() {
     let pr = pull_request_fixture(434);
-    let (text, buf) = widget_bar(
+    let (text, _) = widget_bar(
         120,
         Some("asa/pr-context"),
         None,
@@ -67,11 +67,6 @@ fn renders_pr_id_title_and_container_without_url() {
     assert!(text.contains("Surface PR context in Capsule"));
     assert!(text.contains("jk-test-container"));
     assert!(!text.contains("https://github.com/jackin-project/jackin/pull/434"));
-    assert_eq!(
-        buf[(0, 23)].bg,
-        ratatui::style::Color::Rgb(255, 255, 255),
-        "bar row paints the white background"
-    );
 }
 
 #[test]

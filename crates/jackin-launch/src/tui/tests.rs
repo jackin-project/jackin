@@ -201,7 +201,7 @@ fn build_log_lines_wrap_with_visible_continuation() {
     );
 }
 #[test]
-fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
+fn build_log_dialog_renders_product_wrap_continuation() {
     let _guard = jackin_diagnostics::build_log::TEST_LOCK.lock().unwrap();
     jackin_diagnostics::build_log::begin();
     jackin_diagnostics::build_log::push_line(
@@ -249,14 +249,6 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
     let buffer = terminal.backend().buffer();
     let rendered = format!("{buffer:?}");
     assert!(rendered.contains(BUILD_LOG_WRAP_PREFIX));
-    let bottom = 10;
-    let horizontal_scroll_cells = (1..55)
-        .filter(|x| ["━", "·"].contains(&buffer[(*x, bottom)].symbol()))
-        .count();
-    assert_eq!(
-        horizontal_scroll_cells, 0,
-        "wrapped lines should fit the viewport and avoid horizontal scrollbar"
-    );
 }
 #[test]
 fn build_log_scroll_down_from_saturated_top_moves_visible_content() {

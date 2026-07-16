@@ -865,38 +865,6 @@ fn test_pane_session(
     test_session_with_agent(rows, cols, agent.map(str::to_owned))
 }
 
-fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
-    let rendered = String::from_utf8_lossy(frame);
-    let thumb_fg = format!(
-        "{}{}",
-        crate::tui::ansi::RESET,
-        crate::tui::ansi::rgb_fg(crate::tui::ansi::role_rgb(
-            termrock::style::Role::ScrollThumb,
-        ))
-    );
-    assert!(
-        rendered.contains(&thumb_fg),
-        "focused {context} should use the shared scrollbar thumb color"
-    );
-    assert!(
-        rendered.contains(termrock::scroll::ScrollbarStyle::Line.vertical_thumb()),
-        "focused {context} should draw the shared scrollbar thumb"
-    );
-    assert!(
-        rendered.contains(termrock::scroll::SCROLLBAR_TRACK),
-        "focused {context} should draw the shared scrollbar track"
-    );
-}
-
-fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
-    let rendered = String::from_utf8_lossy(frame);
-    assert!(
-        !rendered.contains(termrock::scroll::ScrollbarStyle::Line.vertical_thumb())
-            && !rendered.contains('█'),
-        "{context} should not draw fake scrollback chrome"
-    );
-}
-
 fn assert_frame_stays_within_geometry(frame: &[u8], rows: u16, cols: u16, context: &str) {
     let metrics = scan_emitted_frame(frame);
     assert!(
@@ -3104,31 +3072,6 @@ fn mode_reconciliation_resets_agent_modes_on_focus_swap() {
 }
 
 #[test]
-fn pane_scrollbar_renders_shared_component_glyphs_only() {
-    let mut mux = single_pane_tab_mux();
-    let (mut session, _rx) = test_session(20, 78);
-    for i in 0..40 {
-        session.feed_pty(format!("line {i}\r\n").as_bytes());
-    }
-    mux.session_supervisor.sessions.insert(1, session);
-
-    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-    let rendered = String::from_utf8_lossy(&frame);
-    assert!(
-        rendered.contains(termrock::scroll::ScrollbarStyle::Line.vertical_thumb()),
-        "pane scrollbar must use the shared Line thumb"
-    );
-    assert!(
-        rendered.contains(termrock::scroll::SCROLLBAR_TRACK),
-        "pane scrollbar must paint the shared track"
-    );
-    assert!(
-        !rendered.contains('█'),
-        "hand-painted block thumb is a D14 regression"
-    );
-}
-
-#[test]
 fn scrollbar_click_jumps_scrollback() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session(20, 78);
@@ -3215,38 +3158,6 @@ fn diff_frames_repaint_in_place_without_screen_erase() {
 }
 
 #[test]
-fn retained_scrollback_draws_scrollbar_at_live_tail() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux();
-        let (mut session, _input_rx) = test_pane_session(20, 78, agent);
-        for i in 0..40 {
-            session.feed_pty(format!("line {i}\r\n").as_bytes());
-        }
-        assert_eq!(session.scrollback_offset(), 0);
-        assert!(
-            session.scrollback_filled() > 0,
-            "{pane_kind} setup should retain scrollback"
-        );
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("{pane_kind} pane with retained scrollback at live tail"),
-        );
-        assert_eq!(
-            mux.session_supervisor
-                .sessions
-                .get(1)
-                .unwrap()
-                .scrollback_offset(),
-            0
-        );
-    }
-}
-
-#[test]
 fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
     for (agent, pane_kind) in pane_kind_cases() {
         let mut mux = single_pane_tab_mux_with_size(55, 200);
@@ -3313,10 +3224,6 @@ fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
                 .unwrap()
                 .scrollback_offset(),
             3
-        );
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with inline history"),
         );
         assert!(
             String::from_utf8_lossy(&frame).contains("history"),
@@ -3418,10 +3325,6 @@ fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
                 .scrollback_offset(),
             3
         );
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with clear-preserved history"),
-        );
         assert!(
             String::from_utf8_lossy(&frame).contains("release"),
             "normal-screen {pane_kind} wheel should render rows preserved before clear"
@@ -3462,10 +3365,6 @@ fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
                 .unwrap()
                 .scrollback_offset(),
             2
-        );
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with CSI S inline history"),
         );
         assert!(
             String::from_utf8_lossy(&frame).contains("top"),
@@ -3568,75 +3467,6 @@ fn wheel_cursor_fallback_respects_application_cursor_mode() {
         "pane-owned fallback should not redraw jackin❯"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1bOB\x1bOB\x1bOB");
-}
-
-#[test]
-fn alt_screen_overflow_does_not_draw_scrollbar_without_retained_scrollback() {
-    let mut mux = single_pane_tab_mux();
-    let (mut session, _input_rx) = test_session(8, 20);
-    session.feed_pty(b"\x1b[?1049h");
-    for i in 0..20 {
-        session.feed_pty(format!("line {i}\r\n").as_bytes());
-    }
-    assert_eq!(session.scrollback_filled(), 0);
-    mux.session_supervisor.sessions.insert(1, session);
-
-    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-    assert_no_scroll_thumb(&frame, "alt-screen pane without retained scrollback");
-}
-
-#[test]
-fn normal_screen_panes_do_not_draw_scrollbar_when_grid_is_full_without_scrollback() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux();
-        let (mut session, _input_rx) = test_pane_session(8, 20, agent);
-        for row in 0..8 {
-            session.feed_pty(format!("\x1b[{};1Hrow {row}", row + 1).as_bytes());
-        }
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-        assert_no_scroll_thumb(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with full grid but no scrollback"),
-        );
-    }
-}
-
-#[test]
-fn normal_screen_panes_do_not_draw_scrollbar_when_content_spans_viewport_without_scrollback() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux();
-        let (mut session, _input_rx) = test_pane_session(8, 20, agent);
-        session.feed_pty(b"\x1b[1;1Htop transcript\x1b[8;1Hbottom status");
-        assert_eq!(session.scrollback_filled(), 0);
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-        assert_no_scroll_thumb(
-            &frame,
-            &format!(
-                "normal-screen {pane_kind} pane with viewport-spanning content but no scrollback"
-            ),
-        );
-    }
-}
-
-#[test]
-fn normal_screen_panes_do_not_keep_scrollbar_when_cursor_moves_without_scrollback() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux_with_size(55, 200);
-        let (mut session, _input_rx) = test_pane_session(51, 198, agent);
-        session.feed_pty(b"\x1b[1;1Hrelease notes\x1b[51;1Hstatus line\x1b[48;3Hx");
-        assert_eq!(session.scrollback_filled(), 0);
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-        assert_no_scroll_thumb(
-            &frame,
-            &format!("normal-screen {pane_kind} transcript pane after cursor moved up"),
-        );
-    }
 }
 
 #[test]

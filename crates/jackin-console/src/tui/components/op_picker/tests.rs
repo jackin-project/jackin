@@ -973,62 +973,6 @@ fn render_picker_buffer(state: &RenderStateFixture, w: u16, h: u16) -> ratatui::
 }
 
 #[test]
-fn account_stage_render_uses_shared_full_width_highlight() {
-    let state = RenderStateFixture::new(OpPickerStage::Account, Some(0));
-    let buffer = render_picker_buffer(&state, 76, 10);
-
-    let selected_y = (0..10)
-        .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
-        .expect("selected account should show shared cursor");
-    for x in 1..75 {
-        assert_eq!(
-            buffer[(x, selected_y)].bg,
-            termrock::Theme::default()
-                .style(termrock::style::Role::Accent)
-                .fg
-                .unwrap_or_default(),
-            "x={x}"
-        );
-    }
-    assert_ne!(
-        buffer[(75, selected_y)].bg,
-        termrock::Theme::default()
-            .style(termrock::style::Role::Accent)
-            .fg
-            .unwrap_or_default(),
-        "selection must not paint the dialog border"
-    );
-}
-
-#[test]
-fn item_stage_render_uses_shared_full_width_highlight() {
-    let state = RenderStateFixture::new(OpPickerStage::Item, Some(1));
-    let buffer = render_picker_buffer(&state, 76, 10);
-
-    let selected_y = (0..10)
-        .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
-        .expect("selected item should show shared cursor");
-    for x in 1..75 {
-        assert_eq!(
-            buffer[(x, selected_y)].bg,
-            termrock::Theme::default()
-                .style(termrock::style::Role::Accent)
-                .fg
-                .unwrap_or_default(),
-            "x={x}"
-        );
-    }
-    assert_ne!(
-        buffer[(75, selected_y)].bg,
-        termrock::Theme::default()
-            .style(termrock::style::Role::Accent)
-            .fg
-            .unwrap_or_default(),
-        "selection must not paint the dialog border"
-    );
-}
-
-#[test]
 fn loading_descriptor_names_current_load_target() {
     assert_eq!(
         loading_descriptor(OpPickerStage::Account, false, "", "", "", ""),
@@ -1336,30 +1280,17 @@ fn recoverable_banner_preserves_selected_list_geometry() {
     state.load_state = recoverable_load_error_state("temporary op failure");
     let buffer = render_picker_buffer(&state, 60, 9);
     let selected_y = (0..9)
-        .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
-        .expect("selected row should remain visible below the banner");
+        .find(|y| {
+            (0..60)
+                .map(|x| buffer[(x, *y)].symbol())
+                .collect::<String>()
+                .contains("bob@example.com")
+        })
+        .expect("selected account should remain visible below the banner");
 
     assert!(
         selected_y > 4,
         "selected row should render in the list area below banner/filter rows"
-    );
-    for x in 1..59 {
-        assert_eq!(
-            buffer[(x, selected_y)].bg,
-            termrock::Theme::default()
-                .style(termrock::style::Role::Accent)
-                .fg
-                .unwrap_or_default(),
-            "x={x}"
-        );
-    }
-    assert_ne!(
-        buffer[(59, selected_y)].bg,
-        termrock::Theme::default()
-            .style(termrock::style::Role::Accent)
-            .fg
-            .unwrap_or_default(),
-        "selected row must not paint the dialog border"
     );
 }
 

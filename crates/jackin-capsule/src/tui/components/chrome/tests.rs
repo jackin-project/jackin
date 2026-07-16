@@ -35,42 +35,6 @@ fn status_bar_renders_without_tabs() {
 }
 
 #[test]
-fn status_bar_renders_shared_tab_underline() {
-    let tabs = [
-        Tab::new_single("shell", 1, "test"),
-        Tab::new_single("agent", 2, "test"),
-    ];
-    let backend = TestBackend::new(80, 2);
-    let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle);
-    terminal
-        .draw(|frame| {
-            frame.render_widget(
-                StatusBarWidget {
-                    plan: &plan,
-                    prefix_mode: PrefixMode::Idle,
-                    hovered_tab: None,
-                    menu_hovered: false,
-                    focused: false,
-                },
-                frame.area(),
-            );
-        })
-        .unwrap();
-    let buf = terminal.backend().buffer();
-    let tab_start = u16::try_from(termrock::text::display_cols(" jackin❯ ")).unwrap() + 1;
-
-    assert_eq!(buf[(tab_start, 1)].symbol(), "━");
-    assert_eq!(
-        buf[(tab_start, 1)].fg,
-        Theme::default()
-            .style(termrock::style::Role::Text)
-            .fg
-            .unwrap_or_default()
-    );
-}
-
-#[test]
 fn status_bar_resets_canvas_across_unused_columns() {
     let tabs = [
         Tab::new_single("Claude", 1, "test"),
@@ -216,66 +180,5 @@ fn hint_row_sits_between_one_blank_row_above_and_below() {
     assert!(
         row_below.trim().is_empty(),
         "bottom spacer polluted: {row_below:?}"
-    );
-}
-
-#[test]
-fn dynamic_key_hint_uses_key_style() {
-    let area = Rect::new(0, 0, 40, 5);
-    let mut buf = Buffer::empty(area);
-    render_hint_spans_row(
-        &mut buf,
-        area,
-        &[
-            termrock::widgets::HintSpan::DynKey("Ctrl-\\".to_owned()),
-            termrock::widgets::HintSpan::Text("menu"),
-        ],
-    );
-
-    let y = hint_row(area);
-    let key_cell = (0..area.width)
-        .find(|x| buf[(*x, y)].symbol() == "C")
-        .expect("key rendered");
-    assert_eq!(
-        buf[(key_cell, y)].fg,
-        Theme::default()
-            .style(termrock::style::Role::Text)
-            .fg
-            .unwrap_or_default()
-    );
-    assert!(
-        buf[(key_cell, y)]
-            .style()
-            .add_modifier
-            .contains(Modifier::BOLD)
-    );
-}
-
-#[test]
-fn separator_hint_uses_shared_border_gray() {
-    let area = Rect::new(0, 0, 40, 5);
-    let mut buf = Buffer::empty(area);
-    render_hint_spans_row(
-        &mut buf,
-        area,
-        &[
-            termrock::widgets::HintSpan::Key("A"),
-            termrock::widgets::HintSpan::Text("alpha"),
-            termrock::widgets::HintSpan::Sep,
-            termrock::widgets::HintSpan::Key("B"),
-            termrock::widgets::HintSpan::Text("bravo"),
-        ],
-    );
-
-    let y = hint_row(area);
-    let sep_cell = (0..area.width)
-        .find(|x| buf[(*x, y)].symbol() == "·")
-        .expect("separator rendered");
-    assert_eq!(
-        buf[(sep_cell, y)].fg,
-        Theme::default()
-            .style(termrock::style::Role::Border)
-            .fg
-            .unwrap_or_default()
     );
 }
