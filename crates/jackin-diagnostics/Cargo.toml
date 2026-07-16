@@ -107,5 +107,9 @@ required-features = ["test-support"]
 name = "wire_failure_retryable"
 required-features = ["test-support"]
 
+[[test]]
+name = "wire_failure_endpoint_loss"
+required-features = ["test-support"]
+
 [lints]
 workspace = true
