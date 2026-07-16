@@ -124,6 +124,7 @@ skip = [
     { crate = "block-buffer@0.10.4", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "cfg_aliases@0.1.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "cipher@0.4.4", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "compact_str@0.9.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "const-oid@0.9.6", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "cpufeatures@0.2.17", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "crypto-common@0.1.7", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
