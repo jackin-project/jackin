@@ -123,5 +123,9 @@ required-features = ["test-support"]
 name = "wire_propagation"
 required-features = ["test-support"]
 
+[[test]]
+name = "wire_sessions"
+required-features = ["test-support"]
+
 [lints]
 workspace = true
