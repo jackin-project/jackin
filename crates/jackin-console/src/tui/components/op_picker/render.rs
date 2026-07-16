@@ -50,7 +50,8 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
         frame,
         area,
         Some(&title),
-        termrock::layout::DialogBorder::Default,
+        termrock::widgets::PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
     let banner_height: u16 = match state.load_state() {
@@ -139,7 +140,8 @@ fn render_loading(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRender
         frame,
         area,
         Some(&title),
-        termrock::layout::DialogBorder::Default,
+        termrock::widgets::PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
     let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
@@ -170,7 +172,8 @@ pub fn render_fatal(frame: &mut Frame<'_>, area: Rect, fatal: &OpPickerFatalStat
         frame,
         area,
         Some("1Password"),
-        termrock::layout::DialogBorder::Default,
+        termrock::widgets::PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
     let rows = Layout::default()

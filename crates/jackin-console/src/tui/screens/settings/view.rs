@@ -215,7 +215,7 @@ pub fn render_general_tab<
 ) {
     let focused = !state.tab_bar_focused() && state.error_popup.is_none();
     let lines = general_state_lines(&state.general, focused);
-    termrock::scroll::render_scrollable_block_at(frame, area, lines, 0, 0, focused, None);
+    crate::tui::scroll_block::render_scrollable_block_at(frame, area, lines, 0, 0, focused, None);
 }
 
 pub fn render_mounts_tab<
@@ -244,7 +244,7 @@ pub fn render_mounts_tab<
         None
     };
     let lines = global_mount_state_lines(&state.mounts, selected, true);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -276,7 +276,7 @@ pub fn render_env_tab<
 ) {
     let focused = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
     let lines = env_state_lines(&state.env, focused, area.width);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -312,7 +312,7 @@ pub fn render_auth_tab<
         .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
     let focused = state.content_focused(SettingsTab::Auth) && state.auth.modal.is_none();
     let lines = auth_state_lines(&state.auth, &state.env, focused);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -344,7 +344,7 @@ pub fn render_trust_tab<
 ) {
     let lines = settings_trust_lines_for_state(state);
     let focused = settings_trust_focused(state);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,

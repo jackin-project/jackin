@@ -10,8 +10,21 @@
 //! disagreement that made the horizontal scrollbar thumb stop short of the end.
 
 use ratatui::text::{Line, Span};
+use termrock::text::leading_space_cols;
 
-use termrock::scroll::padded_max_line_width as max_line_width;
+/// Content width for mount blocks: line width plus leading-indent trailing pad
+/// that `Viewport` mirrors for horizontal scroll range (migration 0018).
+fn max_line_width(lines: &[Line<'_>]) -> usize {
+    lines
+        .iter()
+        .map(|line| {
+            let width = line.width();
+            let pad = leading_space_cols(line.spans.iter().map(|span| span.content.as_ref()));
+            width.saturating_add(pad)
+        })
+        .max()
+        .unwrap_or(0)
+}
 
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::components::mount_rows::{

@@ -72,10 +72,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
-use termrock::layout::{DialogBorder, render_dialog_shell};
+use termrock::layout::render_dialog_shell;
+use termrock::widgets::PanelEmphasis;
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
-    let inner = render_dialog_shell(frame, area, Some(state.title), DialogBorder::Default);
+    let inner = render_dialog_shell(frame, area, Some(state.title), PanelEmphasis::Focused, &termrock::Theme::default());
 
     // inner area is 3 rows (5 outer − 2 border): blank, button, blank.
     let chunks = Layout::default()

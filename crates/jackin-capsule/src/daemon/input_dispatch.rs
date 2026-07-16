@@ -544,7 +544,9 @@ impl Multiplexer {
                         })
                         .unwrap_or_default();
                     if let Some(scroll) = self.dialog_top_mut().and_then(|d| d.body_scroll_mut()) {
-                        if !scroll.on_sgr_wheel_button_for_axes(button, axes) {
+                        if !jackin_core::tui_scroll_input::apply_sgr_wheel_button(
+                            scroll, button, axes,
+                        ) {
                             return;
                         }
                         self.clamp_dialog_top_scroll();

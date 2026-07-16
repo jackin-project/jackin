@@ -426,7 +426,7 @@ pub fn list_name_lines(
         .position(|row| row.as_ref().is_some_and(|row| row.selected))
         && let Some(line) = lines.get_mut(selected_idx)
     {
-        let current_w = termrock::scroll::line_width(line);
+        let current_w = line.width();
         if current_w < content_w {
             let bg = match visual_rows[selected_idx].as_ref().map(|row| row.tone) {
                 Some(WorkspaceListRowTone::Instance) => jackin_core::tui_theme::CYAN,
@@ -449,7 +449,7 @@ pub fn list_name_lines(
                 .style
                 .bg(jackin_core::tui_theme::tab_inactive_hover_bg());
         }
-        let current_w = termrock::scroll::line_width(line);
+        let current_w = line.width();
         if current_w < content_w {
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
@@ -507,10 +507,26 @@ pub fn render_list_names_block(
         render_list_name_line(frame, inner, row_idx as u16, line, usize::from(scroll_x));
     }
     if h_scrollable {
-        termrock::scroll::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
+        termrock::scroll::render_scrollbar(
+            frame.buffer_mut(),
+            termrock::scroll::horizontal_scrollbar_area(area),
+            termrock::scroll::ScrollbarSpec::new(
+                termrock::scroll::ScrollAxis::Horizontal,
+                termrock::scroll::ScrollbarGeometry::new(content_width, viewport_w, scroll_x),
+            ),
+            &theme,
+        );
     }
     if v_scrollable {
-        termrock::scroll::render_vertical_scrollbar(frame, area, content_height, scroll_y);
+        termrock::scroll::render_scrollbar(
+            frame.buffer_mut(),
+            termrock::scroll::vertical_scrollbar_area(area),
+            termrock::scroll::ScrollbarSpec::new(
+                termrock::scroll::ScrollAxis::Vertical,
+                termrock::scroll::ScrollbarGeometry::new(content_height, viewport_h, scroll_y),
+            ),
+            &theme,
+        );
     }
 }
 
@@ -965,7 +981,7 @@ pub fn render_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         crate::tui::mount_display::workspace_mount_block_lines(rows),
@@ -998,7 +1014,7 @@ pub fn render_global_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         crate::tui::mount_display::global_mount_block_lines(rows),
@@ -1102,7 +1118,7 @@ pub fn render_roles_subpanel(
         lines.push(Line::from(spans));
     }
 
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,

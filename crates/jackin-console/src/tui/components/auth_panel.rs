@@ -376,7 +376,8 @@ pub fn render_form<V: AuthCredential>(
         frame,
         area,
         Some("Edit auth"),
-        termrock::layout::DialogBorder::Default,
+        termrock::widgets::PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
     for (idx, row) in build_form_lines(form, focus).into_iter().enumerate() {

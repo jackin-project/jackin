@@ -127,7 +127,7 @@ pub fn handle_mouse_with_config(
         .and_then(|modal| modal.container_info_rect(term_size));
     if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut()
         && let Some(rect) = container_info_rect
-        && info.scroll.on_mouse_scroll_for_axes(
+        && info.scroll.handle_mouse(
             mouse.kind.into(),
             mouse.modifiers.into(),
             termrock::scroll::dialog_scroll_axes(info.content_width(), info.content_height(), rect),

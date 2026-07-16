@@ -128,7 +128,8 @@ use ratatui::{
 };
 
 use jackin_core::tui_theme::{muted_fg, text_fg};
-use termrock::layout::{DialogBorder, render_dialog_shell};
+use termrock::layout::render_dialog_shell;
+use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{List, ListRow, RowRole};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
@@ -136,7 +137,8 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
         frame,
         area,
         Some("Working directory"),
-        DialogBorder::Default,
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
     let rows = Layout::default()

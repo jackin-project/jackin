@@ -179,7 +179,7 @@ pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<
         width: overlay.width.saturating_sub(2),
         height: overlay.height.saturating_sub(2),
     };
-    let chunks = termrock::layout::dialog_inner_chunks(inner, Some(2));
+    let chunks = crate::tui::dialog_layout::dialog_inner_chunks(inner, Some(2));
     if chunks[1].height < 2 {
         return None;
     }
@@ -272,11 +272,12 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
         frame,
         area,
         Some("Git repository detected"),
-        termrock::layout::DialogBorder::Default,
+        termrock::widgets::PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
     let content_rows = if has_url { 2 } else { 1 };
-    let chunks = termrock::layout::dialog_inner_chunks(inner, Some(content_rows));
+    let chunks = crate::tui::dialog_layout::dialog_inner_chunks(inner, Some(content_rows));
     let prompt_row = Rect {
         height: 1,
         ..chunks[1]

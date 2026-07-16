@@ -560,11 +560,13 @@ fn render_usage_info(
     hovered_tab: Option<usize>,
 ) {
     let title = usage_panel_title(state, area.width);
+    let theme = Theme::default();
     let inner = termrock::layout::render_dialog_shell(
         frame,
         area,
         Some(title.as_str()),
-        termrock::layout::DialogBorder::Default,
+        PanelEmphasis::Focused,
+        &theme,
     );
     if inner.height == 0 {
         return;
@@ -601,7 +603,14 @@ fn render_usage_info(
     let body = usage_body_rect(area);
     let lines = usage_info_lines_for_width(state, body.width);
     let mut scroll = state.scroll.clone();
-    termrock::layout::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll);
+    termrock::layout::render_scrollable_dialog_body(
+        frame,
+        area,
+        body,
+        &lines,
+        &mut scroll,
+        &theme,
+    );
 }
 
 fn render_filter_picker(

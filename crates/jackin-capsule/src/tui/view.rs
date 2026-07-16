@@ -109,12 +109,15 @@ fn apply_pane_scrollbar(frame: &mut Frame<'_>, pane: &VisiblePane, offset: usize
     let top_offset = termrock::scroll::TailScroll::new(offset)
         .to_top_offset(content_len, interior_rows)
         .min(usize::from(u16::MAX)) as u16;
-    termrock::scroll::render_vertical_scrollbar_in_area(
-        frame,
+    let theme = termrock::Theme::default();
+    termrock::scroll::render_scrollbar(
+        frame.buffer_mut(),
         track,
-        content_len,
-        interior_rows,
-        top_offset,
+        termrock::scroll::ScrollbarSpec::new(
+            termrock::scroll::ScrollAxis::Vertical,
+            termrock::scroll::ScrollbarGeometry::new(content_len, interior_rows, top_offset),
+        ),
+        &theme,
     );
 }
 

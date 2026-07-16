@@ -56,6 +56,7 @@ mod session_id;
 mod standalone_dialog;
 mod status;
 pub mod tui_hover;
+pub mod tui_scroll_input;
 /// Ratatui adapters for the product-owned jackin❯ palette.
 pub mod tui_theme;
 mod url_text;

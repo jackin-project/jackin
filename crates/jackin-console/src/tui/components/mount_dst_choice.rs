@@ -20,7 +20,8 @@ use ratatui::{
 use jackin_core::ModalOutcome;
 use jackin_core::shorten_home;
 use jackin_core::tui_theme::muted_fg;
-use termrock::layout::{DialogBorder, render_dialog_shell};
+use termrock::layout::render_dialog_shell;
+use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{Action, ActionBar, ActionBarState};
 
 /// Outcome of the mount-destination modal.
@@ -96,7 +97,8 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         frame,
         area,
         Some("Mount destination"),
-        DialogBorder::Default,
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
     // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.

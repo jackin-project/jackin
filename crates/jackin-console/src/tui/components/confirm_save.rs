@@ -18,7 +18,8 @@ use ratatui::{
 };
 
 use jackin_core::ModalOutcome;
-use termrock::layout::{DialogBorder, dialog_inner_chunks, render_dialog_shell};
+use termrock::layout::render_dialog_shell;
+use termrock::widgets::PanelEmphasis;
 use termrock::scroll::ScrollAxes;
 use termrock::scroll::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
@@ -273,7 +274,7 @@ pub fn prepare_for_render<M: Clone>(area: Rect, state: &mut ConfirmSaveState<M>)
 }
 
 pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveState<M>) {
-    let inner = render_dialog_shell(frame, area, Some("Confirm changes"), DialogBorder::Default);
+    let inner = render_dialog_shell(frame, area, Some("Confirm changes"), PanelEmphasis::Focused, &termrock::Theme::default());
 
     // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
     // responsible for any deeper indentation; we just add a uniform
@@ -289,9 +290,16 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
         })
         .collect();
 
-    let chunks = dialog_inner_chunks(inner, None);
+    let chunks = crate::tui::dialog_layout::dialog_inner_chunks(inner, None);
+    let theme = termrock::Theme::default();
 
-    render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
+    render_lines_with_offset_in_area(
+        frame,
+        chunks[1],
+        &indented,
+        state.scroll_offset,
+        &theme,
+    );
 
     let actions = [
         Action {
