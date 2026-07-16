@@ -12,7 +12,7 @@ Split out of the console so the picker's decision logic is unit-testable without
 
 ## Architecture tier and allowed dependencies
 
-**Presentation-adjacent model.** Allowed workspace dependencies include `jackin-core`, `jackin-diagnostics`, Tokio's runtime/channel features, and TermRock. No `op` and no filesystem — the `op` side-effects live in `jackin-env`.
+**Presentation-adjacent model.** Dependencies include `jackin-core`, `jackin-diagnostics`, `jackin-tui`, Tokio runtime/channels, and TermRock. No `op` or filesystem — those effects live in `jackin-env`.
 
 ## Structure
 

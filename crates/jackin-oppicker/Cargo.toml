@@ -13,6 +13,7 @@ anyhow = { workspace = true }
 crossterm = { workspace = true }
 jackin-core = { workspace = true }
 jackin-diagnostics = { workspace = true }
+jackin-tui = { workspace = true }
 termrock = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync"] }
 

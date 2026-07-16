@@ -210,7 +210,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
     frame.render_stateful_widget(
         &List::new(&items, &theme),
         rows[1],
-        &mut ListState::new(state.list_state.selected),
+        &mut ListState::new(state.list_state.selected().copied()),
     );
 }
 

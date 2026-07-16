@@ -904,7 +904,7 @@ pub fn render_role_picker_sidebar<R: crate::tui::components::role_picker::RoleCh
         area,
         &title,
         labels,
-        picker.list_state.selected,
+        picker.list_state.selected().copied(),
         focused,
     );
 }

@@ -7,4 +7,4 @@
 //! module as the typed effect boundary so future work grows here instead of
 //! adding service calls to update or view code.
 
-pub type LaunchEffect = termrock::runtime::NoEffect;
+pub type LaunchEffect = jackin_tui::runtime::NoEffect;

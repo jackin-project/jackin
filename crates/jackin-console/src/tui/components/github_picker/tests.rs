@@ -45,13 +45,13 @@ fn new_selects_first_choice_when_non_empty() {
         choice("/a", "main", "https://github.com/o/a/tree/main"),
         choice("/b", "main", "https://github.com/o/b/tree/main"),
     ]);
-    assert_eq!(s.list_state.selected, Some(0));
+    assert_eq!(s.list_state.selected().copied(), Some(0));
 }
 
 #[test]
 fn new_selects_nothing_when_empty() {
     let s = GithubPickerState::new(vec![]);
-    assert_eq!(s.list_state.selected, None);
+    assert_eq!(s.list_state.selected().copied(), None);
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn down_wraps_at_end() {
     ]);
     s.handle_key(key(KeyCode::Down));
     s.handle_key(key(KeyCode::Down));
-    assert_eq!(s.list_state.selected, Some(0));
+    assert_eq!(s.list_state.selected().copied(), Some(0));
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn up_wraps_at_start() {
         choice("/b", "dev", "https://github.com/o/b/tree/dev"),
     ]);
     s.handle_key(key(KeyCode::Up));
-    assert_eq!(s.list_state.selected, Some(1));
+    assert_eq!(s.list_state.selected().copied(), Some(1));
 }
 
 #[test]

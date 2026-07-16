@@ -6,7 +6,6 @@ use super::{
     BTreeMap, SettingsEnvConfig, SettingsEnvScope, SettingsModalSlot, SettingsPanelChangeCount,
     SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved, SettingsPanelTakeError,
 };
-use termrock::interaction::ModalStack;
 
 pub fn settings_env_config_from_app_config(
     config: &jackin_config::AppConfig,
@@ -26,8 +25,7 @@ pub struct SettingsEnvState<EnvValue, Modal> {
     pub selected: usize,
     pub pending: SettingsEnvConfig<EnvValue>,
     pub original: SettingsEnvConfig<EnvValue>,
-    pub modal: Option<Modal>,
-    pub modal_parents: Vec<Modal>,
+    pub modals: jackin_tui::runtime::ModalFlow<Modal>,
     pub unmasked_rows: std::collections::BTreeSet<(SettingsEnvScope, String)>,
     pub expanded: std::collections::BTreeSet<String>,
     pub error: Option<String>,
@@ -59,8 +57,7 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
             selected: 0,
             original: pending.clone(),
             pending,
-            modal: None,
-            modal_parents: Vec::new(),
+            modals: jackin_tui::runtime::ModalFlow::new(),
             unmasked_rows: std::collections::BTreeSet::default(),
             expanded: std::collections::BTreeSet::default(),
             error: None,
@@ -96,10 +93,7 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
             )
             .saturating_sub(1),
         );
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.clear_chain();
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.clear();
 
         self.unmasked_rows.clear();
         self.expanded.clear();
@@ -147,17 +141,11 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     }
 
     pub fn open_sub_modal(&mut self, child: Modal) {
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.open_sub(child);
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.open_sub(child);
     }
 
     pub fn pop_modal_chain(&mut self) {
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.pop();
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.pop();
     }
 
     pub fn set_value(&mut self, scope: &SettingsEnvScope, key: &str, value: EnvValue) {
@@ -183,10 +171,7 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     }
 
     pub fn clear_modal_chain(&mut self) {
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.clear_chain();
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.clear();
     }
 
     pub fn set_error(&mut self, error: impl Into<String>) {
@@ -220,7 +205,7 @@ impl<EnvValue, Modal> SettingsModalSlot for SettingsEnvState<EnvValue, Modal> {
     type Modal = Modal;
 
     fn modal_mut(&mut self) -> Option<&mut Self::Modal> {
-        self.modal.as_mut()
+        self.modals.current_mut()
     }
 }
 

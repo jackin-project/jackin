@@ -14,6 +14,7 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -21,7 +22,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-use termrock::runtime::{Subscription, SubscriptionPoll};
 
 use super::input::FileBrowserOutcome;
 use super::state::FileBrowserState;

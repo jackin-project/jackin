@@ -69,12 +69,12 @@ impl PromptPicker {
 
     #[must_use]
     pub const fn selected_index(&self) -> Option<usize> {
-        self.state.selected
+        self.state.selected().copied()
     }
 
     pub fn select_index(&mut self, index: usize) {
         if self.filtered.contains(&index) {
-            self.state.selected = Some(index);
+            self.state.select(Some(index));
         }
     }
 
@@ -113,8 +113,8 @@ impl PromptPicker {
                 (needle.is_empty() || label.to_lowercase().contains(&needle)).then_some(index)
             })
             .collect();
-        self.state.selected = self.filtered.first().copied();
-        self.state.offset = 0;
+        self.state.select(self.filtered.first().copied());
+        self.state.scroll_by(isize::MIN, self.filtered.len());
     }
 
     fn rows(&self) -> Vec<ListRow<'static, usize>> {

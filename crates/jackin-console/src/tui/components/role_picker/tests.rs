@@ -30,14 +30,14 @@ fn roles(keys: &[&str]) -> Vec<TestRole> {
 #[test]
 fn new_selects_first_when_non_empty() {
     let s = RolePickerState::new(roles(&["chainargos/agent-smith", "agent-brown"]));
-    assert_eq!(s.list_state.selected, Some(0));
+    assert_eq!(s.list_state.selected().copied(), Some(0));
     assert_eq!(s.filtered.len(), 2);
 }
 
 #[test]
 fn new_selects_nothing_when_empty() {
     let s = RolePickerState::<TestRole>::new(vec![]);
-    assert_eq!(s.list_state.selected, None);
+    assert_eq!(s.list_state.selected().copied(), None);
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn filter_narrows_agent_list() {
     assert_eq!(s.filter, "smith");
     assert_eq!(s.filtered.len(), 1);
     assert_eq!(s.filtered[0].key(), "chainargos/agent-smith");
-    assert_eq!(s.list_state.selected, Some(0));
+    assert_eq!(s.list_state.selected().copied(), Some(0));
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn filter_shrinking_below_selection_resets_to_first_match() {
 
     assert_eq!(s.filtered.len(), 1);
     assert_eq!(s.filtered[0].key(), "chainargos/agent-brown");
-    assert_eq!(s.list_state.selected, Some(0));
+    assert_eq!(s.list_state.selected().copied(), Some(0));
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn filter_empty_shows_all() {
     s.handle_key(key(KeyCode::Backspace));
     assert!(s.filter.is_empty());
     assert_eq!(s.filtered.len(), 2);
-    assert_eq!(s.list_state.selected, Some(0));
+    assert_eq!(s.list_state.selected().copied(), Some(0));
 }
 
 #[test]
@@ -125,14 +125,14 @@ fn down_wraps_at_end() {
     let mut s = RolePickerState::new(roles(&["agent-a", "agent-b"]));
     s.handle_key(key(KeyCode::Down));
     s.handle_key(key(KeyCode::Down));
-    assert_eq!(s.list_state.selected, Some(0));
+    assert_eq!(s.list_state.selected().copied(), Some(0));
 }
 
 #[test]
 fn up_wraps_at_start() {
     let mut s = RolePickerState::new(roles(&["agent-a", "agent-b"]));
     s.handle_key(key(KeyCode::Up));
-    assert_eq!(s.list_state.selected, Some(1));
+    assert_eq!(s.list_state.selected().copied(), Some(1));
 }
 
 /// `j`/`k` append to the filter (no vim-style nav) so roles with

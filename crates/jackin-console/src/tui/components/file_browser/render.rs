@@ -104,7 +104,7 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     let selected = state
         .pending_git_prompt
         .is_none()
-        .then_some(state.list_state.selected)
+        .then_some(state.list_state.selected().copied())
         .flatten();
     let base_style = Style::default().fg(termrock::Theme::default()
         .style(termrock::style::Role::Text)

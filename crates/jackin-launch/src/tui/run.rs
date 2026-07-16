@@ -413,9 +413,9 @@ impl RichRenderer {
                 jackin_version: self.jackin_version,
             },
         };
-        // Progress frame via shared drive_frame (plan 021); OSC 8 post-pass
+        // Progress frame via shared drive_frame; OSC 8 post-pass
         // remains caller-owned per drive_frame contract.
-        termrock::runtime::drive_frame(&mut self.terminal, &adapter, view, area, |_| {})
+        jackin_tui::runtime::drive_frame(&mut self.terminal, &adapter, view, area, |_| {})
             .map(|_| ())
             .context("rendering launch progress TUI")?;
         if let Some(size) = size {
@@ -481,7 +481,7 @@ impl RichRenderer {
     ) -> anyhow::Result<usize> {
         let mut picker = PromptPicker::new(items);
         loop {
-            termrock::runtime::drive_render(&mut self.terminal, |frame| {
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
                 draw_select(frame, title, context, &mut picker);
             })
             .context("rendering launch picker")?;
@@ -520,7 +520,7 @@ impl RichRenderer {
             PromptText::new(title, initial)
         };
         loop {
-            termrock::runtime::drive_render(&mut self.terminal, |frame| {
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
                 draw_text_prompt(frame, &mut input, skippable);
             })
             .context("rendering launch env text prompt")?;
@@ -567,7 +567,7 @@ impl RichRenderer {
             picker.select_index(index);
         }
         loop {
-            termrock::runtime::drive_render(&mut self.terminal, |frame| {
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
                 draw_select(frame, title, &[], &mut picker);
             })
             .context("rendering launch env select prompt")?;
@@ -605,7 +605,7 @@ impl RichRenderer {
 
     fn confirm_loop(&mut self, state: &mut PromptConfirm) -> anyhow::Result<bool> {
         loop {
-            termrock::runtime::drive_render(&mut self.terminal, |frame| {
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
                 draw_confirm(frame, state);
             })
             .context("rendering launch confirmation")?;
@@ -624,7 +624,7 @@ impl RichRenderer {
     fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
         let mut state = PromptError::new(title, message);
         loop {
-            termrock::runtime::drive_render(&mut self.terminal, |frame| {
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
                 draw_error_popup(frame, &mut state);
             })
             .context("rendering launch error popup")?;
@@ -700,7 +700,7 @@ impl RichRenderer {
         loop {
             match &mut mode {
                 Mode::Picker => {
-                    termrock::runtime::drive_render(&mut self.terminal, |frame| {
+                    jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
                         let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
                         let picker_rect = {
                             let rows = u16::try_from(picker.len())
@@ -766,7 +766,7 @@ impl RichRenderer {
                     let mut confirm = PromptConfirm::new(format!(
                         "Delete {label}?\n\nAny uncommitted changes will be lost."
                     ));
-                    termrock::runtime::drive_render(&mut self.terminal, |frame| {
+                    jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
                         draw_confirm(frame, &mut confirm);
                     })
                     .context("rendering delete confirm")?;
@@ -877,7 +877,7 @@ impl RichRenderer {
             let has_repos = worktrees.len() > 1;
             let mut diff_cloned = diff_state.clone();
 
-            termrock::runtime::drive_render(&mut self.terminal, |frame| {
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
                 let (body, hint_area) = dialog_backdrop(frame, frame.area());
                 termrock::widgets::render_hint_bar(
                     frame,
@@ -1083,7 +1083,7 @@ impl RichRenderer {
         let mut picker = PromptPicker::new(options);
 
         loop {
-            termrock::runtime::drive_render(&mut self.terminal, |frame| {
+            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
                 draw_select(frame, title, context, &mut picker);
             })
             .context("rendering exit dialog")?;

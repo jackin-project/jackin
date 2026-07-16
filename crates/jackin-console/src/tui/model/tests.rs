@@ -234,7 +234,7 @@ impl super::LaunchRolePromptManagerState<TestPromptRole> for TestLaunchPromptMan
         picker: crate::tui::components::role_picker::RolePickerState<TestPromptRole>,
     ) {
         self.role_picker_keys = picker.roles.iter().map(|role| role.0).collect();
-        self.role_picker_selected = picker.list_state.selected;
+        self.role_picker_selected = picker.list_state.selected().copied();
         self.role_picker_confirm_label = picker.confirm_label;
     }
 }

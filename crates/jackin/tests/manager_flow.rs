@@ -461,7 +461,8 @@ fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
         .expect("post-default dispatch must open the inline picker");
     let selected = picker
         .list_state
-        .selected
+        .selected()
+        .copied()
         .expect("default role should be selected");
     assert_eq!(picker.filtered[selected].key(), "chainargos/agent-smith");
     Ok(())

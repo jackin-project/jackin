@@ -66,7 +66,8 @@ fn agent_picker_opens_with_default_agent_preselected() -> Result<()> {
         .expect("default_role dispatch must open the inline picker");
     let selected = picker
         .list_state
-        .selected
+        .selected()
+        .copied()
         .expect("default role should be selected");
     assert_eq!(picker.filtered[selected].key(), "chainargos/agent-smith");
     Ok(())

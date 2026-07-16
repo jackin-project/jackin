@@ -715,7 +715,7 @@ fn settings_mounts_with_modal<'a>(
     let mut settings = SettingsState::from_config(config);
     settings.active_tab = crate::tui::state::SettingsTab::Mounts;
     settings.set_active_content_focused(true);
-    settings.mounts.modal = Some(modal);
+    settings.mounts.modals.open(modal);
     state.stage = ManagerStage::Settings(settings);
     state
 }
@@ -729,7 +729,7 @@ fn settings_env_with_modal<'a>(
     let mut settings = SettingsState::from_config(config);
     settings.active_tab = crate::tui::state::SettingsTab::Environments;
     settings.set_active_content_focused(true);
-    settings.env.modal = Some(modal);
+    settings.env.modals.open(modal);
     state.stage = ManagerStage::Settings(settings);
     state
 }
@@ -743,7 +743,7 @@ fn settings_auth_with_modal(
     let mut settings = SettingsState::from_config(config);
     settings.active_tab = crate::tui::state::SettingsTab::Auth;
     settings.set_active_content_focused(true);
-    settings.auth.modal = Some(modal);
+    settings.auth.modals.open(modal);
     state.stage = ManagerStage::Settings(settings);
     state
 }
@@ -1199,7 +1199,7 @@ fn host_console_modal_states_project_visible_focus() {
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = crate::tui::state::SettingsTab::Mounts;
     settings.set_active_content_focused(true);
-    settings.mounts.modal = Some(SettingsModal::MountConfirm {
+    settings.mounts.modals.open(SettingsModal::MountConfirm {
         action: GlobalMountConfirm::Remove,
         state: crate::tui::components::ConfirmState::new("Remove mount?"),
     });
@@ -1291,7 +1291,7 @@ fn host_console_modal_states_project_visible_focus() {
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = crate::tui::state::SettingsTab::Environments;
     settings.set_active_content_focused(true);
-    settings.env.modal = Some(SettingsModal::EnvText {
+    settings.env.modals.open(SettingsModal::EnvText {
         target: SettingsEnvTextTarget::EnvKey {
             scope: SettingsEnvScope::Global,
         },
@@ -1375,7 +1375,7 @@ fn host_console_modal_states_project_visible_focus() {
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = crate::tui::state::SettingsTab::Auth;
     settings.set_active_content_focused(true);
-    settings.auth.modal = Some(SettingsModal::AuthTextInput {
+    settings.auth.modals.open(SettingsModal::AuthTextInput {
         state: Box::new(crate::tui::components::TextInputState::new(
             "Credential",
             "token",

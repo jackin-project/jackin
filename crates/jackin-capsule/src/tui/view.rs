@@ -9,8 +9,8 @@ use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialo
 use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::layout::{self, Tab};
 use crate::tui::model::{HoverTarget, VisiblePane};
+use jackin_tui::runtime::SurfaceFocus;
 use ratatui::{Frame, layout::Rect as RatatuiRect, style::Modifier};
-use termrock::interaction::FocusOwner;
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
     match target {
@@ -51,7 +51,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) term_rows: u16,
     pub(crate) panes: &'a [VisiblePane],
     pub(crate) pane_titles: &'a [(u64, String)],
-    pub(crate) focus_owner: FocusOwner<u64>,
+    pub(crate) focus_owner: SurfaceFocus<u64>,
     pub(crate) zoomed: bool,
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
@@ -183,7 +183,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             prefix_mode: view.prefix_mode,
             hovered_tab: view.hovered_tab,
             menu_hovered: view.menu_hovered,
-            // the tab underline reads the one shared FocusOwner, the same
+            // The tab underline reads the one shared focus ring, the same
             // signal that drives pane-border focus and cursor visibility.
             focused: view.focus_owner.is_tab_bar(),
         },

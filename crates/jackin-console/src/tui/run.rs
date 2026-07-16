@@ -555,7 +555,7 @@ pub const fn letter_input_state_for_console(
             Some(modal) => modal.letter_input_kind(),
             None => None,
         },
-        ManagerStage::Settings(settings) => match &settings.mounts.modal {
+        ManagerStage::Settings(settings) => match settings.mounts.modals.current() {
             Some(modal) => modal.letter_input_kind(),
             None => None,
         },

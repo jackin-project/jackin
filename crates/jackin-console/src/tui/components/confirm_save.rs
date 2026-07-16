@@ -47,89 +47,90 @@ pub enum ConfirmSaveAction {
 }
 
 const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Enter)],
-        action: ConfirmSaveAction::Activate,
-        hint: Some("select"),
-        visibility: Visibility::Shown,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Enter)],
+        ConfirmSaveAction::Activate,
+        Some("select"),
+        Visibility::Shown,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Char('s')),
             KeyChord::plain(KeyCode::Char('S')),
         ],
-        action: ConfirmSaveAction::Save,
-        hint: Some("save"),
-        visibility: Visibility::Shown,
-        glyph: Some("S"),
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::Save,
+        Some("save"),
+        Visibility::Shown,
+        Some("S"),
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Char('c')),
             KeyChord::plain(KeyCode::Char('C')),
         ],
-        action: ConfirmSaveAction::Cancel,
-        hint: Some("cancel"),
-        visibility: Visibility::Shown,
-        glyph: Some("C/Esc"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Esc)],
-        action: ConfirmSaveAction::Cancel,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::Cancel,
+        Some("cancel"),
+        Visibility::Shown,
+        Some("C/Esc"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Esc)],
+        ConfirmSaveAction::Cancel,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Tab),
             KeyChord::plain(KeyCode::Right),
             KeyChord::plain(KeyCode::Char('l')),
             KeyChord::plain(KeyCode::Char('L')),
         ],
-        action: ConfirmSaveAction::FocusNext,
-        hint: Some("move"),
-        visibility: Visibility::Shown,
-        glyph: Some("⇥/→"),
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::FocusNext,
+        Some("move"),
+        Visibility::Shown,
+        Some("⇥/→"),
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::BackTab),
             KeyChord::plain(KeyCode::Left),
             KeyChord::plain(KeyCode::Char('h')),
             KeyChord::plain(KeyCode::Char('H')),
         ],
-        action: ConfirmSaveAction::FocusPrev,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::FocusPrev,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Up),
             KeyChord::plain(KeyCode::Char('k')),
             KeyChord::plain(KeyCode::Char('K')),
         ],
-        action: ConfirmSaveAction::ScrollUp,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::ScrollUp,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Down),
             KeyChord::plain(KeyCode::Char('j')),
             KeyChord::plain(KeyCode::Char('J')),
         ],
-        action: ConfirmSaveAction::ScrollDown,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
+        ConfirmSaveAction::ScrollDown,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
 ];
 
-pub static CONFIRM_SAVE_KEYMAP: Keymap<ConfirmSaveAction> = Keymap::new(CONFIRM_SAVE_BINDINGS);
+pub static CONFIRM_SAVE_KEYMAP: Keymap<ConfirmSaveAction> =
+    Keymap::from_static(CONFIRM_SAVE_BINDINGS);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmSaveFocus {

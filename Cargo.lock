@@ -3121,6 +3121,7 @@ dependencies = [
  "crossterm",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-tui",
  "termrock",
  "tokio",
 ]
@@ -6389,7 +6390,7 @@ dependencies = [
 [[package]]
 name = "termrock"
 version = "0.11.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=f802fcc48c4361ea477c5021b52a121f180d4b4d#f802fcc48c4361ea477c5021b52a121f180d4b4d"
+source = "git+https://github.com/tailrocks/termrock.git?rev=5ff94ee117fd4a1b72fdd0d1b1847815055a93ac#5ff94ee117fd4a1b72fdd0d1b1847815055a93ac"
 dependencies = [
  "anstyle-parse",
  "base64 0.22.1",

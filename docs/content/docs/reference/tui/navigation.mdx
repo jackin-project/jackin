@@ -21,8 +21,8 @@ jackin❯ TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed i
 
 Focus state has three layers, and new components must use the narrowest layer that matches the interaction:
 
-1. `FocusOwner<Tab>` is the screen-level owner for tabbed screens. It answers which region owns input: the tab bar, or one named content block. Borders, tab underlines, cursors, and footer scope derive from that one owner value.
-2. A per-dialog semantic enum implementing `ButtonFocus` is element-level focus inside a button dialog. Use named states such as `Yes` / `No` or `Save` / `Discard` / `Cancel`; do not store a parallel raw index or bool.
+1. `jackin_tui::runtime::SurfaceFocus<Target>` is the product projection over TermRock's `FocusRing` for tabbed screens. It answers which region owns input: the tab bar, or one named content block. Borders, tab underlines, cursors, and footer scope derive from that one owner value.
+2. A per-dialog semantic enum is element-level focus inside a button dialog. Use named states such as `Yes` / `No` or `Save` / `Discard` / `Cancel`, and project them through the shared TermRock focus mechanics; do not store a parallel raw index or bool.
 3. `PanelEmphasis` is border styling only. It is computed from screen-level or dialog-level focus state when rendering; do not store it as independent state.
 
 ### W3C Tabs pattern (required for all tabbed interfaces)

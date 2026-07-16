@@ -241,7 +241,7 @@ pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
         HintSpan::Dyn("Create workspace — follow the prompts".to_owned()),
         HintSpan::GroupSep,
         // UNREGISTERABLE(create-prelude-no-keymap): Esc handled inline; no dedicated create-prelude keymap.
-        HintSpan::Key("Esc"),
+        super::key_span("Esc"),
         HintSpan::Text("cancel"),
     ]
 }
@@ -322,13 +322,13 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             // are intentionally not advertised.
             let g = |a| PREVIEW_PANE_KEYMAP.glyph_for(a);
             vec![
-                HintSpan::Key(g(PreviewPaneAction::NavigateUp)),
+                super::key_span(g(PreviewPaneAction::NavigateUp)),
                 HintSpan::Text("navigate panes"),
                 HintSpan::Sep,
-                HintSpan::Key(g(PreviewPaneAction::Attach)),
+                super::key_span(g(PreviewPaneAction::Attach)),
                 HintSpan::Text("attach focused pane"),
                 HintSpan::GroupSep,
-                HintSpan::Key(g(PreviewPaneAction::Back)),
+                super::key_span(g(PreviewPaneAction::Back)),
                 HintSpan::Text("back"),
             ]
         }
@@ -345,51 +345,51 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             // "restart" verb — so it is labelled accordingly (D15).
             let mut items = if is_live {
                 vec![
-                    HintSpan::Key(g(WorkspaceListAction::NavigateUp)),
+                    super::key_span(g(WorkspaceListAction::NavigateUp)),
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::Enter)),
+                    super::key_span(g(WorkspaceListAction::Enter)),
                     HintSpan::Text("reconnect"),
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::NewSession)),
+                    super::key_span(g(WorkspaceListAction::NewSession)),
                     HintSpan::Text("new session"),
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::InstanceShell)),
+                    super::key_span(g(WorkspaceListAction::InstanceShell)),
                     HintSpan::Text("shell"),
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::InstanceStop)),
+                    super::key_span(g(WorkspaceListAction::InstanceStop)),
                     HintSpan::Text("stop"),
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::ConfirmPurge)),
+                    super::key_span(g(WorkspaceListAction::ConfirmPurge)),
                     HintSpan::Text("purge"),
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::InstanceInspect)),
+                    super::key_span(g(WorkspaceListAction::InstanceInspect)),
                     HintSpan::Text("info"),
                 ]
             } else {
                 vec![
-                    HintSpan::Key(g(WorkspaceListAction::NavigateUp)),
+                    super::key_span(g(WorkspaceListAction::NavigateUp)),
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::Enter)),
+                    super::key_span(g(WorkspaceListAction::Enter)),
                     HintSpan::Text("restart"),
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::ConfirmPurge)),
+                    super::key_span(g(WorkspaceListAction::ConfirmPurge)),
                     HintSpan::Text("delete"),
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::InstanceInspect)),
+                    super::key_span(g(WorkspaceListAction::InstanceInspect)),
                     HintSpan::Text("info"),
                 ]
             };
             if has_snapshot {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key(g(WorkspaceListAction::EnterPreview)));
+                items.push(super::key_span(g(WorkspaceListAction::EnterPreview)));
                 items.push(HintSpan::Text("into preview"));
             }
             items.extend([
                 HintSpan::GroupSep,
-                HintSpan::Key(g(WorkspaceListAction::TreeLeft)),
+                super::key_span(g(WorkspaceListAction::TreeLeft)),
                 HintSpan::Text("back"),
                 HintSpan::GroupSep,
-                HintSpan::Key(g(WorkspaceListAction::Quit)),
+                super::key_span(g(WorkspaceListAction::Quit)),
                 HintSpan::Text("quit"),
             ]);
             items
@@ -411,61 +411,61 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                 items.extend(scroll_hint_spans(scroll_axes));
                 items.push(HintSpan::GroupSep);
             } else {
-                items.push(HintSpan::Key(g(WorkspaceListAction::NavigateUp)));
+                items.push(super::key_span(g(WorkspaceListAction::NavigateUp)));
                 items.push(HintSpan::Sep);
             }
             items.extend([
-                HintSpan::Key(g(WorkspaceListAction::Enter)),
+                super::key_span(g(WorkspaceListAction::Enter)),
                 HintSpan::Text(enter_label),
                 HintSpan::GroupSep,
             ]);
             if is_saved {
                 items.extend([
-                    HintSpan::Key(g(WorkspaceListAction::Edit)),
+                    super::key_span(g(WorkspaceListAction::Edit)),
                     HintSpan::Text("edit"),
                     HintSpan::Sep,
                 ]);
             }
             if show_prewarm {
                 items.extend([
-                    HintSpan::Key(g(WorkspaceListAction::Prewarm)),
+                    super::key_span(g(WorkspaceListAction::Prewarm)),
                     HintSpan::Text("prewarm"),
                     HintSpan::Sep,
                 ]);
             }
             items.extend([
-                HintSpan::Key(g(WorkspaceListAction::NewSession)),
+                super::key_span(g(WorkspaceListAction::NewSession)),
                 HintSpan::Text("new"),
             ]);
             if is_saved {
                 items.extend([
                     HintSpan::Sep,
-                    HintSpan::Key(g(WorkspaceListAction::Delete)),
+                    super::key_span(g(WorkspaceListAction::Delete)),
                     HintSpan::Text("delete"),
                 ]);
             }
             items.extend([
                 HintSpan::Sep,
-                HintSpan::Key(g(WorkspaceListAction::Settings)),
+                super::key_span(g(WorkspaceListAction::Settings)),
                 HintSpan::Text("settings"),
             ]);
             if show_expand {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key(g(WorkspaceListAction::TreeRight)));
+                items.push(super::key_span(g(WorkspaceListAction::TreeRight)));
                 items.push(HintSpan::Text("expand"));
             }
             if show_collapse {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key(g(WorkspaceListAction::TreeLeft)));
+                items.push(super::key_span(g(WorkspaceListAction::TreeLeft)));
                 items.push(HintSpan::Text("collapse"));
             }
             if show_open_in_github {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key(g(WorkspaceListAction::OpenGithub)));
+                items.push(super::key_span(g(WorkspaceListAction::OpenGithub)));
                 items.push(HintSpan::Text("open in GitHub"));
             }
             items.push(HintSpan::GroupSep);
-            items.push(HintSpan::Key(g(WorkspaceListAction::Quit)));
+            items.push(super::key_span(g(WorkspaceListAction::Quit)));
             items.push(HintSpan::Text("quit"));
             items
         }
@@ -516,13 +516,13 @@ pub fn workspace_picker_footer_items(
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         // UNREGISTERABLE(multi-key-display-group): combined up/down navigation display.
-        HintSpan::Key("↑↓"),
+        super::key_span("↑↓"),
         HintSpan::Sep,
-        HintSpan::Key(WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Enter)),
+        super::key_span(WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Enter)),
         HintSpan::Text("launch"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(workspace-picker-no-keymap): Esc handled inline; no dedicated workspace-picker keymap.
-        HintSpan::Key("Esc"),
+        super::key_span("Esc"),
         HintSpan::Text("return to workspaces"),
         HintSpan::GroupSep,
         HintSpan::Text("type to filter"),
@@ -534,7 +534,7 @@ pub fn workspace_picker_footer_items(
     }
     if include_quit {
         items.push(HintSpan::GroupSep);
-        items.push(HintSpan::Key(
+        items.push(super::key_span(
             WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Quit),
         ));
         items.push(HintSpan::Text("quit"));

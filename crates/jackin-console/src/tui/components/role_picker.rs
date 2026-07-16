@@ -192,7 +192,7 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
     frame.render_stateful_widget(
         &List::new(&items, &theme),
         rows[2],
-        &mut ListState::new(state.list_state.selected),
+        &mut ListState::new(state.list_state.selected().copied()),
     );
 }
 

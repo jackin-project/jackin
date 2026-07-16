@@ -90,7 +90,7 @@ pub struct LaunchView {
 // type. Both directions now point inward through `jackin_core`.)
 pub use jackin_core::PromptResult;
 
-// G0 contract wiring — `View<LaunchView>` is the shared TEA view half
+// Product contract wiring — `View<LaunchView>` is the shared view half
 // (D5). The render function (`render_launch_frame`) is the long-standing
 // implementation; this wrapper carries the run-context that the shared
 // `View::render` signature cannot reach. The trait impl is a thin
@@ -113,7 +113,7 @@ pub struct LaunchViewView<'a> {
     pub context: LaunchRenderContext<'a>,
 }
 
-impl termrock::runtime::View<LaunchView> for LaunchViewView<'_> {
+impl jackin_tui::runtime::View<LaunchView> for LaunchViewView<'_> {
     fn render(
         &self,
         model: &LaunchView,

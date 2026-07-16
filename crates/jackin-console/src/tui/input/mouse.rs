@@ -284,12 +284,12 @@ pub fn clickable_at(
                 .is_some(),
         },
         ManagerStage::Settings(settings) => ConsoleClickStageFacts::Settings {
-            mounts_modal_open: settings.mounts.modal.is_some(),
-            env_modal_open: settings.env.modal.is_some(),
+            mounts_modal_open: settings.mounts.modals.is_open(),
+            env_modal_open: settings.env.modals.is_open(),
             tab_target: settings_tab_at_position(mouse.row, mouse.column).is_some(),
             trust_target: settings_trust_clickable_at_position(
                 settings.active_tab,
-                settings.mounts.modal.is_some(),
+                settings.mounts.modals.is_open(),
                 settings.content_area(term_size),
                 mouse.column,
                 mouse.row,

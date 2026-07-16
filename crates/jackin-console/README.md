@@ -10,7 +10,7 @@ Canonical host-console product surface. Owns reusable console state, update/inpu
 
 ## Architecture tier and allowed dependencies
 
-**L3 presentation.** Allowed workspace dependencies include `jackin-config`, `jackin-oppicker`, `jackin-core`, `jackin-diagnostics`, `jackin-env`, `jackin-protocol`, and TermRock. Must NOT depend on `jackin-runtime`, `jackin-launch`, or `jackin-capsule` directly — console reaches runtime through effects-as-data, not direct calls.
+**L3 presentation.** Dependencies include `jackin-config`, `jackin-oppicker`, `jackin-core`, `jackin-diagnostics`, `jackin-env`, `jackin-protocol`, `jackin-tui`, and TermRock. Must NOT depend on `jackin-runtime`, `jackin-launch`, or `jackin-capsule` — console reaches runtime through effects-as-data.
 
 ## Structure
 

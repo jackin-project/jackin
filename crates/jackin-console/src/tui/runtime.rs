@@ -1,16 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! G0 shared-runtime wiring for the console TUI.
+//! Shared jackin❯ application-adapter wiring for the console TUI.
 //!
 //! The shared TEA `Component<Ev, Msg>` and `View<Model>` contracts live in
-//! `termrock::runtime`. This module is the console's implementation of
+//! `jackin_tui::runtime`. This module is the console's implementation of
 //! those traits over its model (`ConsoleState`) and the existing render
 //! function (`crate::tui::view::render`). The trait impls are thin
 //! delegations that satisfy the shared contract at the type level. The
-//! existing event loop in `crates/jackin/src/console/adapter/run.rs` continues
-//! to call `view::render` directly; migrating it to trait dispatch is a
-//! follow-up tracked as a later W6 phase.
+//! existing event loop in `crates/jackin/src/console/adapter/run.rs` owns
+//! scheduling and dispatches rendering through this adapter.
 
 #[derive(Debug)]
 pub struct ConsoleViewContext<'a> {
@@ -23,7 +22,7 @@ pub struct ConsoleView<'a> {
     pub context: ConsoleViewContext<'a>,
 }
 
-impl termrock::runtime::View<crate::tui::console::ConsoleState> for ConsoleView<'_> {
+impl jackin_tui::runtime::View<crate::tui::console::ConsoleState> for ConsoleView<'_> {
     fn render(
         &self,
         model: &crate::tui::console::ConsoleState,
@@ -35,8 +34,8 @@ impl termrock::runtime::View<crate::tui::console::ConsoleState> for ConsoleView<
     }
 }
 
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use std::future::Future;
-use termrock::runtime::{Subscription, SubscriptionPoll};
 
 #[derive(Debug)]
 pub struct BlockingSubscription<T>(tokio::sync::oneshot::Receiver<T>);

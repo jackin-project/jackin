@@ -237,7 +237,7 @@ pub fn render_mounts_tab<
     >,
     area: Rect,
 ) {
-    let focused = state.content_focused(SettingsTab::Mounts) && state.mounts.modal.is_none();
+    let focused = state.content_focused(SettingsTab::Mounts) && !state.mounts.modals.is_open();
     let selected = if focused {
         Some(state.mounts.selected)
     } else {
@@ -274,7 +274,7 @@ pub fn render_env_tab<
     >,
     area: Rect,
 ) {
-    let focused = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
+    let focused = state.content_focused(SettingsTab::Environments) && !state.env.modals.is_open();
     let lines = env_state_lines(&state.env, focused, area.width);
     crate::tui::scroll_block::render_scrollable_block_at(
         frame,
@@ -310,7 +310,7 @@ pub fn render_auth_tab<
         .auth
         .selected_kind
         .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
-    let focused = state.content_focused(SettingsTab::Auth) && state.auth.modal.is_none();
+    let focused = state.content_focused(SettingsTab::Auth) && !state.auth.modals.is_open();
     let lines = auth_state_lines(&state.auth, &state.env, focused);
     crate::tui::scroll_block::render_scrollable_block_at(
         frame,
@@ -634,7 +634,8 @@ pub fn settings_env_lines_for_state<
     >,
     area_width: u16,
 ) -> Vec<Line<'static>> {
-    let show_cursor = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
+    let show_cursor =
+        state.content_focused(SettingsTab::Environments) && !state.env.modals.is_open();
     env_state_lines(&state.env, show_cursor, area_width)
 }
 
@@ -680,9 +681,9 @@ fn settings_trust_focused<
     >,
 ) -> bool {
     state.content_focused(SettingsTab::Trust)
-        && state.auth.modal.is_none()
-        && state.env.modal.is_none()
-        && state.mounts.modal.is_none()
+        && !state.auth.modals.is_open()
+        && !state.env.modals.is_open()
+        && !state.mounts.modals.is_open()
 }
 
 #[must_use]
@@ -1112,13 +1113,13 @@ pub fn settings_screen_footer_for_state(
             .map(|modal| modal.auth_footer_items(settings_auth_can_generate_token(&state.auth))),
         env_modal_items: state
             .env
-            .modal
-            .as_ref()
+            .modals
+            .current()
             .map(SettingsModal::env_footer_items),
         mounts_modal_items: state
             .mounts
-            .modal
-            .as_ref()
+            .modals
+            .current()
             .map(SettingsModal::mounts_footer_items),
         screen_items: settings_footer_items(state, op_available, body_area),
     })

@@ -39,13 +39,18 @@ impl GlobalCapsuleAction {
 
 /// Global keymap for capsule-wide shortcuts. Dispatched before any modal or
 /// prefix check so these chords work on every surface without per-mode wiring.
-pub(crate) static CAPSULE_GLOBAL_KEYMAP: Keymap<GlobalCapsuleAction> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::ctrl(KeyCode::Char('q'))],
-    action: GlobalCapsuleAction::RequestExit,
-    hint: Some("quit"),
-    visibility: Visibility::Shown,
-    glyph: None, // auto-derives "Ctrl-Q"
-}]);
+pub(crate) static CAPSULE_GLOBAL_KEYMAP_BINDINGS: &[KeyBinding<GlobalCapsuleAction>] = &[
+    // The default glyph auto-derives as "Ctrl-Q".
+    KeyBinding::borrowed(
+        &[KeyChord::ctrl(KeyCode::Char('q'))],
+        GlobalCapsuleAction::RequestExit,
+        Some("quit"),
+        Visibility::Shown,
+        None,
+    ),
+];
+pub(crate) static CAPSULE_GLOBAL_KEYMAP: Keymap<GlobalCapsuleAction> =
+    Keymap::from_static(CAPSULE_GLOBAL_KEYMAP_BINDINGS);
 
 /// Static binding table for prefix-mode commands.
 ///
@@ -56,203 +61,205 @@ pub(crate) static CAPSULE_GLOBAL_KEYMAP: Keymap<GlobalCapsuleAction> = Keymap::n
 /// Palette toggle (`space`/`:`) is included as `Internal` — it's redundant
 /// when already in prefix mode (operator can always dismiss and open palette),
 /// but listed for dispatch completeness.
-pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('c'))],
-        action: PrefixCommand::NewTab,
-        hint: Some("new tab"),
-        visibility: Visibility::Shown,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('n'))],
-        action: PrefixCommand::NextTab,
-        hint: Some("next tab"),
-        visibility: Visibility::Shown,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('x'))],
-        action: PrefixCommand::KillPane,
-        hint: Some("close"),
-        visibility: Visibility::Shown,
-        glyph: None,
-    },
+pub(crate) static PREFIX_COMMAND_KEYMAP_BINDINGS: &[KeyBinding<PrefixCommand>] = &[
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('c'))],
+        PrefixCommand::NewTab,
+        Some("new tab"),
+        Visibility::Shown,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('n'))],
+        PrefixCommand::NextTab,
+        Some("next tab"),
+        Visibility::Shown,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('x'))],
+        PrefixCommand::KillPane,
+        Some("close"),
+        Visibility::Shown,
+        None,
+    ),
     // h — primary focus nav; grouped glyph advertises all four directions.
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('h'))],
-        action: PrefixCommand::MoveFocus(ArrowDir::Left),
-        hint: Some("nav"),
-        visibility: Visibility::Shown,
-        glyph: Some("h/j/k/l"),
-    },
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('h'))],
+        PrefixCommand::MoveFocus(ArrowDir::Left),
+        Some("nav"),
+        Visibility::Shown,
+        Some("h/j/k/l"),
+    ),
     // j, k, l — dispatch but do not produce hint spans.
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('j'))],
-        action: PrefixCommand::MoveFocus(ArrowDir::Down),
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('k'))],
-        action: PrefixCommand::MoveFocus(ArrowDir::Up),
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('l'))],
-        action: PrefixCommand::MoveFocus(ArrowDir::Right),
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('"'))],
-        action: PrefixCommand::SplitTopBottom,
-        hint: Some("split ↕"),
-        visibility: Visibility::Shown,
-        glyph: Some("\""),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('%'))],
-        action: PrefixCommand::SplitSideBySide,
-        hint: Some("split ↔"),
-        visibility: Visibility::Shown,
-        glyph: Some("%"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('z'))],
-        action: PrefixCommand::ZoomToggle,
-        hint: Some("zoom"),
-        visibility: Visibility::Shown,
-        glyph: Some("z"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('p'))],
-        action: PrefixCommand::PrevTab,
-        hint: Some("prev tab"),
-        visibility: Visibility::Shown,
-        glyph: Some("p"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('&'))],
-        action: PrefixCommand::KillTab,
-        hint: Some("kill tab"),
-        visibility: Visibility::Shown,
-        glyph: Some("&"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::ctrl(KeyCode::Char('l'))],
-        action: PrefixCommand::ClearPane,
-        hint: Some("clear"),
-        visibility: Visibility::Shown,
-        glyph: Some("Ctrl-L"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('d'))],
-        action: PrefixCommand::Detach,
-        hint: Some("detach"),
-        visibility: Visibility::Shown,
-        glyph: Some("d"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('u'))],
-        action: PrefixCommand::Usage,
-        hint: Some("usage"),
-        visibility: Visibility::Shown,
-        glyph: Some("u"),
-    },
-    KeyBinding {
-        chords: &[
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('j'))],
+        PrefixCommand::MoveFocus(ArrowDir::Down),
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('k'))],
+        PrefixCommand::MoveFocus(ArrowDir::Up),
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('l'))],
+        PrefixCommand::MoveFocus(ArrowDir::Right),
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('"'))],
+        PrefixCommand::SplitTopBottom,
+        Some("split ↕"),
+        Visibility::Shown,
+        Some("\""),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('%'))],
+        PrefixCommand::SplitSideBySide,
+        Some("split ↔"),
+        Visibility::Shown,
+        Some("%"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('z'))],
+        PrefixCommand::ZoomToggle,
+        Some("zoom"),
+        Visibility::Shown,
+        Some("z"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('p'))],
+        PrefixCommand::PrevTab,
+        Some("prev tab"),
+        Visibility::Shown,
+        Some("p"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('&'))],
+        PrefixCommand::KillTab,
+        Some("kill tab"),
+        Visibility::Shown,
+        Some("&"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::ctrl(KeyCode::Char('l'))],
+        PrefixCommand::ClearPane,
+        Some("clear"),
+        Visibility::Shown,
+        Some("Ctrl-L"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('d'))],
+        PrefixCommand::Detach,
+        Some("detach"),
+        Visibility::Shown,
+        Some("d"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('u'))],
+        PrefixCommand::Usage,
+        Some("usage"),
+        Visibility::Shown,
+        Some("u"),
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Char(' ')),
             KeyChord::plain(KeyCode::Char(':')),
         ],
-        action: PrefixCommand::Palette,
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('r'))],
-        action: PrefixCommand::Redraw,
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
+        PrefixCommand::Palette,
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('r'))],
+        PrefixCommand::Redraw,
+        None,
+        Visibility::Internal,
+        None,
+    ),
     // JumpTab 0-9 — register as Internal since full list is not hint-bar-friendly
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('0'))],
-        action: PrefixCommand::JumpTab(0),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('1'))],
-        action: PrefixCommand::JumpTab(1),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('2'))],
-        action: PrefixCommand::JumpTab(2),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('3'))],
-        action: PrefixCommand::JumpTab(3),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('4'))],
-        action: PrefixCommand::JumpTab(4),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('5'))],
-        action: PrefixCommand::JumpTab(5),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('6'))],
-        action: PrefixCommand::JumpTab(6),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('7'))],
-        action: PrefixCommand::JumpTab(7),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('8'))],
-        action: PrefixCommand::JumpTab(8),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Char('9'))],
-        action: PrefixCommand::JumpTab(9),
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-]);
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('0'))],
+        PrefixCommand::JumpTab(0),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('1'))],
+        PrefixCommand::JumpTab(1),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('2'))],
+        PrefixCommand::JumpTab(2),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('3'))],
+        PrefixCommand::JumpTab(3),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('4'))],
+        PrefixCommand::JumpTab(4),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('5'))],
+        PrefixCommand::JumpTab(5),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('6'))],
+        PrefixCommand::JumpTab(6),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('7'))],
+        PrefixCommand::JumpTab(7),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('8'))],
+        PrefixCommand::JumpTab(8),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Char('9'))],
+        PrefixCommand::JumpTab(9),
+        None,
+        Visibility::Internal,
+        None,
+    ),
+];
+pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> =
+    Keymap::from_static(PREFIX_COMMAND_KEYMAP_BINDINGS);
 
 // ── Dialog: filterable list ───────────────────────────────────────────────────
 
@@ -274,47 +281,49 @@ pub(crate) enum FilterListAction {
     Dismiss,
 }
 
-pub(crate) static FILTER_LIST_KEYMAP: Keymap<FilterListAction> = Keymap::new(&[
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Up)],
-        action: FilterListAction::NavigateUp,
-        hint: Some("navigate"),
-        visibility: Visibility::Shown,
-        glyph: Some("↑↓"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Down)],
-        action: FilterListAction::NavigateDown,
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Enter)],
-        action: FilterListAction::Confirm,
-        hint: Some("select"),
-        visibility: Visibility::Shown,
-        glyph: Some("↵"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Backspace)],
-        action: FilterListAction::FilterBackspace,
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+pub(crate) static FILTER_LIST_KEYMAP_BINDINGS: &[KeyBinding<FilterListAction>] = &[
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Up)],
+        FilterListAction::NavigateUp,
+        Some("navigate"),
+        Visibility::Shown,
+        Some("↑↓"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Down)],
+        FilterListAction::NavigateDown,
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Enter)],
+        FilterListAction::Confirm,
+        Some("select"),
+        Visibility::Shown,
+        Some("↵"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Backspace)],
+        FilterListAction::FilterBackspace,
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Esc),
             KeyChord::ctrl(KeyCode::Char('c')),
             KeyChord::ctrl(KeyCode::Char('q')),
         ],
-        action: FilterListAction::Dismiss,
-        hint: Some("cancel"),
-        visibility: Visibility::Shown,
-        glyph: Some("Ctrl-C/Esc"),
-    },
-]);
+        FilterListAction::Dismiss,
+        Some("cancel"),
+        Visibility::Shown,
+        Some("Ctrl-C/Esc"),
+    ),
+];
+pub(crate) static FILTER_LIST_KEYMAP: Keymap<FilterListAction> =
+    Keymap::from_static(FILTER_LIST_KEYMAP_BINDINGS);
 
 // ── Dialog: rename tab ────────────────────────────────────────────────────────
 
@@ -330,33 +339,34 @@ pub(crate) enum RenameAction {
     Dismiss,
 }
 
-pub(crate) static RENAME_KEYMAP: Keymap<RenameAction> = Keymap::new(&[
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Enter)],
-        action: RenameAction::Save,
-        hint: Some("save"),
-        visibility: Visibility::Shown,
-        glyph: Some("↵"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Backspace)],
-        action: RenameAction::FieldBackspace,
-        hint: None,
-        visibility: Visibility::Internal,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+pub(crate) static RENAME_KEYMAP_BINDINGS: &[KeyBinding<RenameAction>] = &[
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Enter)],
+        RenameAction::Save,
+        Some("save"),
+        Visibility::Shown,
+        Some("↵"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Backspace)],
+        RenameAction::FieldBackspace,
+        None,
+        Visibility::Internal,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Esc),
             KeyChord::ctrl(KeyCode::Char('c')),
             KeyChord::ctrl(KeyCode::Char('q')),
         ],
-        action: RenameAction::Dismiss,
-        hint: Some("cancel"),
-        visibility: Visibility::Shown,
-        glyph: Some("Ctrl-C/Esc"),
-    },
-]);
+        RenameAction::Dismiss,
+        Some("cancel"),
+        Visibility::Shown,
+        Some("Ctrl-C/Esc"),
+    ),
+];
+pub(crate) static RENAME_KEYMAP: Keymap<RenameAction> = Keymap::from_static(RENAME_KEYMAP_BINDINGS);
 
 // ── Dialog: read-only dismiss ─────────────────────────────────────────────────
 
@@ -371,9 +381,9 @@ pub(crate) enum ReadOnlyDismissAction {
     Dismiss,
 }
 
-pub(crate) static READ_ONLY_DISMISS_KEYMAP: Keymap<ReadOnlyDismissAction> =
-    Keymap::new(&[KeyBinding {
-        chords: &[
+pub(crate) static READ_ONLY_DISMISS_KEYMAP_BINDINGS: &[KeyBinding<ReadOnlyDismissAction>] =
+    &[KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Esc),
             KeyChord::plain(KeyCode::Char('q')),
             KeyChord::plain(KeyCode::Char('Q')),
@@ -381,11 +391,13 @@ pub(crate) static READ_ONLY_DISMISS_KEYMAP: Keymap<ReadOnlyDismissAction> =
             KeyChord::ctrl(KeyCode::Char('q')),
             KeyChord::plain(KeyCode::Backspace),
         ],
-        action: ReadOnlyDismissAction::Dismiss,
-        hint: Some("dismiss"),
-        visibility: Visibility::Shown,
-        glyph: Some("q/Esc"),
-    }]);
+        ReadOnlyDismissAction::Dismiss,
+        Some("dismiss"),
+        Visibility::Shown,
+        Some("q/Esc"),
+    )];
+pub(crate) static READ_ONLY_DISMISS_KEYMAP: Keymap<ReadOnlyDismissAction> =
+    Keymap::from_static(READ_ONLY_DISMISS_KEYMAP_BINDINGS);
 
 // ── Normal mode: pane resize ─────────────────────────────────────────────────
 
@@ -421,36 +433,38 @@ impl ResizePaneAction {
 /// [`Visibility::HiddenAlias`] so they dispatch without duplicating the hint.
 /// [`crate::tui::components::dialog::hint`] derives the resize-pane entry from
 /// this keymap, keeping dispatch and hint advertisement in sync.
-pub(crate) static RESIZE_PANE_KEYMAP: Keymap<ResizePaneAction> = Keymap::new(&[
-    KeyBinding {
-        chords: &[KeyChord::alt_shift(KeyCode::Up)],
-        action: ResizePaneAction::Up,
-        hint: Some("resize pane"),
-        visibility: Visibility::Shown,
-        glyph: Some(glyph::ALT_SHIFT_ALL_ARROWS),
-    },
-    KeyBinding {
-        chords: &[KeyChord::alt_shift(KeyCode::Down)],
-        action: ResizePaneAction::Down,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::alt_shift(KeyCode::Left)],
-        action: ResizePaneAction::Left,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[KeyChord::alt_shift(KeyCode::Right)],
-        action: ResizePaneAction::Right,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-]);
+pub(crate) static RESIZE_PANE_KEYMAP_BINDINGS: &[KeyBinding<ResizePaneAction>] = &[
+    KeyBinding::borrowed(
+        &[KeyChord::alt_shift(KeyCode::Up)],
+        ResizePaneAction::Up,
+        Some("resize pane"),
+        Visibility::Shown,
+        Some(glyph::ALT_SHIFT_ALL_ARROWS),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::alt_shift(KeyCode::Down)],
+        ResizePaneAction::Down,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::alt_shift(KeyCode::Left)],
+        ResizePaneAction::Left,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::alt_shift(KeyCode::Right)],
+        ResizePaneAction::Right,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+];
+pub(crate) static RESIZE_PANE_KEYMAP: Keymap<ResizePaneAction> =
+    Keymap::from_static(RESIZE_PANE_KEYMAP_BINDINGS);
 
 #[cfg(test)]
 mod tests;

@@ -90,7 +90,7 @@ impl OpPickerState {
             }
             KeyCode::Enter => {
                 let visible = self.filtered_accounts();
-                let picked = selected_choice(&visible, self.account_list_state.selected)
+                let picked = selected_choice(&visible, self.account_list_state.selected().copied())
                     .map(|a| (*a).clone());
                 if let AccountStageCommitPlan::ExistingAccount(a) =
                     account_stage_commit_plan(picked)
@@ -173,8 +173,8 @@ impl OpPickerState {
             }
             KeyCode::Enter => {
                 let visible = self.filtered_vaults();
-                let picked =
-                    selected_choice(&visible, self.vault_list_state.selected).map(|v| (*v).clone());
+                let picked = selected_choice(&visible, self.vault_list_state.selected().copied())
+                    .map(|v| (*v).clone());
                 if let VaultStageCommitPlan::ExistingVault(v) = vault_stage_commit_plan(picked) {
                     let id = v.id.clone();
                     let account_id = self.selected_account_id();
@@ -241,7 +241,7 @@ impl OpPickerState {
                 // `None` is the `+ New item` sentinel (Create mode only).
                 let visible = self.filtered_item_choices();
                 let picked: Option<Option<OpPickerItem>> =
-                    selected_choice(&visible, self.item_list_state.selected)
+                    selected_choice(&visible, self.item_list_state.selected().copied())
                         .map(|choice| choice.map(Clone::clone));
                 match item_stage_commit_plan(picked) {
                     ItemStageCommitPlan::ExistingItem(item) => {
@@ -302,7 +302,10 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                match section_stage_commit_plan(self.section_list_state.selected, &choices) {
+                match section_stage_commit_plan(
+                    self.section_list_state.selected().copied(),
+                    &choices,
+                ) {
                     SectionStageCommitPlan::NewSectionName => {
                         self.section_name_input = section_name_input_state("");
                         self.stage = OpPickerStage::NewSectionName;
@@ -385,7 +388,7 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Left => {
-                let cur = self.field_list_state.selected.unwrap_or(0);
+                let cur = self.field_list_state.selected().copied().unwrap_or(0);
                 let rows = self.build_field_display_rows();
                 if let Some((name, collapsed)) = section_header_collapse_target(
                     rows.get(cur),
@@ -397,7 +400,7 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Right => {
-                let cur = self.field_list_state.selected.unwrap_or(0);
+                let cur = self.field_list_state.selected().copied().unwrap_or(0);
                 let rows = self.build_field_display_rows();
                 if let Some((name, collapsed)) = section_header_collapse_target(
                     rows.get(cur),
@@ -415,7 +418,7 @@ impl OpPickerState {
             }
             KeyCode::Enter => {
                 let visible = self.filtered_fields();
-                let cur = self.field_list_state.selected.unwrap_or(0);
+                let cur = self.field_list_state.selected().copied().unwrap_or(0);
                 let rows = self.build_field_display_rows();
                 match field_stage_commit_plan(
                     rows.get(cur),
@@ -540,8 +543,10 @@ impl OpPickerState {
             self.collapsed_sections.remove(name.as_str());
         }
         let new_len = self.build_field_display_rows().len();
-        self.field_list_state
-            .select(clamp_selection(self.field_list_state.selected, new_len));
+        self.field_list_state.select(clamp_selection(
+            self.field_list_state.selected().copied(),
+            new_len,
+        ));
     }
 
     /// Browse: commit the field's `op://` reference. Create: overwrite the

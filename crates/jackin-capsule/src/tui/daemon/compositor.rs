@@ -197,18 +197,18 @@ impl Multiplexer {
             }
         }
         let focused_id = self.active_focused_id();
-        // P5: tab-bar focus is part of the one shared `FocusOwner` model, not a
+        // P5: tab-bar focus is part of the one shared focus-ring model, not a
         // parallel signal. When the operator has moved focus to the tab bar the
         // owner is `TabBar` even while a pane is open — so the pane cursor hides
         // and the active-tab underline goes green through the same abstraction
         // that drives pane-border focus and cursor visibility. Otherwise the
         // owner follows the focused pane.
         let focus_owner = if self.render.tab_bar_focused {
-            termrock::interaction::FocusOwner::TabBar
+            jackin_tui::runtime::SurfaceFocus::tab_bar(focused_id.unwrap_or_default())
         } else {
             focused_id.map_or(
-                termrock::interaction::FocusOwner::TabBar,
-                termrock::interaction::FocusOwner::Content,
+                jackin_tui::runtime::SurfaceFocus::tab_bar(0),
+                jackin_tui::runtime::SurfaceFocus::content,
             )
         };
         let zoomed = self.active_zoomed_id().is_some();
@@ -502,8 +502,8 @@ impl Multiplexer {
             width: term_cols,
             height: term_rows,
         };
-        // Shared drive_frame (plan 021) — CapsuleView is the View adapter.
-        let result = termrock::runtime::drive_frame(
+        // Shared product drive_frame — CapsuleView is the View adapter.
+        let result = jackin_tui::runtime::drive_frame(
             &mut self.render.ratatui_terminal,
             &crate::tui::runtime::CapsuleView,
             &frame_model,

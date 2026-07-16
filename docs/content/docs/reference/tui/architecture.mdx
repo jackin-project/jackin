@@ -50,7 +50,7 @@ crates/<surface-crate>/src/tui/
 
 1. **[TermRock](https://github.com/tailrocks/termrock)** — Exact-revision external library for neutral panels, lists, scroll, hints, dialogs, tabs, tokens, adapters, and geometry.
 
-2. **`crates/jackin-tui/`** — Product-specific compositions and Ratatui adapters shared by at least two jackin❯ surfaces. It may depend on TermRock and pure product vocabulary, but cannot own a generic theme facade, neutral widgets, terminal lifecycle, run loops, or external effects.
+2. **`crates/jackin-tui/`** — Product-specific compositions and Ratatui adapters shared by at least two jackin❯ surfaces. It may own cross-surface product update/effect, external-subscription, and one-draw adapter contracts, but cannot own a generic theme facade, neutral widgets, terminal lifecycle, surface event loops, schedulers, or external effects.
 
 3. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole reusable TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop policy. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
 

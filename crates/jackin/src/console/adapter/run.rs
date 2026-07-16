@@ -245,7 +245,7 @@ where
     {
         // Scoped mutable borrow of `state.stage`: released before the
         // `View<ConsoleState>` dispatch below needs an immutable borrow of
-        // the whole `state` (G0 spike, plan 053).
+        // the whole `state`.
         let ConsoleStage::Manager(ms) = &mut state.stage;
         if *container_info_overlay_active
             && !matches!(
@@ -260,7 +260,7 @@ where
     }
 
     // Route the primary render through the shared `View<ConsoleState>`
-    // dispatch (spike, plan 053) instead of calling `crate::console::adapter::render`
+    // dispatch instead of calling `crate::console::adapter::render`
     // directly. The confirm-dialog/debug-bar overlay compositing that used to
     // share the same `terminal.draw` closure is not part of the `View`
     // contract — it stays an `overlay` closure that `drive_frame` runs
@@ -269,7 +269,7 @@ where
         context: jackin_console::tui::runtime::ConsoleViewContext { config, cwd },
     };
     let confirm_state = state.quit_confirm.as_ref();
-    termrock::runtime::drive_frame(terminal, &view, &*state, main_area, |frame| {
+    jackin_tui::runtime::drive_frame(terminal, &view, &*state, main_area, |frame| {
         if let Some(confirm) = confirm_state {
             let hint_row = ratatui::layout::Rect {
                 x: main_area.x,

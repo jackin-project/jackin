@@ -267,7 +267,7 @@ fn esc_from_item_goes_to_vault() {
     assert_eq!(s.stage, OpPickerStage::Vault);
     assert!(s.filter_buf.is_empty(), "filter must clear on back-nav");
     // Vault selection preserved.
-    assert_eq!(s.vault_list_state.selected, Some(1));
+    assert_eq!(s.vault_list_state.selected().copied(), Some(1));
     assert_eq!(s.vaults.len(), 2);
 }
 
@@ -288,7 +288,7 @@ fn esc_from_field_goes_to_item() {
     assert_eq!(s.stage, OpPickerStage::Item);
     assert!(s.filter_buf.is_empty());
     // Item selection preserved.
-    assert_eq!(s.item_list_state.selected, Some(0));
+    assert_eq!(s.item_list_state.selected().copied(), Some(0));
     assert_eq!(s.items.len(), 1);
 }
 
@@ -795,7 +795,11 @@ fn left_collapse_via_header_keeps_selection_in_range() {
         "Left must collapse the section"
     );
     let new_len = s.build_field_display_rows().len();
-    let sel = s.field_list_state.selected.expect("selection retained");
+    let sel = s
+        .field_list_state
+        .selected()
+        .copied()
+        .expect("selection retained");
     assert!(
         sel < new_len,
         "selection {sel} must stay within {new_len} rows"
@@ -866,7 +870,7 @@ fn picker_starts_at_account_when_multiple_accounts() {
         "two accounts must route to the Account pane"
     );
     assert_eq!(s.accounts.len(), 2);
-    assert_eq!(s.account_list_state.selected, Some(0));
+    assert_eq!(s.account_list_state.selected().copied(), Some(0));
     assert!(
         s.selected_account.is_none(),
         "selected_account must remain None until the operator picks one"

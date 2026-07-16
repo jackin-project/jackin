@@ -1,5 +1,5 @@
 use crossterm::event::KeyEvent;
-use termrock::runtime::{Subscription, SubscriptionPoll};
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use termrock::widgets::{TextInputOutcome, TextInputState as TermRockTextInputState};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
