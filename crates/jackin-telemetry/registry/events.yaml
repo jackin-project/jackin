@@ -7,6 +7,7 @@ groups:
   - { id: event.ui.widget.unfocused, type: event, name: ui.widget.unfocused, brief: Widget lost focus., stability: development, attributes: [] }
   - { id: event.app.jank, type: event, name: app.jank, brief: Render jank threshold crossed., stability: development, attributes: [] }
   - { id: event.app.crash, type: event, name: app.crash, brief: Application crashed., stability: development, attributes: [] }
+  - { id: event.agent.state.changed, type: event, name: agent.state.changed, brief: Effective coding-agent state changed., stability: development, attributes: [] }
   - { id: event.telemetry.validate, type: event, name: telemetry.validate, brief: Telemetry delivery validation marker., stability: development, attributes: [] }
   - { id: event.launch.stage.started, type: event, name: launch.stage.started, brief: Launch stage started., stability: development, attributes: [] }
   - { id: event.launch.stage.done, type: event, name: launch.stage.done, brief: Launch stage completed., stability: development, attributes: [] }

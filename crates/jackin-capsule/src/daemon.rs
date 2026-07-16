@@ -835,6 +835,64 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     }
 }
 
+fn emit_agent_state_change(
+    session: &Session,
+    transition: &crate::session::StatusTransition,
+    stuck: bool,
+) {
+    use jackin_telemetry::{Attr, FieldSet, Value};
+
+    let source = match transition.winner {
+        jackin_agent_status::evidence::EvidenceWinner::Authority { .. } => "reported",
+        jackin_agent_status::evidence::EvidenceWinner::StrongVisualOrOsc
+        | jackin_agent_status::evidence::EvidenceWinner::Blocked
+        | jackin_agent_status::evidence::EvidenceWinner::Freeze => "visible_screen",
+        jackin_agent_status::evidence::EvidenceWinner::Physics
+        | jackin_agent_status::evidence::EvidenceWinner::ProcessExit => "foreground_process",
+        jackin_agent_status::evidence::EvidenceWinner::Unknown => "none",
+    };
+    let confidence = match session.status.confidence {
+        jackin_protocol::agent_status::AgentStatusConfidence::Unknown => "unknown",
+        jackin_protocol::agent_status::AgentStatusConfidence::Weak => "weak",
+        jackin_protocol::agent_status::AgentStatusConfidence::Strong => "strong",
+        jackin_protocol::agent_status::AgentStatusConfidence::Authoritative => "authoritative",
+    };
+    let mut attrs = vec![
+        Attr {
+            key: jackin_telemetry::schema::attrs::AGENT_STATE,
+            value: Value::Str(transition.effective.label()),
+        },
+        Attr {
+            key: jackin_telemetry::schema::attrs::AGENT_STATUS_SOURCE,
+            value: Value::Str(source),
+        },
+        Attr {
+            key: jackin_telemetry::schema::attrs::AGENT_STATUS_CONFIDENCE,
+            value: Value::Str(confidence),
+        },
+        Attr {
+            key: jackin_telemetry::schema::attrs::AGENT_STATUS_STUCK,
+            value: Value::Bool(stuck),
+        },
+    ];
+    if let Some(agent) = session.agent.as_deref() {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent),
+        });
+    }
+    let _ = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::AGENT_STATE_CHANGED,
+        FieldSet::new(&attrs, None),
+    );
+    let _ = jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_TRANSITIONS)
+        .add(1, &attrs);
+    if stuck {
+        let _ =
+            jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_STUCK).add(1, &attrs);
+    }
+}
+
 async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePackRegistry>) {
     mux.log_resource_metrics().await;
     mux.maybe_spawn_pull_request_context_lookup(Instant::now());
@@ -899,6 +957,7 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
         // only reacts to the resulting transition.
         let tick = session.advance_status(rule_registry, now);
         if let Some(transition) = tick.transition {
+            emit_agent_state_change(session, &transition, tick.stuck);
             // Flap-rate telemetry: every public transition is logged with the
             // deciding evidence so a regression (an agent update breaking a
             // pack) shows up as a burst.

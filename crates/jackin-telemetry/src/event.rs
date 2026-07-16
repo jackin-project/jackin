@@ -100,6 +100,10 @@ pub const APP_CRASH: EventDef = EventDef {
     name: schema::events::APP_CRASH,
     severity: Severity::Error,
 };
+pub const AGENT_STATE_CHANGED: EventDef = EventDef {
+    name: schema::events::AGENT_STATE_CHANGED,
+    severity: Severity::Info,
+};
 pub const TELEMETRY_VALIDATE: EventDef = EventDef {
     name: schema::events::TELEMETRY_VALIDATE,
     severity: Severity::Info,
@@ -163,6 +167,14 @@ macro_rules! emit_named {
         let visit_id = $fields.str(schema::attrs::UI_SCREEN_VISIT_ID);
         let transition_reason = $fields.str(schema::attrs::UI_TRANSITION_REASON);
         let widget_id = $fields.str(schema::attrs::std_attrs::APP_WIDGET_ID);
+        let agent_name = $fields.str(schema::attrs::std_attrs::GEN_AI_AGENT_NAME);
+        let agent_state = $fields.str(schema::attrs::AGENT_STATE);
+        let agent_status_source = $fields.str(schema::attrs::AGENT_STATUS_SOURCE);
+        let agent_status_confidence = $fields.str(schema::attrs::AGENT_STATUS_CONFIDENCE);
+        let agent_status_stuck = $fields.attrs.iter().find_map(|attr| match attr {
+            Attr { key: schema::attrs::AGENT_STATUS_STUCK, value: Value::Bool(value) } => Some(*value),
+            _ => None,
+        });
         let navigation_sequence = $fields.attrs.iter().find_map(|attr| match attr {
             Attr { key: schema::attrs::UI_NAVIGATION_SEQUENCE, value: Value::U64(value) } => Some(*value),
             _ => None,
@@ -172,7 +184,7 @@ macro_rules! emit_named {
         match $level {
             Severity::Trace => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
             Severity::Debug => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "error.type" = error_type, message = body),
-            Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "error.type" = error_type, message = body),
+            Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "gen_ai.agent.name" = agent_name, "agent.state" = agent_state, "agent.status.source" = agent_status_source, "agent.status.confidence" = agent_status_confidence, "agent.status.stuck" = agent_status_stuck, "error.type" = error_type, message = body),
             Severity::Warn => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
             Severity::Error => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
         }
@@ -205,6 +217,9 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
         }
         schema::events::APP_JANK => emit_named!("app.jank", def.severity, fields),
         schema::events::APP_CRASH => emit_named!("app.crash", def.severity, fields),
+        schema::events::AGENT_STATE_CHANGED => {
+            emit_named!("agent.state.changed", def.severity, fields)
+        }
         schema::events::TELEMETRY_VALIDATE => {
             emit_named!("telemetry.validate", def.severity, fields)
         }
