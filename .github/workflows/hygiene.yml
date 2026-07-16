@@ -186,7 +186,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust"
+          install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -197,6 +197,8 @@ jobs:
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: cargo bench --workspace --locked -- --quick 2>&1 | tee bench-output.txt
+      - name: Accelerated telemetry lifecycle soak
+        run: cargo nextest run --profile soak -p jackin-telemetry --locked --run-ignored ignored-only
       - name: Enforce telemetry performance baseline
         run: cargo xtask telemetry-bench --capture
       - name: Upload bench results
