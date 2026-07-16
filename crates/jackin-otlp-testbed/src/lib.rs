@@ -239,7 +239,7 @@ impl Testbed {
             .collect()
     }
 
-    /// Find a native OTLP event by its governed EventName.
+    /// Find a native OTLP event by its governed `EventName`.
     #[must_use]
     pub fn find_event(
         &self,

@@ -236,7 +236,6 @@ fn make_span(name: &str, root: bool) -> Option<Span> {
     })
 }
 
-#[must_use]
 pub fn operation(def: &'static SpanDef, attrs: &[Attr<'_>]) -> Result<OperationGuard, Rejection> {
     if attrs.len() > limits::MAX_SPAN_ATTRIBUTES {
         health::reject(Rejection::SizeLimit);

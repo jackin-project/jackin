@@ -41,11 +41,11 @@ where
 {
     let parent = Span::current().context().span().span_context().clone();
     tokio::spawn(async move {
-        let guard = root_operation(def, &[]).expect("registered detached span definition");
+        let Ok(guard) = root_operation(def, &[]) else {
+            return fut.await;
+        };
         if parent.is_valid() {
-            guard
-                .link(&parent)
-                .expect("first detached link is within limit");
+            let _link_result = guard.link(&parent);
         }
         let output = fut.instrument(guard.span().clone()).await;
         guard.complete(crate::schema::enums::OutcomeValue::Success, None);
@@ -74,11 +74,14 @@ where
             value: crate::Value::Str(job_type.as_str()),
         },
     ];
-    let producer = root_operation(&crate::operation::PREWARM_SCHEDULE, &attrs)
-        .expect("registered prewarm producer definition");
-    let producer_context = producer.span().context().span().span_context().clone();
-    producer.complete(crate::schema::enums::OutcomeValue::Success, None);
-    let _ = crate::counter(&crate::metric::PREWARM_JOBS).add(1, &attrs);
+    let producer_context = root_operation(&crate::operation::PREWARM_SCHEDULE, &attrs)
+        .ok()
+        .map(|producer| {
+            let context = producer.span().context().span().span_context().clone();
+            producer.complete(crate::schema::enums::OutcomeValue::Success, None);
+            context
+        });
+    let _counter_result = crate::counter(&crate::metric::PREWARM_JOBS).add(1, &attrs);
 
     tokio::spawn(async move {
         let attrs = [
@@ -91,12 +94,13 @@ where
                 value: crate::Value::Str(job_type.as_str()),
             },
         ];
-        let consumer = root_operation(&crate::operation::PREWARM_ATTEMPT, &attrs)
-            .expect("registered prewarm consumer definition");
-        if producer_context.is_valid() {
-            consumer
-                .link(&producer_context)
-                .expect("first prewarm link is within limit");
+        let Ok(consumer) = root_operation(&crate::operation::PREWARM_ATTEMPT, &attrs) else {
+            return fut.await;
+        };
+        if let Some(producer_context) = producer_context.as_ref()
+            && producer_context.is_valid()
+        {
+            let _link_result = consumer.link(producer_context);
         }
         let output = fut.instrument(consumer.span().clone()).await;
         consumer.complete(crate::schema::enums::OutcomeValue::Success, None);
@@ -120,11 +124,11 @@ where
 {
     let parent = Span::current().context().span().span_context().clone();
     tokio::task::spawn_blocking(move || {
-        let guard = root_operation(def, &[]).expect("registered detached span definition");
+        let Ok(guard) = root_operation(def, &[]) else {
+            return work();
+        };
         if parent.is_valid() {
-            guard
-                .link(&parent)
-                .expect("first detached link is within limit");
+            let _link_result = guard.link(&parent);
         }
         let result = guard.span().in_scope(work);
         guard.complete(crate::schema::enums::OutcomeValue::Success, None);
@@ -175,11 +179,11 @@ where
 {
     let parent = Span::current().context().span().span_context().clone();
     thread::spawn(move || {
-        let guard = root_operation(def, &[]).expect("registered detached span definition");
+        let Ok(guard) = root_operation(def, &[]) else {
+            return work();
+        };
         if parent.is_valid() {
-            guard
-                .link(&parent)
-                .expect("first detached link is within limit");
+            let _link_result = guard.link(&parent);
         }
         let result = guard.span().in_scope(work);
         guard.complete(crate::schema::enums::OutcomeValue::Success, None);
@@ -198,11 +202,11 @@ where
 {
     let parent = Span::current().context().span().span_context().clone();
     thread::Builder::new().name(name).spawn(move || {
-        let guard = root_operation(def, &[]).expect("registered detached span definition");
+        let Ok(guard) = root_operation(def, &[]) else {
+            return work();
+        };
         if parent.is_valid() {
-            guard
-                .link(&parent)
-                .expect("first detached link is within limit");
+            let _link_result = guard.link(&parent);
         }
         let result = guard.span().in_scope(work);
         guard.complete(crate::schema::enums::OutcomeValue::Success, None);

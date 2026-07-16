@@ -12,18 +12,18 @@ pub fn record_frame(bytes: u64, cursor_moves: u64, painted_cells: u64) {
         key: jackin_telemetry::schema::attrs::STREAM_DIRECTION,
         value: Value::Str("output"),
     }];
-    let _ = counter(&metric::TERMINAL_BYTES).add(bytes, &output);
-    let _ = counter(&metric::TERMINAL_CURSOR_MOVES).add(cursor_moves, &[]);
-    let _ = counter(&metric::TERMINAL_RENDER_CELLS).add(painted_cells, &[]);
-    let _ = counter(&metric::TERMINAL_RENDER_FRAMES).add(1, &[]);
+    let _bytes_result = counter(&metric::TERMINAL_BYTES).add(bytes, &output);
+    let _cursor_result = counter(&metric::TERMINAL_CURSOR_MOVES).add(cursor_moves, &[]);
+    let _cells_result = counter(&metric::TERMINAL_RENDER_CELLS).add(painted_cells, &[]);
+    let _frames_result = counter(&metric::TERMINAL_RENDER_FRAMES).add(1, &[]);
 }
 
 /// Record one render using the registry's seconds unit.
 pub fn record_render(duration_us: u64, painted_cells: u64) {
-    let _ =
+    let _duration_result =
         histogram(&metric::TERMINAL_RENDER_DURATION).record(duration_us as f64 / 1_000_000.0, &[]);
     if painted_cells > 0 {
-        let _ = counter(&metric::TERMINAL_RENDER_CELLS).add(painted_cells, &[]);
+        let _cells_result = counter(&metric::TERMINAL_RENDER_CELLS).add(painted_cells, &[]);
     }
 }
 
@@ -33,12 +33,12 @@ pub fn incr_terminal_bytes_received(bytes: u64) {
         key: jackin_telemetry::schema::attrs::STREAM_DIRECTION,
         value: Value::Str("input"),
     }];
-    let _ = counter(&metric::TERMINAL_BYTES).add(bytes, &input);
+    let _bytes_result = counter(&metric::TERMINAL_BYTES).add(bytes, &input);
 }
 
 /// Record one semantic mouse input without coordinates or payload.
 pub fn incr_mouse_events() {
-    let _ = counter(&metric::TERMINAL_INPUT_MOUSE).add(1, &[]);
+    let _mouse_result = counter(&metric::TERMINAL_INPUT_MOUSE).add(1, &[]);
 }
 
 /// Docker inspection is represented by its governed connection/HTTP boundary.

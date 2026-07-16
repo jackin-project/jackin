@@ -408,7 +408,9 @@ mod otlp {
     }
 
     pub(super) fn validate_flush() -> Result<(), super::ValidationFailure> {
-        let providers = PROVIDERS.lock().expect("provider lock");
+        let providers = PROVIDERS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let providers = providers
             .as_ref()
             .ok_or(super::ValidationFailure::Inactive)?;
@@ -748,7 +750,10 @@ mod otlp {
         // tonic spawns its h2 connection driver) onto whichever runtime is
         // entered here, and they must land on the multi-thread telemetry runtime
         // — not jackin❯'s current-thread main, where flush would deadlock.
-        let _runtime_guard = runtime.as_ref().expect("runtime initialized").enter();
+        let runtime = runtime
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
+        let _runtime_guard = runtime.enter();
         let span_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
             .with_endpoint(traces_endpoint.to_owned())
@@ -950,7 +955,9 @@ mod otlp {
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
             let metrics_active = meter_provider.is_some();
-            *PROVIDERS.lock().expect("provider lock") = Some(OtlpProviders {
+            *PROVIDERS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(OtlpProviders {
                 tracer: tracer_provider,
                 logger: logger_provider,
                 meter: meter_provider,
@@ -1032,7 +1039,9 @@ mod otlp {
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
-            *PROVIDERS.lock().expect("provider lock") = Some(OtlpProviders {
+            *PROVIDERS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(OtlpProviders {
                 tracer: tracer_provider,
                 logger: logger_provider,
                 meter: meter_provider,
@@ -1247,7 +1256,7 @@ mod otlp {
             key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
             value: jackin_telemetry::Value::Str(session_id),
         }];
-        let _ = jackin_telemetry::emit_event(
+        let _event_result = jackin_telemetry::emit_event(
             &jackin_telemetry::event::SESSION_START,
             jackin_telemetry::FieldSet::new(&attrs, None),
         );
@@ -1549,5 +1558,6 @@ fn emit_progress_event_inner(kind: &str, message: &str, error_type: Option<&str>
             value: Value::Str(error_type),
         });
     }
-    let _ = jackin_telemetry::emit_event(def, FieldSet::new(&attrs, Some(message.as_ref())));
+    let _event_result =
+        jackin_telemetry::emit_event(def, FieldSet::new(&attrs, Some(message.as_ref())));
 }

@@ -140,7 +140,7 @@ fn emit_session_event(def: &'static crate::event::EventDef, context: SessionCont
             value: crate::Value::Str(previous),
         });
     }
-    let _ = crate::emit_event(def, crate::FieldSet::new(&attrs, None));
+    let _event_result = crate::emit_event(def, crate::FieldSet::new(&attrs, None));
 }
 
 #[cfg(test)]

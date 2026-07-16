@@ -60,6 +60,6 @@ mod tests {
         let input = "é".repeat(3000);
         let body = clamp_body(&input, Cow::Borrowed);
         assert!(body.len() <= MAX_BODY_BYTES);
-        assert!(std::str::from_utf8(body.as_bytes()).is_ok());
+        std::str::from_utf8(body.as_bytes()).unwrap();
     }
 }

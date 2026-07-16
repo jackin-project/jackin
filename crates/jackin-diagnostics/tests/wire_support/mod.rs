@@ -1,30 +1,31 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(crate) fn assert_three_signal_delivery(identity: jackin_diagnostics::ServiceIdentity) {
-    let home = tempfile::tempdir().expect("isolated telemetry home");
-    let original_dir = std::env::current_dir().expect("current test directory");
-    std::env::set_current_dir(home.path()).expect("enter isolated telemetry directory");
+pub(crate) fn assert_three_signal_delivery(
+    identity: jackin_diagnostics::ServiceIdentity,
+) -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    let original_dir = std::env::current_dir()?;
+    std::env::set_current_dir(home.path())?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
-        .build()
-        .expect("test runtime");
-    let testbed = runtime
-        .block_on(async { jackin_otlp_testbed::Testbed::start() })
-        .expect("start OTLP testbed");
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
     let runtime_guard = runtime.enter();
-    jackin_diagnostics::init_wire_test_export(&testbed.endpoint(), identity)
-        .expect("install wire exporter");
+    jackin_diagnostics::init_wire_test_export(&testbed.endpoint(), identity)?;
 
     let operation =
         jackin_telemetry::root_operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
-            .expect("validation operation");
+            .map_err(|error| anyhow::anyhow!("validation operation rejected: {error:?}"))?;
     assert!(
         !operation.span().is_disabled(),
         "facade span unexpectedly disabled"
     );
-    let metadata = operation.span().metadata().expect("enabled span metadata");
+    let metadata = operation
+        .span()
+        .metadata()
+        .ok_or_else(|| anyhow::anyhow!("enabled span has no metadata"))?;
     assert_eq!(metadata.target(), jackin_telemetry::TELEMETRY_TARGET);
     assert_eq!(metadata.name(), "telemetry.validate");
     let span_guard = operation.span().enter();
@@ -32,13 +33,13 @@ pub(crate) fn assert_three_signal_delivery(identity: jackin_diagnostics::Service
         &jackin_telemetry::event::TELEMETRY_VALIDATE,
         jackin_telemetry::FieldSet::default(),
     )
-    .expect("validation event");
+    .map_err(|error| anyhow::anyhow!("validation event rejected: {error:?}"))?;
     jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
         .add(1, &[])
-        .expect("validation metric");
+        .map_err(|error| anyhow::anyhow!("validation metric rejected: {error:?}"))?;
     drop(span_guard);
     operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
-    jackin_diagnostics::flush_wire_test_export().expect("flush all signals");
+    jackin_diagnostics::flush_wire_test_export()?;
     drop(runtime_guard);
     assert!(
         runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))),
@@ -93,14 +94,12 @@ pub(crate) fn assert_three_signal_delivery(identity: jackin_diagnostics::Service
         assert_resource_contract(resource, identity.service_name);
     }
     jackin_diagnostics::shutdown_capsule_tracing();
-    std::env::set_current_dir(original_dir).expect("restore test directory");
+    std::env::set_current_dir(original_dir)?;
     assert!(
-        std::fs::read_dir(home.path())
-            .expect("read isolated telemetry home")
-            .next()
-            .is_none(),
+        std::fs::read_dir(home.path())?.next().is_none(),
         "governed telemetry created a local artifact"
     );
+    Ok(())
 }
 
 fn assert_resource_contract(

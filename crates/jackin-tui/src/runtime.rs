@@ -341,8 +341,9 @@ where
             key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
             value: jackin_telemetry::Value::Str(screen.as_str()),
         }];
-        let _ = jackin_telemetry::histogram(&jackin_telemetry::metric::UI_RENDER_DURATION)
-            .record(elapsed, &attrs);
+        let _metric_result =
+            jackin_telemetry::histogram(&jackin_telemetry::metric::UI_RENDER_DURATION)
+                .record(elapsed, &attrs);
         if elapsed > JANK_THRESHOLD_SECONDS {
             let jank_attrs = [
                 attrs[0],
@@ -359,7 +360,7 @@ where
                     value: jackin_telemetry::Value::F64(JANK_THRESHOLD_SECONDS),
                 },
             ];
-            let _ = jackin_telemetry::emit_event(
+            let _event_result = jackin_telemetry::emit_event(
                 &jackin_telemetry::event::APP_JANK,
                 jackin_telemetry::FieldSet::new(&jank_attrs, None),
             );

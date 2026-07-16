@@ -87,7 +87,7 @@ pub fn telemetry_line(level: OperationLevel, category: &'static str, body: &str)
         key: jackin_telemetry::schema::attrs::OUTCOME,
         value: jackin_telemetry::Value::Str(outcome),
     }];
-    let _ = jackin_telemetry::emit_event(
+    let _event_result = jackin_telemetry::emit_event(
         def,
         jackin_telemetry::FieldSet::new(&attrs, Some(body.as_ref())),
     );
@@ -106,7 +106,7 @@ pub fn telemetry_error_line(error_type: &'static str, body: &str) {
             value: jackin_telemetry::Value::Str(error_type),
         },
     ];
-    let _ = jackin_telemetry::emit_event(
+    let _event_result = jackin_telemetry::emit_event(
         &jackin_telemetry::event::ERROR_TYPED,
         jackin_telemetry::FieldSet::new(&attrs, Some(body.as_ref())),
     );
@@ -265,7 +265,8 @@ pub fn operation_log_with_outcome(
         OperationLevel::Warn => &jackin_telemetry::event::OPERATION_WARN,
         OperationLevel::Error => &jackin_telemetry::event::ERROR_TYPED,
     };
-    let _ = jackin_telemetry::emit_event(def, jackin_telemetry::FieldSet::new(&attrs, Some(body)));
+    let _event_result =
+        jackin_telemetry::emit_event(def, jackin_telemetry::FieldSet::new(&attrs, Some(body)));
     match level {
         OperationLevel::Debug => emit_debug_line(category, body),
         OperationLevel::Error => emit_compact_line("error", body),
@@ -294,7 +295,7 @@ pub fn operation_error(
             value: jackin_telemetry::Value::Str(error_type),
         },
     ];
-    let _ = jackin_telemetry::emit_event(
+    let _event_result = jackin_telemetry::emit_event(
         &jackin_telemetry::event::ERROR_TYPED,
         jackin_telemetry::FieldSet::new(&attrs, Some(body)),
     );
