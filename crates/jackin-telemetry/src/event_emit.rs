@@ -441,6 +441,7 @@ fn emit_pty_exit(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("cli.invocation.id", field_cli_invocation_id, String),
+            ("error.type", field_error_type, String),
             ("gen_ai.agent.name", field_gen_ai_agent_name, String),
             (
                 "gen_ai.conversation.id",

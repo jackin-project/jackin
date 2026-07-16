@@ -853,7 +853,7 @@ pub const PROCESS_SUBPROCESS_DONE_DEF: super::EventMetadata = super::EventMetada
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended,process.exit.code:recommended,pty.exit.reason:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,error.type:recommended,gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended,process.exit.code:recommended,pty.exit.reason:required,session.id:recommended
 pub const PTY_EXIT: &str = "pty.exit";
 pub const PTY_EXIT_DEF: super::EventMetadata = super::EventMetadata {
     name: PTY_EXIT,
@@ -861,6 +861,12 @@ pub const PTY_EXIT_DEF: super::EventMetadata = super::EventMetadata {
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],

@@ -9,8 +9,10 @@
 //! for re-rendering on tab/pane switch and client reattach.
 
 mod osc_policy;
+mod pty_exit;
 
 pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
+use pty_exit::{error_type as pty_exit_error_type, reason as pty_exit_reason};
 
 /// PTY session: one PTY + one `DamageGrid` + state-inference timer.
 ///
@@ -1582,6 +1584,12 @@ fn emit_pty_exit(
         key: jackin_telemetry::schema::attrs::PTY_EXIT_REASON,
         value: Value::Str(reason.as_str()),
     }];
+    if let Some(error_type) = pty_exit_error_type(reason) {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(error_type.as_str()),
+        });
+    }
     if let Some(status) = status.ok()
         && !status.success()
         && status.signal().is_none()
@@ -1607,23 +1615,6 @@ fn emit_pty_exit(
         &jackin_telemetry::event::PTY_EXIT,
         FieldSet::new(&attrs, None),
     );
-}
-
-fn pty_exit_reason(
-    status: Result<&portable_pty::ExitStatus, &std::io::Error>,
-    cancelled: bool,
-) -> jackin_telemetry::schema::enums::PtyExitReason {
-    if cancelled {
-        return jackin_telemetry::schema::enums::PtyExitReason::Cancelled;
-    }
-    match status {
-        Ok(status) if status.success() => jackin_telemetry::schema::enums::PtyExitReason::Clean,
-        Ok(status) if status.signal().is_some() => {
-            jackin_telemetry::schema::enums::PtyExitReason::Signal
-        }
-        Ok(_) => jackin_telemetry::schema::enums::PtyExitReason::NonzeroExit,
-        Err(_) => jackin_telemetry::schema::enums::PtyExitReason::WaitFailed,
-    }
 }
 
 fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>) -> Option<String> {

@@ -4,8 +4,8 @@
 //! Tests for `session`.
 use super::{
     AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,
-    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe, pty_exit_reason,
-    validate_agent_slug,
+    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe,
+    pty_exit_error_type, pty_exit_reason, validate_agent_slug,
 };
 
 use std::path::Path;
@@ -1177,7 +1177,7 @@ fn child_exit_reason_wait_error_reports_failure() {
 
 #[test]
 fn pty_exit_reason_covers_the_closed_registry() {
-    use jackin_telemetry::schema::enums::PtyExitReason;
+    use jackin_telemetry::schema::enums::{ErrorType, PtyExitReason};
 
     let clean = portable_pty::ExitStatus::with_exit_code(0);
     let nonzero = portable_pty::ExitStatus::with_exit_code(7);
@@ -1194,6 +1194,20 @@ fn pty_exit_reason_covers_the_closed_registry() {
         PtyExitReason::WaitFailed
     );
     assert_eq!(pty_exit_reason(Ok(&clean), true), PtyExitReason::Cancelled);
+    assert_eq!(pty_exit_error_type(PtyExitReason::Clean), None);
+    assert_eq!(pty_exit_error_type(PtyExitReason::Cancelled), None);
+    assert_eq!(
+        pty_exit_error_type(PtyExitReason::Signal),
+        Some(ErrorType::ProcessExitNonzero)
+    );
+    assert_eq!(
+        pty_exit_error_type(PtyExitReason::NonzeroExit),
+        Some(ErrorType::ProcessExitNonzero)
+    );
+    assert_eq!(
+        pty_exit_error_type(PtyExitReason::WaitFailed),
+        Some(ErrorType::IoError)
+    );
 }
 
 // ── diagnostic tail ───────────────────────────────────────────────────────
