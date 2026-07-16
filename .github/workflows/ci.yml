@@ -399,8 +399,11 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+          key: rustup-ci-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
           lookup-only: true
+      - name: Use the minimal Rust CI profile
+        if: steps.toolchain-lookup.outputs.cache-hit != 'true'
+        run: rustup set profile minimal
       - name: Bootstrap missing Rust toolchains
         id: toolchain-cache
         if: >-
@@ -412,11 +415,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+          key: rustup-ci-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
           restore-keys: |
-            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
-            rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-ci-v4-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         if: steps.toolchain-lookup.outputs.cache-hit != 'true' || steps.ci-tools-artifact.outputs.hit != 'true'
         with:

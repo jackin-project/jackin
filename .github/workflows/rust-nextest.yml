@@ -65,11 +65,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+          key: rustup-ci-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
           restore-keys: |
-            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
-            rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-ci-v4-${{ runner.os }}-${{ runner.arch }}-
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - name: Derive exact crate target key
@@ -82,31 +80,79 @@ jobs:
           key=$("$CI_XTASK" affected-crates --all --cache-keys \
             | jq -er --arg package "$PACKAGE" '.[$package]')
           echo "key=$key" >> "$GITHUB_OUTPUT"
-      - name: Restore input-identical crate target
+      - name: Find input-identical crate target
         id: crate-target
         shell: bash
         env:
-          ARTIFACT_NAME: ci-crate-target-${{ inputs.all-features && 'v2' || 'default-v2' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          ARTIFACT_PREFIX: ci-crate-target-${{ inputs.all-features && 'v3' || 'default-v3' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          LEGACY_ARTIFACT_NAME: ci-crate-target-${{ inputs.all-features && 'v2' || 'default-v2' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          artifact_id=$(
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | .id' \
+          hit=false
+          canonical_hit=false
+          legacy=false
+          legacy_name=
+          run_id=$(
+            gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_PREFIX}-ready&per_page=10" \
+              --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
               | head -n 1
           )
-          if [ -z "$artifact_id" ]; then
-            echo "hit=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [ -n "$run_id" ]; then
+            hit=true
+            canonical_hit=true
+          else
+            run_id=$(
+              gh api "repos/${REPOSITORY}/actions/artifacts?name=${LEGACY_ARTIFACT_NAME}&per_page=10" \
+                --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
+                | head -n 1
+            )
+            if [ -n "$run_id" ]; then
+              hit=true
+              legacy=true
+              legacy_name=$LEGACY_ARTIFACT_NAME
+            fi
           fi
-          mkdir -p target/.ci-restore
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > target/.ci-restore/artifact.zip
-          python3 -m zipfile -e target/.ci-restore/artifact.zip target/.ci-restore
+
+          {
+            echo "prefix=$ARTIFACT_PREFIX"
+            echo "hit=$hit"
+            echo "canonical-hit=$canonical_hit"
+            echo "legacy=$legacy"
+            echo "legacy-name=$legacy_name"
+            echo "run-id=$run_id"
+          } >> "$GITHUB_OUTPUT"
+      - name: Download split input-identical crate target
+        if: steps.crate-target.outputs.canonical-hit == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ${{ steps.crate-target.outputs.prefix }}-part-*
+          path: target/.ci-restore
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.crate-target.outputs.run-id }}
+      - name: Download legacy input-identical crate target
+        if: steps.crate-target.outputs.legacy == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ steps.crate-target.outputs.legacy-name }}
+          path: target/.ci-restore
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.crate-target.outputs.run-id }}
+      - name: Restore input-identical crate target
+        if: steps.crate-target.outputs.hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.crate-target.outputs.legacy }}" != "true" ]; then
+            cat target/.ci-restore/target.part-* > target/.ci-restore/target.tar.zst
+          fi
           tar --zstd -xf target/.ci-restore/target.tar.zst
           rm -rf target/.ci-restore
-          find target -type f -exec touch {} +
-          echo "hit=true" >> "$GITHUB_OUTPUT"
+          git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
       - name: Run package tests
         shell: bash
         run: |
@@ -321,22 +367,30 @@ jobs:
       - name: Pack input-identical crate target
         if: >-
           always() && !cancelled() && !failure() &&
-          steps.crate-target.outputs.hit != 'true' &&
+          steps.crate-target.outputs.canonical-hit != 'true' &&
           matrix.config.lane == 'GitHub' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository))
-        run: >-
-          tar --zstd
-          --exclude='target/nextest'
-          --exclude='target/telemetry-*'
-          --exclude='target/.ci-restore'
-          -cf target.tar.zst target
-      - name: Publish input-identical crate target
+        run: |
+          tar --zstd \
+            --exclude='target/nextest' \
+            --exclude='target/telemetry-*' \
+            --exclude='target/.ci-restore' \
+            -cf target.tar.zst target
+          split --bytes=800M --numeric-suffixes=0 --suffix-length=1 \
+            target.tar.zst target.part-
+          rm target.tar.zst
+          if [ -e target.part-5 ]; then
+            echo "::error::crate target exceeds the five-part transfer contract"
+            exit 1
+          fi
+          sha256sum target.part-* > target.ready
+      - name: Publish input-identical crate target part 0
         if: >-
           always() && !cancelled() && !failure() &&
-          steps.crate-target.outputs.hit != 'true' &&
+          steps.crate-target.outputs.canonical-hit != 'true' &&
           matrix.config.lane == 'GitHub' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -344,8 +398,87 @@ jobs:
             github.event.pull_request.head.repo.full_name == github.repository))
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ci-crate-target-${{ inputs.all-features && 'v2' || 'default-v2' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
-          path: target.tar.zst
+          name: ${{ steps.crate-target.outputs.prefix }}-part-0
+          path: target.part-0
+          compression-level: 0
+          retention-days: 7
+      - name: Publish input-identical crate target part 1
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-target.outputs.canonical-hit != 'true' &&
+          matrix.config.lane == 'GitHub' &&
+          hashFiles('target.part-1') != '' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.crate-target.outputs.prefix }}-part-1
+          path: target.part-1
+          compression-level: 0
+          retention-days: 7
+      - name: Publish input-identical crate target part 2
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-target.outputs.canonical-hit != 'true' &&
+          matrix.config.lane == 'GitHub' &&
+          hashFiles('target.part-2') != '' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.crate-target.outputs.prefix }}-part-2
+          path: target.part-2
+          compression-level: 0
+          retention-days: 7
+      - name: Publish input-identical crate target part 3
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-target.outputs.canonical-hit != 'true' &&
+          matrix.config.lane == 'GitHub' &&
+          hashFiles('target.part-3') != '' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.crate-target.outputs.prefix }}-part-3
+          path: target.part-3
+          compression-level: 0
+          retention-days: 7
+      - name: Publish input-identical crate target part 4
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-target.outputs.canonical-hit != 'true' &&
+          matrix.config.lane == 'GitHub' &&
+          hashFiles('target.part-4') != '' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.crate-target.outputs.prefix }}-part-4
+          path: target.part-4
+          compression-level: 0
+          retention-days: 7
+      - name: Publish input-identical crate target ready marker
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-target.outputs.canonical-hit != 'true' &&
+          matrix.config.lane == 'GitHub' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.crate-target.outputs.prefix }}-ready
+          path: target.ready
           compression-level: 0
           retention-days: 7
 
