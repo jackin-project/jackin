@@ -8,7 +8,7 @@
 //! stable library boundary — callers are `main.rs` and tests only.
 //!
 //! Not responsible for: argument parsing (`cli/`), runtime mechanics
-//! (`runtime/`), or TUI rendering (`console/tui/`). This module is glue.
+//! (`runtime/`), or TUI rendering (`console/adapter/`). This module is glue.
 
 mod config_cmd;
 pub(crate) mod context;

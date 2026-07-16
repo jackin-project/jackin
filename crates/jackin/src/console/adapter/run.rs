@@ -63,7 +63,7 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
 /// field editor are distinct screens (the create flow shows as `create` then
 /// `editor`).
 pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Screen {
-    use crate::console::tui::state::ManagerStage;
+    use crate::console::adapter::state::ManagerStage;
     use jackin_diagnostics::Screen;
 
     let ConsoleStage::Manager(ms) = &state.stage;
@@ -83,7 +83,7 @@ pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Scree
 /// this returns `false`, chrome interactions (debug chip) and base-surface mouse
 /// handling are suppressed so only the active modal handles the event.
 pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
-    use crate::console::tui::state::ManagerStage;
+    use crate::console::adapter::state::ManagerStage;
     let ConsoleStage::Manager(ms) = &state.stage;
     state.quit_confirm.is_none()
         && ms.list_modal.is_none()
@@ -250,17 +250,17 @@ where
         if *container_info_overlay_active
             && !matches!(
                 ms.list_modal,
-                Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+                Some(crate::console::adapter::state::Modal::ContainerInfo { .. })
             )
         {
             terminal.clear()?;
             *container_info_overlay_active = false;
         }
-        crate::console::tui::prepare_for_render(ms, config, cwd, main_area);
+        crate::console::adapter::prepare_for_render(ms, config, cwd, main_area);
     }
 
     // Route the primary render through the shared `View<ConsoleState>`
-    // dispatch (spike, plan 053) instead of calling `crate::console::tui::render`
+    // dispatch (spike, plan 053) instead of calling `crate::console::adapter::render`
     // directly. The confirm-dialog/debug-bar overlay compositing that used to
     // share the same `terminal.draw` closure is not part of the `View`
     // contract — it stays an `overlay` closure that `drive_frame` runs
@@ -356,7 +356,7 @@ where
     })?;
 
     let ConsoleStage::Manager(ms) = &state.stage;
-    if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
+    if let Some(modal @ crate::console::adapter::state::Modal::ContainerInfo { state: info }) =
         ms.list_modal.as_ref()
     {
         let rect = modal.rect(main_area);
@@ -437,9 +437,9 @@ where
         let action_fact = action.workspace_action_fact();
         let busy_title = instance_action_busy_title(action_fact);
         let busy_body = instance_action_busy_message(action_fact, container);
-        let _unused = crate::console::tui::update_manager(
+        let _unused = crate::console::adapter::update_manager(
             ms,
-            crate::console::tui::ManagerMessage::OpenStatusPopup {
+            crate::console::adapter::ManagerMessage::OpenStatusPopup {
                 title: busy_title.into(),
                 message: busy_body,
             },
@@ -448,20 +448,20 @@ where
             let full_area = frame.area();
             let (main_area, _debug_bar) =
                 split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
-            crate::console::tui::render(frame, main_area, ms, inputs.config, inputs.cwd);
+            crate::console::adapter::render(frame, main_area, ms, inputs.config, inputs.cwd);
         })?;
     }
     let result = inputs.action_handler.run_in_place(container, action).await;
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    let _unused = crate::console::tui::update_manager(
+    let _unused = crate::console::adapter::update_manager(
         ms,
-        crate::console::tui::ManagerMessage::DismissStatusPopup,
+        crate::console::adapter::ManagerMessage::DismissStatusPopup,
     );
     if let Err(error) = result {
         let err_title = instance_action_failed_error_title(action.workspace_action_fact());
-        let _unused = crate::console::tui::update_manager(
+        let _unused = crate::console::adapter::update_manager(
             ms,
-            crate::console::tui::ManagerMessage::OpenListErrorPopup {
+            crate::console::adapter::ManagerMessage::OpenListErrorPopup {
                 title: err_title.into(),
                 message: instance_action_failed_error_message(error),
             },
@@ -474,7 +474,7 @@ where
 async fn handle_input_outcome<B, H, R>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
-    outcome: crate::console::tui::InputOutcome,
+    outcome: crate::console::adapter::InputOutcome,
     inputs: &mut ConsoleLoopInputs<'_, H, R>,
     needs_redraw: &mut bool,
 ) -> anyhow::Result<ConsoleLoopFlow>
@@ -485,7 +485,7 @@ where
     R: jackin_docker::CommandRunner,
 {
     match outcome {
-        crate::console::tui::InputOutcome::Continue => {
+        crate::console::adapter::InputOutcome::Continue => {
             let ConsoleStage::Manager(ms) = &mut state.stage;
             if crate::console::effects::execute_pending_workspace_save_commit(
                 ms,
@@ -496,8 +496,10 @@ where
                 *needs_redraw = true;
             }
         }
-        crate::console::tui::InputOutcome::ExitJackin => return Ok(ConsoleLoopFlow::Exit(None)),
-        crate::console::tui::InputOutcome::LaunchNamed(name) => {
+        crate::console::adapter::InputOutcome::ExitJackin => {
+            return Ok(ConsoleLoopFlow::Exit(None));
+        }
+        crate::console::adapter::InputOutcome::LaunchNamed(name) => {
             jackin_diagnostics::set_workspace(&name);
             jackin_diagnostics::set_workspace_kind("named");
             jackin_diagnostics::record_action("launch", Some(&name));
@@ -508,12 +510,12 @@ where
                 return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
             }
         }
-        crate::console::tui::InputOutcome::PrewarmNamed(name) => {
+        crate::console::adapter::InputOutcome::PrewarmNamed(name) => {
             return Ok(ConsoleLoopFlow::Exit(Some(ConsoleOutcome::PrewarmNamed(
                 name,
             ))));
         }
-        crate::console::tui::InputOutcome::LaunchCurrentDir => {
+        crate::console::adapter::InputOutcome::LaunchCurrentDir => {
             jackin_diagnostics::set_workspace_kind("current-dir");
             jackin_diagnostics::record_action("launch", Some("current-dir"));
             if let Some(outcome) =
@@ -523,19 +525,19 @@ where
                 return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
             }
         }
-        crate::console::tui::InputOutcome::LaunchWithAgent(role) => {
+        crate::console::adapter::InputOutcome::LaunchWithAgent(role) => {
             if let Some(outcome) = dispatch_committed_role(terminal, state, inputs, role).await? {
                 return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
             }
         }
-        crate::console::tui::InputOutcome::LaunchWithRuntimeAgent(agent) => {
+        crate::console::adapter::InputOutcome::LaunchWithRuntimeAgent(agent) => {
             if let Some(outcome) =
                 launch_with_committed_agent(state, inputs.config, inputs.cwd, agent)?
             {
                 return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
             }
         }
-        crate::console::tui::InputOutcome::NewSessionWithProvider {
+        crate::console::adapter::InputOutcome::NewSessionWithProvider {
             container,
             agent,
             provider,
@@ -548,7 +550,7 @@ where
                 },
             )));
         }
-        crate::console::tui::InputOutcome::LaunchWithProvider {
+        crate::console::adapter::InputOutcome::LaunchWithProvider {
             selector,
             agent,
             provider,
@@ -574,7 +576,7 @@ where
                 },
             )));
         }
-        crate::console::tui::InputOutcome::InstanceAction { container, action } => {
+        crate::console::adapter::InputOutcome::InstanceAction { container, action } => {
             if action.runs_in_place() {
                 handle_in_place_instance_action(terminal, state, inputs, &container, action)
                     .await?;
@@ -643,7 +645,7 @@ where
 
     let outcome = {
         let ConsoleStage::Manager(ms) = &mut state.stage;
-        crate::console::tui::handle_key(ms, inputs.config, inputs.paths, inputs.cwd, key)?
+        crate::console::adapter::handle_key(ms, inputs.config, inputs.paths, inputs.cwd, key)?
     };
     if startup_error_dismissed(state, inputs.startup_error_pending) {
         return Ok(ConsoleLoopFlow::Exit(None));
@@ -705,7 +707,7 @@ fn update_console_pointer_shape(
     }
     let next_pointer_shape = console_pointer_shape(
         mouse_state.chrome_hover.is_some(),
-        crate::console::tui::input::clickable_at(ms, mouse, term_size, Some(config)),
+        crate::console::adapter::input::clickable_at(ms, mouse, term_size, Some(config)),
     );
     if next_pointer_shape != mouse_state.pointer_shape {
         mouse_state.pointer_shape = next_pointer_shape;
@@ -747,7 +749,7 @@ fn handle_mouse_event<H, R>(
                 list_modal_rect,
                 list_modal_container_info: matches!(
                     ms.list_modal,
-                    Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+                    Some(crate::console::adapter::state::Modal::ContainerInfo { .. })
                 ),
                 startup_error_modal_active: startup_error_modal_active_for_console(
                     state,
@@ -761,9 +763,9 @@ fn handle_mouse_event<H, R>(
     }
     if modal_plan.dismiss_list_modal {
         let ConsoleStage::Manager(ms) = &mut state.stage;
-        let _unused = crate::console::tui::update_manager(
+        let _unused = crate::console::adapter::update_manager(
             ms,
-            crate::console::tui::ManagerMessage::DismissListModal,
+            crate::console::adapter::ManagerMessage::DismissListModal,
         );
     }
 
@@ -786,9 +788,9 @@ fn handle_mouse_event<H, R>(
     ) && let Some(run) = active_run
     {
         let log_path = run.path().display().to_string();
-        let _unused = crate::console::tui::update_manager(
+        let _unused = crate::console::adapter::update_manager(
             ms,
-            crate::console::tui::ManagerMessage::OpenListContainerInfo {
+            crate::console::adapter::ManagerMessage::OpenListContainerInfo {
                 state: jackin_console::tui::components::container_info::debug_run_info_state(
                     env!("JACKIN_VERSION"),
                     run.run_id(),
@@ -798,7 +800,7 @@ fn handle_mouse_event<H, R>(
         );
     }
 
-    let _outcome = crate::console::tui::input::handle_mouse_with_config(
+    let _outcome = crate::console::adapter::input::handle_mouse_with_config(
         ms,
         mouse,
         term_size,

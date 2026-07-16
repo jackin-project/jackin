@@ -190,7 +190,7 @@ const APPROVED_TEST_SUPPORT_PARENTS: &[&str] = &[
     "crates/jackin-env/src/lib.rs",
     "crates/jackin-launch/src/lib.rs",
     "crates/jackin-runtime/src/runtime.rs",
-    "crates/jackin/src/console/tui.rs",
+    "crates/jackin/src/console/adapter.rs",
 ];
 
 fn non_tests_rs_violation_at(path: &str, text: &str) -> Option<String> {

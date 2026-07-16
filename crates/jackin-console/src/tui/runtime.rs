@@ -8,7 +8,7 @@
 //! those traits over its model (`ConsoleState`) and the existing render
 //! function (`crate::tui::view::render`). The trait impls are thin
 //! delegations that satisfy the shared contract at the type level. The
-//! existing event loop in `crates/jackin/src/console/tui/run.rs` continues
+//! existing event loop in `crates/jackin/src/console/adapter/run.rs` continues
 //! to call `view::render` directly; migrating it to trait dispatch is a
 //! follow-up tracked as a later W6 phase.
 

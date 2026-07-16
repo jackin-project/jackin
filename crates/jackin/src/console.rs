@@ -10,7 +10,7 @@
 //! and CLI services.
 //!
 //! * `terminal` — inline host-terminal adapter (debug-buffering globals).
-//! * `tui` — inline type aliases + thin input/state adapters; `tui/run.rs` owns the event loop.
+//! * `adapter` — concrete runtime/config/terminal bindings for `jackin-console`.
 //! * `services` — root IO adapters (config, instances, role load, workspace save).
 //! * `effects` — interpreter for typed `ManagerEffect` values.
 
@@ -64,7 +64,7 @@ pub mod terminal {
         &HOST_CONSOLE_TERMINAL
     }
 }
-pub mod tui;
+pub mod adapter;
 
 /// Validate a picked source folder against the agent an auth form targets.
 /// Returns `Ok(())` for non-agent auth kinds. Runtime validation stays in the
@@ -87,9 +87,9 @@ pub(super) fn validate_auth_source_folder(
 #[cfg(test)]
 pub(crate) use jackin_console::services::role_source::resolve_role_input_source;
 
+pub use adapter::{ConsoleStage, ConsoleState, run_console};
 pub use jackin_console::services::launch::{WorkspaceChoice, build_workspace_choice};
 pub use terminal::TerminalSession;
-pub use tui::{ConsoleStage, ConsoleState, run_console};
 
 pub type ConsoleInstanceAction =
     jackin_console::tui::message::ConsoleInstanceAction<jackin_core::Agent>;

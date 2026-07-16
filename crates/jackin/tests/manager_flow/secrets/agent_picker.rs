@@ -104,7 +104,7 @@ fn agent_picker_opens_when_single_eligible_agent() -> Result<()> {
 /// resolve the workspace and break the event loop.
 #[test]
 fn agent_picker_enter_commits_launch() -> Result<()> {
-    use jackin::console::tui::InputOutcome;
+    use jackin::console::adapter::InputOutcome;
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -150,7 +150,7 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
 /// operator stays on the manager list with an unchanged selection.
 #[test]
 fn agent_picker_esc_closes_modal() -> Result<()> {
-    use jackin::console::tui::InputOutcome;
+    use jackin::console::adapter::InputOutcome;
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());

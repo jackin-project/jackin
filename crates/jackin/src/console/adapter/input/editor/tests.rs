@@ -10,8 +10,8 @@ use super::{
     env_key_input_state, handle_editor_modal, poll_role_load, role_load_input_state,
     secret_new_key_label,
 };
-use crate::console::tui::input::handle_key;
-use crate::console::tui::state::{
+use crate::console::adapter::input::handle_key;
+use crate::console::adapter::state::{
     AuthRow, ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
     ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
 };

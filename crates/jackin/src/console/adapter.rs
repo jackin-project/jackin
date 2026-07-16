@@ -1,7 +1,8 @@
-//! Root-console TUI adapter shell.
+//! Root-console binary adapter shell.
 //!
 //! The `jackin` binary owns terminal/runtime/config IO and binds those side
 //! effects to the product state, input, and view code in `jackin-console`.
+//! This is dependency-crossing composition-root code, not a second TUI owner.
 
 pub(crate) mod input {
     //! Key dispatch for the workspace manager. Modal-first precedence:
@@ -23,11 +24,11 @@ pub(crate) mod input {
 
         #[cfg(test)]
         pub(super) fn poll_role_load(
-            editor: &mut crate::console::tui::state::EditorState<'_>,
+            editor: &mut crate::console::adapter::state::EditorState<'_>,
             config: &mut jackin_config::AppConfig,
             paths: &jackin_core::JackinPaths,
         ) -> bool {
-            use crate::console::tui::state::PendingRoleLoad;
+            use crate::console::adapter::state::PendingRoleLoad;
             use jackin_console::tui::model::ConsolePendingRoleLoad as _;
             let Some((load, result)): Option<(PendingRoleLoad, anyhow::Result<()>)> =
                 editor.poll_pending_role_load()
@@ -49,7 +50,7 @@ pub(crate) mod input {
         //! the root-binary `validate_auth_source_folder` implementation.
 
         use super::InputOutcome;
-        use crate::console::tui::state::ManagerState;
+        use crate::console::adapter::state::ManagerState;
         use jackin_config::AppConfig;
         use jackin_core::JackinPaths;
 

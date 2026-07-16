@@ -16,14 +16,14 @@
 
 ## Why this matters
 
-Roadmap Ownership item 5 lists five open convergence tasks: (a) "Route capsule, launch, and host-console loops through the shared `drive_frame` pattern, including the render adapter rather than only the outer terminal draw" — today `drive_frame` (`crates/jackin-tui/src/runtime.rs:284`) has exactly one production caller (host console, `crates/jackin/src/console/tui/run.rs:272`); capsule and launch-tui hand-roll their loops and no render-adapter layer exists; (b) modal wheel handling — `crates/jackin-console/src/tui/input/mouse/modal_scroll.rs` uses per-modal helpers instead of `jackin_tui::scroll`; (c) editor `state_impl/` wildcard imports remain (`pending.rs:5`, `workspace.rs:5`, `navigation.rs:5` — all `use super::super::*;`); (d) `type_complexity` suppressions remain in editor/console code (`input/global_mounts/auth.rs:101`, `tui/state.rs:257`) where named view models are required; (e) op-picker pure planning is split between `jackin-oppicker` (2547 lines) and ~10 console files. Divergent frame loops mean every input/render behavior fix is made N times or not at all.
+Roadmap Ownership item 5 lists five open convergence tasks: (a) "Route capsule, launch, and host-console loops through the shared `drive_frame` pattern, including the render adapter rather than only the outer terminal draw" — today `drive_frame` (`crates/jackin-tui/src/runtime.rs:284`) has exactly one production caller (host console, `crates/jackin/src/console/adapter/run.rs:272`); capsule and launch-tui hand-roll their loops and no render-adapter layer exists; (b) modal wheel handling — `crates/jackin-console/src/tui/input/mouse/modal_scroll.rs` uses per-modal helpers instead of `jackin_tui::scroll`; (c) editor `state_impl/` wildcard imports remain (`pending.rs:5`, `workspace.rs:5`, `navigation.rs:5` — all `use super::super::*;`); (d) `type_complexity` suppressions remain in editor/console code (`input/global_mounts/auth.rs:101`, `tui/state.rs:257`) where named view models are required; (e) op-picker pure planning is split between `jackin-oppicker` (2547 lines) and ~10 console files. Divergent frame loops mean every input/render behavior fix is made N times or not at all.
 
 ## Current state
 
 File map (verify all before starting):
 
 - `crates/jackin-tui/src/runtime.rs:284` — `drive_frame` definition; read its contract fully.
-- Host console caller: `crates/jackin/src/console/tui/run.rs:272`.
+- Host console caller: `crates/jackin/src/console/adapter/run.rs:272`.
 - Capsule loop: `crates/jackin-capsule/src/tui/run.rs` (find the frame loop; the compositor lives at `daemon/compositor.rs`).
 - Launch TUI loop: `crates/jackin-launch/src/` (locate with `grep -rn "draw\|event_loop\|poll" crates/jackin-launch/src/*.rs | head`).
 - Shared classifier: `crates/jackin-tui/src/scroll.rs`; per-modal handling in `crates/jackin-console/src/tui/input/mouse/modal_scroll.rs` (no `jackin_tui::scroll` import today).

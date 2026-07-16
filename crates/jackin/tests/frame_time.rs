@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
-use jackin::console::tui::{ManagerState, prepare_for_render, render};
+use jackin::console::adapter::{ManagerState, prepare_for_render, render};
 use jackin_config::AppConfig;
 
 /// 60 Hz = ~16.7 ms per frame; 16 ms is the hard ceiling.

@@ -202,7 +202,7 @@ After the source/location choice, the console suspends, runs the `claude setup-t
 - **Field stage** (scoped to the chosen section) — the existing fields in that section, plus a `+ New field` sentinel that opens the **text input box** to name the field.
 - Selecting an **existing field** writes the token into that field in-place (overwrite); creation rows write into the chosen section (`(root)` ⇒ unsectioned). Browse mode skips the Section stage and keeps the flat field list with collapsible section headers.
 
-The root console run loop that drives the wizard lives under <RepoFile path="crates/jackin/src/console/tui/run.rs">crates/jackin/src/console/tui/run.rs</RepoFile>; it suspends and resumes the terminal while external minting and write validation run through non-TUI services.
+The root console run loop that drives the wizard lives under <RepoFile path="crates/jackin/src/console/adapter/run.rs">crates/jackin/src/console/adapter/run.rs</RepoFile>; it suspends and resumes the terminal while external minting and write validation run through non-TUI services.
 
 Every "create" affordance in this branch is the same `+ ` sentinel row, and every "name it" prompt is the same text input box. Nothing new is drawn.
 

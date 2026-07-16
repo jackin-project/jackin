@@ -223,6 +223,16 @@ fn check_tui_ownership(root: &std::path::Path) -> Result<()> {
             ));
         }
     }
+    for duplicate_tui in [
+        "crates/jackin/src/console/tui.rs",
+        "crates/jackin/src/console/tui",
+    ] {
+        if root.join(duplicate_tui).exists() {
+            problems.push(format!(
+                "{duplicate_tui}: root console cannot own a second TUI tree; keep product presentation in jackin-console and host bindings under console/adapter"
+            ));
+        }
+    }
 
     check_file_excludes(
         &root.join("crates/jackin-core/Cargo.toml"),

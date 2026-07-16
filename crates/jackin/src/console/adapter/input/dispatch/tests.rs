@@ -12,7 +12,7 @@
 //! same `handle_key`).
 use super::super::test_support::{key, mount};
 use super::*;
-use crate::console::tui::state::{
+use crate::console::adapter::state::{
     EditorState, FieldFocus, ManagerStage, ManagerState, SettingsState,
 };
 use crossterm::event::KeyCode;

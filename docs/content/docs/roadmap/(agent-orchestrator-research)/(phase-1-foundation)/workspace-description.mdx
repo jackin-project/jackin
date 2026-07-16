@@ -13,7 +13,7 @@ title: "Workspace Description Field"
 1. Add an optional `description: Option<String>` field to `WorkspaceConfig`; absent means no description (not empty string). Roundtrip cleanly through TOML (preserve operator whitespace; render only the first line in lists for multi-line values).
 2. `workspace create --description` and `workspace edit --description` / `--clear-description` on `WorkspaceEdit`, mirroring the existing `--clear-default-role` flag shape in <RepoFile path="crates/jackin/src/cli/workspace.rs" />.
 3. `workspace show` renders the description as a top-level field; `workspace list` adds a truncated Description column.
-4. Console workspace picker (<RepoFile path="crates/jackin/src/console/tui.rs" />) shows the description as a one-line subtitle under the workspace name.
+4. Console workspace picker (<RepoFile path="crates/jackin/src/console/adapter.rs" />) shows the description as a one-line subtitle under the workspace name.
 
 ## Out of scope
 

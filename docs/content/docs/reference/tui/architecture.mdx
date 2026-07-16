@@ -16,7 +16,7 @@ Each layer has a strict scope:
 | Update | `tui/update.rs` | Deterministic state transitions: apply `Message` to the model and return typed effects |
 | Effect / Subscription | `tui/effect.rs`, `tui/subscriptions.rs` | Typed descriptions of non-TUI work and long-lived event sources; they describe work but do not execute external commands |
 | View | `tui/view.rs`, screen `view.rs` | Pure Ratatui frame composition from the current model; capsule-only terminal protocol reconciliation such as cursor/mode state, outer-terminal title, OSC passthrough, and pointer-shape hints stays in the backend/writer layer around the frame |
-| Terminal / run loop | `tui/run.rs`, `tui/terminal.rs` | Terminal lifecycle, backend adapter, event-loop wiring, and routing of completed effects back into messages |
+| Terminal / run loop | `tui/run.rs`, `tui/terminal.rs` | Terminal lifecycle, backend adapter, event-loop policy, and routing of completed effects back into messages |
 | Components | `tui/components/` | Surface-local visual components not reusable enough for TermRock |
 
 **Messages and central update.** Every state change that could be driven by a test goes through a semantic `Message` and an update function instead of mutating model state inline in the event handler. Event handlers translate terminal input into messages; update applies the message and returns dirty state plus typed effects. Existing console code may still use names such as `ManagerMessage`, `ManagerState`, `update_manager`, and `UpdateResult`, but new structure should use the same pattern under the owning surface's `src/tui/`.
@@ -52,7 +52,15 @@ crates/<surface-crate>/src/tui/
 
 2. **`crates/jackin-tui/`** — Product-specific compositions and Ratatui adapters shared by at least two jackin❯ surfaces. It may depend on TermRock and pure product vocabulary, but cannot own a generic theme facade, neutral widgets, terminal lifecycle, run loops, or external effects.
 
-3. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop wiring. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
+3. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole reusable TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop policy. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
+
+The top-level `jackin` binary has one composition-root exception: the host
+console's concrete runtime, Docker, config, and terminal bindings live under
+`crates/jackin/src/console/adapter/`. The adapter may execute effects described
+by `jackin-console`, but it must not define widgets, neutral component behavior,
+or a parallel TUI model/update/view. Calling this boundary `adapter` is
+mandatory; a second root `console/tui/` tree would falsely claim presentation
+ownership and is rejected by the architecture gate.
 
 `jackin-core` remains terminal-library-free. It owns product facts and raw domain tokens, never Ratatui, Crossterm, or TermRock types.
 
@@ -146,7 +154,9 @@ src/
 - `Message` / `Action` enums
 - Update functions that mutate only TUI state and return typed effects
 - Effect and subscription type definitions
-- Event-loop wiring and terminal lifecycle/backend adapters
+- Event-loop policy and terminal lifecycle/backend adapters; a composition-root
+  binding may live under `console/adapter/` only when it must cross from the
+  surface crate into higher-tier runtime dependencies
 - Ratatui widget implementations; surface-specific terminal protocol reconciliation belongs in the backend/writer layer, not in widget render functions
 - Frame composition, geometry helpers, hitboxes, focus-visible rendering, hint bars, and local lookbook stories
 
@@ -166,7 +176,8 @@ src/
 tui/update.rs
   -> returns Effect::RefreshInstances
 
-tui/run.rs (effect executor)
+surface tui/run.rs (event-loop policy)
+  -> composition-root adapter when higher-tier runtime binding is required
   -> calls non-TUI service/runtime code
 
 non-TUI service code
