@@ -135,7 +135,7 @@ jobs:
 
       - name: Check behavioral-spec test citations
         run: |
-          "$DOCS_XTASK" docs specs
+          env -u CI "$DOCS_XTASK" docs specs
 
       - name: Check roadmap sidebar completeness
         run: |

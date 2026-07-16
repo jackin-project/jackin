@@ -202,7 +202,10 @@ same binary instead of each invoking Cargo through mise; only a genuinely new
 Codebook version or platform may take the source-build fallback.
 The repository-link job restores the same prepared `jackin-xtask` artifact as
 CI and installs only lychee, so it does not maintain a second Rust build/cache
-path for identical source inputs.
+path for identical source inputs. Because Docs and CI are independent workflows
+for the same revision, the downloader gives the concurrent CI producer one
+bounded 40-second window to publish a newly keyed tool artifact. It never falls
+back to compiling the workspace in Docs.
 
 Required PR/main CI runs the real
 `jackin_load_ctrl_q_yes_exits_cold_build_quickly` Docker smoke inside the
