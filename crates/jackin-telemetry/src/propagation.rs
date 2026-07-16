@@ -75,13 +75,9 @@ pub fn extract(carrier: &impl Carrier) -> ExtractOutcome {
 
 fn valid_product_ids(carrier: &impl Carrier) -> bool {
     let uuid = |value: Option<&str>| value.is_none_or(|value| uuid::Uuid::parse_str(value).is_ok());
-    let session = carrier.session_id().is_none_or(|value| {
-        !value.is_empty()
-            && value.len() <= 64
-            && value
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || "-_.".contains(ch))
-    });
+    let session = carrier
+        .session_id()
+        .is_none_or(|value| !value.is_empty() && value.len() <= 64);
     uuid(carrier.invocation_id()) && uuid(carrier.job_id()) && session
 }
 

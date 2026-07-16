@@ -167,6 +167,104 @@ fn conformance_invalid_attach_control_has_no_detach_side_effect() {
         })
     );
 }
+
+#[test]
+fn conformance_clipboard_continuations_validate_correlation_and_start_identity() {
+    use jackin_protocol::attach::{
+        AttachControlOperation, AttachControlRequest, ClipboardImageChunk, ClipboardImageEnd,
+        ClipboardImageFormat, ClipboardImageStart,
+    };
+
+    let mut mux = test_mux(24, 80);
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+    let (completion_tx, _completion_rx) = mpsc::unbounded_channel();
+    mux.client_registry
+        .client
+        .attach_with_completions(out_tx, completion_tx);
+    let start_context = jackin_protocol::TelemetryContext::v1();
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 91,
+            context: start_context.clone(),
+            operation: AttachControlOperation::ClipboardImageStart(ClipboardImageStart {
+                transfer_id: 7,
+                format: ClipboardImageFormat::Png,
+                size: 3,
+            }),
+        }),
+    );
+    assert!(mux.clipboard.attach_control_operations.contains_key(&7));
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 91,
+            context: jackin_protocol::TelemetryContext {
+                invocation_id: Some("not-a-uuid".to_owned()),
+                ..jackin_protocol::TelemetryContext::v1()
+            },
+            operation: AttachControlOperation::ClipboardImageChunk(ClipboardImageChunk {
+                transfer_id: 7,
+                offset: 0,
+                bytes: vec![1, 2, 3],
+            }),
+        }),
+    );
+    assert!(mux.clipboard.attach_control_operations.contains_key(&7));
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 92,
+            context: start_context.clone(),
+            operation: AttachControlOperation::ClipboardImageEnd(ClipboardImageEnd {
+                transfer_id: 7,
+                sha256: [0; jackin_protocol::attach::FILE_EXPORT_DIGEST_BYTES],
+            }),
+        }),
+    );
+    assert!(
+        mux.clipboard.attach_control_operations.contains_key(&7),
+        "a continuation with a different request identity must not consume the transfer"
+    );
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 91,
+            context: start_context,
+            operation: AttachControlOperation::ClipboardImageChunk(ClipboardImageChunk {
+                transfer_id: 7,
+                offset: 0,
+                bytes: vec![1, 2, 3],
+            }),
+        }),
+    );
+    assert!(
+        mux.clipboard.attach_control_operations.contains_key(&7),
+        "the rejected chunk must not advance the transfer offset"
+    );
+
+    let responses = std::iter::from_fn(|| out_rx.try_recv().ok())
+        .filter_map(|encoded| {
+            jackin_protocol::attach::decode_server(encoded[0], encoded[5..].to_vec()).ok()
+        })
+        .collect::<Vec<_>>();
+    assert!(responses.iter().any(|response| matches!(
+        response,
+        ServerFrame::AttachControlResponse(response)
+            if response.request_id == 91
+                && response.result
+                    == jackin_protocol::attach::AttachControlResult::InvalidCorrelation
+    )));
+    assert!(responses.iter().any(|response| matches!(
+        response,
+        ServerFrame::AttachControlResponse(response)
+            if response.request_id == 92
+                && response.result == jackin_protocol::attach::AttachControlResult::Rejected
+    )));
+}
 use std::io;
 use std::sync::{Arc, Mutex};
 

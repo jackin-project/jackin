@@ -68,3 +68,28 @@ fn extraction_matrix_honors_unsampled_and_rejects_product_ids() {
     };
     assert_eq!(extract(&invalid_id), ExtractOutcome::RejectRequest);
 }
+
+#[test]
+fn session_id_is_an_opaque_bounded_value() {
+    for session in [
+        "opaque session/with symbols!?".to_owned(),
+        "a".repeat(64),
+        "é".repeat(32),
+    ] {
+        let carrier = TestCarrier {
+            v: VERSION,
+            session: Some(session),
+            ..Default::default()
+        };
+        assert_eq!(extract(&carrier), ExtractOutcome::LocalRoot);
+    }
+
+    for session in [String::new(), "a".repeat(65), "é".repeat(33)] {
+        let carrier = TestCarrier {
+            v: VERSION,
+            session: Some(session),
+            ..Default::default()
+        };
+        assert_eq!(extract(&carrier), ExtractOutcome::RejectRequest);
+    }
+}

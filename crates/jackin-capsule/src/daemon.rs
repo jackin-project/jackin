@@ -75,7 +75,8 @@ use crate::session::{
 use crate::socket;
 use crate::token_monitor::{TokenMonitor, TokenTotals};
 
-const RPC_ERROR: &str = jackin_telemetry::schema::enums::ErrorType::RpcError.as_str();
+const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
+    jackin_telemetry::schema::enums::ErrorType::RpcError;
 #[cfg(test)]
 use crate::tui::components::branch_context_bar::branch_context_bar_layout;
 #[cfg(test)]
@@ -284,6 +285,7 @@ pub(super) struct ClipboardState {
 
 pub(super) struct PendingAttachControl {
     pub(crate) request_id: u64,
+    pub(crate) context: jackin_protocol::TelemetryContext,
     pub(crate) operation: Option<jackin_telemetry::operation::OperationGuard>,
 }
 
@@ -1707,7 +1709,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     }
 }
 
-fn control_server_operation(
+pub(crate) fn control_server_operation(
     context: &jackin_protocol::TelemetryContext,
     message: &ClientMsg,
 ) -> Option<Option<jackin_telemetry::operation::OperationGuard>> {

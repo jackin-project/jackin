@@ -131,6 +131,91 @@ fn conformance_serialized_daemon_propagation_matrix_preserves_parentage_sampling
 }
 
 #[test]
+fn daemon_socket_exports_client_parent_server_and_completes_after_response_write() {
+    let (_temp, _paths, layout) = layout();
+    ensure_run_dir(&layout).unwrap();
+    let listener = UnixListener::bind(&layout.socket_path).expect("bind daemon socket");
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let dispatcher = tracing::dispatcher::get_default(Clone::clone);
+    let server_layout = layout.clone();
+    let server = std::thread::spawn(move || {
+        tracing::dispatcher::with_default(&dispatcher, || {
+            let (mut stream, _) = listener.accept().expect("accept daemon client");
+            let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+            handle_stream(
+                &mut stream,
+                &server_layout,
+                "test-build",
+                &CoredumpPolicy::Disabled,
+                &mut attention,
+            )
+            .expect("serve daemon request")
+        })
+    });
+
+    let response = request(&layout.socket_path, "test-build", DaemonRequestKind::Status)
+        .expect("daemon request");
+    assert!(matches!(response.kind, DaemonResponseKind::Status(_)));
+    server.join().expect("server thread");
+    drop(guard);
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 2);
+    let client = spans
+        .iter()
+        .find(|span| span.name == "rpc.client")
+        .expect("client span");
+    let server = spans
+        .iter()
+        .find(|span| span.name == "rpc.server")
+        .expect("server span");
+    assert_eq!(server.trace_id, client.trace_id);
+    assert_eq!(server.parent_span_id, client.span_id);
+    assert!(!client.error && !server.error);
+}
+
+#[test]
+fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
+    use std::net::Shutdown;
+
+    let (_temp, _paths, layout) = layout();
+    let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+    let mut context = TelemetryContext::v1();
+    context.traceparent =
+        Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_owned());
+    let request = DaemonRequest {
+        id: "write-failure".to_owned(),
+        protocol_version: DAEMON_PROTOCOL_VERSION,
+        build_id: "test-build".to_owned(),
+        ctx: context,
+        kind: DaemonRequestKind::Status,
+    };
+    let (mut client, mut server) = UnixStream::pair().expect("daemon socket pair");
+    serde_json::to_writer(&mut client, &request).expect("write daemon request");
+    client.write_all(b"\n").expect("terminate daemon request");
+    client
+        .shutdown(Shutdown::Both)
+        .expect("close daemon client");
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    assert!(
+        handle_stream(
+            &mut server,
+            &layout,
+            "test-build",
+            &CoredumpPolicy::Disabled,
+            &mut attention,
+        )
+        .is_err()
+    );
+    drop(guard);
+    export.force_flush();
+    assert_eq!(export.error_span_count(), 1);
+}
+
+#[test]
 fn daemon_layout_uses_private_run_dir() {
     let (_temp, _paths, layout) = layout();
 
