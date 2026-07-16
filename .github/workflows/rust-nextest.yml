@@ -92,6 +92,8 @@ jobs:
       BUILDX_BUILDER: jackin-construct-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       CARGO_INCREMENTAL: "0"
       CARGO_NET_OFFLINE: "true"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_TERM_COLOR: always
       JACKIN_TELEMETRY_VOLUME_PATH: target/telemetry-volume-ratchet.json
       LOCAL_REGISTRY_IMAGE: projectjackin/construct

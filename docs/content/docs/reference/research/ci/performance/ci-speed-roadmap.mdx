@@ -264,6 +264,12 @@ change still runs the complete site build and Lychee check. The prepared Rust
 `jackin-xtask` binary calculates these contracts; CI does not interpret the
 documentation tree with a Bash script.
 
+Reusable crate seeds are transport artifacts, not debugging deliverables, so
+their CI dev and test profiles omit debug information. Tests, checks, Clippy,
+feature powersets, and benchmarks remain complete inside the crate's one job;
+the archive no longer spends network and extraction time carrying symbols that
+no later CI consumer reads.
+
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses
 for all 26 crates. The crate-test contract now retains the last validated
