@@ -5,7 +5,7 @@ description: "Modal sizing rules, confirmation layouts, sub-dialog stacking, err
 
 ## Modal Sizing Rules
 
-Modal sizes come from the `modal_rects` registry in TermRock. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
+Modal sizes currently come from parallel product-local registries in <RepoFile path="crates/jackin-console/src/tui/components/modal_rects.rs">console</RepoFile> and <RepoFile path="crates/jackin-capsule/src/tui/components/modal_rects.rs">Capsule</RepoFile>. The [Shared TUI Extraction Follow-through roadmap](/roadmap/shared-tui-extraction/) tracks replacing their neutral sizing and placement logic with TermRock `DialogSpec`/`resolve_dialog` while keeping named product modes local. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
 
 | Modal | `pct_w` | `rows` | Reasoning |
 |---|---|---|---|
@@ -99,7 +99,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 ### Debug info dialog contract
 
-`DebugInfo::into_state()` in [TermRock source](https://github.com/tailrocks/termrock) is the only row-order and row-label source for the Debug info dialog. Console, launch, and capsule surfaces may supply different facts, but they all render through `render_container_info()` and must not fork the shell, row labels, copy behavior, hover styling, or scroll behavior.
+`DebugInfo::into_state()` is intended to be the only row-order and row-label source for the Debug info dialog. The current console, launch, and Capsule copies must remain behavior-identical until the [Shared TUI Extraction Follow-through roadmap](/roadmap/shared-tui-extraction/) establishes one jackin❯ product-data owner and one TermRock neutral renderer; no surface may independently fork the shell, row labels, copy behavior, hover styling, or scroll behavior.
 
 The canonical row order is:
 
@@ -282,7 +282,7 @@ Copy feedback is the exception because copy does not navigate or otherwise chang
 
 ## Debug info dialog — one shared, accumulating component
 
-The "Debug info" dialog is a single reusable component, not a per-surface reimplementation. Every surface that shows it — the console manager, the launch cockpit, and the in-container capsule — builds it from the shared `DebugInfo` model ([TermRock source](https://github.com/tailrocks/termrock)) and renders it through `render_container_info`. The look, row order, labels, and copy affordances must be identical on every surface; a surface that hand-rolls its own rows or renderer is a violation.
+The "Debug info" dialog must become one reusable neutral component, not a per-surface reimplementation. Today console, launch, and Capsule retain three copies of the state/render body; the [Shared TUI Extraction Follow-through roadmap](/roadmap/shared-tui-extraction/) tracks converging them on TermRock `DetailTable`/dialog primitives while keeping the product-owned `DebugInfo` facts and row construction in jackin❯. The look, row order, labels, and copy affordances must remain identical throughout the migration.
 
 **The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin❯ version, Run ID, diagnostics log path when one exists). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Run ID, Container ID, jackin❯ version, jackin-capsule, Role, Agent, Target, Diagnostics log, Telemetry. If `Run ID` is present, it is always the first visible row — not merely the first debug-only row or first copy target — and the default Enter-copy target.
 
