@@ -341,6 +341,12 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
+      - id: ci-tools-cache
+        name: Cache resolved CI tool binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/ci-prebuilt-tools
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: "2026.6.11"
@@ -351,9 +357,9 @@ jobs:
                 (github.event_name == 'pull_request' &&
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           install_args: >-
-            cargo-binstall rust cargo:sccache cargo:cargo-nextest
-            cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit
-            cargo:cargo-fuzz cargo:cargo-hack
+            cargo-binstall rust
+            ${{ steps.ci-tools-cache.outputs.cache-hit != 'true' &&
+                'cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -373,12 +379,16 @@ jobs:
         run: cargo build -p jackin-xtask --locked
       - name: Stage shared CI xtask
         run: |
-          mkdir -p target/ci-tools
+          mkdir -p target/ci-prebuilt-tools target/ci-tools
+          if [ "${{ steps.ci-tools-cache.outputs.cache-hit }}" != "true" ]; then
+            for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack; do
+              cp "$(mise which "$tool")" "target/ci-prebuilt-tools/$tool"
+            done
+            strip target/ci-prebuilt-tools/*
+          fi
+          cp target/ci-prebuilt-tools/* target/ci-tools/
           cp target/ci-xtask/debug/jackin-xtask target/ci-tools/jackin-xtask
-          for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack; do
-            cp "$(mise which "$tool")" "target/ci-tools/$tool"
-          done
-          strip target/ci-tools/*
+          strip target/ci-tools/jackin-xtask
       - name: Upload shared CI xtask
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
