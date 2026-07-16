@@ -3,6 +3,8 @@
 
 //! Footer hint rows for capsule dialogs.
 
+use std::borrow::Cow;
+
 use termrock::{keymap::glyph, widgets::HintSpan};
 
 use crate::tui::keymap::{
@@ -10,6 +12,13 @@ use crate::tui::keymap::{
     READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, RESIZE_PANE_KEYMAP, ReadOnlyDismissAction,
     RenameAction,
 };
+
+fn key_span(glyph: impl Into<Cow<'static, str>>) -> HintSpan<'static> {
+    match glyph.into() {
+        Cow::Borrowed(glyph) => HintSpan::Key(glyph),
+        Cow::Owned(glyph) => HintSpan::DynKey(glyph),
+    }
+}
 
 /// Derive a display glyph for a raw palette-key byte.
 ///
@@ -36,7 +45,7 @@ fn format_key_glyph(byte: u8) -> String {
 pub(crate) fn main_view_hint(
     scrollback_active: bool,
     palette_key: u8,
-    axes: termrock::layout::ScrollAxes,
+    axes: termrock::scroll::ScrollAxes,
     prefix_awaiting: bool,
 ) -> Vec<HintSpan<'static>> {
     if prefix_awaiting {
@@ -49,12 +58,12 @@ pub(crate) fn main_view_hint(
         return spans;
     }
     if scrollback_active {
-        let mut spans = termrock::layout::scroll_hint_spans(axes);
+        let mut spans = termrock::scroll::scroll_hint_spans(axes);
         if !spans.is_empty() {
             spans.push(HintSpan::GroupSep);
         }
         // UNREGISTERABLE(scrollback-modal): Esc handled by InputParser scrollback state check; no scrollback keymap exists.
-        spans.push(HintSpan::Key("Esc"));
+        spans.push(key_span("Esc"));
         spans.push(HintSpan::Text("exit scrollback"));
         spans.push(HintSpan::GroupSep);
         spans.push(HintSpan::DynKey(format_key_glyph(palette_key)));
@@ -67,7 +76,7 @@ pub(crate) fn main_view_hint(
             HintSpan::DynKey(format_key_glyph(palette_key)),
             HintSpan::Text("menu"),
         ];
-        let scroll = termrock::layout::scroll_hint_spans(axes);
+        let scroll = termrock::scroll::scroll_hint_spans(axes);
         if !scroll.is_empty() {
             spans.push(HintSpan::GroupSep);
             spans.extend(scroll);
@@ -76,7 +85,7 @@ pub(crate) fn main_view_hint(
         spans.extend(RESIZE_PANE_KEYMAP.hint_spans());
         spans.push(HintSpan::GroupSep);
         // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
-        spans.push(HintSpan::Key("click"));
+        spans.push(key_span("click"));
         spans.push(HintSpan::Text("focus pane"));
         spans.push(HintSpan::GroupSep);
         spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans());
@@ -97,7 +106,7 @@ fn filter_list_hint(confirm_label: &'static str, type_filter: bool) -> Vec<HintS
         spans.push(HintSpan::Text("type filter"));
     }
     spans.push(HintSpan::GroupSep);
-    spans.push(HintSpan::Key(
+    spans.push(key_span(
         FILTER_LIST_KEYMAP.glyph_for(FilterListAction::Confirm),
     ));
     spans.push(HintSpan::Text(confirm_label));
@@ -149,41 +158,41 @@ pub(super) fn export_file_hint() -> Vec<HintSpan<'static>> {
 /// `GitHubContext`, which differ only in their copy label.
 pub(super) fn info_dialog_hint(
     copy_label: &'static str,
-    axes: termrock::layout::ScrollAxes,
+    axes: termrock::scroll::ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
     // UNREGISTERABLE(info-dialog-copy): Enter selects the active copy target inline; no InfoDialog keymap registered.
-    let mut spans = vec![HintSpan::Key("↵"), HintSpan::Text(copy_label)];
-    let scroll = termrock::layout::scroll_hint_spans(axes);
+    let mut spans = vec![key_span("↵"), HintSpan::Text(copy_label)];
+    let scroll = termrock::scroll::scroll_hint_spans(axes);
     if !scroll.is_empty() {
         spans.push(HintSpan::GroupSep);
         spans.extend(scroll);
     }
     spans.push(HintSpan::GroupSep);
-    spans.push(HintSpan::Key(
+    spans.push(key_span(
         READ_ONLY_DISMISS_KEYMAP.glyph_for(ReadOnlyDismissAction::Dismiss),
     ));
     spans.push(HintSpan::Text("dismiss"));
     spans
 }
 
-pub(super) fn usage_hint(axes: termrock::layout::ScrollAxes) -> Vec<HintSpan<'static>> {
+pub(super) fn usage_hint(axes: termrock::scroll::ScrollAxes) -> Vec<HintSpan<'static>> {
     let mut spans = vec![
-        HintSpan::Key(glyph::LEFT_RIGHT),
+        key_span(glyph::LEFT_RIGHT),
         HintSpan::Text("switch provider"),
         HintSpan::GroupSep,
-        HintSpan::Key(glyph::TAB),
+        key_span(glyph::TAB),
         HintSpan::Text("focus content"),
         HintSpan::GroupSep,
-        HintSpan::Key("r"),
+        key_span("r"),
         HintSpan::Text("refresh"),
     ];
-    let scroll = termrock::layout::scroll_hint_spans(axes);
+    let scroll = termrock::scroll::scroll_hint_spans(axes);
     if !scroll.is_empty() {
         spans.push(HintSpan::GroupSep);
         spans.extend(scroll);
     }
     spans.push(HintSpan::GroupSep);
-    spans.push(HintSpan::Key(
+    spans.push(key_span(
         READ_ONLY_DISMISS_KEYMAP.glyph_for(ReadOnlyDismissAction::Dismiss),
     ));
     spans.push(HintSpan::Text("close"));
@@ -196,16 +205,16 @@ pub(super) fn read_only_hint() -> Vec<HintSpan<'static>> {
 
 pub(super) fn confirm_hint() -> Vec<HintSpan<'static>> {
     vec![
-        HintSpan::Key("↵"),
+        key_span("↵"),
         HintSpan::Text("confirm"),
         HintSpan::GroupSep,
-        HintSpan::Key("Y"),
+        key_span("Y"),
         HintSpan::Text("yes"),
         HintSpan::GroupSep,
-        HintSpan::Key("N/Esc"),
+        key_span("N/Esc"),
         HintSpan::Text("no"),
         HintSpan::GroupSep,
-        HintSpan::Key("⇥"),
+        key_span("⇥"),
         HintSpan::Text("focus"),
     ]
 }

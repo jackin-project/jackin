@@ -1,5 +1,5 @@
 //! End-to-end integration test for the workspace manager TUI.
-//! Drives `tui::handle_key` with a scripted key stream — no live
+//! Drives the console adapter's `handle_key` with a scripted key stream — no live
 //! terminal.
 
 #![expect(
@@ -14,13 +14,13 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifi
 use jackin::{
     console::{
         ConsoleStage,
-        effects::{
-            apply_background_event, execute_pending_workspace_save_commit, poll_background_messages,
-        },
-        tui::{
+        adapter::{
             InputOutcome, ManagerStage, ManagerState, dispatch_launch_for_workspace, handle_key,
             new_console_state,
             state::{EditorSaveFlow, EditorState, EditorTab, FieldFocus, Modal},
+        },
+        effects::{
+            apply_background_event, execute_pending_workspace_save_commit, poll_background_messages,
         },
     },
     workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride},
@@ -162,7 +162,7 @@ fn render_to_dump(state: &ManagerState<'_>, config: &AppConfig, cwd: &std::path:
     let backend = TestBackend::new(100, 30);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
-        jackin::console::tui::render(f, f.area(), state, config, cwd);
+        jackin::console::adapter::render(f, f.area(), state, config, cwd);
     })
     .unwrap();
     let buf = term.backend().buffer();
@@ -461,7 +461,8 @@ fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
         .expect("post-default dispatch must open the inline picker");
     let selected = picker
         .list_state
-        .selected
+        .selected()
+        .copied()
         .expect("default role should be selected");
     assert_eq!(picker.filtered[selected].key(), "chainargos/agent-smith");
     Ok(())

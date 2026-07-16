@@ -92,7 +92,7 @@ fn sentinel_enter_opens_scope_picker() -> Result<()> {
 /// confirm the `EnvKey` modal opens with `Workspace` scope.
 #[test]
 fn scope_picker_all_path_to_workspace_envkey() -> Result<()> {
-    use jackin::console::tui::state::SecretsScopeTag;
+    use jackin::console::adapter::state::SecretsScopeTag;
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
@@ -126,7 +126,7 @@ fn scope_picker_all_path_to_workspace_envkey() -> Result<()> {
 /// organically once the first key/value commits.
 #[test]
 fn scope_picker_specific_path_to_agent_picker_then_envkey() -> Result<()> {
-    use jackin::console::tui::state::SecretsScopeTag;
+    use jackin::console::adapter::state::SecretsScopeTag;
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
@@ -470,7 +470,7 @@ fn cancel_from_agent_override_picker_after_scope_pick_does_not_create_section() 
 /// the workspace-level sentinel.
 #[test]
 fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
-    use jackin::console::tui::state::SecretsScopeTag;
+    use jackin::console::adapter::state::SecretsScopeTag;
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config =

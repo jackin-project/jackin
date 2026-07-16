@@ -58,9 +58,15 @@ pub(crate) fn role_lines(
 ) -> Vec<Line<'static>> {
     let badge_text = if is_all { "  all  " } else { "  custom  " };
     let badge_bg = if is_all {
-        termrock::style::PHOSPHOR_GREEN
+        termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default()
     } else {
-        jackin_core::tui_theme::WHITE
+        termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default()
     };
     let badge_style = Style::default()
         .bg(badge_bg)
@@ -70,9 +76,7 @@ pub(crate) fn role_lines(
     let mut status_spans = vec![
         Span::styled(
             "  Allowed roles:  ",
-            Style::default()
-                .fg(jackin_core::tui_theme::WHITE)
-                .add_modifier(Modifier::BOLD),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ),
         Span::styled(badge_text, badge_style),
     ];
@@ -80,7 +84,7 @@ pub(crate) fn role_lines(
         status_spans.push(Span::styled(
             format!("   ({allowed_count} of {} allowed)", rows.len()),
             Style::default()
-                .fg(jackin_core::tui_theme::ACTION_ACCENT)
+                .fg(jackin_tui::tokens::ACTION_ACCENT)
                 .add_modifier(Modifier::ITALIC),
         ));
     }
@@ -99,10 +103,16 @@ pub(crate) fn role_lines(
         let text = format!("{prefix}{check} {star} {}", row.name);
         let style = if selected {
             Style::default()
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
         };
         lines.push(Line::from(Span::styled(text, style)));
     }

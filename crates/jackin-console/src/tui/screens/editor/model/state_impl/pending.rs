@@ -92,7 +92,7 @@ impl<
     type OpRef = OpRef;
 
     fn poll_pending_op_commit(&mut self) -> Option<(Self::OpRef, anyhow::Result<()>)> {
-        use termrock::runtime::{Subscription, SubscriptionPoll};
+        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
         let pending = self.pending_op_commit.as_mut()?;
         let result = match pending.rx.poll_next() {
@@ -142,7 +142,7 @@ impl<
         Self::PendingDriftCheck,
         anyhow::Result<Self::DriftDetection>,
     )> {
-        use termrock::runtime::{Subscription, SubscriptionPoll};
+        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
         let check = self.pending_drift_check.as_mut()?;
         let result = match check.rx.poll_next() {
@@ -187,7 +187,7 @@ impl<
     fn poll_pending_isolation_cleanup(
         &mut self,
     ) -> Option<(Self::PendingIsolationCleanup, anyhow::Result<()>)> {
-        use termrock::runtime::{Subscription, SubscriptionPoll};
+        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
         let cleanup = self.pending_isolation_cleanup.as_mut()?;
         let result = match cleanup.rx.poll_next() {
@@ -230,7 +230,7 @@ impl<
     type PendingRoleLoad = crate::tui::subscriptions::PendingRoleLoad<RoleSource>;
 
     fn poll_pending_role_load(&mut self) -> Option<(Self::PendingRoleLoad, anyhow::Result<()>)> {
-        use termrock::runtime::{Subscription, SubscriptionPoll};
+        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
         let load = self.pending_role_load.as_mut()?;
         let result = match load.rx.poll_next() {

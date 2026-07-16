@@ -5,9 +5,9 @@
 //!
 //! `jackin-isolation::finalize` needs to surface an exit dialog and an
 //! error popup at host teardown. The dialog rendering lives in
-//! `jackin_launch_tui` (presentation, L3); calling it directly would
+//! `jackin_launch` (presentation, L3); calling it directly would
 //! make jackin-runtime (L1) reach into L3. Define the consumer trait
-//! here in the domain layer (L0) and have `jackin_launch_tui` install
+//! here in the domain layer (L0) and have `jackin_launch` install
 //! the impl at startup. Application-layer code calls
 //! [`error_popup`] / [`exit_dialog_with_inspect`] via the global sink —
 //! the same Branch-by-Abstraction pattern the `build_log` sink uses.
@@ -23,7 +23,7 @@ use crate::launch_progress::{PromptContextLine, WorktreeInspect};
 /// never calls presentation code directly. Architecture invariant: this
 /// trait is the ONLY surface through which an L1 module can show a
 /// user-facing dialog; the underlying render impl is owned by
-/// `jackin_launch_tui`.
+/// `jackin_launch`.
 pub trait StandaloneDialogSink: Send + Sync + std::fmt::Debug {
     /// Show a one-shot error popup with `title` and `message`.
     fn error_popup(&self, title: &str, message: &str) -> anyhow::Result<()>;

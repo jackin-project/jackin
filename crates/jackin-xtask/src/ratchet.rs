@@ -624,10 +624,7 @@ const CURATED_PUB_MODS: &[(&str, &[&str])] = &[
     // Plan 019: jackin-config narrowed (private mods + root re-exports).
     ("jackin-config", &["test_support"]),
     // Plan 019: jackin-core — only justified namespace mods remain public.
-    (
-        "jackin-core",
-        &["container_paths", "debug_log", "operator_info", "tui_theme"],
-    ),
+    ("jackin-core", &["container_paths", "debug_log"]),
 ];
 
 /// Fail if a curated crate's root `lib.rs` declares a non-allowlisted `pub mod`.

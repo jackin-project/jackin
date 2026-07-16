@@ -14,6 +14,7 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -21,11 +22,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-use termrock::runtime::{Subscription, SubscriptionPoll};
 
 use super::input::FileBrowserOutcome;
 use super::state::FileBrowserState;
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,8 +165,8 @@ pub fn git_prompt_rect(listing: Rect, has_url: bool) -> Option<Rect> {
 /// screen coordinates. Returns `None` when `has_url` is false — the
 /// URL row isn't rendered then and a click there shouldn't open anything.
 ///
-/// Row order inside the overlay follows the canonical five-slot dialog layout:
-/// `[leading spacer][prompt + url][spacer][buttons][trailing spacer]`.
+/// Row order inside the overlay follows `TermRock` `bottom_rows` composition:
+/// leading spacer, content (prompt + url), mid spacer, buttons, trailing spacer.
 /// The URL row sits at content row index 1 when the URL is present.
 pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<Rect> {
     // Structural exception: URL hit-testing is derived from the child overlay rect used by the File Browser git prompt.
@@ -179,14 +178,14 @@ pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<
         width: overlay.width.saturating_sub(2),
         height: overlay.height.saturating_sub(2),
     };
-    let chunks = termrock::layout::dialog_inner_chunks(inner, Some(2));
-    if chunks[1].height < 2 {
+    let (content, _) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
+    if content.height < 2 {
         return None;
     }
     Some(Rect {
-        x: chunks[1].x,
-        y: chunks[1].y.saturating_add(1),
-        width: chunks[1].width,
+        x: content.x,
+        y: content.y.saturating_add(1),
+        width: content.width,
         height: 1,
     })
 }
@@ -196,11 +195,17 @@ pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<
 /// modal background so only the focused choice pops (canonical template).
 pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
     let focused = Style::default()
-        .bg(WHITE)
+        .bg(termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default())
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
     let unfocused = Style::default()
-        .fg(PHOSPHOR_GREEN)
+        .fg(termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default())
         .add_modifier(Modifier::BOLD);
     let btn = |target: GitPromptFocus, label: &'static str| -> Span<'static> {
         let style = if focus == target { focused } else { unfocused };
@@ -272,20 +277,20 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
         frame,
         area,
         Some("Git repository detected"),
-        termrock::layout::DialogBorder::Default,
+        termrock::widgets::PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
-    let content_rows = if has_url { 2 } else { 1 };
-    let chunks = termrock::layout::dialog_inner_chunks(inner, Some(content_rows));
+    let (content, action_row) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
     let prompt_row = Rect {
         height: 1,
-        ..chunks[1]
+        ..content
     };
 
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            jackin_core::tui_theme::BOLD_WHITE,
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ))
         .alignment(Alignment::Center),
         prompt_row,
@@ -294,15 +299,18 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
     if has_url {
         let url = state.pending_git_url.as_deref().unwrap_or_default();
         let url_row = Rect {
-            y: chunks[1].y.saturating_add(1),
+            y: content.y.saturating_add(1),
             height: 1,
-            ..chunks[1]
+            ..content
         };
         frame.render_widget(
             Paragraph::new(Span::styled(
                 url.to_owned(),
                 Style::default()
-                    .fg(PHOSPHOR_DIM)
+                    .fg(termrock::Theme::default()
+                        .style(termrock::style::Role::TextMuted)
+                        .fg
+                        .unwrap_or_default())
                     .add_modifier(Modifier::ITALIC),
             ))
             .alignment(Alignment::Center),
@@ -312,7 +320,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
 
     frame.render_widget(
         Paragraph::new(git_prompt_buttons(state.pending_git_focus)).alignment(Alignment::Center),
-        chunks[3],
+        action_row,
     );
 }
 

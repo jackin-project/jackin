@@ -114,7 +114,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
 dependencies = [
  "anstyle",
- "anstyle-parse 1.0.0",
+ "anstyle-parse",
  "anstyle-query",
  "anstyle-wincon",
  "colorchoice",
@@ -127,15 +127,6 @@ name = "anstyle"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
-
-[[package]]
-name = "anstyle-parse"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7644824f0aa2c7b9384579234ef10eb7efb6a0deb83f9630a49594dd9c15c2"
-dependencies = [
- "utf8parse",
-]
 
 [[package]]
 name = "anstyle-parse"
@@ -1648,7 +1639,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2688,7 +2679,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2769,6 +2760,7 @@ dependencies = [
  "directories",
  "fs4",
  "futures-util",
+ "jackin-brand",
  "jackin-build-meta",
  "jackin-config",
  "jackin-console",
@@ -2777,12 +2769,13 @@ dependencies = [
  "jackin-docker",
  "jackin-env",
  "jackin-image",
- "jackin-launch-tui",
+ "jackin-launch",
  "jackin-manifest",
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime",
  "jackin-test-support",
+ "jackin-tui",
  "jackin-usage",
  "owo-colors 4.3.0",
  "predicates",
@@ -2817,6 +2810,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-brand"
+version = "0.6.0-dev"
+dependencies = [
+ "owo-colors 4.3.0",
+]
+
+[[package]]
 name = "jackin-build-meta"
 version = "0.6.0-dev"
 dependencies = [
@@ -2835,12 +2835,14 @@ dependencies = [
  "hex",
  "insta",
  "jackin-agent-status",
+ "jackin-brand",
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-process",
  "jackin-protocol",
  "jackin-term",
+ "jackin-tui",
  "jackin-usage",
  "nix 0.31.3",
  "portable-pty",
@@ -2882,11 +2884,12 @@ dependencies = [
  "directories",
  "insta",
  "jackin-config",
- "jackin-console-oppicker",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-env",
+ "jackin-oppicker",
  "jackin-protocol",
+ "jackin-tui",
  "nix 0.31.3",
  "open",
  "ratatui",
@@ -2897,39 +2900,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "jackin-console-oppicker"
-version = "0.6.0-dev"
-dependencies = [
- "anyhow",
- "crossterm",
- "jackin-core",
- "jackin-diagnostics",
- "termrock",
- "tokio",
-]
-
-[[package]]
 name = "jackin-core"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
- "crossterm",
  "directories",
  "hex",
- "owo-colors 4.3.0",
- "ratatui",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
- "termrock",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "anyhow",
  "clap",
@@ -2941,7 +2927,7 @@ dependencies = [
 name = "jackin-diagnostics"
 version = "0.6.0-dev"
 dependencies = [
- "anstyle-parse 1.0.0",
+ "anstyle-parse",
  "anyhow",
  "criterion",
  "crossterm",
@@ -3093,16 +3079,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "jackin-launch-tui"
+name = "jackin-launch"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "crossterm",
+ "jackin-brand",
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-tui",
  "owo-colors 4.3.0",
  "ratatui",
+ "tempfile",
  "termrock",
  "tokio",
  "tokio-util",
@@ -3122,6 +3111,19 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "toml_edit",
+]
+
+[[package]]
+name = "jackin-oppicker"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-tui",
+ "termrock",
+ "tokio",
 ]
 
 [[package]]
@@ -3166,6 +3168,7 @@ dependencies = [
  "fs4",
  "futures-util",
  "hex",
+ "jackin-brand",
  "jackin-build-meta",
  "jackin-config",
  "jackin-core",
@@ -3176,20 +3179,18 @@ dependencies = [
  "jackin-image",
  "jackin-instance",
  "jackin-isolation",
- "jackin-launch-tui",
+ "jackin-launch",
  "jackin-manifest",
  "jackin-process",
  "jackin-protocol",
  "jackin-test-support",
  "nix 0.31.3",
  "owo-colors 4.3.0",
- "ratatui",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tabled",
  "tempfile",
- "termrock",
  "thiserror 2.0.18",
  "tokio",
  "toml",
@@ -3220,6 +3221,16 @@ dependencies = [
  "anyhow",
  "jackin-core",
  "jackin-manifest",
+]
+
+[[package]]
+name = "jackin-tui"
+version = "0.6.0-dev"
+dependencies = [
+ "crossterm",
+ "jackin-brand",
+ "ratatui",
+ "termrock",
 ]
 
 [[package]]
@@ -4882,7 +4893,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5377,7 +5388,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5434,7 +5445,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6339,7 +6350,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6378,15 +6389,16 @@ dependencies = [
 
 [[package]]
 name = "termrock"
-version = "0.10.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=5c4758b5167241ffef5f501f72bb76bc01e77aba#5c4758b5167241ffef5f501f72bb76bc01e77aba"
+version = "0.11.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=5ff94ee117fd4a1b72fdd0d1b1847815055a93ac#5ff94ee117fd4a1b72fdd0d1b1847815055a93ac"
 dependencies = [
- "anstyle-parse 0.2.7",
+ "anstyle-parse",
  "base64 0.22.1",
  "crossterm",
  "ratatui-core",
  "ratatui-crossterm",
  "ratatui-widgets",
+ "serde",
  "tui-scrollbar",
  "unicode-segmentation",
  "unicode-width 0.2.2",
@@ -7582,7 +7594,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

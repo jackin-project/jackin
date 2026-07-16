@@ -414,7 +414,7 @@ fn active_file_browser_commit_facts(
                 return None;
             };
             let Some(SettingsModal::AuthSourceFolderPicker { state: browser }) =
-                settings.auth.modal.as_mut()
+                settings.auth.modals.current_mut()
             else {
                 return None;
             };
@@ -634,7 +634,7 @@ fn execute_settings_file_browser_outcome(
         return false;
     };
     if !matches!(
-        settings.mounts.modal,
+        settings.mounts.modals.current(),
         Some(SettingsModal::MountFileBrowser { .. })
     ) {
         return false;
@@ -653,7 +653,7 @@ fn execute_settings_file_browser_outcome(
         }
         FileBrowserOutcome::Cancel => {
             settings.mounts.pop_modal_chain();
-            if settings.mounts.modal.is_none() {
+            if !settings.mounts.modals.is_open() {
                 settings.mounts.add_draft = None;
             }
         }
@@ -709,7 +709,8 @@ fn active_file_browser_state_mut<'a>(
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return None;
             };
-            let Some(SettingsModal::MountFileBrowser { state }) = settings.mounts.modal.as_mut()
+            let Some(SettingsModal::MountFileBrowser { state }) =
+                settings.mounts.modals.current_mut()
             else {
                 return None;
             };
@@ -720,7 +721,7 @@ fn active_file_browser_state_mut<'a>(
                 return None;
             };
             let Some(SettingsModal::AuthSourceFolderPicker { state }) =
-                settings.auth.modal.as_mut()
+                settings.auth.modals.current_mut()
             else {
                 return None;
             };
@@ -759,12 +760,12 @@ pub fn execute_file_browser_git_url_resolution(
             }
         }
         ManagerStage::Settings(settings) => {
-            if let Some(modal) = settings.mounts.modal.as_mut()
+            if let Some(modal) = settings.mounts.modals.current_mut()
                 && attach_global_mount_file_browser_git_url(modal, path.to_owned())
             {
                 return true;
             }
-            for modal in &mut settings.mounts.modal_parents {
+            for modal in settings.mounts.modals.parents_mut() {
                 if attach_global_mount_file_browser_git_url(modal, path.to_owned()) {
                     return true;
                 }
@@ -820,10 +821,10 @@ pub fn poll_file_browser_git_urls(state: &mut ManagerState<'_>) -> bool {
             }
         }
         ManagerStage::Settings(settings) => {
-            if let Some(modal) = settings.mounts.modal.as_mut() {
+            if let Some(modal) = settings.mounts.modals.current_mut() {
                 dirty |= poll_global_mount_file_browser_git_url(modal);
             }
-            for modal in &mut settings.mounts.modal_parents {
+            for modal in settings.mounts.modals.parents_mut() {
                 dirty |= poll_global_mount_file_browser_git_url(modal);
             }
         }

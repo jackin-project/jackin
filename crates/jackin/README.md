@@ -20,7 +20,7 @@ The jackin❯ CLI — the operator-facing binary that loads roles into isolated 
 | [`main.rs`](src/main.rs) | binary entry | — |
 | [`cli.rs`](src/cli.rs) · [`cli/`](src/cli) | CLI parsing | [`tests.rs`](src/cli/tests.rs) |
 | [`app.rs`](src/app.rs) · [`app/`](src/app) | app wiring | [`tests.rs`](src/app/tests.rs) |
-| [`console.rs`](src/console.rs) | console entry | — |
+| [`console.rs`](src/console.rs) · [`console/`](src/console) | console entry and dependency-crossing host adapters | — |
 | [`prompt.rs`](src/prompt.rs) · [`prompt/`](src/prompt) | prompt flow | [`tests.rs`](src/prompt/tests.rs) |
 | [`preflight.rs`](src/preflight.rs) · [`preflight/`](src/preflight) | preflight checks | [`tests.rs`](src/preflight/tests.rs) |
 | [`workspace.rs`](src/workspace.rs) · [`workspace/`](src/workspace) | workspace commands | [`tests.rs`](src/workspace/tests.rs) |

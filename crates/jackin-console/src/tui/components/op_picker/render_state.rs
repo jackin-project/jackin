@@ -43,7 +43,7 @@ impl OpPickerRenderState for crate::tui::op_picker::OpPickerState {
         selected_entity_label_or_empty(self.selected_item.as_ref(), |item| item.subtitle.as_str())
     }
 
-    fn naming_stage_input(&self) -> Option<&jackin_console_oppicker::TextInputState<'static>> {
+    fn naming_stage_input(&self) -> Option<&jackin_oppicker::TextInputState<'static>> {
         Self::naming_stage_input(self)
     }
 
@@ -55,7 +55,7 @@ impl OpPickerRenderState for crate::tui::op_picker::OpPickerState {
                     email: &account.email,
                     url: &account.url,
                 }),
-            self.account_list_state.selected,
+            self.account_list_state.selected().copied(),
         )
     }
 
@@ -67,7 +67,7 @@ impl OpPickerRenderState for crate::tui::op_picker::OpPickerState {
                     id: &vault.id,
                     name: &vault.name,
                 }),
-            self.vault_list_state.selected,
+            self.vault_list_state.selected().copied(),
         )
     }
 
@@ -80,12 +80,15 @@ impl OpPickerRenderState for crate::tui::op_picker::OpPickerState {
                     subtitle: &item.subtitle,
                 })
             }),
-            self.item_list_state.selected,
+            self.item_list_state.selected().copied(),
         )
     }
 
     fn section_lines(&self) -> Vec<Line<'static>> {
-        section_lines(self.section_choices(), self.section_list_state.selected)
+        section_lines(
+            self.section_choices(),
+            self.section_list_state.selected().copied(),
+        )
     }
 
     fn field_lines(&self) -> Vec<Line<'static>> {
@@ -100,18 +103,18 @@ impl OpPickerRenderState for crate::tui::op_picker::OpPickerState {
                     concealed: field.concealed,
                 }),
             &self.collapsed_sections,
-            self.field_list_state.selected,
+            self.field_list_state.selected().copied(),
         )
     }
 
     fn selected_index(&self) -> Option<usize> {
         selected_index_for_stage(
             self.stage,
-            self.account_list_state.selected,
-            self.vault_list_state.selected,
-            self.item_list_state.selected,
-            self.section_list_state.selected,
-            self.field_list_state.selected,
+            self.account_list_state.selected().copied(),
+            self.vault_list_state.selected().copied(),
+            self.item_list_state.selected().copied(),
+            self.section_list_state.selected().copied(),
+            self.field_list_state.selected().copied(),
         )
     }
 }

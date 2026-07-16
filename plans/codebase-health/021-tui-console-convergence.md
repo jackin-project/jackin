@@ -2,7 +2,7 @@
 
 > **Executor instructions**: Follow step by step; verify each step; STOP conditions binding. Update status row in `plans/codebase-health/README.md` when done. Read the TUI design page (`docs/content/docs/reference/tui/index.mdx`) before ANY TUI change — repo hard rule.
 >
-> **Drift check (run first)**: `git diff --stat 846038946..HEAD -- crates/jackin-tui/src/runtime.rs crates/jackin-console/src/tui/ crates/jackin-capsule/src/tui/ crates/jackin-launch-tui/src/`
+> **Drift check (run first)**: `git diff --stat 846038946..HEAD -- crates/jackin-tui/src/runtime.rs crates/jackin-console/src/tui/ crates/jackin-capsule/src/tui/ crates/jackin-launch/src/`
 > Mismatch with "Current state" = STOP.
 
 ## Status
@@ -16,20 +16,20 @@
 
 ## Why this matters
 
-Roadmap Ownership item 5 lists five open convergence tasks: (a) "Route capsule, launch, and host-console loops through the shared `drive_frame` pattern, including the render adapter rather than only the outer terminal draw" — today `drive_frame` (`crates/jackin-tui/src/runtime.rs:284`) has exactly one production caller (host console, `crates/jackin/src/console/tui/run.rs:272`); capsule and launch-tui hand-roll their loops and no render-adapter layer exists; (b) modal wheel handling — `crates/jackin-console/src/tui/input/mouse/modal_scroll.rs` uses per-modal helpers instead of `jackin_tui::scroll`; (c) editor `state_impl/` wildcard imports remain (`pending.rs:5`, `workspace.rs:5`, `navigation.rs:5` — all `use super::super::*;`); (d) `type_complexity` suppressions remain in editor/console code (`input/global_mounts/auth.rs:101`, `tui/state.rs:257`) where named view models are required; (e) op-picker pure planning is split between `jackin-console-oppicker` (2547 lines) and ~10 console files. Divergent frame loops mean every input/render behavior fix is made N times or not at all.
+Roadmap Ownership item 5 listed five open convergence tasks: (a) "Route capsule, launch, and host-console loops through the shared `drive_frame` pattern, including the render adapter rather than only the outer terminal draw" — at planning time `drive_frame` had exactly one production caller (host console); capsule and `jackin-launch` hand-rolled their loops and no render-adapter layer existed; (b) modal wheel handling — `crates/jackin-console/src/tui/input/mouse/modal_scroll.rs` used per-modal helpers instead of `jackin_tui::scroll`; (c) editor `state_impl/` wildcard imports remained; (d) `type_complexity` suppressions remained in editor/console code where named view models were required; (e) op-picker pure planning was split between `jackin-oppicker` and console files. Divergent frame loops meant every input/render behavior fix was made N times or not at all.
 
 ## Current state
 
 File map (verify all before starting):
 
 - `crates/jackin-tui/src/runtime.rs:284` — `drive_frame` definition; read its contract fully.
-- Host console caller: `crates/jackin/src/console/tui/run.rs:272`.
+- Host console caller: `crates/jackin/src/console/adapter/run.rs:272`.
 - Capsule loop: `crates/jackin-capsule/src/tui/run.rs` (find the frame loop; the compositor lives at `daemon/compositor.rs`).
-- Launch TUI loop: `crates/jackin-launch-tui/src/` (locate with `grep -rn "draw\|event_loop\|poll" crates/jackin-launch-tui/src/*.rs | head`).
+- Launch TUI loop: `crates/jackin-launch/src/` (locate with `grep -rn "draw\|event_loop\|poll" crates/jackin-launch/src/*.rs | head`).
 - Shared classifier: `crates/jackin-tui/src/scroll.rs`; per-modal handling in `crates/jackin-console/src/tui/input/mouse/modal_scroll.rs` (no `jackin_tui::scroll` import today).
 - Wildcards: `crates/jackin-console/src/tui/screens/editor/model/state_impl/{pending,workspace,navigation}.rs` line 5 each.
 - `type_complexity`: `crates/jackin-console/src/tui/input/global_mounts/auth.rs:101`, `crates/jackin-console/src/tui/state.rs:257`.
-- Op-picker: crate `crates/jackin-console-oppicker/src/{lib,input,load,state}.rs`; console-resident references in `tui/input/auth.rs`, `input/global_mounts/auth.rs`, `input/editor/modal.rs`, `tui/auth_config.rs` (re-enumerate with `grep -rln "oppicker\|op_picker" crates/jackin-console/src`).
+- Op-picker: crate `crates/jackin-oppicker/src/{lib,input,load,state}.rs`; console-resident references in `tui/input/auth.rs`, `input/global_mounts/auth.rs`, `input/editor/modal.rs`, `tui/auth_config.rs` (re-enumerate with `grep -rln "oppicker\|op_picker" crates/jackin-console/src`).
 - Snapshot suites (insta) live in `jackin-console` and `jackin-capsule` — they are the behavior oracle for every slice.
 - Cross-cutting TUI behaviour changes require updating the matching page under `docs/content/docs/reference/tui/` in the same PR (repo rule).
 
@@ -37,7 +37,7 @@ File map (verify all before starting):
 
 | Purpose | Command | Expected |
 |---|---|---|
-| TUI crates | `cargo nextest run -p jackin-tui -p jackin-console -p jackin-capsule -p jackin-launch-tui -p jackin-console-oppicker` | pass, no pending snaps |
+| TUI crates | `cargo nextest run -p jackin-tui -p jackin-console -p jackin-capsule -p jackin-launch -p jackin-oppicker` | pass, no pending snaps |
 | Lint | `cargo clippy -p jackin-console -p jackin-capsule -p jackin-tui --all-targets -- -D warnings` | exit 0 |
 | Full | `cargo xtask ci --fast` | exit 0 |
 
@@ -67,15 +67,15 @@ Route `modal_scroll.rs` through `jackin_tui::scroll`'s classifier; delete the lo
 
 ### Step 3: Render adapter + capsule/launch loops onto `drive_frame`
 
-Design the render-adapter trait in `jackin-tui` so `drive_frame` covers view+overlay composition (study what the host console does around `run.rs:272` versus what capsule/launch do; the adapter abstracts "produce this frame's widgets" from "drive terminal + input + tick"). Migrate `jackin-launch-tui` first (smaller), then the capsule loop. Update `docs/content/docs/reference/tui/` for the shared-loop contract.
+Design the render-adapter trait in `jackin-tui` so `drive_frame` covers view+overlay composition (study what the host console does around `run.rs:272` versus what capsule/launch do; the adapter abstracts "produce this frame's widgets" from "drive terminal + input + tick"). Migrate `jackin-launch` first (smaller), then the capsule loop. Update `docs/content/docs/reference/tui/` for the shared-loop contract.
 
-**Verify**: `cargo nextest run -p jackin-capsule -p jackin-launch-tui -p jackin-tui` → pass, snapshots unchanged; `grep -rn "drive_frame" crates | grep -v tests` shows three production callers.
+**Verify**: `cargo nextest run -p jackin-capsule -p jackin-launch -p jackin-tui` → pass, snapshots unchanged; `grep -rn "drive_frame" crates | grep -v tests` shows three production callers.
 
 ### Step 4: Op-picker planning extraction
 
-Triage the ~10 console op-picker files: pure planning (state transitions, list building, filtering) moves to `jackin-console-oppicker`; UI glue (widget wiring, events) stays. Move tests with the code.
+Triage the ~10 console op-picker files: pure planning (state transitions, list building, filtering) moves to `jackin-oppicker`; UI glue (widget wiring, events) stays. Move tests with the code.
 
-**Verify**: `cargo nextest run -p jackin-console -p jackin-console-oppicker` → pass; PR description lists per-file triage (moved vs stayed + why).
+**Verify**: `cargo nextest run -p jackin-console -p jackin-oppicker` → pass; PR description lists per-file triage (moved vs stayed + why).
 
 ## Test plan
 
@@ -83,7 +83,7 @@ Snapshot suites are the primary oracle (unchanged unless a reconciled divergence
 
 ## Done criteria
 
-- [x] Three loops on `drive_frame` incl. render adapter; no hand-rolled frame loop remains in capsule/launch-tui
+- [x] Three loops on `drive_frame` incl. render adapter; no hand-rolled frame loop remains in capsule/`jackin-launch`
 - [x] Modal wheel via `jackin_tui::scroll`; local classifier deleted
 - [x] No `state_impl/` wildcards; the two `type_complexity` suppressions replaced by named view models
 - [x] Op-picker pure planning in the oppicker crate (triage table in PR)
@@ -111,10 +111,10 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 - Modal wheel: `modal_scroll.rs` classifies via `jackin_tui::scroll::mouse_scroll_delta` (shared axes/modifiers).
 
 **Delivered (drive_frame completion pass)**
-- Three production `drive_frame` callers: host console, `jackin-launch-tui` progress render (`LaunchViewView`), capsule compositor (`CapsuleView`).
+- Three production `drive_frame` callers: host console, `jackin-launch` progress render (`LaunchViewView`), capsule compositor (`CapsuleView`).
 - All launch dialog/prompt sub-loops use `drive_render`, the short-lived widget
   adapter over `drive_frame`; no production direct `terminal.draw` remains.
-- Op-picker triage: pure planning already lives in `jackin-console-oppicker`; UI glue stays in console.
+- Op-picker triage: pure planning already lives in `jackin-oppicker`; UI glue stays in console.
 - TUI reference `docs/content/docs/reference/tui/index.mdx` updated for the three-caller contract.
 
 **Index deviation**: none remaining for 021 Done criteria (dialog sub-loops documented as out of full-frame scope).
@@ -123,7 +123,7 @@ Landed 2026-07-14 on `chore/codebase-health-plans`.
 
 | Area | Location | Disposition |
 |---|---|---|
-| Core picker state/filter/load | `jackin-console-oppicker` | **Stays** — already pure planning crate |
+| Core picker state/filter/load | `jackin-oppicker` | **Stays** — already pure planning crate |
 | Console UI glue (auth/settings/editor modal open) | `jackin-console` input/* | **Stays** — widget/event wiring |
 | Breadcrumb/brand labels | console op_picker components | **Stays** — render only |
 | Console auth/env picker plans | console auth/env modules | **Stays** — these plans select console modal wiring and contain no reusable picker transition/filter/load logic |

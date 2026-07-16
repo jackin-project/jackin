@@ -3,9 +3,8 @@
 
 //! Ratatui rendering for capsule dialog overlays.
 //!
-//! Every `Dialog` variant is rendered as a Ratatui widget using shared
-//! `jackin-tui` components (Panel, `FilterInput`, `ConfirmDialog`, etc.) so
-//! the capsule and the host share one component vocabulary.
+//! Every `Dialog` variant is rendered by composing `TermRock` widgets so the
+//! Capsule and host share one neutral component vocabulary.
 //!
 //! Rendering happens inside `compose_ratatui_frame()` via
 //! `render_dialog_ratatui()`. The dialog state is snapshotted into
@@ -19,7 +18,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
 use termrock::Theme;
-use termrock::style::PHOSPHOR_GREEN;
 use termrock::widgets::{
     Action, ChoiceDialog, ChoiceDialogState, DetailTableState, Dialog as MessageShell, List,
     ListRow, ListState, MessageDialog, Panel, PanelEmphasis, RowRole, Tab, Tabs, TabsState,
@@ -90,11 +88,9 @@ pub(crate) enum DialogRatatuiSnapshot {
     },
     /// Shared error popup used for capsule-owned modal errors.
     ErrorPopup(crate::tui::components::dialog::SpawnFailureState),
-    /// The "Debug info" dialog, rendered through the shared jackin-tui
-    /// `ContainerInfoState` so its rows, copy affordances, focused shell,
-    /// spacing, link styling, and hover behaviour are identical to the host
-    /// console and launch cockpit. GitHub context uses the same variant with
-    /// GitHub-specific rows.
+    /// The "Debug info" dialog, rendered from product-owned container facts
+    /// through `TermRock` detail-table, focus, scroll, copy, and link primitives.
+    /// GitHub context uses the same variant with GitHub-specific rows.
     DebugInfo(crate::tui::components::container_info_surface::ContainerInfoState),
     /// Usage overlay, rendered from the same scrollable row model as `DebugInfo`
     /// but laid out as CodexBar-style sections instead of generic key/value
@@ -403,9 +399,9 @@ impl DialogRatatuiSnapshot {
     /// scroll. Measured the same way `render_scrollable_dialog_body` measures,
     /// so a hint built from this advertises exactly the axes whose scrollbar is
     /// drawn — the hint and the scrollbar never disagree.
-    pub(crate) fn scroll_axes(&self, block_area: Rect) -> termrock::layout::ScrollAxes {
+    pub(crate) fn scroll_axes(&self, block_area: Rect) -> termrock::scroll::ScrollAxes {
         match self {
-            Self::DebugInfo(state) => termrock::layout::dialog_scroll_axes(
+            Self::DebugInfo(state) => termrock::scroll::dialog_scroll_axes(
                 state.content_width(),
                 state.content_height(),
                 block_area,
@@ -418,9 +414,9 @@ impl DialogRatatuiSnapshot {
                 let (content_width, content_height, scroll_rect) =
                     usage_scroll_inputs(block_area, state);
                 let width = content_width.max(usage_tab_strip_width(tabs));
-                termrock::layout::dialog_scroll_axes(width, content_height, scroll_rect)
+                termrock::scroll::dialog_scroll_axes(width, content_height, scroll_rect)
             }
-            _ => termrock::layout::ScrollAxes::none(),
+            _ => termrock::scroll::ScrollAxes::none(),
         }
     }
 }
@@ -560,11 +556,13 @@ fn render_usage_info(
     hovered_tab: Option<usize>,
 ) {
     let title = usage_panel_title(state, area.width);
+    let theme = Theme::default();
     let inner = termrock::layout::render_dialog_shell(
         frame,
         area,
         Some(title.as_str()),
-        termrock::layout::DialogBorder::Default,
+        PanelEmphasis::Focused,
+        &theme,
     );
     if inner.height == 0 {
         return;
@@ -601,7 +599,7 @@ fn render_usage_info(
     let body = usage_body_rect(area);
     let lines = usage_info_lines_for_width(state, body.width);
     let mut scroll = state.scroll.clone();
-    termrock::layout::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll);
+    termrock::layout::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll, &theme);
 }
 
 fn render_filter_picker(
@@ -614,7 +612,7 @@ fn render_filter_picker(
     show_filter: bool,
 ) {
     // Reuse the shared modal panel so the menu/pickers match every other
-    // jackin❯ dialog: PHOSPHOR_GREEN focused border + bold-white title.
+    // jackin❯ dialog: Theme::default().style(termrock::style::Role::Accent).fg.unwrap_or_default() focused border + bold-white title.
     let theme = Theme::default();
     let block = Panel::new(&theme)
         .title(title)
@@ -675,7 +673,10 @@ fn render_filter_picker(
                 id,
                 label: Line::from(Span::styled(
                     label.clone(),
-                    Style::default().fg(PHOSPHOR_GREEN),
+                    Style::default().fg(Theme::default()
+                        .style(termrock::style::Role::Accent)
+                        .fg
+                        .unwrap_or_default()),
                 )),
                 trailing: None,
                 role: RowRole::Item,

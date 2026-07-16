@@ -5,7 +5,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use jackin_core::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use termrock::widgets::{Action, ActionBar, ActionBarState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,12 +79,18 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use termrock::layout::{DialogBorder, render_dialog_shell};
-use termrock::style::PHOSPHOR_DARK;
+use termrock::layout::render_dialog_shell;
+use termrock::widgets::PanelEmphasis;
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
     let title = format!("Source for {}", state.key);
-    let inner = render_dialog_shell(frame, area, Some(&title), DialogBorder::Default);
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some(&title),
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
+    );
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -124,7 +130,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
             Paragraph::new(Span::styled(
                 "(install op CLI to enable)",
                 Style::default()
-                    .fg(PHOSPHOR_DARK)
+                    .fg(termrock::Theme::default()
+                        .style(termrock::style::Role::ScrollTrack)
+                        .fg
+                        .unwrap_or_default())
                     .add_modifier(Modifier::DIM),
             ))
             .alignment(Alignment::Center),

@@ -20,14 +20,14 @@ pub fn tab_bar_footer_items(
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         // UNREGISTERABLE(multi-key-display-group): combined prev/next tab display; EDITOR_TAB_BAR_KEYMAP splits these into separate PrevTab (←/⇤) and NextTab (→) entries.
-        HintSpan::Key(glyph::LEFT_RIGHT),
+        super::key_span(glyph::LEFT_RIGHT),
         HintSpan::Text("switch tab"),
     ];
     if enter_content {
         items.extend([
             HintSpan::GroupSep,
             // Both EDITOR_TAB_BAR_KEYMAP and SETTINGS_TAB_BAR_KEYMAP use the same glyph.
-            HintSpan::Key(EDITOR_TAB_BAR_KEYMAP.glyph_for(EditorTabBarAction::FocusContent)),
+            super::key_span(EDITOR_TAB_BAR_KEYMAP.glyph_for(EditorTabBarAction::FocusContent)),
             HintSpan::Text("enter content"),
         ]);
     }
@@ -43,7 +43,7 @@ pub fn content_footer_items(
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         // Both EDITOR_CONTENT_KEYMAP and SETTINGS_*_TAB_KEYMAP use the same ↑↓ glyph.
-        HintSpan::Key(EDITOR_CONTENT_KEYMAP.glyph_for(EditorContentAction::MoveUp)),
+        super::key_span(EDITOR_CONTENT_KEYMAP.glyph_for(EditorContentAction::MoveUp)),
         HintSpan::Text("navigate"),
     ];
 
@@ -54,7 +54,7 @@ pub fn content_footer_items(
 
     items.extend([
         HintSpan::GroupSep,
-        HintSpan::Key(EDITOR_CONTENT_KEYMAP.glyph_for(EditorContentAction::FocusTabBar)),
+        super::key_span(EDITOR_CONTENT_KEYMAP.glyph_for(EditorContentAction::FocusTabBar)),
         HintSpan::Text("tab bar"),
         HintSpan::GroupSep,
     ]);
@@ -67,7 +67,7 @@ pub(super) fn append_open_in_github(items: &mut Vec<HintSpan<'static>>, has_gith
         items.extend([
             HintSpan::Sep,
             // UNREGISTERABLE(workspace-mount-no-keymap): used by workspace-mount rows which have no backing keymap; global-mount callers use SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP directly.
-            HintSpan::Key("O"),
+            super::key_span("O"),
             HintSpan::Text("open in GitHub"),
         ]);
     }
@@ -80,7 +80,7 @@ pub(super) fn append_save_and_escape(
 ) {
     items.extend([
         HintSpan::GroupSep,
-        HintSpan::Key(EDITOR_GLOBAL_KEYMAP.glyph_for(EditorGlobalAction::Save)),
+        super::key_span(EDITOR_GLOBAL_KEYMAP.glyph_for(EditorGlobalAction::Save)),
         HintSpan::Text(save_label),
     ]);
     if let Some(count) = dirty_change_count {
@@ -88,14 +88,14 @@ pub(super) fn append_save_and_escape(
     }
     items.extend([
         HintSpan::GroupSep,
-        HintSpan::Key(EDITOR_GLOBAL_KEYMAP.glyph_for(EditorGlobalAction::Escape)),
+        super::key_span(EDITOR_GLOBAL_KEYMAP.glyph_for(EditorGlobalAction::Escape)),
         HintSpan::Text(if dirty_change_count.is_some() {
             "discard"
         } else {
             "back"
         }),
         HintSpan::Sep,
-        HintSpan::Key(WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Quit)),
+        super::key_span(WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Quit)),
         HintSpan::Text("quit"),
     ]);
 }

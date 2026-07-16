@@ -6,7 +6,7 @@
 //! `op_available = false` propagation through the picker.
 
 use anyhow::Result;
-use jackin::console::tui::state::AuthRow;
+use jackin::console::adapter::state::AuthRow;
 use jackin_console::tui::auth::AuthKind;
 use jackin_core::{ANTHROPIC_API_KEY_ENV_NAME, JackinPaths};
 use tempfile::tempdir;

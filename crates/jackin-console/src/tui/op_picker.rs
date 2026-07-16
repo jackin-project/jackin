@@ -106,7 +106,7 @@ pub fn poll_picker_loads(state: &mut crate::tui::state::ManagerState<'_>) -> boo
         dirty |= poll_op_picker_load(state);
     }
     if let ManagerStage::Settings(settings) = &mut state.stage
-        && let Some(SettingsModal::EnvOpPicker { state, .. }) = settings.env.modal.as_mut()
+        && let Some(SettingsModal::EnvOpPicker { state, .. }) = settings.env.modals.current_mut()
     {
         dirty |= poll_op_picker_load(state);
     }

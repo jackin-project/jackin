@@ -17,11 +17,13 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use jackin_core::ModalOutcome;
-use termrock::layout::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
+use jackin_tui::ModalOutcome;
+use termrock::layout::render_dialog_shell;
+use termrock::scroll::ScrollAxes;
 use termrock::scroll::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };
+use termrock::widgets::PanelEmphasis;
 use termrock::{
     input::KeyCode,
     keymap::{KeyBinding, KeyChord, Keymap, SCROLL_HINT_KEYMAP, Visibility},
@@ -45,89 +47,90 @@ pub enum ConfirmSaveAction {
 }
 
 const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Enter)],
-        action: ConfirmSaveAction::Activate,
-        hint: Some("select"),
-        visibility: Visibility::Shown,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Enter)],
+        ConfirmSaveAction::Activate,
+        Some("select"),
+        Visibility::Shown,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Char('s')),
             KeyChord::plain(KeyCode::Char('S')),
         ],
-        action: ConfirmSaveAction::Save,
-        hint: Some("save"),
-        visibility: Visibility::Shown,
-        glyph: Some("S"),
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::Save,
+        Some("save"),
+        Visibility::Shown,
+        Some("S"),
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Char('c')),
             KeyChord::plain(KeyCode::Char('C')),
         ],
-        action: ConfirmSaveAction::Cancel,
-        hint: Some("cancel"),
-        visibility: Visibility::Shown,
-        glyph: Some("C/Esc"),
-    },
-    KeyBinding {
-        chords: &[KeyChord::plain(KeyCode::Esc)],
-        action: ConfirmSaveAction::Cancel,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::Cancel,
+        Some("cancel"),
+        Visibility::Shown,
+        Some("C/Esc"),
+    ),
+    KeyBinding::borrowed(
+        &[KeyChord::plain(KeyCode::Esc)],
+        ConfirmSaveAction::Cancel,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Tab),
             KeyChord::plain(KeyCode::Right),
             KeyChord::plain(KeyCode::Char('l')),
             KeyChord::plain(KeyCode::Char('L')),
         ],
-        action: ConfirmSaveAction::FocusNext,
-        hint: Some("move"),
-        visibility: Visibility::Shown,
-        glyph: Some("⇥/→"),
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::FocusNext,
+        Some("move"),
+        Visibility::Shown,
+        Some("⇥/→"),
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::BackTab),
             KeyChord::plain(KeyCode::Left),
             KeyChord::plain(KeyCode::Char('h')),
             KeyChord::plain(KeyCode::Char('H')),
         ],
-        action: ConfirmSaveAction::FocusPrev,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::FocusPrev,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Up),
             KeyChord::plain(KeyCode::Char('k')),
             KeyChord::plain(KeyCode::Char('K')),
         ],
-        action: ConfirmSaveAction::ScrollUp,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
-    KeyBinding {
-        chords: &[
+        ConfirmSaveAction::ScrollUp,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
+    KeyBinding::borrowed(
+        &[
             KeyChord::plain(KeyCode::Down),
             KeyChord::plain(KeyCode::Char('j')),
             KeyChord::plain(KeyCode::Char('J')),
         ],
-        action: ConfirmSaveAction::ScrollDown,
-        hint: None,
-        visibility: Visibility::HiddenAlias,
-        glyph: None,
-    },
+        ConfirmSaveAction::ScrollDown,
+        None,
+        Visibility::HiddenAlias,
+        None,
+    ),
 ];
 
-pub static CONFIRM_SAVE_KEYMAP: Keymap<ConfirmSaveAction> = Keymap::new(CONFIRM_SAVE_BINDINGS);
+pub static CONFIRM_SAVE_KEYMAP: Keymap<ConfirmSaveAction> =
+    Keymap::from_static(CONFIRM_SAVE_BINDINGS);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmSaveFocus {
@@ -272,7 +275,13 @@ pub fn prepare_for_render<M: Clone>(area: Rect, state: &mut ConfirmSaveState<M>)
 }
 
 pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveState<M>) {
-    let inner = render_dialog_shell(frame, area, Some("Confirm changes"), DialogBorder::Default);
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Confirm changes"),
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
+    );
 
     // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
     // responsible for any deeper indentation; we just add a uniform
@@ -288,9 +297,10 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
         })
         .collect();
 
-    let chunks = dialog_inner_chunks(inner, None);
+    let (content, action_row) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
+    let theme = termrock::Theme::default();
 
-    render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
+    render_lines_with_offset_in_area(frame, content, &indented, state.scroll_offset, &theme);
 
     let actions = [
         Action {
@@ -306,10 +316,9 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
             style: None,
         },
     ];
-    let theme = termrock::Theme::default();
     frame.render_stateful_widget(
         &ActionBar::new(&actions, &theme).gap(" "),
-        chunks[3],
+        action_row,
         &mut ActionBarState {
             focused: Some(state.focus),
             regions: Vec::new(),

@@ -5,7 +5,7 @@
 
 use std::marker::PhantomData;
 
-use jackin_core::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -487,7 +487,12 @@ pub fn render_error_dialog(frame: &mut Frame<'_>, area: Rect, state: &ErrorPopup
     let theme = termrock::Theme::default();
     frame.render_widget(
         Dialog::new(&state.title, Text::from(state.message.clone()), &theme)
-            .style(Style::default().fg(jackin_core::tui_theme::DANGER_RED))
+            .style(
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Danger)
+                    .fg
+                    .unwrap_or_default()),
+            )
             .emphasis(PanelEmphasis::Focused),
         area,
     );
