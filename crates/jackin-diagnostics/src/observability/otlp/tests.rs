@@ -411,6 +411,94 @@ fn jank_event_exports_once_per_active_crossing() {
 }
 
 #[test]
+fn screen_transition_correlates_old_and_new_lifecycle_logs() {
+    use opentelemetry::logs::AnyValue;
+
+    let (export, subscriber) = super::test_layers(false, "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        let action_attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
+            value: jackin_telemetry::Value::Str("workspace.open"),
+        }];
+        jackin_telemetry::ui::remember_action_parent(
+            jackin_telemetry::root_operation(
+                &jackin_telemetry::operation::UI_ACTION,
+                &action_attrs,
+            )
+            .unwrap(),
+        );
+        let parent = jackin_telemetry::ui::take_action_parent().expect("action parent");
+        let mut tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
+        tracker
+            .enter(jackin_telemetry::schema::enums::ScreenId::WorkspaceList)
+            .unwrap();
+        tracker
+            .transition(
+                jackin_telemetry::schema::enums::ScreenId::WorkspaceEditor,
+                jackin_telemetry::schema::enums::TransitionReason::Action,
+                Some(&parent),
+            )
+            .unwrap();
+        drop(parent);
+    });
+    export.logger_provider.force_flush().unwrap();
+    export.tracer_provider.force_flush().unwrap();
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 3);
+    let spans = export.spans.get_finished_spans().unwrap();
+    let transition = spans
+        .iter()
+        .find(|span| span.name == "ui.screen.transition")
+        .expect("transition span");
+    let entered = logs
+        .iter()
+        .filter(|log| log.record.event_name() == Some("ui.screen.entered"))
+        .collect::<Vec<_>>();
+    let exited = logs
+        .iter()
+        .find(|log| log.record.event_name() == Some("ui.screen.exited"))
+        .expect("exited lifecycle log");
+    assert_eq!(entered.len(), 2);
+    assert_eq!(
+        log_attribute(&entered[0].record, "app.screen.id"),
+        Some(&AnyValue::String("workspace.list".into()))
+    );
+    assert_eq!(
+        log_attribute(&exited.record, "app.screen.id"),
+        Some(&AnyValue::String("workspace.list".into()))
+    );
+    assert_eq!(
+        log_attribute(&entered[1].record, "app.screen.id"),
+        Some(&AnyValue::String("workspace.editor".into()))
+    );
+    for (log, sequence) in [
+        (&entered[0].record, 1),
+        (&exited.record, 2),
+        (&entered[1].record, 3),
+    ] {
+        assert_eq!(
+            log_attribute(log, "ui.navigation.sequence"),
+            Some(&AnyValue::Int(sequence))
+        );
+    }
+    let first_visit = log_attribute(&entered[0].record, "ui.screen.visit.id");
+    assert_eq!(
+        log_attribute(&exited.record, "ui.screen.visit.id"),
+        first_visit
+    );
+    assert_ne!(
+        log_attribute(&entered[1].record, "ui.screen.visit.id"),
+        first_visit
+    );
+    for log in [exited, entered[1]] {
+        let context = log.record.trace_context().expect("transition log context");
+        assert_eq!(context.span_id, transition.span_context.span_id());
+        assert_eq!(context.trace_id, transition.span_context.trace_id());
+    }
+}
+
+#[test]
 fn isolation_events_export_exact_private_shape() {
     use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
 

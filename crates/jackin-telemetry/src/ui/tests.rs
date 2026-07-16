@@ -128,7 +128,7 @@ fn pending_action_owns_effect_and_one_render_until_taken() {
 }
 
 #[test]
-fn transition_exports_prior_and_destination_under_action() {
+fn transition_exports_destination_under_action() {
     let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
@@ -175,10 +175,6 @@ fn transition_exports_prior_and_destination_under_action() {
         .find(|span| span.name == "ui.screen.transition")
         .unwrap();
     assert_eq!(transition.parent_span_id, action.span_context.span_id());
-    assert_eq!(
-        span_attr(transition, schema::attrs::UI_SCREEN_PREVIOUS_ID).as_deref(),
-        Some("workspace.list")
-    );
     assert_eq!(
         span_attr(transition, schema::attrs::std_attrs::APP_SCREEN_ID).as_deref(),
         Some("workspace.editor")

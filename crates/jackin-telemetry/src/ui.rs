@@ -208,10 +208,6 @@ impl ScreenVisitTracker {
         }
         let transition_attrs = [
             Attr {
-                key: schema::attrs::UI_SCREEN_PREVIOUS_ID,
-                value: Value::Str(previous.as_str()),
-            },
-            Attr {
                 key: schema::attrs::std_attrs::APP_SCREEN_ID,
                 value: Value::Str(screen.as_str()),
             },
@@ -225,6 +221,30 @@ impl ScreenVisitTracker {
                 crate::operation(&crate::operation::UI_SCREEN_TRANSITION, &transition_attrs).ok()
             })
         });
+        let result = match transition.as_ref() {
+            Some(operation) => operation
+                .span()
+                .in_scope(|| self.apply_transition(screen, reason)),
+            None => self.apply_transition(screen, reason),
+        };
+        if let Some(transition) = transition {
+            if result.is_ok() {
+                transition.complete(schema::enums::OutcomeValue::Success, None);
+            } else {
+                transition.complete(
+                    schema::enums::OutcomeValue::Error,
+                    Some(schema::enums::ErrorType::TelemetryInstrumentationFault),
+                );
+            }
+        }
+        result
+    }
+
+    fn apply_transition(
+        &mut self,
+        screen: schema::enums::ScreenId,
+        reason: schema::enums::TransitionReason,
+    ) -> Result<(), Rejection> {
         self.exit(reason)?;
         self.enter_new(screen)?;
         counter(&metric::UI_TRANSITIONS).add(
@@ -239,11 +259,7 @@ impl ScreenVisitTracker {
                     value: Value::Str(reason.as_str()),
                 },
             ],
-        )?;
-        if let Some(transition) = transition {
-            transition.complete(schema::enums::OutcomeValue::Success, None);
-        }
-        Ok(())
+        )
     }
 
     fn enter_new(&mut self, screen: schema::enums::ScreenId) -> Result<(), Rejection> {
