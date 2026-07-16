@@ -21,7 +21,18 @@ markers_file="$temp_root/markers.tsv"
 : > "$steps_file"
 : > "$markers_file"
 
-gh api "repos/${repo}/actions/runs/${run_id}/jobs?per_page=100" \
+gh_api_retry() {
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if gh api "$@"; then
+      return 0
+    fi
+    sleep "$attempt"
+  done
+  return 1
+}
+
+gh_api_retry "repos/${repo}/actions/runs/${run_id}/jobs?per_page=100" \
   --paginate --jq '.jobs[] | @base64' > "$jobs_file"
 
 epoch() {
@@ -43,7 +54,7 @@ third_party_pattern='^[[:space:]]*(Compiling|Checking|Building) [[:alnum:]_.+-]+
 source_tool_pattern='Installing [[:alnum:]_.+-]+ v[0-9].*from source'
 cache_miss_pattern='(^|##\[warning\])(Cache not found|No cache found|Rust cache miss)|not found for input keys:'
 
-run_created=$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.created_at')
+run_created=$(gh_api_retry "repos/${repo}/actions/runs/${run_id}" --jq '.created_at')
 run_created_s=$(epoch "$run_created")
 
 log_pids=()
