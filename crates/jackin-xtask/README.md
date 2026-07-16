@@ -1,6 +1,6 @@
 # jackin-xtask
 
-The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, release/construct helpers, schema checks, and PR tooling. The single entry point for "run the project's checks locally": `cargo xtask ci`, `cargo xtask ci --fast`, `cargo xtask ci --e2e`.
+Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-readiness entry points are `cargo xtask ci`, `cargo xtask ci --fast`, and `cargo xtask ci --e2e`.
 
 ## What this crate owns
 
