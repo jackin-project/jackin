@@ -80,6 +80,21 @@ pub(crate) fn assert_three_signal_delivery(
         Vec::<String>::new(),
         "legacy namespace escaped onto the OTLP wire"
     );
+    assert_eq!(
+        testbed.prohibited_value_violations(&[
+            "/home/operator/private-workspace",
+            "https://example.invalid/api?token=fixture-secret",
+            "authorization=Bearer fixture-secret",
+            "--password=fixture-secret",
+            "fixture-role-name",
+            "fixture-container-name",
+            "fixture-tab-label",
+            "fixture-pty-bytes",
+            "mouse_x=413",
+        ]),
+        Vec::<String>::new(),
+        "prohibited fixture material escaped onto the OTLP wire"
+    );
     for resource in traces
         .iter()
         .flat_map(|request| &request.resource_spans)

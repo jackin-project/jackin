@@ -328,6 +328,69 @@ impl Testbed {
         violations
     }
 
+    /// Report captured string fields containing any prohibited fixture value.
+    #[must_use]
+    pub fn prohibited_value_violations(&self, prohibited: &[&str]) -> Vec<String> {
+        let mut violations = Vec::new();
+        for request in self.traces() {
+            for resource in &request.resource_spans {
+                scan_values(
+                    resource
+                        .resource
+                        .as_ref()
+                        .map(|value| value.attributes.as_slice()),
+                    prohibited,
+                    &mut violations,
+                );
+                for span in resource.scope_spans.iter().flat_map(|scope| &scope.spans) {
+                    scan_text(&span.name, prohibited, &mut violations);
+                    scan_values(Some(&span.attributes), prohibited, &mut violations);
+                    for event in &span.events {
+                        scan_text(&event.name, prohibited, &mut violations);
+                        scan_values(Some(&event.attributes), prohibited, &mut violations);
+                    }
+                    if let Some(status) = &span.status {
+                        scan_text(&status.message, prohibited, &mut violations);
+                    }
+                }
+            }
+        }
+        for request in self.logs() {
+            for resource in &request.resource_logs {
+                scan_values(
+                    resource
+                        .resource
+                        .as_ref()
+                        .map(|value| value.attributes.as_slice()),
+                    prohibited,
+                    &mut violations,
+                );
+                for record in resource
+                    .scope_logs
+                    .iter()
+                    .flat_map(|scope| &scope.log_records)
+                {
+                    scan_text(&record.event_name, prohibited, &mut violations);
+                    scan_values(Some(&record.attributes), prohibited, &mut violations);
+                    scan_any_value(record.body.as_ref(), prohibited, &mut violations);
+                }
+            }
+        }
+        for request in self.metrics() {
+            for resource in &request.resource_metrics {
+                scan_values(
+                    resource
+                        .resource
+                        .as_ref()
+                        .map(|value| value.attributes.as_slice()),
+                    prohibited,
+                    &mut violations,
+                );
+            }
+        }
+        violations
+    }
+
     /// Stop the receiver while retaining captured requests for assertions.
     pub fn stop(&mut self) {
         if let Some(shutdown) = self.shutdown.take()
@@ -368,6 +431,45 @@ fn scan_attributes(
 ) {
     for attribute in attributes {
         scan_name(&attribute.key, violations);
+    }
+}
+
+fn scan_values(
+    attributes: Option<&[opentelemetry_proto::tonic::common::v1::KeyValue]>,
+    prohibited: &[&str],
+    violations: &mut Vec<String>,
+) {
+    if let Some(attributes) = attributes {
+        for attribute in attributes {
+            scan_text(&attribute.key, prohibited, violations);
+            scan_any_value(attribute.value.as_ref(), prohibited, violations);
+        }
+    }
+}
+
+fn scan_any_value(
+    value: Option<&opentelemetry_proto::tonic::common::v1::AnyValue>,
+    prohibited: &[&str],
+    violations: &mut Vec<String>,
+) {
+    use opentelemetry_proto::tonic::common::v1::any_value::Value;
+    match value.and_then(|value| value.value.as_ref()) {
+        Some(Value::StringValue(value)) => scan_text(value, prohibited, violations),
+        Some(Value::ArrayValue(value)) => {
+            for value in &value.values {
+                scan_any_value(Some(value), prohibited, violations);
+            }
+        }
+        Some(Value::KvlistValue(value)) => scan_values(Some(&value.values), prohibited, violations),
+        _ => {}
+    }
+}
+
+fn scan_text(text: &str, prohibited: &[&str], violations: &mut Vec<String>) {
+    for value in prohibited {
+        if !value.is_empty() && text.contains(value) {
+            violations.push((*value).to_owned());
+        }
     }
 }
 
@@ -484,5 +586,19 @@ mod tests {
         let mut violations = Vec::new();
         scan_attributes(&attributes, &mut violations);
         assert_eq!(violations, ["jackin.synthetic"]);
+    }
+
+    #[test]
+    fn privacy_detector_rejects_nested_synthetic_value() {
+        let value = opentelemetry_proto::tonic::common::v1::AnyValue {
+            value: Some(
+                opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(
+                    "authorization=Bearer fixture-secret".to_owned(),
+                ),
+            ),
+        };
+        let mut violations = Vec::new();
+        scan_any_value(Some(&value), &["fixture-secret"], &mut violations);
+        assert_eq!(violations, ["fixture-secret"]);
     }
 }
