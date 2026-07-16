@@ -2985,6 +2985,7 @@ dependencies = [
  "sysinfo",
  "tempfile",
  "tokio",
+ "tonic",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",

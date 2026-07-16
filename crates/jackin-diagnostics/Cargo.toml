@@ -81,6 +81,7 @@ jackin-otlp-testbed = { path = "../jackin-otlp-testbed" }
 opentelemetry-proto = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace", "logs", "metrics"] }
 tempfile = { workspace = true }
+tonic = { workspace = true }
 
 [[test]]
 name = "wire_conformance"
@@ -92,6 +93,18 @@ required-features = ["test-support"]
 
 [[test]]
 name = "wire_conformance_capsule"
+required-features = ["test-support"]
+
+[[test]]
+name = "wire_failure_partial_success"
+required-features = ["test-support"]
+
+[[test]]
+name = "wire_failure_non_retryable"
+required-features = ["test-support"]
+
+[[test]]
+name = "wire_failure_retryable"
 required-features = ["test-support"]
 
 [lints]
