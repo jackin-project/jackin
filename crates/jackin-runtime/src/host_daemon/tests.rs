@@ -162,7 +162,7 @@ fn daemon_socket_exports_client_parent_server_and_completes_after_response_write
     export.force_flush();
 
     let spans = export.finished_spans();
-    assert_eq!(spans.len(), 2);
+    assert_eq!(spans.len(), 3);
     let client = spans
         .iter()
         .find(|span| span.name == "rpc.client")
@@ -171,9 +171,15 @@ fn daemon_socket_exports_client_parent_server_and_completes_after_response_write
         .iter()
         .find(|span| span.name == "rpc.server")
         .expect("server span");
+    let connection = spans
+        .iter()
+        .find(|span| span.name == "connection.attempt")
+        .expect("connection attempt span");
     assert_eq!(server.trace_id, client.trace_id);
     assert_eq!(server.parent_span_id, client.span_id);
-    assert!(!client.error && !server.error);
+    assert_eq!(connection.trace_id, client.trace_id);
+    assert_eq!(connection.parent_span_id, client.span_id);
+    assert!(!client.error && !server.error && !connection.error);
 }
 
 #[test]
