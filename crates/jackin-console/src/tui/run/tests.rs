@@ -278,14 +278,13 @@ fn token_generate_status_message_names_target_scope() {
 }
 
 #[test]
-fn debug_run_id_label_prefers_active_run_then_env() {
+fn debug_invocation_id_label_uses_only_the_active_invocation() {
     assert_eq!(
-        debug_run_id_label(Some("run-active"), Some("run-env")),
-        "run-active"
+        debug_invocation_id_label(Some("invocation-active")),
+        "invocation-active"
     );
-    assert_eq!(debug_run_id_label(None, Some("run-env")), "run-env");
-    assert_eq!(debug_run_id_label(Some(""), Some("run-env")), "run-env");
-    assert_eq!(debug_run_id_label(None, None), "");
+    assert_eq!(debug_invocation_id_label(Some("")), "");
+    assert_eq!(debug_invocation_id_label(None), "");
 }
 
 #[test]

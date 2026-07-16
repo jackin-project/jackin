@@ -389,10 +389,6 @@ pub fn debug_info_hint_spans(axes: termrock::layout::ScrollAxes) -> Vec<HintSpan
     spans.push(HintSpan::Key("↵"));
     spans.push(HintSpan::Text("copy value"));
     spans.push(HintSpan::GroupSep);
-    // UNREGISTERABLE(container-info-reveal): R/O toggle reveals diagnostics inline; no ContainerInfo keymap.
-    spans.push(HintSpan::Key("R/O"));
-    spans.push(HintSpan::Text("reveal diagnostics"));
-    spans.push(HintSpan::GroupSep);
     // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
     spans.push(HintSpan::Key("Esc"));
     spans.push(HintSpan::Text("dismiss"));

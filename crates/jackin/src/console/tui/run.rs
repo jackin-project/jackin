@@ -31,7 +31,7 @@ use jackin_console::tui::prompts::{
 };
 use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleModalMouseLayerFacts, QuitConfirmPlan, console_pointer_shape,
-    debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
+    debug_chip_activation_allowed, debug_chip_row, debug_invocation_id_label,
     letter_input_state_for_console, modal_mouse_layer_plan, quit_confirm_area,
     quit_intercept_state_for_console, should_debug_log_mouse, should_open_quit_confirm,
     split_debug_area, startup_error_dismissed, startup_error_modal_active_for_console,
@@ -393,14 +393,11 @@ where
             }
             context.mouse_state.chrome_hover_tracker.clear();
             if let Some(bar_area) = debug_bar_area {
-                let active_run = jackin_diagnostics::active_run();
-                let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
-                let run_id = debug_run_id_label(
-                    active_run.as_ref().map(|r| r.run_id()),
-                    env_run_id.as_deref(),
-                );
+                let invocation_id = jackin_telemetry::identity::current_invocation()
+                    .map(|invocation_id| invocation_id.to_string());
+                let invocation_id = debug_invocation_id_label(invocation_id.as_deref());
                 let chip_row = debug_chip_row(bar_area);
-                let content = format!(" {run_id} ");
+                let content = format!(" {invocation_id} ");
                 let slots = [termrock::widgets::StatusSlot {
                     id: ConsoleChromeHover::DebugChip,
                     content: &content,
