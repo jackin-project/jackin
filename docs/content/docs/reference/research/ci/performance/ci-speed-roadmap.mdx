@@ -12,12 +12,13 @@ configuration; Velnor is faster only when runner-local state persists. The CI
 warmup also prepares one lane-scoped xtask and pinned Cargo-tool bundle for
 fan-out, replacing per-job tool downloads. The resolved tool binaries have a
 seven-day artifact keyed by platform and the pinned mise configuration, outside
-the contended target-cache quota, and Rust
-target archives append the exact source-content revision to their semantic build-shape
-key. That lets an equivalent rerun reuse compiled workspace artifacts instead
-of restoring a permanently stale first snapshot. Trusted manual runs may
-populate both caches so parity and warm-run measurements exercise the same
-contract as automatic CI. A shared
+the contended target-cache quota. Rust target archives keep semantic build-shape
+keys but prune workspace outputs: an exact-source archive trial grew to 16.9
+GiB, evicted the Rust toolchain, and made `cargo fmt` take 1m30s. Dependency
+artifacts remain reusable without letting duplicated workspace outputs displace
+the registry, toolchain, or tool bundle. Trusted manual runs may populate these
+layers so parity and warm-run measurements exercise the same contract as
+automatic CI. A shared
 remote compiler backend is explicitly deferred to the
 [Shared CI compiler cache](/roadmap/shared-ci-compiler-cache/) bake-off.
 Docker E2E uses nine deterministic count partitions for its nine tests; hash
@@ -348,7 +349,7 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
 
 The GitHub Actions cache API showed the repository at its active-cache budget while open PR refs held almost all cached bytes. The largest non-main contributors were full PR BuildKit exports, per-PR `mise` tool archives, and registry snapshots produced after fallback restores. This made the otherwise fast `main` cache vulnerable to eviction and caused intermittent cold runs.
 
-The corrective policy keeps `main` as the durable automatic cache owner. PRs and tags restore the default-branch tool state but do not save a duplicate `mise` archive. The resolved CI binaries instead use a short-retention artifact, so target-cache eviction cannot force every job to reinstall tools. A trusted `workflow_dispatch` may save that bundle and an exact dependency-registry snapshot because manual warm/parity proof requires a second run to consume the first run's result. The shared Cargo registry action validates a fallback archive offline before fetching. Construct PR exports retain only final BuildKit layers with `mode=min`; `main` continues to maintain the full registry build cache with `mode=max`. Preview and tagged-release archive target caches also restore from `main` but save only on `main`. Rust target caches append the source-content hash to the semantic build key so an exact rerun can consume completed workspace outputs; closed-PR cleanup and the repository cache summary must keep the extra immutable entries within quota.
+The corrective policy keeps `main` as the durable automatic cache owner. PRs and tags restore the default-branch tool state but do not save a duplicate `mise` archive. The resolved CI binaries instead use a short-retention artifact, so target-cache eviction cannot force every job to reinstall tools. A trusted `workflow_dispatch` may save that bundle and an exact dependency-registry snapshot because manual warm/parity proof requires a second run to consume the first run's result. The shared Cargo registry action validates a fallback archive offline before fetching. Construct PR exports retain only final BuildKit layers with `mode=min`; `main` continues to maintain the full registry build cache with `mode=max`. Preview and tagged-release archive target caches also restore from `main` but save only on `main`. Rust target caches retain dependency outputs under semantic build keys and explicitly prune jackin❯ workspace outputs; closed-PR cleanup and the repository cache summary must keep those entries within quota. Cross-job workspace object reuse belongs to the shared compiler-cache roadmap rather than duplicated target archives.
 
 The remaining delay in the cache-correction PR was runner admission, not execution: GitHub Actions showed eleven queued repository runs, nine from Renovate, while only two were in progress. Renovate previously allowed twenty concurrent PRs and unlimited hourly creation, which created more CI matrix demand than the hosted runner allocation could admit. Limit Renovate to four concurrent branches and PRs, with at most four new PRs per hour, so dependency updates make steady progress without starving human-authored CI.
 

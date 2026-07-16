@@ -93,9 +93,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ inputs.cache-shared-key }}-package-${{ matrix.shard.group }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ${{ inputs.cache-shared-key }}-package-${{ matrix.shard.group }}
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           save-if: >-
             ${{ github.ref == 'refs/heads/main' ||
@@ -104,9 +104,9 @@ jobs:
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
-          # Each package group owns its exact artifacts. The source revision key
-          # lets an equivalent rerun reuse them without freezing the first
-          # workspace snapshot under an immutable semantic key.
+          # Each package group owns a semantic dependency cache. Workspace
+          # outputs are pruned so duplicated shards cannot evict the toolchain
+          # and registry layers from the repository cache budget.
           # Both lanes use the same target-cache contract. Velnor's persistent
           # runner state remains a transparent accelerator beneath it.
       - name: Run package tests
@@ -298,18 +298,18 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-docker-e2e-dev-workspace-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-docker-e2e-dev-workspace-v1
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           save-if: >-
             ${{ github.ref == 'refs/heads/main' ||
                 github.event_name == 'workflow_dispatch' ||
                 (github.event_name == 'pull_request' &&
                  github.event.pull_request.head.repo.full_name == github.repository) }}
-          # Docker E2E owns its exact build/run artifacts. Package shards keep
-          # the all-features namespace so the narrower Docker graph cannot seed
-          # the shared package-test cache.
+          # Docker E2E owns a separate dependency graph. Package shards keep the
+          # all-features namespace so this narrower graph cannot seed their
+          # shared dependency cache.
       - name: Download construct image for E2E
         if: inputs.construct-image-changed
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

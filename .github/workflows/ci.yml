@@ -384,9 +384,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-xtask-dev-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-xtask-dev-v1
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CARGO_TARGET_DIR RUSTFLAGS RUSTDOC RUSTUP"
           save-if: >-
             ${{ github.ref == 'refs/heads/main' ||
@@ -419,6 +419,7 @@ jobs:
           path: .ci-prebuilt-tools/*
           compression-level: 0
           retention-days: 7
+          include-hidden-files: true
       - name: Upload shared CI xtask
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -558,9 +559,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-all-features-dev-workspace-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-all-features-dev-workspace-v2
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
@@ -675,9 +676,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-default-dev-workspace-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-default-dev-workspace-v2
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
@@ -758,9 +759,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: construct-e2e-image-${{ matrix.config.lane }}-workspace-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: construct-e2e-image-${{ matrix.config.lane }}-workspace-v2
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
       - name: Set up Docker Buildx for E2E cache
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -853,9 +854,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-doctest-dev-${{ matrix.shard.name }}-v3-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-doctest-dev-${{ matrix.shard.name }}-v3
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
       - name: Reject pending insta snapshots
         run: |
@@ -955,9 +956,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-all-features-dev-workspace-v2-package-jackin-capsule-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-all-features-dev-workspace-v2-package-jackin-capsule
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           save-if: >-
             ${{ github.ref == 'refs/heads/main' ||
@@ -1016,9 +1017,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-fuzz-workspace-v3-${{ matrix.target.name }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-fuzz-workspace-v3
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           workspaces: |
             . -> target
@@ -1079,9 +1080,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-bench-${{ matrix.shard.name }}-workspace-v3-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-bench-${{ matrix.shard.name }}-workspace-v3
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
@@ -1136,9 +1137,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-feature-powerset-${{ matrix.package }}-workspace-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-feature-powerset-${{ matrix.package }}-workspace-v2
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       # Crates that actually expose optional behavior (not test-support-only).
       - run: >
@@ -1195,9 +1196,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-msrv-${{ matrix.shard.name }}-dev-workspace-v3-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
+          shared-key: ci-msrv-${{ matrix.shard.name }}-dev-workspace-v3
+          cache-all-crates: "false"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
