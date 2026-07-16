@@ -44,8 +44,7 @@ restoration guarantee.
 ## Stage 5 tag-candidate budget
 
 Recorded against TermRock implementation revision
-`41db0be7a6b166200b4b3661b5594a49700b5570` (the code revision consumed by
-jackin❯) and release metadata revision
+`41db0be7a6b166200b4b3661b5594a49700b5570` (the tag-candidate revision) and release metadata revision
 `941a487c537cbd435371c64679beccdbbc3f77ad` on Linux aarch64.
 
 | Measurement | Stage 0 donor | Stage 5 TermRock | Verdict |
@@ -56,5 +55,6 @@ jackin❯) and release metadata revision
 
 The visible-window implementation retains stable-ID selection and clipping
 tests at large collection sizes; no speed gain changed focus, key routing,
-selection, or clipping semantics. Corrected Unicode widths and double focused
-panel borders are the only accepted post-parity visual differences.
+selection, or clipping semantics. Corrected Unicode widths are the only accepted
+post-parity visual difference; the later double-border change was a regression,
+corrected in TermRock PR #2 without changing panel geometry.

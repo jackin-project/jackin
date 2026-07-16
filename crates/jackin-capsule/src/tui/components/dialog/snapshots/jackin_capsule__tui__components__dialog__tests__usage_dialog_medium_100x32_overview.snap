@@ -5,16 +5,16 @@ expression: "render_usage_dialog_snapshot(100, 32, UsageDialogTab::Overview)"
 
 
 
-       ╔ Usage ═════════════════════════════════════════════════════════════════════════════╗
-       ║         Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax          ║
-       ║        ━━━━━━━━━━                                                                  ║
-       ║────────────────────────────────────────────────────────────────────────────────────║
-       ║  OpenAI      37% left   Resets in 1h 21m                          (Jun 17, 23:15)  ║
-       ║  Anthropic   16% left   Resets in 46m                             (Jun 17, 22:40)  ║
-       ║  Amp        unsupported                                                            ║
-       ║  xAI        needs login                                                            ║
-       ║  Z.AI        88% left   Resets in 4d                              (Jun 21, 00:00)  ║
-       ║  Kimi        72% left   Resets in 13h                             (Jun 18, 11:00)  ║
-       ║  MiniMax    100% left                                                              ║
-       ║                                                                                    ║
-       ╚════════════════════════════════════════════════════════════════════════════════════╝
+       ┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
+       │         Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax          │
+       │        ━━━━━━━━━━                                                                  │
+       │────────────────────────────────────────────────────────────────────────────────────│
+       │  OpenAI      37% left   Resets in 1h 21m                          (Jun 17, 23:15)  │
+       │  Anthropic   16% left   Resets in 46m                             (Jun 17, 22:40)  │
+       │  Amp        unsupported                                                            │
+       │  xAI        needs login                                                            │
+       │  Z.AI        88% left   Resets in 4d                              (Jun 21, 00:00)  │
+       │  Kimi        72% left   Resets in 13h                             (Jun 18, 11:00)  │
+       │  MiniMax    100% left                                                              │
+       │                                                                                    │
+       └────────────────────────────────────────────────────────────────────────────────────┘

@@ -146,6 +146,8 @@ No other mechanism may transfer or clear focus. In particular: navigation keys (
 
 jackin❯ focus indicator is the border of the **active interaction container** rendered in `PHOSPHOR_GREEN`. All sibling and background containers render their borders in `PHOSPHOR_DARK` while they do not own focus. There is exactly one active focus-border owner per surface layer:
 
+Focus changes border color and style only; it never changes border geometry. Focused and unfocused containers both use the established single-line `┌─┐│└─┘` glyph set. Double-line borders are not a focus cue and must not appear on dialogs, panels, or pickers.
+
 - **Top-level list focus.** When the workspace list/sidebar owns navigation focus, the sidebar block has the bright border and right-pane detail blocks use dark borders.
 - **Scrollable detail focus.** When the operator clicks or scroll-focuses a right-pane block such as **Global mounts**, the sidebar returns to a dark border and that scrollable block gets the bright border.
 - **Tab content focus.** In the workspace editor or settings, the focused tab-panel block gets the bright border while other visible panels stay dark. The tab bar uses its own underline focus cue when it owns focus.
