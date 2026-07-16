@@ -742,6 +742,37 @@ That admission delay confirmed the existing lane policy: GitHub-hosted runners r
 
 Construct builds also hid their active work: the xtask subprocess helper captured BuildKit stdout and stderr until `docker buildx bake` exited, so a multi-minute image build showed no layer, cache, or transfer progress. BuildKit invocations now inherit both streams and use plain progress, making runner logs a live diagnostic surface without changing the build graph or cache semantics.
 
+### Final warm proof after main synchronization
+
+The post-merge producer sequence established the current v5 crate targets without
+sharding or combining crates. Run `29524036639` reused the successful
+`jackin-runtime` and `jackin-capsule` results and scheduled only the still-missing
+`jackin` producer after its predecessor was cancelled; that one complete crate
+job published the target and successful-result markers consumed by later runs.
+
+Run `29525218203` is the decisive GitHub-hosted warm CI proof. It completed in
+42 seconds from workflow creation through `ci-required`: the metadata job took
+13 seconds, registry/tool warmup took 10 seconds, affected-crate result routing
+took 10 seconds in parallel, and the required aggregator took 9 seconds. Every
+crate result was reused, and input-identical fmt, audit, dependency-policy,
+schema, ratchet, and README gates skipped under the repository-policy proof.
+The run performed no dependency compilation or download step.
+
+Docs run `29525218020` completed through `docs-required` in 56 seconds. The
+semantic built-site artifact avoided the 58-second Fumadocs rebuild, the
+content-addressed `jackin-xtask` artifact removed the cross-workflow producer
+race, and persistent Codebook restore reduced the measured same-run 15-second
+handoff to 3--6 seconds. Construct run `29525433277` completed in 23 seconds:
+it verified that the previous result's source SHA had identical image and
+construct-command inputs, skipped both architecture builds, and promoted that
+proof to the workflow-independent v2 result contract.
+
+These runs define the service objective precisely: a producer is allowed only
+when semantic inputs changed or no valid proof exists; once the proof exists,
+CI, Docs, and Construct must each finish below one minute without Cargo crate
+downloads or unchanged dependency compilation. Workflow transport, cache
+plumbing, and path-classification edits are not semantic build inputs.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.
