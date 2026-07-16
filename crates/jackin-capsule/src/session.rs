@@ -3,10 +3,8 @@
 
 //! Per-agent PTY session: spawn, resize, write input, read output, and track
 //! session state for the daemon.
-//!
 //! Not responsible for: attach-client I/O, socket framing, or daemon
 //! multiplexing logic (`SessionSupervisor` + the Multiplexer shell own that).
-//!
 //! Key invariant: the session's `DamageGrid` is the single source of truth
 //! for re-rendering on tab/pane switch and client reattach.
 

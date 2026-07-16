@@ -17,10 +17,6 @@ kind = "numeric"
 provider = "file_lines_production"
 cap = 1850
 mode = "enforce"
-[[family.entry]]
-key = "crates/jackin-diagnostics/src/observability.rs"
-bound = 2052
-
 [[family]]
 id = "file-size-test"
 kind = "numeric"

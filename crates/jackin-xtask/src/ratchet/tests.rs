@@ -87,10 +87,7 @@ fn curated_pub_mods_rejects_extra_root_mod() {
     // Valid curated siblings so the only failure is the intentional leak.
     for (crate_name, body) in [
         ("jackin-config", "mod private;\npub mod test_support;\n"),
-        (
-            "jackin-core",
-            "mod private;\npub mod container_paths;\npub mod debug_log;\n",
-        ),
+        ("jackin-core", "mod private;\npub mod container_paths;\n"),
     ] {
         let lib = dir
             .path()
@@ -121,10 +118,7 @@ fn curated_pub_mods_accepts_env_pilot_shape() {
     let shapes = [
         ("jackin-env", "mod env_layer;\npub mod test_support;\n"),
         ("jackin-config", "mod private;\npub mod test_support;\n"),
-        (
-            "jackin-core",
-            "mod private;\npub mod container_paths;\npub mod debug_log;\n",
-        ),
+        ("jackin-core", "mod private;\npub mod container_paths;\n"),
     ];
     for (crate_name, body) in shapes {
         let lib = dir

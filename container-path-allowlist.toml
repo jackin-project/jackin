@@ -4,7 +4,7 @@
 
 [[file]]
 path = "crates/jackin-core/src/container_paths.rs"
-literals = 39
+literals = 38
 note = "the chokepoint module itself defines the canonical constants"
 
 [[file]]

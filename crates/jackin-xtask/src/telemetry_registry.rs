@@ -127,9 +127,7 @@ fn collect_source_files(
     root: &Path,
     files: &mut Vec<(std::path::PathBuf, String)>,
 ) -> Result<()> {
-    let mut entries = fs::read_dir(dir)?.collect::<std::io::Result<Vec<_>>>()?;
-    entries.sort_by_key(fs::DirEntry::file_name);
-    for entry in entries {
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
         let path = entry.path();
         if path.is_dir() {
             collect_source_files(&path, root, files)?;
@@ -218,11 +216,9 @@ fn validate_legacy_namespaces(root: &Path) -> Result<()> {
 }
 
 fn collect_rust_files(dir: &Path, violations: &mut Vec<String>, root: &Path) -> Result<()> {
-    let mut entries = fs::read_dir(dir)
+    for entry in crate::fs_util::read_dir_sorted(dir)
         .with_context(|| format!("reading {}", dir.display()))?
-        .collect::<std::io::Result<Vec<_>>>()?;
-    entries.sort_by_key(fs::DirEntry::file_name);
-    for entry in entries {
+    {
         let path = entry.path();
         if path.is_dir() {
             collect_rust_files(&path, violations, root)?;
