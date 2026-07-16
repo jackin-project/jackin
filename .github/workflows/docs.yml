@@ -39,6 +39,7 @@ jobs:
       result-reuse: ${{ steps.docs-result.outputs.hit }}
       result-name: ${{ steps.docs-result.outputs.name }}
       docs-xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
+      deployment-reuse: ${{ steps.deployed.outputs.reuse }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -161,20 +162,11 @@ jobs:
             echo "name=$name"
           } >> "$GITHUB_OUTPUT"
 
-  deployment-state:
-    if: >-
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      reuse: ${{ steps.deployed.outputs.reuse }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
       - name: Find semantically identical successful Pages deployment
         id: deployed
+        if: >-
+          github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -284,13 +276,12 @@ jobs:
           "$DOCS_XTASK" research check
 
   docs-link-check:
-    needs: [changes, deployment-state]
+    needs: changes
     if: >-
-      always() &&
-      needs.changes.result == 'success' &&
       needs.changes.outputs.docs == 'true' &&
       (needs.changes.outputs.result-reuse != 'true' ||
-       github.ref == 'refs/heads/main')
+       (github.ref == 'refs/heads/main' &&
+        needs.changes.outputs.deployment-reuse != 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -494,7 +485,7 @@ jobs:
 
       - name: Upload artifact
         if: >-
-          needs.deployment-state.outputs.reuse != 'true' &&
+          needs.changes.outputs.deployment-reuse != 'true' &&
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
@@ -671,12 +662,12 @@ jobs:
     # artifact, then accept the same artifact/SHA on the next deployment.
     # Keep retries scoped to that opaque Pages handoff instead of rerunning
     # the whole workflow or retrying source/build/link validation.
-    needs: [docs-link-check, repo-link-check, deployment-state]
+    needs: [changes, docs-link-check, repo-link-check]
     if: >-
       always() &&
       (github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) &&
-      needs.deployment-state.outputs.reuse != 'true' &&
+      needs.changes.outputs.deployment-reuse != 'true' &&
       needs.docs-link-check.result == 'success' &&
       (needs.repo-link-check.result == 'success' ||
        needs.repo-link-check.result == 'skipped')
@@ -734,10 +725,10 @@ jobs:
           exit 1
 
   verify-deployed:
-    needs: [deploy, deployment-state]
+    needs: [changes, deploy]
     if: >-
       always() &&
-      needs.deployment-state.outputs.reuse != 'true' &&
+      needs.changes.outputs.deployment-reuse != 'true' &&
       needs.deploy.result == 'success' &&
       (github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
@@ -798,7 +789,7 @@ jobs:
   # one-job aggregator on schedule has no value.
   docs-required:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, deployment-state, repo-link-check, docs-link-check, prepare-codebook, spell-check-docs, spell-check-source, deploy, verify-deployed, check-deployed]
+    needs: [changes, repo-link-check, docs-link-check, prepare-codebook, spell-check-docs, spell-check-source, deploy, verify-deployed, check-deployed]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
