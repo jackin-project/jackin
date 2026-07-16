@@ -3214,6 +3214,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-ui"
+version = "0.6.0-dev"
+dependencies = [
+ "crossterm",
+ "jackin-core",
+ "ratatui",
+ "termrock",
+]
+
+[[package]]
 name = "jackin-usage"
 version = "0.6.0-dev"
 dependencies = [
