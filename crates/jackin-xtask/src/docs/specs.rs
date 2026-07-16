@@ -96,8 +96,7 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
         );
     }
 
-    let reconciled =
-        std::env::var_os("JACKIN_SPECS_RECONCILE").is_some() || std::env::var_os("CI").is_some();
+    let reconciled = std::env::var_os("JACKIN_SPECS_RECONCILE").is_some();
     emit(&format!(
         "spec gate OK — {inv_rows} INV rows, {cited_ok} cited tests verified (syn{})",
         if reconciled {
@@ -317,15 +316,15 @@ fn cfg_attr_adds_test(attr: &Attribute) -> bool {
 /// Reconcile cited test function names against `cargo nextest list` for the
 /// packages that appear in citations.
 ///
-/// Opt-in: package listing is ~30–60s, so the default gate is syn-only. Enable
-/// with `JACKIN_SPECS_RECONCILE=1` or when `CI=true` (docs CI sets `CI`).
+/// Opt-in: nextest builds every selected test binary before listing test names,
+/// so the default gate is syn-only. Enable with `JACKIN_SPECS_RECONCILE=1` for
+/// an explicit deep reconciliation.
 fn reconcile_with_nextest(
     root: &Path,
     crates: &BTreeSet<String>,
     citations: &[(String, String, String)],
 ) -> Result<(), String> {
-    let reconcile =
-        std::env::var_os("JACKIN_SPECS_RECONCILE").is_some() || std::env::var_os("CI").is_some();
+    let reconcile = std::env::var_os("JACKIN_SPECS_RECONCILE").is_some();
     if !reconcile {
         return Ok(());
     }
