@@ -661,7 +661,7 @@ fn story_container_info_debug(frame: &mut Frame<'_>, area: Rect) {
         role: Some("the-architect".to_owned()),
         agent: Some("claude".to_owned()),
         target: Some("/Users/jackin/Projects/jackin".to_owned()),
-        run_id: Some("jk-run-cc5ff2".to_owned()),
+        invocation_id: Some("jk-run-cc5ff2".to_owned()),
     }
     .into_state();
     render_container_info(frame, area, &state);
