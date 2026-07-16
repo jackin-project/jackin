@@ -115,6 +115,48 @@ pub struct OperationGuard {
     attribute_keys: Mutex<Vec<&'static str>>,
     rpc: Option<RpcLifecycle>,
     connection: Option<ConnectionLifecycle>,
+    background_cycle: Option<BackgroundCycleLifecycle>,
+}
+
+#[derive(Debug)]
+struct BackgroundCycleLifecycle {
+    name: String,
+    started_at: Instant,
+}
+
+impl BackgroundCycleLifecycle {
+    fn start(name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            started_at: Instant::now(),
+        }
+    }
+
+    fn finish(
+        &self,
+        outcome: schema::enums::OutcomeValue,
+        error_type: Option<schema::enums::ErrorType>,
+    ) {
+        let mut attrs = vec![
+            Attr {
+                key: schema::attrs::BACKGROUND_CYCLE_NAME,
+                value: Value::Str(&self.name),
+            },
+            Attr {
+                key: schema::attrs::OUTCOME,
+                value: Value::Str(outcome.as_str()),
+            },
+        ];
+        if let Some(error_type) = error_type {
+            attrs.push(Attr {
+                key: schema::attrs::std_attrs::ERROR_TYPE,
+                value: Value::Str(error_type.as_str()),
+            });
+        }
+        let _count_result = crate::counter(&crate::metric::BACKGROUND_CYCLES).add(1, &attrs);
+        let _duration_result = crate::histogram(&crate::metric::BACKGROUND_CYCLE_DURATION)
+            .record(self.started_at.elapsed().as_secs_f64(), &attrs);
+    }
 }
 
 #[derive(Debug)]
@@ -235,6 +277,7 @@ impl OperationGuard {
             attribute_keys: Mutex::new(Vec::new()),
             rpc: None,
             connection: None,
+            background_cycle: None,
         }
     }
 
@@ -335,6 +378,9 @@ impl OperationGuard {
         }
         if let Some(connection) = &self.connection {
             connection.finish(outcome, error_type);
+        }
+        if let Some(background_cycle) = &self.background_cycle {
+            background_cycle.finish(outcome, error_type);
         }
         if error_type == Some(schema::enums::ErrorType::RecoveredDegradation) {
             let attrs = [Attr {
@@ -622,6 +668,7 @@ fn operation_inner(
         attribute_keys: Mutex::new(Vec::with_capacity(attrs.len())),
         rpc: None,
         connection: None,
+        background_cycle: None,
     };
     for attr in attrs {
         guard.set_attr(*attr)?;
@@ -649,6 +696,18 @@ fn operation_inner(
                     .then_some(attr.value)
                     .and_then(|value| match value {
                         Value::Str(peer) => Some(ConnectionLifecycle::start(peer)),
+                        _ => None,
+                    })
+            })
+        })
+        .flatten();
+    guard.background_cycle = (def.name == schema::spans::BACKGROUND_CYCLE)
+        .then(|| {
+            attrs.iter().find_map(|attr| {
+                (attr.key == schema::attrs::BACKGROUND_CYCLE_NAME)
+                    .then_some(attr.value)
+                    .and_then(|value| match value {
+                        Value::Str(name) => Some(BackgroundCycleLifecycle::start(name)),
                         _ => None,
                     })
             })

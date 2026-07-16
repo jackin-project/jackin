@@ -260,7 +260,7 @@ pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
+// registry: kind=internal; attributes=background.cycle.name:required,cli.invocation.id:recommended,error.type:recommended,outcome:recommended,session.id:recommended
 pub const BACKGROUND_CYCLE: &str = "background.cycle";
 pub const BACKGROUND_CYCLE_DEF: super::SpanMetadata = super::SpanMetadata {
     name: BACKGROUND_CYCLE,
@@ -268,7 +268,26 @@ pub const BACKGROUND_CYCLE_DEF: super::SpanMetadata = super::SpanMetadata {
     kind: super::SpanKind::Internal,
     attributes: &[
         super::AttributeRequirement {
+            name: "background.cycle.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "branch_context",
+                "pr_context",
+                "usage_account",
+                "provider_probe",
+                "instance_refresh",
+                "agent_status",
+            ],
+        },
+        super::AttributeRequirement {
             name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],

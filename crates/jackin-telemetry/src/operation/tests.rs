@@ -251,3 +251,53 @@ fn connection_metric_dimensions_are_bounded() {
         attempts
     );
 }
+
+#[test]
+fn background_cycle_shape_and_metrics_are_bounded() {
+    use schema::enums::{BackgroundCycleName, ErrorType, OutcomeValue};
+
+    let attrs = [Attr {
+        key: schema::attrs::BACKGROUND_CYCLE_NAME,
+        value: Value::Str(BackgroundCycleName::UsageAccount.as_str()),
+    }];
+    let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+    tracing::subscriber::with_default(subscriber, || {
+        operation(&BACKGROUND_CYCLE, &attrs)
+            .expect("registered background cycle")
+            .complete(OutcomeValue::Failure, Some(ErrorType::HttpError));
+    });
+    provider.force_flush().expect("flush");
+    let span = exporter.get_finished_spans().unwrap().pop().unwrap();
+    assert!(span.attributes.iter().any(|attribute| {
+        attribute.key.as_str() == schema::attrs::BACKGROUND_CYCLE_NAME
+            && attribute.value.as_str() == BackgroundCycleName::UsageAccount.as_str()
+    }));
+    assert!(matches!(span.status, Status::Error { .. }));
+
+    let expected = [
+        schema::attrs::BACKGROUND_CYCLE_NAME,
+        schema::attrs::std_attrs::ERROR_TYPE,
+        schema::attrs::OUTCOME,
+    ];
+    assert_eq!(
+        crate::metric::BACKGROUND_CYCLES
+            .dimensions()
+            .iter()
+            .map(|attribute| attribute.name)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        crate::metric::BACKGROUND_CYCLE_DURATION
+            .dimensions()
+            .iter()
+            .map(|attribute| attribute.name)
+            .collect::<Vec<_>>(),
+        expected
+    );
+}

@@ -125,7 +125,7 @@ pub const AGENT_STATE_TRANSITIONS_DEF: super::MetricMetadata = super::MetricMeta
         },
     ],
 };
-// registry: instrument=histogram; unit=s; attributes=
+// registry: instrument=histogram; unit=s; attributes=background.cycle.name:required,error.type:recommended,outcome:required
 pub const BACKGROUND_CYCLE_DURATION: &str = "background.cycle.duration";
 pub const BACKGROUND_CYCLE_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: BACKGROUND_CYCLE_DURATION,
@@ -135,17 +135,83 @@ pub const BACKGROUND_CYCLE_DURATION_DEF: super::MetricMetadata = super::MetricMe
     boundaries: &[
         0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
     ],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "background.cycle.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "branch_context",
+                "pr_context",
+                "usage_account",
+                "provider_probe",
+                "instance_refresh",
+                "agent_status",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+    ],
 };
-// registry: instrument=counter; unit={cycle}; attributes=
+// registry: instrument=counter; unit={cycle}; attributes=background.cycle.name:required,error.type:recommended,outcome:required
 pub const BACKGROUND_CYCLES: &str = "background.cycles";
 pub const BACKGROUND_CYCLES_DEF: super::MetricMetadata = super::MetricMetadata {
     name: BACKGROUND_CYCLES,
-    description: "Background cycles started.",
+    description: "Background cycles completed.",
     instrument: super::MetricInstrument::Counter,
     unit: "{cycle}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "background.cycle.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "branch_context",
+                "pr_context",
+                "usage_account",
+                "provider_probe",
+                "instance_refresh",
+                "agent_status",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+    ],
 };
 // registry: instrument=counter; unit={decision}; attributes=cache.name:required,cache.result:required
 pub const CACHE_DECISIONS: &str = "cache.decisions";

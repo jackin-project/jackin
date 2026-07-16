@@ -114,7 +114,7 @@ In `handle_state_tick`'s transition block (`daemon.rs:885-909` region, where `St
 
 ## Reopened audit additions (2026-07-16)
 
-- Give branch, PR, usage-account, provider-probe, instance-refresh, and agent-status work distinct generated cycle definitions. Autonomous cycles clear stale caller correlation; no-op ticks emit metrics only; substantive cycles record balanced count/duration/outcome/error metrics without job IDs.
+- The shared generated cycle contract now requires bounded `background.cycle.name`, accepts stable `error.type`, and automatically records count/duration/outcome/error metrics without job IDs at guard completion. Remaining: give branch, PR, usage-account, provider-probe, instance-refresh, and agent-status work distinct generated definitions; clear stale caller correlation on autonomous cycles; keep no-op ticks metric-only; and migrate every substantive cycle to the guard.
 - Govern agent-transition event/metric attribute contracts, map the authoritative status source, record flap behavior, and prove same-state silence plus reporter-ID/privacy absence.
 - Propagate operator cancellation into PTY exit classification and emit paired spawn/exit events with stable error types for wait/signal/nonzero paths; exporter tests prove PTY content never appears.
 - Replace Capsule pane action spans with `WidgetFocusTracker` lifecycle for pane, tab, and command palette focus plus bounded duration.
