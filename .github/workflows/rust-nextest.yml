@@ -65,9 +65,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
           restore-keys: |
-            rustup-ci-v4-${{ runner.os }}-${{ runner.arch }}-
+            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - name: Derive exact crate target key
@@ -84,7 +84,8 @@ jobs:
         id: crate-target
         shell: bash
         env:
-          ARTIFACT_PREFIX: ci-crate-target-${{ inputs.all-features && 'v3' || 'default-v3' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          ARTIFACT_PREFIX: ci-crate-target-${{ inputs.all-features && 'v4' || 'default-v4' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          LEGACY_SPLIT_PREFIX: ci-crate-target-${{ inputs.all-features && 'v3' || 'default-v3' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
           LEGACY_ARTIFACT_NAME: ci-crate-target-${{ inputs.all-features && 'v2' || 'default-v2' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -92,7 +93,8 @@ jobs:
           set -euo pipefail
           hit=false
           canonical_hit=false
-          legacy=false
+          format=none
+          download_prefix=
           legacy_name=
           run_id=$(
             gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_PREFIX}-ready&per_page=10" \
@@ -102,16 +104,29 @@ jobs:
           if [ -n "$run_id" ]; then
             hit=true
             canonical_hit=true
+            format=v4
+            download_prefix=$ARTIFACT_PREFIX
           else
             run_id=$(
-              gh api "repos/${REPOSITORY}/actions/artifacts?name=${LEGACY_ARTIFACT_NAME}&per_page=10" \
+              gh api "repos/${REPOSITORY}/actions/artifacts?name=${LEGACY_SPLIT_PREFIX}-ready&per_page=10" \
                 --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
                 | head -n 1
             )
             if [ -n "$run_id" ]; then
               hit=true
-              legacy=true
-              legacy_name=$LEGACY_ARTIFACT_NAME
+              format=v3
+              download_prefix=$LEGACY_SPLIT_PREFIX
+            else
+              run_id=$(
+                gh api "repos/${REPOSITORY}/actions/artifacts?name=${LEGACY_ARTIFACT_NAME}&per_page=10" \
+                  --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
+                  | head -n 1
+              )
+              if [ -n "$run_id" ]; then
+                hit=true
+                format=v2
+                legacy_name=$LEGACY_ARTIFACT_NAME
+              fi
             fi
           fi
 
@@ -119,22 +134,23 @@ jobs:
             echo "prefix=$ARTIFACT_PREFIX"
             echo "hit=$hit"
             echo "canonical-hit=$canonical_hit"
-            echo "legacy=$legacy"
+            echo "format=$format"
+            echo "download-prefix=$download_prefix"
             echo "legacy-name=$legacy_name"
             echo "run-id=$run_id"
           } >> "$GITHUB_OUTPUT"
-      - name: Download split input-identical crate target
-        if: steps.crate-target.outputs.canonical-hit == 'true'
+      - name: Download partitioned input-identical crate target
+        if: steps.crate-target.outputs.format == 'v4' || steps.crate-target.outputs.format == 'v3'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: ${{ steps.crate-target.outputs.prefix }}-part-*
+          pattern: ${{ steps.crate-target.outputs.download-prefix }}-part-*
           path: target/.ci-restore
           merge-multiple: true
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ steps.crate-target.outputs.run-id }}
       - name: Download legacy input-identical crate target
-        if: steps.crate-target.outputs.legacy == 'true'
+        if: steps.crate-target.outputs.format == 'v2'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ steps.crate-target.outputs.legacy-name }}
@@ -147,10 +163,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ steps.crate-target.outputs.legacy }}" != "true" ]; then
+          if [ "${{ steps.crate-target.outputs.format }}" = "v4" ]; then
+            pids=()
+            for archive in target/.ci-restore/target.part-*; do
+              tar --zstd -xf "$archive" &
+              pids+=("$!")
+            done
+            failed=0
+            for pid in "${pids[@]}"; do
+              wait "$pid" || failed=1
+            done
+            [ "$failed" -eq 0 ]
+          elif [ "${{ steps.crate-target.outputs.format }}" = "v3" ]; then
             cat target/.ci-restore/target.part-* > target/.ci-restore/target.tar.zst
+            tar --zstd -xf target/.ci-restore/target.tar.zst
+          else
+            tar --zstd -xf target/.ci-restore/target.tar.zst
           fi
-          tar --zstd -xf target/.ci-restore/target.tar.zst
           rm -rf target/.ci-restore
           git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
       - name: Run package tests
@@ -374,18 +403,41 @@ jobs:
            (github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository))
         run: |
-          tar --zstd \
-            --exclude='target/nextest' \
-            --exclude='target/telemetry-*' \
-            --exclude='target/.ci-restore' \
-            -cf target.tar.zst target
-          split --bytes=800M --numeric-suffixes=0 --suffix-length=1 \
-            target.tar.zst target.part-
-          rm target.tar.zst
-          if [ -e target.part-5 ]; then
-            echo "::error::crate target exceeds the five-part transfer contract"
-            exit 1
-          fi
+          totals=(0 0 0 0 0)
+          for index in 0 1 2 3 4; do
+            : > "target.list-$index"
+          done
+          while IFS=$'\t' read -r -d '' size path; do
+            bucket=0
+            for index in 1 2 3 4; do
+              if [ "${totals[index]}" -lt "${totals[bucket]}" ]; then
+                bucket=$index
+              fi
+            done
+            printf '%s\0' "$path" >> "target.list-$bucket"
+            totals[bucket]=$((totals[bucket] + size))
+          done < <(
+            find target \
+              \( -path target/nextest -o -path 'target/nextest/*' \
+                 -o -path 'target/telemetry-*' \
+                 -o -path target/.ci-restore -o -path 'target/.ci-restore/*' \) \
+              -prune -o \( -type f -o -type l \) -printf '%s\t%p\0' \
+              | sort -z -nr
+          )
+
+          pids=()
+          for index in 0 1 2 3 4; do
+            tar --zstd --null --no-recursion \
+              --files-from="target.list-$index" \
+              -cf "target.part-$index" &
+            pids+=("$!")
+          done
+          failed=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || failed=1
+          done
+          [ "$failed" -eq 0 ]
+          rm target.list-*
           sha256sum target.part-* > target.ready
       - name: Publish input-identical crate target part 0
         if: >-
