@@ -59,6 +59,8 @@ jobs:
       construct_image: ${{ steps.route.outputs.construct_image }}
       docker_e2e: ${{ steps.route.outputs.docker_e2e }}
       workflows: ${{ steps.route.outputs.workflows }}
+      result-reuse: ${{ steps.ci-result.outputs.hit }}
+      result-name: ${{ steps.ci-result.outputs.name }}
       policy-reuse: ${{ steps.policy-result.outputs.hit }}
       policy-result-name: ${{ steps.policy-result.outputs.name }}
     steps:
@@ -271,9 +273,67 @@ jobs:
             echo "workflows=$workflows"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Find input-identical successful CI result
+        id: ci-result
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          digest=$(
+            while IFS= read -r -d '' path; do
+              printf '%s\0%s\n' "$path" "$(git hash-object "$path")"
+            done < <(
+              git ls-files -z -- \
+                '.cargo/**' \
+                '.config/nextest.toml' \
+                '.github/actions/**' \
+                '.github/workflows/ci.yml' \
+                '.github/workflows/rust-nextest.yml' \
+                'Cargo.lock' \
+                'Cargo.toml' \
+                'build.rs' \
+                'clippy.toml' \
+                'crates/**' \
+                'deny.toml' \
+                'docker-bake.hcl' \
+                'docker/**' \
+                'file-size-budget.toml' \
+                'mise.lock' \
+                'mise.toml' \
+                'ratchet.toml' \
+                'rust-toolchain.toml' \
+                'scripts/ci/**' \
+                'src/**' \
+                'test-layout-allowlist.toml' \
+                'tests/**'
+            ) | sha256sum | cut -d ' ' -f 1
+          )
+          name="ci-result-v1-${digest}-${LANES}"
+          artifact_id=
+          if ! artifact_id=$(
+            gh api "repos/${REPOSITORY}/actions/artifacts?name=${name}&per_page=10" \
+              --jq '.artifacts | map(select(.expired == false)) | first | .id // empty'
+          ); then
+            echo "::warning::CI result lookup failed; running the complete selected contract"
+            artifact_id=
+          fi
+          if [ -n "$artifact_id" ]; then
+            echo "::notice::reusing input-identical successful CI result"
+            hit=true
+          else
+            hit=false
+          fi
+          {
+            echo "hit=$hit"
+            echo "name=$name"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Find input-identical repository policy result
         id: policy-result
-        if: steps.route.outputs.rust == 'true'
+        if: steps.route.outputs.rust == 'true' && steps.ci-result.outputs.hit != 'true'
         shell: bash
         env:
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
@@ -335,7 +395,7 @@ jobs:
 
   actionlint:
     needs: [changes, matrix-setup]
-    if: needs.changes.outputs.workflows == 'true'
+    if: needs.changes.outputs.workflows == 'true' && needs.changes.outputs.result-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -356,7 +416,7 @@ jobs:
 
   fmt:
     needs: [changes, matrix-setup]
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -389,7 +449,7 @@ jobs:
 
   cargo-registry-warmup:
     needs: [changes, matrix-setup]
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -1031,6 +1091,27 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: CI
+      - name: Stage input-identical successful CI result
+        if: >-
+          needs.changes.outputs.result-reuse != 'true' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        run: printf '%s\n' "source-sha=${GITHUB_SHA}" > ci-result.txt
+      - name: Publish input-identical successful CI result
+        if: >-
+          needs.changes.outputs.result-reuse != 'true' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ needs.changes.outputs.result-name }}
+          path: ci-result.txt
+          compression-level: 0
+          retention-days: 7
       - name: Stage input-identical repository policy result
         if: >-
           needs.changes.outputs.rust == 'true' &&

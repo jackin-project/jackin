@@ -196,6 +196,14 @@ publish-versus-rehearsal mode, and requested runner lanes. An unrelated commit
 therefore does not rebuild unchanged amd64/arm64 images, while any construct
 input or lane-mode change runs the complete platform matrix.
 
+CI also publishes a seven-day result for the complete verification contract,
+keyed by every Rust, workflow, tool, test, policy, and Docker input plus the
+requested runner lanes. The selector runs before matrix expansion. An exact hit
+allocates only the stable required-status gate; it does not repeat formatting,
+action linting, tool or registry preparation, policy checks, affected-crate
+selection, or crate jobs. A miss retains the component selectors below, so only
+affected crates and genuinely stale components allocate their dedicated jobs.
+
 The repository policy set has a one-day component marker keyed by the semantic
 base revision, Rust/policy inputs, and requested lanes. Pull requests use their
 base SHA and the matching post-merge `main` push uses its `before` SHA, so the
@@ -223,6 +231,12 @@ output for link checking and Pages upload.
 Producer run `29508481632` published the corrected cross-ref site artifact. Warm
 proof must come from a later normal run whose site-contract inputs are
 unchanged, followed by the matching post-merge `main` run.
+Docs publishes a separate seven-day successful-result marker keyed by the full
+site, repository-link, generated-source, spelling, tool, and workflow contract.
+An exact pull-request hit allocates only `docs-required`. The matching `main`
+push additionally restores the built-site artifact and uploads it for Pages,
+but does not repeat repository-link or spelling jobs already proven by the pull
+request. Deployment and deployed-site verification remain `main` responsibilities.
 The repository-link job restores the same prepared `jackin-xtask` artifact as
 CI and installs only lychee, so it does not maintain a second Rust build/cache
 path for identical source inputs. Because Docs and CI are independent workflows

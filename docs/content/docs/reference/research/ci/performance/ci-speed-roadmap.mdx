@@ -201,9 +201,11 @@ Pull requests use the base SHA while the matching post-merge push uses its
 removes the remaining warm two-phase tail: actionlint, formatting, the tool
 warmup, affected-crate selection, and the required gate still run, but unchanged
 schema, ratchet, dependency, README-freshness, and audit results do not allocate
-another runner wave. Unlike the rejected whole-pipeline marker, this component
-result never skips crate/tool producers and cannot prevent artifact
-repopulation.
+another runner wave. A seven-day exact CI result now sits above those component
+selectors and covers the complete Rust, workflow, tool, policy, test, Docker,
+and runner-lane contract. A hit allocates only `ci-required`; a miss falls
+through to the affected-crate and component selectors, preserving one complete
+job per affected crate and normal artifact repopulation.
 
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
@@ -244,6 +246,12 @@ the pull-request-ref isolation of GitHub Actions caches, so the post-merge
 `main` run can reuse the successful PR build. Exact hits install only lychee and
 proceed directly to the four-second link scan; misses retain the full build and
 repopulate the output.
+
+Docs also publishes a seven-day exact validation result covering the site,
+repository-link, generated-source, spelling, tool, and workflow inputs. An
+input-identical pull request allocates only `docs-required`. The matching
+`main` push still restores and uploads the already-built Pages artifact, then
+deploys it, while repository-link and spelling proofs cross the merge boundary.
 
 The first shared-xtask consumer run, `29505456750`, exposed an accidental
 compile path and was cancelled instead of waiting for it. The prepared tool set
