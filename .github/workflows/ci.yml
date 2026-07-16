@@ -490,10 +490,6 @@ jobs:
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo registry warmup (${{ matrix.config.lane }})
-    outputs:
-      affected-packages: ${{ steps.affected-crates.outputs.packages }}
-      affected-cache-keys: ${{ steps.affected-crates.outputs.cache-keys }}
-      reused-packages: ${{ steps.affected-crates.outputs.reused-packages }}
     env:
       CARGO_TARGET_DIR: target
       CARGO_TERM_COLOR: always
@@ -725,71 +721,6 @@ jobs:
           fi
           cp .ci-prebuilt-tools/* target/ci-tools/
           cp .ci-prebuilt-xtask/* target/ci-tools/
-      - id: affected-crates
-        name: Select affected crate tests
-        shell: bash
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          BEFORE_SHA: ${{ github.event.before }}
-          COMMON_CONTRACT_KEY: ${{ needs.changes.outputs.nextest-contract }}
-          CONSTRUCT_IMAGE_CHANGED: ${{ needs.changes.outputs.construct_image }}
-          DOCKER_CONTRACT_KEY: ${{ needs.changes.outputs.docker-contract }}
-          DOCKER_E2E: ${{ needs.changes.outputs.docker_e2e }}
-          EVENT_NAME: ${{ github.event_name }}
-          GH_TOKEN: ${{ github.token }}
-          RUNNER_ARCH: ${{ runner.arch }}
-          RUNNER_OS: ${{ runner.os }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            selection=(--all)
-          elif [ -n "$BASE_REF" ]; then
-            git fetch --no-tags --depth=1 origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
-            selection=(--base "origin/$BASE_REF")
-          elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
-            git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
-            selection=(--base "$BEFORE_SHA")
-          else
-            selection=(--all)
-          fi
-          packages=$(target/ci-tools/jackin-xtask affected-crates \
-            --metadata target/ci-tools/workspace-metadata.json "${selection[@]}")
-          cache_keys=$(target/ci-tools/jackin-xtask affected-crates \
-            --metadata target/ci-tools/workspace-metadata.json "${selection[@]}" --cache-keys)
-          misses=()
-          hits=()
-          while IFS= read -r package; do
-            cache_key=$(jq -er --arg package "$package" '.[$package]' <<< "$cache_keys")
-            result=$(scripts/ci/find-crate-result.sh \
-              "$package" "$cache_key" true \
-              "$DOCKER_E2E" "$CONSTRUCT_IMAGE_CHANGED" \
-              "$COMMON_CONTRACT_KEY" "$DOCKER_CONTRACT_KEY" \
-              "$RUNNER_OS" "$RUNNER_ARCH" "$SOURCE_SHA")
-            if [ "$(jq -r '.hit' <<< "$result")" = "true" ]; then
-              hits+=("$package")
-            else
-              misses+=("$package")
-            fi
-          done < <(jq -r '.[]' <<< "$packages")
-          packages=$(printf '%s\n' "${misses[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
-          reused=$(printf '%s\n' "${hits[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
-          {
-            echo "packages=$packages"
-            echo "cache-keys=$cache_keys"
-            echo "reused-packages=$reused"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "### Crate test routing"
-            echo
-            echo "Reused: ${#hits[@]}; scheduled: ${#misses[@]}."
-            if [ "${#hits[@]}" -gt 0 ]; then
-              printf -- "- reused \`%s\`\n" "${hits[@]}"
-            fi
-            if [ "${#misses[@]}" -gt 0 ]; then
-              printf -- "- scheduled \`%s\`\n" "${misses[@]}"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
       - name: Publish resolved CI tool binaries
         if: >-
           steps.ci-tools-artifact.outputs.hit != 'true' &&
@@ -817,6 +748,51 @@ jobs:
           path: target/ci-tools/*
           compression-level: 0
           retention-days: 1
+
+  affected-crates:
+    needs: [changes, cargo-registry-warmup]
+    if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      packages: ${{ steps.select.outputs.packages }}
+      cache-keys: ${{ steps.select.outputs.cache-keys }}
+      reused-packages: ${{ steps.select.outputs.reused-packages }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          lane: GitHub
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+      - id: select
+        name: Select affected crate tests once
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          COMMON_CONTRACT_KEY: ${{ needs.changes.outputs.nextest-contract }}
+          CONSTRUCT_IMAGE_CHANGED: ${{ needs.changes.outputs.construct_image }}
+          DOCKER_CONTRACT_KEY: ${{ needs.changes.outputs.docker-contract }}
+          DOCKER_E2E: ${{ needs.changes.outputs.docker_e2e }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          result=$(scripts/ci/select-affected-crates.sh)
+          {
+            echo "packages=$(jq -c '.packages' <<< "$result")"
+            echo "cache-keys=$(jq -c '.cache_keys' <<< "$result")"
+            echo "reused-packages=$(jq -c '.reused_packages' <<< "$result")"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Crate test routing"
+            echo
+            echo "Reused: $(jq '.reused_packages | length' <<< "$result"); scheduled: $(jq '.packages | length' <<< "$result")."
+            jq -r '.reused_packages[] | "- reused `\(.)`"' <<< "$result"
+            jq -r '.packages[] | "- scheduled `\(.)`"' <<< "$result"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   schema-check:
     needs: [changes, matrix-setup, cargo-registry-warmup]
@@ -955,17 +931,17 @@ jobs:
       - run: cargo deny check licenses bans sources
 
   test:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, affected-crates, matrix-setup, cargo-registry-warmup]
     if: >-
       always() && needs.changes.outputs.rust == 'true' &&
       needs.changes.outputs.result-reuse != 'true' &&
-      needs.cargo-registry-warmup.outputs.affected-packages != '[]' &&
+      needs.affected-crates.outputs.packages != '[]' &&
       !failure() && !cancelled()
     uses: ./.github/workflows/rust-nextest.yml
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
-      packages-json: ${{ needs.cargo-registry-warmup.outputs.affected-packages }}
-      package-cache-keys-json: ${{ needs.cargo-registry-warmup.outputs.affected-cache-keys }}
+      packages-json: ${{ needs.affected-crates.outputs.packages }}
+      package-cache-keys-json: ${{ needs.affected-crates.outputs.cache-keys }}
       all-features: true
       ci-tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
       ci-xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
@@ -1046,6 +1022,7 @@ jobs:
       - matrix-setup
       - changes
       - actionlint
+      - affected-crates
       - audit
       - cargo-registry-warmup
       - fmt

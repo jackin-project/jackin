@@ -263,6 +263,19 @@ Service, the final ownership boundary removes that handoff completely. A real
 all crate acceptance work in one attributable job and eliminates a separate
 builder job plus save/upload/download/load cycle.
 
+Parity run `29514555916` exposed the last fan-out race and was cancelled before
+its 26-crate matrices could consume hours of runner time. Affected-crate
+selection still ran inside the two-lane registry-warmup matrix, but a matrix job
+publishes one shared output value. The slower Velnor copy therefore replaced
+GitHub's canonical result-marker lookup and scheduled every crate even though
+the markers existed. Selection now runs exactly once in a GitHub-hosted
+control-plane job after both lane warmups. A local all-crate integration probe
+against the repository artifacts reused 25 results and selected only `jackin`,
+the expected construct/E2E owner. GitHub and Velnor still execute the identical
+one-job-per-selected-crate contract; only the repository-wide scheduling
+decision is centralized, eliminating last-writer behavior without shards or
+multi-crate buckets.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the

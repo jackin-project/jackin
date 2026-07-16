@@ -102,6 +102,14 @@ feature, profile, and toolchain variants without placing 26 mostly overlapping
 archives in GitHub's small repository cache quota. The configured canonical
 writer publishes one output for both GitHub and Velnor to restore.
 
+After both lane warmups complete, one GitHub-hosted control-plane job resolves
+the affected set and shared result markers. Selection is deliberately outside
+the runner matrix: matrix job outputs have one shared value, so whichever lane
+finishes last could otherwise replace the canonical package list. Both lanes
+still consume the same contracts and run the same per-crate workflow; the
+central selector only decides which independently attributable crate jobs
+exist.
+
 An exact target-key miss first restores that crate's latest successful target
 as a seed. Cargo still validates every fingerprint and rebuilds changed
 first-party outputs, but unchanged registry and git dependencies remain
@@ -190,9 +198,10 @@ CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 
 An input-identical successful crate result is reused for seven days before any
 toolchain, registry, or target restore. Its key includes the crate's forward
 workspace dependency closure, Cargo and toolchain inputs, runner platform,
-feature and Docker modes, and the semantic crate-test contract. The selector removes
-a hit before matrix expansion, so queued runner capacity is reserved for real
-cache misses and the routing summary records every reuse. Any changed input
+feature and Docker modes, and the semantic crate-test contract. The selector
+removes a hit before matrix expansion. It runs once after both lane warmups, so
+queued runner capacity is reserved for real cache misses and the routing
+summary records every reuse. Any changed input
 runs the complete contract in one dedicated crate job and publishes a
 replacement marker from the configured canonical writer for both GitHub and
 Velnor to consume. Docker inputs and
