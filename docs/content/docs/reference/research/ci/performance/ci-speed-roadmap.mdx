@@ -290,6 +290,14 @@ backdates source files only for an exact source-closure hit. A latest-target
 seed preserves checkout mtimes, forcing Cargo to rebuild changed first-party
 inputs while retaining reusable third-party outputs.
 
+Dual-lane replacement run `29516431932` proved the centralized lookup removed
+the stall: Velnor completed target discovery in under one second. It also
+exposed a runner-expression mismatch before target restore: GitHub decoded the
+nested package metadata object, while Velnor skipped the supplied v4 target.
+The workflow now passes the complete JSON value unchanged and selects the
+package with `jq` inside the shared shell step, removing another runner-specific
+expression evaluation boundary.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the

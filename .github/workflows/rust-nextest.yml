@@ -184,14 +184,15 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           RUNNER_ARCH: ${{ runner.arch }}
           RUNNER_OS: ${{ runner.os }}
-          SUPPLIED_RESULT: ${{ toJSON(fromJSON(inputs.package-target-results-json)[matrix.package]) }}
+          TARGET_RESULTS: ${{ inputs.package-target-results-json }}
         run: |
           set -euo pipefail
-          if [ "$SUPPLIED_RESULT" = "null" ]; then
+          supplied_result=$(jq -c --arg package "$PACKAGE" '.[$package] // null' <<< "$TARGET_RESULTS")
+          if [ "$supplied_result" = "null" ]; then
             result=$(scripts/ci/find-crate-target.sh \
               "$PACKAGE" "$CACHE_KEY" "$ALL_FEATURES" "$RUNNER_OS" "$RUNNER_ARCH")
           else
-            result=$SUPPLIED_RESULT
+            result=$supplied_result
           fi
           {
             echo "prefix=$(jq -r '.prefix' <<< "$result")"
