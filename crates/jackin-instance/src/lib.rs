@@ -451,10 +451,6 @@ impl RoleState {
                   role selectors, validated repo, agent list, env resolver, \
                   workspace. Bundling is a parallel-pass refactor."
     )]
-    #[expect(
-        clippy::excessive_nesting,
-        reason = "scoped credential workers keep borrowed provisioning context local"
-    )]
     pub fn prepare_for_agents(
         paths: &JackinPaths,
         container_name: &str,
@@ -497,28 +493,26 @@ impl RoleState {
         let home_path = home_dir.clone();
 
         let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
-            let handles: Vec<(jackin_core::Agent, _)> = supported_auth
-                .iter()
-                .map(|(supported, mode, sync_src)| {
-                    let root = root_path.clone();
-                    let home_dir = home_path.clone();
-                    let host_home = host_home_path.clone();
-                    let sync_src = sync_src.clone();
-                    let supported = *supported;
-                    let mode = *mode;
-                    let handle = scope.spawn(move || {
-                        Self::provision_agent_auth_slot(
-                            &root,
-                            &home_dir,
-                            &host_home,
-                            supported,
-                            mode,
-                            sync_src.as_deref(),
-                        )
-                    });
-                    (supported, handle)
-                })
-                .collect();
+            let mut handles = Vec::with_capacity(supported_auth.len());
+            for (supported, mode, sync_src) in &supported_auth {
+                let root = root_path.clone();
+                let home_dir = home_path.clone();
+                let host_home = host_home_path.clone();
+                let sync_src = sync_src.clone();
+                let supported = *supported;
+                let mode = *mode;
+                let handle = scope.spawn(move || {
+                    Self::provision_agent_auth_slot(
+                        &root,
+                        &home_dir,
+                        &host_home,
+                        supported,
+                        mode,
+                        sync_src.as_deref(),
+                    )
+                });
+                handles.push((supported, handle));
+            }
 
             let gh_provision_outcome =
                 if github_ignore_can_skip_state_prepare(&github_context, &hosts_yml)? {
@@ -537,32 +531,7 @@ impl RoleState {
                     let gh_handle = scope.spawn({
                         let hosts_yml = hosts_yml.clone();
                         let host_home = host_home_path.clone();
-                        move || {
-                            jackin_diagnostics::active_timing_started(
-                                jackin_diagnostics::DiagnosticStage::Credentials,
-                                "role_state_prepare:github_auth",
-                                Some(&github_context.mode.to_string()),
-                            );
-                            if let Some(parent) = hosts_yml.parent() {
-                                std::fs::create_dir_all(parent).with_context(|| {
-                                    format!(
-                                        "failed to create GitHub role-state directory at {}",
-                                        parent.display()
-                                    )
-                                })?;
-                            }
-                            let result = Self::provision_github_auth(
-                                &hosts_yml,
-                                &github_context,
-                                &host_home,
-                            );
-                            jackin_diagnostics::active_timing_done(
-                                jackin_diagnostics::DiagnosticStage::Credentials,
-                                "role_state_prepare:github_auth",
-                                Some(if result.is_ok() { "prepared" } else { "error" }),
-                            );
-                            result
-                        }
+                        move || Self::provision_github_slot(&hosts_yml, &github_context, &host_home)
                     });
                     gh_handle
                         .join()
@@ -617,6 +586,33 @@ impl RoleState {
             },
             selected_outcome,
         ))
+    }
+
+    fn provision_github_slot(
+        hosts_yml: &Path,
+        github: &GithubAuthContext,
+        host_home: &Path,
+    ) -> anyhow::Result<GithubProvisionOutcome> {
+        jackin_diagnostics::active_timing_started(
+            jackin_diagnostics::DiagnosticStage::Credentials,
+            "role_state_prepare:github_auth",
+            Some(&github.mode.to_string()),
+        );
+        if let Some(parent) = hosts_yml.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create GitHub role-state directory at {}",
+                    parent.display()
+                )
+            })?;
+        }
+        let result = Self::provision_github_auth(hosts_yml, github, host_home);
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Credentials,
+            "role_state_prepare:github_auth",
+            Some(if result.is_ok() { "prepared" } else { "error" }),
+        );
+        result
     }
 
     /// Background-prewarm auth state for non-selected agents only.
