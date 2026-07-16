@@ -45,7 +45,7 @@ enum Command {
     AffectedCrates(affected_crates::AffectedCratesArgs),
     /// Run the local CI merge-readiness gate.
     ///
-    /// Partitions (`--only`, repeatable): lint, policy, tests, msrv, powerset,
+    /// Partitions (`--only`, repeatable): lint, policy, tests, powerset,
     /// docs, snapshots. `--only` is a local-dev tool; merge readiness is the
     /// full `ci` (or `ci --fast` without powerset).
     ///
