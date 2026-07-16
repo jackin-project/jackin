@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+name: Download CI xtask
+description: Restore the lane-scoped jackin-xtask binary prepared once by CI.
+
+inputs:
+  lane:
+    description: Runner lane that produced the binary.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download prepared xtask
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: ci-xtask-${{ inputs.lane }}
+        path: target/ci-tools/${{ inputs.lane }}
+    - name: Export prepared xtask path
+      shell: bash
+      env:
+        CI_XTASK_PATH: ${{ github.workspace }}/target/ci-tools/${{ inputs.lane }}/jackin-xtask
+      run: |
+        set -euo pipefail
+        chmod +x "$CI_XTASK_PATH"
+        echo "CI_XTASK=$CI_XTASK_PATH" >> "$GITHUB_ENV"

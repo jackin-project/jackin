@@ -132,9 +132,9 @@ Does not apply to:
 
 ### Flake policy
 
-CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The sharded workflow uploads `target/nextest/ci/junit.xml` per group and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
+CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The sharded workflow partitions the three largest crates by a stable nextest hash and splits the remaining workspace into explicit package groups. Every shard uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
-Junit artifacts are named `nextest-junit-<group>-<lane>` and seed the Phase 0 suite-wall-time baseline once measured.
+Junit artifacts are named `nextest-junit-<shard>-<lane>` and seed the Phase 0 suite-wall-time baseline once measured.
 Each shard runs `cargo xtask lint ratchet --only suite-time`; it must not invoke
 the all-family ratchet because unrelated artifact providers can add hidden build
 work. The telemetry conformance job similarly owns generation of

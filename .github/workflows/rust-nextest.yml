@@ -43,14 +43,22 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(inputs.runner-configs-json) }}
-        group:
-          - jackin
-          - jackin-capsule
-          - jackin-runtime
-          - small-crates
+        shard:
+          - { name: jackin-1, group: jackin, partition: "hash:1/2" }
+          - { name: jackin-2, group: jackin, partition: "hash:2/2" }
+          - { name: jackin-capsule-1, group: jackin-capsule, partition: "hash:1/2" }
+          - { name: jackin-capsule-2, group: jackin-capsule, partition: "hash:2/2" }
+          - { name: jackin-runtime-1, group: jackin-runtime, partition: "hash:1/5" }
+          - { name: jackin-runtime-2, group: jackin-runtime, partition: "hash:2/5" }
+          - { name: jackin-runtime-3, group: jackin-runtime, partition: "hash:3/5" }
+          - { name: jackin-runtime-4, group: jackin-runtime, partition: "hash:4/5" }
+          - { name: jackin-runtime-5, group: jackin-runtime, partition: "hash:5/5" }
+          - { name: small-tools, group: small-tools, partition: "" }
+          - { name: small-services, group: small-services, partition: "" }
+          - { name: small-foundation, group: small-foundation, partition: "" }
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo nextest ${{ matrix.group }} (${{ matrix.config.lane }})
+    name: cargo nextest ${{ matrix.shard.name }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_OFFLINE: "true"
@@ -60,6 +68,9 @@ jobs:
       SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          lane: ${{ matrix.config.lane }}
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -84,41 +95,70 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ inputs.cache-shared-key }}-package-${{ matrix.group }}
+          shared-key: ${{ inputs.cache-shared-key }}-package-${{ matrix.shard.group }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ matrix.config.lane == 'GitHub' }}
+          save-if: >-
+            ${{ github.ref == 'refs/heads/main' ||
+                (github.event_name == 'pull_request' &&
+                 github.event.pull_request.head.repo.full_name == github.repository) }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
           # Each package shard owns its exact artifacts; a single shared key lets
           # the fastest shard permanently seed a narrow graph for every package.
-          # Velnor proves parity from persistent local state without writing GHA
-          # target archives; GitHub populates the hosted fallback caches.
+          # Both lanes use the same target-cache contract. Velnor's persistent
+          # runner state remains a transparent accelerator beneath it.
       - name: Run package tests
         shell: bash
         run: |
           set -euo pipefail
 
-          case "${{ matrix.group }}" in
+          case "${{ matrix.shard.group }}" in
             jackin|jackin-capsule|jackin-runtime)
-              args=(-p "${{ matrix.group }}")
+              args=(-p "${{ matrix.shard.group }}")
               ;;
-            small-crates)
+            small-tools)
+              args=(-p jackin-console -p jackin-console-oppicker -p jackin-xtask)
+              ;;
+            small-services)
               args=(
-                --workspace
-                --exclude jackin
-                --exclude jackin-capsule
-                --exclude jackin-runtime
+                -p jackin-config
+                -p jackin-diagnostics
+                -p jackin-env
+                -p jackin-image
+              )
+              ;;
+            small-foundation)
+              args=(
+                -p jackin-agent-status
+                -p jackin-build-meta
+                -p jackin-core
+                -p jackin-dev
+                -p jackin-docker
+                -p jackin-host
+                -p jackin-instance
+                -p jackin-isolation
+                -p jackin-launch-tui
+                -p jackin-manifest
+                -p jackin-pr-trailers
+                -p jackin-process
+                -p jackin-protocol
+                -p jackin-term
+                -p jackin-test-support
+                -p jackin-usage
               )
               ;;
             *)
-              echo "::error::unknown nextest package group: ${{ matrix.group }}"
+              echo "::error::unknown nextest package group: ${{ matrix.shard.group }}"
               exit 1
               ;;
           esac
 
           args+=(--no-tests=pass --color=always --locked --offline --profile ci)
+          if [ -n "${{ matrix.shard.partition }}" ]; then
+            args+=(--partition "${{ matrix.shard.partition }}")
+          fi
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
@@ -127,19 +167,20 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nextest-junit-${{ matrix.group }}-${{ matrix.config.lane }}
+          name: nextest-junit-${{ matrix.shard.name }}-${{ matrix.config.lane }}
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
       # Plan 027: suite-time family enforces when junit exists (skipped locally).
       - name: Suite-time ratchet (scheduled enforce)
         if: always() && hashFiles('target/nextest/ci/junit.xml') != ''
-        run: cargo run -p jackin-xtask --locked -- lint ratchet --only suite-time
+        run: |
+          "$CI_XTASK" lint ratchet --only suite-time
       - name: Slowest tests summary
         if: always()
         shell: bash
         run: |
           if [ -f target/nextest/ci/junit.xml ]; then
-            python3 - "$GITHUB_STEP_SUMMARY" "${{ matrix.group }}" <<'PY'
+            python3 - "$GITHUB_STEP_SUMMARY" "${{ matrix.shard.name }}" <<'PY'
           import sys
           import xml.etree.ElementTree as ET
           from pathlib import Path
@@ -199,8 +240,8 @@ jobs:
         if: always()
         uses: ./.github/actions/sccache-stats
         with:
-          artifact-name: sccache-stats-nextest-${{ matrix.group }}-${{ matrix.config.lane }}
-          heading: sccache nextest ${{ matrix.group }} (${{ matrix.config.lane }})
+          artifact-name: sccache-stats-nextest-${{ matrix.shard.name }}-${{ matrix.config.lane }}
+          heading: sccache nextest ${{ matrix.shard.name }} (${{ matrix.config.lane }})
 
   docker-e2e:
     if: inputs.docker-e2e
@@ -208,9 +249,14 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(inputs.runner-configs-json) }}
+        shard:
+          - { name: docker-e2e-1, partition: "hash:1/4" }
+          - { name: docker-e2e-2, partition: "hash:2/4" }
+          - { name: docker-e2e-3, partition: "hash:3/4" }
+          - { name: docker-e2e-4, partition: "hash:4/4" }
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: Docker E2E smoke (${{ matrix.config.lane }})
+    name: Docker E2E ${{ matrix.shard.name }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_OFFLINE: "true"
@@ -248,35 +294,22 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ matrix.config.lane == 'GitHub' }}
+          save-if: >-
+            ${{ github.ref == 'refs/heads/main' ||
+                (github.event_name == 'pull_request' &&
+                 github.event.pull_request.head.repo.full_name == github.repository) }}
           # Docker E2E owns its exact build/run artifacts. Package shards keep
           # the all-features namespace so the narrower Docker graph cannot seed
           # the shared package-test cache.
       - name: Download construct image for E2E
         if: inputs.construct-image-changed
-        shell: bash
-        env:
-          ARTIFACT_NAME: construct-trixie-image-${{ matrix.config.lane }}
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.run_id }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          artifact_id="$(
-            gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
-              --paginate \
-              --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" \
-              | head -n 1
-          )"
-          if [ -z "$artifact_id" ]; then
-            echo "Artifact not found: ${ARTIFACT_NAME}" >&2
-            exit 1
-          fi
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > /tmp/construct-trixie-image.zip
-          unzip -o /tmp/construct-trixie-image.zip -d /tmp
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: construct-trixie-image-${{ matrix.config.lane }}
+          path: target/construct-image
       - name: Load construct image for E2E
         if: inputs.construct-image-changed
-        run: docker load --input /tmp/construct-trixie.tar
+        run: docker load --input target/construct-image/construct-trixie.tar
       - name: Build jackin-capsule for nextest
         run: cargo build -p jackin-capsule --bin jackin-capsule --locked --offline
       - name: Point nextest at jackin-capsule
@@ -294,12 +327,13 @@ jobs:
           if [ -n "${VELNOR_DOCKER_HOST_TEMP:-}" ]; then
             export TMPDIR="$VELNOR_DOCKER_HOST_TEMP"
           fi
-          cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked --offline
+          cargo nextest run -p jackin --features e2e --profile docker-e2e \
+            --partition "${{ matrix.shard.partition }}" --color=always --locked --offline
       - name: Upload Docker E2E junit + timing
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nextest-junit-docker-e2e-${{ matrix.config.lane }}
+          name: nextest-junit-${{ matrix.shard.name }}-${{ matrix.config.lane }}
           path: target/nextest/docker-e2e/junit.xml
           if-no-files-found: ignore
       - name: Fail on unquarantined Docker E2E flakes
@@ -330,5 +364,5 @@ jobs:
         if: always()
         uses: ./.github/actions/sccache-stats
         with:
-          artifact-name: sccache-stats-docker-e2e-${{ matrix.config.lane }}
-          heading: sccache docker-e2e (${{ matrix.config.lane }})
+          artifact-name: sccache-stats-${{ matrix.shard.name }}-${{ matrix.config.lane }}
+          heading: sccache ${{ matrix.shard.name }} (${{ matrix.config.lane }})
