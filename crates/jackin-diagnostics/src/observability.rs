@@ -283,20 +283,14 @@ pub fn shutdown_capsule_tracing() {
 
 /// Install OTLP export for the in-container capsule process.
 ///
-/// `session_id` groups all of this session's telemetry (standard `session.id`);
-/// `run_id` (the host's `parallax.run.id`, propagated via env) joins the session
-/// to the host run; `traceparent` (propagated W3C header) links the session
-/// back to the launch trace. Returns `Ok(true)` when export was activated,
+/// W3C trace context links the session back to the launch trace. Returns
+/// `Ok(true)` when export was activated,
 /// `Ok(false)` when no endpoint is configured (the common, no-op case).
-pub fn init_capsule_tracing(
-    session_id: &str,
-    run_id: Option<&str>,
-    traceparent: Option<&str>,
-) -> anyhow::Result<bool> {
+pub fn init_capsule_tracing(traceparent: Option<&str>) -> anyhow::Result<bool> {
     let env = |key: &str| std::env::var(key).ok();
     let activated = match config::resolve_otlp_config(&env)? {
         Some(config) => {
-            otlp::init_capsule(session_id, run_id, traceparent, &config)?;
+            otlp::init_capsule(traceparent, &config)?;
             true
         }
         None => false,
@@ -1125,8 +1119,6 @@ mod otlp {
     /// direct OTLP layers and stamps the
     /// capsule resource; providers come from [`build_otlp_providers`].
     pub(super) fn init_capsule(
-        _session_id: &str,
-        _run_id: Option<&str>,
         _traceparent: Option<&str>,
         config: &super::config::OtlpConfig,
     ) -> anyhow::Result<()> {

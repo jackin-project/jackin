@@ -6,8 +6,7 @@
 //! Runtime-gated on the OTLP endpoint env the host injects
 //! (`OTEL_EXPORTER_OTLP_ENDPOINT`); a no-op when unset. When active, the
 //! session's telemetry carries a `session.id` (grouping the whole session into
-//! one timeline), the host `parallax.run.id` (joining it to the host run), and a
-//! link back to the launch trace via the propagated `TRACEPARENT`. Capsule
+//! one timeline) and a link back to the launch trace via W3C propagation. Capsule
 //! `clog!`/`cdebug!` bodies are bridged prefix-free with schema attributes;
 //! operator-visible file/stderr rendering keeps the `[jackin-capsule …]` prefix.
 
@@ -15,27 +14,22 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static OTLP_ACTIVE: AtomicBool = AtomicBool::new(false);
-/// Session/run/traceparent captured at daemon start for the local log banner.
+/// Session and trace context captured at daemon start.
 static SESSION_CONTEXT: OnceLock<SessionContext> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 struct SessionContext {
     session_id: String,
-    run_id: Option<String>,
     traceparent: Option<String>,
 }
 
 /// Capsule session correlation context captured by [`init`], for local sinks
 /// (e.g. the multiplexer log banner).
 #[must_use]
-pub fn session_context() -> Option<(String, Option<String>, Option<String>)> {
-    SESSION_CONTEXT.get().map(|ctx| {
-        (
-            ctx.session_id.clone(),
-            ctx.run_id.clone(),
-            ctx.traceparent.clone(),
-        )
-    })
+pub fn session_context() -> Option<(String, Option<String>)> {
+    SESSION_CONTEXT
+        .get()
+        .map(|ctx| (ctx.session_id.clone(), ctx.traceparent.clone()))
 }
 
 /// Initialise capsule OTLP export. Reads the session/run identity and launch
@@ -50,18 +44,12 @@ pub fn init() -> FlushGuard {
     }
     let session = jackin_telemetry::identity::begin_session();
     let session_id = session.current.to_string();
-    let run_id = std::env::var("JACKIN_RUN_ID").ok();
     let traceparent = std::env::var("TRACEPARENT").ok();
     drop(SESSION_CONTEXT.set(SessionContext {
         session_id: session_id.clone(),
-        run_id: run_id.clone(),
         traceparent: traceparent.clone(),
     }));
-    match jackin_diagnostics::init_capsule_tracing(
-        &session_id,
-        run_id.as_deref(),
-        traceparent.as_deref(),
-    ) {
+    match jackin_diagnostics::init_capsule_tracing(traceparent.as_deref()) {
         Ok(true) => {
             OTLP_ACTIVE.store(true, Ordering::Relaxed);
             let attrs = [jackin_telemetry::Attr {
@@ -152,8 +140,8 @@ pub fn bridge_log(level: BridgeLevel, message: &str) {
 /// Structured bridge entry used by capsule macros and tests.
 pub fn bridge_log_structured(
     level: BridgeLevel,
-    category: &'static str,
-    event_name: &'static str,
+    _category: &'static str,
+    _event_name: &'static str,
     message: &str,
 ) {
     if !otlp_active() {
@@ -164,74 +152,24 @@ pub fn bridge_log_structured(
     let session_id = SESSION_CONTEXT
         .get()
         .map_or("", |ctx| ctx.session_id.as_str());
-    let run_id = SESSION_CONTEXT
-        .get()
-        .and_then(|ctx| ctx.run_id.as_deref())
-        .unwrap_or("");
     let outcome = level.outcome();
-
-    match level {
-        BridgeLevel::Trace => tracing::event!(
-            name: "capsule.trace",
-            target: "jackin_capsule",
-            tracing::Level::TRACE,
-            "event.name" = event_name,
-            "jackin.category" = category,
-            "jackin.component" = "capsule",
-            "event.outcome" = outcome,
-            "session.id" = session_id,
-            "parallax.run.id" = run_id,
-            "{body}"
-        ),
-        BridgeLevel::Debug => tracing::event!(
-            name: "capsule.debug",
-            target: "jackin_capsule",
-            tracing::Level::DEBUG,
-            "event.name" = event_name,
-            "jackin.category" = category,
-            "jackin.component" = "capsule",
-            "event.outcome" = outcome,
-            "session.id" = session_id,
-            "parallax.run.id" = run_id,
-            "{body}"
-        ),
-        BridgeLevel::Info => tracing::event!(
-            name: "capsule.log",
-            target: "jackin_capsule",
-            tracing::Level::INFO,
-            "event.name" = event_name,
-            "jackin.category" = category,
-            "jackin.component" = "capsule",
-            "event.outcome" = outcome,
-            "session.id" = session_id,
-            "parallax.run.id" = run_id,
-            "{body}"
-        ),
-        BridgeLevel::Warn => tracing::event!(
-            name: "capsule.warn",
-            target: "jackin_capsule",
-            tracing::Level::WARN,
-            "event.name" = event_name,
-            "jackin.category" = category,
-            "jackin.component" = "capsule",
-            "event.outcome" = outcome,
-            "session.id" = session_id,
-            "parallax.run.id" = run_id,
-            "{body}"
-        ),
-        BridgeLevel::Error => tracing::event!(
-            name: "capsule.error",
-            target: "jackin_capsule",
-            tracing::Level::ERROR,
-            "event.name" = event_name,
-            "jackin.category" = category,
-            "jackin.component" = "capsule",
-            "event.outcome" = outcome,
-            "session.id" = session_id,
-            "parallax.run.id" = run_id,
-            "{body}"
-        ),
-    }
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(outcome),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
+            value: jackin_telemetry::Value::Str(session_id),
+        },
+    ];
+    let def = match level {
+        BridgeLevel::Trace | BridgeLevel::Debug => &jackin_telemetry::event::DEBUG_LINE,
+        BridgeLevel::Info => &jackin_telemetry::event::OPERATION_LOG,
+        BridgeLevel::Warn => &jackin_telemetry::event::OPERATION_WARN,
+        BridgeLevel::Error => &jackin_telemetry::event::ERROR_TYPED,
+    };
+    let _ = jackin_telemetry::emit_event(def, jackin_telemetry::FieldSet::new(&attrs, Some(body)));
 }
 
 /// Flush and shut down the OTLP exporters before the daemon exits, so the tail
