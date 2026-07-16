@@ -503,6 +503,10 @@ pub(super) async fn resolve_agent_repo_with(
             )
             .await?;
         if !repo_matches(git_url, &remote_url) {
+            jackin_telemetry::cache::decision(
+                jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                jackin_telemetry::schema::enums::CacheResult::Stale,
+            );
             // TUI alt-screen corruption: `eprintln!` from inside a
             // console session paints over the render.
             jackin_diagnostics::telemetry_debug!(
@@ -540,11 +544,16 @@ pub(super) async fn resolve_agent_repo_with(
                 None,
             )
             .await?;
-        anyhow::ensure!(
-            status.is_empty(),
-            "cached role repo contains local changes or extra files: {}. Remove the cached repo or clean it before loading.",
-            cached_repo.repo_dir.display()
-        );
+        if !status.is_empty() {
+            jackin_telemetry::cache::decision(
+                jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                jackin_telemetry::schema::enums::CacheResult::Stale,
+            );
+            anyhow::bail!(
+                "cached role repo contains local changes or extra files: {}. Remove the cached repo or clean it before loading.",
+                cached_repo.repo_dir.display()
+            );
+        }
 
         let fresh_fetch_age = opts.refresh_ttl.and_then(|ttl| {
             opts.branch_override
@@ -555,6 +564,10 @@ pub(super) async fn resolve_agent_repo_with(
                 .flatten()
         });
         if let Some(age) = fresh_fetch_age {
+            jackin_telemetry::cache::decision(
+                jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                jackin_telemetry::schema::enums::CacheResult::Hit,
+            );
             jackin_diagnostics::telemetry_debug!(
                 "repo_cache",
                 "skipping role repo fetch for {}: FETCH_HEAD is {}s old",
@@ -618,8 +631,16 @@ pub(super) async fn resolve_agent_repo_with(
                     )
                     .await?;
             }
+            jackin_telemetry::cache::decision(
+                jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                jackin_telemetry::schema::enums::CacheResult::Reuse,
+            );
         }
     } else {
+        jackin_telemetry::cache::decision(
+            jackin_telemetry::schema::enums::CacheName::RoleRepository,
+            jackin_telemetry::schema::enums::CacheResult::Miss,
+        );
         let clone_args = clone_args(git_url, &repo_path, opts.branch_override.as_deref());
         runner
             .run("git", &clone_args, None, &git_run_opts)
