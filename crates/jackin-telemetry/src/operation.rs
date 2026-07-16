@@ -34,59 +34,6 @@ macro_rules! span_def {
 }
 
 span_def!(CLI_COMMAND, CLI_COMMAND_DEF);
-/*
-pub const APP_STARTUP: SpanDef = SpanDef {
-    name: schema::spans::APP_STARTUP,
-};
-pub const APP_SHUTDOWN: SpanDef = SpanDef {
-    name: schema::spans::APP_SHUTDOWN,
-};
-pub const UI_ACTION: SpanDef = SpanDef {
-    name: schema::spans::UI_ACTION,
-};
-pub const UI_SCREEN_TRANSITION: SpanDef = SpanDef {
-    name: schema::spans::UI_SCREEN_TRANSITION,
-};
-pub const UI_RENDER: SpanDef = SpanDef {
-    name: schema::spans::UI_RENDER,
-};
-pub const BACKGROUND_CYCLE: SpanDef = SpanDef {
-    name: schema::spans::BACKGROUND_CYCLE,
-};
-pub const PREWARM_SCHEDULE: SpanDef = SpanDef {
-    name: schema::spans::PREWARM_SCHEDULE,
-};
-pub const PREWARM_ATTEMPT: SpanDef = SpanDef {
-    name: schema::spans::PREWARM_ATTEMPT,
-};
-pub const CONNECTION_ATTEMPT: SpanDef = SpanDef {
-    name: schema::spans::CONNECTION_ATTEMPT,
-};
-pub const PROCESS_COMMAND: SpanDef = SpanDef {
-    name: schema::spans::PROCESS_COMMAND,
-};
-pub const LAUNCH: SpanDef = SpanDef {
-    name: schema::spans::LAUNCH,
-};
-pub const LAUNCH_STAGE: SpanDef = SpanDef {
-    name: schema::spans::LAUNCH_STAGE,
-};
-pub const HTTP_CLIENT: SpanDef = SpanDef {
-    name: schema::spans::HTTP_CLIENT,
-};
-pub const DB_CLIENT: SpanDef = SpanDef {
-    name: schema::spans::DB_CLIENT,
-};
-pub const RPC_CLIENT: SpanDef = SpanDef {
-    name: schema::spans::RPC_CLIENT,
-};
-pub const RPC_SERVER: SpanDef = SpanDef {
-    name: schema::spans::RPC_SERVER,
-};
-pub const TELEMETRY_VALIDATE: SpanDef = SpanDef {
-    name: schema::spans::TELEMETRY_VALIDATE,
-};
-*/
 span_def!(APP_STARTUP, APP_STARTUP_DEF);
 span_def!(APP_SHUTDOWN, APP_SHUTDOWN_DEF);
 span_def!(UI_ACTION, UI_ACTION_DEF);
