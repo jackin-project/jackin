@@ -63,6 +63,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Reject pending insta snapshots
+        run: |
+          pending=$(git ls-files --others --exclude-standard '*.pending-snap'; find crates -name '*.pending-snap' -print)
+          if [ -n "$pending" ]; then echo "::error::pending insta snapshots found:"; echo "$pending"; exit 1; fi
+
       - name: Force rust=true construct=true on workflow_dispatch
         id: dispatch
         if: github.event_name == 'workflow_dispatch'
@@ -327,6 +332,8 @@ jobs:
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo registry warmup (${{ matrix.config.lane }})
+    outputs:
+      affected-packages: ${{ steps.affected-crates.outputs.packages }}
     env:
       CARGO_TARGET_DIR: target/ci-xtask
       CARGO_TERM_COLOR: always
@@ -438,6 +445,27 @@ jobs:
           fi
           cp .ci-prebuilt-tools/* target/ci-tools/
           cp .ci-prebuilt-xtask/jackin-xtask target/ci-tools/jackin-xtask
+      - id: affected-crates
+        name: Select affected crate tests
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            packages=$(target/ci-tools/jackin-xtask affected-crates --all)
+          elif [ -n "$BASE_REF" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+            packages=$(target/ci-tools/jackin-xtask affected-crates --base "origin/$BASE_REF")
+          elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
+            packages=$(target/ci-tools/jackin-xtask affected-crates --base "$BEFORE_SHA")
+          else
+            packages=$(target/ci-tools/jackin-xtask affected-crates --all)
+          fi
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
       - name: Publish resolved CI tool binaries
         if: >-
           steps.ci-tools-artifact.outputs.hit != 'true' &&
@@ -840,106 +868,13 @@ jobs:
           artifact-name: sccache-stats-ci-construct-e2e-image-${{ matrix.config.lane }}
           heading: sccache ci construct-e2e-image (${{ matrix.config.lane }})
 
-  # Plan 011: promote scheduled doc tests into PR CI + cheap pending-snap hygiene.
-  doctest:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
-    if: needs.changes.outputs.rust == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
-        package_group:
-          - { name: core, packages: "-p jackin -p jackin-core -p jackin-host -p jackin-instance -p jackin-isolation -p jackin-docker" }
-          - { name: capsule, packages: "-p jackin-capsule -p jackin-runtime -p jackin-protocol -p jackin-term -p jackin-agent-status" }
-          - { name: services, packages: "-p jackin-config -p jackin-diagnostics -p jackin-env -p jackin-image -p jackin-manifest -p jackin-usage" }
-          - { name: tools, packages: "-p jackin-console -p jackin-console-oppicker -p jackin-launch-tui -p jackin-process -p jackin-test-support -p jackin-build-meta -p jackin-dev -p jackin-xtask" }
-    runs-on: ${{ fromJSON(matrix.config.runner) }}
-    timeout-minutes: 60
-    name: cargo test --doc ${{ matrix.package_group.name }} (${{ matrix.config.lane }})
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_NET_OFFLINE: "true"
-      CARGO_TERM_COLOR: always
-      RUSTC_WRAPPER: sccache
-      SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: ./.github/actions/download-ci-xtask
-        with:
-          lane: ${{ matrix.config.lane }}
-      - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        env:
-          RUSTC_WRAPPER: ""
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ci-doctest-dev-${{ matrix.package_group.name }}-v3
-          cache-all-crates: "false"
-          cache-workspace-crates: "false"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-      - name: Reject pending insta snapshots
-        run: |
-          pending=$(git ls-files --others --exclude-standard '*.pending-snap'; find crates -name '*.pending-snap' -print)
-          if [ -n "$pending" ]; then echo "::error::pending insta snapshots found:"; echo "$pending"; exit 1; fi
-      - name: Enumerate changed insta snapshots for review
-        run: |
-          # Plan 024: absence of *.pending-snap is not proof of review. List every
-          # .snap that differs from origin/main so PR reviewers must acknowledge them.
-          base=$(git merge-base origin/main HEAD 2>/dev/null || true)
-          if [ -z "$base" ]; then
-            echo "No merge-base with origin/main; skipping snapshot-diff enumeration."
-            exit 0
-          fi
-          changed=$(git diff --name-only "$base" -- '*.snap' || true)
-          {
-            echo "## Changed insta snapshots"
-            if [ -z "$changed" ]; then
-              echo "_None vs origin/main._"
-            else
-              echo "Reviewer must acknowledge each changed \`.snap\` (hand-edited snapshots that match buggy output are rejected in review):"
-              echo
-              echo '```'
-              echo "$changed"
-              echo '```'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ -n "$changed" ]; then
-            echo "Changed .snap files:"
-            echo "$changed"
-          else
-            echo "No changed .snap files vs origin/main."
-          fi
-      - run: cargo test --doc ${{ matrix.package_group.packages }} --locked
-      - name: Capture sccache stats
-        if: always()
-        uses: ./.github/actions/sccache-stats
-        with:
-          artifact-name: sccache-stats-ci-doctest-${{ matrix.package_group.name }}-${{ matrix.config.lane }}
-          heading: sccache ci doctest ${{ matrix.package_group.name }} (${{ matrix.config.lane }})
-
   test:
     needs: [changes, construct-e2e-image, matrix-setup, cargo-registry-warmup]
     if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
     uses: ./.github/workflows/rust-nextest.yml
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
+      packages-json: ${{ needs.cargo-registry-warmup.outputs.affected-packages }}
       all-features: true
       cache-shared-key: ci-all-features-dev-workspace-v2
       save-target-cache: false
@@ -1051,9 +986,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-fuzz-workspace-v3
+          shared-key: ci-fuzz-${{ matrix.package.name }}-workspace-v4
           cache-all-crates: "false"
-          cache-workspace-crates: "false"
+          cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           workspaces: |
             . -> target
@@ -1075,21 +1010,25 @@ jobs:
               "$fuzz_target" -- -max_total_time=20
           done
   bench-build:
-    # Stable package groups avoid compiling crates that do not define benchmarks.
+    # One job per crate that defines benchmarks; never combine crate failures.
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
-        package_group:
-          - { name: host, packages: "-p jackin -p jackin-runtime" }
-          - { name: capsule, packages: "-p jackin-capsule -p jackin-term" }
-          - { name: data, packages: "-p jackin-config -p jackin-manifest -p jackin-usage" }
-          - { name: diagnostics, packages: "-p jackin-diagnostics" }
+        package:
+          - jackin
+          - jackin-capsule
+          - jackin-config
+          - jackin-diagnostics
+          - jackin-manifest
+          - jackin-runtime
+          - jackin-term
+          - jackin-usage
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo bench build ${{ matrix.package_group.name }} (${{ matrix.config.lane }})
+    name: cargo bench build ${{ matrix.package }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -1115,15 +1054,15 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-bench-${{ matrix.package_group.name }}-workspace-v3
+          shared-key: ci-bench-${{ matrix.package }}-workspace-v4
           cache-all-crates: "false"
-          cache-workspace-crates: "false"
+          cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: cargo build --benches ${{ matrix.package_group.packages }} --locked
+      - run: cargo build --benches -p "${{ matrix.package }}" --locked
 
   # Plan 022: scoped feature-powerset for crates with real optional behavior.
   # Full workspace powerset stays on the scheduled hygiene lane.
@@ -1174,7 +1113,7 @@ jobs:
         with:
           shared-key: ci-feature-powerset-${{ matrix.package }}-workspace-v2
           cache-all-crates: "false"
-          cache-workspace-crates: "false"
+          cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       # Crates that actually expose optional behavior (not test-support-only).
       - run: >
@@ -1195,14 +1134,10 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
-        package_group:
-          - { name: core, packages: "-p jackin -p jackin-core -p jackin-host -p jackin-instance -p jackin-isolation -p jackin-docker" }
-          - { name: capsule, packages: "-p jackin-capsule -p jackin-runtime -p jackin-protocol -p jackin-term -p jackin-agent-status" }
-          - { name: services, packages: "-p jackin-config -p jackin-diagnostics -p jackin-env -p jackin-image -p jackin-manifest -p jackin-usage" }
-          - { name: tools, packages: "-p jackin-console -p jackin-console-oppicker -p jackin-launch-tui -p jackin-process -p jackin-test-support -p jackin-build-meta -p jackin-dev -p jackin-xtask" }
+        package: ${{ fromJSON(needs.cargo-registry-warmup.outputs.affected-packages) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo msrv check ${{ matrix.package_group.name }} (${{ matrix.config.lane }})
+    name: cargo msrv check ${{ matrix.package }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -1231,16 +1166,16 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-msrv-${{ matrix.package_group.name }}-dev-workspace-v3
+          shared-key: ci-msrv-${{ matrix.package }}-dev-workspace-v4
           cache-all-crates: "false"
-          cache-workspace-crates: "false"
+          cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - name: cargo check on MSRV
-        run: cargo check ${{ matrix.package_group.packages }} --all-targets --locked
+        run: cargo check -p "${{ matrix.package }}" --all-targets --locked
         env:
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
   audit:
@@ -1317,7 +1252,6 @@ jobs:
       - file-size-gate
       - check-default
       - construct-e2e-image
-      - doctest
       - test
       - fuzz
       - bench-build

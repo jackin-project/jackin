@@ -10,6 +10,11 @@ on:
         description: JSON array of runner lane configs. Each item has lane and JSON-encoded runner fields.
         required: true
         type: string
+      packages-json:
+        description: JSON array of exact affected workspace crate names.
+        required: false
+        default: '["jackin","jackin-agent-status","jackin-build-meta","jackin-capsule","jackin-config","jackin-console","jackin-console-oppicker","jackin-core","jackin-dev","jackin-diagnostics","jackin-docker","jackin-env","jackin-host","jackin-image","jackin-instance","jackin-isolation","jackin-launch-tui","jackin-manifest","jackin-pr-trailers","jackin-process","jackin-protocol","jackin-runtime","jackin-term","jackin-test-support","jackin-usage","jackin-xtask"]'
+        type: string
       all-features:
         description: Run each package with all Cargo features enabled.
         required: true
@@ -43,16 +48,10 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(inputs.runner-configs-json) }}
-        package_group:
-          - { name: jackin, packages: "-p jackin" }
-          - { name: jackin-capsule, packages: "-p jackin-capsule" }
-          - { name: jackin-runtime, packages: "-p jackin-runtime" }
-          - { name: small-tools, packages: "-p jackin-console -p jackin-console-oppicker -p jackin-xtask" }
-          - { name: small-services, packages: "-p jackin-config -p jackin-diagnostics -p jackin-env -p jackin-image" }
-          - { name: small-foundation, packages: "-p jackin-agent-status -p jackin-build-meta -p jackin-core -p jackin-dev -p jackin-docker -p jackin-host -p jackin-instance -p jackin-isolation -p jackin-launch-tui -p jackin-manifest -p jackin-pr-trailers -p jackin-process -p jackin-protocol -p jackin-term -p jackin-test-support -p jackin-usage" }
+        package: ${{ fromJSON(inputs.packages-json) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo nextest ${{ matrix.package_group.name }} (${{ matrix.config.lane }})
+    name: cargo test ${{ matrix.package }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_OFFLINE: "true"
@@ -89,9 +88,12 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ inputs.cache-shared-key }}-package-${{ matrix.package_group.name }}
+          shared-key: ${{ inputs.cache-shared-key }}-package-${{ matrix.package }}
           cache-all-crates: "false"
-          cache-workspace-crates: "false"
+          # This job is the sole owner of this crate's test cache. Preserve its
+          # compiled workspace outputs so an input-identical run executes tests
+          # without rebuilding the crate or its workspace dependencies.
+          cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           save-if: >-
             ${{ github.ref == 'refs/heads/main' ||
@@ -100,8 +102,8 @@ jobs:
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
-          # Each package group owns a semantic dependency cache. Workspace
-          # outputs are pruned so duplicated package outputs cannot evict the toolchain
+          # Each crate owns a semantic dependency cache. Workspace outputs are
+          # pruned so duplicated crate outputs cannot evict the toolchain
           # and registry layers from the repository cache budget.
           # Both lanes use the same target-cache contract. Velnor's persistent
           # runner state remains a transparent accelerator beneath it.
@@ -110,17 +112,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          read -r -a args <<< "${{ matrix.package_group.packages }}"
-          args+=(--no-tests=pass --color=always --locked --offline --profile ci)
+          args=(-p "${{ matrix.package }}" --no-tests=pass --color=always --locked --offline --profile ci)
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
           cargo nextest run "${args[@]}"
+      - name: Run crate doctests
+        run: cargo test --doc -p "${{ matrix.package }}" --locked --offline
       - name: Upload junit + timing
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nextest-junit-${{ matrix.package_group.name }}-${{ matrix.config.lane }}
+          name: nextest-junit-${{ matrix.package }}-${{ matrix.config.lane }}
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
       # Plan 027: suite-time family enforces when junit exists (skipped locally).
@@ -133,7 +136,7 @@ jobs:
         shell: bash
         run: |
           if [ -f target/nextest/ci/junit.xml ]; then
-            python3 - "$GITHUB_STEP_SUMMARY" "${{ matrix.package_group.name }}" <<'PY'
+            python3 - "$GITHUB_STEP_SUMMARY" "${{ matrix.package }}" <<'PY'
           import sys
           import xml.etree.ElementTree as ET
           from pathlib import Path
@@ -189,78 +192,14 @@ jobs:
             exit 1
           fi
 
-      - name: Capture sccache stats
-        if: always()
-        uses: ./.github/actions/sccache-stats
-        with:
-          artifact-name: sccache-stats-nextest-${{ matrix.package_group.name }}-${{ matrix.config.lane }}
-          heading: sccache nextest ${{ matrix.package_group.name }} (${{ matrix.config.lane }})
-
-  docker-e2e:
-    if: inputs.docker-e2e
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON(inputs.runner-configs-json) }}
-    runs-on: ${{ fromJSON(matrix.config.runner) }}
-    timeout-minutes: 60
-    name: Docker E2E (${{ matrix.config.lane }})
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_NET_OFFLINE: "true"
-      CARGO_TERM_COLOR: always
-      RUSTC_WRAPPER: sccache
-      SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: ./.github/actions/download-ci-xtask
-        with:
-          lane: ${{ matrix.config.lane }}
-      - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        env:
-          # sccache install: blank wrapper in case binstall source-falls-back
-          # to cargo, which would probe rustc through a missing sccache.
-          RUSTC_WRAPPER: ""
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ci-docker-e2e-dev-workspace-v1
-          cache-all-crates: "false"
-          cache-workspace-crates: "false"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: >-
-            ${{ github.ref == 'refs/heads/main' ||
-                github.event_name == 'workflow_dispatch' ||
-                (github.event_name == 'pull_request' &&
-                 github.event.pull_request.head.repo.full_name == github.repository) }}
-          # Docker E2E owns a separate dependency graph. Package jobs keep the
-          # all-features namespace so this narrower graph cannot seed their
-          # shared dependency cache.
-      - name: Download construct image for E2E
-        if: inputs.construct-image-changed
+      - name: Download construct image for Docker E2E
+        if: matrix.package == 'jackin' && inputs.docker-e2e && inputs.construct-image-changed
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: construct-trixie-image-${{ matrix.config.lane }}
           path: target/construct-image
       - name: Recover construct image through the Actions API
-        if: inputs.construct-image-changed
+        if: matrix.package == 'jackin' && inputs.docker-e2e && inputs.construct-image-changed
         shell: bash
         env:
           ARTIFACT_NAME: construct-trixie-image-${{ matrix.config.lane }}
@@ -274,28 +213,24 @@ jobs:
           if [ -f "$ARTIFACT_PATH/construct-trixie.tar" ]; then
             exit 0
           fi
-
-          artifact_id=$(
-            gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
-              --paginate \
-              --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" \
-              | head -n 1
-          )
+          artifact_id=$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" --paginate \
+            --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" | head -n 1)
           if [ -z "$artifact_id" ]; then
             echo "::error::artifact not found: ${ARTIFACT_NAME}"
             exit 1
           fi
-
           archive="$ARTIFACT_PATH/.artifact.zip"
           gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
           python3 -m zipfile -e "$archive" "$ARTIFACT_PATH"
           rm "$archive"
-      - name: Load construct image for E2E
-        if: inputs.construct-image-changed
+      - name: Load construct image for Docker E2E
+        if: matrix.package == 'jackin' && inputs.docker-e2e && inputs.construct-image-changed
         run: docker load --input target/construct-image/construct-trixie.tar
-      - name: Build jackin-capsule for nextest
+      - name: Build jackin-capsule for Docker E2E
+        if: matrix.package == 'jackin' && inputs.docker-e2e
         run: cargo build -p jackin-capsule --bin jackin-capsule --locked --offline
       - name: Point nextest at jackin-capsule
+        if: matrix.package == 'jackin' && inputs.docker-e2e
         run: |
           capsule_bin="${CARGO_TARGET_DIR:-target}/debug/jackin-capsule"
           chmod +x "$capsule_bin"
@@ -304,6 +239,7 @@ jobs:
             *) echo "JACKIN_CAPSULE_BIN=$PWD/$capsule_bin" >> "$GITHUB_ENV" ;;
           esac
       - name: Run Docker E2E smoke tests
+        if: matrix.package == 'jackin' && inputs.docker-e2e
         shell: bash
         run: |
           set -euo pipefail
@@ -313,20 +249,18 @@ jobs:
           cargo nextest run -p jackin --features e2e --profile docker-e2e \
             --no-tests=pass --color=always --locked --offline
       - name: Upload Docker E2E junit + timing
-        if: always()
+        if: always() && matrix.package == 'jackin' && inputs.docker-e2e
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nextest-junit-docker-e2e-${{ matrix.config.lane }}
           path: target/nextest/docker-e2e/junit.xml
           if-no-files-found: ignore
       - name: Fail on unquarantined Docker E2E flakes
-        if: always()
+        if: always() && matrix.package == 'jackin' && inputs.docker-e2e
         shell: bash
         run: |
           [ -f target/nextest/docker-e2e/junit.xml ] || exit 0
-          if ! grep -q 'flaky="true"' target/nextest/docker-e2e/junit.xml; then
-            exit 0
-          fi
+          if ! grep -q 'flaky="true"' target/nextest/docker-e2e/junit.xml; then exit 0; fi
           mapfile -t flaky_names < <(
             grep 'flaky="true"' target/nextest/docker-e2e/junit.xml \
               | sed -n 's/.*name="\([^"]*\)".*/\1/p'
@@ -343,9 +277,10 @@ jobs:
             printf "%s\n" "${unquarantined[@]}"
             exit 1
           fi
+
       - name: Capture sccache stats
         if: always()
         uses: ./.github/actions/sccache-stats
         with:
-          artifact-name: sccache-stats-docker-e2e-${{ matrix.config.lane }}
-          heading: sccache docker-e2e (${{ matrix.config.lane }})
+          artifact-name: sccache-stats-nextest-${{ matrix.package }}-${{ matrix.config.lane }}
+          heading: sccache test ${{ matrix.package }} (${{ matrix.config.lane }})

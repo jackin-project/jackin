@@ -76,8 +76,11 @@ producer; both lanes restore that same portable output.
 A cold bootstrap is recorded as a cache miss, not hidden by raising the target.
 Fan-out jobs stay offline and consume the warmup result. Cross-run compiler
 result sharing is deferred to the [Shared CI compiler cache](<docs/content/docs/roadmap/(infrastructure)/shared-ci-compiler-cache.mdx>)
-roadmap item; until that backend ships, logical sharding and bounded Cargo target
-caches keep sequential work and cache-quota churn out of the critical path.
+roadmap item. Until that backend ships, `jackin-xtask affected-crates` reads the
+Cargo metadata graph and maps a diff to changed crates plus their transitive
+reverse workspace dependents. Workspace-wide inputs and unrecognized Rust paths
+fail safe to every crate. Each selected crate owns one job and one target-cache
+namespace, including its nextest tests, doctests, and conditional Docker E2E.
 
 ## Verification matrix
 
@@ -106,7 +109,7 @@ fields. The shared problem matcher is registered by CI for human/GitHub output.
 Changed `.snap` files are enumerated in CI against the PR merge-base with `origin/main` (step summary + job log). Reviewers must acknowledge each listed snapshot; hand-edited snapshots that merely match buggy output are rejected in review. Pending files (`*.pending-snap`) still fail CI. Prefer `cargo insta review` / `cargo insta accept` over hand-editing `.snap` bodies.
 
 
-Every crate is verified by `cargo nextest run -p <crate>`. Exceptions worth naming: `jackin` E2E tests need `--features e2e --profile docker-e2e`; doctests need `cargo test --doc --workspace --locked`. The machine-checkable per-member map is also emitted by `cargo xtask health --format json` under `verification_map`.
+Every crate is verified by `cargo nextest run -p <crate>`. Exceptions worth naming: `jackin` E2E tests need `--features e2e --profile docker-e2e`; crate-owned doctests use `cargo test --doc -p <crate> --locked`. The machine-checkable per-member map is also emitted by `cargo xtask health --format json` under `verification_map`.
 
 ## Recording capsule render-conformance fixtures
 
@@ -155,9 +158,9 @@ Does not apply to:
 
 ### Flake policy
 
-CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. A crate is never partitioned across multiple nextest jobs: `jackin`, `jackin-capsule`, and `jackin-runtime` each have one job, while low-cost crates run in disjoint package groups. Docker E2E also runs as one job. Every package job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
+CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate; it has no shards and no multi-crate buckets. The `jackin` job also owns its conditional Docker E2E steps, so that suite does not create a second test job for the crate. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
-Junit artifacts are named `nextest-junit-<package-group>-<lane>` and seed the Phase 0 suite-wall-time baseline once measured.
+Junit artifacts are named `nextest-junit-<crate>-<lane>` and seed the Phase 0 suite-wall-time baseline once measured.
 Each package job runs `cargo xtask lint ratchet --only suite-time`; it must not invoke
 the all-family ratchet because unrelated artifact providers can add hidden build
 work. The telemetry conformance job similarly owns generation of

@@ -3,6 +3,7 @@
 //! **Architecture Invariant:** T1.
 //! Entry point: [`main`] — cargo xtask command dispatcher.
 
+mod affected_crates;
 mod agent_files;
 mod agent_links;
 mod arch;
@@ -40,6 +41,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Print the crates whose tests are affected by a Git diff.
+    AffectedCrates(affected_crates::AffectedCratesArgs),
     /// Run the local CI merge-readiness gate.
     ///
     /// Partitions (`--only`, repeatable): lint, policy, tests, msrv, powerset,
@@ -178,6 +181,7 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
+        Command::AffectedCrates(args) => affected_crates::run(args),
         Command::Construct(cmd) => construct::run(cmd),
         Command::Ci(args) => ci::run(args),
         Command::Pr(cmd) => pr::run(cmd),
