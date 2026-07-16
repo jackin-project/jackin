@@ -1448,7 +1448,7 @@ fn run_optional_command(program: &str, args: &[&str]) -> bool {
     // "Optional" means "do not abort runtime_setup", not "swallow the
     // exit code." A failing `claude mcp add tirith` or `shellfirm`
     // call leaves the role launched without the MCP wired up, so log
-    // the exact failure to the multiplexer log for operator triage.
+    // the exact failure through governed telemetry for operator triage.
     match jackin_process::exec_sync(&request) {
         Ok(result) if result.success => true,
         Ok(result) => {

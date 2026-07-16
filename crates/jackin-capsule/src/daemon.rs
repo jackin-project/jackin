@@ -1358,7 +1358,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // label. A send failure here means the receiver was
                 // closed by a takeover/cancellation race in the same
                 // tick; log the first failure so a wedged first-frame
-                // queue is observable in the multiplexer log instead
+                // queue is observable through governed telemetry instead
                 // of silently leaving the operator's terminal blank.
                 let mut initial_frames: Vec<(InitialFrameKind, Vec<u8>)> = Vec::with_capacity(5);
                 initial_frames.push((

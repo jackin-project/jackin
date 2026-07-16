@@ -17,7 +17,7 @@ pub enum Effect {
 
 /// Stages of the takeover/first-attach burst. Each variant maps to a
 /// human-readable label used in the clog line when the send fails so a
-/// dropped initial frame is observable in the multiplexer log.
+/// dropped initial frame is observable through governed telemetry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum InitialFrameKind {
     Welcome,

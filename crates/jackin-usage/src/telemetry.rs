@@ -23,7 +23,7 @@ struct SessionContext {
 }
 
 /// Capsule session correlation context captured by [`init`], for local sinks
-/// (e.g. the multiplexer log banner).
+/// (for example, the compact startup banner).
 #[must_use]
 pub fn session_context() -> Option<(String, Option<String>)> {
     SESSION_CONTEXT

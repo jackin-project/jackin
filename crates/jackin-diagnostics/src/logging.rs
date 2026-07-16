@@ -30,7 +30,6 @@ pub enum TelemetrySink {
     OtlpSpans,
     OtlpLogs,
     Console,
-    DiagnosticsFile,
 }
 
 pub fn set_debug_mode(enabled: bool) {
@@ -67,7 +66,6 @@ pub fn sink_level(sink: TelemetrySink, debug: bool) -> TelemetryLevel {
         TelemetrySink::OtlpSpans => "JACKIN_TELEMETRY_OTLP_SPANS_LEVEL",
         TelemetrySink::OtlpLogs => "JACKIN_TELEMETRY_OTLP_LOGS_LEVEL",
         TelemetrySink::Console => "JACKIN_TELEMETRY_CONSOLE_LEVEL",
-        TelemetrySink::DiagnosticsFile => "JACKIN_TELEMETRY_FILE_LEVEL",
     };
     std::env::var(env_key)
         .ok()
