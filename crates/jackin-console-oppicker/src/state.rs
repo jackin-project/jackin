@@ -218,16 +218,6 @@ impl OpPickerState {
             }),
         );
 
-        if built.empty_reference_with_sibling_refs {
-            jackin_diagnostics::telemetry_debug!(
-                "op_picker",
-                "empty field.reference for {}/{} (id {}); sibling fields have references — falling back to 3-segment URI",
-                vault.name,
-                item.name,
-                field.id
-            );
-        }
-
         jackin_core::OpRef {
             op: built.op,
             path: built.path,

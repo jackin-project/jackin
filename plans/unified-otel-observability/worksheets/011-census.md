@@ -36,7 +36,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-capsule/src/util.rs` | 0 | 5 | 5 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-config/src/app_config/persist.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-config/src/migrations.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-console-oppicker/src/state.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-console-oppicker/src/state.rs` | 1 | 0 | 0 | 0 | 0 | 0 | DELETE — returned reference owns fallback behavior; vault/item names and field identifiers prohibited |
 | `crates/jackin-console/src/services/role_source.rs` | 5 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-console/src/tui/input/auth.rs` | 3 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-console/src/tui/input/editor.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
@@ -86,7 +86,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-runtime/src/runtime/repo_cache.rs` | 4 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/runtime/universe.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-term/src/grid/perform.rs` | 0 | 0 | 1 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-usage/src/logging.rs` | 0 | 0 | 1 | 1 | 0 | 0 | governed DEBUG detail; structural counts only; raw payload removed |
+| `crates/jackin-usage/src/logging.rs` | 0 | 0 | 1 | 1 | 0 | 0 | REPLACE — registered `app.crash` panic boundary owns the error and flush; raw panic payload prohibited |
 | `crates/jackin-usage/src/telemetry.rs` | 0 | 3 | 1 | 0 | 0 | 0 | REPLACE remaining init failure — typed health plus best-effort `config_error`; DELETE duplicate active lifecycle containing session identity |
 | `crates/jackin-usage/src/token_monitor.rs` | 0 | 0 | 1 | 0 | 0 | 0 | REPLACE — `ResultTelemetryExt` emits typed `io_error`; collector absence owns behavior; provider labels, host paths, and raw errors prohibited |
 | `crates/jackin-usage/src/token_monitor/opencode.rs` | 0 | 0 | 3 | 0 | 0 | 0 | REPLACE — `ResultTelemetryExt` emits typed `db_error`; collector false outcome owns behavior; database path and raw errors prohibited |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production census after the isolation, instance, host, image-fallback, launch-TUI, and usage-collector migration passes: 145 `telemetry_info!`, 258 `telemetry_debug!`, 10 `telemetry_warn!`, and 3 `telemetry_error!` sites. The generic macro machinery and these 416 sites remain open.
+Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, and oppicker migration passes: 145 `telemetry_info!`, 252 `telemetry_debug!`, 10 `telemetry_warn!`, and 3 `telemetry_error!` sites. The generic macro machinery and these 410 sites remain open; macro names in definitions or documentation are excluded.
