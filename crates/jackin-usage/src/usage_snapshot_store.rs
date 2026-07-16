@@ -18,6 +18,7 @@ use jackin_core::account_key_hash;
 use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
 #[cfg(test)]
 use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
+use jackin_telemetry::ResultTelemetryExt as _;
 
 const SCHEMA_VERSION: &str = "4";
 
@@ -381,12 +382,10 @@ async fn upsert_account_snapshot_rows(
         {
             // Roll the whole batch back so a mid-batch failure never leaves a
             // partially-written snapshot set; surface the original row error.
-            if let Err(rollback_err) =
+            let _rollback =
                 store_backend::operation(DbOperation::Rollback, conn.execute("ROLLBACK", ()))
                     .await
-            {
-                jackin_diagnostics::telemetry_debug!("capsule", "telemetry snapshot rollback failed: {rollback_err}");
-            }
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError);
             return Err(format!("upsert telemetry account snapshot failed: {err}"));
         }
     }

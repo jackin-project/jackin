@@ -93,11 +93,11 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-usage/src/usage.rs` | 0 | 4 | 1 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-usage/src/usage/codex.rs` | 0 | 2 | 2 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-usage/src/usage/refresh.rs` | 0 | 9 | 2 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
-| `crates/jackin-usage/src/usage_snapshot_store.rs` | 0 | 0 | 1 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-usage/src/usage_snapshot_store.rs` | 0 | 0 | 1 | 0 | 0 | 0 | REPLACE — `ResultTelemetryExt` emits typed `db_error`; original upsert error remains the returned owner; raw rollback error prohibited |
 | `crates/jackin/src/console/effects.rs` | 14 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin/src/console/services.rs` | 2 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin/src/console/tui/run.rs` | 2 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production census after the isolation, instance, host, image-fallback, launch-TUI, and token-monitor deletion passes: 158 `telemetry_info!`, 262 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 434 sites remain open.
+Current production census after the isolation, instance, host, image-fallback, launch-TUI, and usage-collector migration passes: 158 `telemetry_info!`, 261 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 433 sites remain open.
