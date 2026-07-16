@@ -5,14 +5,14 @@ ARG SHELLFIRM_VERSION
 # the final image. Building inside Docker — rather than prebuilding on the host —
 # keeps it off the host's mise/cargo-binstall environment and produces the
 # binary for the target image architecture.
-FROM rust:1.97.0-trixie@sha256:44637ff22d0a6571a221bfaf137849711ad02ff4723dbb4736e297538f6a3e60 AS shellfirm-builder
+FROM rust:1.97.0-trixie@sha256:b92b8c8574f8f3b207fcb0912fb3e2de4041580b5934d90312d53938c9a038a9 AS shellfirm-builder
 
 ARG SHELLFIRM_VERSION
 
 RUN cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked --root /opt/shellfirm && \
     /opt/shellfirm/bin/shellfirm --version | grep -F "${SHELLFIRM_VERSION}"
 
-FROM debian:trixie-20260623@sha256:d07d1b51c39f51188e60be9b64e6bf769fa94e187f092bc32b91305cfa34ba5a
+FROM debian:13@sha256:fac46bff2e02f51425b6e33b0e1169f55dfb053d83511ca28aa50c09fd5ed7a4
 
 ARG SHELLFIRM_VERSION
 
@@ -95,14 +95,31 @@ RUN case "${TARGETARCH}" in \
     cd / && \
     rm -rf "${workdir}"
 
-# Install mise with the official standalone installer. MISE_VERSION is pinned
-# in versions.env so Renovate bumps invalidate this layer. The installer
-# downloads the checksummed release asset from GitHub, where every version
-# stays available — the mise apt repository only serves the latest package,
-# so an apt version pin breaks on every upstream release.
+# Install the pinned mise release directly. Avoid the `mise.run | sh` pipe:
+# it can block without emitting BuildKit progress when a version invalidates
+# this layer. The release archive and its published checksum are both fetched
+# with bounded retries, so failures are visible and terminate promptly.
 ARG MISE_VERSION
 RUN test -n "${MISE_VERSION}" || { echo "MISE_VERSION build arg is required" >&2; exit 1; } && \
-    curl -fsSL https://mise.run | MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh && \
+    case "${TARGETARCH}" in \
+      amd64) mise_arch=x64 ;; \
+      arm64) mise_arch=arm64 ;; \
+      *) printf 'unsupported TARGETARCH for mise: %s\n' "${TARGETARCH}" >&2 && exit 1 ;; \
+    esac && \
+    archive="mise-v${MISE_VERSION}-linux-${mise_arch}.tar.gz" && \
+    base="https://github.com/jdx/mise/releases/download/v${MISE_VERSION}" && \
+    workdir="$(mktemp -d)" && \
+    cd "${workdir}" && \
+    curl --fail --location --show-error --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
+      --output "${archive}" "${base}/${archive}" && \
+    curl --fail --location --show-error --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
+      --output SHASUMS256.txt "${base}/SHASUMS256.txt" && \
+    grep "  ./${archive}$" SHASUMS256.txt | sed 's#  \./#  #' > checksums-mise.txt && \
+    sha256sum -c checksums-mise.txt && \
+    tar -xzf "${archive}" --strip-components=2 -C /usr/local/bin mise/bin/mise && \
+    chmod 0755 /usr/local/bin/mise && \
+    cd / && \
+    rm -rf "${workdir}" && \
     mise --version
 
 # Install Docker CLI, Buildx, and Compose plugins
