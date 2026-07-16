@@ -123,7 +123,13 @@ use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{List, ListRow, RowRole, TextInput, TextInputState, Validation};
 
 pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
-    let inner = render_dialog_shell(frame, area, Some("Select Role"), PanelEmphasis::Focused, &termrock::Theme::default());
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Select Role"),
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
+    );
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

@@ -87,7 +87,13 @@ impl<A: AgentChoice> Default for AgentChoiceState<A> {
 }
 
 pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentChoiceState<A>) {
-    let inner = render_dialog_shell(frame, area, Some("Pick Agent"), PanelEmphasis::Focused, &termrock::Theme::default());
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Pick Agent"),
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
+    );
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

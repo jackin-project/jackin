@@ -296,10 +296,7 @@ pub(crate) fn usage_lines_for_row(
         "Focused agent" | "Focused account" => {
             lines.push(Line::from(vec![
                 usage_content_indent(),
-                Span::styled(
-                    value.to_owned(),
-                    jackin_core::tui_theme::text_strong(),
-                ),
+                Span::styled(value.to_owned(), jackin_core::tui_theme::text_strong()),
             ]));
         }
         "Provider" | "Account" | "Username" | "Plan" | "Auth" | "Status" | "Updated"
@@ -350,10 +347,7 @@ pub(crate) fn usage_legacy_overview_provider_lines(
     let status = parts[2];
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(
-            label.to_owned(),
-            jackin_core::tui_theme::text_strong(),
-        ),
+        Span::styled(label.to_owned(), jackin_core::tui_theme::text_strong()),
         Span::raw("  "),
         Span::styled(account.to_owned(), Style::default().fg(text_fg())),
         Span::raw("  "),
@@ -518,10 +512,7 @@ pub(crate) fn usage_quota_bucket_lines(
     }
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(
-            display_label,
-            jackin_core::tui_theme::text_strong(),
-        ),
+        Span::styled(display_label, jackin_core::tui_theme::text_strong()),
     ]));
 
     let Some(first) = value.split(" · ").find(|part| !part.trim().is_empty()) else {
@@ -746,10 +737,7 @@ pub(crate) fn usage_quota_bucket_compact_lines(
     let detail = compact_bucket_detail_for_width(label, &detail, width);
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(
-            label.to_owned(),
-            jackin_core::tui_theme::text_strong(),
-        ),
+        Span::styled(label.to_owned(), jackin_core::tui_theme::text_strong()),
         Span::styled("  ", text_muted()),
         Span::styled(detail, Style::default().fg(text_fg())),
     ]));

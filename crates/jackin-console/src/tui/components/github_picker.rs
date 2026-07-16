@@ -85,7 +85,13 @@ use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{List, ListRow, RowRole};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
-    let inner = render_dialog_shell(frame, area, Some("Open in GitHub"), PanelEmphasis::Focused, &termrock::Theme::default());
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Open in GitHub"),
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
+    );
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

@@ -603,14 +603,7 @@ fn render_usage_info(
     let body = usage_body_rect(area);
     let lines = usage_info_lines_for_width(state, body.width);
     let mut scroll = state.scroll.clone();
-    termrock::layout::render_scrollable_dialog_body(
-        frame,
-        area,
-        body,
-        &lines,
-        &mut scroll,
-        &theme,
-    );
+    termrock::layout::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll, &theme);
 }
 
 fn render_filter_picker(

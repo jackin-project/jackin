@@ -10,7 +10,7 @@ Usage, pricing, telemetry, and token monitors for the `jackin-capsule` daemon. O
 
 ## Architecture tier and allowed dependencies
 
-**Infrastructure** (capsule-side observability/accounting). Allowed inward dependencies: `jackin-core`, `jackin-protocol`, `jackin-diagnostics`. No dependency on `jackin-capsule` (would be circular), `jackin-tui`, `jackin-console`, or any presentation crate. Logging infrastructure (`logging`, `clog!`, `cdebug!`) lives here so both binaries share one tier.
+**Infrastructure** (capsule-side observability/accounting). Allowed inward dependencies: `jackin-core`, `jackin-protocol`, `jackin-diagnostics`. No dependency on `jackin-capsule` (would be circular), `jackin-console`, `jackin-launch-tui`, or any presentation crate (TermRock is only for presentation crates). Logging infrastructure (`logging`, `clog!`, `cdebug!`) lives here so both binaries share one tier.
 
 ## Structure
 

@@ -42,11 +42,7 @@ pub fn apply_raw_dialog_scroll_key(
 
 /// Apply SGR mouse-wheel button bits to dialog scroll offsets.
 #[must_use]
-pub fn apply_sgr_wheel_button(
-    scroll: &mut DialogScroll,
-    button: u8,
-    axes: ScrollAxes,
-) -> bool {
+pub fn apply_sgr_wheel_button(scroll: &mut DialogScroll, button: u8, axes: ScrollAxes) -> bool {
     let forward = (button & 1) != 0;
     let horizontal = (button & 2) != 0 || (button & 4) != 0;
     let kind = match (horizontal, forward) {

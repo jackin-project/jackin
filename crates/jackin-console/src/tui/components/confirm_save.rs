@@ -19,11 +19,11 @@ use ratatui::{
 
 use jackin_core::ModalOutcome;
 use termrock::layout::render_dialog_shell;
-use termrock::widgets::PanelEmphasis;
 use termrock::scroll::ScrollAxes;
 use termrock::scroll::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };
+use termrock::widgets::PanelEmphasis;
 use termrock::{
     input::KeyCode,
     keymap::{KeyBinding, KeyChord, Keymap, SCROLL_HINT_KEYMAP, Visibility},
@@ -274,7 +274,13 @@ pub fn prepare_for_render<M: Clone>(area: Rect, state: &mut ConfirmSaveState<M>)
 }
 
 pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveState<M>) {
-    let inner = render_dialog_shell(frame, area, Some("Confirm changes"), PanelEmphasis::Focused, &termrock::Theme::default());
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Confirm changes"),
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
+    );
 
     // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
     // responsible for any deeper indentation; we just add a uniform
@@ -293,13 +299,7 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
     let (content, action_row) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
     let theme = termrock::Theme::default();
 
-    render_lines_with_offset_in_area(
-        frame,
-        content,
-        &indented,
-        state.scroll_offset,
-        &theme,
-    );
+    render_lines_with_offset_in_area(frame, content, &indented, state.scroll_offset, &theme);
 
     let actions = [
         Action {

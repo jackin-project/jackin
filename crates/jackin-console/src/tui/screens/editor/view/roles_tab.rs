@@ -68,10 +68,7 @@ pub(crate) fn role_lines(
         .add_modifier(Modifier::BOLD);
 
     let mut status_spans = vec![
-        Span::styled(
-            "  Allowed roles:  ",
-            jackin_core::tui_theme::text_strong(),
-        ),
+        Span::styled("  Allowed roles:  ", jackin_core::tui_theme::text_strong()),
         Span::styled(badge_text, badge_style),
     ];
     if !is_all {
