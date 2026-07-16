@@ -251,7 +251,9 @@ permits the exact-source timestamp fast path; a different key preserves
 checkout timestamps so Cargo rebuilds changed first-party inputs while reusing
 compiled dependencies. Successful changed-source jobs replace the seed in one
 publish step. Semantic crate-result markers remain the higher-level path that
-skips an input-identical crate job entirely.
+skips an input-identical crate job entirely. During v5-to-v6 population, a v6
+miss may resolve the known input-identical v5 artifact directly from the same
+source key; it never follows or republishes a v5 latest-target pointer.
 
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses

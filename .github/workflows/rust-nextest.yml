@@ -203,6 +203,7 @@ jobs:
           {
             echo "name=$(jq -r '.name' <<< "$result")"
             echo "hit=$(jq -r '.hit' <<< "$result")"
+            echo "known-exact=$(jq -r '.known_exact' <<< "$result")"
             echo "artifact-id=$(jq -r '.artifact_id' <<< "$result")"
           } >> "$GITHUB_OUTPUT"
       - name: Use runner-local target seed
@@ -236,6 +237,7 @@ jobs:
         shell: bash
         env:
           CACHE_KEY: ${{ steps.crate-target-key.outputs.key }}
+          KNOWN_EXACT: ${{ steps.crate-target.outputs.known-exact }}
         run: |
           set -euo pipefail
           target_dir=${CARGO_TARGET_DIR:-target}
@@ -243,7 +245,8 @@ jobs:
           tar --zstd --strip-components=1 -C "$target_dir" \
             -xf target/.ci-restore/target.tar.zst
           canonical_hit=false
-          if [ "$(cat "$target_dir/.ci-source-key" 2>/dev/null || true)" = "$CACHE_KEY" ]; then
+          if [ "$KNOWN_EXACT" = true ] ||
+             [ "$(cat "$target_dir/.ci-source-key" 2>/dev/null || true)" = "$CACHE_KEY" ]; then
             canonical_hit=true
           fi
           rm -f "$target_dir/.ci-source-key"
