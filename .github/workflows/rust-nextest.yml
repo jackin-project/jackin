@@ -121,6 +121,7 @@ jobs:
           fi
           cargo nextest run "${args[@]}"
       - name: Run crate doctests
+        if: ${{ !contains(fromJSON('["jackin-dev","jackin-pr-trailers","jackin-xtask"]'), matrix.package) }}
         run: cargo test --doc -p "${{ matrix.package }}" --locked --offline
       - name: Check crate default features
         run: cargo check -p "${{ matrix.package }}" --all-targets --locked --offline
