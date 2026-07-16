@@ -253,20 +253,13 @@ jobs:
       - name: Bootstrap buildx
         run: mise run construct-init-buildx
 
-      - name: Expose GitHub Actions cache runtime
-        if: matrix.config.lane != 'GitHub' || needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
-        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
-
       - name: Build ${{ matrix.config.platform }} without push
         if: matrix.config.lane != 'GitHub' || needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         env:
-          # Registry buildcache (written by main) is the primary warm source — avoids a cold
-          # GHA start when the scope is empty or evicted. GHA scope is secondary,
-          # so PR refs retain only final layers while main owns the full cache.
-          CACHE_FROM: |
-            type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
-            type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }}
-          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=min,ignore-error=true
+          # Both runner lanes restore the same durable cache written by main.
+          # Velnor's persistent BuildKit state remains a transparent local
+          # accelerator; it does not change this workflow configuration.
+          CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
         run: mise run construct-build-platform ${{ matrix.config.platform }}
 
       - name: Push ${{ matrix.config.platform }} image by digest

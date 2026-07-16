@@ -67,10 +67,11 @@ gates. The same artifact carries the pinned Cargo CI tools so fan-out jobs do
 not independently install `nextest`, `deny`, `shear`, `audit`, `fuzz`, `hack`,
 or `sccache`. GitHub and Velnor use the same workflow, commands, cache keys, and
 failure policy; Velnor may be faster only because its runner-local state
-persists. The prepared xtask also has a seven-day artifact keyed by the exact
-Git source tree, operating system, and architecture, so an equivalent rerun or
-post-merge tree reuses the binary instead of compiling it again. GitHub is the
-canonical Linux binary producer; both lanes restore that same portable output.
+persists. The prepared xtask also has a seven-day artifact keyed by its actual
+transitive source inputs, Cargo graph/configuration, toolchain, operating
+system, and architecture. Unrelated workflow or docs edits therefore reuse the
+binary instead of compiling it again. GitHub is the canonical Linux binary
+producer; both lanes restore that same portable output.
 
 A cold bootstrap is recorded as a cache miss, not hidden by raising the target.
 Fan-out jobs stay offline and consume the warmup result. Cross-run compiler
@@ -154,10 +155,10 @@ Does not apply to:
 
 ### Flake policy
 
-CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The sharded workflow partitions the three largest crates by a stable nextest hash and splits the remaining workspace into explicit package groups. Every shard uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
+CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. A crate is never partitioned across multiple nextest jobs: `jackin`, `jackin-capsule`, and `jackin-runtime` each have one job, while low-cost crates run in disjoint package groups. Docker E2E also runs as one job. Every package job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
-Junit artifacts are named `nextest-junit-<shard>-<lane>` and seed the Phase 0 suite-wall-time baseline once measured.
-Each shard runs `cargo xtask lint ratchet --only suite-time`; it must not invoke
+Junit artifacts are named `nextest-junit-<package-group>-<lane>` and seed the Phase 0 suite-wall-time baseline once measured.
+Each package job runs `cargo xtask lint ratchet --only suite-time`; it must not invoke
 the all-family ratchet because unrelated artifact providers can add hidden build
 work. The telemetry conformance job similarly owns generation of
 `target/telemetry-volume-ratchet.json` and enforces only `export-volume` after
