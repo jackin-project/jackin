@@ -232,6 +232,13 @@ orchestration paths. This preserves the exact one-crate/one-job rule for real
 source or test-contract changes and creates zero crate runners for cache-only
 workflow maintenance.
 
+Parity run `29512417290` then proved that the shared contract values reached
+Velnor intact, but exposed one remaining implicit runner dependency: the
+affected-crate selector read the shell variable `GITHUB_SHA`, which Velnor did
+not populate. Both selector call sites now receive `${{ github.sha }}` through
+the same explicit `SOURCE_SHA` environment entry on every lane. No lane-specific
+test or cache path was added.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the

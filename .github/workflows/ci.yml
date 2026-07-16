@@ -739,6 +739,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUNNER_ARCH: ${{ runner.arch }}
           RUNNER_OS: ${{ runner.os }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -764,7 +765,7 @@ jobs:
               "$package" "$cache_key" true \
               "$DOCKER_E2E" "$CONSTRUCT_IMAGE_CHANGED" \
               "$COMMON_CONTRACT_KEY" "$DOCKER_CONTRACT_KEY" \
-              "$RUNNER_OS" "$RUNNER_ARCH" "$GITHUB_SHA")
+              "$RUNNER_OS" "$RUNNER_ARCH" "$SOURCE_SHA")
             if [ "$(jq -r '.hit' <<< "$result")" = "true" ]; then
               hits+=("$package")
             else

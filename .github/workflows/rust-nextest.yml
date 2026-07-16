@@ -103,6 +103,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           RUNNER_ARCH: ${{ runner.arch }}
           RUNNER_OS: ${{ runner.os }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           common_contract_key=$COMMON_CONTRACT_KEY
@@ -113,7 +114,7 @@ jobs:
             "$PACKAGE" "$CACHE_KEY" "$ALL_FEATURES" \
             "$DOCKER_E2E" "$CONSTRUCT_IMAGE_CHANGED" \
             "$common_contract_key" "$DOCKER_CONTRACT_KEY" \
-            "$RUNNER_OS" "$RUNNER_ARCH" "$GITHUB_SHA")
+            "$RUNNER_OS" "$RUNNER_ARCH" "$SOURCE_SHA")
           {
             echo "name=$(jq -r '.name' <<< "$result")"
             echo "sha-name=$(jq -r '.sha_name' <<< "$result")"
