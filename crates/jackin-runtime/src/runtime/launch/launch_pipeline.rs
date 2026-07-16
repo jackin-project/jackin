@@ -693,7 +693,12 @@ pub(crate) async fn load_role_with(
         .contains_key(workspace.name.as_str())
         .then(|| workspace.name.clone());
 
-    let mut steps = super::StepCounter::new(&selector.name);
+    let telemetry_target_kind = if workspace_name.is_some() {
+        jackin_telemetry::schema::enums::LaunchTargetKind::Workspace
+    } else {
+        jackin_telemetry::schema::enums::LaunchTargetKind::Directory
+    };
+    let mut steps = super::StepCounter::new(&selector.name, telemetry_target_kind);
     initialize_launch_progress(
         &mut steps,
         selector,

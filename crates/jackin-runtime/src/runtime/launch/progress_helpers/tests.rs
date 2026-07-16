@@ -31,7 +31,10 @@ fn steps_with_progress(cancelled: bool) -> StepCounter {
     if cancelled {
         progress.cancel_token().cancel();
     }
-    let mut steps = StepCounter::new("test-role");
+    let mut steps = StepCounter::new(
+        "test-role",
+        jackin_telemetry::schema::enums::LaunchTargetKind::Directory,
+    );
     steps.start_progress(progress);
     steps
 }

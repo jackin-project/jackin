@@ -5,27 +5,36 @@
 
 use std::time::Instant;
 
-use crate::schema::enums::{ErrorType, LaunchStageName, OutcomeValue};
+use crate::schema::enums::{ErrorType, LaunchStageName, LaunchTargetKind, OutcomeValue};
 use crate::{Attr, FieldSet, OperationGuard, Value};
 
 #[derive(Debug)]
 pub struct StageGuard {
     stage: LaunchStageName,
+    target: LaunchTargetKind,
     operation: Option<OperationGuard>,
     started_at: Instant,
 }
 
 impl StageGuard {
     #[must_use]
-    pub fn start(stage: LaunchStageName) -> Self {
+    pub fn start(stage: LaunchStageName, target: LaunchTargetKind) -> Self {
         let stage_name = stage.as_str();
         let stage_attr = [Attr {
             key: crate::schema::attrs::LAUNCH_STAGE_NAME,
             value: Value::Str(stage_name),
         }];
         let operation = crate::operation_or_disabled(&crate::operation::LAUNCH_STAGE, &stage_attr);
+        let target_name = target.as_str();
+        let active_attrs = [
+            stage_attr[0],
+            Attr {
+                key: crate::schema::attrs::LAUNCH_TARGET_KIND,
+                value: Value::Str(target_name),
+            },
+        ];
         let _active =
-            crate::up_down_counter(&crate::metric::LAUNCH_STAGE_ACTIVE).add(1, &stage_attr);
+            crate::up_down_counter(&crate::metric::LAUNCH_STAGE_ACTIVE).add(1, &active_attrs);
         let event_attrs = [
             stage_attr[0],
             Attr {
@@ -39,6 +48,7 @@ impl StageGuard {
         );
         Self {
             stage,
+            target,
             operation: Some(operation),
             started_at: Instant::now(),
         }
@@ -55,15 +65,23 @@ impl StageGuard {
         operation.complete(outcome, error_type);
 
         let stage_name = self.stage.as_str();
-        let active_attrs = [Attr {
-            key: crate::schema::attrs::LAUNCH_STAGE_NAME,
-            value: Value::Str(stage_name),
-        }];
+        let target_name = self.target.as_str();
+        let active_attrs = [
+            Attr {
+                key: crate::schema::attrs::LAUNCH_STAGE_NAME,
+                value: Value::Str(stage_name),
+            },
+            Attr {
+                key: crate::schema::attrs::LAUNCH_TARGET_KIND,
+                value: Value::Str(target_name),
+            },
+        ];
         let _active =
             crate::up_down_counter(&crate::metric::LAUNCH_STAGE_ACTIVE).add(-1, &active_attrs);
 
         let mut terminal_attrs = vec![
             active_attrs[0],
+            active_attrs[1],
             Attr {
                 key: crate::schema::attrs::OUTCOME,
                 value: Value::Str(outcome.as_str()),

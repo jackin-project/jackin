@@ -9,16 +9,21 @@ pub(in crate::runtime) struct StepCounter {
     pub(in crate::runtime::launch) current_stage: Option<crate::runtime::progress::LaunchStage>,
     pub(in crate::runtime::launch) progress: Option<crate::runtime::progress::LaunchProgress>,
     stage_telemetry: [Option<jackin_telemetry::launch::StageGuard>; 11],
+    target_kind: jackin_telemetry::schema::enums::LaunchTargetKind,
 }
 
 impl StepCounter {
-    pub(in crate::runtime::launch) fn new(role_name: &str) -> Self {
+    pub(in crate::runtime::launch) fn new(
+        role_name: &str,
+        target_kind: jackin_telemetry::schema::enums::LaunchTargetKind,
+    ) -> Self {
         Self {
             current: 0,
             role_name: role_name.to_owned(),
             current_stage: None,
             progress: None,
             stage_telemetry: std::array::from_fn(|_| None),
+            target_kind,
         }
     }
 
@@ -86,6 +91,7 @@ impl StepCounter {
         }
         self.stage_telemetry[index] = Some(jackin_telemetry::launch::StageGuard::start(
             telemetry_stage(stage),
+            self.target_kind,
         ));
         if let Some(progress) = &mut self.progress {
             progress.stage_started(stage, detail);
@@ -150,9 +156,9 @@ impl StepCounter {
         error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
     ) {
         let index = stage_index(stage);
-        let telemetry = self.stage_telemetry[index]
-            .take()
-            .unwrap_or_else(|| jackin_telemetry::launch::StageGuard::start(telemetry_stage(stage)));
+        let telemetry = self.stage_telemetry[index].take().unwrap_or_else(|| {
+            jackin_telemetry::launch::StageGuard::start(telemetry_stage(stage), self.target_kind)
+        });
         telemetry.complete(outcome, error_type);
     }
 

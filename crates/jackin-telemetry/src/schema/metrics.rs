@@ -625,7 +625,7 @@ pub const LAUNCH_CACHE_REUSE_DEF: super::MetricMetadata = super::MetricMetadata 
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=updowncounter; unit={execution}; attributes=launch.stage.name:required
+// registry: instrument=updowncounter; unit={execution}; attributes=launch.stage.name:required,launch.target.kind:required
 pub const LAUNCH_STAGE_ACTIVE: &str = "launch.stage.active";
 pub const LAUNCH_STAGE_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: LAUNCH_STAGE_ACTIVE,
@@ -633,26 +633,34 @@ pub const LAUNCH_STAGE_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata
     instrument: super::MetricInstrument::UpDownCounter,
     unit: "{execution}",
     boundaries: &[],
-    attributes: &[super::AttributeRequirement {
-        name: "launch.stage.name",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "identity",
-            "role",
-            "credentials",
-            "construct",
-            "agent_binaries",
-            "derived_image",
-            "workspace",
-            "network",
-            "sidecar",
-            "capsule",
-            "hardline",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "launch.stage.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "identity",
+                "role",
+                "credentials",
+                "construct",
+                "agent_binaries",
+                "derived_image",
+                "workspace",
+                "network",
+                "sidecar",
+                "capsule",
+                "hardline",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "launch.target.kind",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["workspace", "directory"],
+        },
+    ],
 };
-// registry: instrument=histogram; unit=s; attributes=error.type:recommended,launch.stage.name:required,outcome:required
+// registry: instrument=histogram; unit=s; attributes=error.type:recommended,launch.stage.name:required,launch.target.kind:required,outcome:required
 pub const LAUNCH_STAGE_DURATION: &str = "launch.stage.duration";
 pub const LAUNCH_STAGE_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: LAUNCH_STAGE_DURATION,
@@ -688,6 +696,12 @@ pub const LAUNCH_STAGE_DURATION_DEF: super::MetricMetadata = super::MetricMetada
             ],
         },
         super::AttributeRequirement {
+            name: "launch.target.kind",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["workspace", "directory"],
+        },
+        super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -702,7 +716,7 @@ pub const LAUNCH_STAGE_DURATION_DEF: super::MetricMetadata = super::MetricMetada
         },
     ],
 };
-// registry: instrument=counter; unit={execution}; attributes=error.type:recommended,launch.stage.name:required,outcome:required
+// registry: instrument=counter; unit={execution}; attributes=error.type:recommended,launch.stage.name:required,launch.target.kind:required,outcome:required
 pub const LAUNCH_STAGE_EXECUTIONS: &str = "launch.stage.executions";
 pub const LAUNCH_STAGE_EXECUTIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: LAUNCH_STAGE_EXECUTIONS,
@@ -734,6 +748,12 @@ pub const LAUNCH_STAGE_EXECUTIONS_DEF: super::MetricMetadata = super::MetricMeta
                 "capsule",
                 "hardline",
             ],
+        },
+        super::AttributeRequirement {
+            name: "launch.target.kind",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["workspace", "directory"],
         },
         super::AttributeRequirement {
             name: "outcome",

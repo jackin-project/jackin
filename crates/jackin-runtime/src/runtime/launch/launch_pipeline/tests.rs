@@ -101,7 +101,10 @@ agents = ["codex"]
             workspace,
             docker,
             runner: FakeRunner::default(),
-            steps: super::super::StepCounter::new("agent-smith"),
+            steps: super::super::StepCounter::new(
+                "agent-smith",
+                jackin_telemetry::schema::enums::LaunchTargetKind::Directory,
+            ),
             opts: super::super::LoadOptions {
                 agent: Some(Agent::Codex),
                 ..Default::default()
