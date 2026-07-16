@@ -94,7 +94,7 @@ jobs:
         env:
           ALL_FEATURES: ${{ inputs.all-features }}
           CACHE_KEY: ${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}
-          COMMON_CONTRACT_KEY: ${{ inputs.nextest-contract || hashFiles('.github/workflows/rust-nextest.yml', '.config/nextest.toml', 'clippy.toml', 'flaky-tests.toml', 'ratchet.toml', 'mise.toml', 'mise.lock', 'scripts/ci/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**') }}
+          COMMON_CONTRACT_KEY: ${{ inputs.nextest-contract }}
           CONSTRUCT_IMAGE_CHANGED: ${{ inputs.construct-image-changed }}
           DOCKER_CONTRACT_KEY: ${{ inputs.docker-contract || hashFiles('docker/**', 'docker-bake.hcl') }}
           DOCKER_E2E: ${{ inputs.docker-e2e }}
@@ -105,10 +105,14 @@ jobs:
           RUNNER_OS: ${{ runner.os }}
         run: |
           set -euo pipefail
+          common_contract_key=$COMMON_CONTRACT_KEY
+          if [ -z "$common_contract_key" ]; then
+            common_contract_key=$(scripts/ci/crate-test-contract.sh)
+          fi
           result=$(scripts/ci/find-crate-result.sh \
             "$PACKAGE" "$CACHE_KEY" "$ALL_FEATURES" \
             "$DOCKER_E2E" "$CONSTRUCT_IMAGE_CHANGED" \
-            "$COMMON_CONTRACT_KEY" "$DOCKER_CONTRACT_KEY" \
+            "$common_contract_key" "$DOCKER_CONTRACT_KEY" \
             "$RUNNER_OS" "$RUNNER_ARCH" "$GITHUB_SHA")
           {
             echo "name=$(jq -r '.name' <<< "$result")"

@@ -153,8 +153,15 @@ third-party compile lines: 63 while rebuilding the changed shared xtask and 97
 when the `jackin-xtask` crate's new exact target key had no seed.
 After every successful crate job, the configured canonical lane publishes a seven-day result marker
 keyed by the crate's exact forward dependency closure, Cargo/toolchain inputs,
-runner platform, feature and Docker modes, and the hashed test-workflow
-contract. The affected-crate selector queries those markers before matrix
+runner platform, feature and Docker modes, and the semantic crate-test
+contract. The contract is a stable identifier owned by
+<RepoFile path="scripts/ci/crate-test-contract.sh">scripts/ci/crate-test-contract.sh</RepoFile>,
+not a hash of the complete reusable workflow. A cache-transport, artifact, or
+reporting edit therefore does not discard still-valid crate proofs. Changing a
+test command or its acceptance criteria requires bumping that identifier and
+intentionally misses every affected proof. Workflow and composite-action paths
+are orchestration inputs, not crates, so they do not select every crate unless
+the semantic identifier changes. The affected-crate selector queries those markers before matrix
 expansion and before any crate runner is requested. A hit is reported in the
 routing summary and creates no empty matrix job; a miss creates exactly one
 dedicated job for that crate. This distinction is required for the one-minute
@@ -164,7 +171,7 @@ publishes an exact-SHA alias for release workflows. GitHub is the canonical
 writer when present, while a Velnor-only dispatch makes Velnor the writer; both
 lanes read the same marker names and execute the same lookup and test contract.
 A changed crate/dependency,
-lockfile, toolchain, test configuration, workflow contract, fuzz input, Docker
+lockfile, toolchain, test configuration, semantic test contract, fuzz input, Docker
 input, or execution mode produces a miss and runs the complete crate contract.
 
 Run `29501796144` validated marker publication but rejected job-level-only
@@ -216,6 +223,14 @@ passed unchanged into both lane matrices and the reusable nextest workflow.
 Latest pointers independently resolve the run owning the matching ready marker,
 and are republished only alongside newly uploaded target parts. The same
 runner-independent Rust and registry contracts feed Construct jobs.
+
+The next producer run exposed a separate invalidation problem: hashing the
+entire reusable test workflow turned cache-only plumbing changes into misses
+for all 26 crates. The crate-test contract now retains the last validated
+semantic identifier while the affected-crate graph ignores workflow/action
+orchestration paths. This preserves the exact one-crate/one-job rule for real
+source or test-contract changes and creates zero crate runners for cache-only
+workflow maintenance.
 
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and

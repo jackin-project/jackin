@@ -84,7 +84,6 @@ jobs:
           CI_TOOLS: ${{ hashFiles('mise.toml', 'mise.lock') }}
           CI_XTASK: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           DOCKER: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
-          NEXTEST: ${{ hashFiles('.github/workflows/rust-nextest.yml', '.config/nextest.toml', 'clippy.toml', 'flaky-tests.toml', 'ratchet.toml', 'mise.toml', 'mise.lock', 'scripts/ci/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**') }}
           REGISTRY: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
           RUSTUP: ${{ hashFiles('rust-toolchain.toml') }}
           RUSTUP_CI: ${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
@@ -94,7 +93,7 @@ jobs:
             echo "ci-tools=$CI_TOOLS"
             echo "ci-xtask=$CI_XTASK"
             echo "docker=$DOCKER"
-            echo "nextest=$NEXTEST"
+            echo "nextest=$(scripts/ci/crate-test-contract.sh)"
             echo "registry=$REGISTRY"
             echo "rustup=$RUSTUP"
             echo "rustup-ci=$RUSTUP_CI"
@@ -132,6 +131,7 @@ jobs:
             rust:
               - '.cargo/**'
               - '.github/workflows/ci.yml'
+              - 'scripts/ci/crate-test-contract.sh'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'clippy.toml'
@@ -154,7 +154,7 @@ jobs:
             docker_e2e:
               - '.config/nextest.toml'
               - '.github/workflows/ci.yml'
-              - '.github/workflows/rust-nextest.yml'
+              - 'scripts/ci/crate-test-contract.sh'
               - 'docker/**'
               - 'crates/jackin/tests/dind_e2e.rs'
               - 'crates/jackin/tests/dind_e2e/**'
@@ -180,6 +180,7 @@ jobs:
               - 'crates/jackin-usage/**'
             workflows:
               - '.github/workflows/**'
+              - '.github/actions/**'
             mise:
               - 'mise.toml'
 

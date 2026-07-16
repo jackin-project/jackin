@@ -80,7 +80,13 @@ result sharing is deferred to the [Shared CI compiler cache](<docs/content/docs/
 roadmap item. `jackin-xtask affected-crates` reads the
 Cargo metadata graph and maps a diff to changed crates plus their transitive
 reverse workspace dependents. Workspace-wide inputs and unrecognized Rust paths
-fail safe to every crate. Each selected cache miss owns one job and one
+fail safe to every crate. Workflow and composite-action plumbing is not a crate
+input and therefore creates no crate job by itself. The stable semantic
+identifier in [`scripts/ci/crate-test-contract.sh`](scripts/ci/crate-test-contract.sh)
+must be bumped whenever the
+per-crate commands or acceptance criteria change; cache transport, artifact
+lookup, and reporting changes keep the identifier and reuse prior proofs. Each
+selected cache miss owns one job and one
 target-cache namespace, including default/all-feature checks, clippy, nextest, doctests,
 MSRV, applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
 Scheduling follows the reverse dependency closure; the input-identical target
@@ -181,7 +187,7 @@ CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 
 An input-identical successful crate result is reused for seven days before any
 toolchain, registry, or target restore. Its key includes the crate's forward
 workspace dependency closure, Cargo and toolchain inputs, runner platform,
-feature and Docker modes, and the test-workflow contract. The selector removes
+feature and Docker modes, and the semantic crate-test contract. The selector removes
 a hit before matrix expansion, so queued runner capacity is reserved for real
 cache misses and the routing summary records every reuse. Any changed input
 runs the complete contract in one dedicated crate job and publishes a
