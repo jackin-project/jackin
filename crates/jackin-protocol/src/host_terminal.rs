@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host-terminal default-color capture for attach clients.
+//! Host-terminal default-color capture shared by attach clients.
 //!
 //! Before an attach `Hello`, the client can ask the terminal it runs on for
 //! its default foreground/background (OSC 10/11). The daemon feeds the answer
@@ -19,8 +19,11 @@ use tokio::io::AsyncReadExt;
 /// ordinary input.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct HostColors {
+    /// Reported default foreground RGB value.
     pub fg: Option<(u8, u8, u8)>,
+    /// Reported default background RGB value.
     pub bg: Option<(u8, u8, u8)>,
+    /// Operator input read during the handshake that was not an OSC reply.
     pub leftover_input: Vec<u8>,
 }
 

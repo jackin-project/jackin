@@ -254,3 +254,36 @@ fn tui_ownership_gate_rejects_core_presentation_and_shared_run_loop() {
     assert!(error.contains("jackin-core/src/lib.rs"), "{error}");
     assert!(error.contains("jackin-tui/src/run.rs"), "{error}");
 }
+
+#[test]
+fn tui_ownership_gate_rejects_surface_local_host_color_handshake() {
+    let temp = tempfile::tempdir().unwrap();
+    for path in [
+        "crates/jackin-core/src",
+        "crates/jackin-runtime/src/runtime",
+        "crates/jackin-tui/src",
+        "crates/jackin-capsule/src/tui",
+    ] {
+        std::fs::create_dir_all(temp.path().join(path)).unwrap();
+    }
+    std::fs::write(
+        temp.path().join("crates/jackin-core/Cargo.toml"),
+        "[package]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("crates/jackin-runtime/Cargo.toml"),
+        "[package]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path()
+            .join("crates/jackin-capsule/src/tui/host_colors.rs"),
+        "",
+    )
+    .unwrap();
+
+    let error = check_tui_ownership(temp.path()).unwrap_err().to_string();
+    assert!(error.contains("host_colors.rs"), "{error}");
+    assert!(error.contains("jackin-protocol"), "{error}");
+}

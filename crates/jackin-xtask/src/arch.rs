@@ -234,6 +234,16 @@ fn check_tui_ownership(root: &std::path::Path) -> Result<()> {
             ));
         }
     }
+    for duplicate_terminal_adapter in [
+        "crates/jackin-runtime/src/runtime/host_colors.rs",
+        "crates/jackin-capsule/src/tui/host_colors.rs",
+    ] {
+        if root.join(duplicate_terminal_adapter).exists() {
+            problems.push(format!(
+                "{duplicate_terminal_adapter}: OSC host-color handshake is shared protocol behavior; keep its single implementation in jackin-protocol"
+            ));
+        }
+    }
 
     check_file_excludes(
         &root.join("crates/jackin-core/Cargo.toml"),
@@ -299,10 +309,9 @@ fn check_rust_tree_excludes(
     forbidden: &[&str],
     problems: &mut Vec<String>,
 ) -> Result<()> {
-    for entry in std::fs::read_dir(dir)
+    for entry in crate::fs_util::read_dir_sorted(dir)
         .with_context(|| format!("reading TUI ownership tree {}", dir.display()))?
     {
-        let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
             check_rust_tree_excludes(&path, forbidden, problems)?;

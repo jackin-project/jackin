@@ -10,7 +10,6 @@
 pub mod ansi;
 pub mod components;
 pub mod effect;
-pub mod host_colors;
 pub mod input;
 pub(crate) mod keymap;
 pub mod layout;
