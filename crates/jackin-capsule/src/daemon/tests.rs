@@ -595,16 +595,25 @@ fn control_reply_exposes_typed_telemetry_health() {
     let ServerMsg::TelemetryHealth { report } = reply else {
         panic!("expected telemetry health");
     };
-    assert!(report.active_signals <= 3);
+    assert_eq!(report.fingerprint.service_name, "jackin-capsule");
+    assert_eq!(report.fingerprint.app_mode, "capsule");
+    assert_eq!(report.fingerprint.compression, "gzip");
+    assert_eq!(report.fingerprint.sampler, "parentbased_always_on");
+    assert_eq!(report.config_failure, None);
+    assert!(report.health.active_signals <= 3);
     assert_eq!(
-        report.capsule_export,
+        report.health.capsule_export,
         jackin_protocol::control::CapsuleExportCoverage::NotApplicable
     );
     assert_eq!(
-        report.flush,
+        report.health.flush,
         jackin_protocol::control::TelemetryFlushStatus::Pending
     );
-    assert!(!report.shutdown_timed_out);
+    assert!(!report.health.shutdown_timed_out);
+    let json = serde_json::to_string(&report).unwrap().to_ascii_lowercase();
+    assert!(!json.contains("authorization"));
+    assert!(!json.contains("header"));
+    assert!(!json.contains("certificate"));
 }
 
 #[test]

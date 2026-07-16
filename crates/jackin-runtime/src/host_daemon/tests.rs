@@ -284,20 +284,15 @@ fn telemetry_health_round_trip_is_typed_and_sanitized() {
     );
     assert_eq!(report.fingerprint.service_name, "jackin-daemon");
     assert_eq!(report.fingerprint.app_mode, "daemon");
+    assert_eq!(report.fingerprint.compression, "gzip");
+    assert_eq!(report.fingerprint.sampler, "parentbased_always_on");
+    assert_eq!(report.config_failure, None);
     assert_eq!(report.health.flush, TelemetryFlushStatus::Pending);
     assert!(!report.health.shutdown_timed_out);
     let json = serde_json::to_string(&report).unwrap().to_ascii_lowercase();
     assert!(!json.contains("authorization"));
     assert!(!json.contains("header"));
     assert!(!json.contains("certificate"));
-}
-
-#[test]
-fn endpoint_fingerprint_keeps_authority_only() {
-    assert_eq!(
-        endpoint_authority("https://token@example.test:4317/private/path"),
-        Some("example.test:4317".to_owned())
-    );
 }
 
 #[test]

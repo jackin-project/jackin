@@ -15,6 +15,18 @@ fn authentication_detection_never_returns_material() {
     assert!(!any_auth_configured(&|_| None));
 }
 
+#[test]
+fn public_failure_class_is_typed_and_sanitized() {
+    let failure = super::super::TelemetryConfigFailure::from(OtlpConfigError::InvalidHeaders {
+        variable: "OTEL_EXPORTER_OTLP_HEADERS",
+    });
+    assert_eq!(
+        failure,
+        super::super::TelemetryConfigFailure::InvalidHeaders
+    );
+    assert_eq!(failure.to_string(), "invalid headers");
+}
+
 fn resolve(values: &[(&str, &str)]) -> Result<Option<OtlpConfig>, OtlpConfigError> {
     let values: HashMap<&str, &str> = values.iter().copied().collect();
     resolve_otlp_config(&|key| values.get(key).map(|value| (*value).to_owned()))
@@ -48,6 +60,13 @@ fn signal_endpoints_override_base_and_all_are_required() {
     assert_eq!(config.traces_endpoint, "http://base:4317");
     assert_eq!(config.logs_endpoint, "http://logs:4317");
     assert_eq!(config.metrics_endpoint, "http://base:4317");
+    let fingerprint = super::super::OtlpConfigFingerprint::from_config(&config);
+    assert_eq!(fingerprint.traces.authority, "base:4317");
+    assert_eq!(fingerprint.logs.authority, "logs:4317");
+    assert_eq!(fingerprint.metrics.authority, "base:4317");
+    assert!(!fingerprint.traces.tls);
+    assert_eq!(fingerprint.compression, "gzip");
+    assert_eq!(fingerprint.sampler, "parentbased_always_on");
 
     assert_eq!(
         resolve(&[("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://traces:4317",)]),

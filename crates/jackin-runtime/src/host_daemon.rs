@@ -101,18 +101,42 @@ pub struct DaemonStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TelemetryHealthReport {
     pub fingerprint: SanitizedConfigFingerprint,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_failure: Option<TelemetryConfigFailure>,
     pub health: TelemetryHealthSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SanitizedConfigFingerprint {
-    pub endpoint_authority: Option<String>,
+    pub traces: Option<TelemetrySignalConfigFingerprint>,
+    pub logs: Option<TelemetrySignalConfigFingerprint>,
+    pub metrics: Option<TelemetrySignalConfigFingerprint>,
     pub compression: String,
-    pub tls: bool,
     pub sampler: String,
     pub active_signals: u8,
     pub service_name: String,
     pub app_mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetrySignalConfigFingerprint {
+    pub authority: String,
+    pub tls: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryConfigFailure {
+    MissingSignalEndpoint,
+    UnsupportedProtocol,
+    ConflictingSampler,
+    UnsupportedCompression,
+    InvalidTimeout,
+    InvalidHeaders,
+    InvalidResourceAttributes,
+    InvalidEndpoint,
+    EmptyValue,
+    IncompleteClientIdentity,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -790,7 +814,7 @@ fn handle_request(
 
 fn telemetry_health_report() -> TelemetryHealthReport {
     let health = jackin_diagnostics::telemetry_health_snapshot();
-    let signal = |value: jackin_diagnostics::TelemetrySignalHealth| TelemetrySignalHealth {
+    let health_signal = |value: jackin_diagnostics::TelemetrySignalHealth| TelemetrySignalHealth {
         attempts: value.attempts,
         successes: value.successes,
         failures: value.failures,
@@ -800,26 +824,52 @@ fn telemetry_health_report() -> TelemetryHealthReport {
         jackin_diagnostics::TelemetryFlushStatus::Succeeded => TelemetryFlushStatus::Succeeded,
         jackin_diagnostics::TelemetryFlushStatus::Failed => TelemetryFlushStatus::Failed,
     };
+    let (resolved, config_failure) = match jackin_diagnostics::resolved_otlp_config_fingerprint() {
+        Ok(config) => (config, None),
+        Err(failure) => (None, Some(telemetry_config_failure(failure))),
+    };
+    let config_signal =
+        |value: jackin_diagnostics::OtlpSignalFingerprint| TelemetrySignalConfigFingerprint {
+            authority: value.authority,
+            tls: value.tls,
+        };
+    let (traces, logs, metrics, compression, sampler) = resolved.map_or_else(
+        || {
+            (
+                None,
+                None,
+                None,
+                "gzip".to_owned(),
+                "parentbased_always_on".to_owned(),
+            )
+        },
+        |config| {
+            (
+                Some(config_signal(config.traces)),
+                Some(config_signal(config.logs)),
+                Some(config_signal(config.metrics)),
+                config.compression.to_owned(),
+                config.sampler.to_owned(),
+            )
+        },
+    );
     TelemetryHealthReport {
         fingerprint: SanitizedConfigFingerprint {
-            endpoint_authority: jackin_diagnostics::configured_endpoint()
-                .as_deref()
-                .and_then(endpoint_authority),
-            compression: std::env::var("OTEL_EXPORTER_OTLP_COMPRESSION")
-                .unwrap_or_else(|_| "none".to_owned()),
-            tls: jackin_diagnostics::configured_endpoint()
-                .is_some_and(|endpoint| endpoint.starts_with("https://")),
-            sampler: std::env::var("OTEL_TRACES_SAMPLER")
-                .unwrap_or_else(|_| "parentbased_always_on".to_owned()),
+            traces,
+            logs,
+            metrics,
+            compression,
+            sampler,
             active_signals: health.active_signals,
             service_name: "jackin-daemon".to_owned(),
             app_mode: "daemon".to_owned(),
         },
+        config_failure,
         health: TelemetryHealthSnapshot {
             active_signals: health.active_signals,
-            traces: signal(health.traces),
-            logs: signal(health.logs),
-            metrics: signal(health.metrics),
+            traces: health_signal(health.traces),
+            logs: health_signal(health.logs),
+            metrics: health_signal(health.metrics),
             facade_rejections: health.facade_rejections,
             flush,
             shutdown_completed: health.shutdown_completed,
@@ -829,12 +879,41 @@ fn telemetry_health_report() -> TelemetryHealthReport {
     }
 }
 
-fn endpoint_authority(endpoint: &str) -> Option<String> {
-    let without_scheme = endpoint
-        .split_once("://")
-        .map_or(endpoint, |(_, rest)| rest);
-    let authority = without_scheme.split('/').next()?.split('@').next_back()?;
-    (!authority.is_empty()).then(|| authority.to_owned())
+const fn telemetry_config_failure(
+    failure: jackin_diagnostics::TelemetryConfigFailure,
+) -> TelemetryConfigFailure {
+    match failure {
+        jackin_diagnostics::TelemetryConfigFailure::MissingSignalEndpoint => {
+            TelemetryConfigFailure::MissingSignalEndpoint
+        }
+        jackin_diagnostics::TelemetryConfigFailure::UnsupportedProtocol => {
+            TelemetryConfigFailure::UnsupportedProtocol
+        }
+        jackin_diagnostics::TelemetryConfigFailure::ConflictingSampler => {
+            TelemetryConfigFailure::ConflictingSampler
+        }
+        jackin_diagnostics::TelemetryConfigFailure::UnsupportedCompression => {
+            TelemetryConfigFailure::UnsupportedCompression
+        }
+        jackin_diagnostics::TelemetryConfigFailure::InvalidTimeout => {
+            TelemetryConfigFailure::InvalidTimeout
+        }
+        jackin_diagnostics::TelemetryConfigFailure::InvalidHeaders => {
+            TelemetryConfigFailure::InvalidHeaders
+        }
+        jackin_diagnostics::TelemetryConfigFailure::InvalidResourceAttributes => {
+            TelemetryConfigFailure::InvalidResourceAttributes
+        }
+        jackin_diagnostics::TelemetryConfigFailure::InvalidEndpoint => {
+            TelemetryConfigFailure::InvalidEndpoint
+        }
+        jackin_diagnostics::TelemetryConfigFailure::EmptyValue => {
+            TelemetryConfigFailure::EmptyValue
+        }
+        jackin_diagnostics::TelemetryConfigFailure::IncompleteClientIdentity => {
+            TelemetryConfigFailure::IncompleteClientIdentity
+        }
+    }
 }
 
 pub trait AttentionNotifierAdapter {

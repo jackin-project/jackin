@@ -104,7 +104,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         ClientMsg::TelemetryHealth => {
             let health = jackin_diagnostics::telemetry_health_snapshot();
             ServerMsg::TelemetryHealth {
-                report: telemetry_health_snapshot(health),
+                report: telemetry_health_report(health),
             }
         }
         ClientMsg::Status => ServerMsg::SessionList {
@@ -194,9 +194,9 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
     }
 }
 
-fn telemetry_health_snapshot(
+fn telemetry_health_report(
     health: jackin_diagnostics::TelemetryHealth,
-) -> jackin_protocol::control::TelemetryHealthSnapshot {
+) -> jackin_protocol::control::TelemetryHealthReport {
     fn signal(
         health: jackin_diagnostics::TelemetrySignalHealth,
     ) -> jackin_protocol::control::TelemetrySignalHealth {
@@ -237,17 +237,80 @@ fn telemetry_health_snapshot(
             jackin_protocol::control::CapsuleExportCoverage::NotApplicable
         }
     };
-    jackin_protocol::control::TelemetryHealthSnapshot {
-        active_signals: health.active_signals,
-        traces: signal(health.traces),
-        logs: signal(health.logs),
-        metrics: signal(health.metrics),
-        facade_rejections: health.facade_rejections,
-        capsule_export,
-        flush,
-        shutdown_completed: health.shutdown_completed,
-        shutdown_succeeded: health.shutdown_succeeded,
-        shutdown_timed_out: health.shutdown_timed_out,
+    let (resolved, config_failure) = match jackin_diagnostics::resolved_otlp_config_fingerprint() {
+        Ok(config) => (config, None),
+        Err(failure) => (None, Some(telemetry_config_failure(failure))),
+    };
+    let config_signal = |value: jackin_diagnostics::OtlpSignalFingerprint| {
+        jackin_protocol::control::TelemetrySignalConfigFingerprint {
+            authority: value.authority,
+            tls: value.tls,
+        }
+    };
+    let (traces, logs, metrics, compression, sampler) = resolved.map_or_else(
+        || {
+            (
+                None,
+                None,
+                None,
+                "gzip".to_owned(),
+                "parentbased_always_on".to_owned(),
+            )
+        },
+        |config| {
+            (
+                Some(config_signal(config.traces)),
+                Some(config_signal(config.logs)),
+                Some(config_signal(config.metrics)),
+                config.compression.to_owned(),
+                config.sampler.to_owned(),
+            )
+        },
+    );
+    jackin_protocol::control::TelemetryHealthReport {
+        fingerprint: jackin_protocol::control::SanitizedConfigFingerprint {
+            traces,
+            logs,
+            metrics,
+            compression,
+            sampler,
+            active_signals: health.active_signals,
+            service_name: "jackin-capsule".to_owned(),
+            app_mode: "capsule".to_owned(),
+        },
+        config_failure,
+        health: jackin_protocol::control::TelemetryHealthSnapshot {
+            active_signals: health.active_signals,
+            traces: signal(health.traces),
+            logs: signal(health.logs),
+            metrics: signal(health.metrics),
+            facade_rejections: health.facade_rejections,
+            capsule_export,
+            flush,
+            shutdown_completed: health.shutdown_completed,
+            shutdown_succeeded: health.shutdown_succeeded,
+            shutdown_timed_out: health.shutdown_timed_out,
+        },
+    }
+}
+
+const fn telemetry_config_failure(
+    failure: jackin_diagnostics::TelemetryConfigFailure,
+) -> jackin_protocol::control::TelemetryConfigFailure {
+    use jackin_diagnostics::TelemetryConfigFailure as Source;
+    use jackin_protocol::control::TelemetryConfigFailure as Target;
+
+    match failure {
+        Source::MissingSignalEndpoint => Target::MissingSignalEndpoint,
+        Source::UnsupportedProtocol => Target::UnsupportedProtocol,
+        Source::ConflictingSampler => Target::ConflictingSampler,
+        Source::UnsupportedCompression => Target::UnsupportedCompression,
+        Source::InvalidTimeout => Target::InvalidTimeout,
+        Source::InvalidHeaders => Target::InvalidHeaders,
+        Source::InvalidResourceAttributes => Target::InvalidResourceAttributes,
+        Source::InvalidEndpoint => Target::InvalidEndpoint,
+        Source::EmptyValue => Target::EmptyValue,
+        Source::IncompleteClientIdentity => Target::IncompleteClientIdentity,
     }
 }
 

@@ -19,10 +19,60 @@ pub struct ValidationReport {
     pub health: TelemetryHealth,
 }
 
+/// Sanitized class of invalid OTLP configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TelemetryConfigFailure {
+    MissingSignalEndpoint,
+    UnsupportedProtocol,
+    ConflictingSampler,
+    UnsupportedCompression,
+    InvalidTimeout,
+    InvalidHeaders,
+    InvalidResourceAttributes,
+    InvalidEndpoint,
+    EmptyValue,
+    IncompleteClientIdentity,
+}
+
+impl From<config::OtlpConfigError> for TelemetryConfigFailure {
+    fn from(value: config::OtlpConfigError) -> Self {
+        match value {
+            config::OtlpConfigError::MissingSignalEndpoint(_) => Self::MissingSignalEndpoint,
+            config::OtlpConfigError::UnsupportedProtocol { .. } => Self::UnsupportedProtocol,
+            config::OtlpConfigError::ConflictingSampler => Self::ConflictingSampler,
+            config::OtlpConfigError::UnsupportedCompression { .. } => Self::UnsupportedCompression,
+            config::OtlpConfigError::InvalidTimeout { .. } => Self::InvalidTimeout,
+            config::OtlpConfigError::InvalidHeaders { .. } => Self::InvalidHeaders,
+            config::OtlpConfigError::InvalidResourceAttribute => Self::InvalidResourceAttributes,
+            config::OtlpConfigError::InvalidEndpoint(_) => Self::InvalidEndpoint,
+            config::OtlpConfigError::EmptyValue(_) => Self::EmptyValue,
+            config::OtlpConfigError::IncompleteClientIdentity(_) => Self::IncompleteClientIdentity,
+        }
+    }
+}
+
+impl std::fmt::Display for TelemetryConfigFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::MissingSignalEndpoint => "missing signal endpoint",
+            Self::UnsupportedProtocol => "unsupported protocol",
+            Self::ConflictingSampler => "conflicting sampler",
+            Self::UnsupportedCompression => "unsupported compression",
+            Self::InvalidTimeout => "invalid timeout",
+            Self::InvalidHeaders => "invalid headers",
+            Self::InvalidResourceAttributes => "invalid resource attributes",
+            Self::InvalidEndpoint => "invalid endpoint",
+            Self::EmptyValue => "empty configuration value",
+            Self::IncompleteClientIdentity => "incomplete client identity",
+        })
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ValidationFailure {
     NoEndpoint,
     Disabled,
+    Config(TelemetryConfigFailure),
     Inactive,
     Export(&'static str),
     Rejected,
@@ -33,6 +83,9 @@ impl std::fmt::Display for ValidationFailure {
         match self {
             Self::NoEndpoint => formatter.write_str("no endpoint configured"),
             Self::Disabled => formatter.write_str("OpenTelemetry SDK is disabled"),
+            Self::Config(failure) => {
+                write!(formatter, "invalid telemetry configuration: {failure}")
+            }
             Self::Inactive => formatter.write_str("telemetry providers are not active"),
             Self::Export(signal) => write!(formatter, "telemetry export failed for {signal}"),
             Self::Rejected => {
@@ -49,8 +102,10 @@ pub fn validate_delivery() -> Result<ValidationReport, ValidationFailure> {
     if std::env::var("OTEL_SDK_DISABLED").is_ok_and(|value| value.eq_ignore_ascii_case("true")) {
         return Err(ValidationFailure::Disabled);
     }
-    if !otlp_endpoint_configured() {
-        return Err(ValidationFailure::NoEndpoint);
+    match resolved_otlp_config_fingerprint() {
+        Err(failure) => return Err(ValidationFailure::Config(failure)),
+        Ok(None) => return Err(ValidationFailure::NoEndpoint),
+        Ok(Some(_)) => {}
     }
     let before = telemetry_health_snapshot();
     if before.active_signals != 3 {
@@ -295,6 +350,54 @@ pub fn otlp_endpoint_configured() -> bool {
 #[must_use]
 pub fn otlp_auth_configured() -> bool {
     config::any_auth_configured(&|key| std::env::var(key).ok())
+}
+
+/// Effective, privacy-safe configuration for one OTLP signal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OtlpSignalFingerprint {
+    pub authority: String,
+    pub tls: bool,
+}
+
+/// Effective per-signal OTLP configuration without credentials or paths.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OtlpConfigFingerprint {
+    pub traces: OtlpSignalFingerprint,
+    pub logs: OtlpSignalFingerprint,
+    pub metrics: OtlpSignalFingerprint,
+    pub compression: &'static str,
+    pub sampler: &'static str,
+}
+
+/// Resolve and sanitize the same configuration used to build the providers.
+pub fn resolved_otlp_config_fingerprint()
+-> Result<Option<OtlpConfigFingerprint>, TelemetryConfigFailure> {
+    let env = |key: &str| std::env::var(key).ok();
+    config::resolve_otlp_config(&env)
+        .map(|config| config.map(|config| OtlpConfigFingerprint::from_config(&config)))
+        .map_err(Into::into)
+}
+
+impl OtlpConfigFingerprint {
+    fn from_config(config: &config::OtlpConfig) -> Self {
+        let signal = |endpoint: &str| OtlpSignalFingerprint {
+            authority: endpoint_authority(endpoint).unwrap_or_default(),
+            tls: endpoint.starts_with("https://"),
+        };
+        Self {
+            traces: signal(&config.traces_endpoint),
+            logs: signal(&config.logs_endpoint),
+            metrics: signal(&config.metrics_endpoint),
+            compression: "gzip",
+            sampler: "parentbased_always_on",
+        }
+    }
+}
+
+fn endpoint_authority(endpoint: &str) -> Option<String> {
+    let (_, rest) = endpoint.split_once("://")?;
+    let authority = rest.split('/').next()?;
+    (!authority.is_empty()).then(|| authority.to_owned())
 }
 
 /// How a launched container should reach the host OTLP backend.

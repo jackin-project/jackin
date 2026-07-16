@@ -29,12 +29,13 @@ pub use metrics::{
     incr_mouse_events, incr_terminal_bytes_received, record_frame, record_render,
 };
 pub use observability::{
-    CapsuleExportCoverage, ContainerOtlp, ServiceIdentity, TelemetryFlushStatus, TelemetryHealth,
+    CapsuleExportCoverage, ContainerOtlp, OtlpConfigFingerprint, OtlpSignalFingerprint,
+    ServiceIdentity, TelemetryConfigFailure, TelemetryFlushStatus, TelemetryHealth,
     TelemetrySignalHealth, ValidationFailure, ValidationReport, backend_query_hint,
     configured_endpoint, configured_endpoint_summary, container_otlp, init_capsule_tracing,
     init_tracing, init_tracing_for, otlp_auth_configured, otlp_endpoint_configured,
-    record_telemetry_rejection, shutdown_capsule_tracing, telemetry_health_snapshot,
-    unsupported_otlp_protocol, validate_delivery,
+    record_telemetry_rejection, resolved_otlp_config_fingerprint, shutdown_capsule_tracing,
+    telemetry_health_snapshot, unsupported_otlp_protocol, validate_delivery,
 };
 #[cfg(feature = "test-support")]
 pub use observability::{

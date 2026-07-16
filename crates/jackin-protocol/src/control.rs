@@ -134,8 +134,8 @@ impl ServerMsg {
 pub enum ServerMsg {
     /// Current jackin❯-owned exporter and facade health observations.
     TelemetryHealth {
-        /// Typed process-local health snapshot.
-        report: TelemetryHealthSnapshot,
+        /// Typed process-local health report.
+        report: TelemetryHealthReport,
     },
     /// Current session inventory.
     SessionList {
@@ -199,6 +199,74 @@ pub enum ServerMsg {
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+/// Sanitized Capsule telemetry configuration and process health.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetryHealthReport {
+    /// Effective per-signal configuration and process identity.
+    pub fingerprint: SanitizedConfigFingerprint,
+    /// Typed invalid-configuration class, if resolution failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_failure: Option<TelemetryConfigFailure>,
+    /// Current jackin❯-owned health observations.
+    pub health: TelemetryHealthSnapshot,
+}
+
+/// Privacy-safe effective Capsule OTLP configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SanitizedConfigFingerprint {
+    /// Effective trace exporter configuration, when enabled and valid.
+    pub traces: Option<TelemetrySignalConfigFingerprint>,
+    /// Effective log exporter configuration, when enabled and valid.
+    pub logs: Option<TelemetrySignalConfigFingerprint>,
+    /// Effective metric exporter configuration, when enabled and valid.
+    pub metrics: Option<TelemetrySignalConfigFingerprint>,
+    /// Enforced exporter compression.
+    pub compression: String,
+    /// Enforced trace sampler.
+    pub sampler: String,
+    /// Number of active exporters.
+    pub active_signals: u8,
+    /// Canonical process service name.
+    pub service_name: String,
+    /// Canonical application mode.
+    pub app_mode: String,
+}
+
+/// Privacy-safe effective configuration for one OTLP signal.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetrySignalConfigFingerprint {
+    /// Sanitized host and port without scheme, credentials, or path.
+    pub authority: String,
+    /// Whether the signal uses TLS.
+    pub tls: bool,
+}
+
+/// Sanitized invalid-configuration class.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryConfigFailure {
+    /// At least one required signal endpoint is absent.
+    MissingSignalEndpoint,
+    /// A configured protocol is not supported.
+    UnsupportedProtocol,
+    /// The configured sampler conflicts with the required sampler.
+    ConflictingSampler,
+    /// A configured compression mode is not supported.
+    UnsupportedCompression,
+    /// A configured exporter timeout is invalid.
+    InvalidTimeout,
+    /// A configured header is malformed.
+    InvalidHeaders,
+    /// A configured Resource attribute is malformed.
+    InvalidResourceAttributes,
+    /// A configured endpoint is malformed or contains credentials.
+    InvalidEndpoint,
+    /// An optional configuration value was explicitly empty.
+    EmptyValue,
+    /// A client certificate or key is missing its pair.
+    IncompleteClientIdentity,
 }
 
 /// Sanitized process-local telemetry health exposed over control protocols.
