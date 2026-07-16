@@ -38,7 +38,7 @@ pub fn launch_container_info_state(
         role: identity.map(|identity| identity.role.clone()),
         agent: identity.map(|identity| identity.agent.clone()),
         target: identity.map(|identity| identity.target_label.clone()),
-        run_id: debug_mode.then(|| run_id.to_owned()),
+        invocation_id: debug_mode.then(|| run_id.to_owned()),
         capsule_version: None,
     };
     let mut state = info.into_state();

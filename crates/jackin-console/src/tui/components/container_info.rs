@@ -17,7 +17,7 @@ pub fn debug_run_info_state(
 ) -> jackin_tui::components::ContainerInfoState {
     jackin_tui::components::DebugInfo {
         jackin_version: Some(jackin_version.into()),
-        run_id: Some(invocation_id.into()),
+        invocation_id: Some(invocation_id.into()),
         ..Default::default()
     }
     .into_state()

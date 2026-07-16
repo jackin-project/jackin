@@ -421,7 +421,7 @@ fn container_info_copy_click_queues_typed_effect() {
         state: jackin_tui::components::ContainerInfoState::new(
             "Debug info",
             vec![
-                jackin_tui::components::ContainerInfoRow::new("Run ID", "run-123")
+                jackin_tui::components::ContainerInfoRow::new("Invocation ID", "run-123")
                     .copyable()
                     .emphasised(),
             ],

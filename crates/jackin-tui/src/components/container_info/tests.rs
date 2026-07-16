@@ -11,7 +11,7 @@ use super::*;
 fn debug_info_exposes_copyable_run_id_without_local_artifacts() {
     let state = DebugInfo {
         jackin_version: Some("0.6.0-test".to_owned()),
-        run_id: Some("jk-run-b93735".to_owned()),
+        invocation_id: Some("jk-run-b93735".to_owned()),
         ..Default::default()
     }
     .into_state();
@@ -19,12 +19,12 @@ fn debug_info_exposes_copyable_run_id_without_local_artifacts() {
 
     let run_row = rows
         .iter()
-        .find(|row| row.label == "Run ID")
-        .expect("Run ID row present");
+        .find(|row| row.label == "Invocation ID")
+        .expect("Invocation ID row present");
     assert_eq!(run_row.value(), "jk-run-b93735");
     assert!(
         !run_row.value().contains(".jsonl"),
-        "Run ID row must never contain the diagnostics JSONL path"
+        "Invocation ID row must never contain a local diagnostics path"
     );
     assert!(run_row.is_copyable());
 
@@ -40,12 +40,15 @@ fn debug_info_puts_run_id_first_when_available() {
         role: Some("the-architect".to_owned()),
         agent: Some("Codex".to_owned()),
         target: Some("/workspace".to_owned()),
-        run_id: Some("jk-run-top".to_owned()),
+        invocation_id: Some("jk-run-top".to_owned()),
     }
     .into_state();
 
     let rows = state.rows();
-    assert_eq!(rows.first().map(|row| row.label.as_str()), Some("Run ID"));
+    assert_eq!(
+        rows.first().map(|row| row.label.as_str()),
+        Some("Invocation ID")
+    );
     assert_eq!(
         rows.first().map(ContainerInfoRow::value),
         Some("jk-run-top")
@@ -53,7 +56,7 @@ fn debug_info_puts_run_id_first_when_available() {
     assert_eq!(
         state.keyboard_copy_payload(),
         Some((0, "jk-run-top".to_owned())),
-        "keyboard copy defaults to the top Run ID row"
+        "keyboard copy defaults to the top Invocation ID row"
     );
 }
 
@@ -63,7 +66,7 @@ fn keyboard_copy_payload_uses_first_copyable_row() {
         "Debug info",
         vec![
             ContainerInfoRow::new("jackin version", "0.6.0-dev"),
-            ContainerInfoRow::new("Run ID", "jk-run-123").copyable(),
+            ContainerInfoRow::new("Invocation ID", "jk-run-123").copyable(),
             ContainerInfoRow::new("Container ID", "jk-container-123").copyable(),
         ],
     );
@@ -78,7 +81,7 @@ fn keyboard_copy_payload_uses_first_copyable_row() {
 fn enter_does_not_dismiss_container_info_state() {
     let mut state = ContainerInfoState::new(
         "Debug info",
-        vec![ContainerInfoRow::new("Run ID", "jk-run-123").copyable()],
+        vec![ContainerInfoRow::new("Invocation ID", "jk-run-123").copyable()],
     );
 
     assert!(matches!(
@@ -150,7 +153,7 @@ fn copy_payload_at_follows_horizontal_and_vertical_scroll() {
         "Debug info",
         vec![
             ContainerInfoRow::new("Container ID", "jk-hidden").copyable(),
-            ContainerInfoRow::new("Run ID", "jk-run-hidden").copyable(),
+            ContainerInfoRow::new("Legacy", "jk-run-hidden").copyable(),
             ContainerInfoRow::new("Role", "hidden-role"),
             ContainerInfoRow::new("Agent", "hidden-agent"),
             ContainerInfoRow::new("Target", "hidden-target"),
@@ -162,8 +165,9 @@ fn copy_payload_at_follows_horizontal_and_vertical_scroll() {
     state.scroll.scroll_y = 4;
     let area = Rect::new(0, 0, 50, 5);
 
+    let visible_payload = (1..area.width).find_map(|col| copy_payload_at(area, &state, col, 3));
     assert_eq!(
-        copy_payload_at(area, &state, 5, 3),
+        visible_payload,
         Some((5, "https://telemetry.example.test/v1/traces".to_owned())),
         "copy hit-test must follow the value after both axes scroll"
     );
@@ -178,7 +182,7 @@ fn copy_payload_at_follows_horizontal_and_vertical_scroll() {
 fn copyable_rows_render_explicit_copy_affordance() {
     let state = ContainerInfoState::new(
         "Debug info",
-        vec![ContainerInfoRow::new("Run ID", "jk-run-b93735").copyable()],
+        vec![ContainerInfoRow::new("Invocation ID", "jk-run-b93735").copyable()],
     );
     let backend = TestBackend::new(64, 8);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -217,7 +221,7 @@ fn hyperlink_overlay_follows_horizontal_and_vertical_scroll() {
         "Debug info",
         vec![
             ContainerInfoRow::new("Container ID", "jk-hidden").copyable(),
-            ContainerInfoRow::new("Run ID", "jk-run-hidden").copyable(),
+            ContainerInfoRow::new("Legacy", "jk-run-hidden").copyable(),
             ContainerInfoRow::new("Role", "hidden-role"),
             ContainerInfoRow::new("Agent", "hidden-agent"),
             ContainerInfoRow::new("Target", "hidden-target"),
@@ -226,13 +230,14 @@ fn hyperlink_overlay_follows_horizontal_and_vertical_scroll() {
                 .hyperlink("https://telemetry.example.test/v1/traces"),
         ],
     );
-    state.scroll.scroll_x = 58;
+    state.scroll.scroll_x = u16::MAX;
     state.scroll.scroll_y = 4;
 
-    let overlay = String::from_utf8(hyperlink_overlay(Rect::new(0, 0, 50, 5), &state))
+    let overlay = String::from_utf8(hyperlink_overlay(Rect::new(0, 0, 24, 5), &state))
         .expect("overlay should be utf8");
+    let opener = "\u{1b}]8;;https://telemetry.example.test/v1/traces\u{1b}\\";
     let visible = overlay
-        .split("\x1b[1;4m")
+        .split(opener)
         .nth(1)
         .and_then(|tail| tail.split("\x1b]8;;\x1b\\").next())
         .expect("overlay should include one visible linked text span");
@@ -244,7 +249,7 @@ fn hyperlink_overlay_follows_horizontal_and_vertical_scroll() {
     );
     assert!(
         !visible.contains("https://telemetry"),
-        "overlay must not link text that has scrolled off the left edge"
+        "overlay must not link text that has scrolled off the left edge: {visible:?}"
     );
 }
 

@@ -73,7 +73,7 @@ impl Dialog {
             role: (!role.is_empty()).then(|| role.clone()),
             agent: Some(agent_label),
             target: (!workdir.is_empty()).then(|| workdir.clone()),
-            run_id: debug.then(|| diagnostics.invocation_id.clone()),
+            invocation_id: debug.then(|| diagnostics.invocation_id.clone()),
         }
         .into_state();
         if let Some(row) = *copied_row {

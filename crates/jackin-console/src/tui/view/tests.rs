@@ -1323,7 +1323,8 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         state: jackin_tui::components::ContainerInfoState::new(
             "Container",
             vec![jackin_tui::components::ContainerInfoRow::new(
-                "Run ID", "abc",
+                "Invocation ID",
+                "abc",
             )],
         ),
     });

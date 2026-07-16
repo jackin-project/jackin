@@ -169,7 +169,7 @@ fn non_debug_dialog_hides_bottom_status_bar() {
         role: Some("the-architect".to_owned()),
         agent: Some("Codex".to_owned()),
         target: None,
-        run_id: None,
+        invocation_id: None,
     }
     .into_state();
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
@@ -370,7 +370,7 @@ fn debug_dialog_keeps_status_bar_visible() {
         role: Some("the-architect".to_owned()),
         agent: Some("Codex".to_owned()),
         target: None,
-        run_id: Some("jk-run-test".to_owned()),
+        invocation_id: Some("jk-run-test".to_owned()),
     }
     .into_state();
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));

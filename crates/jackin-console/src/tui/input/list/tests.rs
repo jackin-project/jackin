@@ -1223,7 +1223,7 @@ fn container_info_enter_copies_default_value_without_dismissing() {
             "Debug info",
             vec![
                 jackin_tui::components::ContainerInfoRow::new("jackin version", "0.6.0-dev"),
-                jackin_tui::components::ContainerInfoRow::new("Run ID", "jk-run-123")
+                jackin_tui::components::ContainerInfoRow::new("Invocation ID", "jk-run-123")
                     .copyable()
                     .emphasised(),
             ],

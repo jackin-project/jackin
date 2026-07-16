@@ -44,7 +44,7 @@ Every capability the base image supports must reach the agent inside the pane.
 ### Clipboard and OSC 52
 
 - Deny OSC 52 sequences from the focused pane by default. Pass them to the host terminal unmodified only when the operator set `JACKIN_OSC52=allow` before launch. This keeps agent-initiated clipboard writes from mutating the operator's host clipboard unless the role explicitly needs that behavior.
-- jackin❯-owned copy actions such as Debug info copyable values (Run ID, Container ID, Diagnostics log) and mouse-selection copy emit OSC 52 directly from the multiplexer to the attached client. They must render visible feedback because terminals may silently drop clipboard writes when policy blocks them.
+- jackin❯-owned copy actions such as Debug info copyable values (Invocation ID and Container ID) and mouse-selection copy emit OSC 52 directly from the multiplexer to the attached client. They must render visible feedback because terminals may silently drop clipboard writes when policy blocks them.
 - Never intercept or log clipboard content.
 
 ### Pointer shape

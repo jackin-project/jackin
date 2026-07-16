@@ -133,7 +133,7 @@ pub struct DebugInfo {
     /// Working directory / target label.
     pub target: Option<String>,
     /// Opaque invocation id.
-    pub run_id: Option<String>,
+    pub invocation_id: Option<String>,
 }
 
 impl DebugInfo {
@@ -141,8 +141,8 @@ impl DebugInfo {
     #[must_use]
     pub fn into_state(self) -> ContainerInfoState {
         let mut rows = Vec::new();
-        if let Some(run_id) = self.run_id {
-            rows.push(ContainerInfoRow::new("Run ID", run_id).copyable());
+        if let Some(invocation_id) = self.invocation_id {
+            rows.push(ContainerInfoRow::new("Invocation ID", invocation_id).copyable());
         }
         if let Some(container_id) = self.container_id {
             rows.push(ContainerInfoRow::new("Container ID", container_id).copyable());

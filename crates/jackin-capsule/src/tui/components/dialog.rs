@@ -168,7 +168,7 @@ pub enum Dialog {
     /// container-name segment of the bottom branch/PR context bar.
     /// Surfaces role key, focused-agent runtime, full container ID,
     /// and workspace path with shared copy-to-clipboard affordances.
-    /// Enter copies the shared default row (Run ID when available) and
+    /// Enter copies the shared default row (Invocation ID when available) and
     /// clicks copy whichever copyable value was hit. The dialog stays
     /// open so copied-row feedback can render. Esc / q / a click
     /// outside the box dismisses. `focused_agent` is the slug of
@@ -941,7 +941,7 @@ impl Dialog {
         if matches!(self, Self::SpawnFailure(_)) {
             return DialogAction::Consume;
         }
-        // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
+        // ContainerInfo: any copyable row (Container ID or Invocation ID)
         // log) copies via the shared hit-test. The clicked row's value goes to
         // the clipboard and that row shows the "Copied!" badge.
         if matches!(self, Self::ContainerInfo { .. }) {

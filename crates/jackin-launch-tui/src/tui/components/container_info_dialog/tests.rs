@@ -42,7 +42,7 @@ fn launch_container_info_exposes_run_id_without_local_artifacts() {
         rows.first()
             .map(jackin_tui::components::ContainerInfoRow::value),
         Some("jk-run-b93735"),
-        "Run ID must stay the first Debug info row even when launch knows the container"
+        "Invocation ID must stay the first Debug info row even when launch knows the container"
     );
     let run_row = rows
         .iter()
@@ -51,7 +51,7 @@ fn launch_container_info_exposes_run_id_without_local_artifacts() {
     assert!(run_row.is_copyable());
     assert!(
         !run_row.value().contains(".jsonl"),
-        "Run ID row must not contain diagnostics path"
+        "Invocation ID row must not contain a local diagnostics path"
     );
     assert!(rows.iter().all(|row| row.href().is_none()));
 }
