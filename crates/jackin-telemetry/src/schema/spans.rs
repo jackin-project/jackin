@@ -493,9 +493,7 @@ pub const DB_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "db.operation.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
-            allowed_values: &[
-                "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete",
-            ],
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "db.system.name",
@@ -547,15 +545,7 @@ pub const HTTP_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "gen_ai.provider.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
-            allowed_values: &[
-                "anthropic",
-                "openai",
-                "amp",
-                "xai",
-                "zai",
-                "minimax",
-                "kimi",
-            ],
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "http.request.method",

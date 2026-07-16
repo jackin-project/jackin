@@ -98,4 +98,6 @@ pub(crate) fn cache_decision(
         &jackin_telemetry::event::CACHE_DECISION,
         jackin_telemetry::FieldSet::new(&attrs, None),
     );
+    let _count =
+        jackin_telemetry::counter(&jackin_telemetry::metric::CACHE_DECISIONS).add(1, &attrs);
 }

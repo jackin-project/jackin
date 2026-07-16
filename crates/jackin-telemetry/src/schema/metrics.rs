@@ -147,6 +147,35 @@ pub const BACKGROUND_CYCLES_DEF: super::MetricMetadata = super::MetricMetadata {
     boundaries: &[],
     attributes: &[],
 };
+// registry: instrument=counter; unit={decision}; attributes=cache.name:required,cache.result:required
+pub const CACHE_DECISIONS: &str = "cache.decisions";
+pub const CACHE_DECISIONS_DEF: super::MetricMetadata = super::MetricMetadata {
+    name: CACHE_DECISIONS,
+    description: "Product cache decisions.",
+    instrument: super::MetricInstrument::Counter,
+    unit: "{decision}",
+    boundaries: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cache.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "role_repository",
+                "agent_binary",
+                "capsule_binary",
+                "derived_image",
+                "usage_snapshot",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "cache.result",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["hit", "miss", "stale", "reuse", "bypass"],
+        },
+    ],
+};
 // registry: instrument=histogram; unit=s; attributes=cli.command.name:required,error.type:recommended,outcome:required
 pub const CLI_DURATION: &str = "cli.duration";
 pub const CLI_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
@@ -612,20 +641,8 @@ pub const DB_CLIENT_OPERATION_DURATION_DEF: super::MetricMetadata = super::Metri
         name: "db.operation.name",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete",
-        ],
+        allowed_values: &[],
     }],
-};
-// registry: instrument=counter; unit={reuse}; attributes=
-pub const LAUNCH_CACHE_REUSE: &str = "launch.cache.reuse";
-pub const LAUNCH_CACHE_REUSE_DEF: super::MetricMetadata = super::MetricMetadata {
-    name: LAUNCH_CACHE_REUSE,
-    description: "Launch cache reuse decisions.",
-    instrument: super::MetricInstrument::Counter,
-    unit: "{reuse}",
-    boundaries: &[],
-    attributes: &[],
 };
 // registry: instrument=updowncounter; unit={execution}; attributes=launch.stage.name:required,launch.target.kind:required
 pub const LAUNCH_STAGE_ACTIVE: &str = "launch.stage.active";
@@ -1265,6 +1282,7 @@ pub const ALL: &[&str] = &[
     AGENT_STATE_TRANSITIONS,
     BACKGROUND_CYCLE_DURATION,
     BACKGROUND_CYCLES,
+    CACHE_DECISIONS,
     CLI_DURATION,
     CLI_FAILURES,
     CLI_INVOCATIONS,
@@ -1272,7 +1290,6 @@ pub const ALL: &[&str] = &[
     CONNECTION_ATTEMPTS,
     CONNECTION_DURATION,
     DB_CLIENT_OPERATION_DURATION,
-    LAUNCH_CACHE_REUSE,
     LAUNCH_STAGE_ACTIVE,
     LAUNCH_STAGE_DURATION,
     LAUNCH_STAGE_EXECUTIONS,
@@ -1304,6 +1321,7 @@ pub const DEFINITIONS: &[super::MetricMetadata] = &[
     AGENT_STATE_TRANSITIONS_DEF,
     BACKGROUND_CYCLE_DURATION_DEF,
     BACKGROUND_CYCLES_DEF,
+    CACHE_DECISIONS_DEF,
     CLI_DURATION_DEF,
     CLI_FAILURES_DEF,
     CLI_INVOCATIONS_DEF,
@@ -1311,7 +1329,6 @@ pub const DEFINITIONS: &[super::MetricMetadata] = &[
     CONNECTION_ATTEMPTS_DEF,
     CONNECTION_DURATION_DEF,
     DB_CLIENT_OPERATION_DURATION_DEF,
-    LAUNCH_CACHE_REUSE_DEF,
     LAUNCH_STAGE_ACTIVE_DEF,
     LAUNCH_STAGE_DURATION_DEF,
     LAUNCH_STAGE_EXECUTIONS_DEF,
