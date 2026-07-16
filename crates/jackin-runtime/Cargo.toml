@@ -19,7 +19,6 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-core = { workspace = true }
-jackin-tui = { workspace = true }
 jackin-config = { workspace = true }
 jackin-env = { workspace = true }
 jackin-manifest = { workspace = true }
@@ -41,8 +40,6 @@ thiserror = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
-ratatui = { workspace = true }
-termrock = { workspace = true }
 crossterm = { workspace = true }
 dialoguer = { workspace = true }
 sha2 = { workspace = true }

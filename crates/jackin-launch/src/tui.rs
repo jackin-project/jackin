@@ -14,3 +14,6 @@ pub mod subscriptions;
 pub mod terminal;
 pub mod update;
 pub mod view;
+
+#[cfg(test)]
+mod product_tests;

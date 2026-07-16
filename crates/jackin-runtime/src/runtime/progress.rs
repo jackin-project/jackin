@@ -8,53 +8,16 @@
 //! and `LaunchStage` exclusively.
 
 use std::io::Write;
-#[cfg(test)]
-use std::time::Duration;
 
 pub use jackin_core::LaunchCancelled;
 use jackin_core::{LaunchHostTerminal, LaunchOutputSink};
 use jackin_launch::LaunchTuiOutputSink;
 pub use jackin_launch::progress::LaunchProgress;
-#[cfg(test)]
-use jackin_launch::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
-#[cfg(test)]
-use jackin_launch::tui::components::build_log_dialog::{
-    build_log_scroll_metrics, refresh_build_log_layout, render_build_log_dialog,
-    wrap_build_log_lines,
-};
-#[cfg(test)]
-use jackin_launch::tui::components::failure_dialog::failure_popup_hyperlink_overlay;
-#[cfg(test)]
-use jackin_launch::tui::components::failure_dialog::{
-    failure_copy_payload, failure_copy_target_at,
-};
-#[cfg(test)]
-use jackin_launch::tui::components::failure_dialog::{
-    failure_popup_rect_for_rows, failure_popup_rows, failure_popup_value_rect,
-};
-#[cfg(test)]
-use jackin_launch::tui::components::progress_rail::{
-    LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
-    display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,
-};
-#[cfg(test)]
-use jackin_launch::tui::components::prompts::{
-    PromptConfirm, PromptError, PromptText, draw_confirm, draw_error_popup, draw_text_prompt,
-};
-#[cfg(test)]
-use jackin_launch::tui::view::render_launch_frame as render_launch_frame_view;
 pub use jackin_launch::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
     LaunchView, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     active_stage_index, initial_view, update_launch_view, update_stage,
 };
-#[cfg(test)]
-#[cfg(test)]
-use ratatui::Frame;
-#[cfg(test)]
-use ratatui::layout::Rect;
-#[cfg(test)]
-use ratatui::style::Color;
 
 struct HostTerminal;
 
@@ -215,31 +178,3 @@ pub fn standalone_launch_dialog(
 pub fn rich_terminal_supported() -> bool {
     jackin_launch::tui::terminal::rich_terminal_supported()
 }
-
-/// Bail with the canonical rich-terminal requirement message unless the
-/// current terminal can host the launch surface. Both `LaunchProgress::new`
-/// and the pre-launch `prelaunch_select_choice` picker gate through this so
-/// the message cannot drift between them.
-#[cfg(test)]
-fn render_launch_frame(
-    frame: &mut Frame<'_>,
-    view: &LaunchView,
-    run_id: &str,
-    run_log_path: &str,
-    no_motion: bool,
-    rain: Option<&jackin_launch::tui::components::rain::RainState>,
-) {
-    render_launch_frame_view(
-        frame,
-        view,
-        run_id,
-        Some(run_log_path),
-        no_motion,
-        rain,
-        jackin_diagnostics::is_debug_mode(),
-        env!("JACKIN_VERSION"),
-    );
-}
-
-#[cfg(test)]
-mod tests;

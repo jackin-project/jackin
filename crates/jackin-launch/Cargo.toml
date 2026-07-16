@@ -27,3 +27,6 @@ workspace = true
 
 [build-dependencies]
 jackin-build-meta = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
