@@ -54,8 +54,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      reuse: ${{ steps.pipeline-result.outputs.hit }}
-      result-name: ${{ steps.pipeline-result.outputs.name }}
       rust: ${{ steps.route.outputs.rust }}
       construct: ${{ steps.route.outputs.construct }}
       construct_image: ${{ steps.route.outputs.construct_image }}
@@ -66,49 +64,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Find exact successful CI result
-        id: pipeline-result
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          GH_TOKEN: ${{ github.token }}
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          name="ci-pipeline-result-v1-${GITHUB_SHA}-${EVENT_NAME}-${LANES}"
-          artifact_id=
-          if ! artifact_id=$(
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=${name}&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | .id' \
-              | head -n 1
-          ); then
-            echo "::warning::successful-pipeline lookup failed; running CI in full"
-            artifact_id=
-          fi
-          if [ -n "$artifact_id" ]; then
-            echo "::notice::reusing exact successful CI result for ${GITHUB_SHA}"
-          fi
-          {
-            echo "name=$name"
-            if [ -n "$artifact_id" ]; then
-              echo "hit=true"
-            else
-              echo "hit=false"
-            fi
-          } >> "$GITHUB_OUTPUT"
-
       - name: Reject pending insta snapshots
-        if: steps.pipeline-result.outputs.hit != 'true'
         run: |
           pending=$(git ls-files --others --exclude-standard '*.pending-snap'; find crates -name '*.pending-snap' -print)
           if [ -n "$pending" ]; then echo "::error::pending insta snapshots found:"; echo "$pending"; exit 1; fi
 
       - name: Force rust=true construct=true on workflow_dispatch
         id: dispatch
-        if: >-
-          steps.pipeline-result.outputs.hit != 'true' &&
-          github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           {
@@ -125,9 +88,7 @@ jobs:
       # though they live outside src/ and tests/.
       - name: Classify changed paths
         id: filter
-        if: >-
-          steps.pipeline-result.outputs.hit != 'true' &&
-          github.event_name != 'workflow_dispatch'
+        if: github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         with:
           token: ${{ github.token }}
@@ -188,7 +149,6 @@ jobs:
 
       - name: Route changed paths
         id: route
-        if: steps.pipeline-result.outputs.hit != 'true'
         shell: bash
         env:
           FORCE_RUST: ${{ steps.dispatch.outputs.rust }}
@@ -680,6 +640,7 @@ jobs:
           path: .ci-prebuilt-xtask/*
           compression-level: 0
           retention-days: 7
+          include-hidden-files: true
       - name: Upload shared CI xtask
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -1003,28 +964,3 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: CI
-      - name: Stage exact successful CI result
-        if: >-
-          needs.changes.outputs.reuse != 'true' &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        run: |
-          printf '%s\n' \
-            "source-sha=${GITHUB_SHA}" \
-            "event=${GITHUB_EVENT_NAME}" \
-            > ci-pipeline-result.txt
-      - name: Publish exact successful CI result
-        if: >-
-          needs.changes.outputs.reuse != 'true' &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ needs.changes.outputs.result-name }}
-          path: ci-pipeline-result.txt
-          compression-level: 0
-          retention-days: 7
