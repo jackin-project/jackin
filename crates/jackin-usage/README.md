@@ -10,7 +10,7 @@ Usage, pricing, telemetry, and token monitors for the `jackin-capsule` daemon. O
 
 ## Architecture tier and allowed dependencies
 
-**Infrastructure** (capsule-side accounting). Allowed inward dependencies: `jackin-core`, `jackin-protocol`, `jackin-diagnostics`. No dependency on `jackin-capsule` (would be circular), `jackin-tui`, `jackin-console`, or any presentation crate.
+**Infrastructure** (capsule-side observability/accounting). Allowed inward dependencies: `jackin-core`, `jackin-protocol`, and `jackin-diagnostics`. No dependency on `jackin-capsule` (which would be circular), `jackin-tui`, `jackin-console`, `jackin-launch`, or any presentation crate.
 
 ## Structure
 

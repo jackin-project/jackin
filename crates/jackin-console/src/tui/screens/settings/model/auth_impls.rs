@@ -8,7 +8,6 @@ use super::{
     SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved,
     SettingsPanelTakeError, SettingsState,
 };
-use termrock::interaction::ModalStack;
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]
@@ -39,8 +38,7 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
             pending,
             github_env: github_env.clone(),
             original_github_env: github_env,
-            modal: None,
-            modal_parents: Vec::new(),
+            modals: jackin_tui::runtime::ModalFlow::new(),
             generating_token: false,
             error: None,
             pending_op_commit: None,
@@ -112,10 +110,7 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.github_env = self.original_github_env.clone();
         self.selected_kind = None;
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.clear_chain();
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.clear();
         self.generating_token = false;
         self.error = None;
     }
@@ -129,33 +124,33 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 
     pub fn restore_pending_auth_form(&mut self) {
-        self.modal = self.pop_parent_modal();
+        self.modals.pop();
     }
 
     #[must_use]
     pub const fn has_modal(&self) -> bool {
-        self.modal.is_some()
+        self.modals.is_open()
     }
 
     #[must_use]
     pub const fn modal_ref(&self) -> Option<&Modal> {
-        self.modal.as_ref()
+        self.modals.current()
     }
 
-    pub const fn modal_mut(&mut self) -> Option<&mut Modal> {
-        self.modal.as_mut()
+    pub fn modal_mut(&mut self) -> Option<&mut Modal> {
+        self.modals.current_mut()
     }
 
     pub fn take_modal(&mut self) -> Option<Modal> {
-        self.modal.take()
+        self.modals.take_current()
     }
 
     pub fn set_modal(&mut self, modal: Modal) {
-        self.modal = Some(modal);
+        self.modals.set_current(modal);
     }
 
     pub fn clear_modal(&mut self) {
-        self.modal = None;
+        self.modals.clear();
     }
 
     pub fn set_error(&mut self, error: impl Into<String>) {
@@ -231,28 +226,18 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 
     pub fn open_child_modal(&mut self, parent_modal: Modal, child_modal: Modal) {
-        let mut stack = ModalStack::from_parts(None, std::mem::take(&mut self.modal_parents));
-        stack.open_sub(parent_modal);
-        stack.open_sub(child_modal);
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.open_pair(parent_modal, child_modal);
     }
 
     pub fn pop_parent_modal(&mut self) -> Option<Modal> {
-        let mut stack = ModalStack::from_parts(None, std::mem::take(&mut self.modal_parents));
-        stack.pop();
-        let restored = stack.take_current();
-        let (_, parents) = stack.into_parts();
-        self.modal_parents = parents;
-        restored
+        self.modals.pop();
+        self.modals.take_current()
     }
 
     /// Push the current auth modal onto the parent stack so a sub-modal can
     /// open without losing the auth form's in-progress state.
     pub fn push_auth_modal(&mut self, sub_modal: Modal) {
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.open_sub(sub_modal);
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.open_sub(sub_modal);
     }
 }
 
@@ -278,7 +263,7 @@ impl<EnvValue, Modal, OpRef> crate::tui::model::ConsolePendingOpCommit
     type OpRef = OpRef;
 
     fn poll_pending_op_commit(&mut self) -> Option<(Self::OpRef, anyhow::Result<()>)> {
-        use termrock::runtime::{Subscription, SubscriptionPoll};
+        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
         let pending = self.pending_op_commit.as_mut()?;
         let result = match pending.rx.poll_next() {
@@ -299,7 +284,7 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthSlot
     type Modal = Modal;
 
     fn modal_mut(&mut self) -> Option<&mut Self::Modal> {
-        self.modal.as_mut()
+        self.modals.current_mut()
     }
 }
 
@@ -326,7 +311,7 @@ impl<Modal, PendingOpCommit> SettingsAuthState<jackin_core::EnvValue, Modal, Pen
             agent_env,
         )
         .cloned();
-        self.modal = Some(build(kind, row, existing_credential));
+        self.modals.open(build(kind, row, existing_credential));
     }
 
     pub fn apply_auth_outcome(
@@ -390,8 +375,8 @@ impl<
     fn settings_modal_facts(&self) -> crate::tui::model::ConsoleStageModalFacts {
         crate::tui::model::ConsoleStageModalFacts {
             settings_error_popup_open: self.error_popup.is_some(),
-            settings_mounts_modal_open: self.mounts.modal.is_some(),
-            settings_env_modal_open: self.env.modal.is_some(),
+            settings_mounts_modal_open: self.mounts.modals.is_open(),
+            settings_env_modal_open: self.env.modals.is_open(),
             settings_auth_modal_open: self.auth.has_modal(),
             ..crate::tui::model::ConsoleStageModalFacts::default()
         }
@@ -453,8 +438,8 @@ where
             selected: self.mounts.selected,
             modal: self
                 .mounts
-                .modal
-                .as_ref()
+                .modals
+                .current()
                 .map(crate::tui::debug::ConsoleSettingsMountModalDebugKind::settings_mount_modal_debug_kind),
         }
     }

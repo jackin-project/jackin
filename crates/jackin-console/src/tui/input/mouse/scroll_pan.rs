@@ -129,8 +129,8 @@ pub fn update_scroll_focus(
 pub fn settings_modal_open(settings: &crate::tui::state::SettingsState<'_>) -> bool {
     settings_modal_open_fact(
         settings.error_popup.is_some(),
-        settings.mounts.modal.is_some(),
-        settings.env.modal.is_some(),
+        settings.mounts.modals.is_open(),
+        settings.env.modals.is_open(),
         settings.auth.has_modal(),
     )
 }

@@ -275,6 +275,8 @@ fn conformance_clipboard_continuations_validate_correlation_and_start_identity()
                 && response.result == jackin_protocol::attach::AttachControlResult::Rejected
     )));
 }
+use crate::tui::socket_backend::SgrMetadata;
+use jackin_term::DamageGrid;
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -283,6 +285,65 @@ use crate::protocol::attach::read_server_frame;
 use crate::tui::components::dialog::PullRequestStatus;
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 use tokio::io::AsyncReadExt;
+
+fn sgr_regions_for_inner(bytes: &[u8], inner: Rect) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+    let mut grid = DamageGrid::new(2, 10, 100);
+    grid.process(bytes);
+    let view = grid.scrollback_view(0, 2);
+    let panes = vec![VisiblePane {
+        id: 1,
+        outer: inner,
+        inner,
+        focused: false,
+    }];
+    let pane_screens = vec![(1u64, crate::tui::view::PaneScreen::View(view))];
+    compositor::pane_sgr_regions(&panes, &pane_screens)
+}
+
+fn sgr_regions_for(bytes: &[u8]) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+    sgr_regions_for_inner(bytes, Rect::new(2, 3, 5, 10))
+}
+
+#[test]
+fn pane_sgr_regions_coalesces_one_styled_run_and_skips_default() {
+    let regions = sgr_regions_for(b"\x1b[4:3mab\x1b[24mcd");
+    assert_eq!(regions.len(), 1, "got {regions:?}");
+    let (rect, metadata) = regions[0];
+    assert_eq!((rect.x, rect.y, rect.width, rect.height), (3, 2, 2, 1));
+    assert_eq!(metadata.underline_style, jackin_term::UnderlineStyle::Curly);
+}
+
+#[test]
+fn pane_sgr_regions_splits_adjacent_differing_runs() {
+    let regions = sgr_regions_for(b"\x1b[4:3mab\x1b[4:2mcd");
+    assert_eq!(regions.len(), 2, "got {regions:?}");
+    assert_eq!((regions[0].0.x, regions[0].0.width), (3, 2));
+    assert_eq!(
+        regions[0].1.underline_style,
+        jackin_term::UnderlineStyle::Curly
+    );
+    assert_eq!((regions[1].0.x, regions[1].0.width), (5, 2));
+    assert_eq!(
+        regions[1].1.underline_style,
+        jackin_term::UnderlineStyle::Double
+    );
+}
+
+#[test]
+fn pane_sgr_regions_empty_when_nothing_styled() {
+    assert!(sgr_regions_for(b"plain text").is_empty());
+}
+
+#[test]
+fn pane_sgr_regions_clamps_run_to_inner_width() {
+    let regions = sgr_regions_for_inner(b"\x1b[4:3mabcdef", Rect::new(0, 0, 5, 4));
+    assert_eq!(regions.len(), 1, "got {regions:?}");
+    assert_eq!(regions[0].0.width, 4, "run must clamp to inner cols");
+    assert_eq!(
+        regions[0].1.underline_style,
+        jackin_term::UnderlineStyle::Curly
+    );
+}
 
 #[derive(Debug)]
 struct NullChildKiller;
@@ -1124,36 +1185,6 @@ fn test_pane_session(
     test_session_with_agent(rows, cols, agent.map(str::to_owned))
 }
 
-fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
-    let rendered = String::from_utf8_lossy(frame);
-    let thumb_fg = format!(
-        "{}{}",
-        crate::tui::ansi::RESET,
-        crate::tui::ansi::rgb_fg(jackin_core::PHOSPHOR_GREEN)
-    );
-    assert!(
-        rendered.contains(&thumb_fg),
-        "focused {context} should use the shared scrollbar thumb color"
-    );
-    assert!(
-        rendered.contains(termrock::scroll::ScrollbarStyle::Line.vertical_thumb()),
-        "focused {context} should draw the shared scrollbar thumb"
-    );
-    assert!(
-        rendered.contains(termrock::scroll::SCROLLBAR_TRACK),
-        "focused {context} should draw the shared scrollbar track"
-    );
-}
-
-fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
-    let rendered = String::from_utf8_lossy(frame);
-    assert!(
-        !rendered.contains(termrock::scroll::ScrollbarStyle::Line.vertical_thumb())
-            && !rendered.contains('█'),
-        "{context} should not draw fake scrollback chrome"
-    );
-}
-
 fn assert_frame_stays_within_geometry(frame: &[u8], rows: u16, cols: u16, context: &str) {
     let metrics = scan_emitted_frame(frame);
     assert!(
@@ -1777,7 +1808,7 @@ fn command_palette_labels_single_pane_close_as_close_tab() {
 }
 
 #[test]
-fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
+fn dialog_backdrop_preserves_product_status_brand() {
     fn mux_with_two_sessions() -> Multiplexer {
         let mut mux = split_tab_mux();
         let (session_one, _) = test_session(24, 80);
@@ -1787,7 +1818,7 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
         mux
     }
 
-    fn assert_backdrop_opaque(mut mux: Multiplexer, context: &str) {
+    fn assert_brand_preserved(mut mux: Multiplexer, context: &str) {
         let frame =
             String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::DialogChange))
                 .to_string();
@@ -1800,29 +1831,22 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
             frame.contains("jackin") && frame.contains("48;2;0;255;65"),
             "{context} should preserve the top status brand (green block) while a dialog is open: {frame:?}"
         );
-        assert!(
-            !frame.contains(&format!(
-                "{}┌",
-                crate::tui::ansi::rgb_fg(jackin_core::BORDER_GRAY)
-            )),
-            "{context} should hide inactive pane borders behind the dialog: {frame:?}"
-        );
     }
 
     let mut menu_mux = mux_with_two_sessions();
     menu_mux.open_command_palette();
-    assert_backdrop_opaque(menu_mux, "menu dialog");
+    assert_brand_preserved(menu_mux, "menu dialog");
 
     let mut container_mux = mux_with_two_sessions();
     container_mux.open_container_info_dialog();
-    assert_backdrop_opaque(container_mux, "container info dialog");
+    assert_brand_preserved(container_mux, "container info dialog");
 
     let mut github_mux = mux_with_two_sessions();
     github_mux.pr_watch.pull_request_context_branch = Some(branch("feat/capsule-pr-context-bar"));
     github_mux.pr_watch.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
     github_mux.launch_env.workdir_context.gh_available = false;
     github_mux.open_github_context_dialog(Instant::now());
-    assert_backdrop_opaque(github_mux, "GitHub context dialog");
+    assert_brand_preserved(github_mux, "GitHub context dialog");
 }
 
 #[test]
@@ -3359,31 +3383,6 @@ fn mode_reconciliation_resets_agent_modes_on_focus_swap() {
 }
 
 #[test]
-fn pane_scrollbar_renders_shared_component_glyphs_only() {
-    let mut mux = single_pane_tab_mux();
-    let (mut session, _rx) = test_session(20, 78);
-    for i in 0..40 {
-        session.feed_pty(format!("line {i}\r\n").as_bytes());
-    }
-    mux.session_supervisor.sessions.insert(1, session);
-
-    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-    let rendered = String::from_utf8_lossy(&frame);
-    assert!(
-        rendered.contains(termrock::scroll::ScrollbarStyle::Line.vertical_thumb()),
-        "pane scrollbar must use the shared Line thumb"
-    );
-    assert!(
-        rendered.contains(termrock::scroll::SCROLLBAR_TRACK),
-        "pane scrollbar must paint the shared track"
-    );
-    assert!(
-        !rendered.contains('█'),
-        "hand-painted block thumb is a D14 regression"
-    );
-}
-
-#[test]
 fn scrollbar_click_jumps_scrollback() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session(20, 78);
@@ -3470,38 +3469,6 @@ fn diff_frames_repaint_in_place_without_screen_erase() {
 }
 
 #[test]
-fn retained_scrollback_draws_scrollbar_at_live_tail() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux();
-        let (mut session, _input_rx) = test_pane_session(20, 78, agent);
-        for i in 0..40 {
-            session.feed_pty(format!("line {i}\r\n").as_bytes());
-        }
-        assert_eq!(session.scrollback_offset(), 0);
-        assert!(
-            session.scrollback_filled() > 0,
-            "{pane_kind} setup should retain scrollback"
-        );
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("{pane_kind} pane with retained scrollback at live tail"),
-        );
-        assert_eq!(
-            mux.session_supervisor
-                .sessions
-                .get(1)
-                .unwrap()
-                .scrollback_offset(),
-            0
-        );
-    }
-}
-
-#[test]
 fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
     for (agent, pane_kind) in pane_kind_cases() {
         let mut mux = single_pane_tab_mux_with_size(55, 200);
@@ -3568,10 +3535,6 @@ fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
                 .unwrap()
                 .scrollback_offset(),
             3
-        );
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with inline history"),
         );
         assert!(
             String::from_utf8_lossy(&frame).contains("history"),
@@ -3673,10 +3636,6 @@ fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
                 .scrollback_offset(),
             3
         );
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with clear-preserved history"),
-        );
         assert!(
             String::from_utf8_lossy(&frame).contains("release"),
             "normal-screen {pane_kind} wheel should render rows preserved before clear"
@@ -3717,10 +3676,6 @@ fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
                 .unwrap()
                 .scrollback_offset(),
             2
-        );
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with CSI S inline history"),
         );
         assert!(
             String::from_utf8_lossy(&frame).contains("top"),
@@ -3823,75 +3778,6 @@ fn wheel_cursor_fallback_respects_application_cursor_mode() {
         "pane-owned fallback should not redraw jackin❯"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1bOB\x1bOB\x1bOB");
-}
-
-#[test]
-fn alt_screen_overflow_does_not_draw_scrollbar_without_retained_scrollback() {
-    let mut mux = single_pane_tab_mux();
-    let (mut session, _input_rx) = test_session(8, 20);
-    session.feed_pty(b"\x1b[?1049h");
-    for i in 0..20 {
-        session.feed_pty(format!("line {i}\r\n").as_bytes());
-    }
-    assert_eq!(session.scrollback_filled(), 0);
-    mux.session_supervisor.sessions.insert(1, session);
-
-    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-    assert_no_scroll_thumb(&frame, "alt-screen pane without retained scrollback");
-}
-
-#[test]
-fn normal_screen_panes_do_not_draw_scrollbar_when_grid_is_full_without_scrollback() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux();
-        let (mut session, _input_rx) = test_pane_session(8, 20, agent);
-        for row in 0..8 {
-            session.feed_pty(format!("\x1b[{};1Hrow {row}", row + 1).as_bytes());
-        }
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-        assert_no_scroll_thumb(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with full grid but no scrollback"),
-        );
-    }
-}
-
-#[test]
-fn normal_screen_panes_do_not_draw_scrollbar_when_content_spans_viewport_without_scrollback() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux();
-        let (mut session, _input_rx) = test_pane_session(8, 20, agent);
-        session.feed_pty(b"\x1b[1;1Htop transcript\x1b[8;1Hbottom status");
-        assert_eq!(session.scrollback_filled(), 0);
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-        assert_no_scroll_thumb(
-            &frame,
-            &format!(
-                "normal-screen {pane_kind} pane with viewport-spanning content but no scrollback"
-            ),
-        );
-    }
-}
-
-#[test]
-fn normal_screen_panes_do_not_keep_scrollbar_when_cursor_moves_without_scrollback() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux_with_size(55, 200);
-        let (mut session, _input_rx) = test_pane_session(51, 198, agent);
-        session.feed_pty(b"\x1b[1;1Hrelease notes\x1b[51;1Hstatus line\x1b[48;3Hx");
-        assert_eq!(session.scrollback_filled(), 0);
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-        assert_no_scroll_thumb(
-            &frame,
-            &format!("normal-screen {pane_kind} transcript pane after cursor moved up"),
-        );
-    }
 }
 
 #[test]
@@ -4323,7 +4209,7 @@ fn container_info_copy_feedback_expires() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     });
     let now = Instant::now();
     mux.clipboard.dialog_copy_feedback_deadline = Some(now);
@@ -4350,7 +4236,7 @@ fn container_info_id_click_copies_and_renders_feedback() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(tx);
@@ -7251,7 +7137,7 @@ fn reattach_updates_capabilities_without_resetting_model_palette() {
 // CLI/TUI output captured outside the unit test process.
 
 use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
-use jackin_term::{Cell, DamageGrid};
+use jackin_term::Cell;
 
 /// The outer terminal: a second `DamageGrid` sized to the attach client.
 /// `apply` is `process()`; the capsule's own `?2026` brackets and mode

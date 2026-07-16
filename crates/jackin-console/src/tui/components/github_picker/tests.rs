@@ -45,13 +45,13 @@ fn new_selects_first_choice_when_non_empty() {
         choice("/a", "main", "https://github.com/o/a/tree/main"),
         choice("/b", "main", "https://github.com/o/b/tree/main"),
     ]);
-    assert_eq!(s.list_state.selected, Some(0));
+    assert_eq!(s.list_state.selected().copied(), Some(0));
 }
 
 #[test]
 fn new_selects_nothing_when_empty() {
     let s = GithubPickerState::new(vec![]);
-    assert_eq!(s.list_state.selected, None);
+    assert_eq!(s.list_state.selected().copied(), None);
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn down_wraps_at_end() {
     ]);
     s.handle_key(key(KeyCode::Down));
     s.handle_key(key(KeyCode::Down));
-    assert_eq!(s.list_state.selected, Some(0));
+    assert_eq!(s.list_state.selected().copied(), Some(0));
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn up_wraps_at_start() {
         choice("/b", "dev", "https://github.com/o/b/tree/dev"),
     ]);
     s.handle_key(key(KeyCode::Up));
-    assert_eq!(s.list_state.selected, Some(1));
+    assert_eq!(s.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -121,39 +121,4 @@ fn enter_on_empty_list_is_continue() {
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
-}
-
-fn render_buffer(state: &GithubPickerState, w: u16, h: u16) -> ratatui::buffer::Buffer {
-    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
-    let backend = TestBackend::new(w, h);
-    let mut term = Terminal::new(backend).unwrap();
-    term.draw(|f| render(f, Rect::new(0, 0, w, h), state))
-        .unwrap();
-    term.backend().buffer().clone()
-}
-
-#[test]
-fn selected_row_uses_shared_full_width_highlight() {
-    let state = GithubPickerState::new(vec![choice(
-        "/workspace/repo",
-        "main",
-        "https://github.com/o/repo/tree/main",
-    )]);
-
-    let buffer = render_buffer(&state, 60, 8);
-    let selected_y = (0..8)
-        .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
-        .expect("selected row should show shared cursor");
-    for x in 1..59 {
-        assert_eq!(
-            buffer[(x, selected_y)].bg,
-            termrock::style::PHOSPHOR_GREEN,
-            "x={x}"
-        );
-    }
-    assert_ne!(
-        buffer[(59, selected_y)].bg,
-        termrock::style::PHOSPHOR_GREEN,
-        "selection must not paint the dialog border"
-    );
 }

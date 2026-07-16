@@ -6,7 +6,7 @@
 //! roles that already carry a github override.
 
 use anyhow::Result;
-use jackin::console::tui::state::AuthRow;
+use jackin::console::adapter::state::AuthRow;
 use jackin::workspace::WorkspaceRoleOverride;
 use jackin_config::AppConfig;
 use jackin_console::tui::auth::AuthKind;

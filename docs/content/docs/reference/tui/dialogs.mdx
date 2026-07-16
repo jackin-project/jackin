@@ -84,22 +84,22 @@ Every dialog that contains a button row (OK, Yes/No, Save/Discard/Cancel, etc.) 
 
 This applies to all dialog surfaces: the host console confirm dialog, the launch failure popup, the capsule confirm action dialog, and any future dialog that renders buttons.
 
-**Implementation:** In height calculations, use `content_rows + 6` (= 2 borders + 1 leading spacer + 1 spacer + 1 button + 1 trailing spacer). For any new dialog: compute the exact row count and add exactly 6 overhead rows. Use `termrock::layout::dialog_inner_chunks(inner, Some(content_rows))` to split the inner area into the canonical five slots and render into the correct slots.
+**Implementation:** In height calculations, use `content_rows + 6` (= 2 borders + 1 leading spacer + 1 spacer + 1 button + 1 trailing spacer). For any new dialog: compute the exact row count and add exactly 6 overhead rows. Compose the body with TermRock `layout::bottom_rows` (for example `bottom_rows(inner, [1, 1, 1])` for mid-spacer / actions / trailing spacer, then split the remaining body into a leading spacer plus content). Console surfaces that still share the historical five-row body can call `jackin_console::tui::dialog_layout::dialog_content_and_actions` — a thin product composition helper on top of `bottom_rows`, not a TermRock compatibility facade.
 
-**Universal dialog scroll rule:** No dialog may silently clip content. When a dialog's body cannot fit in the dialog area, it must scroll on the overflowing axis with a scrollbar on the matching border — vertical on the right, horizontal on the bottom — and the bar appears **only** when content actually overflows that axis. Both axes go through one shared mechanism in [TermRock source](https://github.com/tailrocks/termrock): a `DialogBodyScroll` field (`scroll_x` + `scroll_y`) plus `render_scrollable_dialog_body(frame, block_area, inner, &lines, &mut scroll)`, which renders the body's `Vec<Line>` with both-axis offset (`Paragraph::scroll`) and draws the scrollbars when overflowing. Keyboard scroll is `↑`/`↓`/`j`/`k` (vertical) and `←`/`→`/`h`/`l` (horizontal); the mouse wheel scrolls both axes. Never hand-roll per-row clipping or a bespoke scrollbar — route the body through `render_scrollable_dialog_body`.
+**Universal dialog scroll rule:** No dialog may silently clip content. When a dialog's body cannot fit in the dialog area, it must scroll on the overflowing axis with a scrollbar on the matching border — vertical on the right, horizontal on the bottom — and the bar appears **only** when content actually overflows that axis. Both axes go through one shared mechanism in [TermRock source](https://github.com/tailrocks/termrock): a `DialogScroll` field (`scroll_x` + `scroll_y`) plus theme-explicit helpers such as `render_scrollable_dialog_body(frame, block_area, content_area, &lines, &mut scroll, &theme)` or the canonical `Viewport` widget, which render with both-axis offset and draw scrollbars when overflowing. Keyboard scroll is `↑`/`↓`/`j`/`k` (vertical) and `←`/`→`/`h`/`l` (horizontal); the mouse wheel scrolls both axes. Never hand-roll per-row clipping or a bespoke scrollbar — route the body through TermRock scroll primitives.
 
-**Wheel routing is per-surface but uses one handler.** Each surface has its own input loop, so each must route the wheel to the open dialog's scroll state — but all of them call the shared `DialogBodyScroll::on_mouse_scroll(kind, modifiers)` so the behaviour is identical. Two non-obvious requirements that this rule exists to enforce:
+**Wheel routing is per-surface but uses one neutral handler.** Each surface has its own input loop, so each must decode terminal events and call TermRock `DialogScroll::handle_mouse`; backends that still hold raw SGR/bytes first translate them in their surface-local TUI input adapter. Shared widget state never parses escape sequences. Two non-obvious requirements that this rule exists to enforce:
 
 - **A dialog must not swallow wheel events.** The capsule's input dispatch previously dropped every non-left-click press while a dialog was open, eating the wheel before it could scroll the body; the dialog-open guard must let wheel buttons through to the scroll handler.
-- **Every surface that opens a scrollable dialog wires the wheel.** All three input loops route the wheel to the open dialog's `on_mouse_scroll`: the console manager (<RepoFile path="crates/jackin-console/src/tui/input/mouse.rs">crates/jackin-console/src/tui/input/mouse.rs</RepoFile>), the launch cockpit (<RepoFile path="crates/jackin-launch-tui/src/tui/subscriptions.rs">crates/jackin-launch-tui/src/tui/subscriptions.rs</RepoFile>), and the capsule daemon (<RepoFile path="crates/jackin-capsule/src/daemon/input_dispatch.rs">crates/jackin-capsule/src/daemon/input_dispatch.rs</RepoFile>). Adding a new surface that hosts a scrollable dialog means wiring its wheel the same way.
+- **Every surface that opens a scrollable dialog wires the wheel.** All three input loops route the wheel to the open dialog's scroll state: the console manager (<RepoFile path="crates/jackin-console/src/tui/input/mouse.rs">crates/jackin-console/src/tui/input/mouse.rs</RepoFile>), the launch cockpit (<RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs">crates/jackin-launch/src/tui/subscriptions.rs</RepoFile>), and the capsule daemon (<RepoFile path="crates/jackin-capsule/src/tui/daemon/input_dispatch.rs">crates/jackin-capsule/src/tui/daemon/input_dispatch.rs</RepoFile>). Adding a new surface that hosts a scrollable dialog means wiring its wheel the same way.
 
-`on_mouse_scroll` treats `ScrollLeft`/`ScrollRight` as horizontal **and** `Shift`+`ScrollUp`/`ScrollDown` as horizontal, because some terminals map a horizontal trackpad swipe onto a shifted vertical wheel rather than emitting native horizontal-wheel events.
+`DialogScroll::handle_mouse` treats `ScrollLeft`/`ScrollRight` as horizontal **and** `Shift`+`ScrollUp`/`ScrollDown` as horizontal, because some terminals map a horizontal trackpad swipe onto a shifted vertical wheel rather than emitting native horizontal-wheel events.
 
-`ContainerInfoState` (the shared "Debug info" dialog) is the reference implementation: long identity values scroll horizontally instead of clipping, and its click-to-copy hit-test follows the content under both scroll axes. Surfaces that rebuild their dialog state every frame persist the `DialogBodyScroll` outside the rebuilt state and thread it into the rebuilt `ContainerInfoState`.
+`ContainerInfoState` (the shared "Debug info" dialog) is the reference implementation: long identity values scroll horizontally instead of clipping, and its click-to-copy hit-test follows the content under both scroll axes. Surfaces that rebuild their dialog state every frame (the Capsule and launch cockpit) persist the `DialogScroll` outside the rebuilt state — on the Capsule's `Dialog` enum variant and the cockpit's `LaunchView` — and thread it into the rebuilt `ContainerInfoState`.
 
 ### Debug info dialog contract
 
-`DebugInfo::into_state()` in <RepoFile path="crates/jackin-core/src/operator_info.rs">the product facade</RepoFile> is the only row-order and row-label source for Debug info. It projects into TermRock `DetailTable`, the single neutral renderer for shell, values, copy/link capabilities, hover styling, visible regions, and both-axis scroll. No surface may fork either layer.
+`DebugInfo::into_state()` in <RepoFile path="crates/jackin-tui/src/operator_info.rs">the product facade</RepoFile> is the only row-order and row-label source for Debug info. It projects into TermRock `DetailTable`, the single neutral renderer for shell, values, copy/link capabilities, hover styling, visible regions, and both-axis scroll. No surface may fork either layer.
 
 The canonical row order is:
 
@@ -171,15 +171,15 @@ Concrete obligations:
 - **Commit / terminal action** (agent picked, role selected, destructive action confirmed, copy fired, env key + value both committed): clear the entire chain so the operator lands on the underlying screen in one step. A terminal action means "the chain achieved its goal" — walking back through every intermediate step would be noise.
 - **Sub-dialog titles** read as a step inside the parent's flow — `Split: ← Left` for the agent picker opened from a `SplitDirectionPicker`, not `Agent picker` again. The title is what surfaces the breadcrumb to the operator.
 
-The shared mechanism for this contract is `ModalStack` in [TermRock source](https://github.com/tailrocks/termrock). `open_sub` pushes the visible modal as a parent and opens the child, `pop` restores one parent for Esc/cancel, and `clear_chain` closes the whole flow after a terminal commit. Host console editor/settings lifecycle methods route through this primitive even while their public state still exposes `modal` / `modal_parents` compatibility fields.
+The shared mechanism for this contract is TermRock's atomic `FocusRing` + `ModalStack` lifecycle, projected into product state by `jackin_tui::runtime::ModalFlow`. `open_sub` preserves the visible product modal while opening its matching focus scope, `pop` restores both parent and scope for Esc/cancel, and `clear` closes the whole chain after a terminal commit. Product code tests its modal transitions through `ModalFlow`; TermRock owns the primitive focus/stack conformance tests.
 
 Settings uses one `SettingsModal` union for global mounts, environment, and auth dialogs. Tab-specific render and input helpers accept that same modal type and treat a wrong-tab variant as a routing bug, so shared modal behavior has one container shape instead of three parallel enum families.
 
-The capsule's `Vec<Dialog>` stack in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile> has the same semantics and is compatible with `ModalStack`; migrating that storage shape is optional uniformity work, not required for correctness.
+The capsule's product dialog stack in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile> owns pane/session-specific dialog values, while shared focus-scope mechanics remain TermRock-owned. It must preserve the same open/pop/clear semantics and must not reimplement neutral focus traversal.
 
 Modal-to-modal flows carry return context in the modal variant or the shared stack frame, not in a side slot. Environment pickers carry their scope/key/value context on modal variants, and auth-form source/picker flows return through the modal parent stack. A bare `Option<Modal>` slot is not a valid shape for any flow that can open a child modal, because it cannot represent the parent under the child.
 
-Compliance is covered by focused tests for the container palette stack, editor environment-source and mount-destination chains, settings environment chains, settings global-mount add chains, and the shared `ModalStack` push/pop/clear semantics. Treat new Esc-back regressions on any surface as bugs; fix the flow with `ModalStack` semantics rather than adding a new stash.
+Compliance is covered by focused tests for the container palette stack, editor environment-source and mount-destination chains, settings environment chains, settings global-mount add chains, and the jackin❯ `ModalFlow` projection. Treat new Esc-back regressions on any surface as bugs; fix the product flow through the shared lifecycle rather than adding a new stash.
 
 ---
 
@@ -235,8 +235,8 @@ Parity is test-backed for the common auth rows: equivalent settings and editor r
 
 When modifying settings tabs, verify the workspace editor tabs (and vice versa):
 
-- **Scroll focus wiring**: every tab must have a `scroll_focused` field (or use a shared field like `tab_content_scroll_focused`) that is set by the mouse click handler and passed as `focused` to `render_scrollable_block`. No tab may hardcode `focused = false`.
-- **Vertical scroll state**: every tab that can overflow vertically must have a `scroll_y` state field that `render_scrollable_block` mutates in-place. Never use a throwaway local `no_scroll_y = 0u16` unless the tab is genuinely designed to be non-scrollable vertically (and even then, verify the counterpart tab makes the same choice intentionally).
+- **Scroll focus wiring**: every tab must have a `scroll_focused` field (or use a shared field like `tab_content_scroll_focused`) that is set by the mouse click handler and passed as `focused` to the TermRock `Viewport` / console `scroll_block` adapter. No tab may hardcode `focused = false`.
+- **Vertical scroll state**: every tab that can overflow vertically must have a `scroll_y` state field that the scrollable renderer consumes. Never use a throwaway local `no_scroll_y = 0u16` unless the tab is genuinely designed to be non-scrollable vertically (and even then, verify the counterpart tab makes the same choice intentionally).
 - **Content width agreement**: the content width used by the mouse wheel and drag handlers must be computed from the same line-building function the renderer uses. Mismatched width computations make the scrollbar thumb stop short of the track end.
 - **Mouse wheel vertical dispatch**: `scroll_active_panel_vertical` must route to the correct `scroll_y` field for every tab in both panels. A missing branch silently drops scroll events.
 - **Focus highlight**: the green border must appear when and only when the block is focused and scrollable, in both panels identically.
@@ -245,7 +245,7 @@ When modifying settings tabs, verify the workspace editor tabs (and vice versa):
 
 Operators use both surfaces regularly. When Settings Auth scrolls but workspace editor Auth does not (or vice versa), the UI feels broken even if each panel works correctly in isolation. The two panels look alike; they must act alike. Divergence accumulates invisibly until a new operator encounters it and files a bug.
 
-The **shared renderer** (`render_scrollable_block`, `render_scrollable_block_focused`) and **shared scroll helpers** (`scrollable.rs`) enforce visual consistency automatically. The state wiring and mouse handlers are the remaining surface where inconsistency can creep in — which is why this explicit audit rule exists.
+The **shared renderer** (TermRock `Viewport` via the console `scroll_block` adapter, plus `DialogScroll` / `render_scrollbar`) enforces visual consistency automatically. The state wiring and mouse handlers are the remaining surface where inconsistency can creep in — which is why this explicit audit rule exists.
 
 ### Long values in dialogs — truncation is a design violation
 
@@ -255,7 +255,7 @@ Any dialog or info panel that displays a long value (file path, container ID, UR
 
 2. **Word-wrap onto multiple lines**. If the value is a long string (not a path), wrap it within the dialog width. `ErrorPopup` owns the row wrapping, height estimate, scroll offset, and value-cell rectangles so render, OSC 8 overlays, and copy/reveal hit-testing stay aligned.
 
-3. **Horizontal scroll**. Only use this when neither hyperlink nor wrap is feasible. Use `render_scrollable_block` so the shared scrollbar and clamp math apply.
+3. **Horizontal scroll**. Only use this when neither hyperlink nor wrap is feasible. Use TermRock `Viewport` / `DialogScroll` so the shared scrollbar and clamp math apply.
 
 Never silently truncate: `path.display().to_string().chars().take(N).collect()` with no affordance is a design violation. If the operator cannot access the full value, the dialog is broken.
 
@@ -281,7 +281,7 @@ Copy feedback is the exception because copy does not navigate or otherwise chang
 
 ## Debug info dialog — one shared, accumulating component
 
-The "Debug info" dialog has one product facade and one neutral renderer. <RepoFile path="crates/jackin-core/src/operator_info.rs">jackin❯ operator info</RepoFile> owns `DebugInfo`, row order, labels, diagnostics policy, clipboard/open effects, and final OSC emission. TermRock `DetailTable` and `Panel` own rendering, scrolling, copy/link capabilities, hover, copied affordances, and typed hit regions. Console, launch, and Capsule only supply the facts available at their lifecycle stage.
+The "Debug info" dialog has one product facade and one neutral renderer. <RepoFile path="crates/jackin-tui/src/operator_info.rs">jackin❯ operator info</RepoFile> owns `DebugInfo`, row order, labels, diagnostics policy, clipboard/open effects, and final OSC emission. TermRock `DetailTable` and `Panel` own rendering, scrolling, copy/link capabilities, hover, copied affordances, and typed hit regions. Console, launch, and Capsule only supply the facts available at their lifecycle stage.
 
 **The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows the jackin❯ version and invocation ID. The launch cockpit additionally knows the container id, role, agent, target, and optional sanitized telemetry delivery summary. The capsule additionally knows its own binary version. Canonical row order: Invocation ID, Container ID, jackin❯ version, jackin-capsule, Role, Agent, Target, Telemetry. If `Invocation ID` is present, it is always the first visible row and the default Enter-copy target.
 

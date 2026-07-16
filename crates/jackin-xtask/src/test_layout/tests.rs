@@ -63,7 +63,7 @@ fn another_helper() {}
 #[test]
 fn external_test_support_is_allowed_but_inline_support_is_not() {
     assert!(
-        non_tests_rs_violation_at("crates/jackin-launch-tui/src/lib.rs", "mod test_support;\n")
+        non_tests_rs_violation_at("crates/jackin-launch/src/lib.rs", "mod test_support;\n")
             .is_none()
     );
     assert!(non_tests_rs_violation("mod test_support;\n").is_some());

@@ -57,8 +57,8 @@ provider = "expect_per_lint_crate"
 cap = 0
 mode = "enforce"
 [[family.entry]]
-key = "clippy::cast_precision_loss@jackin-launch-tui"
-bound = 1
+key = "clippy::cast_precision_loss@jackin-launch"
+bound = 2
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
 bound = 6
@@ -66,8 +66,8 @@ bound = 6
 key = "clippy::cast_sign_loss@jackin-console"
 bound = 1
 [[family.entry]]
-key = "clippy::cast_sign_loss@jackin-launch-tui"
-bound = 10
+key = "clippy::cast_sign_loss@jackin-launch"
+bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
 bound = 12
@@ -141,7 +141,7 @@ bound = 2
 key = "clippy::excessive_nesting@jackin-core"
 bound = 1
 [[family.entry]]
-key = "clippy::excessive_nesting@jackin-launch-tui"
+key = "clippy::excessive_nesting@jackin-launch"
 bound = 5
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-runtime"
@@ -168,7 +168,7 @@ bound = 1
 key = "clippy::expect_used@jackin-config"
 bound = 2
 [[family.entry]]
-key = "clippy::expect_used@jackin-console-oppicker"
+key = "clippy::expect_used@jackin-oppicker"
 bound = 3
 [[family.entry]]
 key = "clippy::expect_used@jackin-image"
@@ -213,7 +213,7 @@ bound = 1
 key = "clippy::missing_const_for_fn@jackin-console"
 bound = 1
 [[family.entry]]
-key = "clippy::missing_const_for_fn@jackin-console-oppicker"
+key = "clippy::missing_const_for_fn@jackin-oppicker"
 bound = 1
 [[family.entry]]
 key = "clippy::needless_collect@jackin"
@@ -309,13 +309,13 @@ bound = 4
 key = "clippy::struct_excessive_bools@jackin-console"
 bound = 14
 [[family.entry]]
-key = "clippy::struct_excessive_bools@jackin-console-oppicker"
+key = "clippy::struct_excessive_bools@jackin-oppicker"
 bound = 3
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-core"
 bound = 1
 [[family.entry]]
-key = "clippy::struct_excessive_bools@jackin-launch-tui"
+key = "clippy::struct_excessive_bools@jackin-launch"
 bound = 2
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-protocol"
@@ -327,7 +327,7 @@ bound = 3
 key = "clippy::struct_excessive_bools@jackin-xtask"
 bound = 1
 [[family.entry]]
-key = "clippy::suboptimal_flops@jackin-launch-tui"
+key = "clippy::suboptimal_flops@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-capsule"
@@ -348,7 +348,7 @@ bound = 2
 key = "clippy::too_many_arguments@jackin-isolation"
 bound = 1
 [[family.entry]]
-key = "clippy::too_many_arguments@jackin-launch-tui"
+key = "clippy::too_many_arguments@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
@@ -358,7 +358,7 @@ key = "clippy::too_many_arguments@jackin-usage"
 bound = 2
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-capsule"
-bound = 7
+bound = 8
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-console"
 bound = 7
@@ -366,7 +366,7 @@ bound = 7
 key = "clippy::too_many_lines@jackin-env"
 bound = 1
 [[family.entry]]
-key = "clippy::too_many_lines@jackin-launch-tui"
+key = "clippy::too_many_lines@jackin-launch"
 bound = 2
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-protocol"
@@ -384,7 +384,7 @@ bound = 1
 key = "clippy::type_complexity@jackin-test-support"
 bound = 1
 [[family.entry]]
-key = "clippy::type_complexity@jackin-launch-tui"
+key = "clippy::type_complexity@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::unnecessary_wraps@jackin-config"
@@ -456,16 +456,13 @@ bound = 1
 key = "missing_debug_implementations@jackin-instance"
 bound = 1
 [[family.entry]]
-key = "missing_debug_implementations@jackin-launch-tui"
+key = "missing_debug_implementations@jackin-launch"
 bound = 3
 [[family.entry]]
 key = "missing_debug_implementations@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "missing_debug_implementations@jackin-test-support"
-bound = 1
-[[family.entry]]
-key = "missing_docs@jackin-core"
 bound = 1
 [[family.entry]]
 key = "private_bounds@jackin-core"
@@ -512,43 +509,46 @@ key = "CLAUDE.md"
 bound = 6499
 [[family.entry]]
 key = "crates/AGENTS.md"
-bound = 14742
+bound = 14740
 [[family.entry]]
 key = "crates/jackin-agent-status/README.md"
 bound = 2129
+[[family.entry]]
+key = "crates/jackin-brand/README.md"
+bound = 965
 [[family.entry]]
 key = "crates/jackin-build-meta/README.md"
 bound = 628
 [[family.entry]]
 key = "crates/jackin-capsule/README.md"
-bound = 6193
+bound = 6348
 [[family.entry]]
 key = "crates/jackin-config/README.md"
 bound = 2745
 [[family.entry]]
-key = "crates/jackin-console-oppicker/README.md"
-bound = 1625
+key = "crates/jackin-oppicker/README.md"
+bound = 1575
 [[family.entry]]
 key = "crates/jackin-console/README.md"
-bound = 2549
+bound = 2498
 [[family.entry]]
 key = "crates/jackin-core/README.md"
-bound = 5194
+bound = 5482
 [[family.entry]]
 key = "crates/jackin-dev/README.md"
 bound = 1199
 [[family.entry]]
 key = "crates/jackin-diagnostics/README.md"
-bound = 1970
+bound = 2137
 [[family.entry]]
 key = "crates/jackin-docker/README.md"
-bound = 1681
+bound = 1673
 [[family.entry]]
 key = "crates/jackin-env/README.md"
-bound = 2872
+bound = 2860
 [[family.entry]]
 key = "crates/jackin-host/README.md"
-bound = 1756
+bound = 1803
 [[family.entry]]
 key = "crates/jackin-image/README.md"
 bound = 2685
@@ -557,10 +557,10 @@ key = "crates/jackin-instance/README.md"
 bound = 1807
 [[family.entry]]
 key = "crates/jackin-isolation/README.md"
-bound = 2155
+bound = 2171
 [[family.entry]]
-key = "crates/jackin-launch-tui/README.md"
-bound = 1762
+key = "crates/jackin-launch/README.md"
+bound = 1892
 [[family.entry]]
 key = "crates/jackin-lints/README.md"
 bound = 2031
@@ -578,10 +578,10 @@ key = "crates/jackin-otlp-testbed/README.md"
 bound = 1122
 [[family.entry]]
 key = "crates/jackin-protocol/README.md"
-bound = 1144
+bound = 1325
 [[family.entry]]
 key = "crates/jackin-runtime/README.md"
-bound = 3571
+bound = 3652
 [[family.entry]]
 key = "crates/jackin-telemetry/README.md"
 bound = 1940
@@ -592,14 +592,17 @@ bound = 2915
 key = "crates/jackin-test-support/README.md"
 bound = 2633
 [[family.entry]]
+key = "crates/jackin-tui/README.md"
+bound = 1812
+[[family.entry]]
 key = "crates/jackin-usage/README.md"
-bound = 1969
+bound = 2010
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
 bound = 5807
 [[family.entry]]
 key = "crates/jackin/README.md"
-bound = 2793
+bound = 2860
 
 [[family]]
 id = "export-volume"
@@ -669,11 +672,11 @@ bound = 1
 key = "jackin-console"
 bound = 7
 [[family.entry]]
-key = "jackin-console-oppicker"
+key = "jackin-oppicker"
 bound = 3
 [[family.entry]]
 key = "jackin-core"
-bound = 3
+bound = 1
 [[family.entry]]
 key = "jackin-diagnostics"
 bound = 11
@@ -699,20 +702,23 @@ bound = 2
 key = "jackin-isolation"
 bound = 6
 [[family.entry]]
-key = "jackin-launch-tui"
-bound = 7
+key = "jackin-launch"
+bound = 8
 [[family.entry]]
 key = "jackin-manifest"
 bound = 5
 [[family.entry]]
 key = "jackin-protocol"
-bound = 6
+bound = 7
 [[family.entry]]
 key = "jackin-runtime"
 bound = 7
 [[family.entry]]
 key = "jackin-term"
 bound = 6
+[[family.entry]]
+key = "jackin-tui"
+bound = 3
 [[family.entry]]
 key = "jackin-test-support"
 bound = 4
@@ -821,7 +827,7 @@ bound = 28
 key = "jackin-isolation"
 bound = 23
 [[family.entry]]
-key = "jackin-launch-tui"
+key = "jackin-launch"
 bound = 41
 [[family.entry]]
 key = "jackin-lints"

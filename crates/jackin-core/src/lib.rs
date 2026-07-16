@@ -18,7 +18,6 @@
 
 mod account_key;
 mod agent;
-mod ansi_tokens;
 mod auth;
 mod build_log_sink;
 mod clock;
@@ -31,13 +30,11 @@ mod docker;
 mod docker_security;
 mod env_model;
 mod env_value;
-mod host_colors;
 mod instance;
 mod isolation;
 mod isolation_record;
 mod launch_progress;
 mod manifest;
-mod modal_outcome;
 mod op_cache;
 mod op_probe_error;
 mod op_reference;
@@ -51,8 +48,6 @@ mod selector;
 mod session_id;
 mod standalone_dialog;
 mod status;
-/// Ratatui adapters for the product-owned jackin❯ palette.
-pub mod tui_theme;
 mod url_text;
 mod workspace_label;
 mod workspace_name;
@@ -60,7 +55,6 @@ mod worktree_dirty;
 
 pub use account_key::*;
 pub use agent::{Agent, AgentRuntime, AgentStatePaths, ParseAgentError, agent_runtime_registry};
-pub use ansi_tokens::*;
 pub use auth::*;
 pub use build_log_sink::*;
 pub use clock::*;
@@ -71,13 +65,11 @@ pub use docker::*;
 pub use docker_security::*;
 pub use env_model::*;
 pub use env_value::*;
-pub use host_colors::*;
 pub use instance::*;
 pub use isolation::*;
 pub use isolation_record::*;
 pub use launch_progress::*;
 pub use manifest::*;
-pub use modal_outcome::*;
 pub use op_cache::*;
 pub use op_probe_error::*;
 pub use op_reference::*;
@@ -97,8 +89,3 @@ pub use url_text::*;
 pub use workspace_label::*;
 pub use workspace_name::*;
 pub use worktree_dirty::*;
-#[expect(
-    missing_docs,
-    reason = "operator-information projection is documented as one cohesive product facade"
-)]
-pub mod operator_info;

@@ -1,6 +1,7 @@
 # jackin-diagnostics
 
 Composition root for jackin❯ observability and in-memory invocation progress.
+Terminal-ownership and title policy for rich surfaces live in this crate's `terminal` module (product-owned process globals; TermRock owns neutral session mechanics).
 
 ## What this crate owns
 

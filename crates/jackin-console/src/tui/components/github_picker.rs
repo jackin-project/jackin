@@ -10,8 +10,8 @@
 
 use crate::github_mounts::GithubChoice;
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_core::ModalOutcome;
 use jackin_core::shorten_home;
+use jackin_tui::ModalOutcome;
 use termrock::widgets::ListState;
 
 #[derive(Debug)]
@@ -79,12 +79,18 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::{PHOSPHOR_DIM, WHITE};
-use termrock::layout::{DialogBorder, render_dialog_shell};
+use termrock::layout::render_dialog_shell;
+use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{List, ListRow, RowRole};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
-    let inner = render_dialog_shell(frame, area, Some("Open in GitHub"), DialogBorder::Default);
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Open in GitHub"),
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
+    );
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -98,7 +104,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no GitHub sources",
-                jackin_core::tui_theme::DIM,
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],
@@ -125,12 +131,21 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
             ListRow {
                 id: i,
                 label: Line::from(vec![
-                    Span::styled(display.to_owned(), Style::default().fg(WHITE)),
+                    Span::styled(
+                        display.to_owned(),
+                        Style::default().fg(termrock::Theme::default()
+                            .style(termrock::style::Role::Text)
+                            .fg
+                            .unwrap_or_default()),
+                    ),
                     Span::raw(format!("{}  ", " ".repeat(pad))),
                     Span::styled(
                         format!("github \u{b7} {}", c.branch),
                         Style::default()
-                            .fg(PHOSPHOR_DIM)
+                            .fg(termrock::Theme::default()
+                                .style(termrock::style::Role::TextMuted)
+                                .fg
+                                .unwrap_or_default())
                             .add_modifier(Modifier::ITALIC),
                     ),
                 ]),
@@ -144,7 +159,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
     frame.render_stateful_widget(
         &List::new(&items, &theme),
         rows[1],
-        &mut ListState::new(state.list_state.selected),
+        &mut ListState::new(state.list_state.selected().copied()),
     );
 }
 

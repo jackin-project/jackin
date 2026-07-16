@@ -143,7 +143,7 @@ impl Dialog {
     pub fn new_github_context() -> Self {
         Self::GitHubContext {
             copied: false,
-            scroll: termrock::layout::DialogBodyScroll::new(),
+            scroll: termrock::scroll::DialogScroll::new(),
         }
     }
 }

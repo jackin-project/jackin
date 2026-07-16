@@ -124,12 +124,12 @@ pub fn draw_scrollbar(
     };
     let col = pane_col.saturating_add(pane_cols).saturating_sub(1);
 
-    // Active pane uses the brand phosphor-green; inactive panes a
-    // neutral gray that matches their inactive border colour.
+    // Active pane uses TermRock scroll-thumb accent; inactive panes use the
+    // inactive border role so thumbs match Panel border semantics.
     let thumb_color = if focused {
-        jackin_core::PHOSPHOR_GREEN
+        crate::tui::ansi::role_rgb(termrock::style::Role::ScrollThumb)
     } else {
-        jackin_core::BORDER_GRAY_LIGHT
+        crate::tui::ansi::role_rgb(termrock::style::Role::Border)
     };
 
     // Thumb rows are 0-based relative to the interior; skip the top

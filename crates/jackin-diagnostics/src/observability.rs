@@ -1449,7 +1449,7 @@ mod otlp {
         "jackin_image",
         "jackin_instance",
         "jackin_isolation",
-        "jackin_launch_tui",
+        "jackin_launch",
         "jackin_manifest",
         "jackin_pr_trailers",
         "jackin_protocol",

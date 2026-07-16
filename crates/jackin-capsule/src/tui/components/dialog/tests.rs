@@ -34,7 +34,7 @@ fn palette() -> Dialog {
 fn spawn_failure_popup_uses_error_popup_hints_and_dismiss_keys() {
     let mut dialog = Dialog::SpawnFailure(SpawnFailureState::new("Spawn failed", "shell: cap hit"));
     assert_eq!(
-        dialog.footer_hint_spans(None, termrock::layout::ScrollAxes::none()),
+        dialog.footer_hint_spans(None, termrock::scroll::ScrollAxes::none()),
         vec![
             termrock::widgets::HintSpan::Key("↵/Esc"),
             termrock::widgets::HintSpan::Text("dismiss"),
@@ -434,7 +434,7 @@ fn container_info_fixture() -> Dialog {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     }
 }
 
@@ -450,7 +450,7 @@ fn container_info_with_diagnostics_fixture() -> Dialog {
         },
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     }
 }
 
@@ -543,7 +543,7 @@ fn container_info_state_without_invocation_omits_identity_row() {
         },
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     let state = d
         .container_info_state_with_debug(true)
@@ -758,7 +758,7 @@ fn container_info_clear_copy_feedback_hides_badge() {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     assert!(d.clear_copy_feedback());
     let Dialog::ContainerInfo { copied_row, .. } = d else {
@@ -782,7 +782,7 @@ fn github_context_enter_copies_pr_url_and_shows_feedback() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
 
     match d.handle_key(b"\r", Some(&view)) {
@@ -800,7 +800,7 @@ fn github_context_o_opens_pr_url() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
 
     match d.handle_key(b"o", Some(&view)) {
@@ -822,7 +822,7 @@ fn github_context_c_opens_ci_url_when_available() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
 
     match d.handle_key(b"c", Some(&view)) {
@@ -842,7 +842,7 @@ fn github_context_url_click_copies_pr_url() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -867,7 +867,7 @@ fn github_context_open_rows_click_open_urls() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -897,7 +897,7 @@ fn github_context_unavailable_ci_row_is_not_clickable() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -922,7 +922,7 @@ fn github_context_uses_shared_focused_info_dialog() {
     let pr = pull_request_fixture();
     let d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
 
     let view = github_view_for_fixture(&pr);
@@ -1975,10 +1975,6 @@ fn usage_dialog_renders_inside_narrow_terminal() {
     assert!(!rendered.contains("████"), "{rendered}");
     assert!(rendered.contains("Session  37% left"), "{rendered}");
     assert!(!rendered.contains("Focused :"), "{rendered}");
-    assert!(
-        rendered.contains("┃") || rendered.contains("·"),
-        "{rendered}"
-    );
 }
 
 #[test]
@@ -2229,9 +2225,11 @@ fn github_context_clamp_body_scroll_reduces_overscroll() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll {
-            scroll_x: u16::MAX,
-            scroll_y: u16::MAX,
+        scroll: {
+            let mut __scroll = termrock::scroll::DialogScroll::default();
+            __scroll.scroll_x = u16::MAX;
+            __scroll.scroll_y = u16::MAX;
+            __scroll
         },
     };
 

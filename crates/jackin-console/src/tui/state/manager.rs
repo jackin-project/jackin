@@ -9,8 +9,7 @@ use ratatui::layout::Rect;
 
 use crate::tui::runtime::BlockingSubscription;
 use jackin_config::AppConfig;
-use termrock::interaction::FocusOwner;
-use termrock::runtime::{Subscription, SubscriptionPoll};
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use crate::tui::model::{
@@ -65,7 +64,7 @@ impl ManagerState<'_> {
         }
     }
 
-    pub const fn reset_list_scroll(&mut self) {
+    pub fn reset_list_scroll(&mut self) {
         self.list_mounts_scroll_x = 0;
         self.list_mounts_scroll_y = 0;
         self.list_global_mounts_scroll_x = 0;
@@ -74,32 +73,34 @@ impl ManagerState<'_> {
         self.list_role_global_mounts_scroll_y = 0;
         self.list_roles_scroll_x = 0;
         self.list_roles_scroll_y = 0;
-        self.list_focus_owner = FocusOwner::TabBar;
+        self.list_focus_owner.focus_tab_bar();
         self.list_names_scroll_x = 0;
         self.list_names_scroll_y = 0;
     }
 
-    pub const fn list_names_focused(&self) -> bool {
+    pub fn list_names_focused(&self) -> bool {
         self.list_focus_owner.is_tab_bar()
     }
 
     pub fn set_list_names_focused(&mut self, focused: bool) {
         if focused {
-            self.list_focus_owner = FocusOwner::TabBar;
+            self.list_focus_owner.focus_tab_bar();
         } else if self.list_names_focused() {
-            self.list_focus_owner = FocusOwner::Content(MountScrollFocus::Workspace);
+            self.list_focus_owner
+                .focus_content(MountScrollFocus::Workspace);
         }
     }
 
-    pub const fn list_scroll_focus(&self) -> Option<MountScrollFocus> {
-        match self.list_focus_owner {
-            FocusOwner::Content(focus) => Some(focus),
-            FocusOwner::TabBar => None,
-        }
+    pub fn list_scroll_focus(&self) -> Option<MountScrollFocus> {
+        self.list_focus_owner.focused_content()
     }
 
     pub fn set_list_scroll_focus(&mut self, focus: Option<MountScrollFocus>) {
-        self.list_focus_owner = focus.map_or(FocusOwner::TabBar, FocusOwner::Content);
+        if let Some(focus) = focus {
+            self.list_focus_owner.focus_content(focus);
+        } else {
+            self.list_focus_owner.focus_tab_bar();
+        }
     }
 
     /// Allocates a fresh empty cache and assumes `op` unavailable —
@@ -155,7 +156,9 @@ impl ManagerState<'_> {
             list_role_global_mounts_scroll_y: 0,
             list_roles_scroll_x: 0,
             list_roles_scroll_y: 0,
-            list_focus_owner: FocusOwner::TabBar,
+            list_focus_owner: jackin_tui::runtime::SurfaceFocus::tab_bar(
+                MountScrollFocus::Workspace,
+            ),
             list_names_scroll_x: 0,
             list_names_scroll_y: 0,
             list_split_pct: DEFAULT_SPLIT_PCT,

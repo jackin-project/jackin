@@ -18,7 +18,7 @@ use jackin_image::derived_image::{
 use jackin_image::image_decision::ImageInvalidationReason;
 use jackin_image::image_recipe::{recipe_labels, supported_set_uses_cache_bust};
 use jackin_image::version_check;
-use jackin_launch_tui::build_log::DiagnosticsBuildLogSink;
+use jackin_launch::build_log::DiagnosticsBuildLogSink;
 use jackin_manifest::repo::CachedRepo;
 
 use crate::runtime::naming::{

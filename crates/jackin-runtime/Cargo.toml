@@ -18,6 +18,7 @@ name = "jackin_runtime"
 path = "src/lib.rs"
 
 [dependencies]
+jackin-brand = { workspace = true }
 jackin-core = { workspace = true }
 jackin-config = { workspace = true }
 jackin-env = { workspace = true }
@@ -25,7 +26,7 @@ jackin-manifest = { workspace = true }
 jackin-docker = { workspace = true }
 jackin-image = { workspace = true }
 jackin-diagnostics = { workspace = true }
-jackin-launch-tui = { workspace = true }
+jackin-launch = { workspace = true }
 jackin-host = { workspace = true }
 jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
@@ -40,8 +41,6 @@ thiserror = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
-ratatui = { workspace = true }
-termrock = { workspace = true }
 crossterm = { workspace = true }
 dialoguer = { workspace = true }
 sha2 = { workspace = true }

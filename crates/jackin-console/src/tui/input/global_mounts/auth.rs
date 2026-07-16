@@ -43,7 +43,10 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 return;
             };
             if settings.is_dirty() {
-                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+                settings
+                    .mounts
+                    .modals
+                    .open(confirm_modal(GlobalMountConfirm::Discard));
             }
         }
         SettingsAuthKeyPlan::ReturnToList => {
@@ -243,7 +246,8 @@ pub fn handle_settings_auth_modal(
             match source_picker_plan(outcome) {
                 SourcePickerPlan::Plain => {
                     let literal = auth
-                        .modal_parents
+                        .modals
+                        .parents()
                         .last()
                         .and_then(|m| {
                             if let SettingsModal::AuthForm { literal_buffer, .. } = m {
@@ -353,7 +357,7 @@ pub fn handle_settings_auth_modal(
 fn handle_settings_token_generate_pick(
     auth: &mut crate::tui::state::SettingsAuthState,
     pending_token_generate: &mut Option<crate::tui::state::PendingTokenGenerate>,
-    outcome: jackin_console_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
+    outcome: jackin_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
     modal: SettingsModal<'static>,
 ) {
     use crate::tui::op_picker::OpPickerSelection;

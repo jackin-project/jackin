@@ -137,10 +137,11 @@ fn real_tiers_table_covers_every_expected_member() {
         "jackin",
         "jackin-agent-status",
         "jackin-build-meta",
+        "jackin-brand",
         "jackin-capsule",
         "jackin-config",
         "jackin-console",
-        "jackin-console-oppicker",
+        "jackin-oppicker",
         "jackin-core",
         "jackin-dev",
         "jackin-diagnostics",
@@ -150,7 +151,7 @@ fn real_tiers_table_covers_every_expected_member() {
         "jackin-image",
         "jackin-instance",
         "jackin-isolation",
-        "jackin-launch-tui",
+        "jackin-launch",
         "jackin-manifest",
         "jackin-otlp-testbed",
         "jackin-pr-trailers",
@@ -159,6 +160,7 @@ fn real_tiers_table_covers_every_expected_member() {
         "jackin-runtime",
         "jackin-telemetry",
         "jackin-term",
+        "jackin-tui",
         "jackin-test-support",
         "jackin-usage",
         "jackin-xtask",
@@ -191,4 +193,99 @@ fn evaluate_accepts_live_tier_shape_on_synthetic_clean_graph() {
     ]);
     let problems = evaluate(&t, &prod, &dev, &m, &[]);
     assert!(problems.is_empty(), "{problems:?}");
+}
+
+#[test]
+fn tui_ownership_gate_accepts_clean_boundaries() {
+    let temp = tempfile::tempdir().unwrap();
+    for path in [
+        "crates/jackin-core/src",
+        "crates/jackin-runtime/src",
+        "crates/jackin-tui/src",
+    ] {
+        std::fs::create_dir_all(temp.path().join(path)).unwrap();
+    }
+    std::fs::write(
+        temp.path().join("crates/jackin-core/Cargo.toml"),
+        "[package]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("crates/jackin-runtime/Cargo.toml"),
+        "[package]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("crates/jackin-tui/src/lib.rs"),
+        "pub mod tokens;\n",
+    )
+    .unwrap();
+
+    check_tui_ownership(temp.path()).unwrap();
+}
+
+#[test]
+fn tui_ownership_gate_rejects_core_presentation_and_shared_run_loop() {
+    let temp = tempfile::tempdir().unwrap();
+    for path in [
+        "crates/jackin-core/src",
+        "crates/jackin-runtime/src",
+        "crates/jackin-tui/src",
+    ] {
+        std::fs::create_dir_all(temp.path().join(path)).unwrap();
+    }
+    std::fs::write(
+        temp.path().join("crates/jackin-core/Cargo.toml"),
+        "[dependencies]\nratatui = \"*\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("crates/jackin-runtime/Cargo.toml"),
+        "[package]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("crates/jackin-core/src/lib.rs"),
+        "use termrock::Theme;\n",
+    )
+    .unwrap();
+    std::fs::write(temp.path().join("crates/jackin-tui/src/run.rs"), "").unwrap();
+
+    let error = check_tui_ownership(temp.path()).unwrap_err().to_string();
+    assert!(error.contains("jackin-core/Cargo.toml"), "{error}");
+    assert!(error.contains("jackin-core/src/lib.rs"), "{error}");
+    assert!(error.contains("jackin-tui/src/run.rs"), "{error}");
+}
+
+#[test]
+fn tui_ownership_gate_rejects_surface_local_host_color_handshake() {
+    let temp = tempfile::tempdir().unwrap();
+    for path in [
+        "crates/jackin-core/src",
+        "crates/jackin-runtime/src/runtime",
+        "crates/jackin-tui/src",
+        "crates/jackin-capsule/src/tui",
+    ] {
+        std::fs::create_dir_all(temp.path().join(path)).unwrap();
+    }
+    std::fs::write(
+        temp.path().join("crates/jackin-core/Cargo.toml"),
+        "[package]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("crates/jackin-runtime/Cargo.toml"),
+        "[package]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path()
+            .join("crates/jackin-capsule/src/tui/host_colors.rs"),
+        "",
+    )
+    .unwrap();
+
+    let error = check_tui_ownership(temp.path()).unwrap_err().to_string();
+    assert!(error.contains("host_colors.rs"), "{error}");
+    assert!(error.contains("jackin-protocol"), "{error}");
 }

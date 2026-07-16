@@ -171,6 +171,6 @@ fn render_error(error: &anyhow::Error, debug: bool) {
             eprintln!("  {} {error:#}", "detail:".dimmed());
         }
     } else {
-        jackin_launch_tui::output::fatal(&format!("{error:#}"));
+        jackin_launch::output::fatal(&format!("{error:#}"));
     }
 }

@@ -14,7 +14,7 @@
 
 use std::io::{self, Write as _};
 
-use jackin_core::{PHOSPHOR_DIM, PHOSPHOR_GREEN, owo_rgb};
+use jackin_brand::{PHOSPHOR_DIM, PHOSPHOR_GREEN, owo_rgb};
 use jackin_diagnostics::{is_debug_mode, rich_terminal_owned};
 
 /// Display a spinner while waiting, returning when `poll` returns `Ok(())`.

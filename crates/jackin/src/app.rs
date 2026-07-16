@@ -8,7 +8,7 @@
 //! stable library boundary — callers are `main.rs` and tests only.
 //!
 //! Not responsible for: argument parsing (`cli/`), runtime mechanics
-//! (`runtime/`), or TUI rendering (`console/tui/`). This module is glue.
+//! (`runtime/`), or TUI rendering (`console/adapter/`). This module is glue.
 
 mod config_cmd;
 pub(crate) mod context;
@@ -142,7 +142,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     // domain crates can call `jackin_core::emit_compact_line` without
     // depending on the diagnostics implementation.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
-    jackin_launch_tui::install_standalone_dialog_sink();
+    jackin_launch::install_standalone_dialog_sink();
     if debug {
         announce_debug_run(&diagnostics);
     }

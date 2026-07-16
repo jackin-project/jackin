@@ -3,16 +3,16 @@
 
 //! Workspace-manager effect executors and background polling.
 
-use crate::console::services::instances::load_instance_refresh_snapshot;
-use crate::console::tui::{
+use crate::console::adapter::{
     ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
 };
+use crate::console::services::instances::load_instance_refresh_snapshot;
 use jackin_config::AppConfig;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::runtime::spawn_blocking_subscription;
 use jackin_console::tui::screens::workspaces::update::saved_workspace_selected_index;
 
-use crate::console::tui::state::{
+use crate::console::adapter::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
 };
@@ -253,7 +253,7 @@ pub(crate) fn apply_role_load_completion(
             );
             let err_text = e.to_string();
             if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
-                crate::console::tui::state::open_role_input_error(
+                crate::console::adapter::state::open_role_input_error(
                     editor,
                     &format!(
                         "Could not load role {:?}.\n\nThe role loader hit an internal \
@@ -295,14 +295,16 @@ fn apply_role_source_persist_result(
                         "role",
                         "role source is trusted; adding key={key:?} directly to the workspace"
                     );
-                    crate::console::tui::state::add_role_to_workspace_editor(editor, config, &key);
+                    crate::console::adapter::state::add_role_to_workspace_editor(
+                        editor, config, &key,
+                    );
                 } else {
                     jackin_diagnostics::telemetry_debug!(
                         "role",
                         "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
                         git = source.git.as_str()
                     );
-                    crate::console::tui::state::open_role_trust_confirm(editor, key, source);
+                    crate::console::adapter::state::open_role_trust_confirm(editor, key, source);
                 }
             }
             Err(e) => {
@@ -330,13 +332,13 @@ fn apply_role_source_persist_result(
                 let ManagerStage::Editor(editor) = &mut state.stage else {
                     return;
                 };
-                crate::console::tui::state::add_role_to_workspace_editor(editor, config, &key);
+                crate::console::adapter::state::add_role_to_workspace_editor(editor, config, &key);
             }
             Err(error) => {
                 let ManagerStage::Editor(editor) = &mut state.stage else {
                     return;
                 };
-                crate::console::tui::state::open_editor_action_error(editor, &error);
+                crate::console::adapter::state::open_editor_action_error(editor, &error);
             }
         },
     }
@@ -379,7 +381,9 @@ pub(crate) fn apply_role_load_completion_for_tests(
                     "role source is trusted; adding key={key:?} directly to the workspace",
                     key = load.key
                 );
-                crate::console::tui::state::add_role_to_workspace_editor(editor, config, &load.key);
+                crate::console::adapter::state::add_role_to_workspace_editor(
+                    editor, config, &load.key,
+                );
             } else {
                 jackin_diagnostics::telemetry_debug!(
                     "role",
@@ -387,7 +391,11 @@ pub(crate) fn apply_role_load_completion_for_tests(
                     key = load.key,
                     git = load.source.git.as_str()
                 );
-                crate::console::tui::state::open_role_trust_confirm(editor, load.key, load.source);
+                crate::console::adapter::state::open_role_trust_confirm(
+                    editor,
+                    load.key,
+                    load.source,
+                );
             }
         }
         Err(e) => {
@@ -399,7 +407,7 @@ pub(crate) fn apply_role_load_completion_for_tests(
             );
             let err_text = e.to_string();
             if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
-                crate::console::tui::state::open_role_input_error(
+                crate::console::adapter::state::open_role_input_error(
                     editor,
                     &format!(
                         "Could not load role {:?}.\n\nThe role loader hit an internal \
@@ -475,10 +483,10 @@ pub(crate) fn persist_trusted_role_source_for_tests(
 ) {
     match execute_role_source_persist(config, paths, key, source) {
         Ok(()) => {
-            crate::console::tui::state::add_role_to_workspace_editor(editor, config, key);
+            crate::console::adapter::state::add_role_to_workspace_editor(editor, config, key);
         }
         Err(error) => {
-            crate::console::tui::state::open_editor_action_error(editor, &error);
+            crate::console::adapter::state::open_editor_action_error(editor, &error);
         }
     }
 }
@@ -507,7 +515,7 @@ fn execute_trusted_role_source_persist(
 pub(crate) fn execute_token_generate(
     paths: &jackin_core::JackinPaths,
     config: &AppConfig,
-    req: &crate::console::tui::state::PendingTokenGenerate,
+    req: &crate::console::adapter::state::PendingTokenGenerate,
 ) -> anyhow::Result<jackin_core::EnvValue> {
     jackin_env::mint_token_value(paths, config, &req.scope, &req.args)
 }

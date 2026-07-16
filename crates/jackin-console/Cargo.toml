@@ -15,13 +15,14 @@ anyhow = { workspace = true }
 crossterm = { workspace = true }
 directories = { workspace = true }
 jackin-config = { workspace = true }
-jackin-console-oppicker = { workspace = true }
+jackin-oppicker = { workspace = true }
 jackin-core = { workspace = true }
+jackin-tui = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-telemetry = { workspace = true }
 jackin-env = { workspace = true }
 jackin-protocol = { workspace = true }
-termrock = { workspace = true, features = ["crossterm"] }
+termrock = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync"] }
 nix = { workspace = true, features = ["term"] }
 open = "5.3.4"

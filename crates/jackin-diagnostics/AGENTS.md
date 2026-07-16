@@ -3,4 +3,4 @@
 
 ## Boundaries
 
-- Terminal-ownership *guards* live in `jackin-tui` (re-exported here). Usage/telemetry *store* + token monitors live in `jackin-usage`.
+- Product terminal-ownership guards live in this crate's `terminal` module; TermRock owns neutral session mechanics. Usage/telemetry *store* + token monitors live in `jackin-usage`.

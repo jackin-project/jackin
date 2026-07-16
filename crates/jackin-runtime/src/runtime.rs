@@ -15,7 +15,6 @@ pub mod docker_profile;
 pub mod drift;
 pub mod exit_summary;
 pub mod host_attach;
-pub mod host_colors;
 pub mod identity;
 pub mod image;
 pub mod launch;

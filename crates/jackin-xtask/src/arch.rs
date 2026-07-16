@@ -36,9 +36,11 @@ use crate::report::{self, FormatArgs};
 pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-core", 0),
     ("jackin-telemetry", 0),
+    ("jackin-brand", 0),
     ("jackin-dev", 0),
     ("jackin-process", 0),
     ("jackin-term", 0),
+    ("jackin-tui", 1),
     ("jackin-build-meta", 1),
     ("jackin-pr-trailers", 1),
     ("jackin-xtask", 1),
@@ -47,12 +49,12 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-agent-status", 2),
     ("jackin-diagnostics", 2),
     ("jackin-manifest", 2),
-    ("jackin-console-oppicker", 3),
+    ("jackin-oppicker", 3),
     ("jackin-docker", 3),
     ("jackin-env", 3),
     ("jackin-instance", 3),
-    ("jackin-launch-tui", 3),
     ("jackin-otlp-testbed", 3),
+    ("jackin-launch", 3),
     ("jackin-test-support", 3),
     ("jackin-usage", 3),
     ("jackin-capsule", 4),
@@ -126,6 +128,7 @@ fn run_inner(args: LintArchArgs) -> Result<()> {
     crate::container_paths_gate::check_turso_sole_owner(&root)?;
     // Plan 019: env-pilot curated `pub mod` surface (grows as crates narrow).
     crate::ratchet::check_curated_pub_mods(&root)?;
+    check_tui_ownership(&root)?;
     let metadata = read_metadata(&root)?;
 
     let workspace_members: BTreeSet<String> = {
@@ -211,6 +214,113 @@ fn run_inner(args: LintArchArgs) -> Result<()> {
     }
     emit(&message);
     emit("hint: re-run with --strict to fail on these");
+    Ok(())
+}
+
+fn check_tui_ownership(root: &std::path::Path) -> Result<()> {
+    let mut problems = Vec::new();
+    for legacy in ["crates/jackin-launch-tui", "crates/jackin-console-oppicker"] {
+        if root.join(legacy).exists() {
+            problems.push(format!(
+                "{legacy}: retired crate directory exists; use the canonical surface crate name"
+            ));
+        }
+    }
+    for duplicate_tui in [
+        "crates/jackin/src/console/tui.rs",
+        "crates/jackin/src/console/tui",
+    ] {
+        if root.join(duplicate_tui).exists() {
+            problems.push(format!(
+                "{duplicate_tui}: root console cannot own a second TUI tree; keep product presentation in jackin-console and host bindings under console/adapter"
+            ));
+        }
+    }
+    for duplicate_terminal_adapter in [
+        "crates/jackin-runtime/src/runtime/host_colors.rs",
+        "crates/jackin-capsule/src/tui/host_colors.rs",
+    ] {
+        if root.join(duplicate_terminal_adapter).exists() {
+            problems.push(format!(
+                "{duplicate_terminal_adapter}: OSC host-color handshake is shared protocol behavior; keep its single implementation in jackin-protocol"
+            ));
+        }
+    }
+
+    check_file_excludes(
+        &root.join("crates/jackin-core/Cargo.toml"),
+        &["ratatui", "crossterm", "termrock", "jackin-tui"],
+        &mut problems,
+    )?;
+    check_rust_tree_excludes(
+        &root.join("crates/jackin-core/src"),
+        &["ratatui", "crossterm", "termrock", "jackin_tui"],
+        &mut problems,
+    )?;
+    check_file_excludes(
+        &root.join("crates/jackin-runtime/Cargo.toml"),
+        &["ratatui", "termrock", "jackin-tui"],
+        &mut problems,
+    )?;
+    check_rust_tree_excludes(
+        &root.join("crates/jackin-runtime/src"),
+        &["ratatui", "termrock", "jackin_tui"],
+        &mut problems,
+    )?;
+
+    let shared_src = root.join("crates/jackin-tui/src");
+    for forbidden in ["theme.rs", "terminal.rs", "run.rs"] {
+        if shared_src.join(forbidden).exists() {
+            problems.push(format!(
+                "crates/jackin-tui/src/{forbidden}: shared product composition cannot own a generic theme, terminal lifecycle, or run loop"
+            ));
+        }
+    }
+
+    if problems.is_empty() {
+        return Ok(());
+    }
+    problems.sort();
+    bail!(
+        "{} TUI ownership violation(s):\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    )
+}
+
+fn check_file_excludes(
+    path: &std::path::Path,
+    forbidden: &[&str],
+    problems: &mut Vec<String>,
+) -> Result<()> {
+    let source = std::fs::read_to_string(path)
+        .with_context(|| format!("reading TUI ownership input {}", path.display()))?;
+    for token in forbidden {
+        if source.contains(token) {
+            problems.push(format!(
+                "{}: contains forbidden TUI dependency `{token}`",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn check_rust_tree_excludes(
+    dir: &std::path::Path,
+    forbidden: &[&str],
+    problems: &mut Vec<String>,
+) -> Result<()> {
+    for entry in crate::fs_util::read_dir_sorted(dir)
+        .with_context(|| format!("reading TUI ownership tree {}", dir.display()))?
+    {
+        let path = entry.path();
+        if path.is_dir() {
+            check_rust_tree_excludes(&path, forbidden, problems)?;
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            check_file_excludes(&path, forbidden, problems)?;
+        }
+    }
     Ok(())
 }
 

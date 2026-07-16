@@ -28,16 +28,18 @@ name = "build-jackin-capsule"
 path = "src/bin/build_jackin_capsule/main.rs"
 
 [dependencies]
+jackin-brand = { workspace = true }
 anyhow = { workspace = true }
 jackin-config = { workspace = true }
 jackin-core = { workspace = true }
+jackin-tui = { workspace = true }
 jackin-docker = { workspace = true }
 jackin-manifest = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-env = { workspace = true }
 jackin-image = { workspace = true }
 jackin-runtime = { workspace = true }
-jackin-launch-tui = { workspace = true }
+jackin-launch = { workspace = true }
 jackin-console = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-usage = { workspace = true }

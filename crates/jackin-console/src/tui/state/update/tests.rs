@@ -9,8 +9,8 @@ use crate::tui::state::{
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsModal, SettingsState,
     SettingsTab,
 };
+use jackin_tui::runtime::SurfaceFocusTarget;
 use ratatui::layout::Rect;
-use termrock::interaction::FocusOwner;
 
 fn state_with_saved_count(count: usize) -> ManagerState<'static> {
     let tmp = tempfile::tempdir().unwrap();
@@ -477,14 +477,18 @@ fn dismiss_settings_error_popup_restores_pending_auth_form() {
     let mut state = state_with_saved_count(0);
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.error_popup = Some(ErrorPopupState::new("Token mint failed", "op item missing"));
-    settings.auth.modal_parents.push(SettingsModal::AuthForm {
-        target: AuthFormTarget::Workspace {
-            kind: AuthKind::Claude,
-        },
-        state: Box::new(AuthForm::new(AuthKind::Claude)),
-        focus: AuthFormFocus::Save,
-        literal_buffer: "token".into(),
-    });
+    settings
+        .auth
+        .modals
+        .parents_mut()
+        .push(SettingsModal::AuthForm {
+            target: AuthFormTarget::Workspace {
+                kind: AuthKind::Claude,
+            },
+            state: Box::new(AuthForm::new(AuthKind::Claude)),
+            focus: AuthFormFocus::Save,
+            literal_buffer: "token".into(),
+        });
     state.stage = ManagerStage::Settings(settings);
 
     assert!(update_manager(&mut state, ManagerMessage::DismissSettingsErrorPopup).is_dirty());
@@ -493,23 +497,23 @@ fn dismiss_settings_error_popup_restores_pending_auth_form() {
         panic!("expected settings stage");
     };
     assert!(settings.error_popup.is_none());
-    assert!(settings.auth.modal_parents.is_empty());
+    assert!(settings.auth.modals.parents().is_empty());
     let Some(SettingsModal::AuthForm {
         target,
         focus,
         literal_buffer,
         ..
-    }) = settings.auth.modal
+    }) = settings.auth.modals.current()
     else {
         panic!("expected auth form to be restored");
     };
     assert_eq!(
-        target,
+        *target,
         AuthFormTarget::Workspace {
             kind: AuthKind::Claude
         }
     );
-    assert_eq!(focus, AuthFormFocus::Save);
+    assert_eq!(*focus, AuthFormFocus::Save);
     assert_eq!(literal_buffer, "token");
 }
 
@@ -942,13 +946,13 @@ fn set_list_scroll_focus_stores_focus() {
     );
     assert_eq!(state.list_scroll_focus(), Some(MountScrollFocus::Workspace));
     assert_eq!(
-        state.list_focus_owner,
-        FocusOwner::Content(MountScrollFocus::Workspace)
+        state.list_focus_owner.focused(),
+        SurfaceFocusTarget::Content(MountScrollFocus::Workspace)
     );
 
     assert!(update_manager(&mut state, ManagerMessage::SetListScrollFocus(None)).is_dirty());
     assert!(state.list_scroll_focus().is_none());
-    assert_eq!(state.list_focus_owner, FocusOwner::TabBar);
+    assert_eq!(state.list_focus_owner.focused(), SurfaceFocusTarget::TabBar);
 }
 
 #[test]
@@ -959,12 +963,12 @@ fn set_list_names_focused_stores_flag() {
 
     assert!(update_manager(&mut state, ManagerMessage::SetListNamesFocused(true)).is_dirty());
     assert!(state.list_names_focused());
-    assert_eq!(state.list_focus_owner, FocusOwner::TabBar);
+    assert_eq!(state.list_focus_owner.focused(), SurfaceFocusTarget::TabBar);
     assert!(update_manager(&mut state, ManagerMessage::SetListNamesFocused(false)).is_dirty());
     assert!(!state.list_names_focused());
     assert_eq!(
-        state.list_focus_owner,
-        FocusOwner::Content(MountScrollFocus::Workspace)
+        state.list_focus_owner.focused(),
+        SurfaceFocusTarget::Content(MountScrollFocus::Workspace)
     );
 }
 

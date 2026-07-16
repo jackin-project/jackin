@@ -395,5 +395,6 @@ impl CapsuleConfig {
     }
 }
 
+pub mod host_terminal;
 #[cfg(test)]
 mod tests;

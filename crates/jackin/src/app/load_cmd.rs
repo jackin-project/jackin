@@ -205,7 +205,7 @@ pub(super) async fn handle_console(
         config,
         &paths,
         &cwd,
-        console::tui::run::ConsoleRunOptions {
+        console::adapter::run::ConsoleRunOptions {
             op_available,
             startup_error,
             parent_session: Some(&screen),

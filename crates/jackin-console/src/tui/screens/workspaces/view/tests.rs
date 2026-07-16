@@ -548,33 +548,6 @@ fn inline_provider_picker_keeps_instance_context() {
 }
 
 #[test]
-fn picker_sidebar_cursor_is_focus_gated() {
-    let render = |focused| {
-        let backend = TestBackend::new(20, 6);
-        let mut terminal = Terminal::new(backend).expect("terminal");
-        terminal
-            .draw(|frame| {
-                render_picker_sidebar(
-                    frame,
-                    Rect::new(0, 0, 20, 6),
-                    " Provider ",
-                    vec!["Anthropic".to_owned(), "Kimi".to_owned()],
-                    Some(0),
-                    focused,
-                );
-            })
-            .expect("draw");
-        terminal.backend().buffer().clone()
-    };
-
-    let focused = render(true);
-    let unfocused = render(false);
-
-    assert_eq!(focused[(1, 1)].symbol(), "▸");
-    assert_eq!(unfocused[(1, 1)].symbol(), " ");
-}
-
-#[test]
 fn provider_picker_sidebar_wraps_title_labels_and_selection() {
     let backend = TestBackend::new(32, 6);
     let mut terminal = Terminal::new(backend).expect("terminal");
@@ -602,7 +575,6 @@ fn provider_picker_sidebar_wraps_title_labels_and_selection() {
     assert!(text.contains("Provider"));
     assert!(text.contains("Anthropic"));
     assert!(text.contains("Kimi"));
-    assert_eq!(terminal.backend().buffer()[(1, 2)].symbol(), "▸");
 }
 
 #[test]

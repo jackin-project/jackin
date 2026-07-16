@@ -6,10 +6,11 @@ members = [
     "crates/jackin",
     "crates/jackin-agent-status",
     "crates/jackin-build-meta",
+    "crates/jackin-brand",
     "crates/jackin-capsule",
     "crates/jackin-config",
     "crates/jackin-console",
-    "crates/jackin-console-oppicker",
+    "crates/jackin-oppicker",
     "crates/jackin-core",
     "crates/jackin-dev",
     "crates/jackin-diagnostics",
@@ -20,10 +21,11 @@ members = [
     "crates/jackin-manifest",
     "crates/jackin-process",
     "crates/jackin-protocol",
-    "crates/jackin-launch-tui",
+    "crates/jackin-launch",
     "crates/jackin-runtime",
     "crates/jackin-term",
     "crates/jackin-telemetry",
+    "crates/jackin-tui",
     "crates/jackin-xtask",
     "crates/jackin-pr-trailers",
     "crates/jackin-usage",
@@ -64,10 +66,11 @@ futures-util = "0.3"
 hex = "0.4"
 insta = "=1.48.0"
 jackin-build-meta = { version = "0.6.0-dev", path = "crates/jackin-build-meta" }
+jackin-brand = { version = "0.6.0-dev", path = "crates/jackin-brand" }
 jackin-agent-status = { version = "0.6.0-dev", path = "crates/jackin-agent-status" }
 jackin-config = { version = "0.6.0-dev", path = "crates/jackin-config" }
 jackin-console = { version = "0.6.0-dev", path = "crates/jackin-console" }
-jackin-console-oppicker = { version = "0.6.0-dev", path = "crates/jackin-console-oppicker" }
+jackin-oppicker = { version = "0.6.0-dev", path = "crates/jackin-oppicker" }
 jackin-core = { version = "0.6.0-dev", path = "crates/jackin-core" }
 jackin-diagnostics = { version = "0.6.0-dev", path = "crates/jackin-diagnostics" }
 jackin-docker = { version = "0.6.0-dev", path = "crates/jackin-docker" }
@@ -76,7 +79,7 @@ jackin-host = { version = "0.6.0-dev", path = "crates/jackin-host" }
 jackin-image = { version = "0.6.0-dev", path = "crates/jackin-image" }
 jackin-instance = { version = "0.6.0-dev", path = "crates/jackin-instance" }
 jackin-isolation = { version = "0.6.0-dev", path = "crates/jackin-isolation" }
-jackin-launch-tui = { version = "0.6.0-dev", path = "crates/jackin-launch-tui" }
+jackin-launch = { version = "0.6.0-dev", path = "crates/jackin-launch" }
 jackin-manifest = { version = "0.6.0-dev", path = "crates/jackin-manifest" }
 jackin-otlp-testbed = { version = "0.6.0-dev", path = "crates/jackin-otlp-testbed" }
 jackin-process = { version = "0.6.0-dev", path = "crates/jackin-process" }
@@ -84,6 +87,7 @@ jackin-protocol = { version = "0.6.0-dev", path = "crates/jackin-protocol" }
 jackin-runtime = { version = "0.6.0-dev", path = "crates/jackin-runtime" }
 jackin-telemetry = { version = "0.6.0-dev", path = "crates/jackin-telemetry" }
 jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
+jackin-tui = { version = "0.6.0-dev", path = "crates/jackin-tui" }
 jackin-test-support = { version = "0.6.0-dev", path = "crates/jackin-test-support" }
 jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
 nix = "0.31"
@@ -104,7 +108,10 @@ ratatui = "0.30"
 # Must stay lockstep-compatible with ratatui 0.30; pinned when workspace was
 # virtualized (#532/#713). Candidate: relax to "0.1" — needs lockfile-refresh PR.
 ratatui-core = "=0.1.2"
-termrock = { version = "=0.10.0", git = "https://github.com/tailrocks/termrock.git", rev = "5c4758b5167241ffef5f501f72bb76bc01e77aba" }
+# Enable the full public feature matrix TermRock ships: Crossterm session/input
+# adapters plus serde for persistable widget state (DialogScroll, ListState, …).
+# Pin latest reviewed TermRock main; follow migrations sequentially (currently through 0027).
+termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "5ff94ee117fd4a1b72fdd0d1b1847815055a93ac", features = ["crossterm", "serde"] }
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false }

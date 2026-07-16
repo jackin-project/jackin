@@ -21,9 +21,9 @@ jackin❯ TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed i
 
 Focus state has three layers, and new components must use the narrowest layer that matches the interaction:
 
-1. `FocusOwner<Tab>` is the screen-level owner for tabbed screens. It answers which region owns input: the tab bar, or one named content block. Borders, tab underlines, cursors, and footer scope derive from that one owner value.
-2. A per-dialog semantic enum implementing `ButtonFocus` is element-level focus inside a button dialog. Use named states such as `Yes` / `No` or `Save` / `Discard` / `Cancel`; do not store a parallel raw index or bool.
-3. `PanelFocus` is border styling only. It is computed from screen-level or dialog-level focus state when rendering; do not store it as independent state.
+1. `jackin_tui::runtime::SurfaceFocus<Target>` is the product projection over TermRock's `FocusRing` for tabbed screens. It answers which region owns input: the tab bar, or one named content block. Borders, tab underlines, cursors, and footer scope derive from that one owner value.
+2. A per-dialog semantic enum is element-level focus inside a button dialog. Use named states such as `Yes` / `No` or `Save` / `Discard` / `Cancel`, and project them through the shared TermRock focus mechanics; do not store a parallel raw index or bool.
+3. `PanelEmphasis` is border styling only. It is computed from screen-level or dialog-level focus state when rendering; do not store it as independent state.
 
 ### W3C Tabs pattern (required for all tabbed interfaces)
 
@@ -94,7 +94,7 @@ Review checklist: whenever a PR adds or changes a TUI action that can wait, revi
 
 This mirrors the web/W3C convention: on a website you know something is clickable because (1) the cursor turns into a hand pointer over it, and (2) it changes appearance on hover. Every jackin❯ TUI element that performs an action on click **must** expose both, plus a distinct resting style:
 
-1. **Hand pointer on hover.** When the pointer is over a clickable element, the terminal cursor must switch to the hand/pointer shape via OSC 22 (`\x1b]22;pointer\x1b\\`); it returns to the default shape (`\x1b]22;default`) when the pointer leaves. This is the single most important "you can click this" signal. Both surfaces already own the mechanism — the in-container multiplexer's `PointerShape` in <RepoFile path="crates/jackin-capsule/src/tui.rs">crates/jackin-capsule/src/tui.rs</RepoFile>, OSC 22 encoder in <RepoFile path="crates/jackin-capsule/src/tui/terminal.rs">crates/jackin-capsule/src/tui/terminal.rs</RepoFile>, and `update_pointer_shape_for_mouse` in <RepoFile path="crates/jackin-capsule/src/daemon/mouse_input.rs">crates/jackin-capsule/src/daemon/mouse_input.rs</RepoFile>, plus the console's pointer handling — so a new clickable wires into the existing hover→pointer-shape resolution rather than inventing its own.
+1. **Hand pointer on hover.** When the pointer is over a clickable element, the terminal cursor must switch to the hand/pointer shape via OSC 22 (`\x1b]22;pointer\x1b\\`); it returns to the default shape (`\x1b]22;default`) when the pointer leaves. This is the single most important "you can click this" signal. Both surfaces already own the mechanism — the in-container multiplexer's `PointerShape` in <RepoFile path="crates/jackin-capsule/src/tui.rs">crates/jackin-capsule/src/tui.rs</RepoFile>, OSC 22 encoder in <RepoFile path="crates/jackin-capsule/src/tui/terminal.rs">crates/jackin-capsule/src/tui/terminal.rs</RepoFile>, and `update_pointer_shape_for_mouse` in <RepoFile path="crates/jackin-capsule/src/tui/daemon/mouse_input.rs">crates/jackin-capsule/src/tui/daemon/mouse_input.rs</RepoFile>, plus the console's pointer handling — so a new clickable wires into the existing hover→pointer-shape resolution rather than inventing its own.
 2. **Hover style change.** The element must visibly change while hovered — a lifted background, brighter foreground, or equivalent — modest but unmistakable, matching the website's "this is interactive" clarity without overpowering the surrounding chrome. The **gold-standard exemplar is TermRock `Tabs`**: hovering a tab lifts its background and its render-produced regions keep hover and click in lock-step. Model new clickables on it.
 3. **Distinct resting style.** The element looks different from inert text even when not hovered (e.g. the blue instance-id link chip, the emphasized copy value).
 
@@ -139,7 +139,7 @@ Footer hints must lead with the focused row's primary action. A mode row leads w
 
 When a tabbed screen's **tab bar** owns focus, its active tab shows a `PHOSPHOR_GREEN` `━` underline and no content block has a green border. When a **content block** owns focus, the active tab underline switches to `WHITE` and the content block gets the `PHOSPHOR_GREEN` border. Exactly one of (tab bar, content block) shows the green signal at a time — never both.
 
-**Implementation:** `tab_bar_focused: bool` is the single owner flag. The tab strip render calls `TabStrip::new(...).focused(tab_bar_focused)` — green when `true`, white when `false`. Content blocks derive their `PanelFocus` from `!tab_bar_focused && scroll_focused`. A tab switch (keyboard or click) that returns focus to the tab bar must clear all `scroll_focused` booleans for that screen so no content block keeps a stale green border.
+**Implementation:** `tab_bar_focused: bool` is the single owner flag. The tab strip render calls `TabStrip::new(...).focused(tab_bar_focused)` — green when `true`, white when `false`. Content blocks derive their `PanelEmphasis` from `!tab_bar_focused && scroll_focused`. A tab switch (keyboard or click) that returns focus to the tab bar must clear all `scroll_focused` booleans for that screen so no content block keeps a stale green border.
 
 ### `↓` and `⇥` are equivalent for entering tab content
 
@@ -167,7 +167,7 @@ Every wheel handler — on every surface, for dialog bodies **and** main scrolla
 
 When a modal or child prompt is open, wheel/touchpad scroll belongs to the topmost scrollable or list-like modal under the pointer. The event must not leak into the screen behind it, even when the modal selection is already at the first or last row.
 
-List-like modals move their selected row with saturating, non-wrapping scroll semantics. Keyboard Up/Down may keep the modal's normal wrapping behavior, but wheel gestures behave like scrolling: first row stays first, last row stays last. Dialog-body scrolling routes through `DialogBodyScroll`; selectable lists route through the shared list-selection scroll helper. A new picker or File Browser host context that lets the background panel scroll while the modal is open violates this rule.
+List-like modals move their selected row with saturating, non-wrapping scroll semantics. Keyboard Up/Down may keep the modal's normal wrapping behavior, but wheel gestures behave like scrolling: first row stays first, last row stays last. Dialog-body scrolling routes through `DialogScroll`; selectable lists route through the shared list-selection scroll helper. A new picker or File Browser host context that lets the background panel scroll while the modal is open violates this rule.
 
 ### Full bottom-of-screen stack: spacer → hints → spacer → status/chip row
 
@@ -205,7 +205,7 @@ Hint rows are not hand-built. The vocabulary is the shared `HintSpan` enum in Te
 
 #### Hint spans derive from the keymap that owns dispatch
 
-The span vocabulary is shared, but the *keys* a hint bar advertises are not free text — they derive from the `Keymap<A>` that owns dispatch for that surface, never from hand-written glyphs. `Keymap<A>` in [TermRock source](https://github.com/tailrocks/termrock) is the single source of truth: `Keymap::dispatch(chord)` and `Keymap::hint_spans()` / `Keymap::glyph_for(action)` read from the one `&'static [KeyBinding<A>]` table, so the advertised key cannot drift from the handled key for any `Shown` or `HiddenAlias` binding. Every surface keymap follows this — the shared widgets (`CONFIRM_KEYMAP`, `TEXT_INPUT_KEYMAP`, `SELECT_LIST_KEYMAP`, `ERROR_POPUP_KEYMAP`, `SAVE_DISCARD_KEYMAP`), the console tables in <RepoFile path="crates/jackin-console/src/tui/keymap.rs">crates/jackin-console/src/tui/keymap.rs</RepoFile>, the launch tables in <RepoFile path="crates/jackin-launch-tui/src/tui/keymap.rs">crates/jackin-launch-tui/src/tui/keymap.rs</RepoFile>, and the capsule tables (`CAPSULE_GLOBAL_KEYMAP`, `PREFIX_COMMAND_KEYMAP`, `RESIZE_PANE_KEYMAP`, and the dialog keymaps) in <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs">crates/jackin-capsule/src/tui/keymap.rs</RepoFile>. Multi-byte input the byte-level `Keymap<u8>` cannot represent is bridged by `raw_bytes_to_chord` (e.g. `KeyChord::alt_shift` for the `Alt+Shift+Arrow` CSI sequence that drives `RESIZE_PANE_KEYMAP`).
+The span vocabulary is shared, but the *keys* a hint bar advertises are not free text — they derive from the `Keymap<A>` that owns dispatch for that surface, never from hand-written glyphs. `Keymap<A>` in [TermRock source](https://github.com/tailrocks/termrock) is the single source of truth: `Keymap::dispatch(chord)` and `Keymap::hint_spans()` / `Keymap::glyph_for(action)` read from the one `&'static [KeyBinding<A>]` table, so the advertised key cannot drift from the handled key for any `Shown` or `HiddenAlias` binding. Every surface keymap follows this — the shared widgets (`CONFIRM_KEYMAP`, `TEXT_INPUT_KEYMAP`, `SELECT_LIST_KEYMAP`, `ERROR_POPUP_KEYMAP`, `SAVE_DISCARD_KEYMAP`), the console tables in <RepoFile path="crates/jackin-console/src/tui/keymap.rs">crates/jackin-console/src/tui/keymap.rs</RepoFile>, the launch tables in <RepoFile path="crates/jackin-launch/src/tui/keymap.rs">crates/jackin-launch/src/tui/keymap.rs</RepoFile>, and the capsule tables (`CAPSULE_GLOBAL_KEYMAP`, `PREFIX_COMMAND_KEYMAP`, `RESIZE_PANE_KEYMAP`, and the dialog keymaps) in <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs">crates/jackin-capsule/src/tui/keymap.rs</RepoFile>. Multi-byte input the byte-level `Keymap<u8>` cannot represent is bridged by `raw_bytes_to_chord` (e.g. `KeyChord::alt_shift` for the `Alt+Shift+Arrow` CSI sequence that drives `RESIZE_PANE_KEYMAP`).
 
 A `HintSpan::Key(…)` literal may appear in a hint builder only when it represents a genuinely unregisterable input: a multi-byte CSI escape sequence, a mouse event, a combined multi-key display group (e.g. `↑↓/j/k`), a dynamic runtime value, or an inline-handled surface that has no backing keymap. Every such literal must carry an `// UNREGISTERABLE(<reason>)` comment naming the specific reason. A bare `HintSpan::Key(…)` with neither a keymap entry nor an `// UNREGISTERABLE` annotation is a design-decision violation and a merge blocker. The Debug-info dialog hint bar has exactly one builder — `debug_info_hint_spans` in [TermRock source](https://github.com/tailrocks/termrock) — and the console modal footer (`container_info_footer_items`) delegates to it, so the console, launch cockpit, and any future surface render byte-identical hints, matching the one-shared-dialog rule in [Chrome & Surfaces](/reference/tui/chrome).
 
@@ -226,7 +226,7 @@ Dragging beyond the top or bottom of a scrollable pane auto-scrolls in that dire
 
 When a rich alternate-screen surface owns the terminal — the launch/loading cockpit, the workspace console, the in-container multiplexer, or the PR-verify surface — `--debug` must not print over it. Operator notices are deferred until terminal ownership ends, while governed telemetry exports directly to the configured backend. No local telemetry file is created.
 
-The mechanism is the `rich_surface_active` flag plus the active diagnostics run: `emit_debug_line` / `active_debug` (<RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile>, <RepoFile path="crates/jackin-diagnostics/src/run.rs">crates/jackin-diagnostics/src/run.rs</RepoFile>) route to the run file, and the command runner (<RepoFile path="crates/jackin-docker/src/shell_runner.rs">crates/jackin-docker/src/shell_runner.rs</RepoFile>) suppresses live streaming whenever `--debug` is on or a rich surface is active. Streaming child output straight to `stdout`/`stderr` while a rich surface is up is a bug; route it through the diagnostics run instead.
+The mechanism is the `rich_surface_active` flag plus the active diagnostics run: `emit_debug_line` / `active_debug` (<RepoFile path="crates/jackin/src/console/adapter.rs">crates/jackin/src/console/adapter.rs</RepoFile>, <RepoFile path="crates/jackin-diagnostics/src/run.rs">crates/jackin-diagnostics/src/run.rs</RepoFile>) route to the run file, and the command runner (<RepoFile path="crates/jackin-docker/src/shell_runner.rs">crates/jackin-docker/src/shell_runner.rs</RepoFile>) suppresses live streaming whenever `--debug` is on or a rich surface is active. Streaming child output straight to `stdout`/`stderr` while a rich surface is up is a bug; route it through the diagnostics run instead.
 
 The launch UI may show the current `cli.invocation.id` as a copyable backend correlation handle. It never shows a reveal action for a nonexistent diagnostics path. Keep detailed evidence out of the alternate screen: add governed telemetry for registered semantic data or use the explicit operator-output port, then defer that output while a rich surface owns the terminal.
 
@@ -246,25 +246,25 @@ For passive detail blocks, the green border is the affordance for scroll. Operat
 
 ### Implementation
 
-`render_scrollable_block` enforces the passive-scroll rule automatically: it computes `content_width`, `content_height`, `viewport_w`, and `viewport_h` from the lines it is about to render, checks `is_scrollable(content_width, viewport_w) || is_scrollable(content_height, viewport_h)`, and ignores the `focused` flag when the result is false. Callers pass `focused = true` or `false` from their state; the renderer suppresses the green border if the content currently fits.
+TermRock `Viewport` (console `scroll_block` adapter) paints `PanelEmphasis` from the caller's `focused` flag with **no overflow gate**. Caller `focused` means **interaction ownership** — forms, tab content, and other containers that accept keys stay green even when content fits. The passive-scroll focusability rule is enforced in state/input: list-detail surfaces clear `list_scroll_focus` when content no longer overflows (`list_pre_render_focus_plan` / `focused_block_still_scrollable`), so a passive detail block does not remain the focus owner without overflow.
 
 This means the rule is **impossible to accidentally violate** through the shared renderer. What callers must still ensure:
 
-1. **Mouse click handler (`update_scroll_focus`)** — set the `focused` / `scroll_focused` state field for any block whose hit-test rect contains the click, **regardless of whether the block is currently scrollable**. The renderer already suppresses the green border when content fits; the state field only needs to be accurate for keyboard scroll dispatch (if the block isn't scrollable, scroll keys are no-ops anyway). Do NOT add `is_scrollable` guards in the click handler — that causes a different bug where clicking a non-scrollable block silently clears focus from the previously focused block without giving it to the clicked one.
+1. **Mouse click handler (`update_scroll_focus`)** — set the `focused` / `scroll_focused` state field for any block whose hit-test rect contains the click, **regardless of whether the block is currently scrollable**. Pre-render focus planning (`list_pre_render_focus_plan` / `focused_block_still_scrollable`) clears passive list-detail focus when content no longer overflows, so the green border stays honest without the paint path second-guessing `focused`. Do NOT add `is_scrollable` guards in the click handler — that causes a different bug where clicking a non-scrollable block silently clears focus from the previously focused block without giving it to the clicked one.
 
 2. **Resize guard** — when the terminal shrinks and content that previously overflowed now fits, `list_scroll_focus` (list view) is cleared by `focused_block_still_scrollable`. Similar guards must exist for any persistent focus state that a terminal resize can invalidate.
 
-Both checks must use the **same content height and width values** as `render_scrollable_block` uses for the actual rendered lines. Any mismatch causes the bug where the input handler clamps scroll to the wrong maximum — the scrollbar thumb stops short of the track end even though the operator has not reached the actual content limit.
+Both checks must use the **same content height and width values** as TermRock `Viewport` / console `scroll_block` uses for the actual rendered lines. Any mismatch causes the bug where the input handler clamps scroll to the wrong maximum — the scrollbar thumb stops short of the track end even though the operator has not reached the actual content limit.
 
 **Derive content extents from the rendered lines, never from a parallel column-sum.** A block's `content_width` must use TermRock's rendered-line width helpers over the exact `Vec<Line>` the block renders, and its `content_height` must be that line count. Build the lines once in a pure function and feed the same function to rendering and scroll clamping. A parallel column sum drifts from Unicode display width and trailing padding.
 
 ### Click hit-test area must cover the full rendered block
 
-**The mouse hit-test rect for a scrollable block must exactly match (or be a superset of) the `area` passed to `render_scrollable_block`.** Never compute the hit-test area from content dimensions or row counts — use the full rendered block height.
+**The mouse hit-test rect for a scrollable block must exactly match (or be a superset of) the `area` passed to TermRock `Viewport` / console `scroll_block`.** Never compute the hit-test area from content dimensions or row counts — use the full rendered block height.
 
 **Why this matters:** A block that holds N content rows plus an empty trailing area is still one block. The empty rows are inside the border; they are visually part of the same scrollable surface. Operators intuitively click anywhere inside the block — including blank space below the last row — and expect focus to switch. If the hit-test rect is computed from content height alone (e.g. `height = rows + 2`), clicks in the empty trailing area fall outside the rect and silently do nothing. The operator sees their click ignored and infers the UI is broken.
 
-**Implementation rule:** Every `point_in(mouse, area)` check in `update_scroll_focus` must use the same `area` that the renderer passes to `render_scrollable_block`. In practice this means:
+**Implementation rule:** Every `point_in(mouse, area)` check in `update_scroll_focus` must use the same `area` that the renderer passes to TermRock `Viewport` / console `scroll_block`. In practice this means:
 
 - For full-body blocks (editor Mounts tab, editor other tabs, settings content): use `editor_content_area(term_size)` — the full body rect below header + tab strip. Do not shrink this to content height.
 - For per-block sub-areas in the list view right pane (Workspace mounts, Global mounts, Roles): use the height computed by the same block-height function the renderer's `Constraint::Length(...)` uses.
@@ -277,7 +277,7 @@ A violated hit-test rect is a silent bug: no compile error, no test failure, and
 
 Any block whose content is wider than its viewport renders the shared horizontal scrollbar thumb on its **bottom border**, mirroring the vertical thumb on the right border. When content fits horizontally, no scrollbar is shown.
 
-**Enforcement:** `render_scrollable_block` / `render_scrollable_block_at` already calls `render_horizontal_scrollbar(frame, area, content_width, eff_x)` internally. Any surface that tracks `scroll_x` independently must call `render_horizontal_scrollbar` itself after rendering its rows.
+**Enforcement:** TermRock `Viewport` paints the vertical overflow bar; surfaces that own independent horizontal scroll must paint the bottom track through TermRock `render_scrollbar` + `ScrollbarSpec` (or an equivalent TermRock helper). Any surface that tracks `scroll_x` independently must use the same overflow math as the painted content.
 
 The `H/L scroll` hint must only appear in the footer when horizontal scrolling is actually possible (content overflows the viewport). Showing `H/L scroll` when content fits is a false affordance.
 
@@ -306,7 +306,7 @@ The track is always the dim `·` (`SCROLLBAR_TRACK`) regardless of style or axis
 
 ### Content height formula for each block type
 
-These are the exact formulas that match what each render function passes to `render_scrollable_block`:
+These are the exact formulas that match what each render function passes to TermRock `Viewport` / console `scroll_block`:
 
 | Block | `content_height` |
 |---|---|
@@ -321,35 +321,34 @@ The workspace mounts formula uses `.max(1)` because an empty mount list renders 
 
 ## Scrollable Blocks — Shared Component
 
-**All bordered scrollable content blocks must use `render_scrollable_block`** (defined in [TermRock source](https://github.com/tailrocks/termrock), re-exported through `view.rs` for manager-internal callers). Never hand-roll block creation, Paragraph scroll, or scrollbar rendering inline.
+**All bordered scrollable content blocks must use TermRock `Viewport` / console `scroll_block`** (defined in [TermRock source](https://github.com/tailrocks/termrock), re-exported through `view.rs` for manager-internal callers). Never hand-roll block creation, Paragraph scroll, or scrollbar rendering inline.
 
-`render_scrollable_block` guarantees:
-- Border color `PHOSPHOR_GREEN` when focused, `PHOSPHOR_DARK` otherwise.
-- Horizontal scrollbar rendered only when content overflows horizontally.
+TermRock `Viewport` (console call sites go through `scroll_block::render_scrollable_block_at`) guarantees:
+- Border role `BorderFocused` (phosphor green) when `focused` is true (interaction owner); otherwise `Border` (neutral gray).
 - Vertical scrollbar rendered only when content overflows vertically.
-- `*scroll_x` and `*scroll_y` clamped to valid range in-place every frame (eliminates stale overshoot).
-- Scrollbar thumbs are proportional to visible content in both axes, so small overflow produces a long thumb and large overflow produces a short thumb, while a block scrolled to its maximum offset still shows the thumb at the visible end of the track.
+- Horizontal overflow is scrolled through `DialogScroll` offsets; paint horizontal tracks with TermRock `render_scrollbar` when a surface needs an explicit bottom bar.
+- Scroll offsets are clamped to valid range every frame (eliminates stale overshoot).
+- Scrollbar thumbs are proportional to visible content, so small overflow produces a long thumb and large overflow produces a short thumb, while a block scrolled to its maximum offset still shows the thumb at the visible end of the track.
 - Scrollbar thumb length is invariant for a fixed `content_length` + `viewport` + track length. Scrolling moves the thumb; it must never resize by one cell because of offset-dependent rounding.
-- Horizontal scrolling preserves matching trailing padding for each row's leading padding, so two-space-indented tables do not pin their final visible character against the right border or scrollbar column at maximum horizontal offset.
 
-Input hit-testing, focusability, cursor-follow scrolling, selected-list windowing, scrollbar dragging, wheel/key max-offset math, right-padding content width, and scrollbar rendering must flow through `termrock::scroll` and canonical widget state. Those modules are the source of truth for clamping, top-relative offsets, tail-relative offsets, full-cell thumb conversion, and scrollbar metrics. Do not reimplement viewport, thumb, track, or offset formulas in product input handlers or renderers.
+Input hit-testing, focusability, cursor-follow scrolling, selected-list windowing, scrollbar dragging, wheel/key max-offset math, content width measurement, and scrollbar rendering must flow through `termrock::scroll` and canonical widget state. Those modules are the source of truth for clamping, top-relative offsets, tail-relative offsets, full-cell thumb conversion, and scrollbar metrics. Do not reimplement viewport, thumb, track, or offset formulas in product input handlers or renderers.
 
-The shared model does **not** make every scrollbar look the same. jackin❯ owns renderer output: console horizontal scrollbars keep dotted tracks with `━` thumbs, console vertical scrollbars keep dotted tracks with `█` thumbs, and capsule panes paint only `█` thumb cells into the right border column. Do not adopt `tui-scrollbar`'s fractional glyph renderer, arrows, or default styles for these surfaces unless this decision is explicitly revisited.
+The shared model does **not** make every scrollbar look the same. jackin❯ owns product composition: capsule panes paint only thumb cells into the right border column via `render_scrollbar` + `ScrollbarSpec`, while console detail panels use `Viewport` chrome. Do not invent a second neutral scrollbar renderer in product code.
 
-Signature:
+Console call shape (adapter around TermRock `Viewport`):
 ```rust
-pub(crate) fn render_scrollable_block(
-    frame: &mut Frame,
+pub fn render_scrollable_block_at(
+    frame: &mut Frame<'_>,
     area: Rect,
     lines: Vec<Line<'_>>,
-    scroll_x: &mut u16,
-    scroll_y: &mut u16,
+    scroll_x: u16,
+    scroll_y: u16,
     focused: bool,
     title: Option<&str>,
 )
 ```
 
-Pass `None` for `title` to suppress the block title. Pass `Some(" Title ")` (with surrounding spaces) to match the standard label style.
+Pass `None` for `title` to suppress the block title. Pass a bare trimmed title (no padding); TermRock `Viewport` / `Panel` normalize title spacing.
 
 ---
 
@@ -357,7 +356,7 @@ Pass `None` for `title` to suppress the block title. Pass `Some(" Title ")` (wit
 
 **Focus sustainability rule (extended):** Focus on a container must persist as long as the operator is interacting within that container. This includes all inline sub-pickers — when an inline agent picker, role picker, or provider picker opens WITHIN a focused sidebar, the sidebar border must remain green because the picker is an inline extension of the sidebar's current action, not a separate container that steals focus. The picker receives keyboard input through the sidebar; it does not claim its own focus indicator.
 
-**Inline picker focus rule:** An inline picker rendered inside a parent container must use the parent's focus state for its panel border. Use `focused = parent.list_names_focused` (or equivalent), never hardcoded `PanelFocus::Unfocused`. The `▸` cursor inside an inline picker follows the same gating: only visible when the parent container is focused. Focus on a container must persist as long as the operator is interacting within that container. Navigation keys (`↑`/`↓`/`←`/`→`) executed inside a focused container must never transfer or clear focus — they navigate within the current owner. Only an explicit user action (mouse click on a different area, `Tab` to another area, `Esc` to a parent screen) may move focus.
+**Inline picker focus rule:** An inline picker rendered inside a parent container must use the parent's focus state for its panel border. Use `focused = parent.list_names_focused` (or equivalent), never hardcoded `PanelEmphasis::Normal` when the parent owns interaction. The `▸` cursor inside an inline picker follows the same gating: only visible when the parent container is focused. Focus on a container must persist as long as the operator is interacting within that container. Navigation keys (`↑`/`↓`/`←`/`→`) executed inside a focused container must never transfer or clear focus — they navigate within the current owner. Only an explicit user action (mouse click on a different area, `Tab` to another area, `Esc` to a parent screen) may move focus.
 
 **`list_names_focused` (left sidebar) is cleared only when:**
 1. The user clicks in the right pane — `update_scroll_focus` sends `SetListNamesFocused(false)`.

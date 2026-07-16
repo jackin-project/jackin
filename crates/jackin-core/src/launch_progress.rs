@@ -3,8 +3,8 @@
 
 //! Non-UI launch cockpit value types: stages, identity, failure, restore
 //! dialog data, and port traits. Shared by the orchestration layer
-//! (`jackin-runtime`) and the presentation layer (`jackin-launch-tui`) with no
-//! dependency on `ratatui` or `jackin-tui`.
+//! (`jackin-runtime`) and the presentation layer (`jackin-launch`) with no
+//! dependency on Ratatui or a presentation crate.
 
 use std::future::Future;
 use std::path::Path;
@@ -314,8 +314,8 @@ pub trait LaunchHostTerminal: Send + Sync {
 
 /// Port for launch-phase terminal side-effects (deploy banner, failure
 /// lines, warp outro animations). Lives in core so `jackin-runtime` can
-/// call without depending on `jackin-tui`. Implemented by an adapter in
-/// `jackin-launch-tui` and injected via static accessor (mirrors
+/// call without depending on a presentation crate. Implemented by an adapter in
+/// `jackin-launch` and injected via static accessor (mirrors
 /// [`LaunchHostTerminal`] / `host_terminal`).
 pub trait LaunchOutputSink: Send + Sync {
     /// Animated "deploying" banner for `role_name`.
