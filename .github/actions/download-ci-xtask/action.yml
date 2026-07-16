@@ -118,7 +118,7 @@ runs:
         set -euo pipefail
         chmod +x "$CI_XTASK_PATH"
         echo "CI_XTASK=$CI_XTASK_PATH" >> "$GITHUB_ENV"
-        if [ -x "$CI_TOOLS_PATH/cargo-fuzz" ]; then
+        if [ -f "$CI_TOOLS_PATH/cargo-fuzz" ]; then
           chmod +x "$CI_TOOLS_PATH"/*
           echo "CI_CARGO_FUZZ=$CI_TOOLS_PATH/cargo-fuzz" >> "$GITHUB_ENV"
         fi
