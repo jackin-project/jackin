@@ -372,9 +372,7 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         },
         DialogAction::CopyToClipboard("container".into()),
         DialogAction::OpenHostUrl("https://github.com/jackin-project/jackin/pull/565".into()),
-        DialogAction::RevealHostPath(
-            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl".into(),
-        ),
+        DialogAction::RevealHostPath("/Users/operator/Documents/report.txt".into()),
         DialogAction::SwitchUsageProvider {
             provider_label: "Claude".into(),
         },

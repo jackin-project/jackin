@@ -247,9 +247,7 @@ fn server_frames_roundtrip() {
         ServerFrame::Bell,
         ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/actions/runs/1".into()),
         ServerFrame::HostOpenUrl("mailto:operator@example.com".into()),
-        ServerFrame::HostRevealPath(
-            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl".into(),
-        ),
+        ServerFrame::HostRevealPath("/Users/operator/Documents/report.txt".into()),
         ServerFrame::HostStageImageFromClipboardPath,
         ServerFrame::HostPasteImageFromClipboard,
         ServerFrame::HostStageImageFromClipboard,

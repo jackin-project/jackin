@@ -10,8 +10,6 @@
 use std::path::Path;
 use std::process::Command;
 
-use super::diagnostics::{diagnostics_snapshot, latest_docker_build_log};
-
 pub(super) const REPORT_BEGIN: &str = "===JACKIN_E2E_REPORT_BEGIN===";
 pub(super) const REPORT_END: &str = "===JACKIN_E2E_REPORT_END===";
 
@@ -68,26 +66,11 @@ pub(super) fn assert_sentinel_build_output_routed_to_log(home: &Path, stdout: &s
             && stdout.contains("save"),
         "PTY transcript should prove the rich launch dialogs rendered\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
-    let build_log = latest_docker_build_log(home).unwrap_or_else(|| {
-        panic!(
-            "expected docker build log artifact under diagnostics\n{}",
-            diagnostics_snapshot(home)
-        )
-    });
-    let build_log_contents = std::fs::read_to_string(&build_log).unwrap_or_else(|error| {
-        panic!(
-            "failed to read docker build log {}: {error}",
-            build_log.display()
-        )
-    });
+    let artifact_dir = home.join(".jackin/data/diagnostics/runs");
     assert!(
-        build_log_contents.contains("command: docker ")
-            && build_log_contents.contains("buildx build")
-            && build_log_contents.contains(raw_build_marker)
-            && build_log_contents.contains("DerivedDockerfile"),
-        "Docker build output should be captured in the build log artifact {}\n{}",
-        build_log.display(),
-        build_log_contents
+        !artifact_dir.exists(),
+        "governed telemetry must not create local diagnostics artifacts at {}",
+        artifact_dir.display()
     );
 }
 
