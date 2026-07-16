@@ -250,10 +250,15 @@ jobs:
       matrix:
         config: ${{ fromJSON(inputs.runner-configs-json) }}
         shard:
-          - { name: docker-e2e-1, partition: "hash:1/4" }
-          - { name: docker-e2e-2, partition: "hash:2/4" }
-          - { name: docker-e2e-3, partition: "hash:3/4" }
-          - { name: docker-e2e-4, partition: "hash:4/4" }
+          - { name: docker-e2e-1, partition: "count:1/9" }
+          - { name: docker-e2e-2, partition: "count:2/9" }
+          - { name: docker-e2e-3, partition: "count:3/9" }
+          - { name: docker-e2e-4, partition: "count:4/9" }
+          - { name: docker-e2e-5, partition: "count:5/9" }
+          - { name: docker-e2e-6, partition: "count:6/9" }
+          - { name: docker-e2e-7, partition: "count:7/9" }
+          - { name: docker-e2e-8, partition: "count:8/9" }
+          - { name: docker-e2e-9, partition: "count:9/9" }
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: Docker E2E ${{ matrix.shard.name }} (${{ matrix.config.lane }})
