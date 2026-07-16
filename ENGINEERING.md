@@ -17,7 +17,7 @@ Must use crate, not hand-rolled:
 - JSON parsing → `serde_json` (already in workspace).
 - Date/time, base64, semver, URL parsing, hex, regex — pick maintained ecosystem crate.
 - Cryptographic primitives — never roll own; use `ring`, `rustls`, `argon2`, etc.
-- SQLite / embedded-DB access → **`turso` only** (the workspace's single DB stack; see [telemetry_store.rs](crates/jackin-usage/src/telemetry_store.rs)). Never `rusqlite`, `diesel`-on-SQLite, or any other SQLite binding — a second SQLite stack is a continuity-with-workspace violation. `turso`'s API is async, so a sync caller must make its path async (or `block_on` a runtime handle), not reach for a sync binding.
+- SQLite / embedded-DB access → **`turso` only** (the workspace's single DB stack; see [usage_snapshot_store.rs](crates/jackin-usage/src/usage_snapshot_store.rs)). Never `rusqlite`, `diesel`-on-SQLite, or any other SQLite binding — a second SQLite stack is a continuity-with-workspace violation. `turso`'s API is async, so a sync caller must make its path async (or `block_on` a runtime handle), not reach for a sync binding.
 
 "Trivially small" carve-out narrow: single five-line helper splitting one fixed-format string fine. Multi-state line-by-line scanner with quote handling, comment stripping, indent rules, or anything smelling like reimplementing parser — not.
 
@@ -61,24 +61,15 @@ Patterns this blocks (real findings):
 
 When you do duplicate (deltas too structural for shared body, or shared body defers divergent decision to runtime branch hurting readability), leave one-line comment on each copy naming sibling and *reason* divergence preserved.
 
-## Telemetry must be debuggable on demand without becoming noisy by default (hard rule)
+## Governed observability (hard rule)
 
-**Standard log output (no debug flag) must be compact: lifecycle events, action breadcrumbs, error paths only. Debug-flag output must be firehose detailed enough to reconstruct every operator keystroke, protocol frame, dispatch decision, render boundary. Both surfaces live in same code, gated on same flag — no `// TODO: remove debug logging` smell, no "rebuild with extra logging" round trip.**
+All application telemetry uses `jackin-telemetry`. Register the semantic name, attributes, bounded values, and signal type first; then emit through the event, operation, metric, or spawn facade. Product crates must not construct OpenTelemetry instruments, use arbitrary telemetry targets, or turn operator prose into attributes.
 
-Two-tier:
+Severity reflects meaning: INFO for lifecycle and state change, WARN for handled degradation, ERROR for failed operations, DEBUG for diagnostic decisions, and TRACE only for narrowly governed high-frequency detail. Default telemetry stays compact. Anything expected more than roughly ten times per minute belongs at DEBUG/TRACE or becomes an aggregated metric, but privacy rules still prohibit raw PTY, input, rendered content, argv, paths, names, and secrets at every level.
 
-- **`clog!` (compact, always on).** Daemon start, session spawn/exit, child reap, PTY mutex poison, attach handshake outcomes, dialog dispatch arms that act (`Command`, `SpawnAgent`, `RenameTab`, `Dismiss`), pane/tab close, focus swap, error paths with underlying errno. Quiet enough multi-hour session yields scrollable log. Operators paste these into bug reports for timeline of *what happened*.
-- **`cdebug!` (verbose, gated on `JACKIN_TELEMETRY_LEVEL=debug`).** Every byte from client, every parser event with dispatch state (dialog open / focused pane / prefix awaiting), every PTY write with bytes and destination session, every render frame size and reason, every dialog redraw, every per-tick state ticker. Macro skips format + write entirely when flag off, so production pays nothing. Flag on, trace localizes "key X produced no visible effect" from log alone — chunk line proves byte reached daemon, parser line proves classification, dispatch line proves routing, PTY-write line proves byte hit slave fd.
+Use bounded operation guards for work with latency and outcome. Never create lifetime spans for a process, console, screen, session, tab, or pane. Joined work inherits context; detached, blocking, cycle, stream, and prewarm work uses the matching ownership helper so parentage and links remain honest. Every failure and cancellation path closes its guard.
 
-The host forwards the resolved `JACKIN_TELEMETRY_LEVEL` at the container boundary; without a telemetry override, `--debug` supplies the debug fallback, while explicit telemetry configuration may select `info`, `debug`, or `trace`. Capsule logging captures the effective level once at `logging::init()` time. New verbose sites branch on `cdebug!`, not `clog!`. New compact sites branch on `clog!`. Anything firing more than ~10 times/minute under normal operation belongs on `cdebug!`.
-
-Adding "TEMPORARY logging to triage regression" — stop, convert to `cdebug!` — next bug report needs same telemetry, removing-and-readding each regression cycle is the loop this rule breaks. Same for any surface growing telemetry / tracing layer (host CLI's `tui::tprintln`, docs site render warnings, `runtime::launch` path): two tiers, debug-gated firehose, default compact.
-
-When current logs insufficient to explain complex or inconsistent behaviour, do not guess. First add durable `cdebug!` telemetry capturing missing state, ask operator to rerun repro with `--debug`, then fix from that evidence. Only exception: missing state obtainable safely from live process or container without code change — inspect directly and keep going.
-
-Structured run telemetry lives beside the console/file tiers: use `RunDiagnostics` stage, timing, error, and summary APIs for operations with durations, outcomes, or failures, because those events also export through OTLP. New instrumentation for workflow behaviour should use that structured path instead of bare prose log lines; see [Run Diagnostics](docs/content/docs/reference/runtime/diagnostics.mdx).
-
-Reason: operators rarely reproduce on demand. They need to paste log that already has answer — no rebuild, no extra instrumentation forgotten at ship, no "now run again with this added line". Host's `--debug` single switch; everything downstream honours it.
+Operator output is a separate port. `--debug`, compact notices, and explicit evidence exports help a human troubleshoot; they do not bypass the registry or create a telemetry sink. `RunDiagnostics` is bounded current-invocation UI state, not history. Durable observability goes directly over OTLP and the backend owns history. See [Application observability](docs/content/docs/reference/runtime/diagnostics.mdx).
 
 ## Code comments — explain only what is not obvious
 
