@@ -16,11 +16,11 @@ Launch cockpit TUI — the presentation surface for `jackin load`. Renders build
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`progress.rs`](src/progress.rs) · [`progress/`](src/progress) | build/launch progress rendering | [`tests.rs`](src/progress/tests.rs) |
+| [`progress.rs`](src/progress.rs) · [`progress/`](src/progress) | `LaunchProgress` stage machine + test renderer | [`tests.rs`](src/progress/tests.rs) |
 | [`launch_output.rs`](src/launch_output.rs) | launch output streaming | — |
 | [`build_log.rs`](src/build_log.rs) | build-log streaming | — |
 | [`standalone_dialog_sink.rs`](src/standalone_dialog_sink.rs) · [`standalone_dialog_sink/`](src/standalone_dialog_sink) | standalone dialog sink | [`tests.rs`](src/standalone_dialog_sink/tests.rs) |
-| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | output, animation, and chrome using TermRock and shared operator-info UI | — |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | launch cockpit view (TermRock + `jackin-tui` operator-info) | [`tests.rs`](src/tui/tests.rs) |
 
 ## Public API
 

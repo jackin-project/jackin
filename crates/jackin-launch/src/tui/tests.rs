@@ -1,13 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Product-level launch TUI composition and progress tests.
+//! Launch surface product composition tests (migrated out of jackin-runtime).
 
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
 
-use crate::progress::LaunchProgress;
 use crate::tui::components::build_log_dialog::{
     BUILD_LOG_WRAP_PREFIX, build_log_scroll_metrics, refresh_build_log_layout,
     render_build_log_dialog, wrap_build_log_lines,
@@ -19,8 +16,7 @@ use crate::tui::components::failure_dialog::{
 };
 use crate::tui::components::footer::StatusFooterHover;
 use crate::tui::components::progress_rail::{
-    LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
-    display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,
+    LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, faded_color, label_edge_fade_factor, labels_line,
 };
 use crate::tui::components::prompts::{
     PromptConfirm, PromptError, PromptText, draw_confirm, draw_error_popup, draw_text_prompt,
@@ -28,9 +24,8 @@ use crate::tui::components::prompts::{
 use crate::tui::view::render_launch_frame as render_launch_frame_view;
 use crate::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchStage, LaunchTargetKind, LaunchView,
-    StageStatus, StageView, active_stage_index, initial_view, update_stage,
+    StageStatus, StageView, initial_view, update_stage,
 };
-use jackin_diagnostics::RunDiagnostics;
 use ratatui::backend::TestBackend;
 use ratatui::{Frame, layout::Rect, style::Color};
 
@@ -54,121 +49,6 @@ fn render_launch_frame(
     );
 }
 
-fn test_diagnostics() -> Arc<RunDiagnostics> {
-    let tmp = tempfile::tempdir().unwrap();
-    let paths = jackin_core::JackinPaths::for_tests(tmp.path());
-    RunDiagnostics::start(&paths, false, "load").unwrap()
-}
-
-fn dummy_failure() -> LaunchFailure {
-    LaunchFailure {
-        title: "boom".to_owned(),
-        summary: "it failed".to_owned(),
-        detail: None,
-        next_step: None,
-        stage: LaunchStage::Network,
-        diagnostics_path: None,
-        command_output_path: None,
-    }
-}
-
-#[tokio::test]
-async fn stage_failed_does_not_block_on_test_renderer() {
-    // The Rich path waits for an operator Enter/Esc dismiss. The test
-    // renderer returns immediately so failure-state tests do not hang.
-    let mut progress = LaunchProgress::for_test(test_diagnostics());
-    tokio::time::timeout(
-        Duration::from_millis(500),
-        progress.stage_failed(dummy_failure()),
-    )
-    .await
-    .expect("stage_failed must not block on the test renderer");
-    assert!(progress.view_for_test().lock().unwrap().failure.is_some());
-    assert!(!progress.view_for_test().lock().unwrap().failure_ack);
-}
-
-#[tokio::test]
-async fn stage_failed_writes_full_detail_to_diagnostics() {
-    let tmp = tempfile::tempdir().unwrap();
-    let paths = jackin_core::JackinPaths::for_tests(tmp.path());
-    let run = RunDiagnostics::start(&paths, false, "load").unwrap();
-    let diagnostics: Arc<RunDiagnostics> = Arc::clone(&run);
-    let mut progress = LaunchProgress::for_test(diagnostics);
-
-    progress
-            .stage_failed(LaunchFailure {
-                title: "Launch failed".to_owned(),
-                summary: "preparing kimi binary".to_owned(),
-                detail: Some(
-                    "preparing kimi binary: resolving latest kimi binary: https://code.kimi.com/kimi-code/latest failed: curl: (28) Connection timed out after 30001 milliseconds".to_owned(),
-                ),
-                next_step: None,
-                stage: LaunchStage::DerivedImage,
-                diagnostics_path: None,
-                command_output_path: None,
-            })
-            .await;
-
-    let body = std::fs::read_to_string(run.path()).unwrap();
-    // Schema v2 may label the event as `event.name` rather than `kind`.
-    assert!(
-        body.contains("stage_failed") || body.contains("launch_failed"),
-        "expected failure diagnostic: {body}"
-    );
-    assert!(
-        body.contains("preparing kimi binary"),
-        "expected summary in diagnostics: {body}"
-    );
-    assert!(
-        body.contains("Connection timed out after 30001 milliseconds"),
-        "expected full detail in diagnostics: {body}"
-    );
-}
-
-#[tokio::test]
-async fn stage_failed_resets_prior_ack() {
-    // A second failure must start un-acked: a stale ack left over from a
-    // previously dismissed popup would otherwise auto-dismiss the new one.
-    let mut progress = LaunchProgress::for_test(test_diagnostics());
-    progress.stage_failed(dummy_failure()).await;
-    progress.view_for_test().lock().unwrap().failure_ack = true;
-    progress.stage_failed(dummy_failure()).await;
-    assert!(!progress.view_for_test().lock().unwrap().failure_ack);
-}
-
-#[test]
-fn select_choice_errors_without_rich_renderer() {
-    let mut progress = LaunchProgress::for_test(test_diagnostics());
-    let error = progress
-        .select_choice("pick", vec!["a".into(), "b".into()])
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("requires the rich launch dialog")
-    );
-}
-
-#[test]
-fn env_prompts_error_without_rich_renderer() {
-    let mut progress = LaunchProgress::for_test(test_diagnostics());
-
-    assert!(
-        progress
-            .prompt_text("API key", None, true)
-            .unwrap_err()
-            .to_string()
-            .contains("requires the rich launch dialog")
-    );
-    assert!(
-        progress
-            .prompt_select("Project", &["web".to_owned()], None, false)
-            .unwrap_err()
-            .to_string()
-            .contains("requires the rich launch dialog")
-    );
-}
-
 #[test]
 fn text_prompt_dialog_renders_prompt_and_default() {
     let backend = TestBackend::new(90, 24);
@@ -184,7 +64,6 @@ fn text_prompt_dialog_renders_prompt_and_default() {
     assert!(rendered.contains("main"), "{rendered}");
     assert!(rendered.contains("↵"), "{rendered}");
 }
-
 #[test]
 fn confirm_dialog_renders_role_trust_details() {
     let backend = TestBackend::new(100, 26);
@@ -215,7 +94,6 @@ fn confirm_dialog_renders_role_trust_details() {
     assert!(rendered.contains("jackin-agent-jones"), "{rendered}");
     assert!(rendered.contains('Y'), "{rendered}");
 }
-
 #[test]
 fn error_popup_dialog_renders_title_and_message() {
     let backend = TestBackend::new(100, 26);
@@ -234,222 +112,6 @@ fn error_popup_dialog_renders_title_and_message() {
     );
     assert!(rendered.contains("dismiss"), "{rendered}");
 }
-
-#[test]
-fn update_stage_sets_one_rows_status_and_detail() {
-    let mut view = initial_view();
-    update_stage(&mut view, LaunchStage::Network, StageStatus::Done, "up");
-    let net = view
-        .stages
-        .iter()
-        .find(|r| r.stage == LaunchStage::Network)
-        .unwrap();
-    assert_eq!(net.status, StageStatus::Done);
-    assert_eq!(net.detail, "up");
-    // A different stage is left untouched.
-    let cap = view
-        .stages
-        .iter()
-        .find(|r| r.stage == LaunchStage::Capsule)
-        .unwrap();
-    assert_ne!(cap.status, StageStatus::Done);
-}
-
-#[test]
-fn stage_labels_are_stable() {
-    let labels: Vec<&str> = LaunchStage::ALL.iter().map(|stage| stage.label()).collect();
-    assert_eq!(
-        labels,
-        vec![
-            "identity",
-            "role",
-            "credentials",
-            "construct",
-            "agent binaries",
-            "derived image",
-            "workspace",
-            "network",
-            "sidecar",
-            "capsule",
-            "hardline"
-        ]
-    );
-}
-
-#[tokio::test]
-async fn test_renderer_does_not_delay_stage_settle() {
-    let progress = LaunchProgress::for_test(test_diagnostics());
-    tokio::time::timeout(Duration::from_millis(20), progress.settle_stage_visual())
-        .await
-        .expect("test renderer should not sleep");
-}
-
-#[test]
-fn failed_stage_is_the_active_progress_label() {
-    let mut view = initial_view();
-    update_stage(
-        &mut view,
-        LaunchStage::Credentials,
-        StageStatus::Done,
-        "ready",
-    );
-    update_stage(
-        &mut view,
-        LaunchStage::Construct,
-        StageStatus::Done,
-        "ready",
-    );
-    update_stage(
-        &mut view,
-        LaunchStage::DerivedImage,
-        StageStatus::Failed,
-        "Building the Docker container failed.",
-    );
-
-    assert_eq!(
-        view.stages[active_stage_index(&view)].stage,
-        LaunchStage::DerivedImage
-    );
-    let labels = labels_line(&view, true, 80);
-    let failed = labels
-        .spans
-        .iter()
-        .find(|span| span.content == "derived image")
-        .expect("failed stage label should be visible");
-    assert_eq!(
-        failed.style.fg,
-        Some(
-            termrock::Theme::default()
-                .style(termrock::style::Role::Danger)
-                .fg
-                .unwrap_or_default()
-        )
-    );
-}
-
-#[test]
-fn progress_display_masks_out_of_order_completed_stages() {
-    let mut view = initial_view();
-    update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
-    update_stage(
-        &mut view,
-        LaunchStage::Role,
-        StageStatus::Running,
-        "resolving role",
-    );
-    update_stage(
-        &mut view,
-        LaunchStage::Workspace,
-        StageStatus::Done,
-        "materialized early",
-    );
-
-    let statuses = display_stage_statuses(&view);
-    assert_eq!(statuses[0], StageStatus::Done);
-    assert_eq!(statuses[1], StageStatus::Running);
-    assert!(
-        statuses[2..]
-            .iter()
-            .all(|status| *status == StageStatus::Queued),
-        "later out-of-order completions must not punch green holes in the progress rail: {statuses:?}"
-    );
-}
-
-#[test]
-fn progress_display_fills_every_prior_stage_sequentially() {
-    let mut view = initial_view();
-    update_stage(
-        &mut view,
-        LaunchStage::Identity,
-        StageStatus::Skipped,
-        "already known",
-    );
-    update_stage(&mut view, LaunchStage::Role, StageStatus::Done, "trusted");
-    update_stage(
-        &mut view,
-        LaunchStage::Credentials,
-        StageStatus::Done,
-        "resolved",
-    );
-    update_stage(
-        &mut view,
-        LaunchStage::Construct,
-        StageStatus::Done,
-        "online",
-    );
-    update_stage(
-        &mut view,
-        LaunchStage::AgentBinaries,
-        StageStatus::Done,
-        "cached",
-    );
-    update_stage(
-        &mut view,
-        LaunchStage::DerivedImage,
-        StageStatus::Running,
-        "building",
-    );
-
-    let statuses = display_stage_statuses(&view);
-    assert_eq!(
-        &statuses[..6],
-        &[
-            StageStatus::Done,
-            StageStatus::Done,
-            StageStatus::Done,
-            StageStatus::Done,
-            StageStatus::Done,
-            StageStatus::Running,
-        ]
-    );
-}
-
-#[test]
-fn active_stage_uses_the_sequential_frontier() {
-    let mut view = initial_view();
-    update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
-    update_stage(
-        &mut view,
-        LaunchStage::Workspace,
-        StageStatus::Running,
-        "polling workspace",
-    );
-
-    assert_eq!(
-        view.stages[active_stage_index(&view)].stage,
-        LaunchStage::Identity
-    );
-}
-
-#[test]
-fn stage_label_transition_slides_between_centers() {
-    let mut view = initial_view();
-    update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
-    update_stage(
-        &mut view,
-        LaunchStage::Role,
-        StageStatus::Running,
-        "resolving role",
-    );
-
-    let transition = view
-        .label_transition
-        .expect("active stage change should start a label slide");
-    assert_eq!(transition.from, 0);
-    assert_eq!(transition.to, 1);
-
-    view.frame = transition.start_frame + LABEL_SLIDE_FRAMES / 2;
-    let active = active_stage_index(&view);
-    let display_statuses = display_stage_statuses(&view);
-    let (_, centers) = label_strip(&view, active, false, &display_statuses);
-    let center = animated_label_center(&view, &centers).unwrap();
-    assert!(center > centers[0], "label viewport should move right");
-    assert!(
-        center < centers[1],
-        "label viewport should not snap to the target"
-    );
-}
-
 #[test]
 fn stage_label_line_stays_near_the_progress_rail() {
     let mut view = initial_view();
@@ -481,7 +143,6 @@ fn stage_label_line_stays_near_the_progress_rail() {
     assert!(rendered.contains("construct"), "{rendered}");
     assert!(rendered.contains("agent binaries"), "{rendered}");
 }
-
 #[test]
 fn label_edge_fade_factor_is_lower_at_the_edges() {
     let width = 24;
@@ -493,7 +154,6 @@ fn label_edge_fade_factor_is_lower_at_the_edges() {
     assert!(left < 0.1, "left edge should almost disappear");
     assert!(right < 0.1, "right edge should almost disappear");
 }
-
 #[test]
 fn faded_color_scales_rgb_channels() {
     assert_eq!(
@@ -501,7 +161,6 @@ fn faded_color_scales_rgb_channels() {
         Color::Rgb(50, 100, 25)
     );
 }
-
 #[test]
 fn build_log_lines_wrap_with_visible_continuation() {
     let raw = vec![
@@ -541,7 +200,6 @@ fn build_log_lines_wrap_with_visible_continuation() {
         "ANSI escape bytes should be interpreted, not rendered literally"
     );
 }
-
 #[test]
 fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
     let _guard = jackin_diagnostics::build_log::TEST_LOCK.lock().unwrap();
@@ -600,7 +258,6 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
         "wrapped lines should fit the viewport and avoid horizontal scrollbar"
     );
 }
-
 #[test]
 fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
     let _guard = jackin_diagnostics::build_log::TEST_LOCK.lock().unwrap();
@@ -654,7 +311,6 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
         1
     );
 }
-
 #[test]
 fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     let backend = TestBackend::new(120, 28);
@@ -771,7 +427,6 @@ fn failure_with_paths() -> LaunchFailure {
         command_output_path: Some(PathBuf::from("/jk/run/x.docker-build.log")),
     }
 }
-
 #[test]
 fn failure_copy_target_at_hits_each_copyable_row_value() {
     // The whole point of the copy-on-click feature: a click landing on a
@@ -814,7 +469,6 @@ fn failure_copy_target_at_hits_each_copyable_row_value() {
         );
     }
 }
-
 #[test]
 fn launch_container_info_renders_from_footer_chip_state() {
     jackin_diagnostics::set_debug_mode(true);
@@ -860,7 +514,6 @@ fn launch_container_info_renders_from_footer_chip_state() {
         );
     }
 }
-
 #[test]
 fn failure_copy_target_at_ignores_non_copyable_rows_and_absent_paths() {
     // The message row is non-copyable; a click on its y at the value
@@ -889,7 +542,6 @@ fn failure_copy_target_at_ignores_non_copyable_rows_and_absent_paths() {
         "absent docker-output path must produce no value rect",
     );
 }
-
 #[test]
 fn failure_copy_payload_sources_value_from_rows() {
     // Single source of truth: the copied value must equal what the
@@ -920,7 +572,6 @@ fn failure_copy_payload_sources_value_from_rows() {
         "absent path yields no payload",
     );
 }
-
 #[test]
 fn failure_popup_renders_copyable_rows_and_copied_badge() {
     let backend = TestBackend::new(120, 28);
@@ -950,7 +601,6 @@ fn failure_popup_renders_copyable_rows_and_copied_badge() {
         );
     }
 }
-
 #[test]
 fn failure_popup_wraps_long_paths_without_dropping_tail() {
     let backend = TestBackend::new(72, 28);
@@ -982,7 +632,6 @@ fn failure_popup_wraps_long_paths_without_dropping_tail() {
         );
     }
 }
-
 #[test]
 fn failure_popup_path_overlay_emits_osc8_file_links() {
     let area = Rect::new(0, 0, 120, 28);

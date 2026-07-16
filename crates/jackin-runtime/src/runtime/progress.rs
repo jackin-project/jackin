@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Re-export of launch TUI progress types plus host-side prelaunch helpers.
+//! Host wiring for launch progress: re-exports presentation types from
+//! `jackin-launch` and installs host-terminal/desktop adapters.
 //!
-//! Not responsible for rendering — the TUI render functions are re-exported
-//! only for test use (`#[cfg(test)]`). Production callers use `LaunchProgress`
-//! and `LaunchStage` exclusively.
+//! Not responsible for rendering or product composition tests — those live in
+//! `jackin-launch` (`progress` + `tui`). This module only bridges host I/O
+//! (clipboard, reveal/open, diagnostics compact lines) into the launch surface.
 
 use std::io::Write;
 

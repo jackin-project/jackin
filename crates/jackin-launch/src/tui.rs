@@ -16,4 +16,4 @@ pub mod update;
 pub mod view;
 
 #[cfg(test)]
-mod product_tests;
+mod tests;
