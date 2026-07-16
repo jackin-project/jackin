@@ -14,7 +14,7 @@ Launch prompts and failures now live on the rich surface. The runtime progress w
 
 Console-triggered launches reuse the same path rather than maintaining a second launch renderer. The console records launch actions, carries bounded current-invocation progress state, and calls the same load pipeline; the one-terminal ownership work is documented in [TUI Design Decisions](/reference/tui/). Boundary rain is also no longer a per-launch decision: launch marks jackin❯ universe start through the runtime lifecycle helper, and app/runtime code owns first-entry/last-exit animation gating.
 
-`jackin diagnostics validate` emits all three signal markers and requests a force-flush, but positive per-signal backend delivery proof remains pending on the unified roadmap. History and comparison are backend responsibilities; jackin❯ does not provide local telemetry readers or a backend-independent trace viewer.
+`jackin diagnostics validate` emits all three signal markers and confirms a new exporter success for each signal within one bounded flush window. History and comparison are backend responsibilities; jackin❯ does not provide local telemetry readers or a backend-independent trace viewer.
 
 Some safe startup overlap has already landed: pre-launch orphan cleanup and Git identity lookup run with `tokio::join!`, and governed telemetry includes substep timing events needed to evaluate future parallelization. Broader launch parallelism remains intentionally unfinished until dependency edges and cleanup behavior are verified from traces.
 

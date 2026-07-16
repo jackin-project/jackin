@@ -120,7 +120,7 @@ These variables control direct OTLP delivery; see [Run Telemetry](/guides/run-te
 | `JACKIN_TELEMETRY_LEVEL` | Overrides `[telemetry].level` from `config.toml`: `info` (default), `debug`, or `trace`. Every level remains governed by the schema and privacy allowlist. |
 | `JACKIN_TELEMETRY_CATEGORIES` | Overrides `[telemetry].categories` from `config.toml` with a comma-separated debug-category allowlist such as `docker,launch`; `*` allows every registered debug category. |
 
-The host never forwards OTLP headers, client credentials, certificate paths, or arbitrary Resource attributes into a Capsule. Capsule export receives only routing and explicitly safe launch context when the network policy permits it; `network.mode=none` disables Capsule telemetry egress. `jackin diagnostics validate` currently checks marker emission and exporter flush only. Positive per-signal backend receipt and the final typed daemon-health contract remain pending.
+The host never forwards OTLP headers, client credentials, certificate paths, or arbitrary Resource attributes into a Capsule. Capsule export receives only routing and explicitly safe launch context when the network policy permits it; `network.mode=none` disables Capsule telemetry egress. `jackin diagnostics validate` requires a new exporter success for each signal, no new exporter failure or facade rejection, and a successful shared bounded flush. Host and Capsule daemon protocols expose typed sanitized telemetry health.
 
 ## Host attach validation
 

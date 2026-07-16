@@ -9,7 +9,7 @@ description: Emit OTLP markers and request an exporter flush
 jackin diagnostics validate
 ```
 
-`validate` emits one governed trace, event, and metric marker and requests a flush from all three OTLP exporters. It does not read or write local telemetry files. Positive per-signal backend acknowledgement remains pending, so current success is not proof that the endpoint accepted every signal.
+`validate` emits one governed trace, event, and metric marker and requests a flush from all three OTLP exporters. It succeeds only when each signal records a new exporter success, no signal records a new failure, the governed facade rejects nothing, and the shared bounded flush succeeds. It does not read or write local telemetry files.
 
 Current successful output identifies the endpoint, reports the exporter flush result, and includes the flush time:
 
@@ -19,7 +19,7 @@ signals:   traces ok  logs ok  metrics ok
 delivery:  confirmed (flush 12ms)
 ```
 
-The `delivery: confirmed` label is provisional: it reports current marker/flush completion, not backend receipt. The unified observability roadmap tracks replacing it with genuine per-signal proof.
+`delivery: confirmed` means the configured OTLP endpoint acknowledged exports for all three signals during this validation window. It does not promise that a downstream backend retained or indexed the data after acknowledgement.
 
 The command exits non-zero when `OTEL_SDK_DISABLED=true`, no endpoint is configured, providers are inactive, the governed marker is rejected, or any signal cannot be flushed. Confirm that the endpoint is reachable and that `OTEL_EXPORTER_OTLP_PROTOCOL` is unset or `grpc`, then retry.
 

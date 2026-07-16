@@ -15,7 +15,7 @@ When OTLP is configured and the network policy permits it, each host, daemon, an
 
 Provider construction is best-effort and product work stays fail-open. Export uses bounded batches, five-second per-export deadlines, bounded retry for retryable gRPC status codes, and no retry for authentication or partial-success responses. Saturation drops telemetry instead of blocking product threads. Graceful shutdown force-flushes traces, logs, and metrics concurrently within one shared budget, then shuts providers down in tracer, logger, meter order. Shutdown is idempotent.
 
-`jackin diagnostics validate` emits one marker per signal and requests a force-flush. Positive per-signal backend delivery proof and the final typed daemon-health contract remain pending roadmap work; current flush completion must not be interpreted as confirmation that the backend accepted every signal.
+`jackin diagnostics validate` emits one marker per signal and requests a force-flush. Success requires a new exporter-success delta for traces, logs, and metrics, no new per-signal failure or facade rejection, and a successful shared bounded flush. The host and Capsule daemon protocols expose typed sanitized health snapshots. Exporter acknowledgement confirms delivery to the configured OTLP endpoint, not downstream retention or indexing.
 
 ## Schema authority
 
