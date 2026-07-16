@@ -10,7 +10,7 @@ use owo_colors::OwoColorize as _;
 use std::fmt::Arguments;
 use std::io::Write as _;
 
-use termrock::{PHOSPHOR_GREEN, Rgb};
+use jackin_core::{PHOSPHOR_GREEN, Rgb};
 
 fn owo_rgb(rgb: Rgb) -> owo_colors::Rgb {
     owo_colors::Rgb(rgb.r, rgb.g, rgb.b)

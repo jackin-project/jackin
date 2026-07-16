@@ -8,13 +8,13 @@ use crate::tui::screens::workspaces::update::WorkspaceInstanceAction;
 pub fn status_popup_state(
     title: impl Into<String>,
     message: impl Into<String>,
-) -> termrock::components::StatusPopupState {
-    termrock::components::StatusPopupState::new(title, message)
+) -> crate::tui::components::StatusPopupState {
+    crate::tui::components::StatusPopupState::new(title, message)
 }
 
 pub fn role_resolution_status_popup_state(
     role_key: impl std::fmt::Display,
-) -> termrock::components::StatusPopupState {
+) -> crate::tui::components::StatusPopupState {
     status_popup_state(
         "Resolving agent role",
         format!("Loading and resolving {role_key}"),
@@ -23,16 +23,16 @@ pub fn role_resolution_status_popup_state(
 
 pub fn role_loading_status_popup_state(
     role_key: impl std::fmt::Display,
-) -> termrock::components::StatusPopupState {
+) -> crate::tui::components::StatusPopupState {
     status_popup_state("Loading role", format!("Loading role {role_key}"))
 }
 
-pub fn workspace_save_drift_check_status_popup_state() -> termrock::components::StatusPopupState {
+pub fn workspace_save_drift_check_status_popup_state() -> crate::tui::components::StatusPopupState {
     status_popup_state("Saving", "Checking isolation records...")
 }
 
 pub fn workspace_save_isolation_cleanup_status_popup_state()
--> termrock::components::StatusPopupState {
+-> crate::tui::components::StatusPopupState {
     status_popup_state("Saving", "Deleting isolated state...")
 }
 

@@ -10,13 +10,12 @@ use ratatui::style::{Color, Style};
 use crate::tui::components::chrome::bottom_chrome_areas;
 
 pub fn render_dialog_backdrop(frame: &mut Frame<'_>, area: Rect) {
-    let backdrop = termrock::widgets::Backdrop {
-        symbol: ' ',
-        style: Style::default()
+    let backdrop = termrock::widgets::Backdrop::new().style(
+        Style::default()
             .fg(Color::Reset)
-            .bg(termrock::style::DIALOG_BACKDROP),
-    };
-    frame.render_widget(&backdrop, area);
+            .bg(jackin_core::tui_theme::DIALOG_BACKDROP),
+    );
+    frame.render_widget(backdrop, area);
 }
 
 #[must_use]
@@ -30,7 +29,8 @@ pub fn exact_dialog_rect(area: Rect, width: u16, height: u16) -> Rect {
             min_height: height,
             preferred_height: height,
             max_height: height,
-            margin: 0,
+            horizontal_margin: 0,
+            vertical_margin: 0,
             placement: termrock::layout::Placement::Centered,
         },
     )
@@ -74,8 +74,8 @@ pub fn dialog_scroll_axes(
 
 pub fn dialog_scroll(
     scroll: &termrock::scroll::DialogScroll,
-) -> termrock::components::DialogBodyScroll {
-    termrock::components::DialogBodyScroll {
+) -> termrock::layout::DialogBodyScroll {
+    termrock::layout::DialogBodyScroll {
         scroll_x: scroll.scroll_x,
         scroll_y: scroll.scroll_y,
     }

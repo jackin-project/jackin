@@ -12,7 +12,8 @@ use super::{
     SettingsEnvTabAction, SettingsGeneralTabAction, SettingsGlobalMountsTabAction,
     SettingsTabBarAction, SettingsTrustTabAction, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
 };
-use termrock::keymap::{KeyChord, LogicalKey};
+use termrock::input::KeyCode;
+use termrock::keymap::KeyChord;
 
 // ── Workspace list ────────────────────────────────────────────────────────────
 
@@ -20,36 +21,36 @@ use termrock::keymap::{KeyChord, LogicalKey};
 fn workspace_list_keymap_nav_and_vim_aliases() {
     use WorkspaceListAction::*;
     assert_eq!(
-        WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)),
+        WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(KeyCode::Up)),
         Some(NavigateUp)
     );
     assert_eq!(
-        WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(KeyCode::Down)),
         Some(NavigateDown)
     );
     for ch in ['k', 'K'] {
         assert_eq!(
-            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(NavigateUp),
             "vim '{ch}' must move up"
         );
     }
     for ch in ['j', 'J'] {
         assert_eq!(
-            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(NavigateDown),
             "vim '{ch}' must move down"
         );
     }
     for ch in ['h', 'H'] {
         assert_eq!(
-            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(ScrollLeft),
         );
     }
     for ch in ['l', 'L'] {
         assert_eq!(
-            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(ScrollRight),
         );
     }
@@ -58,25 +59,25 @@ fn workspace_list_keymap_nav_and_vim_aliases() {
 #[test]
 fn workspace_list_keymap_action_and_instance_keys() {
     use WorkspaceListAction::*;
-    let cases: &[(LogicalKey, WorkspaceListAction)] = &[
-        (LogicalKey::Left, TreeLeft),
-        (LogicalKey::Right, TreeRight),
-        (LogicalKey::Enter, Enter),
-        (LogicalKey::Char('e'), Edit),
-        (LogicalKey::Char('n'), NewSession),
-        (LogicalKey::Char('d'), Delete),
-        (LogicalKey::Char('o'), OpenGithub),
-        (LogicalKey::Char('s'), Settings),
-        (LogicalKey::Char('r'), InstanceReconnect),
-        (LogicalKey::Char('a'), InstanceNewSession),
-        (LogicalKey::Char('x'), InstanceShell),
-        (LogicalKey::Char('i'), InstanceInspect),
-        (LogicalKey::Char('t'), InstanceStop),
-        (LogicalKey::Char('p'), ConfirmPurge),
-        (LogicalKey::Tab, EnterPreview),
-        (LogicalKey::Esc, Exit),
-        (LogicalKey::Char('q'), Exit),
-        (LogicalKey::Char('Q'), Exit),
+    let cases: &[(KeyCode, WorkspaceListAction)] = &[
+        (KeyCode::Left, TreeLeft),
+        (KeyCode::Right, TreeRight),
+        (KeyCode::Enter, Enter),
+        (KeyCode::Char('e'), Edit),
+        (KeyCode::Char('n'), NewSession),
+        (KeyCode::Char('d'), Delete),
+        (KeyCode::Char('o'), OpenGithub),
+        (KeyCode::Char('s'), Settings),
+        (KeyCode::Char('r'), InstanceReconnect),
+        (KeyCode::Char('a'), InstanceNewSession),
+        (KeyCode::Char('x'), InstanceShell),
+        (KeyCode::Char('i'), InstanceInspect),
+        (KeyCode::Char('t'), InstanceStop),
+        (KeyCode::Char('p'), ConfirmPurge),
+        (KeyCode::Tab, EnterPreview),
+        (KeyCode::Esc, Exit),
+        (KeyCode::Char('q'), Exit),
+        (KeyCode::Char('Q'), Exit),
     ];
     for (key, expected) in cases {
         assert_eq!(
@@ -115,35 +116,35 @@ fn workspace_list_keymap_glyphs_match_footer_literals() {
 fn preview_pane_keymap_dispatch_and_aliases() {
     use PreviewPaneAction::*;
     assert_eq!(
-        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)),
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Up)),
         Some(NavigateUp)
     );
     assert_eq!(
-        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Down)),
         Some(NavigateDown)
     );
     assert_eq!(
-        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('k'))),
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('k'))),
         Some(NavigateUp)
     );
     assert_eq!(
-        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('j'))),
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('j'))),
         Some(NavigateDown)
     );
     assert_eq!(
-        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Enter)),
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Enter)),
         Some(Attach)
     );
     assert_eq!(
-        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Esc)),
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Esc)),
         Some(Back)
     );
     assert_eq!(
-        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Left)),
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Left)),
         Some(Back)
     );
     assert_eq!(
-        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::BackTab)),
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(KeyCode::BackTab)),
         Some(Back)
     );
 }
@@ -154,7 +155,7 @@ fn preview_pane_hint_spans_advertise_shown_keys_only() {
         .hint_spans()
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -170,15 +171,15 @@ fn preview_pane_hint_spans_advertise_shown_keys_only() {
 #[test]
 fn editor_global_save_and_escape() {
     assert_eq!(
-        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('s'))),
+        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('s'))),
         Some(EditorGlobalAction::Save)
     );
     assert_eq!(
-        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('S'))),
+        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('S'))),
         Some(EditorGlobalAction::Save)
     );
     assert_eq!(
-        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Esc)),
+        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Esc)),
         Some(EditorGlobalAction::Escape)
     );
 }
@@ -186,11 +187,11 @@ fn editor_global_save_and_escape() {
 #[test]
 fn editor_global_no_nav_keys() {
     assert_eq!(
-        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)),
+        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Up)),
         None
     );
     assert_eq!(
-        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Tab)),
+        EDITOR_GLOBAL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Tab)),
         None
     );
 }
@@ -200,23 +201,23 @@ fn editor_global_no_nav_keys() {
 #[test]
 fn editor_tab_bar_nav() {
     assert_eq!(
-        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Left)),
+        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Left)),
         Some(EditorTabBarAction::PrevTab)
     );
     assert_eq!(
-        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::BackTab)),
+        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::BackTab)),
         Some(EditorTabBarAction::PrevTab)
     );
     assert_eq!(
-        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Right)),
+        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Right)),
         Some(EditorTabBarAction::NextTab)
     );
     assert_eq!(
-        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Tab)),
+        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Tab)),
         Some(EditorTabBarAction::FocusContent)
     );
     assert_eq!(
-        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Down)),
         Some(EditorTabBarAction::FocusContent)
     );
 }
@@ -225,7 +226,7 @@ fn editor_tab_bar_nav() {
 fn editor_tab_bar_vim_aliases() {
     for ch in ['j', 'J'] {
         assert_eq!(
-            EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            EDITOR_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(EditorTabBarAction::FocusContent),
             "'{ch}' must focus content"
         );
@@ -237,11 +238,11 @@ fn editor_tab_bar_vim_aliases() {
 #[test]
 fn editor_content_move_field() {
     assert_eq!(
-        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)),
+        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Up)),
         Some(EditorContentAction::MoveUp)
     );
     assert_eq!(
-        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Down)),
         Some(EditorContentAction::MoveDown)
     );
 }
@@ -250,14 +251,14 @@ fn editor_content_move_field() {
 fn editor_content_vim_nav_aliases() {
     for ch in ['k', 'K'] {
         assert_eq!(
-            EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(EditorContentAction::MoveUp),
             "'{ch}' must move up"
         );
     }
     for ch in ['j', 'J'] {
         assert_eq!(
-            EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(EditorContentAction::MoveDown),
             "'{ch}' must move down"
         );
@@ -268,14 +269,14 @@ fn editor_content_vim_nav_aliases() {
 fn editor_content_vim_scroll_aliases() {
     for ch in ['h', 'H'] {
         assert_eq!(
-            EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(EditorContentAction::ScrollLeft),
             "'{ch}' must scroll left"
         );
     }
     for ch in ['l', 'L'] {
         assert_eq!(
-            EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(EditorContentAction::ScrollRight),
             "'{ch}' must scroll right"
         );
@@ -285,11 +286,11 @@ fn editor_content_vim_scroll_aliases() {
 #[test]
 fn editor_content_header_arrows() {
     assert_eq!(
-        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Left)),
+        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Left)),
         Some(EditorContentAction::CollapseHeader)
     );
     assert_eq!(
-        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Right)),
+        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Right)),
         Some(EditorContentAction::ExpandHeader)
     );
 }
@@ -297,15 +298,15 @@ fn editor_content_header_arrows() {
 #[test]
 fn editor_content_tab_and_enter() {
     assert_eq!(
-        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Tab)),
+        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Tab)),
         Some(EditorContentAction::NextTab)
     );
     assert_eq!(
-        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::BackTab)),
+        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::BackTab)),
         Some(EditorContentAction::FocusTabBar)
     );
     assert_eq!(
-        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Enter)),
+        EDITOR_CONTENT_KEYMAP.dispatch(KeyChord::plain(KeyCode::Enter)),
         Some(EditorContentAction::CheckImmediate)
     );
 }
@@ -315,19 +316,19 @@ fn editor_content_tab_and_enter() {
 #[test]
 fn settings_tab_bar_nav() {
     assert_eq!(
-        SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Left)),
+        SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Left)),
         Some(SettingsTabBarAction::PrevTab)
     );
     assert_eq!(
-        SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Right)),
+        SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Right)),
         Some(SettingsTabBarAction::NextTab)
     );
     assert_eq!(
-        SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Tab)),
+        SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Tab)),
         Some(SettingsTabBarAction::FocusContent)
     );
     assert_eq!(
-        SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Down)),
         Some(SettingsTabBarAction::FocusContent)
     );
 }
@@ -336,7 +337,7 @@ fn settings_tab_bar_nav() {
 fn settings_tab_bar_vim_aliases() {
     for ch in ['j', 'J'] {
         assert_eq!(
-            SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_TAB_BAR_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsTabBarAction::FocusContent),
             "'{ch}' must focus content"
         );
@@ -348,15 +349,15 @@ fn settings_tab_bar_vim_aliases() {
 #[test]
 fn settings_content_shell_keys() {
     assert_eq!(
-        SETTINGS_CONTENT_SHELL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Tab)),
+        SETTINGS_CONTENT_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Tab)),
         Some(SettingsContentShellAction::NextTab)
     );
     assert_eq!(
-        SETTINGS_CONTENT_SHELL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::BackTab)),
+        SETTINGS_CONTENT_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::BackTab)),
         Some(SettingsContentShellAction::FocusTabBar)
     );
     assert_eq!(
-        SETTINGS_CONTENT_SHELL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Esc)),
+        SETTINGS_CONTENT_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Esc)),
         Some(SettingsContentShellAction::FocusTabBarOrClearAuth)
     );
 }
@@ -366,11 +367,11 @@ fn settings_content_shell_keys() {
 #[test]
 fn settings_general_tab_nav() {
     assert_eq!(
-        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)),
+        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Up)),
         Some(SettingsGeneralTabAction::MoveUp)
     );
     assert_eq!(
-        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Down)),
         Some(SettingsGeneralTabAction::MoveDown)
     );
 }
@@ -379,14 +380,14 @@ fn settings_general_tab_nav() {
 fn settings_general_tab_vim_aliases() {
     for ch in ['k', 'K'] {
         assert_eq!(
-            SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsGeneralTabAction::MoveUp),
             "'{ch}' must move up"
         );
     }
     for ch in ['j', 'J'] {
         assert_eq!(
-            SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsGeneralTabAction::MoveDown),
             "'{ch}' must move down"
         );
@@ -396,27 +397,27 @@ fn settings_general_tab_vim_aliases() {
 #[test]
 fn settings_general_tab_actions() {
     assert_eq!(
-        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(' '))),
+        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(' '))),
         Some(SettingsGeneralTabAction::Toggle)
     );
     assert_eq!(
-        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('s'))),
+        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('s'))),
         Some(SettingsGeneralTabAction::Save)
     );
     assert_eq!(
-        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('S'))),
+        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('S'))),
         Some(SettingsGeneralTabAction::Save)
     );
     assert_eq!(
-        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('q'))),
+        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('q'))),
         Some(SettingsGeneralTabAction::Back)
     );
     assert_eq!(
-        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('Q'))),
+        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('Q'))),
         Some(SettingsGeneralTabAction::Back)
     );
     assert_eq!(
-        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Esc)),
+        SETTINGS_GENERAL_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Esc)),
         Some(SettingsGeneralTabAction::Back)
     );
 }
@@ -426,39 +427,39 @@ fn settings_general_tab_actions() {
 #[test]
 fn settings_env_tab_nav_and_actions() {
     assert_eq!(
-        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)),
+        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Up)),
         Some(SettingsEnvTabAction::MoveUp)
     );
     assert_eq!(
-        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Down)),
         Some(SettingsEnvTabAction::MoveDown)
     );
     assert_eq!(
-        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('a'))),
+        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('a'))),
         Some(SettingsEnvTabAction::Add)
     );
     assert_eq!(
-        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('s'))),
+        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('s'))),
         Some(SettingsEnvTabAction::Save)
     );
     assert_eq!(
-        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('d'))),
+        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('d'))),
         Some(SettingsEnvTabAction::Delete)
     );
     assert_eq!(
-        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('m'))),
+        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('m'))),
         Some(SettingsEnvTabAction::ToggleMask)
     );
     assert_eq!(
-        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('p'))),
+        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('p'))),
         Some(SettingsEnvTabAction::OpenPicker)
     );
     assert_eq!(
-        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Enter)),
+        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Enter)),
         Some(SettingsEnvTabAction::Enter)
     );
     assert_eq!(
-        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('q'))),
+        SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('q'))),
         Some(SettingsEnvTabAction::Back)
     );
 }
@@ -467,13 +468,13 @@ fn settings_env_tab_nav_and_actions() {
 fn settings_env_tab_vim_aliases() {
     for ch in ['k', 'K'] {
         assert_eq!(
-            SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsEnvTabAction::MoveUp)
         );
     }
     for ch in ['j', 'J'] {
         assert_eq!(
-            SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_ENV_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsEnvTabAction::MoveDown)
         );
     }
@@ -485,14 +486,14 @@ fn settings_env_tab_vim_aliases() {
 fn settings_trust_tab_scroll_aliases() {
     for ch in ['h', 'H'] {
         assert_eq!(
-            SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsTrustTabAction::ScrollLeft),
             "'{ch}' must scroll left"
         );
     }
     for ch in ['l', 'L'] {
         assert_eq!(
-            SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsTrustTabAction::ScrollRight),
             "'{ch}' must scroll right"
         );
@@ -502,15 +503,15 @@ fn settings_trust_tab_scroll_aliases() {
 #[test]
 fn settings_trust_tab_actions() {
     assert_eq!(
-        SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(' '))),
+        SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(' '))),
         Some(SettingsTrustTabAction::Toggle)
     );
     assert_eq!(
-        SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('s'))),
+        SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('s'))),
         Some(SettingsTrustTabAction::Save)
     );
     assert_eq!(
-        SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('q'))),
+        SETTINGS_TRUST_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('q'))),
         Some(SettingsTrustTabAction::Back)
     );
 }
@@ -520,22 +521,22 @@ fn settings_trust_tab_actions() {
 #[test]
 fn settings_global_mounts_nav_and_scroll() {
     assert_eq!(
-        SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)),
+        SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Up)),
         Some(SettingsGlobalMountsTabAction::MoveUp)
     );
     assert_eq!(
-        SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Down)),
         Some(SettingsGlobalMountsTabAction::MoveDown)
     );
     for ch in ['h', 'H'] {
         assert_eq!(
-            SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsGlobalMountsTabAction::ScrollLeft)
         );
     }
     for ch in ['l', 'L'] {
         assert_eq!(
-            SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsGlobalMountsTabAction::ScrollRight)
         );
     }
@@ -545,13 +546,13 @@ fn settings_global_mounts_nav_and_scroll() {
 fn settings_global_mounts_vim_nav() {
     for ch in ['k', 'K'] {
         assert_eq!(
-            SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsGlobalMountsTabAction::MoveUp)
         );
     }
     for ch in ['j', 'J'] {
         assert_eq!(
-            SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(SettingsGlobalMountsTabAction::MoveDown)
         );
     }
@@ -560,26 +561,26 @@ fn settings_global_mounts_vim_nav() {
 #[test]
 fn settings_global_mounts_action_keys() {
     use SettingsGlobalMountsTabAction::*;
-    let cases: &[(LogicalKey, SettingsGlobalMountsTabAction)] = &[
-        (LogicalKey::Char('s'), Save),
-        (LogicalKey::Char('S'), Save),
-        (LogicalKey::Char('r'), ToggleReadonly),
-        (LogicalKey::Char('R'), ToggleReadonly),
-        (LogicalKey::Char('a'), Add),
-        (LogicalKey::Char('A'), Add),
-        (LogicalKey::Char('d'), Delete),
-        (LogicalKey::Char('D'), Delete),
-        (LogicalKey::Char('o'), OpenGithub),
-        (LogicalKey::Char('O'), OpenGithub),
-        (LogicalKey::Char('n'), EditRename),
-        (LogicalKey::Char('N'), EditRename),
-        (LogicalKey::Char('1'), EditSource),
-        (LogicalKey::Char('2'), EditDest),
-        (LogicalKey::Char('3'), EditScope),
-        (LogicalKey::Enter, Enter),
-        (LogicalKey::Esc, Back),
-        (LogicalKey::Char('q'), Back),
-        (LogicalKey::Char('Q'), Back),
+    let cases: &[(KeyCode, SettingsGlobalMountsTabAction)] = &[
+        (KeyCode::Char('s'), Save),
+        (KeyCode::Char('S'), Save),
+        (KeyCode::Char('r'), ToggleReadonly),
+        (KeyCode::Char('R'), ToggleReadonly),
+        (KeyCode::Char('a'), Add),
+        (KeyCode::Char('A'), Add),
+        (KeyCode::Char('d'), Delete),
+        (KeyCode::Char('D'), Delete),
+        (KeyCode::Char('o'), OpenGithub),
+        (KeyCode::Char('O'), OpenGithub),
+        (KeyCode::Char('n'), EditRename),
+        (KeyCode::Char('N'), EditRename),
+        (KeyCode::Char('1'), EditSource),
+        (KeyCode::Char('2'), EditDest),
+        (KeyCode::Char('3'), EditScope),
+        (KeyCode::Enter, Enter),
+        (KeyCode::Esc, Back),
+        (KeyCode::Char('q'), Back),
+        (KeyCode::Char('Q'), Back),
     ];
     for (key, expected) in cases {
         assert_eq!(
@@ -595,11 +596,11 @@ fn settings_global_mounts_action_keys() {
 #[test]
 fn inline_picker_shell_scroll() {
     assert_eq!(
-        INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Left)),
+        INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Left)),
         Some(InlinePickerShellAction::ScrollLeft)
     );
     assert_eq!(
-        INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Right)),
+        INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Right)),
         Some(InlinePickerShellAction::ScrollRight)
     );
 }
@@ -608,14 +609,14 @@ fn inline_picker_shell_scroll() {
 fn inline_picker_shell_vim_scroll_aliases() {
     for ch in ['h', 'H'] {
         assert_eq!(
-            INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(InlinePickerShellAction::ScrollLeft),
             "'{ch}' must scroll left"
         );
     }
     for ch in ['l', 'L'] {
         assert_eq!(
-            INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char(ch))),
             Some(InlinePickerShellAction::ScrollRight),
             "'{ch}' must scroll right"
         );
@@ -626,11 +627,11 @@ fn inline_picker_shell_vim_scroll_aliases() {
 fn inline_picker_shell_q_not_exit() {
     // q/Q must NOT be captured — they filter in the SelectList, not exit.
     assert_eq!(
-        INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('q'))),
+        INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('q'))),
         None
     );
     assert_eq!(
-        INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('Q'))),
+        INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('Q'))),
         None
     );
 }
@@ -643,7 +644,7 @@ fn editor_general_rename_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -661,7 +662,7 @@ fn editor_general_workdir_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -678,7 +679,7 @@ fn editor_general_toggle_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -695,7 +696,7 @@ fn editor_role_new_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -716,7 +717,7 @@ fn settings_general_toggle_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -733,7 +734,7 @@ fn settings_trust_toggle_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()

@@ -457,7 +457,7 @@ jobs:
           if [ -n "${VELNOR_DOCKER_HOST_TEMP:-}" ]; then
             export TMPDIR="$VELNOR_DOCKER_HOST_TEMP"
           fi
-          cargo nextest run -p jackin --features e2e --profile docker-e2e \
+          cargo nextest run -p jackin --test dind_e2e --features e2e --profile docker-e2e \
             -E 'test(jackin_load_ctrl_q_yes_exits_cold_build_quickly)' \
             --no-tests=pass --color=always --locked --offline
       - name: Upload Docker E2E junit + timing

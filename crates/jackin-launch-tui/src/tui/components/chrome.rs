@@ -13,23 +13,12 @@ pub struct BottomChromeAreas {
 }
 
 #[must_use]
-pub const fn bottom_chrome_areas(area: Rect) -> BottomChromeAreas {
+pub fn bottom_chrome_areas(area: Rect) -> BottomChromeAreas {
+    let (body, [hint, spacer, footer]) = termrock::layout::bottom_rows(area, [1, 1, 1]);
     BottomChromeAreas {
-        body: Rect {
-            height: area.height.saturating_sub(BOTTOM_CHROME_ROWS),
-            ..area
-        },
-        hint: row_from_bottom(area, 3),
-        spacer: row_from_bottom(area, 2),
-        footer: row_from_bottom(area, 1),
-    }
-}
-
-const fn row_from_bottom(area: Rect, offset: u16) -> Rect {
-    Rect {
-        x: area.x,
-        y: area.y.saturating_add(area.height.saturating_sub(offset)),
-        width: area.width,
-        height: if area.height >= offset { 1 } else { 0 },
+        body,
+        hint,
+        spacer,
+        footer,
     }
 }

@@ -5,7 +5,7 @@ description: "Modal sizing rules, confirmation layouts, sub-dialog stacking, err
 
 ## Modal Sizing Rules
 
-Modal sizes come from the `modal_rects` registry in TermRock. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
+Modal sizes are product policy expressed as TermRock `DialogSpec` values. The console and Capsule registries retain named product modes and construct min/preferred/max dimensions, independent margins, and placement; all neutral centering, top placement, clamping, and narrow-terminal resolution runs through TermRock `resolve_dialog`. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
 
 | Modal | `pct_w` | `rows` | Reasoning |
 |---|---|---|---|
@@ -84,7 +84,7 @@ Every dialog that contains a button row (OK, Yes/No, Save/Discard/Cancel, etc.) 
 
 This applies to all dialog surfaces: the host console confirm dialog, the launch failure popup, the capsule confirm action dialog, and any future dialog that renders buttons.
 
-**Implementation:** In height calculations, use `content_rows + 6` (= 2 borders + 1 leading spacer + 1 spacer + 1 button + 1 trailing spacer). For any new dialog: compute the exact row count and add exactly 6 overhead rows. Use `jackin_tui::components::dialog_inner_chunks(inner, Some(content_rows))` to split the inner area into the canonical five slots and render into the correct slots.
+**Implementation:** In height calculations, use `content_rows + 6` (= 2 borders + 1 leading spacer + 1 spacer + 1 button + 1 trailing spacer). For any new dialog: compute the exact row count and add exactly 6 overhead rows. Use `termrock::layout::dialog_inner_chunks(inner, Some(content_rows))` to split the inner area into the canonical five slots and render into the correct slots.
 
 **Universal dialog scroll rule:** No dialog may silently clip content. When a dialog's body cannot fit in the dialog area, it must scroll on the overflowing axis with a scrollbar on the matching border — vertical on the right, horizontal on the bottom — and the bar appears **only** when content actually overflows that axis. Both axes go through one shared mechanism in [TermRock source](https://github.com/tailrocks/termrock): a `DialogBodyScroll` field (`scroll_x` + `scroll_y`) plus `render_scrollable_dialog_body(frame, block_area, inner, &lines, &mut scroll)`, which renders the body's `Vec<Line>` with both-axis offset (`Paragraph::scroll`) and draws the scrollbars when overflowing. Keyboard scroll is `↑`/`↓`/`j`/`k` (vertical) and `←`/`→`/`h`/`l` (horizontal); the mouse wheel scrolls both axes. Never hand-roll per-row clipping or a bespoke scrollbar — route the body through `render_scrollable_dialog_body`.
 
@@ -99,7 +99,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 ### Debug info dialog contract
 
-`DebugInfo::into_state()` in [TermRock source](https://github.com/tailrocks/termrock) is the only row-order and row-label source for the Debug info dialog. Console, launch, and capsule surfaces may supply different facts, but they all render through `render_container_info()` and must not fork the shell, row labels, copy behavior, hover styling, or scroll behavior.
+`DebugInfo::into_state()` in <RepoFile path="crates/jackin-core/src/operator_info.rs">the product facade</RepoFile> is the only row-order and row-label source for Debug info. It projects into TermRock `DetailTable`, the single neutral renderer for shell, values, copy/link capabilities, hover styling, visible regions, and both-axis scroll. No surface may fork either layer.
 
 The canonical row order is:
 
@@ -168,7 +168,7 @@ Concrete obligations:
 
 - **Open**: push the new modal *on top of* the parent — do not overwrite the slot.
 - **Esc / Cancel**: pop one frame. Operator returns to whichever modal was visible immediately before.
-- **Mouse-click outside the box**: dismisses the dialog (same as Esc). This rule applies to **all** surfaces — host console, launch cockpit, and capsule — not only the capsule's dialog stack. Clicking *inside* the dialog body where there is no interactive element is a no-op (does not dismiss). **Implementation:** use `classify_click(modal_rect, col, row)` from `jackin_tui::components::modal_lifecycle`; result `OutsideDismiss` triggers dismiss, while `InsideHit` is consumed by the modal and does not propagate to underlying chrome.
+- **Mouse-click outside the box**: dismisses the dialog (same as Esc). This rule applies to **all** surfaces — host console, launch cockpit, and capsule — not only the capsule's dialog stack. Clicking *inside* the dialog body where there is no interactive element is a no-op (does not dismiss). **Implementation:** use `termrock::interaction::classify_click(modal_rect, col, row)`; `OutsideDismiss` triggers dismiss, while `InsideHit` is consumed by the modal and does not propagate to underlying chrome.
 - **Commit / terminal action** (agent picked, role selected, destructive action confirmed, copy fired, env key + value both committed): clear the entire chain so the operator lands on the underlying screen in one step. A terminal action means "the chain achieved its goal" — walking back through every intermediate step would be noise.
 - **Sub-dialog titles** read as a step inside the parent's flow — `Split: ← Left` for the agent picker opened from a `SplitDirectionPicker`, not `Agent picker` again. The title is what surfaces the breadcrumb to the operator.
 
@@ -282,7 +282,7 @@ Copy feedback is the exception because copy does not navigate or otherwise chang
 
 ## Debug info dialog — one shared, accumulating component
 
-The "Debug info" dialog is a single reusable component, not a per-surface reimplementation. Every surface that shows it — the console manager, the launch cockpit, and the in-container capsule — builds it from the shared `DebugInfo` model ([TermRock source](https://github.com/tailrocks/termrock)) and renders it through `render_container_info`. The look, row order, labels, and copy affordances must be identical on every surface; a surface that hand-rolls its own rows or renderer is a violation.
+The "Debug info" dialog has one product facade and one neutral renderer. <RepoFile path="crates/jackin-core/src/operator_info.rs">jackin❯ operator info</RepoFile> owns `DebugInfo`, row order, labels, diagnostics policy, clipboard/open effects, and final OSC emission. TermRock `DetailTable` and `Panel` own rendering, scrolling, copy/link capabilities, hover, copied affordances, and typed hit regions. Console, launch, and Capsule only supply the facts available at their lifecycle stage.
 
 **The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin❯ version, Run ID, diagnostics log path when one exists). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Run ID, Container ID, jackin❯ version, jackin-capsule, Role, Agent, Target, Diagnostics log, Telemetry. If `Run ID` is present, it is always the first visible row — not merely the first debug-only row or first copy target — and the default Enter-copy target.
 

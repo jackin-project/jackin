@@ -25,10 +25,10 @@ fn widget_bar(
     loading: bool,
     container: &str,
     hover: Option<crate::tui::model::HoverTarget>,
-) -> (String, ratatui::buffer::Buffer) {
+) -> (String, Buffer) {
     use ratatui::widgets::Widget as _;
-    let area = ratatui::layout::Rect::new(0, 0, cols, 24);
-    let mut buf = ratatui::buffer::Buffer::empty(area);
+    let area = Rect::new(0, 0, cols, 24);
+    let mut buf = Buffer::empty(area);
     crate::tui::components::chrome::BottomChromeWidget {
         branch,
         usage_status_label,
@@ -318,7 +318,7 @@ fn hit_rejects_columns_outside_region() {
 #[test]
 fn hover_highlights_click_targets() {
     let pr = pull_request_fixture(434);
-    let hover_fg = termrock::style::DEBUG_AMBER;
+    let hover_fg = jackin_core::tui_theme::DEBUG_AMBER;
     let (_, ctx) = widget_bar(
         120,
         Some("asa/pr-context"),

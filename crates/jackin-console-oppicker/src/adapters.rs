@@ -1,6 +1,6 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 use termrock::runtime::{Subscription, SubscriptionPoll};
-use termrock::widgets::{EditAction, TextInputState as TermRockTextInputState};
+use termrock::widgets::{TextInputOutcome, TextInputState as TermRockTextInputState};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModalOutcome<T> {
@@ -35,23 +35,12 @@ impl<'a> TextInputState<'a> {
         &self.inner
     }
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
-        match key.code {
-            KeyCode::Esc => return ModalOutcome::Cancel,
-            KeyCode::Enter if !self.trimmed_value().is_empty() => {
-                return ModalOutcome::Commit(self.trimmed_value());
-            }
-            KeyCode::Backspace => self.inner.apply(EditAction::Backspace),
-            KeyCode::Delete => self.inner.apply(EditAction::Delete),
-            KeyCode::Left => self.inner.apply(EditAction::MoveLeft),
-            KeyCode::Right => self.inner.apply(EditAction::MoveRight),
-            KeyCode::Home => self.inner.apply(EditAction::Home),
-            KeyCode::End => self.inner.apply(EditAction::End),
-            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.inner.apply(EditAction::Insert(c));
-            }
-            _ => {}
+        match self.inner.handle_key(key.into()) {
+            TextInputOutcome::Submitted(_) => ModalOutcome::Commit(self.trimmed_value()),
+            TextInputOutcome::Cancelled => ModalOutcome::Cancel,
+            TextInputOutcome::Ignored | TextInputOutcome::Changed => ModalOutcome::Continue,
+            _ => ModalOutcome::Continue,
         }
-        ModalOutcome::Continue
     }
 }
 

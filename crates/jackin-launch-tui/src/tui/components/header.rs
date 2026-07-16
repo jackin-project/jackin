@@ -3,26 +3,26 @@
 
 //! Launch cockpit header rendering.
 
+use jackin_core::tui_theme::WHITE;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use termrock::style::WHITE;
 
 use crate::LaunchView;
 use crate::tui::components::cells::coalesce_cells;
 
 fn brand_header_line(label: &str) -> Line<'static> {
     let block = Style::default()
-        .bg(termrock::style::BRAND_BLOCK)
+        .bg(jackin_core::tui_theme::BRAND_BLOCK)
         .add_modifier(Modifier::BOLD);
     Line::from(vec![
-        Span::styled(" jackin", block.fg(termrock::style::INK)),
+        Span::styled(" jackin", block.fg(jackin_core::tui_theme::INK)),
         Span::styled("❯", block.fg(WHITE)),
         Span::styled(" ", block),
         Span::styled(" · ", Style::default().fg(termrock::style::PHOSPHOR_DARK)),
-        Span::styled(label.to_owned(), termrock::style::DIM),
+        Span::styled(label.to_owned(), jackin_core::tui_theme::DIM),
     ])
 }
 

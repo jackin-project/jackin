@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::tui::auth::AuthKind;
+use crate::tui::components::ErrorPopupState;
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{
     AuthForm, AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
@@ -9,7 +10,7 @@ use crate::tui::state::{
     SettingsTab,
 };
 use ratatui::layout::Rect;
-use termrock::components::{ErrorPopupState, FocusOwner};
+use termrock::interaction::FocusOwner;
 
 fn state_with_saved_count(count: usize) -> ManagerState<'static> {
     let tmp = tempfile::tempdir().unwrap();
@@ -517,7 +518,7 @@ fn return_to_list_closes_confirm_stages() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::ConfirmDelete {
         name: "workspace".into(),
-        state: termrock::components::ConfirmState::new("delete?"),
+        state: crate::tui::components::ConfirmState::new("delete?"),
     };
 
     assert!(update_manager(&mut state, ManagerMessage::ReturnToList).is_dirty());

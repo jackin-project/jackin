@@ -9,7 +9,7 @@ use ratatui::layout::Rect;
 
 use crate::tui::runtime::BlockingSubscription;
 use jackin_config::AppConfig;
-use termrock::components::FocusOwner;
+use termrock::interaction::FocusOwner;
 use termrock::runtime::{Subscription, SubscriptionPoll};
 
 use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
@@ -1027,7 +1027,7 @@ impl WorkspaceListHoverState for ManagerState<'_> {
 }
 
 impl StatusOverlayState for ManagerState<'_> {
-    fn set_status_overlay(&mut self, overlay: Option<termrock::components::StatusPopupState>) {
+    fn set_status_overlay(&mut self, overlay: Option<crate::tui::components::StatusPopupState>) {
         self.status_overlay = overlay;
     }
 }
@@ -1040,7 +1040,7 @@ impl ListModalState for ManagerState<'_> {
         self.list_modal = Some(Modal::ContainerInfo { state });
     }
 
-    fn open_error_popup_modal(&mut self, state: termrock::components::ErrorPopupState) {
+    fn open_error_popup_modal(&mut self, state: crate::tui::components::ErrorPopupState) {
         self.list_modal = Some(Modal::ErrorPopup { state });
     }
 

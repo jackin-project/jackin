@@ -597,19 +597,8 @@ impl OpPickerState {
     }
 }
 
-fn cycle_select(list_state: &mut tui_widget_list::ListState, count: usize, delta: i32) {
-    if count == 0 {
-        return;
-    }
-    let cur = list_state.selected.unwrap_or(0);
-    let next = if delta < 0 {
-        if cur == 0 { count - 1 } else { cur - 1 }
-    } else if cur + 1 >= count {
-        0
-    } else {
-        cur + 1
-    };
-    list_state.select(Some(next));
+fn cycle_select(list_state: &mut termrock::widgets::ListState<usize>, count: usize, delta: isize) {
+    list_state.cycle_index(count, delta);
 }
 
 #[must_use]
