@@ -62,8 +62,18 @@ fn activate(version: &str, repair: bool) -> Result<()> {
             fs::remove_dir_all(&install)
                 .with_context(|| format!("removing incomplete {}", install.display()))?;
         }
-        cmd::run_streaming(Command::new("mise").args(["install", &format!("rust@{version}")]))
+        let tool = format!("rust@{version}");
+        let _uninstall = cmd::run_streaming(Command::new("mise").args(["uninstall", &tool]));
+        cmd::run_streaming(Command::new("mise").args(["install", &tool]))
             .with_context(|| format!("installing Rust {version} with mise"))?;
+    }
+    if let Some(toolchain) = find_rustup_toolchain(version)? {
+        append_github_file("GITHUB_ENV", &format!("RUSTUP_TOOLCHAIN={toolchain}"))?;
+        writeln!(
+            io::stdout().lock(),
+            "prepared Rust toolchain {toolchain} from repaired rustup storage"
+        )?;
+        return Ok(());
     }
     if !valid_toolchain(&install) {
         bail!(
