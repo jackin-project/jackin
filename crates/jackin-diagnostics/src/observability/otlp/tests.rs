@@ -277,7 +277,7 @@ fn otel_internal_visitor_empty_uses_fallback() {
 #[test]
 fn exported_log_carries_body_and_attributes() {
     let logs = exported_logs!(false, "run1", || {
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             "run1",
             "compact_kind",
             "hello world",
@@ -337,7 +337,7 @@ fn exported_log_carries_body_and_attributes() {
 #[test]
 fn exported_log_body_and_detail_are_redacted() {
     let logs = exported_logs!(false, "run1", || {
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             "run1",
             "compact_kind",
             "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
@@ -357,7 +357,7 @@ fn exported_log_body_and_detail_are_redacted() {
 #[test]
 fn exported_error_log_is_error_severity() {
     let logs = exported_logs!(false, "run1", || {
-        crate::observability::emit_jsonl_error("run1", "failure", "boom", None, None);
+        crate::observability::emit_progress_error("run1", "failure", "boom", None, None);
     });
 
     assert_eq!(logs.len(), 1);
@@ -410,12 +410,24 @@ fn conformance_single_delivery() {
 #[test]
 fn debug_kind_is_debug_severity_and_filtered_at_info() {
     let info_logs = exported_logs!(false, "run1", || {
-        crate::observability::emit_jsonl_event("run1", "debug", "debug line", None, Some("docker"));
+        crate::observability::emit_progress_event(
+            "run1",
+            "debug",
+            "debug line",
+            None,
+            Some("docker"),
+        );
     });
     assert!(info_logs.is_empty());
 
     let debug_logs = exported_logs!(true, "run1", || {
-        crate::observability::emit_jsonl_event("run1", "debug", "debug line", None, Some("docker"));
+        crate::observability::emit_progress_event(
+            "run1",
+            "debug",
+            "debug line",
+            None,
+            Some("docker"),
+        );
     });
     assert_eq!(debug_logs.len(), 1);
     let log = &debug_logs[0];
@@ -430,7 +442,13 @@ fn debug_kind_is_debug_severity_and_filtered_at_info() {
 #[test]
 fn absent_stage_and_detail_are_not_exported_as_sentinels() {
     let logs = exported_logs!(false, "run1", || {
-        crate::observability::emit_jsonl_event("run1", "compact_kind", "hello world", None, None);
+        crate::observability::emit_progress_event(
+            "run1",
+            "compact_kind",
+            "hello world",
+            None,
+            None,
+        );
     });
 
     assert_eq!(logs.len(), 1);
@@ -606,7 +624,7 @@ fn dependency_targets_are_filtered_out() {
 #[test]
 fn jackin_targets_still_export() {
     let logs = exported_logs!(false, "run1", || {
-        crate::observability::emit_jsonl_event("run1", "compact_kind", "hello", None, None);
+        crate::observability::emit_progress_event("run1", "compact_kind", "hello", None, None);
         // Prefix-free capsule body with schema fields (plan 004 bridge shape).
         tracing::event!(
             target: "jackin_capsule",
@@ -719,7 +737,7 @@ fn export_filter_directive_internal_flag_restores_global_level() {
 #[test]
 fn wire_log_resource_excludes_run_and_component() {
     let logs = exported_logs!(false, "wire-run", || {
-        crate::observability::emit_jsonl_event("wire-run", "compact_kind", "hello", None, None);
+        crate::observability::emit_progress_event("wire-run", "compact_kind", "hello", None, None);
     });
     assert_eq!(logs.len(), 1);
     let resource = &logs[0].resource;
@@ -1014,7 +1032,7 @@ fn jsonl_trace_id_matches_in_memory_exporter() {
 #[test]
 fn bridge_populates_top_level_event_name_from_attribute() {
     let logs = exported_logs!(false, "run1", || {
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             "run1",
             "session_detach",
             "operator detached",
@@ -1043,22 +1061,28 @@ fn bridge_populates_top_level_event_name_from_attribute() {
 #[test]
 fn top_level_event_name_matches_attribute_and_registry() {
     let logs = exported_logs!(false, "run1", || {
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             "run1",
             "stage_started",
             "building",
             Some("image"),
             None,
         );
-        crate::observability::emit_jsonl_event("run1", "stage_done", "built", Some("image"), None);
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
+            "run1",
+            "stage_done",
+            "built",
+            Some("image"),
+            None,
+        );
+        crate::observability::emit_progress_event(
             "run1",
             "session_detach",
             "operator detached",
             None,
             None,
         );
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             "run1",
             "process.execute",
             "host process execute",

@@ -8,3 +8,16 @@ groups:
   - { id: event.app.jank, type: event, name: app.jank, brief: Render jank threshold crossed., stability: development, attributes: [] }
   - { id: event.app.crash, type: event, name: app.crash, brief: Application crashed., stability: development, attributes: [] }
   - { id: event.telemetry.validate, type: event, name: telemetry.validate, brief: Telemetry delivery validation marker., stability: development, attributes: [] }
+  - { id: event.launch.stage.started, type: event, name: launch.stage.started, brief: Launch stage started., stability: development, attributes: [] }
+  - { id: event.launch.stage.done, type: event, name: launch.stage.done, brief: Launch stage completed., stability: development, attributes: [] }
+  - { id: event.launch.stage.failed, type: event, name: launch.stage.failed, brief: Launch stage failed., stability: development, attributes: [] }
+  - { id: event.launch.stage.skipped, type: event, name: launch.stage.skipped, brief: Launch stage skipped., stability: development, attributes: [] }
+  - { id: event.timing.started, type: event, name: timing.started, brief: Timing interval started., stability: development, attributes: [] }
+  - { id: event.timing.done, type: event, name: timing.done, brief: Timing interval completed., stability: development, attributes: [] }
+  - { id: event.debug.line, type: event, name: debug.line, brief: Governed debug breadcrumb., stability: development, attributes: [] }
+  - { id: event.process.subprocess.done, type: event, name: process.subprocess.done, brief: Subprocess completed., stability: development, attributes: [] }
+  - { id: event.run.summary, type: event, name: run.summary, brief: Invocation summary produced., stability: development, attributes: [] }
+  - { id: event.performance.slow.foreground.wait, type: event, name: performance.slow.foreground.wait, brief: Foreground wait exceeded its threshold., stability: development, attributes: [] }
+  - { id: event.capsule.session.detach, type: event, name: capsule.session.detach, brief: Operator detached from a capsule session., stability: development, attributes: [] }
+  - { id: event.capsule.session.clean.shutdown, type: event, name: capsule.session.clean.shutdown, brief: Capsule session shut down cleanly., stability: development, attributes: [] }
+  - { id: event.error.typed, type: event, name: error.typed, brief: Typed product error occurred., stability: development, attributes: [] }

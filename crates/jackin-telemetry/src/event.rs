@@ -105,6 +105,37 @@ pub const TELEMETRY_VALIDATE: EventDef = EventDef {
     severity: Severity::Info,
 };
 
+macro_rules! event_def {
+    ($constant:ident, $name:ident, $severity:ident) => {
+        pub const $constant: EventDef = EventDef {
+            name: schema::events::$name,
+            severity: Severity::$severity,
+        };
+    };
+}
+
+event_def!(LAUNCH_STAGE_STARTED, LAUNCH_STAGE_STARTED, Info);
+event_def!(LAUNCH_STAGE_DONE, LAUNCH_STAGE_DONE, Info);
+event_def!(LAUNCH_STAGE_FAILED, LAUNCH_STAGE_FAILED, Error);
+event_def!(LAUNCH_STAGE_SKIPPED, LAUNCH_STAGE_SKIPPED, Info);
+event_def!(TIMING_STARTED, TIMING_STARTED, Info);
+event_def!(TIMING_DONE, TIMING_DONE, Info);
+event_def!(DEBUG_LINE, DEBUG_LINE, Debug);
+event_def!(PROCESS_SUBPROCESS_DONE, PROCESS_SUBPROCESS_DONE, Info);
+event_def!(RUN_SUMMARY, RUN_SUMMARY, Info);
+event_def!(
+    PERFORMANCE_SLOW_FOREGROUND_WAIT,
+    PERFORMANCE_SLOW_FOREGROUND_WAIT,
+    Warn
+);
+event_def!(CAPSULE_SESSION_DETACH, CAPSULE_SESSION_DETACH, Info);
+event_def!(
+    CAPSULE_SESSION_CLEAN_SHUTDOWN,
+    CAPSULE_SESSION_CLEAN_SHUTDOWN,
+    Info
+);
+event_def!(ERROR_TYPED, ERROR_TYPED, Error);
+
 fn validate(def: &'static EventDef, fields: &FieldSet<'_>) -> Result<(), Rejection> {
     if !schema::events::ALL.contains(&def.name) {
         return Err(Rejection::UnknownName);
@@ -175,6 +206,33 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
         schema::events::TELEMETRY_VALIDATE => {
             emit_named!("telemetry.validate", def.severity, fields)
         }
+        schema::events::LAUNCH_STAGE_STARTED => {
+            emit_named!("launch.stage.started", def.severity, fields)
+        }
+        schema::events::LAUNCH_STAGE_DONE => emit_named!("launch.stage.done", def.severity, fields),
+        schema::events::LAUNCH_STAGE_FAILED => {
+            emit_named!("launch.stage.failed", def.severity, fields)
+        }
+        schema::events::LAUNCH_STAGE_SKIPPED => {
+            emit_named!("launch.stage.skipped", def.severity, fields)
+        }
+        schema::events::TIMING_STARTED => emit_named!("timing.started", def.severity, fields),
+        schema::events::TIMING_DONE => emit_named!("timing.done", def.severity, fields),
+        schema::events::DEBUG_LINE => emit_named!("debug.line", def.severity, fields),
+        schema::events::PROCESS_SUBPROCESS_DONE => {
+            emit_named!("process.subprocess.done", def.severity, fields)
+        }
+        schema::events::RUN_SUMMARY => emit_named!("run.summary", def.severity, fields),
+        schema::events::PERFORMANCE_SLOW_FOREGROUND_WAIT => {
+            emit_named!("performance.slow.foreground.wait", def.severity, fields)
+        }
+        schema::events::CAPSULE_SESSION_DETACH => {
+            emit_named!("capsule.session.detach", def.severity, fields)
+        }
+        schema::events::CAPSULE_SESSION_CLEAN_SHUTDOWN => {
+            emit_named!("capsule.session.clean.shutdown", def.severity, fields)
+        }
+        schema::events::ERROR_TYPED => emit_named!("error.typed", def.severity, fields),
         _ => unreachable!("validated closed event registry"),
     }
     Ok(())

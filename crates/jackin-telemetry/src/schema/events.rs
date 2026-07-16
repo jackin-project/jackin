@@ -11,6 +11,19 @@ pub const UI_WIDGET_UNFOCUSED: &str = "ui.widget.unfocused";
 pub const APP_JANK: &str = "app.jank";
 pub const APP_CRASH: &str = "app.crash";
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
+pub const LAUNCH_STAGE_STARTED: &str = "launch.stage.started";
+pub const LAUNCH_STAGE_DONE: &str = "launch.stage.done";
+pub const LAUNCH_STAGE_FAILED: &str = "launch.stage.failed";
+pub const LAUNCH_STAGE_SKIPPED: &str = "launch.stage.skipped";
+pub const TIMING_STARTED: &str = "timing.started";
+pub const TIMING_DONE: &str = "timing.done";
+pub const DEBUG_LINE: &str = "debug.line";
+pub const PROCESS_SUBPROCESS_DONE: &str = "process.subprocess.done";
+pub const RUN_SUMMARY: &str = "run.summary";
+pub const PERFORMANCE_SLOW_FOREGROUND_WAIT: &str = "performance.slow.foreground.wait";
+pub const CAPSULE_SESSION_DETACH: &str = "capsule.session.detach";
+pub const CAPSULE_SESSION_CLEAN_SHUTDOWN: &str = "capsule.session.clean.shutdown";
+pub const ERROR_TYPED: &str = "error.typed";
 
 pub const ALL: &[&str] = &[
     SESSION_START,
@@ -22,4 +35,17 @@ pub const ALL: &[&str] = &[
     APP_JANK,
     APP_CRASH,
     TELEMETRY_VALIDATE,
+    LAUNCH_STAGE_STARTED,
+    LAUNCH_STAGE_DONE,
+    LAUNCH_STAGE_FAILED,
+    LAUNCH_STAGE_SKIPPED,
+    TIMING_STARTED,
+    TIMING_DONE,
+    DEBUG_LINE,
+    PROCESS_SUBPROCESS_DONE,
+    RUN_SUMMARY,
+    PERFORMANCE_SLOW_FOREGROUND_WAIT,
+    CAPSULE_SESSION_DETACH,
+    CAPSULE_SESSION_CLEAN_SHUTDOWN,
+    ERROR_TYPED,
 ];

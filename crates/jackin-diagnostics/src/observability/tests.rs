@@ -4,7 +4,7 @@
 //! Tests for observability setup.
 
 use super::rewrite_endpoint_for_container;
-use super::{event_taxonomy, otel_events, otel_metrics};
+use super::{otel_events, otel_metrics};
 
 #[test]
 fn semconv_registry_metric_names_are_stable_wire_strings() {
@@ -52,35 +52,6 @@ fn semconv_registry_event_kinds_are_stable_wire_strings() {
     assert!(otel_events::ALL.contains(&otel_events::SESSION_DETACH));
     assert!(otel_events::ALL.contains(&otel_events::CLEAN_SHUTDOWN));
     assert!(otel_events::ALL.contains(&otel_events::PROCESS_EXECUTE));
-}
-
-#[test]
-fn session_detach_outcome_is_expected_close_not_failure() {
-    let taxonomy = event_taxonomy(
-        otel_events::SESSION_DETACH,
-        "operator detached",
-        None,
-        None,
-        None,
-        "INFO",
-    );
-    assert_eq!(taxonomy.outcome, "expected_close");
-    assert_eq!(taxonomy.event_name, "capsule.session.detach");
-    assert_ne!(taxonomy.outcome, "failure");
-}
-
-#[test]
-fn clean_shutdown_outcome_is_expected_close() {
-    let taxonomy = event_taxonomy(
-        otel_events::CLEAN_SHUTDOWN,
-        "container exited cleanly",
-        None,
-        None,
-        None,
-        "INFO",
-    );
-    assert_eq!(taxonomy.outcome, "expected_close");
-    assert_eq!(taxonomy.event_name, "capsule.session.clean.shutdown");
 }
 
 #[test]

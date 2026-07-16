@@ -191,7 +191,7 @@ impl RunDiagnostics {
             run.compact("otlp", &line);
             crate::logging::emit_compact_line("otlp", &line);
         }
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             &run.run_id,
             "run",
             &format!("command {command} started"),
@@ -224,18 +224,18 @@ impl RunDiagnostics {
     }
 
     pub fn compact(&self, kind: &str, message: &str) {
-        crate::observability::emit_jsonl_event(&self.run_id, kind, message, None, None);
+        crate::observability::emit_progress_event(&self.run_id, kind, message, None, None);
     }
 
     pub fn error(&self, kind: &str, message: &str) {
-        crate::observability::emit_jsonl_error(&self.run_id, kind, message, None, None);
+        crate::observability::emit_progress_error(&self.run_id, kind, message, None, None);
     }
 
     pub fn error_typed(&self, kind: &str, message: &str, error_type: Option<&str>) {
         if let Some(error_type) = error_type {
             crate::metrics::incr_errors(error_type);
         }
-        crate::observability::emit_jsonl_error_typed(
+        crate::observability::emit_progress_error_typed(
             &self.run_id,
             kind,
             message,
@@ -297,7 +297,7 @@ impl RunDiagnostics {
         }
         let _entered = span.enter();
         if kind.ends_with("_failed") {
-            crate::observability::emit_jsonl_error_typed(
+            crate::observability::emit_progress_error_typed(
                 &self.run_id,
                 kind,
                 message,
@@ -306,7 +306,7 @@ impl RunDiagnostics {
                 None,
             );
         } else {
-            crate::observability::emit_jsonl_event(
+            crate::observability::emit_progress_event(
                 &self.run_id,
                 kind,
                 message,
@@ -336,7 +336,7 @@ impl RunDiagnostics {
         else {
             return;
         };
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             &self.run_id,
             "slow_foreground_wait",
             &wait.message,
@@ -352,7 +352,7 @@ impl RunDiagnostics {
         let event_detail = timing_detail(name, None, detail);
         let span = self.current_stage_span(stage);
         let _entered = span.as_ref().map(tracing::Span::enter);
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             &self.run_id,
             "timing_started",
             &format!("{name} started"),
@@ -373,7 +373,7 @@ impl RunDiagnostics {
         let event_detail = timing_detail(name, elapsed_ms, detail);
         let span = self.current_stage_span(stage);
         let _entered = span.as_ref().map(tracing::Span::enter);
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             &self.run_id,
             "timing_done",
             &format!("{name} done"),
@@ -427,7 +427,7 @@ impl RunDiagnostics {
             "cache_misses": metrics.cache_misses,
         })
         .to_string();
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             &self.run_id,
             "run_summary",
             "stage durations and counters",
@@ -435,7 +435,7 @@ impl RunDiagnostics {
             Some(&summary),
         );
         if !unclosed.is_empty() {
-            crate::observability::emit_jsonl_event(
+            crate::observability::emit_progress_event(
                 &self.run_id,
                 "diagnostics",
                 &format!("unclosed: {}", unclosed.join(", ")),
@@ -481,7 +481,13 @@ impl RunDiagnostics {
         if !crate::logging::debug_capture_enabled(category, self.debug) {
             return false;
         }
-        crate::observability::emit_jsonl_event(&self.run_id, "debug", line, None, Some(category));
+        crate::observability::emit_progress_event(
+            &self.run_id,
+            "debug",
+            line,
+            None,
+            Some(category),
+        );
         true
     }
 
@@ -497,7 +503,7 @@ impl RunDiagnostics {
             "capsule_log": capsule_log_path,
         })
         .to_string();
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             &self.run_id,
             "container_started",
             &format!("container {container_name} started"),
@@ -543,7 +549,7 @@ impl RunDiagnostics {
             format!("container {container_name} exited (exit {exit_code})")
         };
         if kind == "container_crash" {
-            crate::observability::emit_jsonl_error(
+            crate::observability::emit_progress_error(
                 &self.run_id,
                 kind,
                 &msg,
@@ -551,7 +557,7 @@ impl RunDiagnostics {
                 Some(&detail),
             );
         } else {
-            crate::observability::emit_jsonl_event(
+            crate::observability::emit_progress_event(
                 &self.run_id,
                 kind,
                 &msg,
@@ -561,7 +567,7 @@ impl RunDiagnostics {
         }
         if let Some(evidence) = crash_evidence.filter(|s| !s.is_empty()) {
             let capped_evidence = cap_crash_evidence_for_export(evidence);
-            crate::observability::emit_jsonl_error(
+            crate::observability::emit_progress_error(
                 &self.run_id,
                 "container_crash_log",
                 &format!("container {container_name} crash evidence"),
@@ -585,7 +591,7 @@ impl RunDiagnostics {
             "cached": cached,
         })
         .to_string();
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             &self.run_id,
             "docker_build_step",
             &format!("docker build step {step} {label}"),
@@ -601,7 +607,7 @@ impl RunDiagnostics {
             "exit_code": exit_code,
         })
         .to_string();
-        crate::observability::emit_jsonl_event(
+        crate::observability::emit_progress_event(
             &self.run_id,
             "subprocess_done",
             "subprocess exited",

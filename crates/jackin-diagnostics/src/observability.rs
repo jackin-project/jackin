@@ -1655,602 +1655,73 @@ pub use otlp::{TestExport, test_capsule_layers};
 #[cfg(test)]
 pub(crate) use otlp::{emit_session_start_for_test, test_layers};
 
-pub(crate) fn emit_jsonl_event(
-    run_id: &str,
+pub(crate) fn emit_progress_event(
+    _invocation_id: &str,
     kind: &str,
     message: &str,
-    stage: Option<&str>,
-    detail: Option<&str>,
+    _stage: Option<&str>,
+    _detail: Option<&str>,
 ) {
-    emit_jsonl_event_with_level(
-        run_id,
-        kind,
-        message,
-        stage,
-        detail,
-        None,
-        JsonlEventLevel::Info,
-    );
+    emit_progress_event_inner(kind, message, None);
 }
 
-pub(crate) fn emit_jsonl_error(
-    run_id: &str,
+pub(crate) fn emit_progress_error(
+    _invocation_id: &str,
     kind: &str,
     message: &str,
-    stage: Option<&str>,
-    detail: Option<&str>,
+    _stage: Option<&str>,
+    _detail: Option<&str>,
 ) {
-    emit_jsonl_error_typed(run_id, kind, message, stage, detail, None);
+    emit_progress_event_inner(kind, message, Some("operation_error"));
 }
 
-pub(crate) fn emit_jsonl_error_typed(
-    run_id: &str,
+pub(crate) fn emit_progress_error_typed(
+    _invocation_id: &str,
     kind: &str,
     message: &str,
-    stage: Option<&str>,
-    detail: Option<&str>,
+    _stage: Option<&str>,
+    _detail: Option<&str>,
     error_type: Option<&str>,
 ) {
-    emit_jsonl_event_with_level(
-        run_id,
-        kind,
-        message,
-        stage,
-        detail,
-        error_type,
-        JsonlEventLevel::Error,
-    );
+    emit_progress_event_inner(kind, message, error_type.or(Some("operation_error")));
 }
 
-enum JsonlEventLevel {
-    Info,
-    Error,
-}
+fn emit_progress_event_inner(kind: &str, message: &str, error_type: Option<&str>) {
+    use jackin_telemetry::event;
+    use jackin_telemetry::{Attr, FieldSet, Value};
 
-pub(crate) struct EventTaxonomy {
-    pub event_name: String,
-    pub outcome: &'static str,
-    pub component: &'static str,
-    pub operation: String,
-    pub category: String,
-}
-
-pub(crate) fn event_taxonomy(
-    kind: &str,
-    message: &str,
-    stage: Option<&str>,
-    detail: Option<&str>,
-    error_type: Option<&str>,
-    level: &str,
-) -> EventTaxonomy {
-    use crate::registry::{Outcome, lookup, normalize_stage_token};
-
-    let _ = message;
-    if let Some(def) = lookup(kind) {
-        let operation = match def.operation {
-            "stage" | "timing" => stage.map_or_else(
-                || def.operation.to_owned(),
-                |stage| format!("{}.{}", def.operation, normalize_stage_token(stage)),
-            ),
-            other => other.to_owned(),
-        };
-        let category = if def.kind == otel_events::DEBUG {
-            detail.map_or_else(|| def.category.to_owned(), normalize_stage_token)
-        } else if def.operation == "timing" {
-            stage.map_or_else(
-                || def.category.to_owned(),
-                |stage| format!("timing.{}", normalize_stage_token(stage)),
-            )
-        } else {
-            def.category.to_owned()
-        };
-        let outcome = outcome_from_def(def, error_type, level);
-        return EventTaxonomy {
-            event_name: def.name.to_owned(),
-            outcome: outcome.as_str(),
-            component: def.component,
-            operation,
-            category,
-        };
-    }
-
-    // Unregistered free-form kinds (error codes, ad-hoc tests) keep the kind
-    // token as the event name until plan 008 migrates call sites. Never apply
-    // blind underscore→dot derivation for registered paths.
-    let event_name = kind.to_owned();
-    let outcome = if error_type.is_some() || level.eq_ignore_ascii_case("ERROR") {
-        Outcome::Failure
-    } else {
-        Outcome::Success
+    let (def, outcome) = match kind {
+        "stage_started" => (&event::LAUNCH_STAGE_STARTED, "success"),
+        "stage_done" => (&event::LAUNCH_STAGE_DONE, "success"),
+        "stage_failed" => (&event::LAUNCH_STAGE_FAILED, "failure"),
+        "stage_skipped" => (&event::LAUNCH_STAGE_SKIPPED, "cancelled"),
+        "timing_started" => (&event::TIMING_STARTED, "success"),
+        "timing_done" => (&event::TIMING_DONE, "success"),
+        "debug" => (&event::DEBUG_LINE, "success"),
+        "subprocess_done" => (
+            &event::PROCESS_SUBPROCESS_DONE,
+            if error_type.is_some() {
+                "failure"
+            } else {
+                "success"
+            },
+        ),
+        "run_summary" => (&event::RUN_SUMMARY, "success"),
+        "slow_foreground_wait" => (&event::PERFORMANCE_SLOW_FOREGROUND_WAIT, "success"),
+        "session_detach" => (&event::CAPSULE_SESSION_DETACH, "expected_close"),
+        "clean_shutdown" => (&event::CAPSULE_SESSION_CLEAN_SHUTDOWN, "expected_close"),
+        _ => (&event::ERROR_TYPED, "failure"),
     };
-    let category = if kind.starts_with("docker_") || kind.starts_with("container_") {
-        "docker".to_owned()
-    } else {
-        kind.split(['_', '.'])
-            .next()
-            .map_or_else(|| "unknown".to_owned(), normalize_stage_token)
-    };
-    EventTaxonomy {
-        operation: event_name.clone(),
-        category,
-        outcome: outcome.as_str(),
-        component: if kind.starts_with("capsule_") {
-            "capsule"
-        } else {
-            "host"
-        },
-        event_name,
-    }
-}
-
-fn outcome_from_def(
-    def: &crate::registry::EventDef,
-    error_type: Option<&str>,
-    level: &str,
-) -> crate::registry::Outcome {
-    use crate::registry::Outcome;
-
-    if def.outcomes == [Outcome::ExpectedClose]
-        || def.outcomes.first() == Some(&Outcome::ExpectedClose)
-            && def.outcomes.iter().all(|o| *o == Outcome::ExpectedClose)
-    {
-        return Outcome::ExpectedClose;
-    }
-    if def.outcomes.len() == 1 {
-        return def.outcomes[0];
-    }
-    if (error_type.is_some()
-        || level.eq_ignore_ascii_case("ERROR")
-        || def.severity == crate::registry::Severity::Error)
-        && def.outcomes.contains(&Outcome::Failure)
-    {
-        return Outcome::Failure;
-    }
-    if def.kind.contains("skipped") && def.outcomes.contains(&Outcome::Cancelled) {
-        return Outcome::Cancelled;
-    }
-    if def.outcomes.contains(&Outcome::Success) {
-        Outcome::Success
-    } else {
-        def.outcomes[0]
-    }
-}
-
-fn emit_jsonl_event_with_level(
-    run_id: &str,
-    kind: &str,
-    message: &str,
-    stage: Option<&str>,
-    detail: Option<&str>,
-    error_type: Option<&str>,
-    level: JsonlEventLevel,
-) {
     let message = crate::redact::redact_text(message);
-    let detail = detail.map(crate::redact::redact_text);
-    let detail = detail.as_ref().map(AsRef::as_ref);
-    let taxonomy = event_taxonomy(
-        kind,
-        message.as_ref(),
-        stage,
-        detail,
-        error_type,
-        match level {
-            JsonlEventLevel::Info => "INFO",
-            JsonlEventLevel::Error => "ERROR",
-        },
-    );
-    // The `--debug` firehose is DEBUG-severity so external exporters filter
-    // it by level; the JSONL layer ignores levels and records everything.
-    // The trailing format message becomes the OTLP log body — without it,
-    // exported records carry attributes but an empty body.
-    // Stamp current screen onto the active span so logs/metrics inherit it.
-    if let Some(screen) = crate::current_screen_name() {
-        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-        tracing::Span::current().set_attribute(otel_keys::SCREEN_NAME, screen);
+    let mut attrs = vec![Attr {
+        key: jackin_telemetry::schema::attrs::OUTCOME,
+        value: Value::Str(outcome),
+    }];
+    if let Some(error_type) = error_type {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(error_type),
+        });
     }
-
-    if kind == otel_events::DEBUG && !matches!(level, JsonlEventLevel::Error) {
-        emit_debug_jsonl_event(
-            run_id,
-            kind,
-            message.as_ref(),
-            stage,
-            detail,
-            error_type,
-            &taxonomy,
-        );
-    } else if matches!(level, JsonlEventLevel::Error) {
-        emit_error_jsonl_event(
-            run_id,
-            kind,
-            message.as_ref(),
-            stage,
-            detail,
-            error_type,
-            &taxonomy,
-        );
-    } else {
-        emit_info_jsonl_event(
-            run_id,
-            kind,
-            message.as_ref(),
-            stage,
-            detail,
-            error_type,
-            &taxonomy,
-        );
-    }
-}
-
-// TODO: stop exporting `kind` as an OTLP-indexed attribute once the
-// versioned JSONL adapter owns the legacy serialization path.
-//
-// `parallax.run.id` is the canonical run identity on records (never Resource).
-// Use `tracing::event!(Level::…)` rather than `info!`/`debug!`/`error!`: the
-// convenience macros reject three-segment dotted field names.
-
-fn emit_info_jsonl_event(
-    run_id: &str,
-    _kind: &str,
-    message: &str,
-    stage: Option<&str>,
-    detail: Option<&str>,
-    error_type: Option<&str>,
-    taxonomy: &EventTaxonomy,
-) {
-    let screen_name = crate::current_screen_name().unwrap_or("");
-    match (stage, detail, error_type) {
-        (Some(stage), Some(detail), Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::INFO,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "jackin.detail" = detail,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (Some(stage), Some(detail), None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::INFO,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "jackin.detail" = detail,
-            "{message}"
-        ),
-        (Some(stage), None, Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::INFO,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (Some(stage), None, None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::INFO,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "{message}"
-        ),
-        (None, Some(detail), Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::INFO,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.detail" = detail,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (None, Some(detail), None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::INFO,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.detail" = detail,
-            "{message}"
-        ),
-        (None, None, Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::INFO,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (None, None, None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::INFO,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "{message}"
-        ),
-    }
-}
-
-fn emit_debug_jsonl_event(
-    run_id: &str,
-    _kind: &str,
-    message: &str,
-    stage: Option<&str>,
-    detail: Option<&str>,
-    error_type: Option<&str>,
-    taxonomy: &EventTaxonomy,
-) {
-    let screen_name = crate::current_screen_name().unwrap_or("");
-    match (stage, detail, error_type) {
-        (Some(stage), Some(detail), Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::DEBUG,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "jackin.detail" = detail,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (Some(stage), Some(detail), None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::DEBUG,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "jackin.detail" = detail,
-            "{message}"
-        ),
-        (Some(stage), None, Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::DEBUG,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (Some(stage), None, None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::DEBUG,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "{message}"
-        ),
-        (None, Some(detail), Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::DEBUG,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.detail" = detail,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (None, Some(detail), None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::DEBUG,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.detail" = detail,
-            "{message}"
-        ),
-        (None, None, Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::DEBUG,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (None, None, None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::DEBUG,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "{message}"
-        ),
-    }
-}
-
-fn emit_error_jsonl_event(
-    run_id: &str,
-    _kind: &str,
-    message: &str,
-    stage: Option<&str>,
-    detail: Option<&str>,
-    error_type: Option<&str>,
-    taxonomy: &EventTaxonomy,
-) {
-    let screen_name = crate::current_screen_name().unwrap_or("");
-    match (stage, detail, error_type) {
-        (Some(stage), Some(detail), Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::ERROR,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "jackin.detail" = detail,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (Some(stage), Some(detail), None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::ERROR,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "jackin.detail" = detail,
-            "{message}"
-        ),
-        (Some(stage), None, Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::ERROR,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (Some(stage), None, None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::ERROR,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.stage" = stage,
-            "{message}"
-        ),
-        (None, Some(detail), Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::ERROR,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.detail" = detail,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (None, Some(detail), None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::ERROR,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "jackin.detail" = detail,
-            "{message}"
-        ),
-        (None, None, Some(error_type)) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::ERROR,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "error.type" = error_type,
-            "{message}"
-        ),
-        (None, None, None) => tracing::event!(
-            target: jackin_telemetry::TELEMETRY_TARGET,
-            tracing::Level::ERROR,
-            "parallax.run.id" = run_id,
-            event.name = taxonomy.event_name.as_str(),
-            event.outcome = taxonomy.outcome,
-            jackin.component = taxonomy.component,
-            jackin.operation = taxonomy.operation.as_str(),
-            jackin.category = taxonomy.category.as_str(),
-            "jackin.screen.name" = screen_name,
-            "{message}"
-        ),
-    }
+    let _ = jackin_telemetry::emit_event(def, FieldSet::new(&attrs, Some(message.as_ref())));
 }
