@@ -5,7 +5,7 @@ fn graph() -> WorkspaceGraph {
         names: BTreeMap::from([
             ("core-id".into(), "core".into()),
             ("runtime-id".into(), "runtime".into()),
-            ("app-id".into(), "app".into()),
+            ("app-id".into(), "jackin".into()),
             ("tool-id".into(), "tool".into()),
         ]),
         roots: BTreeMap::from([
@@ -37,7 +37,7 @@ fn cache_closure_follows_workspace_dependencies() {
 fn selects_changed_crate_and_transitive_reverse_dependents() {
     assert_eq!(
         graph().affected(&[PathBuf::from("crates/core/src/lib.rs")]),
-        ["app", "core", "runtime"]
+        ["core", "jackin", "runtime"]
     );
 }
 
@@ -57,7 +57,7 @@ fn ignores_documentation_alongside_changed_crates() {
             PathBuf::from("crates/core/README.md"),
             PathBuf::from("docs/design.mdx"),
         ]),
-        ["app", "core", "runtime"]
+        ["core", "jackin", "runtime"]
     );
     assert!(
         graph()
@@ -68,7 +68,18 @@ fn ignores_documentation_alongside_changed_crates() {
 
 #[test]
 fn selects_all_for_workspace_input_or_unknown_rust_path() {
-    let expected = ["app", "core", "runtime", "tool"];
+    let expected = ["core", "jackin", "runtime", "tool"];
     assert_eq!(graph().affected(&[PathBuf::from("Cargo.lock")]), expected);
     assert_eq!(graph().affected(&[PathBuf::from("src/build.rs")]), expected);
+}
+
+#[test]
+fn routes_docker_inputs_only_to_the_jackin_e2e_owner() {
+    assert_eq!(
+        graph().affected(&[
+            PathBuf::from("docker/construct/Dockerfile"),
+            PathBuf::from("docker-bake.hcl"),
+        ]),
+        ["jackin"]
+    );
 }

@@ -176,7 +176,9 @@ workspace dependency closure, Cargo and toolchain inputs, runner platform,
 feature and Docker modes, and the test-workflow contract. A hit preserves the
 crate's single status job while skipping Cargo and test execution; any changed
 input runs the complete contract and publishes a replacement marker from the
-canonical GitHub lane for both GitHub and Velnor to consume.
+canonical GitHub lane for both GitHub and Velnor to consume. Docker inputs and
+execution modes affect only the `jackin` result, because that crate owns the
+single conditional Docker E2E path.
 
 Required PR/main CI runs the real
 `jackin_load_ctrl_q_yes_exits_cold_build_quickly` Docker smoke inside the

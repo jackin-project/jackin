@@ -196,6 +196,17 @@ impl WorkspaceGraph {
 
         let mut selected = BTreeSet::new();
         for path in relevant {
+            if is_docker_test_input(path) {
+                let Some(id) = self
+                    .names
+                    .iter()
+                    .find_map(|(id, name)| (name == "jackin").then(|| id.clone()))
+                else {
+                    return self.all_names();
+                };
+                selected.insert(id);
+                continue;
+            }
             let Some((id, _)) = self
                 .roots
                 .iter()
@@ -305,6 +316,10 @@ fn is_workspace_wide(path: &Path) -> bool {
     ) || text.starts_with(".cargo/")
         || text.starts_with(".github/workflows/")
         || text.starts_with(".github/actions/")
+}
+
+fn is_docker_test_input(path: &Path) -> bool {
+    path == Path::new("docker-bake.hcl") || path.starts_with("docker")
 }
 
 fn is_documentation(path: &Path) -> bool {
