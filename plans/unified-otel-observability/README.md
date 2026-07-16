@@ -13,7 +13,7 @@ Execute in the order below unless the dependency graph says otherwise. Each exec
 | [001](001-telemetry-schema-crate.md) | `jackin-telemetry` schema crate, Weaver registry, generated constants | P1 | L | — | IN PROGRESS — descriptor tables and event severity remain manually duplicated |
 | [002](002-otlp-composition-root.md) | OTLP composition root: baseline deps, runtime contract, Resource | P1 | L | 001 | IN PROGRESS — implementation complete, final integrated gates pending |
 | [003](003-tracing-bridge-layering.md) | Bridge layering: one event → one log, native EventName, no inference | P1 | M | 002 | IN PROGRESS — WARN/ERROR filtering and generated severity evidence remain |
-| [004](004-telemetry-facade-api.md) | Governed facade: events, operation guard, metrics, limits, lint gates | P1 | L | 001–003 | IN PROGRESS — cancellation semantics and callback enforcement remain |
+| [004](004-telemetry-facade-api.md) | Governed facade: events, operation guard, metrics, limits, lint gates | P1 | L | 001–003 | IN PROGRESS — callback enforcement and descriptor generation remain |
 | [005](005-async-spawn-helpers.md) | Spawn ownership helpers (joined/detached/cycle/stream) + spawn lint | P1 | M | 004 | IN PROGRESS — exact raw-spawn census still fails in the testbed |
 | [006](006-cross-process-propagation.md) | Versioned W3C envelopes on all protocols; CLIENT/SERVER RPC spans | P1 | L | 004, 005 | IN PROGRESS — contextual control and conformance revisions underway |
 | [007](007-identity-lifecycle-roots.md) | `cli.invocation.id`, `session.id`, command/startup/shutdown roots | P1 | L | 004, 006 | TODO — reopened by audit |
