@@ -131,9 +131,12 @@ downloading its `1.02GB` target and `63s` in package tests, while
 package, documentation, feature-powerset, and benchmark checks. The next exact
 v4 run must therefore measure the no-republish path, and the remaining work
 must reduce real test time and transferred bytes rather than add test shards.
-The shared setup job now treats prepared xtask/tool hits as a complete warm
-state: it skips the Rust toolchain, Cargo registry, mise, and clippy setup that
-only cold artifact population requires. On a miss, registry preparation runs
+The shared setup job treats prepared xtask/tool hits as reusable build inputs,
+but no longer mistakes them for proof that the pinned Rust toolchain exists.
+Both runner lanes now validate the rustup or mise installation independently;
+an incomplete persistent mise entry is removed and repaired once before crate
+fan-out. The warm path still skips Cargo registry and clippy setup that only
+cold artifact population requires. On a miss, registry preparation runs
 before any source-build fallback. Run `29500145758` rejected the first version
 of that shortcut because the restored xtask still invoked
 `cargo metadata --offline`; without a restored git dependency cache it tried
@@ -141,6 +144,17 @@ to resolve `termrock` and failed before selecting crates. The prepared xtask
 artifact now carries the locked workspace metadata document as well as the
 binary. Selection and cache-key derivation read that snapshot without invoking
 Cargo, while any crate-manifest change invalidates and regenerates both files.
+
+Both-lane run `29541459778` rejected the assumption that a successful prepared
+binary restore implied a valid persistent toolchain. GitHub completed the same
+steps, but Velnor exposed an incomplete `1.97.0` mise entry: format, policy,
+audit, and the `jackin` crate job attempted rustup synchronization instead of
+remaining offline. The same run also exposed a crate-result lookup that relied
+on GitHub's implicit `GITHUB_REPOSITORY` environment variable. Toolchain
+validation/repair and result-artifact lookup now live in `jackin-xtask`, take
+explicit inputs, and run unchanged on both lanes. Construct run `29541460946`
+proved the intended parity shape independently: the shared amd64 command took
+`46s` on Velnor and `62s` on GitHub; native GitHub arm64 took `77s`.
 
 Target archives remain the cold-population fallback, not the final warm path.
 An exact source-closure miss now consults a small per-crate latest-target

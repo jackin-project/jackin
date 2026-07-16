@@ -74,6 +74,11 @@ on:
         required: false
         default: ""
         type: string
+      rust-version:
+        description: Exact current Rust toolchain version.
+        required: false
+        default: ""
+        type: string
 permissions:
   actions: read
   contents: read
@@ -102,43 +107,30 @@ jobs:
       SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          lane: ${{ matrix.config.lane }}
+          xtask-contract: ${{ inputs.ci-xtask-contract }}
+          include-tools: "false"
       - name: Find input-identical successful crate result
         id: crate-result
-        shell: bash
         env:
-          ALL_FEATURES: ${{ inputs.all-features }}
-          CACHE_KEY: ${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}
-          COMMON_CONTRACT_KEY: ${{ inputs.nextest-contract }}
-          CONSTRUCT_IMAGE_CHANGED: ${{ inputs.construct-image-changed }}
-          DOCKER_CONTRACT_KEY: ${{ inputs.docker-contract || hashFiles('docker/**', 'docker-bake.hcl') }}
-          DOCKER_E2E: ${{ inputs.docker-e2e }}
           GH_TOKEN: ${{ github.token }}
-          PACKAGE: ${{ matrix.package }}
-          REPOSITORY: ${{ github.repository }}
-          RUNNER_ARCH: ${{ runner.arch }}
-          RUNNER_OS: ${{ runner.os }}
-          SOURCE_SHA: ${{ github.sha }}
-          REFRESH_PACKAGE: ${{ inputs.refresh-package }}
-        run: |
-          set -euo pipefail
-          common_contract_key=$COMMON_CONTRACT_KEY
-          if [ -z "$common_contract_key" ]; then
-            common_contract_key=$(scripts/ci/crate-test-contract.sh)
-          fi
-          result=$(scripts/ci/find-crate-result.sh \
-            "$PACKAGE" "$CACHE_KEY" "$ALL_FEATURES" \
-            "$DOCKER_E2E" "$CONSTRUCT_IMAGE_CHANGED" \
-            "$common_contract_key" "$DOCKER_CONTRACT_KEY" \
-            "$RUNNER_OS" "$RUNNER_ARCH" "$SOURCE_SHA")
-          hit=$(jq -r '.hit' <<< "$result")
-          if [ "$PACKAGE" = "$REFRESH_PACKAGE" ]; then
-            hit=false
-          fi
-          {
-            echo "name=$(jq -r '.name' <<< "$result")"
-            echo "sha-name=$(jq -r '.sha_name' <<< "$result")"
-            echo "hit=$hit"
-          } >> "$GITHUB_OUTPUT"
+        run: >-
+          "$CI_XTASK" ci-result find
+          --package "${{ matrix.package }}"
+          --cache-key "${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}"
+          --all-features "${{ inputs.all-features }}"
+          --docker-e2e "${{ inputs.docker-e2e }}"
+          --construct-image-changed "${{ inputs.construct-image-changed }}"
+          --common-contract-key "${{ inputs.nextest-contract }}"
+          --docker-contract-key "${{ inputs.docker-contract || hashFiles('docker/**', 'docker-bake.hcl') }}"
+          --runner-os "${{ runner.os }}"
+          --runner-arch "${{ runner.arch }}"
+          --source-sha "${{ github.sha }}"
+          --repository "${{ github.repository }}"
+          --refresh-package "${{ inputs.refresh-package }}"
+          --github-output
       - uses: ./.github/actions/download-ci-xtask
         if: steps.crate-result.outputs.hit != 'true'
         with:
@@ -157,9 +149,9 @@ jobs:
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
         if: steps.crate-result.outputs.hit != 'true'
-        run: |
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ inputs.rust-version }}"
       - id: cargo-registry-cache
         if: steps.crate-result.outputs.hit != 'true'
         uses: ./.github/actions/cache-cargo-registry

@@ -32,11 +32,18 @@ hits=()
 target_results='{}'
 while IFS= read -r package; do
   cache_key=$(jq -er --arg package "$package" '.[$package]' <<< "$cache_keys")
-  result=$(scripts/ci/find-crate-result.sh \
-    "$package" "$cache_key" true \
-    "$DOCKER_E2E" "$CONSTRUCT_IMAGE_CHANGED" \
-    "$COMMON_CONTRACT_KEY" "$DOCKER_CONTRACT_KEY" \
-    Linux X64 "$SOURCE_SHA")
+  result=$("$CI_XTASK" ci-result find \
+    --package "$package" \
+    --cache-key "$cache_key" \
+    --all-features true \
+    --docker-e2e "$DOCKER_E2E" \
+    --construct-image-changed "$CONSTRUCT_IMAGE_CHANGED" \
+    --common-contract-key "$COMMON_CONTRACT_KEY" \
+    --docker-contract-key "$DOCKER_CONTRACT_KEY" \
+    --runner-os Linux \
+    --runner-arch X64 \
+    --source-sha "$SOURCE_SHA" \
+    --repository "$GITHUB_REPOSITORY")
   if [ "$package" != "$force_package" ] && [ "$(jq -r '.hit' <<< "$result")" = "true" ]; then
     hits+=("$package")
   else

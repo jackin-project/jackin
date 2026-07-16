@@ -9,7 +9,9 @@ mod agent_links;
 mod arch;
 mod ci;
 mod ci_audit;
+mod ci_result;
 mod ci_target;
+mod ci_toolchain;
 mod cmd;
 mod construct;
 mod container_paths_gate;
@@ -57,9 +59,15 @@ enum Command {
     /// Audit every job and step in the current GitHub Actions run.
     #[command(name = "ci-audit")]
     CiAudit(ci_audit::CiAuditArgs),
+    /// Resolve reusable per-crate CI results.
+    #[command(name = "ci-result", subcommand)]
+    CiResult(ci_result::CiResultCommand),
     /// Manage the reusable per-crate Cargo target used by CI.
     #[command(name = "ci-target", subcommand)]
     CiTarget(ci_target::CiTargetCommand),
+    /// Validate and activate the prepared Rust toolchain used by CI.
+    #[command(name = "ci-toolchain", subcommand)]
+    CiToolchain(ci_toolchain::CiToolchainCommand),
     /// Construct base-image build and publish tasks.
     ///
     /// Use as `cargo xtask construct <subcommand>`.
@@ -208,6 +216,22 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     }
 }
 
+fn run_lint(command: Option<LintCommand>, strict: bool) -> anyhow::Result<()> {
+    match command {
+        Some(LintCommand::Files(args)) => lint::run(args),
+        Some(LintCommand::Tests(args)) => test_layout::run(args),
+        Some(LintCommand::Agents(args)) => agent_files::run(args),
+        Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
+        Some(LintCommand::Arch(args)) => arch::run(args),
+        Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
+        Some(LintCommand::Headers(args)) => headers::run(args),
+        Some(LintCommand::ReadmeFreshness(args)) => readme_freshness::run(args),
+        Some(LintCommand::Suppressions(args)) => suppressions::run(args),
+        Some(LintCommand::Ratchet(args)) => ratchet::run(args),
+        None => run_all_lints(strict),
+    }
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
@@ -215,7 +239,9 @@ fn main() -> ExitCode {
         Command::Construct(cmd) => construct::run(cmd),
         Command::Ci(args) => ci::run(args),
         Command::CiAudit(args) => ci_audit::run(args),
+        Command::CiResult(command) => ci_result::run(command),
         Command::CiTarget(command) => ci_target::run(command),
+        Command::CiToolchain(command) => ci_toolchain::run(command),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
         Command::FrameTiming(args) => frame_timing::run(args),
@@ -227,19 +253,7 @@ fn main() -> ExitCode {
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::ReleaseVerify(args) => release_verify::run(args),
         Command::Health(args) => health::run(args),
-        Command::Lint { command, strict } => match command {
-            Some(LintCommand::Files(args)) => lint::run(args),
-            Some(LintCommand::Tests(args)) => test_layout::run(args),
-            Some(LintCommand::Agents(args)) => agent_files::run(args),
-            Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
-            Some(LintCommand::Arch(args)) => arch::run(args),
-            Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
-            Some(LintCommand::Headers(args)) => headers::run(args),
-            Some(LintCommand::ReadmeFreshness(args)) => readme_freshness::run(args),
-            Some(LintCommand::Suppressions(args)) => suppressions::run(args),
-            Some(LintCommand::Ratchet(args)) => ratchet::run(args),
-            None => run_all_lints(strict),
-        },
+        Command::Lint { command, strict } => run_lint(command, strict),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

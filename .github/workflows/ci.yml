@@ -475,6 +475,11 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          lane: ${{ matrix.config.lane }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "false"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -492,9 +497,9 @@ jobs:
           install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
-        run: |
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
       - run: cargo fmt --check
 
   cargo-registry-warmup:
@@ -617,8 +622,21 @@ jobs:
             ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        if: steps.ci-xtask-artifact.outputs.hit == 'true'
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          install_args: rust@${{ needs.changes.outputs.rust-version }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Validate the prepared current Rust toolchain
+        if: steps.ci-xtask-artifact.outputs.hit == 'true'
+        run: >-
+          .ci-prebuilt-xtask/jackin-xtask ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
       - name: Prepare the exact current Rust toolchain
-        if: steps.prepared-inputs.outputs.ready != 'true'
+        if: steps.ci-xtask-artifact.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -768,6 +786,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           FORCE_PACKAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh-package || '' }}
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -918,9 +937,9 @@ jobs:
           install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
-        run: |
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
@@ -952,6 +971,7 @@ jobs:
       nextest-contract: ${{ needs.changes.outputs.nextest-contract }}
       registry-contract: ${{ needs.changes.outputs.registry-contract }}
       rustup-contract: ${{ needs.changes.outputs.rustup-contract }}
+      rust-version: ${{ needs.changes.outputs.rust-version }}
     secrets: inherit
   audit:
     # Advisories are also covered daily by hygiene.yml (cargo deny check
@@ -1000,9 +1020,9 @@ jobs:
           install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
-        run: |
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
