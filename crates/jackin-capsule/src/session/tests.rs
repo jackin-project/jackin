@@ -1210,6 +1210,27 @@ fn pty_exit_reason_covers_the_closed_registry() {
     );
 }
 
+#[test]
+fn terminate_marks_the_live_exit_as_cancelled() {
+    let (input_tx, _input_rx) = mpsc::unbounded_channel();
+    let session = Session::new_for_test(
+        "test".to_owned(),
+        None,
+        None,
+        (24, 80),
+        0,
+        input_tx,
+        Arc::new(Mutex::new(Box::new(NullMasterPty))),
+        Arc::new(Mutex::new(Box::new(NullChildKiller))),
+    );
+    session.terminate();
+    assert!(
+        session
+            .termination_requested
+            .load(std::sync::atomic::Ordering::Acquire)
+    );
+}
+
 // ── diagnostic tail ───────────────────────────────────────────────────────
 
 #[test]

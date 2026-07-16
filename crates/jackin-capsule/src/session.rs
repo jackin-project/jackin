@@ -35,7 +35,7 @@ use pty_exit::{error_type as pty_exit_error_type, reason as pty_exit_reason};
 /// understands would vanish at the multiplexer boundary.
 use jackin_core::container_paths;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
@@ -169,6 +169,7 @@ pub struct Session {
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
+    termination_requested: Arc<AtomicBool>,
     pub last_output_at: std::time::Instant,
     /// Last time the operator sent explicit keyboard input to this pane.
     /// Recency evidence only — never authors state (see the agent runtime
@@ -448,6 +449,7 @@ impl Session {
             crate::pid1::register_managed_child(pid);
         }
         let child_killer = Arc::new(Mutex::new(child.clone_killer()));
+        let termination_requested = Arc::new(AtomicBool::new(false));
         drop(slave);
 
         let master: Arc<Mutex<Box<dyn MasterPty + Send>>> = Arc::new(Mutex::new(master));
@@ -631,12 +633,14 @@ impl Session {
         // multiplexer process itself exits.
         let exit_agent = agent.clone();
         let exit_conversation_id = conversation_id.clone();
+        let exit_termination_requested = Arc::clone(&termination_requested);
         jackin_telemetry::spawn::stream_blocking("pty.wait", move || {
             let status = child.wait();
             emit_pty_exit(
                 exit_agent.as_deref(),
                 exit_conversation_id.as_deref(),
                 status.as_ref(),
+                exit_termination_requested.load(Ordering::Acquire),
             );
             if let Some(pid) = child_pid {
                 crate::pid1::unregister_managed_child(pid);
@@ -679,6 +683,7 @@ impl Session {
                 input_tx,
                 pty_master: master,
                 child_killer,
+                termination_requested,
                 last_output_at: std::time::Instant::now(),
                 last_input_at: std::time::Instant::now(),
                 received_output: false,
@@ -1444,6 +1449,7 @@ impl Session {
     }
 
     pub fn terminate(&self) {
+        self.termination_requested.store(true, Ordering::Release);
         match self.child_killer.lock() {
             Ok(mut killer) => {
                 if let Err(e) = killer.kill() {
@@ -1577,9 +1583,10 @@ fn emit_pty_exit(
     agent: Option<&str>,
     conversation_id: Option<&str>,
     status: Result<&portable_pty::ExitStatus, &std::io::Error>,
+    cancelled: bool,
 ) {
     use jackin_telemetry::{Attr, FieldSet, Value};
-    let reason = pty_exit_reason(status, false);
+    let reason = pty_exit_reason(status, cancelled);
     let mut attrs = vec![Attr {
         key: jackin_telemetry::schema::attrs::PTY_EXIT_REASON,
         value: Value::Str(reason.as_str()),
@@ -1665,6 +1672,7 @@ impl Session {
             input_tx,
             pty_master,
             child_killer,
+            termination_requested: Arc::new(AtomicBool::new(false)),
             last_output_at: std::time::Instant::now(),
             last_input_at: std::time::Instant::now(),
             received_output: true,
