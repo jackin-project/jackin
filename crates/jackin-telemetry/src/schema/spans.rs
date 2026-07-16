@@ -9,6 +9,8 @@ pub const UI_ACTION: &str = "ui.action";
 pub const UI_SCREEN_TRANSITION: &str = "ui.screen.transition";
 pub const UI_RENDER: &str = "ui.render";
 pub const BACKGROUND_CYCLE: &str = "background.cycle";
+pub const PREWARM_SCHEDULE: &str = "prewarm.schedule";
+pub const PREWARM_ATTEMPT: &str = "prewarm.attempt";
 pub const CONNECTION_ATTEMPT: &str = "connection.attempt";
 pub const PROCESS_COMMAND: &str = "process.command";
 pub const RPC_CLIENT: &str = "rpc.client";
@@ -23,6 +25,8 @@ pub const ALL: &[&str] = &[
     UI_SCREEN_TRANSITION,
     UI_RENDER,
     BACKGROUND_CYCLE,
+    PREWARM_SCHEDULE,
+    PREWARM_ATTEMPT,
     CONNECTION_ATTEMPT,
     PROCESS_COMMAND,
     RPC_CLIENT,

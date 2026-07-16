@@ -38,6 +38,12 @@ pub const UI_RENDER: SpanDef = SpanDef {
 pub const BACKGROUND_CYCLE: SpanDef = SpanDef {
     name: schema::spans::BACKGROUND_CYCLE,
 };
+pub const PREWARM_SCHEDULE: SpanDef = SpanDef {
+    name: schema::spans::PREWARM_SCHEDULE,
+};
+pub const PREWARM_ATTEMPT: SpanDef = SpanDef {
+    name: schema::spans::PREWARM_ATTEMPT,
+};
 pub const CONNECTION_ATTEMPT: SpanDef = SpanDef {
     name: schema::spans::CONNECTION_ATTEMPT,
 };
@@ -159,6 +165,12 @@ fn make_span(name: &str, root: bool) -> Option<Span> {
             schema::spans::BACKGROUND_CYCLE => {
                 tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "background.cycle")
             }
+            schema::spans::PREWARM_SCHEDULE => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "prewarm.schedule", otel.kind = "producer")
+            }
+            schema::spans::PREWARM_ATTEMPT => {
+                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "prewarm.attempt", otel.kind = "consumer")
+            }
             schema::spans::CONNECTION_ATTEMPT => {
                 tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "connection.attempt")
             }
@@ -198,6 +210,12 @@ fn make_span(name: &str, root: bool) -> Option<Span> {
         }
         schema::spans::BACKGROUND_CYCLE => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "background.cycle")
+        }
+        schema::spans::PREWARM_SCHEDULE => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "prewarm.schedule", otel.kind = "producer")
+        }
+        schema::spans::PREWARM_ATTEMPT => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "prewarm.attempt", otel.kind = "consumer")
         }
         schema::spans::CONNECTION_ATTEMPT => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "connection.attempt", otel.kind = "client")

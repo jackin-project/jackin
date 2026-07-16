@@ -53,6 +53,57 @@ where
     })
 }
 
+/// Schedule detached prewarm work as a PRODUCER decision linked to one
+/// CONSUMER attempt with a shared durable job identity.
+pub fn spawn_prewarm_job<F>(
+    job_type: crate::schema::enums::JobType,
+    fut: F,
+) -> JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let attrs = [
+        crate::Attr {
+            key: crate::schema::attrs::JOB_ID,
+            value: crate::Value::Str(&job_id),
+        },
+        crate::Attr {
+            key: crate::schema::attrs::JOB_TYPE,
+            value: crate::Value::Str(job_type.as_str()),
+        },
+    ];
+    let producer = root_operation(&crate::operation::PREWARM_SCHEDULE, &attrs)
+        .expect("registered prewarm producer definition");
+    let producer_context = producer.span().context().span().span_context().clone();
+    producer.complete(crate::schema::enums::OutcomeValue::Success, None);
+    let _ = crate::counter(&crate::metric::PREWARM_JOBS).add(1, &attrs);
+
+    tokio::spawn(async move {
+        let attrs = [
+            crate::Attr {
+                key: crate::schema::attrs::JOB_ID,
+                value: crate::Value::Str(&job_id),
+            },
+            crate::Attr {
+                key: crate::schema::attrs::JOB_TYPE,
+                value: crate::Value::Str(job_type.as_str()),
+            },
+        ];
+        let consumer = root_operation(&crate::operation::PREWARM_ATTEMPT, &attrs)
+            .expect("registered prewarm consumer definition");
+        if producer_context.is_valid() {
+            consumer
+                .link(&producer_context)
+                .expect("first prewarm link is within limit");
+        }
+        let output = fut.instrument(consumer.span().clone()).await;
+        consumer.complete(crate::schema::enums::OutcomeValue::Success, None);
+        output
+    })
+}
+
 pub fn joined_blocking<F, R>(work: F) -> JoinHandle<R>
 where
     F: FnOnce() -> R + Send + 'static,

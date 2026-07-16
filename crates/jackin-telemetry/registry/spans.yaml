@@ -6,6 +6,8 @@ groups:
   - { id: span.ui.screen.transition, type: span, brief: Bounded screen transition., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
   - { id: span.ui.render, type: span, brief: Bounded action-triggered render., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
   - { id: span.background.cycle, type: span, brief: One periodic cycle., span_kind: internal, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.prewarm.schedule, type: span, brief: Detached prewarm job scheduling decision., span_kind: producer, stability: development, attributes: [{ref: job.id}, {ref: job.type}, {ref: outcome}] }
+  - { id: span.prewarm.attempt, type: span, brief: Detached prewarm job attempt., span_kind: consumer, stability: development, attributes: [{ref: job.id}, {ref: job.type}, {ref: outcome}] }
   - { id: span.connection.attempt, type: span, brief: One connection attempt., span_kind: client, stability: development, attributes: [{ref: outcome}] }
   - { id: span.process.command, type: span, brief: One subprocess command., span_kind: client, stability: development, attributes: [{ref: outcome}] }
   - { id: span.rpc.client, type: span, brief: One bounded RPC client request., span_kind: client, stability: development, attributes: [{ref: outcome}] }

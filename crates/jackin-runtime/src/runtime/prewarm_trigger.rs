@@ -109,8 +109,8 @@ pub fn spawn_background_image_prewarm(
     #[cfg(not(test))]
     {
         let paths = paths.clone();
-        jackin_telemetry::spawn::spawn_detached(
-            &jackin_telemetry::operation::BACKGROUND_CYCLE,
+        jackin_telemetry::spawn::spawn_prewarm_job(
+            jackin_telemetry::schema::enums::JobType::ImagePrewarm,
             async move {
                 if let Some(run) = jackin_diagnostics::active_run() {
                     run.stage(
@@ -193,8 +193,8 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
     #[cfg(not(test))]
     {
         let paths = paths.clone();
-        jackin_telemetry::spawn::spawn_detached(
-            &jackin_telemetry::operation::BACKGROUND_CYCLE,
+        jackin_telemetry::spawn::spawn_prewarm_job(
+            jackin_telemetry::schema::enums::JobType::SidecarPrewarm,
             async move {
                 if let Some(run) = jackin_diagnostics::active_run() {
                     run.stage(
