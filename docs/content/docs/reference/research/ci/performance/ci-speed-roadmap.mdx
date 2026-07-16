@@ -276,6 +276,20 @@ one-job-per-selected-crate contract; only the repository-wide scheduling
 decision is centralized, eliminating last-writer behavior without shards or
 multi-crate buckets.
 
+The first corrected dual-lane producer, run `29515476757`, verified that only
+the two lane copies of the `jackin` job were created, then exposed another
+duplicated control-plane lookup: GitHub resolved the crate target and began
+testing while Velnor remained inside the identical artifact search for more
+than two minutes. The run was cancelled rather than left consuming runners.
+Target-artifact discovery now runs once beside affected-crate result selection;
+each lane receives the resolved format, artifact prefix, and owning run ID and
+only performs the target download and verification work it actually owns.
+The same diagnostic reproduced a stale local xtask test binary after an older
+target had newer timestamps than the checkout. Target restoration now
+backdates source files only for an exact source-closure hit. A latest-target
+seed preserves checkout mtimes, forcing Cargo to rebuild changed first-party
+inputs while retaining reusable third-party outputs.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the

@@ -21,6 +21,7 @@ cache_keys=$("$CI_XTASK" affected-crates \
   --metadata "$CI_METADATA" "${selection[@]}" --cache-keys)
 misses=()
 hits=()
+target_results='{}'
 while IFS= read -r package; do
   cache_key=$(jq -er --arg package "$package" '.[$package]' <<< "$cache_keys")
   result=$(scripts/ci/find-crate-result.sh \
@@ -32,6 +33,13 @@ while IFS= read -r package; do
     hits+=("$package")
   else
     misses+=("$package")
+    target_result=$(scripts/ci/find-crate-target.sh \
+      "$package" "$cache_key" true Linux X64)
+    target_results=$(jq -cn \
+      --argjson current "$target_results" \
+      --arg package "$package" \
+      --argjson target "$target_result" \
+      '$current + {($package): $target}')
   fi
 done < <(jq -r '.[]' <<< "$selected")
 
@@ -41,4 +49,6 @@ jq -cn \
   --argjson packages "$packages" \
   --argjson cache_keys "$cache_keys" \
   --argjson reused_packages "$reused" \
-  '{packages: $packages, cache_keys: $cache_keys, reused_packages: $reused_packages}'
+  --argjson target_results "$target_results" \
+  '{packages: $packages, cache_keys: $cache_keys, reused_packages: $reused_packages,
+    target_results: $target_results}'

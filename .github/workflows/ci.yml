@@ -758,6 +758,7 @@ jobs:
       packages: ${{ steps.select.outputs.packages }}
       cache-keys: ${{ steps.select.outputs.cache-keys }}
       reused-packages: ${{ steps.select.outputs.reused-packages }}
+      target-results: ${{ steps.select.outputs.target-results }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
@@ -785,6 +786,7 @@ jobs:
             echo "packages=$(jq -c '.packages' <<< "$result")"
             echo "cache-keys=$(jq -c '.cache_keys' <<< "$result")"
             echo "reused-packages=$(jq -c '.reused_packages' <<< "$result")"
+            echo "target-results=$(jq -c '.target_results' <<< "$result")"
           } >> "$GITHUB_OUTPUT"
           {
             echo "### Crate test routing"
@@ -942,6 +944,7 @@ jobs:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       packages-json: ${{ needs.affected-crates.outputs.packages }}
       package-cache-keys-json: ${{ needs.affected-crates.outputs.cache-keys }}
+      package-target-results-json: ${{ needs.affected-crates.outputs.target-results }}
       all-features: true
       ci-tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
       ci-xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}

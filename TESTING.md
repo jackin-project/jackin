@@ -108,13 +108,17 @@ the runner matrix: matrix job outputs have one shared value, so whichever lane
 finishes last could otherwise replace the canonical package list. Both lanes
 still consume the same contracts and run the same per-crate workflow; the
 central selector only decides which independently attributable crate jobs
-exist.
+exist. It also resolves target-artifact metadata once for every selected miss,
+so GitHub and Velnor do not repeat the same repository API search before
+restoring identical target parts.
 
 An exact target-key miss first restores that crate's latest successful target
 as a seed. Cargo still validates every fingerprint and rebuilds changed
 first-party outputs, but unchanged registry and git dependencies remain
 available instead of being recompiled solely because the crate source key
-changed. A successful miss publishes both the new exact target and a small
+changed. Only an exact source-closure hit backdates checkout mtimes; a latest
+seed preserves current source mtimes so Cargo cannot accept stale first-party
+objects. A successful miss publishes both the new exact target and a small
 latest-target pointer; it does not duplicate the target archive.
 
 ## Verification matrix

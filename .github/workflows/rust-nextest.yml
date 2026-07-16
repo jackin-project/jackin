@@ -20,6 +20,11 @@ on:
         required: false
         default: '{}'
         type: string
+      package-target-results-json:
+        description: JSON object mapping each affected crate to centrally resolved target artifact metadata.
+        required: false
+        default: '{}'
+        type: string
       all-features:
         description: Run each package with all Cargo features enabled.
         required: true
@@ -172,94 +177,30 @@ jobs:
         if: steps.crate-result.outputs.hit != 'true'
         shell: bash
         env:
-          ARTIFACT_PREFIX: ci-crate-target-${{ inputs.all-features && 'v4' || 'default-v4' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
-          LEGACY_SPLIT_PREFIX: ci-crate-target-${{ inputs.all-features && 'v3' || 'default-v3' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
-          LEGACY_ARTIFACT_NAME: ci-crate-target-${{ inputs.all-features && 'v2' || 'default-v2' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
-          LATEST_MARKER_NAME: ci-crate-target-${{ inputs.all-features && 'latest-v4' || 'default-latest-v4' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-ready
-          LATEST_PREFIX_BASE: ci-crate-target-${{ inputs.all-features && 'v4' || 'default-v4' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
+          ALL_FEATURES: ${{ inputs.all-features }}
+          CACHE_KEY: ${{ steps.crate-target-key.outputs.key }}
           GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.package }}
           REPOSITORY: ${{ github.repository }}
+          RUNNER_ARCH: ${{ runner.arch }}
+          RUNNER_OS: ${{ runner.os }}
+          SUPPLIED_RESULT: ${{ toJSON(fromJSON(inputs.package-target-results-json)[matrix.package]) }}
         run: |
           set -euo pipefail
-          hit=false
-          canonical_hit=false
-          format=none
-          download_prefix=
-          legacy_name=
-          run_id=$(
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_PREFIX}-ready&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
-              | head -n 1
-          )
-          if [ -n "$run_id" ]; then
-            hit=true
-            canonical_hit=true
-            format=v4
-            download_prefix=$ARTIFACT_PREFIX
+          if [ "$SUPPLIED_RESULT" = "null" ]; then
+            result=$(scripts/ci/find-crate-target.sh \
+              "$PACKAGE" "$CACHE_KEY" "$ALL_FEATURES" "$RUNNER_OS" "$RUNNER_ARCH")
           else
-            run_id=$(
-              gh api "repos/${REPOSITORY}/actions/artifacts?name=${LEGACY_SPLIT_PREFIX}-ready&per_page=10" \
-                --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
-                | head -n 1
-            )
-            if [ -n "$run_id" ]; then
-              hit=true
-              format=v3
-              download_prefix=$LEGACY_SPLIT_PREFIX
-            else
-              run_id=$(
-                gh api "repos/${REPOSITORY}/actions/artifacts?name=${LEGACY_ARTIFACT_NAME}&per_page=10" \
-                  --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
-                  | head -n 1
-              )
-              if [ -n "$run_id" ]; then
-                hit=true
-                format=v2
-                legacy_name=$LEGACY_ARTIFACT_NAME
-              fi
-            fi
+            result=$SUPPLIED_RESULT
           fi
-          if [ "$hit" != "true" ]; then
-            latest_artifact=$(
-              gh api "repos/${REPOSITORY}/actions/artifacts?name=${LATEST_MARKER_NAME}&per_page=10" \
-                --jq '.artifacts[] | select(.expired == false) | [.id, .workflow_run.id] | @tsv' \
-                | head -n 1
-            )
-            if [ -n "$latest_artifact" ]; then
-              read -r latest_artifact_id run_id <<< "$latest_artifact"
-              mkdir -p target/.ci-latest-marker
-              gh api "repos/${REPOSITORY}/actions/artifacts/${latest_artifact_id}/zip" \
-                > target/.ci-latest-marker/artifact.zip
-              python3 -m zipfile -e \
-                target/.ci-latest-marker/artifact.zip target/.ci-latest-marker
-              download_prefix=$(cat target/.ci-latest-marker/target.latest)
-              rm -rf target/.ci-latest-marker
-              if [[ ! "$download_prefix" =~ ^${LATEST_PREFIX_BASE}[0-9a-f]{64}$ ]]; then
-                echo "::error::invalid latest-target prefix for ${{ matrix.package }}"
-                exit 1
-              fi
-              run_id=$(
-                gh api "repos/${REPOSITORY}/actions/artifacts?name=${download_prefix}-ready&per_page=10" \
-                  --jq '.artifacts | map(select(.expired == false)) | first | .workflow_run.id // empty'
-              )
-              if [ -n "$run_id" ]; then
-                hit=true
-                format=v4
-                echo "::notice::seeding ${{ matrix.package }} from its latest successful target"
-              else
-                echo "::warning::latest ${{ matrix.package }} target parts are unavailable; rebuilding"
-              fi
-            fi
-          fi
-
           {
-            echo "prefix=$ARTIFACT_PREFIX"
-            echo "hit=$hit"
-            echo "canonical-hit=$canonical_hit"
-            echo "format=$format"
-            echo "download-prefix=$download_prefix"
-            echo "legacy-name=$legacy_name"
-            echo "run-id=$run_id"
+            echo "prefix=$(jq -r '.prefix' <<< "$result")"
+            echo "hit=$(jq -r '.hit' <<< "$result")"
+            echo "canonical-hit=$(jq -r '.canonical_hit' <<< "$result")"
+            echo "format=$(jq -r '.format' <<< "$result")"
+            echo "download-prefix=$(jq -r '.download_prefix' <<< "$result")"
+            echo "legacy-name=$(jq -r '.legacy_name' <<< "$result")"
+            echo "run-id=$(jq -r '.run_id' <<< "$result")"
           } >> "$GITHUB_OUTPUT"
       - name: Download partitioned input-identical crate target
         if: steps.crate-target.outputs.format == 'v4' || steps.crate-target.outputs.format == 'v3'
@@ -303,7 +244,11 @@ jobs:
             tar --zstd -xf target/.ci-restore/target.tar.zst
           fi
           rm -rf target/.ci-restore
-          git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
+          if [ "${{ steps.crate-target.outputs.canonical-hit }}" = "true" ]; then
+            git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
+          else
+            echo "::notice::latest-target seed restored; preserving checkout mtimes so Cargo rebuilds changed first-party inputs"
+          fi
       - name: Run package tests
         if: steps.crate-result.outputs.hit != 'true'
         shell: bash
