@@ -19,9 +19,9 @@ groups:
   - { id: metric.connection.active, type: metric, metric_name: connection.active, instrument: updowncounter, unit: "{connection}", brief: Active connections., stability: development }
   - { id: metric.connection.duration, type: metric, metric_name: connection.duration, instrument: histogram, unit: s, brief: Connection duration., stability: development }
   - { id: metric.db.client.operation.duration, type: metric, metric_name: db.client.operation.duration, instrument: histogram, unit: s, brief: Database client operation duration., stability: development, attributes: [{ref: db.operation.name, requirement_level: required}] }
-  - { id: metric.rpc.requests, type: metric, metric_name: rpc.requests, instrument: counter, unit: "{request}", brief: RPC requests., stability: development }
-  - { id: metric.rpc.active, type: metric, metric_name: rpc.active, instrument: updowncounter, unit: "{request}", brief: Active RPC requests., stability: development }
-  - { id: metric.rpc.duration, type: metric, metric_name: rpc.duration, instrument: histogram, unit: s, brief: RPC request duration., stability: development }
+  - { id: metric.rpc.requests, type: metric, metric_name: rpc.requests, instrument: counter, unit: "{request}", brief: RPC requests., stability: development, attributes: [{ref: rpc.method, requirement_level: required}, {ref: outcome, requirement_level: required}, {ref: error.type}] }
+  - { id: metric.rpc.active, type: metric, metric_name: rpc.active, instrument: updowncounter, unit: "{request}", brief: Active RPC requests., stability: development, attributes: [{ref: rpc.method, requirement_level: required}] }
+  - { id: metric.rpc.duration, type: metric, metric_name: rpc.duration, instrument: histogram, unit: s, brief: RPC request duration., stability: development, attributes: [{ref: rpc.method, requirement_level: required}, {ref: outcome, requirement_level: required}, {ref: error.type}] }
   - { id: metric.agent.state.transitions, type: metric, metric_name: agent.state.transitions, instrument: counter, unit: "{transition}", brief: Effective agent state transitions., stability: development }
   - { id: metric.agent.state.stuck, type: metric, metric_name: agent.state.stuck, instrument: counter, unit: "{event}", brief: Agent stuck-state detections., stability: development }
   - { id: metric.agent.state.flaps, type: metric, metric_name: agent.state.flaps, instrument: counter, unit: "{event}", brief: Agent state flap detections., stability: development }

@@ -10,7 +10,7 @@ use super::*;
 
 fn exported_span(
     outcome: Option<schema::enums::OutcomeValue>,
-    error_type: Option<&'static str>,
+    error_type: Option<schema::enums::ErrorType>,
 ) -> opentelemetry_sdk::trace::SpanData {
     let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
@@ -36,7 +36,7 @@ fn exported_span(
 
 fn exported_status(
     outcome: Option<schema::enums::OutcomeValue>,
-    error_type: Option<&'static str>,
+    error_type: Option<schema::enums::ErrorType>,
 ) -> Status {
     exported_span(outcome, error_type).status
 }
@@ -56,10 +56,33 @@ fn outcome_status_mapping_is_explicit() {
         schema::enums::OutcomeValue::Timeout,
     ] {
         assert!(matches!(
-            exported_status(Some(outcome), Some("timeout")),
+            exported_status(Some(outcome), Some(schema::enums::ErrorType::Timeout)),
             Status::Error { .. }
         ));
     }
+}
+
+#[test]
+fn completion_matrix_rejects_impossible_pairs() {
+    use schema::enums::{ErrorType, OutcomeValue};
+    assert!(valid_completion(OutcomeValue::Success, None));
+    assert!(valid_completion(
+        OutcomeValue::Success,
+        Some(ErrorType::RecoveredDegradation)
+    ));
+    assert!(valid_completion(
+        OutcomeValue::Failure,
+        Some(ErrorType::RpcError)
+    ));
+    assert!(!valid_completion(OutcomeValue::Failure, None));
+    assert!(!valid_completion(
+        OutcomeValue::Success,
+        Some(ErrorType::RpcError)
+    ));
+    assert!(!valid_completion(
+        OutcomeValue::Cancellation,
+        Some(ErrorType::DependencyCancelled)
+    ));
 }
 
 #[test]
@@ -121,7 +144,17 @@ fn rpc_server_honors_remote_parent_and_kind() {
         TraceState::default(),
     );
     tracing::subscriber::with_default(subscriber, || {
-        operation_with_remote_parent(&RPC_SERVER, &[], &parent)
+        let attrs = [
+            Attr {
+                key: schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+                value: Value::Str("jackin"),
+            },
+            Attr {
+                key: schema::attrs::std_attrs::RPC_METHOD,
+                value: Value::Str("jackin.test.Service/Method"),
+            },
+        ];
+        operation_with_remote_parent(&RPC_SERVER, &attrs, &parent)
             .unwrap()
             .complete(schema::enums::OutcomeValue::Success, None);
     });

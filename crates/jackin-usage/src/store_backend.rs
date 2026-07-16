@@ -56,7 +56,13 @@ pub async fn operation<T, E>(
     } else {
         jackin_telemetry::schema::enums::OutcomeValue::Failure
     };
-    span.complete(outcome, result.as_ref().err().map(|_| "db_error"));
+    span.complete(
+        outcome,
+        result
+            .as_ref()
+            .err()
+            .map(|_| jackin_telemetry::schema::enums::ErrorType::DbError),
+    );
     let metric_attrs = [jackin_telemetry::Attr {
         key: jackin_telemetry::schema::attrs::std_attrs::DB_OPERATION_NAME,
         value: jackin_telemetry::Value::Str(operation_name),

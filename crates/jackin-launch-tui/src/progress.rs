@@ -201,7 +201,7 @@ impl LaunchProgress {
         self.finish_stage_telemetry(
             stage,
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
-            Some("launch_stage_failed"),
+            Some(jackin_telemetry::schema::enums::ErrorType::LaunchStageFailed),
         );
         let summary = failure.summary.clone();
         let next_step = failure.next_step.clone();
@@ -255,7 +255,7 @@ impl LaunchProgress {
         &mut self,
         stage: LaunchStage,
         outcome: jackin_telemetry::schema::enums::OutcomeValue,
-        error_type: Option<&'static str>,
+        error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
     ) {
         let index = stage_index(stage);
         if self.stage_telemetry[index].is_none() {

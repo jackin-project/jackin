@@ -117,6 +117,17 @@ pub(super) fn validate_metric_attributes<'a>(
             return Err(jackin_telemetry::Rejection::InvalidValue);
         }
         match &attribute.value {
+            opentelemetry::Value::String(value) => {
+                jackin_telemetry::privacy::validate_string(value.as_str())?;
+            }
+            opentelemetry::Value::Array(opentelemetry::Array::String(values)) => {
+                for value in values {
+                    jackin_telemetry::privacy::validate_string(value.as_str())?;
+                }
+            }
+            _ => {}
+        }
+        match &attribute.value {
             opentelemetry::Value::String(value)
                 if value.as_str().len() > jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES =>
             {

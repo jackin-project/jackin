@@ -32,6 +32,33 @@ fn source_policy_is_syntax_aware_and_blocks_raw_meters() {
 }
 
 #[test]
+fn observable_callbacks_are_snapshot_only() {
+    let allowed = r"fn install(builder: Builder, value: AtomicU64) {
+        builder.with_callback(move |observer| observer.observe(value.load(Ordering::Relaxed), &[]));
+    }";
+    assert!(
+        source_policy_violations("crates/jackin-diagnostics/src/example.rs", allowed).is_empty()
+    );
+
+    for prohibited in [
+        "std::fs::read_to_string(\"state\")",
+        "state.lock()",
+        "handle.block_on(work())",
+        "handle.enter()",
+        "socket.read(&mut bytes)",
+    ] {
+        let source = format!(
+            "fn install(builder: Builder) {{ builder.with_callback(move |_observer| {{ let _ = {prohibited}; }}); }}"
+        );
+        assert_eq!(
+            source_policy_violations("crates/jackin-diagnostics/src/example.rs", &source),
+            ["observable callback performs blocking/runtime work"],
+            "{prohibited}"
+        );
+    }
+}
+
+#[test]
 fn registry_generation_is_deterministic_and_covers_dotted_commands() {
     let root = repo_root().expect("repository root must resolve");
     let first = generate_rust_sources(&root).expect("registry must generate");
@@ -51,9 +78,13 @@ fn registry_generation_is_deterministic_and_covers_dotted_commands() {
         .find(|(path, _)| path.ends_with("schema/attrs.rs"))
         .map(|(_, contents)| contents)
         .expect("attribute output must exist");
-    assert!(attrs.contains("pub const APP_CRASH_ID: &str = \"app.crash.id\";"));
+    assert!(attrs.contains("pub use opentelemetry_semantic_conventions::attribute::APP_CRASH_ID;"));
     assert!(attrs.contains("(APP_CRASH_ID, \"app.crash.id\"),"));
-    assert!(attrs.contains("pub const APP_JANK_FRAME_COUNT: &str = \"app.jank.frame_count\";"));
+    assert!(
+        attrs.contains(
+            "pub use opentelemetry_semantic_conventions::attribute::APP_JANK_FRAME_COUNT;"
+        )
+    );
     assert!(attrs.contains("(APP_JANK_FRAME_COUNT, \"app.jank.frame_count\"),"));
     assert!(attrs.contains(
         "pub use std_attrs::{APP_JANK_FRAME_COUNT, APP_JANK_PERIOD, APP_JANK_THRESHOLD};"
@@ -92,11 +123,15 @@ fn namespace_scan_detects_telemetry_literals_without_flagging_identifiers() {
     ));
     assert!(contains_legacy_telemetry_name(
         path,
-        "pub const LABEL_ROLE: &str = \"jackin.role\";"
+        "pub const LABEL_ROLE_KEY: &str = \"jackin.role\";"
     ));
     assert!(!contains_legacy_telemetry_name(
         "crates/jackin-runtime/src/runtime/naming.rs",
-        "pub const LABEL_ROLE: &str = \"jackin.role\";"
+        "pub const LABEL_ROLE_KEY: &str = \"jackin.role\";"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        "crates/jackin-runtime/src/runtime/naming.rs",
+        "pub const DIFFERENT_SYMBOL: &str = \"jackin.role\";"
     ));
     assert!(contains_legacy_telemetry_name(
         path,

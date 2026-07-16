@@ -67,5 +67,16 @@ pub fn validate_value(value: &Value<'_>) -> Result<(), Rejection> {
     }
 }
 
+pub fn validate_attribute_value(key: &str, value: &Value<'_>) -> Result<(), Rejection> {
+    if matches!(key, "exception.message" | "exception.stacktrace") {
+        match value {
+            Value::Str(_) => Ok(()),
+            _ => Err(Rejection::InvalidValue),
+        }
+    } else {
+        validate_value(value)
+    }
+}
+
 #[cfg(test)]
 mod tests;

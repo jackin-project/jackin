@@ -142,25 +142,21 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
 
         telemetry_line(OperationLevel::Info, "screen", "list entered");
         telemetry_line(OperationLevel::Warn, "docker", "process retry exhausted");
-        run.stage(
-            "stage_started",
-            crate::DiagnosticStage::Prepare,
-            "preparing",
-            None,
-        );
-        run.stage("stage_done", crate::DiagnosticStage::Prepare, "ready", None);
-        run.stage(
-            "stage_started",
-            crate::DiagnosticStage::DerivedImage,
-            "building",
-            None,
-        );
-        run.stage(
-            "stage_done",
-            crate::DiagnosticStage::DerivedImage,
-            "built",
-            None,
-        );
+        let launch_attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::LAUNCH_TARGET_KIND,
+            value: jackin_telemetry::Value::Str("workspace"),
+        }];
+        let launch =
+            jackin_telemetry::operation(&jackin_telemetry::operation::LAUNCH, &launch_attrs)
+                .expect("registered launch operation");
+        let launch_scope = launch.span().enter();
+        let stage_attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::LAUNCH_STAGE_NAME,
+            value: jackin_telemetry::Value::Str("derived_image"),
+        }];
+        jackin_telemetry::operation(&jackin_telemetry::operation::LAUNCH_STAGE, &stage_attrs)
+            .expect("registered launch stage")
+            .complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
 
         let operation =
             jackin_telemetry::operation(&jackin_telemetry::operation::PROCESS_COMMAND, &[])
@@ -176,8 +172,10 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
         drop(guard);
         operation.complete(
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
-            Some(jackin_telemetry::schema::enums::ErrorType::RpcError.as_str()),
+            Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
         );
+        drop(launch_scope);
+        launch.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
 
         for _ in 0..100 {
             crate::metrics::record_frame(32, 1, 4);

@@ -35,7 +35,11 @@ pub(crate) fn attribute(
     attr: Attr<'_>,
 ) -> Result<(), Rejection> {
     privacy::validate_key(attr.key)?;
-    limits::validate_value(&attr.value)?;
+    let exception = matches!(attr.key, "exception.message" | "exception.stacktrace");
+    if !exception {
+        privacy::validate_value(&attr.value)?;
+    }
+    limits::validate_attribute_value(attr.key, &attr.value)?;
     let Some(requirement) = requirements
         .iter()
         .find(|requirement| requirement.name == attr.key)

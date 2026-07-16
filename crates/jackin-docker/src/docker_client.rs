@@ -88,7 +88,10 @@ async fn docker_http<T>(
         } else {
             jackin_telemetry::schema::enums::OutcomeValue::Failure
         },
-        result.as_ref().err().map(|_| "http_error"),
+        result
+            .as_ref()
+            .err()
+            .map(|_| jackin_telemetry::schema::enums::ErrorType::HttpError),
     );
     result
 }
@@ -382,7 +385,7 @@ impl DockerApi for BollardDockerClient {
                 let Some(state) = info.state else {
                     operation.complete(
                         jackin_telemetry::schema::enums::OutcomeValue::Failure,
-                        Some("http_error"),
+                        Some(jackin_telemetry::schema::enums::ErrorType::HttpError),
                     );
                     return ContainerState::InspectUnavailable("no state field".to_owned());
                 };
@@ -417,7 +420,7 @@ impl DockerApi for BollardDockerClient {
             } else {
                 jackin_telemetry::schema::enums::OutcomeValue::Success
             },
-            failed.then_some("http_error"),
+            failed.then_some(jackin_telemetry::schema::enums::ErrorType::HttpError),
         );
         state
     }

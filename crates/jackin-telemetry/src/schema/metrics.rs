@@ -221,7 +221,7 @@ pub const PREWARM_JOBS_DEF: super::MetricMetadata = super::MetricMetadata {
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=updowncounter; unit={request}; attributes=
+// registry: instrument=updowncounter; unit={request}; attributes=rpc.method:required
 pub const RPC_ACTIVE: &str = "rpc.active";
 pub const RPC_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: RPC_ACTIVE,
@@ -229,9 +229,14 @@ pub const RPC_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     instrument: super::MetricInstrument::UpDownCounter,
     unit: "{request}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "rpc.method",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[],
+    }],
 };
-// registry: instrument=histogram; unit=s; attributes=
+// registry: instrument=histogram; unit=s; attributes=error.type:recommended,outcome:required,rpc.method:required
 pub const RPC_DURATION: &str = "rpc.duration";
 pub const RPC_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: RPC_DURATION,
@@ -241,9 +246,35 @@ pub const RPC_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     boundaries: &[
         0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
     ],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "rpc.method",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: instrument=counter; unit={request}; attributes=
+// registry: instrument=counter; unit={request}; attributes=error.type:recommended,outcome:required,rpc.method:required
 pub const RPC_REQUESTS: &str = "rpc.requests";
 pub const RPC_REQUESTS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: RPC_REQUESTS,
@@ -251,7 +282,33 @@ pub const RPC_REQUESTS_DEF: super::MetricMetadata = super::MetricMetadata {
     instrument: super::MetricInstrument::Counter,
     unit: "{request}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "rpc.method",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+    ],
 };
 // registry: instrument=counter; unit={rejection}; attributes=telemetry.rejection.reason:required,telemetry.signal:required
 pub const TELEMETRY_REJECTIONS: &str = "telemetry.rejections";

@@ -140,7 +140,10 @@ async fn try_report_event(args: &[String]) -> Result<()> {
             } else {
                 jackin_telemetry::schema::enums::OutcomeValue::Failure
             },
-            result.as_ref().err().map(|_| "rpc_error"),
+            result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::RpcError),
         );
     }
     result
@@ -239,7 +242,10 @@ pub async fn run_status_capture(args: &[String]) -> Result<()> {
             } else {
                 jackin_telemetry::schema::enums::OutcomeValue::Failure
             },
-            read_result.as_ref().err().map(|_| "rpc_error"),
+            read_result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::RpcError),
         );
     }
     read_result?;
@@ -579,7 +585,7 @@ async fn connect_and_send(
             if let Some(operation) = operation {
                 operation.complete(
                     jackin_telemetry::schema::enums::OutcomeValue::Failure,
-                    Some("rpc_error"),
+                    Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
                 );
             }
             return Err(error).context("cannot connect to jackin-capsule daemon");
@@ -603,7 +609,7 @@ async fn connect_and_send(
         if let Some(operation) = operation {
             operation.complete(
                 jackin_telemetry::schema::enums::OutcomeValue::Failure,
-                Some("rpc_error"),
+                Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
             );
         }
         return Err(error.into());
@@ -629,7 +635,10 @@ async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
             } else {
                 jackin_telemetry::schema::enums::OutcomeValue::Failure
             },
-            result.as_ref().err().map(|_| "rpc_error"),
+            result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::RpcError),
         );
     }
     result

@@ -429,7 +429,28 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
         return Err(reason);
     }
     let body = fields.body.map(limits::redact_and_clamp);
-    let sanitized = FieldSet::new(fields.attrs, body.as_deref());
+    let exception_values: Vec<_> = fields
+        .attrs
+        .iter()
+        .map(|attr| match (attr.key, attr.value) {
+            ("exception.message" | "exception.stacktrace", Value::Str(value)) => {
+                Some(limits::redact_and_clamp(value))
+            }
+            _ => None,
+        })
+        .collect();
+    let sanitized_attrs: Vec<_> = fields
+        .attrs
+        .iter()
+        .zip(&exception_values)
+        .map(|(attr, exception)| Attr {
+            key: attr.key,
+            value: exception
+                .as_ref()
+                .map_or(attr.value, |value| Value::Str(value.as_ref())),
+        })
+        .collect();
+    let sanitized = FieldSet::new(&sanitized_attrs, body.as_deref());
     with_event_arrays(&sanitized, || emit_registered_event(def, sanitized));
     Ok(())
 }

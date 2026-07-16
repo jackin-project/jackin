@@ -14,7 +14,8 @@ use crate::protocol::attach::{
 };
 use crate::socket;
 
-const RPC_ERROR: &str = jackin_telemetry::schema::enums::ErrorType::RpcError.as_str();
+const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
+    jackin_telemetry::schema::enums::ErrorType::RpcError;
 
 fn record_attach_failure(body: &'static str) {
     jackin_diagnostics::operation::telemetry_error_line(
@@ -54,7 +55,7 @@ pub(crate) struct ControlResponse {
     pub(crate) msg: jackin_protocol::control::ServerMsg,
     pub(crate) operation: Option<jackin_telemetry::operation::OperationGuard>,
     pub(crate) outcome: jackin_telemetry::schema::enums::OutcomeValue,
-    pub(crate) error_type: Option<&'static str>,
+    pub(crate) error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
 }
 
 impl ControlResponse {
@@ -90,7 +91,7 @@ pub(crate) struct AttachResponseCompletion {
     pub(crate) request_id: u64,
     pub(crate) operation: Option<jackin_telemetry::operation::OperationGuard>,
     pub(crate) outcome: jackin_telemetry::schema::enums::OutcomeValue,
-    pub(crate) error_type: Option<&'static str>,
+    pub(crate) error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
 }
 
 impl AttachResponseCompletion {

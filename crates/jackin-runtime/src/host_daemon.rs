@@ -21,7 +21,8 @@ pub const DAEMON_PROTOCOL_VERSION: u16 = 2;
 pub const MAX_REQUEST_BYTES: u64 = 16 * 1024;
 pub const SOCKET_FILE_NAME: &str = "jackin-daemon.sock";
 pub const PID_FILE_NAME: &str = "jackin-daemon.pid";
-const RPC_ERROR: &str = jackin_telemetry::schema::enums::ErrorType::RpcError.as_str();
+const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
+    jackin_telemetry::schema::enums::ErrorType::RpcError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonRequest {

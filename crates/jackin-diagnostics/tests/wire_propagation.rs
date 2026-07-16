@@ -25,9 +25,19 @@ fn conformance_wire_preserves_remote_parent_and_detached_link() -> anyhow::Resul
         true,
         TraceState::default(),
     );
+    let rpc_attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str("jackin.test.Service/Method"),
+        },
+    ];
     jackin_telemetry::operation_with_remote_parent(
         &jackin_telemetry::operation::RPC_SERVER,
-        &[],
+        &rpc_attrs,
         &remote,
     )
     .map_err(|error| anyhow::anyhow!("server operation rejected: {error:?}"))?

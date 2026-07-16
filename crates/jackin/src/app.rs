@@ -218,7 +218,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             } else {
                 jackin_telemetry::schema::enums::OutcomeValue::Failure
             },
-            (!success).then_some("command_failed"),
+            (!success).then_some(jackin_telemetry::schema::enums::ErrorType::ProcessExitNonzero),
         );
     }
     if interactive
@@ -233,7 +233,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             } else {
                 jackin_telemetry::schema::enums::OutcomeValue::Failure
             },
-            (!success).then_some("command_failed"),
+            (!success).then_some(jackin_telemetry::schema::enums::ErrorType::ProcessExitNonzero),
         );
     }
     record_run_error(&result);

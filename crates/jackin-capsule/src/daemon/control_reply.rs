@@ -9,7 +9,8 @@ use jackin_protocol::control::ServerMsg;
 
 use crate::attach_protocol::ControlResponse;
 
-const RPC_ERROR: &str = jackin_telemetry::schema::enums::ErrorType::RpcError.as_str();
+const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
+    jackin_telemetry::schema::enums::ErrorType::RpcError;
 
 pub(crate) struct PendingExecReply {
     reply_tx: tokio::sync::oneshot::Sender<ControlResponse>,
@@ -65,7 +66,7 @@ impl PendingExecReply {
         self,
         reply: ServerMsg,
         outcome: jackin_telemetry::schema::enums::OutcomeValue,
-        error_type: Option<&'static str>,
+        error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
     ) {
         let response = ControlResponse {
             msg: reply,
@@ -83,7 +84,7 @@ fn exec_reply_outcome(
     reply: &ServerMsg,
 ) -> (
     jackin_telemetry::schema::enums::OutcomeValue,
-    Option<&'static str>,
+    Option<jackin_telemetry::schema::enums::ErrorType>,
 ) {
     match reply {
         ServerMsg::ExecResult { exit_code: 0, .. } => {
@@ -108,7 +109,7 @@ fn process_exec_reply_outcome(
     reply: &ServerMsg,
 ) -> (
     jackin_telemetry::schema::enums::OutcomeValue,
-    Option<&'static str>,
+    Option<jackin_telemetry::schema::enums::ErrorType>,
 ) {
     match reply {
         ServerMsg::ExecResult { exit_code: 0, .. } => {

@@ -24,56 +24,85 @@ const RAW_SPAWN_ALLOWLIST: &[&str] = &[];
 
 const RAW_TRACING_ALLOWLIST: &[&str] = &[];
 
-const NON_TELEMETRY_EXEMPTIONS: &[(&str, &str)] = &[
-    ("crates/jackin-core/src/constants.rs", "jackin.role.toml"),
+const NON_TELEMETRY_EXEMPTIONS: &[(&str, &str, &str)] = &[
+    (
+        "crates/jackin-core/src/constants.rs",
+        "const:MANIFEST_FILENAME",
+        "jackin.role.toml",
+    ),
     (
         "crates/jackin-manifest/src/repo_contract.rs",
+        "const:LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION",
         "jackin.construct.version",
     ),
     (
         "crates/jackin-manifest/src/repo_contract.rs",
+        "const:LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA",
         "jackin.role.git.sha",
     ),
     (
         "crates/jackin-runtime/src/runtime/snapshot.rs",
+        "fn:socket_path",
         "jackin.sock",
     ),
     (
         "crates/jackin-runtime/src/runtime/discovery.rs",
+        "fn:list_running_agent_display_names",
         "jackin.display.name",
     ),
     (
         "crates/jackin-runtime/src/runtime/launch/launch_dind.rs",
+        "fn:prewarmed_dind_state_is_live",
+        "jackin.kind",
+    ),
+    (
+        "crates/jackin-runtime/src/runtime/launch/launch_dind.rs",
+        "fn:adopt_prewarmed_dind_sidecar",
         "jackin.kind",
     ),
     (
         "crates/jackin-runtime/src/runtime/cleanup.rs",
+        "fn:collect_labeled_dind",
         "jackin.kind",
     ),
-    ("crates/jackin-runtime/src/runtime/naming.rs", "jackin.role"),
     (
         "crates/jackin-runtime/src/runtime/naming.rs",
+        "const:LABEL_ROLE_KEY",
+        "jackin.role",
+    ),
+    (
+        "crates/jackin-runtime/src/runtime/naming.rs",
+        "const:LABEL_IMAGE_KEY",
         "jackin.image",
     ),
     (
         "crates/jackin-image/src/naming.rs",
+        "const:LABEL_IMAGE_CONSTRUCT",
         "jackin.construct.image",
     ),
     (
         "crates/jackin-image/src/naming.rs",
+        "const:LABEL_IMAGE_RECIPE_HASH",
         "jackin.image.recipe.hash",
     ),
     (
         "crates/jackin-image/src/naming.rs",
+        "const:LABEL_IMAGE_RECIPE_VERSION",
         "jackin.image.recipe.version",
     ),
-    ("crates/jackin-image/src/naming.rs", "jackin.agent"),
     (
         "crates/jackin-image/src/naming.rs",
+        "const:LABEL_IMAGE_AGENT_VERSION_PREFIX",
+        "jackin.agent",
+    ),
+    (
+        "crates/jackin-image/src/naming.rs",
+        "const:LABEL_IMAGE_CAPSULE_VERSION",
         "jackin.capsule.version",
     ),
     (
         "crates/jackin-image/src/naming.rs",
+        "const:LABEL_IMAGE_MANIFEST_VERSION",
         "jackin.manifest.version",
     ),
 ];
@@ -384,6 +413,15 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
     }
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if node.method == "with_callback" {
+            for argument in &node.args {
+                let mut callback = ObservableCallbackScanner::default();
+                callback.visit_expr(argument);
+                for (span, violation) in callback.violations {
+                    self.reject(span, violation);
+                }
+            }
+        }
         if !self.allows_spawn() && node.method == "spawn_local" {
             self.reject(node.span(), "unmanaged async/thread spawn");
         }
@@ -422,6 +460,61 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
             self.reject(node.span(), "tracing instrument outside governed facade");
         }
         syn::visit::visit_attribute(self, node);
+    }
+}
+
+#[derive(Default)]
+struct ObservableCallbackScanner {
+    violations: Vec<(proc_macro2::Span, &'static str)>,
+}
+
+impl ObservableCallbackScanner {
+    fn reject(&mut self, span: proc_macro2::Span) {
+        self.violations
+            .push((span, "observable callback performs blocking/runtime work"));
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for ObservableCallbackScanner {
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(function) = node.func.as_ref() {
+            let name = SourcePolicyScanner::path_name(&function.path);
+            if name.starts_with("std::fs::")
+                || name.starts_with("tokio::fs::")
+                || name.starts_with("fs::")
+                || matches!(
+                    name.as_str(),
+                    "std::thread::sleep" | "thread::sleep" | "tokio::runtime::Handle::current"
+                )
+            {
+                self.reject(node.span());
+            }
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if matches!(
+            node.method.to_string().as_str(),
+            "lock"
+                | "read"
+                | "read_to_string"
+                | "read_dir"
+                | "write"
+                | "open"
+                | "connect"
+                | "enter"
+                | "entered"
+                | "block_on"
+        ) {
+            self.reject(node.span());
+        }
+        syn::visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_expr_await(&mut self, node: &'ast syn::ExprAwait) {
+        self.reject(node.span());
+        syn::visit::visit_expr_await(self, node);
     }
 }
 
@@ -658,15 +751,15 @@ fn generate_attributes(
     output.push_str("\n/// Standard semantic-convention keys isolated behind a stable facade.\n");
     output.push_str("pub mod std_attrs {\n");
     let mut standard_names = Vec::new();
-    for (constant, wire_name) in &metadata.standard_upstream {
+    for constant in metadata.standard_upstream.keys() {
         output.push_str(&format!(
-            "    pub const {constant}: &str = {wire_name:?};\n"
+            "    pub use opentelemetry_semantic_conventions::attribute::{constant};\n"
         ));
         standard_names.push(constant.clone());
     }
     for (constant, wire_name) in &metadata.standard_local {
         output.push_str(&format!(
-            "    // Local pin: absent from opentelemetry-semantic-conventions {}; registry schema {}.\n",
+            "    // Local pin: not authoritative in opentelemetry-semantic-conventions {}; registry schema {}.\n",
             metadata.rust_crate_version, metadata.registry_schema_version
         ));
         output.push_str(&format!(
@@ -1398,14 +1491,16 @@ fn is_project_namespace(literal: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
 }
 
-fn is_non_telemetry_name(path: &str, literal: &str) -> bool {
+fn is_non_telemetry_name(path: &str, context: &str, literal: &str) -> bool {
     NON_TELEMETRY_EXEMPTIONS
         .iter()
-        .any(|(exempt_path, exempt_literal)| *exempt_path == path && *exempt_literal == literal)
+        .any(|(exempt_path, exempt_context, exempt_literal)| {
+            *exempt_path == path && *exempt_context == context && *exempt_literal == literal
+        })
         || (path == "crates/jackin-xtask/src/telemetry_registry.rs"
             && NON_TELEMETRY_EXEMPTIONS
                 .iter()
-                .map(|(_, fixture_name)| fixture_name)
+                .map(|(_, _, fixture_name)| fixture_name)
                 .chain(
                     NAMESPACE_TEST_FIXTURES
                         .iter()
@@ -1419,6 +1514,7 @@ fn is_non_telemetry_name(path: &str, literal: &str) -> bool {
 
 struct NamespaceScanner<'a> {
     path: &'a str,
+    context: String,
     violations: BTreeSet<(usize, String)>,
 }
 
@@ -1426,18 +1522,32 @@ impl<'a> NamespaceScanner<'a> {
     fn new(path: &'a str) -> Self {
         Self {
             path,
+            context: String::from("file"),
             violations: BTreeSet::new(),
         }
     }
 
     fn inspect(&mut self, literal: &str, line: usize) {
-        if is_project_namespace(literal) && !is_non_telemetry_name(self.path, literal) {
+        if is_project_namespace(literal)
+            && !is_non_telemetry_name(self.path, &self.context, literal)
+        {
             self.violations.insert((line, literal.to_owned()));
         }
     }
 }
 
 impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
+    fn visit_item_const(&mut self, item: &'ast syn::ItemConst) {
+        let previous = std::mem::replace(&mut self.context, format!("const:{}", item.ident));
+        syn::visit::visit_item_const(self, item);
+        self.context = previous;
+    }
+
+    fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
+        let previous = std::mem::replace(&mut self.context, format!("fn:{}", item.sig.ident));
+        syn::visit::visit_item_fn(self, item);
+        self.context = previous;
+    }
     fn visit_lit_str(&mut self, literal: &'ast syn::LitStr) {
         self.inspect(&literal.value(), literal.span().start().line);
     }

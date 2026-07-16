@@ -13,7 +13,7 @@ use crate::operation::{SpanDef, root_operation};
 #[derive(Clone, Copy, Debug)]
 pub struct DetachedCompletion {
     pub outcome: crate::schema::enums::OutcomeValue,
-    pub error_type: Option<&'static str>,
+    pub error_type: Option<crate::schema::enums::ErrorType>,
 }
 
 pub fn spawn_joined<F>(fut: F) -> JoinHandle<F::Output>

@@ -394,6 +394,22 @@ pub const PTY_EXIT_REASON_DEF: super::AttributeMetadata = super::AttributeMetada
     ],
 };
 // registry-type: string
+pub const RPC_METHOD: &str = "rpc.method";
+pub const RPC_METHOD_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: RPC_METHOD,
+    description: "Fully-qualified logical RPC method name.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
+};
+// registry-type: string
+pub const RPC_SYSTEM_NAME: &str = "rpc.system.name";
+pub const RPC_SYSTEM_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: RPC_SYSTEM_NAME,
+    description: "Identifies the remote system being called.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
+};
+// registry-type: string
 pub const SESSION_PREVIOUS_ID: &str = "session.previous_id";
 pub const SESSION_PREVIOUS_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: SESSION_PREVIOUS_ID,
@@ -569,6 +585,8 @@ pub const ALL_KEYS: &[&str] = &[
     PROCESS_EXECUTABLE_NAME,
     PROCESS_EXIT_CODE,
     PTY_EXIT_REASON,
+    RPC_METHOD,
+    RPC_SYSTEM_NAME,
     SESSION_PREVIOUS_ID,
     STREAM_DIRECTION,
     TELEMETRY_REJECTION_REASON,
@@ -616,6 +634,8 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     PROCESS_EXECUTABLE_NAME_DEF,
     PROCESS_EXIT_CODE_DEF,
     PTY_EXIT_REASON_DEF,
+    RPC_METHOD_DEF,
+    RPC_SYSTEM_NAME_DEF,
     SESSION_PREVIOUS_ID_DEF,
     STREAM_DIRECTION_DEF,
     TELEMETRY_REJECTION_REASON_DEF,
@@ -638,50 +658,53 @@ pub fn definition(name: &str) -> Option<&'static super::AttributeMetadata> {
 
 /// Standard semantic-convention keys isolated behind a stable facade.
 pub mod std_attrs {
-    pub const APP_BUILD_ID: &str = "app.build_id";
-    pub const APP_CRASH_ID: &str = "app.crash.id";
-    pub const APP_JANK_FRAME_COUNT: &str = "app.jank.frame_count";
-    pub const APP_JANK_PERIOD: &str = "app.jank.period";
-    pub const APP_JANK_THRESHOLD: &str = "app.jank.threshold";
-    pub const APP_SCREEN_ID: &str = "app.screen.id";
-    pub const APP_SCREEN_NAME: &str = "app.screen.name";
-    pub const APP_WIDGET_ID: &str = "app.widget.id";
-    pub const APP_WIDGET_NAME: &str = "app.widget.name";
-    pub const CODE_FILE_PATH: &str = "code.file.path";
-    pub const CODE_FUNCTION_NAME: &str = "code.function.name";
-    pub const CODE_LINE_NUMBER: &str = "code.line.number";
-    pub const CONTAINER_ID: &str = "container.id";
-    pub const DB_OPERATION_NAME: &str = "db.operation.name";
-    pub const DB_SYSTEM_NAME: &str = "db.system.name";
-    pub const ERROR_TYPE: &str = "error.type";
-    pub const EXCEPTION_MESSAGE: &str = "exception.message";
-    pub const EXCEPTION_STACKTRACE: &str = "exception.stacktrace";
-    pub const EXCEPTION_TYPE: &str = "exception.type";
+    pub use opentelemetry_semantic_conventions::attribute::APP_BUILD_ID;
+    pub use opentelemetry_semantic_conventions::attribute::APP_CRASH_ID;
+    pub use opentelemetry_semantic_conventions::attribute::APP_JANK_FRAME_COUNT;
+    pub use opentelemetry_semantic_conventions::attribute::APP_JANK_PERIOD;
+    pub use opentelemetry_semantic_conventions::attribute::APP_JANK_THRESHOLD;
+    pub use opentelemetry_semantic_conventions::attribute::APP_SCREEN_ID;
+    pub use opentelemetry_semantic_conventions::attribute::APP_SCREEN_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::APP_WIDGET_ID;
+    pub use opentelemetry_semantic_conventions::attribute::APP_WIDGET_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::CODE_FILE_PATH;
+    pub use opentelemetry_semantic_conventions::attribute::CODE_FUNCTION_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::CODE_LINE_NUMBER;
+    pub use opentelemetry_semantic_conventions::attribute::CONTAINER_ID;
+    pub use opentelemetry_semantic_conventions::attribute::DB_OPERATION_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::DB_SYSTEM_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::ERROR_TYPE;
+    pub use opentelemetry_semantic_conventions::attribute::EXCEPTION_MESSAGE;
+    pub use opentelemetry_semantic_conventions::attribute::EXCEPTION_STACKTRACE;
+    pub use opentelemetry_semantic_conventions::attribute::EXCEPTION_TYPE;
+    pub use opentelemetry_semantic_conventions::attribute::HTTP_REQUEST_METHOD;
+    pub use opentelemetry_semantic_conventions::attribute::NETWORK_TRANSPORT;
+    pub use opentelemetry_semantic_conventions::attribute::NETWORK_TYPE;
+    pub use opentelemetry_semantic_conventions::attribute::OS_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::OS_TYPE;
+    pub use opentelemetry_semantic_conventions::attribute::OS_VERSION;
+    pub use opentelemetry_semantic_conventions::attribute::PROCESS_COMMAND;
+    pub use opentelemetry_semantic_conventions::attribute::PROCESS_EXECUTABLE_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::PROCESS_EXIT_CODE;
+    pub use opentelemetry_semantic_conventions::attribute::PROCESS_PID;
+    pub use opentelemetry_semantic_conventions::attribute::PROCESS_RUNTIME_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::PROCESS_RUNTIME_VERSION;
+    pub use opentelemetry_semantic_conventions::attribute::RPC_METHOD;
+    pub use opentelemetry_semantic_conventions::attribute::RPC_SYSTEM_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::SERVER_ADDRESS;
+    pub use opentelemetry_semantic_conventions::attribute::SERVICE_INSTANCE_ID;
+    pub use opentelemetry_semantic_conventions::attribute::SERVICE_NAME;
+    pub use opentelemetry_semantic_conventions::attribute::SERVICE_NAMESPACE;
+    pub use opentelemetry_semantic_conventions::attribute::SERVICE_VERSION;
+    pub use opentelemetry_semantic_conventions::attribute::SESSION_ID;
+    pub use opentelemetry_semantic_conventions::attribute::SESSION_PREVIOUS_ID;
+    pub use opentelemetry_semantic_conventions::attribute::URL_TEMPLATE;
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
     pub const GEN_AI_AGENT_NAME: &str = "gen_ai.agent.name";
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
     pub const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
     pub const GEN_AI_PROVIDER_NAME: &str = "gen_ai.provider.name";
-    pub const HTTP_REQUEST_METHOD: &str = "http.request.method";
-    pub const NETWORK_TRANSPORT: &str = "network.transport";
-    pub const NETWORK_TYPE: &str = "network.type";
-    pub const OS_NAME: &str = "os.name";
-    pub const OS_TYPE: &str = "os.type";
-    pub const OS_VERSION: &str = "os.version";
-    pub const PROCESS_COMMAND: &str = "process.command";
-    pub const PROCESS_EXECUTABLE_NAME: &str = "process.executable.name";
-    pub const PROCESS_EXIT_CODE: &str = "process.exit.code";
-    pub const PROCESS_PID: &str = "process.pid";
-    pub const PROCESS_RUNTIME_NAME: &str = "process.runtime.name";
-    pub const PROCESS_RUNTIME_VERSION: &str = "process.runtime.version";
-    pub const RPC_METHOD: &str = "rpc.method";
-    pub const RPC_SYSTEM_NAME: &str = "rpc.system.name";
-    pub const SERVER_ADDRESS: &str = "server.address";
-    pub const SERVICE_INSTANCE_ID: &str = "service.instance.id";
-    pub const SERVICE_NAME: &str = "service.name";
-    pub const SERVICE_NAMESPACE: &str = "service.namespace";
-    pub const SERVICE_VERSION: &str = "service.version";
-    pub const SESSION_ID: &str = "session.id";
-    pub const SESSION_PREVIOUS_ID: &str = "session.previous_id";
-    pub const URL_TEMPLATE: &str = "url.template";
     pub const ALL_KEYS: &[&str] = &[
         APP_BUILD_ID,
         APP_CRASH_ID,
@@ -702,9 +725,6 @@ pub mod std_attrs {
         EXCEPTION_MESSAGE,
         EXCEPTION_STACKTRACE,
         EXCEPTION_TYPE,
-        GEN_AI_AGENT_NAME,
-        GEN_AI_CONVERSATION_ID,
-        GEN_AI_PROVIDER_NAME,
         HTTP_REQUEST_METHOD,
         NETWORK_TRANSPORT,
         NETWORK_TYPE,
@@ -727,6 +747,9 @@ pub mod std_attrs {
         SESSION_ID,
         SESSION_PREVIOUS_ID,
         URL_TEMPLATE,
+        GEN_AI_AGENT_NAME,
+        GEN_AI_CONVERSATION_ID,
+        GEN_AI_PROVIDER_NAME,
     ];
     pub const UPSTREAM_ALIASES: &[(&str, &str)] = &[
         (APP_BUILD_ID, "app.build_id"),
@@ -748,9 +771,6 @@ pub mod std_attrs {
         (EXCEPTION_MESSAGE, "exception.message"),
         (EXCEPTION_STACKTRACE, "exception.stacktrace"),
         (EXCEPTION_TYPE, "exception.type"),
-        (GEN_AI_AGENT_NAME, "gen_ai.agent.name"),
-        (GEN_AI_CONVERSATION_ID, "gen_ai.conversation.id"),
-        (GEN_AI_PROVIDER_NAME, "gen_ai.provider.name"),
         (HTTP_REQUEST_METHOD, "http.request.method"),
         (NETWORK_TRANSPORT, "network.transport"),
         (NETWORK_TYPE, "network.type"),

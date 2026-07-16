@@ -135,7 +135,11 @@ impl RpcLifecycle {
         }
     }
 
-    fn finish(&self, outcome: schema::enums::OutcomeValue, error_type: Option<&'static str>) {
+    fn finish(
+        &self,
+        outcome: schema::enums::OutcomeValue,
+        error_type: Option<schema::enums::ErrorType>,
+    ) {
         let active_attrs = [Attr {
             key: schema::attrs::std_attrs::RPC_METHOD,
             value: Value::Str(&self.method),
@@ -156,7 +160,7 @@ impl RpcLifecycle {
         if let Some(error_type) = error_type {
             attrs.push(Attr {
                 key: schema::attrs::std_attrs::ERROR_TYPE,
-                value: Value::Str(error_type),
+                value: Value::Str(error_type.as_str()),
             });
         }
         let _request_result = crate::counter(&crate::metric::RPC_REQUESTS).add(1, &attrs);
@@ -228,7 +232,16 @@ impl OperationGuard {
         Ok(())
     }
 
-    pub fn complete(self, outcome: schema::enums::OutcomeValue, error_type: Option<&'static str>) {
+    pub fn complete(
+        self,
+        outcome: schema::enums::OutcomeValue,
+        error_type: Option<schema::enums::ErrorType>,
+    ) {
+        if !valid_completion(outcome, error_type) {
+            health::reject(health::Signal::Trace, Rejection::InvalidValue);
+            self.completed.store(true, Ordering::Release);
+            return;
+        }
         self.record_completion(outcome, error_type);
         self.completed.store(true, Ordering::Release);
     }
@@ -236,7 +249,7 @@ impl OperationGuard {
     fn record_completion(
         &self,
         outcome: schema::enums::OutcomeValue,
-        error_type: Option<&'static str>,
+        error_type: Option<schema::enums::ErrorType>,
     ) {
         let failure = matches!(
             outcome,
@@ -244,30 +257,31 @@ impl OperationGuard {
                 | schema::enums::OutcomeValue::Error
                 | schema::enums::OutcomeValue::Timeout
         );
-        let valid_error_type = error_type.filter(|value| {
-            schema::enums::ErrorType::ALL
-                .iter()
-                .any(|candidate| candidate.as_str() == *value)
-        });
-        let error_type = if failure && valid_error_type.is_none() {
-            health::reject(health::Signal::Trace, Rejection::InvalidValue);
-            Some("telemetry_instrumentation_fault")
-        } else {
-            valid_error_type
-        };
         self.span
             .set_attribute(schema::attrs::OUTCOME, outcome.as_str());
         if let Some(error_type) = error_type {
             self.span
-                .set_attribute(schema::attrs::std_attrs::ERROR_TYPE, error_type);
+                .set_attribute(schema::attrs::std_attrs::ERROR_TYPE, error_type.as_str());
         }
         if failure {
-            let description = limits::redact_and_clamp(error_type.unwrap_or(outcome.as_str()));
+            let description = limits::redact_and_clamp(
+                error_type.map_or(outcome.as_str(), schema::enums::ErrorType::as_str),
+            );
             self.span
                 .set_status(Status::error(description.into_owned()));
         }
         if let Some(rpc) = &self.rpc {
             rpc.finish(outcome, error_type);
+        }
+        if error_type == Some(schema::enums::ErrorType::RecoveredDegradation) {
+            let attrs = [Attr {
+                key: schema::attrs::OUTCOME,
+                value: Value::Str(outcome.as_str()),
+            }];
+            let _warning = crate::emit_event(
+                &crate::event::OPERATION_WARN,
+                crate::event::FieldSet::new(&attrs, None),
+            );
         }
     }
 }
@@ -277,9 +291,24 @@ impl Drop for OperationGuard {
         if !self.completed.load(Ordering::Acquire) {
             self.record_completion(
                 schema::enums::OutcomeValue::Error,
-                Some("telemetry_instrumentation_fault"),
+                Some(schema::enums::ErrorType::TelemetryInstrumentationFault),
             );
         }
+    }
+}
+
+const fn valid_completion(
+    outcome: schema::enums::OutcomeValue,
+    error_type: Option<schema::enums::ErrorType>,
+) -> bool {
+    use schema::enums::{ErrorType, OutcomeValue};
+    match (outcome, error_type) {
+        (OutcomeValue::Failure | OutcomeValue::Error | OutcomeValue::Timeout, Some(error)) => {
+            !matches!(error, ErrorType::RecoveredDegradation)
+        }
+        (OutcomeValue::Success, None | Some(ErrorType::RecoveredDegradation))
+        | (OutcomeValue::Skip | OutcomeValue::Cancellation, None) => true,
+        _ => false,
     }
 }
 

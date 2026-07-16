@@ -190,7 +190,10 @@ pub async fn resolve_credentials(
             } else {
                 jackin_telemetry::schema::enums::OutcomeValue::Failure
             },
-            result.as_ref().err().map(|_| "rpc_error"),
+            result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::RpcError),
         );
     }
     result
@@ -387,7 +390,7 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
             ),
             _ => (
                 jackin_telemetry::schema::enums::OutcomeValue::Failure,
-                Some("rpc_error"),
+                Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
             ),
         };
         operation.complete(outcome, error_type);

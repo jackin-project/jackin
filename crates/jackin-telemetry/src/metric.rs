@@ -134,8 +134,18 @@ struct InstalledInstruments {
 
 static INSTRUMENTS: OnceLock<InstalledInstruments> = OnceLock::new();
 static METER_RESERVED: Mutex<bool> = Mutex::new(false);
-type SeriesFingerprint = (u64, u64);
-type SeriesByInstrument = HashMap<&'static str, HashSet<SeriesFingerprint>>;
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum DimensionValue {
+    Str(String),
+    Bool(bool),
+    I64(i64),
+    U64(u64),
+    F64(u64),
+    StrArray(Vec<String>),
+}
+
+type SeriesIdentity = Vec<(&'static str, DimensionValue)>;
+type SeriesByInstrument = HashMap<&'static str, HashSet<SeriesIdentity>>;
 static SERIES: OnceLock<Mutex<SeriesByInstrument>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -326,7 +336,6 @@ fn validate_instrument(
                 && metadata.attributes == def.attributes
         })
     {
-        health::reject(health::Signal::Metric, Rejection::UnknownName);
         return Err(Rejection::UnknownName);
     }
     limits::validate_name(def.name)
@@ -334,61 +343,50 @@ fn validate_instrument(
 
 fn validate_attributes(def: &InstrumentDef, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
     validation::attributes(def.attributes, attrs, limits::MAX_METRIC_ATTRIBUTES)
+        .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))
 }
 
 fn accept_series(name: &'static str, attrs: &[Attr<'_>]) -> bool {
-    let fingerprint = fingerprint(attrs);
+    let identity = series_identity(attrs);
     let mut all = SERIES
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let stream = all.entry(name).or_default();
-    if stream.contains(&fingerprint) {
+    if stream.contains(&identity) {
         return true;
     }
     if stream.len() >= limits::MAX_CARDINALITY {
         health::reject(health::Signal::Metric, Rejection::Cardinality);
         return false;
     }
-    stream.insert(fingerprint);
+    stream.insert(identity);
     true
 }
 
-fn fingerprint(attrs: &[Attr<'_>]) -> (u64, u64) {
+fn series_identity(attrs: &[Attr<'_>]) -> SeriesIdentity {
     let mut order = [0usize; limits::MAX_METRIC_ATTRIBUTES];
     for (index, slot) in order[..attrs.len()].iter_mut().enumerate() {
         *slot = index;
     }
     order[..attrs.len()].sort_unstable_by_key(|index| attrs[*index].key);
-    let mut first = 0xcbf2_9ce4_8422_2325_u64;
-    let mut second = 0x8422_2325_cbf2_9ce4_u64;
-    for index in &order[..attrs.len()] {
-        hash_attr(&mut first, &attrs[*index]);
-        hash_attr(&mut second, &attrs[*index]);
-    }
-    (first, second)
-}
-
-fn hash_attr(state: &mut u64, attr: &Attr<'_>) {
-    let mut hash = |bytes: &[u8]| {
-        for byte in bytes {
-            *state = (*state ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3);
-        }
-    };
-    hash(attr.key.as_bytes());
-    match attr.value {
-        Value::Str(value) => hash(value.as_bytes()),
-        Value::Bool(value) => hash(&[u8::from(value)]),
-        Value::I64(value) => hash(&value.to_le_bytes()),
-        Value::U64(value) => hash(&value.to_le_bytes()),
-        Value::F64(value) => hash(&value.to_bits().to_le_bytes()),
-        Value::StrArray(values) => {
-            for value in values {
-                hash(value.as_bytes());
-                hash(&[0]);
-            }
-        }
-    }
+    order[..attrs.len()]
+        .iter()
+        .map(|index| {
+            let attr = attrs[*index];
+            let value = match attr.value {
+                Value::Str(value) => DimensionValue::Str(value.to_owned()),
+                Value::Bool(value) => DimensionValue::Bool(value),
+                Value::I64(value) => DimensionValue::I64(value),
+                Value::U64(value) => DimensionValue::U64(value),
+                Value::F64(value) => DimensionValue::F64(value.to_bits()),
+                Value::StrArray(values) => DimensionValue::StrArray(
+                    values.iter().map(|value| (*value).to_owned()).collect(),
+                ),
+            };
+            (attr.key, value)
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -416,7 +414,8 @@ impl Counter {
         let Some(instruments) = INSTRUMENTS.get() else {
             return Ok(());
         };
-        validate_instrument(self.0, InstrumentKind::Counter)?;
+        validate_instrument(self.0, InstrumentKind::Counter)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
         validate_attributes(self.0, attrs)?;
         if !accept_series(self.0.name, attrs) {
             return Err(Rejection::Cardinality);
@@ -432,7 +431,8 @@ impl Histogram {
         let Some(instruments) = INSTRUMENTS.get() else {
             return Ok(());
         };
-        validate_instrument(self.0, InstrumentKind::Histogram)?;
+        validate_instrument(self.0, InstrumentKind::Histogram)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
         validate_attributes(self.0, attrs)?;
         if !accept_series(self.0.name, attrs) {
             return Err(Rejection::Cardinality);
@@ -449,7 +449,8 @@ impl UpDownCounter {
         let Some(instruments) = INSTRUMENTS.get() else {
             return Ok(());
         };
-        validate_instrument(self.0, InstrumentKind::UpDownCounter)?;
+        validate_instrument(self.0, InstrumentKind::UpDownCounter)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
         validate_attributes(self.0, attrs)?;
         if !accept_series(self.0.name, attrs) {
             return Err(Rejection::Cardinality);

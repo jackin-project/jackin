@@ -358,45 +358,73 @@ pub const PROCESS_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=client; attributes=outcome:recommended
+// registry: kind=client; attributes=outcome:recommended,rpc.method:required,rpc.system.name:required
 pub const RPC_CLIENT: &str = "rpc.client";
 pub const RPC_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
     name: RPC_CLIENT,
     description: "One bounded RPC client request.",
     kind: super::SpanKind::Client,
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Recommended,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "rpc.method",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "rpc.system.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: kind=server; attributes=outcome:recommended
+// registry: kind=server; attributes=outcome:recommended,rpc.method:required,rpc.system.name:required
 pub const RPC_SERVER: &str = "rpc.server";
 pub const RPC_SERVER_DEF: super::SpanMetadata = super::SpanMetadata {
     name: RPC_SERVER,
     description: "One bounded RPC server request.",
     kind: super::SpanKind::Server,
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Recommended,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "rpc.method",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "rpc.system.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+    ],
 };
 // registry: kind=internal; attributes=outcome:recommended
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";

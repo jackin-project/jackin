@@ -1267,7 +1267,10 @@ pub(crate) fn provider_request<T>(
         } else {
             jackin_telemetry::schema::enums::OutcomeValue::Failure
         },
-        result.as_ref().err().map(|_| "http_error"),
+        result
+            .as_ref()
+            .err()
+            .map(|_| jackin_telemetry::schema::enums::ErrorType::HttpError),
     );
     result
 }

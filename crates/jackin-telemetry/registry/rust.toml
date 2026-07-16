@@ -38,9 +38,6 @@ ERROR_TYPE = "error.type"
 EXCEPTION_MESSAGE = "exception.message"
 EXCEPTION_STACKTRACE = "exception.stacktrace"
 EXCEPTION_TYPE = "exception.type"
-GEN_AI_AGENT_NAME = "gen_ai.agent.name"
-GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id"
-GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
 HTTP_REQUEST_METHOD = "http.request.method"
 NETWORK_TRANSPORT = "network.transport"
 NETWORK_TYPE = "network.type"
@@ -68,6 +65,9 @@ URL_TEMPLATE = "url.template"
 # Every entry must map CONSTANT_NAME = "wire.name" and is emitted as a local
 # constant carrying the exact registry schema version above.
 [standard_local]
+GEN_AI_AGENT_NAME = "gen_ai.agent.name"
+GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id"
+GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
 
 [[standard_enum]]
 rust_type = "AgentName"

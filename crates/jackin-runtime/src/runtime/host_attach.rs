@@ -56,7 +56,8 @@ const RESET_CLEAR_HOME: &[u8] = b"\x1b[0m\x1b[2J\x1b[H";
 const CLIENT_OWNED_MODE_STATE: &[u8] =
     b"\x1b[?7l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h";
 const HOST_FILE_EXPORT_DESTINATION_CATEGORY: &str = "host-downloads-jackin-instance";
-const RPC_ERROR: &str = jackin_telemetry::schema::enums::ErrorType::RpcError.as_str();
+const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
+    jackin_telemetry::schema::enums::ErrorType::RpcError;
 
 fn log_clipboard_image_paste_trigger() {
     jackin_diagnostics::emit_compact_line(

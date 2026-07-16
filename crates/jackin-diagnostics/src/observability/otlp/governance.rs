@@ -145,6 +145,9 @@ fn validate_log_record(
     {
         return Err(jackin_telemetry::Rejection::SizeLimit);
     }
+    if let Some(AnyValue::String(body)) = record.body() {
+        jackin_telemetry::privacy::validate_string(body.as_str())?;
+    }
     for (index, (key, value)) in record.attributes_iter().enumerate() {
         if record
             .attributes_iter()
@@ -188,28 +191,39 @@ fn validate_log_value(
     if !valid_type {
         return Err(jackin_telemetry::Rejection::InvalidValue);
     }
+    jackin_telemetry::privacy::validate_key(key)?;
     let maximum = if matches!(key, "exception.message" | "exception.stacktrace") {
         jackin_telemetry::limits::MAX_BODY_BYTES
     } else {
         jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES
     };
     match value {
-        AnyValue::String(value) if value.as_str().len() > maximum => {
-            Err(jackin_telemetry::Rejection::SizeLimit)
-        }
-        AnyValue::String(value)
+        AnyValue::String(value) => {
+            jackin_telemetry::privacy::validate_string(value.as_str())?;
             if !requirement.allowed_values.is_empty()
-                && !requirement.allowed_values.contains(&value.as_str()) =>
-        {
-            Err(jackin_telemetry::Rejection::InvalidValue)
+                && !requirement.allowed_values.contains(&value.as_str())
+            {
+                return Err(jackin_telemetry::Rejection::InvalidValue);
+            }
+            if value.as_str().len() > maximum {
+                return Err(jackin_telemetry::Rejection::SizeLimit);
+            }
+            Ok(())
         }
-        AnyValue::ListAny(values)
-            if values.len() > jackin_telemetry::limits::MAX_ARRAY_ELEMENTS
-                || values.iter().any(|value| {
-                    !matches!(value, AnyValue::String(item) if item.as_str().len() <= maximum)
-                }) =>
-        {
-            Err(jackin_telemetry::Rejection::SizeLimit)
+        AnyValue::ListAny(values) => {
+            if values.len() > jackin_telemetry::limits::MAX_ARRAY_ELEMENTS {
+                return Err(jackin_telemetry::Rejection::SizeLimit);
+            }
+            for value in values.iter() {
+                let AnyValue::String(item) = value else {
+                    return Err(jackin_telemetry::Rejection::InvalidValue);
+                };
+                if item.as_str().len() > maximum {
+                    return Err(jackin_telemetry::Rejection::SizeLimit);
+                }
+                jackin_telemetry::privacy::validate_string(item.as_str())?;
+            }
+            Ok(())
         }
         _ => Ok(()),
     }
@@ -224,6 +238,27 @@ fn validate_span(
     {
         return Err(jackin_telemetry::Rejection::SizeLimit);
     }
+    if let opentelemetry::trace::Status::Error { description } = &span.status {
+        if description.len() > jackin_telemetry::limits::MAX_BODY_BYTES {
+            return Err(jackin_telemetry::Rejection::SizeLimit);
+        }
+        jackin_telemetry::privacy::validate_string(description)?;
+    }
+    for link in span.links.iter() {
+        if link.attributes.len() > jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES {
+            return Err(jackin_telemetry::Rejection::SizeLimit);
+        }
+        for (index, attribute) in link.attributes.iter().enumerate() {
+            if link.attributes[..index]
+                .iter()
+                .any(|prior| prior.key == attribute.key)
+            {
+                return Err(jackin_telemetry::Rejection::InvalidValue);
+            }
+            jackin_telemetry::privacy::validate_key(attribute.key.as_str())?;
+            validate_untyped_span_value(&attribute.value)?;
+        }
+    }
     for (index, attribute) in span.attributes.iter().enumerate() {
         if span.attributes[..index]
             .iter()
@@ -232,8 +267,18 @@ fn validate_span(
             return Err(jackin_telemetry::Rejection::InvalidValue);
         }
         if attribute.key.as_str() == jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE {
+            let opentelemetry::Value::String(value) = &attribute.value else {
+                return Err(jackin_telemetry::Rejection::InvalidValue);
+            };
+            if !jackin_telemetry::schema::enums::ErrorType::ALL
+                .iter()
+                .any(|candidate| candidate.as_str() == value.as_str())
+            {
+                return Err(jackin_telemetry::Rejection::InvalidValue);
+            }
             continue;
         }
+        jackin_telemetry::privacy::validate_key(attribute.key.as_str())?;
         let Some(requirement) = definition
             .attributes
             .iter()
@@ -268,15 +313,40 @@ fn validate_span_value(
     if !valid {
         return Err(jackin_telemetry::Rejection::InvalidValue);
     }
-    if matches!(value, Value::String(value) if value.as_str().len() > jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES)
-    {
-        return Err(jackin_telemetry::Rejection::SizeLimit);
-    }
+    validate_untyped_span_value(value)?;
     if matches!(value, Value::String(value) if !requirement.allowed_values.is_empty() && !requirement.allowed_values.contains(&value.as_str()))
     {
         return Err(jackin_telemetry::Rejection::InvalidValue);
     }
     Ok(())
+}
+
+fn validate_untyped_span_value(
+    value: &opentelemetry::Value,
+) -> Result<(), jackin_telemetry::Rejection> {
+    use opentelemetry::{Array, Value};
+    match value {
+        Value::String(value) => {
+            if value.as_str().len() > jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES {
+                return Err(jackin_telemetry::Rejection::SizeLimit);
+            }
+            jackin_telemetry::privacy::validate_string(value.as_str())
+        }
+        Value::Array(Array::String(values)) => {
+            if values.len() > jackin_telemetry::limits::MAX_ARRAY_ELEMENTS {
+                return Err(jackin_telemetry::Rejection::SizeLimit);
+            }
+            for value in values {
+                if value.as_str().len() > jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES {
+                    return Err(jackin_telemetry::Rejection::SizeLimit);
+                }
+                jackin_telemetry::privacy::validate_string(value.as_str())?;
+            }
+            Ok(())
+        }
+        Value::Array(_) => Err(jackin_telemetry::Rejection::InvalidValue),
+        _ => Ok(()),
+    }
 }
 
 fn validate_required(

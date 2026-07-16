@@ -266,7 +266,7 @@ pub fn load_role<'a>(
                 ),
                 Err(_) => operation.complete(
                     jackin_telemetry::schema::enums::OutcomeValue::Failure,
-                    Some("launch_failed"),
+                    Some(jackin_telemetry::schema::enums::ErrorType::LaunchFailed),
                 ),
             }
             result

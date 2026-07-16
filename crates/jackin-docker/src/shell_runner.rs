@@ -289,7 +289,7 @@ fn process_execute_completion<T>(
     result: &anyhow::Result<T>,
 ) -> (
     jackin_telemetry::schema::enums::OutcomeValue,
-    Option<&'static str>,
+    Option<jackin_telemetry::schema::enums::ErrorType>,
 ) {
     match result {
         Ok(_) => (jackin_telemetry::schema::enums::OutcomeValue::Success, None),
@@ -301,7 +301,7 @@ fn process_execute_completion<T>(
         {
             (
                 jackin_telemetry::schema::enums::OutcomeValue::Timeout,
-                Some("timeout"),
+                Some(jackin_telemetry::schema::enums::ErrorType::Timeout),
             )
         }
         Err(error)
@@ -319,12 +319,12 @@ fn process_execute_completion<T>(
         {
             (
                 jackin_telemetry::schema::enums::OutcomeValue::Failure,
-                Some("process_exit_nonzero"),
+                Some(jackin_telemetry::schema::enums::ErrorType::ProcessExitNonzero),
             )
         }
         Err(_) => (
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
-            Some("process_spawn_error"),
+            Some(jackin_telemetry::schema::enums::ErrorType::ProcessSpawnError),
         ),
     }
 }

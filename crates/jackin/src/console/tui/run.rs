@@ -424,7 +424,10 @@ where
             } else {
                 jackin_telemetry::schema::enums::OutcomeValue::Failure
             },
-            render_result.as_ref().err().map(|_| "render_error"),
+            render_result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::LaunchFailed),
         );
     }
     render_result?;

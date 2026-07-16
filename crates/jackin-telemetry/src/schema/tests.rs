@@ -39,6 +39,18 @@ fn upstream_aliases_match_registry_wire_names() {
         opentelemetry_semantic_conventions::SCHEMA_URL,
         attrs::std_attrs::RUST_CRATE_SCHEMA_URL
     );
+    assert_eq!(
+        attrs::std_attrs::ERROR_TYPE,
+        opentelemetry_semantic_conventions::attribute::ERROR_TYPE
+    );
+    assert_eq!(
+        attrs::std_attrs::HTTP_REQUEST_METHOD,
+        opentelemetry_semantic_conventions::attribute::HTTP_REQUEST_METHOD
+    );
+    assert_eq!(
+        attrs::std_attrs::SERVICE_NAME,
+        opentelemetry_semantic_conventions::attribute::SERVICE_NAME
+    );
 }
 
 #[test]

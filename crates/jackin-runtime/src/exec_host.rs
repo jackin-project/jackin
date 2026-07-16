@@ -227,7 +227,7 @@ async fn handle_connection(
             if let Some(operation) = operation {
                 operation.complete(
                     jackin_telemetry::schema::enums::OutcomeValue::Failure,
-                    Some("rpc_error"),
+                    Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
                 );
             }
             write_result?;
@@ -258,7 +258,8 @@ async fn handle_connection(
             } else {
                 jackin_telemetry::schema::enums::OutcomeValue::Failure
             },
-            (!succeeded || write_result.is_err()).then_some("rpc_error"),
+            (!succeeded || write_result.is_err())
+                .then_some(jackin_telemetry::schema::enums::ErrorType::RpcError),
         );
     }
     write_result?;
