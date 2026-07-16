@@ -215,8 +215,8 @@ async fn await_operator_env(
     }
 }
 
-// Boxed future required: load_role calls itself recursively via
-// RestoreResolution::RebuildRelatedRole — async fn recursion is not allowed.
+// Public launch boundary: exactly one launch operation owns all restore and
+// rebuild recursion performed by `load_role_inner`.
 pub fn load_role<'a>(
     paths: &'a JackinPaths,
     config: &'a mut AppConfig,
@@ -241,18 +241,8 @@ pub fn load_role<'a>(
 
     Box::pin(
         async move {
-            let result = load_role_with(
-                paths,
-                config,
-                selector,
-                workspace,
-                docker,
-                runner,
-                opts,
-                |_, _| anyhow::bail!("role trust prompt requires the rich launch dialog"),
-                |_, _, _| anyhow::bail!("branch trust prompt requires the rich launch dialog"),
-            )
-            .await;
+            let result =
+                load_role_inner(paths, config, selector, workspace, docker, runner, opts).await;
             match &result {
                 Ok(()) => {
                     operation
@@ -271,6 +261,30 @@ pub fn load_role<'a>(
         }
         .instrument(span),
     )
+}
+
+// Boxed internal future permits related-role rebuild recursion without
+// reopening the public launch telemetry boundary.
+fn load_role_inner<'a>(
+    paths: &'a JackinPaths,
+    config: &'a mut AppConfig,
+    selector: &'a RoleSelector,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    docker: &'a impl DockerApi,
+    runner: &'a mut impl CommandRunner,
+    opts: &'a super::LoadOptions,
+) -> std::pin::Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>> {
+    Box::pin(load_role_with(
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        runner,
+        opts,
+        |_, _| anyhow::bail!("role trust prompt requires the rich launch dialog"),
+        |_, _, _| anyhow::bail!("branch trust prompt requires the rich launch dialog"),
+    ))
 }
 
 #[cfg(test)]
@@ -1018,7 +1032,7 @@ pub(crate) async fn load_role_with(
                 steps.finish_progress();
                 let selector = RoleSelector::parse(&manifest.role_key)?;
                 let related_opts = super::related_restore_load_options(opts, &manifest)?;
-                let load_result = load_role(
+                let load_result = load_role_inner(
                     paths,
                     config,
                     &selector,
