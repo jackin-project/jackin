@@ -63,9 +63,12 @@ pub(crate) fn run_ci_link_result() -> Result<()> {
     if artifact.is_none()
         && let Some(base) = usable_base_sha(env::var("BASE_SHA").ok())
     {
-        git_fetch(&base)?;
-        if surface_contract("HEAD")? == surface_contract(&base)? {
-            let legacy_name = format!("docs-links-v2-{runner_os}-{}", link_contract(&base, true)?);
+        let fetched_base = git_fetch(&base)?;
+        if surface_contract("HEAD")? == surface_contract(&fetched_base)? {
+            let legacy_name = format!(
+                "docs-links-v2-{runner_os}-{}",
+                link_contract(&fetched_base, true)?
+            );
             artifact = find_artifact(&repository, repository_id, &legacy_name)?;
             if artifact.is_some() {
                 migrated = true;
@@ -131,10 +134,16 @@ fn artifact_is_recent(artifact: &Artifact) -> Result<bool> {
     Ok(now.saturating_sub(created) < 259_200)
 }
 
-fn git_fetch(git_ref: &str) -> Result<()> {
+fn git_fetch(git_ref: &str) -> Result<String> {
     let mut command = cmd::command("git");
     command.args(["fetch", "--no-tags", "--depth=1", "origin", git_ref]);
-    cmd::run(&mut command)
+    cmd::run(&mut command)?;
+    let mut command = cmd::command("git");
+    command.args(["rev-parse", "FETCH_HEAD"]);
+    Ok(String::from_utf8(cmd::output(&mut command)?)
+        .context("FETCH_HEAD is not UTF-8")?
+        .trim()
+        .to_owned())
 }
 
 fn usable_base_sha(base: Option<String>) -> Option<String> {
