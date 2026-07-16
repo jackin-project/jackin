@@ -10,17 +10,7 @@ use serde::Deserialize;
 
 use crate::docs::repo_root;
 
-const LEGACY_NAMESPACE_ALLOWLIST: &[&str] = &[
-    "crates/jackin-diagnostics/src/metrics.rs",
-    "crates/jackin-diagnostics/src/observability.rs",
-    "crates/jackin-diagnostics/src/operation.rs",
-    "crates/jackin-diagnostics/src/registry.rs",
-    "crates/jackin-diagnostics/src/run.rs",
-    "crates/jackin-diagnostics/src/run/jsonl_adapter.rs",
-    "crates/jackin-diagnostics/src/screen.rs",
-    "crates/jackin-usage/src/telemetry.rs",
-    "crates/jackin/src/app.rs",
-];
+const LEGACY_NAMESPACE_ALLOWLIST: &[&str] = &[];
 
 const NON_TELEMETRY_DOTTED_NAME_FILES: &[&str] = &["crates/jackin-runtime/src/runtime/naming.rs"];
 
