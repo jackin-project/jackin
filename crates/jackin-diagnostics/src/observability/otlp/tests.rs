@@ -322,6 +322,66 @@ fn facade_event_exports_native_event_name_once() {
     assert_eq!(logs[0].record.event_name(), Some("session.start"));
 }
 
+#[test]
+fn isolation_events_export_exact_private_shape() {
+    use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
+
+    let (export, subscriber) = super::test_layers(false, "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        crate::operation::isolation_decision(
+            WorkspaceIsolationMode::Worktree,
+            NetworkMode::Allowlist,
+            DindMode::Rootless,
+        );
+        crate::operation::isolation_firewall_failed(NetworkMode::Allowlist);
+    });
+    export.logger_provider.force_flush().unwrap();
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 2);
+
+    let decision = logs
+        .iter()
+        .find(|log| log.record.event_name() == Some("isolation.decision"))
+        .expect("decision event");
+    let mut decision_keys = decision
+        .record
+        .attributes_iter()
+        .map(|(key, _)| key.as_str())
+        .collect::<Vec<_>>();
+    decision_keys.sort_unstable();
+    assert_eq!(
+        decision_keys,
+        [
+            "dind.mode",
+            "network.mode",
+            "outcome",
+            "workspace.isolation.mode"
+        ]
+    );
+
+    let firewall = logs
+        .iter()
+        .find(|log| log.record.event_name() == Some("isolation.firewall.failed"))
+        .expect("firewall event");
+    let mut firewall_keys = firewall
+        .record
+        .attributes_iter()
+        .map(|(key, _)| key.as_str())
+        .collect::<Vec<_>>();
+    firewall_keys.sort_unstable();
+    assert_eq!(firewall_keys, ["error.type", "network.mode", "outcome"]);
+
+    for log in &logs {
+        assert!(log.record.body().is_none());
+        assert!(!log.record.attributes_iter().any(|(key, _)| {
+            ["path", "workspace", "role", "container", "host"]
+                .iter()
+                .any(|forbidden| key.as_str().contains(forbidden))
+                && key.as_str() != "workspace.isolation.mode"
+        }));
+    }
+}
+
 fn log_attribute<'a>(
     record: &'a opentelemetry_sdk::logs::SdkLogRecord,
     name: &str,

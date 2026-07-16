@@ -158,9 +158,12 @@ pub async fn resolve_credentials(
     let operation =
         jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
     let result = async {
-        let mut stream = UnixStream::connect(host_sock_path).await.with_context(|| {
-            format!("connecting to host credential resolver at {host_sock_path}")
-        })?;
+        let mut stream = jackin_diagnostics::operation::connection_attempt(
+            jackin_telemetry::schema::enums::ConnectionPeerType::HostDaemon,
+            UnixStream::connect(host_sock_path),
+        )
+        .await
+        .with_context(|| format!("connecting to host credential resolver at {host_sock_path}"))?;
 
         let mut ctx = jackin_protocol::TelemetryContext::v1();
         if let Some(operation) = operation.as_ref() {
@@ -364,9 +367,12 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
         _ => unreachable!("constructed ExecCommand above"),
     };
     let result = async {
-        let mut stream = UnixStream::connect(SOCKET_PATH)
-            .await
-            .with_context(|| format!("connecting to capsule socket at {SOCKET_PATH}"))?;
+        let mut stream = jackin_diagnostics::operation::connection_attempt(
+            jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleControl,
+            UnixStream::connect(SOCKET_PATH),
+        )
+        .await
+        .with_context(|| format!("connecting to capsule socket at {SOCKET_PATH}"))?;
         stream
             .write_all(&frame(&request))
             .await

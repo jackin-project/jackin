@@ -143,8 +143,11 @@ pub fn fetch_usage_accounts(
 }
 
 fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<ServerMsg> {
-    let mut stream = UnixStream::connect(path)
-        .with_context(|| format!("connecting to daemon socket {}", path.display()))?;
+    let mut stream = jackin_diagnostics::operation::connection_attempt_sync(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleControl,
+        || UnixStream::connect(path),
+    )
+    .with_context(|| format!("connecting to daemon socket {}", path.display()))?;
     stream
         .set_read_timeout(Some(SOCKET_TIMEOUT))
         .context("setting read timeout")?;

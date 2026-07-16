@@ -100,7 +100,10 @@ pub fn select_host_attach_transport(
         };
     }
 
-    match std::os::unix::net::UnixStream::connect(&socket_path) {
+    match jackin_diagnostics::operation::connection_attempt_sync(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+        || std::os::unix::net::UnixStream::connect(&socket_path),
+    ) {
         Ok(_) => HostAttachTransportPlan::DirectSocket { socket_path },
         Err(err) => HostAttachTransportPlan::AttachProxy {
             socket_path,
@@ -187,7 +190,12 @@ async fn wait_for_capsule_daemon_ready(
 
 fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> bool {
     let socket_path = super::snapshot::socket_path(paths, container_name);
-    socket_path.exists() && std::os::unix::net::UnixStream::connect(socket_path).is_ok()
+    socket_path.exists()
+        && jackin_diagnostics::operation::connection_attempt_sync(
+            jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+            || std::os::unix::net::UnixStream::connect(socket_path),
+        )
+        .is_ok()
 }
 
 #[cfg(test)]

@@ -114,6 +114,61 @@ pub struct OperationGuard {
     attributes: AtomicUsize,
     attribute_keys: Mutex<Vec<&'static str>>,
     rpc: Option<RpcLifecycle>,
+    connection: Option<ConnectionLifecycle>,
+}
+
+#[derive(Debug)]
+struct ConnectionLifecycle {
+    peer: String,
+    started_at: Instant,
+}
+
+impl ConnectionLifecycle {
+    fn start(peer: &str) -> Self {
+        let attrs = [Attr {
+            key: schema::attrs::CONNECTION_PEER_TYPE,
+            value: Value::Str(peer),
+        }];
+        let _active_result =
+            crate::up_down_counter(&crate::metric::CONNECTION_ACTIVE).add(1, &attrs);
+        Self {
+            peer: peer.to_owned(),
+            started_at: Instant::now(),
+        }
+    }
+
+    fn finish(
+        &self,
+        outcome: schema::enums::OutcomeValue,
+        error_type: Option<schema::enums::ErrorType>,
+    ) {
+        let active_attrs = [Attr {
+            key: schema::attrs::CONNECTION_PEER_TYPE,
+            value: Value::Str(&self.peer),
+        }];
+        let _active_result =
+            crate::up_down_counter(&crate::metric::CONNECTION_ACTIVE).add(-1, &active_attrs);
+
+        let mut attrs = vec![
+            Attr {
+                key: schema::attrs::CONNECTION_PEER_TYPE,
+                value: Value::Str(&self.peer),
+            },
+            Attr {
+                key: schema::attrs::OUTCOME,
+                value: Value::Str(outcome.as_str()),
+            },
+        ];
+        if let Some(error_type) = error_type {
+            attrs.push(Attr {
+                key: schema::attrs::std_attrs::ERROR_TYPE,
+                value: Value::Str(error_type.as_str()),
+            });
+        }
+        let _attempt_result = crate::counter(&crate::metric::CONNECTION_ATTEMPTS).add(1, &attrs);
+        let _duration_result = crate::histogram(&crate::metric::CONNECTION_DURATION)
+            .record(self.started_at.elapsed().as_secs_f64(), &attrs);
+    }
 }
 
 #[derive(Debug)]
@@ -179,6 +234,7 @@ impl OperationGuard {
             attributes: AtomicUsize::new(0),
             attribute_keys: Mutex::new(Vec::new()),
             rpc: None,
+            connection: None,
         }
     }
 
@@ -276,6 +332,9 @@ impl OperationGuard {
         }
         if let Some(rpc) = &self.rpc {
             rpc.finish(outcome, error_type);
+        }
+        if let Some(connection) = &self.connection {
+            connection.finish(outcome, error_type);
         }
         if error_type == Some(schema::enums::ErrorType::RecoveredDegradation) {
             let attrs = [Attr {
@@ -562,6 +621,7 @@ fn operation_inner(
         attributes: AtomicUsize::new(0),
         attribute_keys: Mutex::new(Vec::with_capacity(attrs.len())),
         rpc: None,
+        connection: None,
     };
     for attr in attrs {
         guard.set_attr(*attr)?;
@@ -582,6 +642,18 @@ fn operation_inner(
     })
     .flatten();
     guard.rpc = rpc;
+    guard.connection = (def.name == schema::spans::CONNECTION_ATTEMPT)
+        .then(|| {
+            attrs.iter().find_map(|attr| {
+                (attr.key == schema::attrs::CONNECTION_PEER_TYPE)
+                    .then_some(attr.value)
+                    .and_then(|value| match value {
+                        Value::Str(peer) => Some(ConnectionLifecycle::start(peer)),
+                        _ => None,
+                    })
+            })
+        })
+        .flatten();
     Ok(guard)
 }
 

@@ -59,9 +59,7 @@ pub async fn run_client(
     terminal.default_fg = host_colors.fg;
     terminal.default_bg = host_colors.bg;
 
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon — is it running?")?;
+    let mut stream = connect_attach_socket().await?;
 
     let hello = encode_client(ClientFrame::Hello {
         rows,
@@ -200,4 +198,13 @@ pub async fn run_client(
             }
         }
     }
+}
+
+async fn connect_attach_socket() -> Result<UnixStream> {
+    jackin_diagnostics::operation::connection_attempt(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+        UnixStream::connect(SOCKET_PATH),
+    )
+    .await
+    .context("cannot connect to jackin-capsule daemon — is it running?")
 }

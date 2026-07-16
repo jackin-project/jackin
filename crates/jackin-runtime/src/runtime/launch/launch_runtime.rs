@@ -103,6 +103,42 @@ pub(crate) struct SiblingAuthPrewarm<'a> {
     pub(crate) role_key: &'a str,
 }
 
+fn emit_isolation_decision(
+    workspace: &crate::isolation::materialize::MaterializedWorkspace,
+    grants: &crate::runtime::docker_profile::EffectiveGrants,
+) {
+    use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
+
+    let workspace = match workspace
+        .mounts
+        .first()
+        .map_or(jackin_core::MountIsolation::Shared, |mount| mount.isolation)
+    {
+        jackin_core::MountIsolation::Shared => WorkspaceIsolationMode::Shared,
+        jackin_core::MountIsolation::Worktree => WorkspaceIsolationMode::Worktree,
+        jackin_core::MountIsolation::Clone => WorkspaceIsolationMode::Clone,
+    };
+    let network = match grants.network {
+        crate::runtime::docker_profile::NetworkGrant::None => NetworkMode::None,
+        crate::runtime::docker_profile::NetworkGrant::Allowlist => NetworkMode::Allowlist,
+        crate::runtime::docker_profile::NetworkGrant::Open => NetworkMode::Open,
+    };
+    let dind = match grants.dind {
+        crate::runtime::docker_profile::DindGrant::None => DindMode::None,
+        crate::runtime::docker_profile::DindGrant::Rootless => DindMode::Rootless,
+        crate::runtime::docker_profile::DindGrant::Privileged => DindMode::Privileged,
+    };
+    jackin_diagnostics::operation::isolation_decision(workspace, network, dind);
+}
+
+fn emit_post_run_failure(is_firewall: bool) {
+    if is_firewall {
+        jackin_diagnostics::operation::isolation_firewall_failed(
+            jackin_telemetry::schema::enums::NetworkMode::Allowlist,
+        );
+    }
+}
+
 pub(crate) fn spawn_sibling_auth_prewarm(
     paths: &JackinPaths,
     container_name: &str,
@@ -278,6 +314,8 @@ pub(crate) async fn launch_role_runtime(
     let certs_volume = dind_certs_volume(container_name);
     let dind_enabled = crate::runtime::docker_profile::dind_enabled(grants);
     let network_disabled = crate::runtime::docker_profile::network_disabled(grants);
+
+    emit_isolation_decision(workspace, grants);
 
     let cgroup_version = crate::runtime::docker_profile::probe_cgroup_version();
     if let Some(warning) =
@@ -997,7 +1035,7 @@ pub(crate) async fn launch_role_runtime(
     //   - WP-SUDO sudo-provision (sudo-granted profiles only — compat / explicit
     //     `sudo = true`): writes /etc/sudoers.d/agent. The base image bakes no
     //     sudoers, so non-sudo profiles have nothing to provision and skip it.
-    let mut post_run_steps: Vec<(String, [&str; 6], String)> = Vec::new();
+    let mut post_run_steps: Vec<(String, [&str; 6], String, bool)> = Vec::new();
     if let Some(argv) =
         crate::runtime::docker_profile::firewall_post_run_argv(grants, container_name)
     {
@@ -1005,6 +1043,7 @@ pub(crate) async fn launch_role_runtime(
             format!("firewall_apply profile={profile}"),
             argv,
             format!("egress allowlist install failed for `{profile}` profile; container torn down (fail-closed). The agent was not started without the firewall the profile promises."),
+            true,
         ));
     }
     if grants.sudo {
@@ -1012,9 +1051,10 @@ pub(crate) async fn launch_role_runtime(
             format!("sudo_provision profile={profile}"),
             crate::runtime::docker_profile::sudo_provision_post_run_argv(container_name),
             format!("sudo provisioning failed for `{profile}` profile; container torn down (fail-closed)."),
+            false,
         ));
     }
-    for (label, argv, failure_context) in post_run_steps {
+    for (label, argv, failure_context, is_firewall) in post_run_steps {
         let result = runner.run("docker", &argv, None, &docker_run_opts).await;
         jackin_diagnostics::telemetry_debug!(
             "launch",
@@ -1022,6 +1062,7 @@ pub(crate) async fn launch_role_runtime(
             if result.is_ok() { "0" } else { "nonzero" },
         );
         if let Err(err) = result {
+            emit_post_run_failure(is_firewall);
             if let Err(remove_err) = docker.remove_container(container_name).await {
                 jackin_diagnostics::emit_compact_line(
                     "warning",

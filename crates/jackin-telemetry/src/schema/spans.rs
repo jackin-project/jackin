@@ -423,7 +423,7 @@ pub const CLI_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=client; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
+// registry: kind=client; attributes=cli.invocation.id:recommended,connection.peer.type:required,error.type:recommended,outcome:recommended,session.id:recommended
 pub const CONNECTION_ATTEMPT: &str = "connection.attempt";
 pub const CONNECTION_ATTEMPT_DEF: super::SpanMetadata = super::SpanMetadata {
     name: CONNECTION_ATTEMPT,
@@ -432,6 +432,25 @@ pub const CONNECTION_ATTEMPT_DEF: super::SpanMetadata = super::SpanMetadata {
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "connection.peer.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "host_daemon",
+                "capsule_control",
+                "capsule_attach",
+                "docker",
+                "provider",
+                "parallax",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],

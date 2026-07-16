@@ -428,8 +428,11 @@ pub fn request(
     let operation =
         jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
     let perform_request = || {
-        let mut stream = UnixStream::connect(socket_path)
-            .with_context(|| format!("connecting to daemon socket {}", socket_path.display()))?;
+        let mut stream = jackin_diagnostics::operation::connection_attempt_sync(
+            jackin_telemetry::schema::enums::ConnectionPeerType::HostDaemon,
+            || UnixStream::connect(socket_path),
+        )
+        .with_context(|| format!("connecting to daemon socket {}", socket_path.display()))?;
         let mut ctx = TelemetryContext::v1();
         jackin_telemetry::propagation::inject(&mut ctx);
         let request = DaemonRequest {

@@ -114,9 +114,12 @@ pub(super) async fn run_host_attach_session(
                 "host attach using direct socket {}",
                 socket_path.display()
             );
-            let stream = UnixStream::connect(&socket_path)
-                .await
-                .with_context(|| format!("connecting to {}", socket_path.display()))?;
+            let stream = jackin_diagnostics::operation::connection_attempt(
+                jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+                UnixStream::connect(&socket_path),
+            )
+            .await
+            .with_context(|| format!("connecting to {}", socket_path.display()))?;
             let (reader, writer) = stream.into_split();
             run_terminal_attach(reader, writer, request).await
         }

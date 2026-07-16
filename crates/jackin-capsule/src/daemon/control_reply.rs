@@ -37,8 +37,13 @@ impl PendingExecReply {
             .as_ref()
             .map(|operation| operation.span().clone());
         let spawn = move || {
-            jackin_telemetry::spawn::spawn_detached_with_completion(
+            let attrs = [jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+                value: jackin_telemetry::Value::Str("configured_command"),
+            }];
+            jackin_telemetry::spawn::spawn_detached_with_attrs(
                 &jackin_telemetry::operation::PROCESS_COMMAND,
+                &attrs,
                 async move {
                     let reply = future.await;
                     let (outcome, error_type) = process_exec_reply_outcome(&reply);
@@ -48,6 +53,7 @@ impl PendingExecReply {
                         error_type,
                     }
                 },
+                |completion| *completion,
             )
         };
         if let Some(server_span) = server_span {

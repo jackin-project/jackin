@@ -395,17 +395,29 @@ pub const CLI_INVOCATIONS_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=updowncounter; unit={connection}; attributes=
+// registry: instrument=updowncounter; unit={connection}; attributes=connection.peer.type:required
 pub const CONNECTION_ACTIVE: &str = "connection.active";
 pub const CONNECTION_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CONNECTION_ACTIVE,
-    description: "Active connections.",
+    description: "Active connection attempts.",
     instrument: super::MetricInstrument::UpDownCounter,
     unit: "{connection}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "connection.peer.type",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "host_daemon",
+            "capsule_control",
+            "capsule_attach",
+            "docker",
+            "provider",
+            "parallax",
+        ],
+    }],
 };
-// registry: instrument=counter; unit={attempt}; attributes=
+// registry: instrument=counter; unit={attempt}; attributes=connection.peer.type:required,error.type:recommended,outcome:required
 pub const CONNECTION_ATTEMPTS: &str = "connection.attempts";
 pub const CONNECTION_ATTEMPTS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CONNECTION_ATTEMPTS,
@@ -413,19 +425,85 @@ pub const CONNECTION_ATTEMPTS_DEF: super::MetricMetadata = super::MetricMetadata
     instrument: super::MetricInstrument::Counter,
     unit: "{attempt}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "connection.peer.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "host_daemon",
+                "capsule_control",
+                "capsule_attach",
+                "docker",
+                "provider",
+                "parallax",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+    ],
 };
-// registry: instrument=histogram; unit=s; attributes=
+// registry: instrument=histogram; unit=s; attributes=connection.peer.type:required,error.type:recommended,outcome:required
 pub const CONNECTION_DURATION: &str = "connection.duration";
 pub const CONNECTION_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CONNECTION_DURATION,
-    description: "Connection duration.",
+    description: "Connection attempt duration.",
     instrument: super::MetricInstrument::Histogram,
     unit: "s",
     boundaries: &[
         0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
     ],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "connection.peer.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "host_daemon",
+                "capsule_control",
+                "capsule_attach",
+                "docker",
+                "provider",
+                "parallax",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+    ],
 };
 // registry: instrument=histogram; unit=s; attributes=db.operation.name:required
 pub const DB_CLIENT_OPERATION_DURATION: &str = "db.client.operation.duration";

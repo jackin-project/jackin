@@ -56,8 +56,12 @@ impl DetachedCompletion {
 struct DetachedGuard(Option<crate::operation::OperationGuard>);
 
 impl DetachedGuard {
-    fn new(def: &'static SpanDef, parent: &opentelemetry::trace::SpanContext) -> Self {
-        let operation = root_operation(def, &[]).ok();
+    fn new(
+        def: &'static SpanDef,
+        attrs: &[crate::Attr<'_>],
+        parent: &opentelemetry::trace::SpanContext,
+    ) -> Self {
+        let operation = root_operation(def, attrs).ok();
         if parent.is_valid()
             && let Some(operation) = &operation
         {
@@ -150,7 +154,7 @@ where
     C: FnOnce(&F::Output) -> DetachedCompletion + Send + 'static,
 {
     let parent = Span::current().context().span().span_context().clone();
-    let guard = DetachedGuard::new(def, &parent);
+    let guard = DetachedGuard::new(def, &[], &parent);
     tokio::spawn(run_detached(guard, fut, classify).with_current_subscriber())
 }
 
@@ -166,8 +170,25 @@ where
     C: FnOnce(&F::Output) -> DetachedCompletion + Send + 'static,
 {
     let parent = Span::current().context().span().span_context().clone();
-    let guard = DetachedGuard::new(def, &parent);
+    let guard = DetachedGuard::new(def, &[], &parent);
     handle.spawn(run_detached(guard, fut, classify).with_current_subscriber())
+}
+
+/// Spawn detached work with a bounded, registry-validated operation shape.
+pub fn spawn_detached_with_attrs<F, C>(
+    def: &'static SpanDef,
+    attrs: &[crate::Attr<'_>],
+    fut: F,
+    classify: C,
+) -> JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+    C: FnOnce(&F::Output) -> DetachedCompletion + Send + 'static,
+{
+    let parent = Span::current().context().span().span_context().clone();
+    let guard = DetachedGuard::new(def, attrs, &parent);
+    tokio::spawn(run_detached(guard, fut, classify).with_current_subscriber())
 }
 
 async fn run_detached<F, C>(guard: DetachedGuard, fut: F, classify: C) -> F::Output
@@ -185,7 +206,7 @@ where
     F: Future<Output = DetachedCompletion> + Send + 'static,
 {
     let parent = Span::current().context().span().span_context().clone();
-    let guard = DetachedGuard::new(def, &parent);
+    let guard = DetachedGuard::new(def, &[], &parent);
     tokio::spawn(
         async move {
             let completion = fut.instrument(guard.span()).await;
@@ -281,7 +302,7 @@ where
     R: Send + 'static,
 {
     let parent = Span::current().context().span().span_context().clone();
-    let guard = DetachedGuard::new(def, &parent);
+    let guard = DetachedGuard::new(def, &[], &parent);
     tokio::task::spawn_blocking(move || {
         let result = in_span_scope(guard.span(), work);
         guard.complete(classify(&result));
@@ -383,7 +404,7 @@ where
     R: Send + 'static,
 {
     let parent = Span::current().context().span().span_context().clone();
-    let guard = DetachedGuard::new(def, &parent);
+    let guard = DetachedGuard::new(def, &[], &parent);
     thread::spawn(move || {
         let result = in_span_scope(guard.span(), work);
         guard.complete(classify(&result));
@@ -403,7 +424,7 @@ where
     R: Send + 'static,
 {
     let parent = Span::current().context().span().span_context().clone();
-    let guard = DetachedGuard::new(def, &parent);
+    let guard = DetachedGuard::new(def, &[], &parent);
     thread::Builder::new().name(name).spawn(move || {
         let result = in_span_scope(guard.span(), work);
         guard.complete(classify(&result));
@@ -505,7 +526,7 @@ impl<T: Send + 'static> JoinSetExt<T> for JoinSet<T> {
         C: FnOnce(&T) -> DetachedCompletion + Send + 'static,
     {
         let parent = Span::current().context().span().span_context().clone();
-        let guard = DetachedGuard::new(def, &parent);
+        let guard = DetachedGuard::new(def, &[], &parent);
         self.spawn(run_detached(guard, fut, classify).with_current_subscriber())
     }
 }

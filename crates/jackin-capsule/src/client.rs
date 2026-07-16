@@ -59,9 +59,12 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let stream = UnixStream::connect(socket_path)
-        .await
-        .with_context(|| format!("cannot connect to jackin-capsule daemon at {socket_path}"))?;
+    let stream = jackin_diagnostics::operation::connection_attempt(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+        UnixStream::connect(socket_path),
+    )
+    .await
+    .with_context(|| format!("cannot connect to jackin-capsule daemon at {socket_path}"))?;
     let (mut socket_read, mut socket_write) = stream.into_split();
     let mut input = input;
     let mut output = output;
@@ -579,7 +582,12 @@ async fn connect_and_send(
     ];
     let operation =
         jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
-    let mut stream = match UnixStream::connect(SOCKET_PATH).await {
+    let mut stream = match jackin_diagnostics::operation::connection_attempt(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleControl,
+        UnixStream::connect(SOCKET_PATH),
+    )
+    .await
+    {
         Ok(stream) => stream,
         Err(error) => {
             if let Some(operation) = operation {

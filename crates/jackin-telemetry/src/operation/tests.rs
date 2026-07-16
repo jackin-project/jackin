@@ -180,3 +180,74 @@ fn rpc_server_honors_remote_parent_and_kind() {
     assert_eq!(span.parent_span_id, span_id);
     assert_eq!(span.span_kind, SpanKind::Server);
 }
+
+#[test]
+fn connection_attempt_exports_bounded_peer_shape() {
+    use schema::enums::{ConnectionPeerType, ErrorType, OutcomeValue};
+
+    let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+    tracing::subscriber::with_default(subscriber, || {
+        let attrs = [Attr {
+            key: schema::attrs::CONNECTION_PEER_TYPE,
+            value: Value::Str(ConnectionPeerType::CapsuleControl.as_str()),
+        }];
+        operation(&CONNECTION_ATTEMPT, &attrs)
+            .unwrap()
+            .complete(OutcomeValue::Failure, Some(ErrorType::ConnectionRefused));
+    });
+    provider.force_flush().unwrap();
+    let span = exporter.get_finished_spans().unwrap().pop().unwrap();
+    assert_eq!(span.name, schema::spans::CONNECTION_ATTEMPT);
+    assert_eq!(span.span_kind, SpanKind::Client);
+    let keys = span
+        .attributes
+        .iter()
+        .map(|attribute| attribute.key.as_str())
+        .collect::<Vec<_>>();
+    assert!(keys.contains(&schema::attrs::CONNECTION_PEER_TYPE));
+    assert!(keys.contains(&schema::attrs::OUTCOME));
+    assert!(keys.contains(&schema::attrs::std_attrs::ERROR_TYPE));
+    for forbidden in [
+        "file.path",
+        "process.command_args",
+        "process.command_line",
+        "process.output",
+        "server.address",
+    ] {
+        assert!(!keys.contains(&forbidden));
+    }
+}
+
+#[test]
+fn connection_metric_dimensions_are_bounded() {
+    let attempts = crate::metric::CONNECTION_ATTEMPTS
+        .dimensions()
+        .iter()
+        .map(|attribute| attribute.name)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        attempts,
+        [
+            schema::attrs::CONNECTION_PEER_TYPE,
+            schema::attrs::std_attrs::ERROR_TYPE,
+            schema::attrs::OUTCOME,
+        ]
+    );
+    assert_eq!(
+        crate::metric::CONNECTION_ACTIVE.dimensions()[0].name,
+        schema::attrs::CONNECTION_PEER_TYPE
+    );
+    assert_eq!(
+        crate::metric::CONNECTION_DURATION
+            .dimensions()
+            .iter()
+            .map(|attribute| attribute.name)
+            .collect::<Vec<_>>(),
+        attempts
+    );
+}
