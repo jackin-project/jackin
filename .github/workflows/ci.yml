@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-# NOTE: `preview.yml` gates its publish step on the latest successful
-# push run for this workflow name and source SHA. Renaming this file's
-# `name:` field silently breaks the Homebrew preview publish chain.
+# NOTE: `preview.yml` is triggered by a successful run of this workflow name
+# on main and verifies the triggering source SHA before publishing. Renaming
+# the `name:` field silently breaks the Homebrew preview chain.
 name: CI
 
 on:
