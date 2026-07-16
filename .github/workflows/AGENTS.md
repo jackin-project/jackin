@@ -6,7 +6,7 @@ Apply these rules to every workflow under this directory. They define the reposi
 
 - Install every CI tool with `jdx/mise-action`; `mise.toml`, `mise.lock`, and `rust-toolchain.toml` are the version sources. Do not add language-specific setup actions.
 - Add Rust components and cross-compilation targets after mise. Use `cargo:<crate>` keys directly in `mise.toml` and `install_args` for Cargo tools.
-- The MSRV job reads `Cargo.toml`'s `rust-version` at runtime; it never hardcodes a version.
+- CI uses only the newest pinned stable Rust toolchain. Keep `Cargo.toml`'s `rust-version` aligned with `rust-toolchain.toml`; do not add older-compiler lanes or compatibility caches.
 
 ## Caches
 
@@ -27,6 +27,12 @@ Apply these rules to every workflow under this directory. They define the reposi
 ## Runner Capacity
 
 - GitHub-hosted runners are the default and required PR path. Every runner-selectable pipeline exposes a `workflow_dispatch` `lanes` choice with `github`, `velnor`, and `both`; omitted input resolves to `github`. `velnor` runs only when explicitly selected, never from automatic PR or push triggers.
+
+## Semantic Boundaries
+
+- Never split one crate's tests, one artifact's bytes, or one conceptual command into numbered shards, batches, jobs, steps, or parts. One affected crate owns one complete test job; one cache artifact is one archive with one publish and one restore operation.
+- Split jobs and steps only when they have distinct meaning, ownership, or failure diagnosis. Transport mechanics are not semantic boundaries.
+- Improve runtime through result reuse, local or remote caches, prebuilt artifacts, and faster transport. Do not trade readability or independently attributable results for parallel fragments of the same work.
 
 ## Publishing and Parity
 

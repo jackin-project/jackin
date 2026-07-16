@@ -338,7 +338,7 @@ jackin❯ is built in Rust. The runtime dependencies, grouped by what they own, 
 | Open external URLs | `open` |
 | Test helpers (dev) | `assert_cmd`, `predicates` |
 
-The project targets **Rust edition 2024** with a current MSRV of **1.94** (see `rust-version` in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>) and `unsafe_code = "forbid"` at the crate root. Clippy lints are configured with `correctness` and `suspicious` set to `deny` and `complexity`/`style`/`perf`/`pedantic`/`nursery` set to `warn` — see <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> for the full lint table.
+The project targets **Rust edition 2024** with the newest pinned stable Rust, currently **1.97** (see `rust-version` in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> and the exact channel in <RepoFile path="rust-toolchain.toml">rust-toolchain.toml</RepoFile>), and `unsafe_code = "forbid"` at the crate root. Older compilers are unsupported. Clippy lints are configured with `correctness` and `suspicious` set to `deny` and `complexity`/`style`/`perf`/`pedantic`/`nursery` set to `warn` — see <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> for the full lint table.
 
 When this list drifts from <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>, <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> wins. Update both in the same PR.
 
