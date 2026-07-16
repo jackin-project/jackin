@@ -496,10 +496,20 @@ pub fn install_host_panic_hook() {
 /// hooks. Panic payloads are untrusted free text, so redaction precedes the
 /// four-KiB export cap.
 pub fn emit_panic_crash(info: &std::panic::PanicHookInfo<'_>, context: &str) {
+    let payload = info
+        .payload()
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload");
+    emit_crash_message(context, payload);
+}
+
+pub(crate) fn emit_crash_message(context: &str, payload: &str) {
     const EXCEPTION_MESSAGE_CAP: usize = 4 * 1024;
 
     let message =
-        crate::redact::redact_and_cap(&format!("{context}: {info}"), EXCEPTION_MESSAGE_CAP);
+        crate::redact::redact_and_cap(&format!("{context}: {payload}"), EXCEPTION_MESSAGE_CAP);
     let crash_id = uuid::Uuid::new_v4().to_string();
     let mut attrs = vec![
         jackin_telemetry::Attr {
@@ -513,14 +523,6 @@ pub fn emit_panic_crash(info: &std::panic::PanicHookInfo<'_>, context: &str) {
         jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::EXCEPTION_MESSAGE,
             value: jackin_telemetry::Value::Str(&message),
-        },
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::OUTCOME,
-            value: jackin_telemetry::Value::Str("failure"),
-        },
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
-            value: jackin_telemetry::Value::Str("panic"),
         },
     ];
     let session_id =

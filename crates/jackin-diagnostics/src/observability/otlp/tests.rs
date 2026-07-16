@@ -323,6 +323,57 @@ fn facade_event_exports_native_event_name_once() {
 }
 
 #[test]
+fn crash_event_exports_complete_bounded_private_shape() {
+    use opentelemetry::logs::AnyValue;
+
+    let (export, subscriber) = super::test_layers(false, "unused");
+    let session = jackin_telemetry::identity::SessionGuard::claim(
+        jackin_telemetry::identity::SessionKind::Console,
+    )
+    .expect("crash test session");
+    let expected_session = session.context().current.to_string();
+    tracing::subscriber::with_default(subscriber, || {
+        let payload = format!("{} token=supersecret", "x".repeat(5_000));
+        crate::run::emit_crash_message("host panic", &payload);
+    });
+    export.logger_provider.force_flush().unwrap();
+    drop(session);
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 1);
+    let record = &logs[0].record;
+    assert_eq!(record.event_name(), Some("app.crash"));
+    let crash_id = log_attribute(record, "app.crash.id")
+        .and_then(|value| match value {
+            AnyValue::String(value) => Some(value.as_str()),
+            _ => None,
+        })
+        .expect("crash UUID");
+    assert!(uuid::Uuid::parse_str(crash_id).is_ok());
+    assert_eq!(
+        log_attribute(record, "session.id"),
+        Some(&AnyValue::String(expected_session.into()))
+    );
+    assert_eq!(
+        log_attribute(record, "exception.type"),
+        Some(&AnyValue::String("panic".into()))
+    );
+    let message = log_attribute(record, "exception.message")
+        .and_then(|value| match value {
+            AnyValue::String(value) => Some(value.as_str()),
+            _ => None,
+        })
+        .expect("exception message");
+    assert!(message.len() <= 4 * 1024);
+    assert!(!message.contains("supersecret"));
+    assert!(
+        !record
+            .attributes_iter()
+            .any(|(key, _)| matches!(key.as_str(), "outcome" | "error.type"))
+    );
+}
+
+#[test]
 fn isolation_events_export_exact_private_shape() {
     use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
 
