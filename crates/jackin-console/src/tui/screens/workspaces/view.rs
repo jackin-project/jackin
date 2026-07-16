@@ -1325,9 +1325,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
 
     lines.push(Line::from(Span::styled(
         "  Live tab/pane tree (from container daemon)",
-        Style::default()
-            .fg(jackin_core::tui_theme::text_fg())
-            .add_modifier(Modifier::BOLD),
+        jackin_core::tui_theme::text_strong(),
     )));
     for tab in tabs {
         let prefix = if tab.active { "▸" } else { " " };
@@ -1342,13 +1340,11 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
             ),
             Span::styled(
                 tab.label.clone(),
-                Style::default()
-                    .fg(jackin_core::tui_theme::text_fg())
-                    .add_modifier(if tab.active {
-                        Modifier::BOLD
-                    } else {
-                        Modifier::empty()
-                    }),
+                if tab.active {
+                    jackin_core::tui_theme::text_strong()
+                } else {
+                    jackin_core::tui_theme::text()
+                },
             ),
         ]));
         for pane in &tab.panes {
@@ -1389,9 +1385,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
 fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
         format!("  {:<24}  Agent", "Session"),
-        Style::default()
-            .fg(jackin_core::tui_theme::text_fg())
-            .add_modifier(Modifier::BOLD),
+        jackin_core::tui_theme::text_strong(),
     ))];
     for row in rows {
         let name = if row.name.chars().count() > 24 {

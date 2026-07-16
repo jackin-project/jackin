@@ -290,12 +290,12 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
         })
         .collect();
 
-    let chunks = crate::tui::dialog_layout::dialog_inner_chunks(inner, None);
+    let (content, action_row) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
     let theme = termrock::Theme::default();
 
     render_lines_with_offset_in_area(
         frame,
-        chunks[1],
+        content,
         &indented,
         state.scroll_offset,
         &theme,
@@ -315,10 +315,9 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
             style: None,
         },
     ];
-    let theme = termrock::Theme::default();
     frame.render_stateful_widget(
         &ActionBar::new(&actions, &theme).gap(" "),
-        chunks[3],
+        action_row,
         &mut ActionBarState {
             focused: Some(state.focus),
             regions: Vec::new(),

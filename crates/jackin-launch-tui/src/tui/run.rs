@@ -12,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::backend::Backend as _;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use termrock::interaction::Outcome;
 use termrock::widgets::TextInputOutcome;
@@ -1124,9 +1124,7 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
         .map(|line| match line {
             PromptContextLine::Emphasis(text) => Line::from(Span::styled(
                 text.clone(),
-                Style::default()
-                    .fg(jackin_core::tui_theme::text_fg())
-                    .add_modifier(Modifier::BOLD),
+                jackin_core::tui_theme::text_strong(),
             )),
             PromptContextLine::Muted(text) => Line::from(Span::styled(
                 text.clone(),

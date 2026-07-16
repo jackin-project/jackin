@@ -47,7 +47,7 @@ pub fn labeled_field_line(
     emphasis: FieldEmphasis,
 ) -> Line<'static> {
     let label_style = if selected {
-        Style::default().fg(text_fg()).add_modifier(Modifier::BOLD)
+        jackin_core::tui_theme::text_strong()
     } else {
         Style::default().fg(text_fg())
     };
@@ -255,7 +255,7 @@ pub fn auth_line_width(row: &AuthLineRow) -> usize {
 }
 
 fn render_auth_line(selected: bool, row: &AuthLineRow) -> Line<'static> {
-    let bold_white = Style::default().fg(text_fg()).add_modifier(Modifier::BOLD);
+    let bold_white = jackin_core::tui_theme::text_strong();
     let dim_green = Style::default().fg(jackin_core::tui_theme::muted_fg());
     let phosphor = Style::default().fg(accent_fg());
 
@@ -338,7 +338,7 @@ fn render_source_folder_line(
         Span::raw(prefix),
         Span::styled(
             format!("{label:<label_width$}"),
-            Style::default().fg(text_fg()).add_modifier(Modifier::BOLD),
+            jackin_core::tui_theme::text_strong(),
         ),
         Span::styled(
             value,
@@ -395,7 +395,7 @@ fn render_auth_source_line(
         Span::raw(prefix),
         Span::styled(
             format!("{label:<label_width$}"),
-            Style::default().fg(text_fg()).add_modifier(Modifier::BOLD),
+            jackin_core::tui_theme::text_strong(),
         ),
     ];
 

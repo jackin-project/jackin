@@ -11,7 +11,7 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
 };
 
@@ -298,7 +298,7 @@ pub(crate) fn usage_lines_for_row(
                 usage_content_indent(),
                 Span::styled(
                     value.to_owned(),
-                    Style::default().fg(text_fg()).add_modifier(Modifier::BOLD),
+                    jackin_core::tui_theme::text_strong(),
                 ),
             ]));
         }
@@ -352,7 +352,7 @@ pub(crate) fn usage_legacy_overview_provider_lines(
         usage_content_indent(),
         Span::styled(
             label.to_owned(),
-            Style::default().fg(text_fg()).add_modifier(Modifier::BOLD),
+            jackin_core::tui_theme::text_strong(),
         ),
         Span::raw("  "),
         Span::styled(account.to_owned(), Style::default().fg(text_fg())),
@@ -438,9 +438,9 @@ pub(crate) fn usage_header_lines(
     let account = account.map(str::trim).filter(|value| !value.is_empty());
     lines.push(usage_header_two_column(
         value,
-        Style::default().fg(text_fg()).add_modifier(Modifier::BOLD),
+        jackin_core::tui_theme::text_strong(),
         account.unwrap_or(""),
-        Style::default().fg(text_fg()).add_modifier(Modifier::BOLD),
+        jackin_core::tui_theme::text_strong(),
         width,
     ));
 
@@ -520,7 +520,7 @@ pub(crate) fn usage_quota_bucket_lines(
         usage_content_indent(),
         Span::styled(
             display_label,
-            Style::default().fg(text_fg()).add_modifier(Modifier::BOLD),
+            jackin_core::tui_theme::text_strong(),
         ),
     ]));
 
@@ -592,7 +592,7 @@ pub(crate) fn usage_limit_reset_credit_lines(
     let right = parts.first().copied().unwrap_or_default();
     lines.push(usage_header_two_column(
         "Limit Reset Credits",
-        Style::default().fg(text_fg()).add_modifier(Modifier::BOLD),
+        jackin_core::tui_theme::text_strong(),
         right,
         text_muted(),
         width,
@@ -748,7 +748,7 @@ pub(crate) fn usage_quota_bucket_compact_lines(
         usage_content_indent(),
         Span::styled(
             label.to_owned(),
-            Style::default().fg(text_fg()).add_modifier(Modifier::BOLD),
+            jackin_core::tui_theme::text_strong(),
         ),
         Span::styled("  ", text_muted()),
         Span::styled(detail, Style::default().fg(text_fg())),

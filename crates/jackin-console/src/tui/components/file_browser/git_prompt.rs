@@ -166,8 +166,8 @@ pub fn git_prompt_rect(listing: Rect, has_url: bool) -> Option<Rect> {
 /// screen coordinates. Returns `None` when `has_url` is false — the
 /// URL row isn't rendered then and a click there shouldn't open anything.
 ///
-/// Row order inside the overlay follows the canonical five-slot dialog layout:
-/// `[leading spacer][prompt + url][spacer][buttons][trailing spacer]`.
+/// Row order inside the overlay follows TermRock `bottom_rows` composition:
+/// leading spacer, content (prompt + url), mid spacer, buttons, trailing spacer.
 /// The URL row sits at content row index 1 when the URL is present.
 pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<Rect> {
     // Structural exception: URL hit-testing is derived from the child overlay rect used by the File Browser git prompt.
@@ -179,14 +179,14 @@ pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<
         width: overlay.width.saturating_sub(2),
         height: overlay.height.saturating_sub(2),
     };
-    let chunks = crate::tui::dialog_layout::dialog_inner_chunks(inner, Some(2));
-    if chunks[1].height < 2 {
+    let (content, _) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
+    if content.height < 2 {
         return None;
     }
     Some(Rect {
-        x: chunks[1].x,
-        y: chunks[1].y.saturating_add(1),
-        width: chunks[1].width,
+        x: content.x,
+        y: content.y.saturating_add(1),
+        width: content.width,
         height: 1,
     })
 }
@@ -276,11 +276,10 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
         &termrock::Theme::default(),
     );
 
-    let content_rows = if has_url { 2 } else { 1 };
-    let chunks = crate::tui::dialog_layout::dialog_inner_chunks(inner, Some(content_rows));
+    let (content, action_row) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
     let prompt_row = Rect {
         height: 1,
-        ..chunks[1]
+        ..content
     };
 
     frame.render_widget(
@@ -295,9 +294,9 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
     if has_url {
         let url = state.pending_git_url.as_deref().unwrap_or_default();
         let url_row = Rect {
-            y: chunks[1].y.saturating_add(1),
+            y: content.y.saturating_add(1),
             height: 1,
-            ..chunks[1]
+            ..content
         };
         frame.render_widget(
             Paragraph::new(Span::styled(
@@ -313,7 +312,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
 
     frame.render_widget(
         Paragraph::new(git_prompt_buttons(state.pending_git_focus)).alignment(Alignment::Center),
-        chunks[3],
+        action_row,
     );
 }
 

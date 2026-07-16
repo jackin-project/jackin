@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
@@ -735,9 +735,7 @@ pub struct TrustPreviewRow {
               per-section readability."
 )]
 pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>> {
-    let heading = Style::default()
-        .fg(jackin_core::tui_theme::text_fg())
-        .add_modifier(Modifier::BOLD);
+    let heading = jackin_core::tui_theme::text_strong();
     let value = Style::default().fg(jackin_core::tui_theme::accent_fg());
     let dim = Style::default().fg(jackin_core::tui_theme::muted_fg());
 
@@ -1006,9 +1004,7 @@ fn allowed_roles_summary(preview: &WorkspaceSavePreview) -> String {
 
 #[must_use]
 pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> {
-    let heading = Style::default()
-        .fg(jackin_core::tui_theme::text_fg())
-        .add_modifier(Modifier::BOLD);
+    let heading = jackin_core::tui_theme::text_strong();
     let add_style = Style::default().fg(jackin_core::tui_theme::accent_fg());
     let remove_style = Style::default().fg(jackin_core::tui_theme::muted_fg());
     let sep_style = Style::default().fg(jackin_core::tui_theme::scroll_track_fg());

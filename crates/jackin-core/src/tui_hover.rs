@@ -3,10 +3,11 @@
 
 //! Incremental hover registration on TermRock [`HitRegion`] geometry.
 //!
-//! Surfaces that assemble hit geometry over the course of a frame register
-//! regions here, then query pointer identity. Geometry uses TermRock's
-//! canonical [`HitRegion`] type; when a full painted region slice is already
-//! available prefer [`termrock::interaction::HoverState`] directly.
+//! Migration 0014 removed TermRock's free-standing hover registry in favor of
+//! [`HitRegion`] + [`termrock::interaction::HoverState`]. Surfaces that assemble
+//! hit geometry over a frame still need a product-side builder; this type only
+//! accumulates TermRock regions. When a full painted region slice is already
+//! available, call [`termrock::interaction::HoverState::update`] directly.
 
 use ratatui::layout::{Position, Rect};
 use termrock::interaction::HitRegion;
