@@ -257,7 +257,7 @@ jobs:
         if: matrix.config.lane != 'GitHub' || needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         env:
           # Both runner lanes restore the same durable cache written by main.
-          # Velnor's persistent BuildKit state remains a transparent local
+          # Persistent BuildKit state on Velnor remains a transparent local
           # accelerator; it does not change this workflow configuration.
           CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
         run: mise run construct-build-platform ${{ matrix.config.platform }}

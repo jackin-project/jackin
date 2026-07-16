@@ -29,7 +29,7 @@ workspace paths, and branch cache scope. They are useful as a compatibility
 fallback, but restoring many multi-gigabyte archives consumes the repository's
 cache quota and causes eviction churn. A content-addressed compiler cache stores
 the output of an individual compiler invocation. That lets `check`, `clippy`,
-nextest, doctest, benchmark-build, MSRV, preview, and release jobs reuse matching
+nextest, documentation tests, benchmark-build, MSRV, preview, and release jobs reuse matching
 work without transferring an entire `target/` tree.
 
 The service must preserve one pipeline definition for both runner lanes.
@@ -42,7 +42,7 @@ workflow or a privileged skip.
 
 | Criterion | `sccache` | `kache` | Consequence for jackin❯ |
 | --- | --- | --- | --- |
-| Rust model | Compiler wrapper with stable Rust support and local/remote cache backends | Content-addressed Rust/C/C++ build wrapper using reflinks, hard links, or copies for local materialization | Both can eliminate repeated Rust compilation; `sccache` has the longer production history |
+| Rust model | Compiler wrapper with stable Rust support and local/remote cache backends | Content-addressed Rust/C/C++ build wrapper using copy-on-write links, hard links, or copies for local materialization | Both can eliminate repeated Rust compilation; `sccache` has the longer production history |
 | Remote sharing | S3, Redis, GCS, Azure, HTTP/WebDAV and other documented backends; multi-level cache chains | GitHub Actions cache or S3 synchronization, with daemon-driven prefetch/upload | S3-compatible storage is the common bake-off backend and avoids GitHub's repository cache quota |
 | Local hot path | Local disk cache with an explicit size cap | Zero-copy local cache plus SQLite index and LRU size limit | Benchmark Velnor warm hits separately, but keep configuration identical across lanes |
 | CI observability | Hit/miss and error statistics are mature and already collected by jackin❯ jobs | Reports and miss explanations are first-class features | `kache` may provide better miss diagnosis; acceptance still depends on measured hit rate and wall time |
@@ -112,4 +112,3 @@ Sources: [`sccache` repository and backend documentation](https://github.com/moz
   budgets, visibility, and pruning; this item owns cross-run CI compiler reuse.
 - [CI/CD speed roadmap](/reference/research/ci/performance/ci-speed-roadmap/)
   contains the measured history behind the current cache and runner choices.
-

@@ -84,8 +84,13 @@ pub(crate) fn run(args: AffectedCratesArgs) -> Result<()> {
 }
 
 fn cargo_metadata() -> Result<Metadata> {
-    let output =
-        cmd::output(cmd::command("cargo").args(["metadata", "--format-version", "1", "--locked"]))?;
+    let output = cmd::output(cmd::command("cargo").args([
+        "metadata",
+        "--format-version",
+        "1",
+        "--locked",
+        "--offline",
+    ]))?;
     serde_json::from_slice(&output).context("parsing cargo metadata")
 }
 
