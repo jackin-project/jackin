@@ -567,6 +567,19 @@ fn log_attribute<'a>(
         .find_map(|(key, value)| (key.as_str() == name).then_some(value))
 }
 
+fn cli_command_test_attrs() -> [jackin_telemetry::Attr<'static>; 2] {
+    [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::CLI_COMMAND_NAME,
+            value: jackin_telemetry::Value::Str("diagnostics"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::CLI_INVOCATION_ID,
+            value: jackin_telemetry::Value::Str("invocation-test"),
+        },
+    ]
+}
+
 #[test]
 fn conformance_single_delivery_preserves_native_shape() {
     use opentelemetry::logs::{AnyValue, Severity};
@@ -574,8 +587,11 @@ fn conformance_single_delivery_preserves_native_shape() {
 
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
-        let operation =
-            jackin_telemetry::operation(&jackin_telemetry::operation::CLI_COMMAND, &[]).unwrap();
+        let operation = jackin_telemetry::operation(
+            &jackin_telemetry::operation::CLI_COMMAND,
+            &cli_command_test_attrs(),
+        )
+        .unwrap();
         let entered = operation.span().enter();
         let attrs = [
             jackin_telemetry::Attr {
@@ -862,9 +878,11 @@ fn governed_event_level_gates_are_exact_and_do_not_infer_span_state() {
     for (level, expected) in [("info", 3usize), ("debug", 4usize), ("trace", 5usize)] {
         let (export, subscriber) = super::test_layers_at(level, "unused");
         tracing::subscriber::with_default(subscriber, || {
-            let operation =
-                jackin_telemetry::operation(&jackin_telemetry::operation::CLI_COMMAND, &[])
-                    .unwrap();
+            let operation = jackin_telemetry::operation(
+                &jackin_telemetry::operation::CLI_COMMAND,
+                &cli_command_test_attrs(),
+            )
+            .unwrap();
             let entered = operation.span().enter();
             emit_severity_matrix();
             drop(entered);
