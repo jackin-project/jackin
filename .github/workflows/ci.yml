@@ -65,6 +65,7 @@ jobs:
       workflows: ${{ steps.route.outputs.workflows }}
       audit-contract: ${{ steps.contracts.outputs.audit }}
       ci-xtask-contract: ${{ steps.contracts.outputs.ci-xtask }}
+      docs-xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
       ci-tools-contract: ${{ steps.contracts.outputs.ci-tools }}
       docker-contract: ${{ steps.contracts.outputs.docker }}
       nextest-contract: ${{ steps.contracts.outputs.nextest }}
@@ -95,6 +96,7 @@ jobs:
             echo "audit=$AUDIT"
             echo "ci-tools=$CI_TOOLS"
             echo "ci-xtask=$CI_XTASK"
+            echo "docs-xtask=$(scripts/ci/docs-xtask-contract.sh)"
             echo "docker=$DOCKER"
             echo "nextest=$(scripts/ci/crate-test-contract.sh)"
             echo "registry=$REGISTRY"
@@ -703,6 +705,15 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-xtask-contract }}
+          path: .ci-prebuilt-xtask/*
+          compression-level: 0
+          retention-days: 7
+          include-hidden-files: true
+      - name: Publish Docs-compatible CI xtask
+        if: matrix.config.cache_writer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.docs-xtask-contract }}
           path: .ci-prebuilt-xtask/*
           compression-level: 0
           retention-days: 7
