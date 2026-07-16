@@ -113,6 +113,14 @@ Status flip, page condensation, overview move, cross-reference sweep. While cond
 
 **Verify**: `bun run check:links:fresh` → exit 0; `cargo xtask ci --only docs` → exit 0; `bun test` (docs) → pass.
 
+## Reopened audit additions (2026-07-16)
+
+- Keep the roadmap Open until Plans 012–016 have direct passing evidence; do not describe the telemetry-store rename, delivery proof, or full closure before they land.
+- Remove all JSONL/run-ID/reveal/open/sidecar/local-path guidance from codebase map, TUI chrome, host affordances and related roadmap pages; describe `cli.invocation.id`, bounded in-memory current-run state, and backend-owned history.
+- Align validate and health prose with implemented evidence only: per-signal delivery proof, actual wire fields, concurrent force-flush followed by ordered provider shutdown, and no invented drop/last-state counters.
+- Document every supported/validated standard OTLP endpoint, protocol, disabled, service/resource, compression, timeout, header, CA/client TLS and fixed-sampler variable, including sanitization and Capsule-safe auth restrictions.
+- Sweep stale source comments, fixture instructions, usage README terminology and prewarm operator prose after the owning code plans land. Update every contradictory roadmap cross-reference and run docs build/link/RepoFile gates.
+
 ## Test plan
 
 The docs gates ARE the tests (build, lychee, repo-links, roadmap audit, research check, codebook). Additionally: a manual read-through of `/guides/run-telemetry/` and `/reference/runtime/diagnostics/` against the roadmap acceptance criterion sentence — the four claims (direct OTLP, backend-owned history, in-memory current-run UI state, no local telemetry files) must each appear explicitly.

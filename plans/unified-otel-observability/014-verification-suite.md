@@ -99,6 +99,12 @@ Against a live testbed instance (host-process side runs real providers pointed a
 - Add named matrices for outcome/error ownership, all required metric families, second-line metric rejection, and bounded stream/watcher close operations.
 - Make privacy coverage case-row-complete, including arbitrary model names, agent codenames, config keys/values, role source URL/id, cache keys, allowlisted hosts, image references/labels, and credential/client-key paths.
 - Add an authenticated Capsule-safe three-signal receiver case; endpoint-only classification is insufficient when Parallax authentication is required.
+- Replace identity-only marker helpers with representative host CLI, daemon RPC, Capsule launch/control, subprocess, provider, config, PTY and `jackin-exec` flows over the real receiver. Add live serialized propagation, disabled-child fallback, malformed context, and genuinely concurrent/interleaved session cases.
+- Extend receiver privacy/namespace scanning to metric names/datapoints/exemplars, span-link attributes, and instrumentation-scope metadata, with injected canaries and detector self-tests rather than absence-only fixtures.
+- Build a non-vacuous accelerated soak covering bounded span duration/open-span count, connection/cycle/job work, queue/memory caps, invocation stability and reattach linkage. Every failure-mode case records health deltas, product latency, bounds and all three signals.
+- Prove cross-provider Resource equality and correlation-ID exclusion, registry-wide exactly-once event shape, default DEBUG/TRACE absence, ordered/bounded shutdown, all-stream cardinality, and representative wire volume.
+- Make the 5% performance gate a controlled/calibrated comparison and prove disabled paths perform no formatting as well as no allocation. Run testbed detector/self-tests explicitly in CI.
+- Replace every generic/nonexistent acceptance-map claim with exact executable test names/commands and durable evidence; specifically remove `container_info_state_has_no_local_telemetry_affordance` unless that test exists.
 
 ## Test plan
 
