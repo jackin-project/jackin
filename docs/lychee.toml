@@ -54,6 +54,9 @@ exclude = [
   # code.claude.com is browser-visible, but redirects automated clients to
   # dns.google where the documentation path returns 404.
   "https://code\\.claude\\.com/",
+  # Qdrant's public benchmark is browser-visible but repeatedly times out from
+  # GitHub Actions and can consume the full link-check retry budget by itself.
+  "https://qdrant\\.tech/benchmarks/",
   # wezterm.org is browser-visible but CI lychee intermittently fails to connect
   # to it. Cited from reference/tui and capsule terminal-model docs.
   "https://wezterm\\.org/",
