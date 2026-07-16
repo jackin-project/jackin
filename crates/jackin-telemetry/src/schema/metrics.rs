@@ -970,7 +970,14 @@ pub const UI_JANK_DEF: super::MetricMetadata = super::MetricMetadata {
         name: "app.screen.id",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
-        allowed_values: &[],
+        allowed_values: &[
+            "workspace.list",
+            "workspace.editor",
+            "settings",
+            "workspace.create",
+            "launch.progress",
+            "capsule",
+        ],
     }],
 };
 // registry: instrument=histogram; unit=s; attributes=app.screen.id:required
@@ -987,7 +994,14 @@ pub const UI_RENDER_DURATION_DEF: super::MetricMetadata = super::MetricMetadata 
         name: "app.screen.id",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
-        allowed_values: &[],
+        allowed_values: &[
+            "workspace.list",
+            "workspace.editor",
+            "settings",
+            "workspace.create",
+            "launch.progress",
+            "capsule",
+        ],
     }],
 };
 // registry: instrument=histogram; unit=s; attributes=app.screen.id:required,ui.transition.reason:required
@@ -1005,7 +1019,14 @@ pub const UI_SCREEN_DWELL_DEF: super::MetricMetadata = super::MetricMetadata {
             name: "app.screen.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
-            allowed_values: &[],
+            allowed_values: &[
+                "workspace.list",
+                "workspace.editor",
+                "settings",
+                "workspace.create",
+                "launch.progress",
+                "capsule",
+            ],
         },
         super::AttributeRequirement {
             name: "ui.transition.reason",
@@ -1038,7 +1059,14 @@ pub const UI_TRANSITIONS_DEF: super::MetricMetadata = super::MetricMetadata {
             name: "app.screen.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
-            allowed_values: &[],
+            allowed_values: &[
+                "workspace.list",
+                "workspace.editor",
+                "settings",
+                "workspace.create",
+                "launch.progress",
+                "capsule",
+            ],
         },
         super::AttributeRequirement {
             name: "ui.transition.reason",

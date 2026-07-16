@@ -80,6 +80,11 @@ attribute = "gen_ai.provider.name"
 values = ["anthropic", "openai", "amp", "xai", "zai", "minimax", "kimi"]
 
 [[standard_enum]]
+rust_type = "DbOperationName"
+attribute = "db.operation.name"
+values = ["begin", "select", "insert", "upsert", "update", "delete"]
+
+[[standard_enum]]
 rust_type = "ScreenId"
 attribute = "app.screen.id"
 values = ["workspace.list", "workspace.editor", "settings", "workspace.create", "launch.progress", "capsule"]

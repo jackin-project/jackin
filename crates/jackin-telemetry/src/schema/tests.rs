@@ -29,6 +29,31 @@ fn contract_closed_set_sizes_are_stable() {
 }
 
 #[test]
+fn bounded_standard_values_drive_runtime_validation() {
+    assert_eq!(
+        attrs::APP_SCREEN_ID_DEF.allowed_values,
+        enums::ScreenId::ALL
+            .iter()
+            .map(|value| value.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        attrs::GEN_AI_PROVIDER_NAME_DEF.allowed_values,
+        enums::ProviderName::ALL
+            .iter()
+            .map(|value| value.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        attrs::DB_OPERATION_NAME_DEF.allowed_values,
+        enums::DbOperationName::ALL
+            .iter()
+            .map(|value| value.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn upstream_aliases_match_registry_wire_names() {
     assert!(
         attrs::std_attrs::UPSTREAM_ALIASES

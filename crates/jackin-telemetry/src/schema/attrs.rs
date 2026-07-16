@@ -48,13 +48,20 @@ pub const APP_MODE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     value_type: super::ValueType::String,
     allowed_values: &["one_shot", "interactive", "daemon", "capsule"],
 };
-// registry-type: string
+// registry-type: enum
 pub const APP_SCREEN_ID: &str = "app.screen.id";
 pub const APP_SCREEN_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: APP_SCREEN_ID,
     description: "Stable application screen identifier.",
     value_type: super::ValueType::String,
-    allowed_values: &[],
+    allowed_values: &[
+        "workspace.list",
+        "workspace.editor",
+        "settings",
+        "workspace.create",
+        "launch.progress",
+        "capsule",
+    ],
 };
 // registry-type: string
 pub const APP_SCREEN_NAME: &str = "app.screen.name";
@@ -289,6 +296,14 @@ pub const CREDENTIAL_SOURCE_TYPE_DEF: super::AttributeMetadata = super::Attribut
     ],
 };
 // registry-type: enum
+pub const DB_OPERATION_NAME: &str = "db.operation.name";
+pub const DB_OPERATION_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: DB_OPERATION_NAME,
+    description: "Database operation name.",
+    value_type: super::ValueType::String,
+    allowed_values: &["begin", "select", "insert", "upsert", "update", "delete"],
+};
+// registry-type: enum
 pub const DIND_MODE: &str = "dind.mode";
 pub const DIND_MODE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: DIND_MODE,
@@ -311,6 +326,22 @@ pub const GEN_AI_CONVERSATION_ID_DEF: super::AttributeMetadata = super::Attribut
     description: "Generative AI conversation identifier.",
     value_type: super::ValueType::String,
     allowed_values: &[],
+};
+// registry-type: enum
+pub const GEN_AI_PROVIDER_NAME: &str = "gen_ai.provider.name";
+pub const GEN_AI_PROVIDER_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: GEN_AI_PROVIDER_NAME,
+    description: "Generative AI provider name.",
+    value_type: super::ValueType::String,
+    allowed_values: &[
+        "anthropic",
+        "openai",
+        "amp",
+        "xai",
+        "zai",
+        "minimax",
+        "kimi",
+    ],
 };
 // registry-type: string
 pub const JOB_ID: &str = "job.id";
@@ -583,9 +614,11 @@ pub const ALL_KEYS: &[&str] = &[
     CONFIG_SCOPE,
     CONNECTION_PEER_TYPE,
     CREDENTIAL_SOURCE_TYPE,
+    DB_OPERATION_NAME,
     DIND_MODE,
     GEN_AI_AGENT_NAME,
     GEN_AI_CONVERSATION_ID,
+    GEN_AI_PROVIDER_NAME,
     JOB_ID,
     JOB_TYPE,
     LAUNCH_STAGE_NAME,
@@ -633,9 +666,11 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     CONFIG_SCOPE_DEF,
     CONNECTION_PEER_TYPE_DEF,
     CREDENTIAL_SOURCE_TYPE_DEF,
+    DB_OPERATION_NAME_DEF,
     DIND_MODE_DEF,
     GEN_AI_AGENT_NAME_DEF,
     GEN_AI_CONVERSATION_ID_DEF,
+    GEN_AI_PROVIDER_NAME_DEF,
     JOB_ID_DEF,
     JOB_TYPE_DEF,
     LAUNCH_STAGE_NAME_DEF,

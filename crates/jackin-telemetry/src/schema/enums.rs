@@ -20,6 +20,7 @@ bounded_values!(AgentState { Working => "working", Blocked => "blocked", Done =>
 bounded_values!(AgentStatusConfidence { Unknown => "unknown", Weak => "weak", Strong => "strong", Authoritative => "authoritative" });
 bounded_values!(AgentStatusSource { None => "none", VisibleScreen => "visible_screen", ShellIntegration => "shell_integration", ForegroundProcess => "foreground_process", Reported => "reported" });
 bounded_values!(AppMode { OneShot => "one_shot", Interactive => "interactive", Daemon => "daemon", Capsule => "capsule" });
+bounded_values!(AppScreenId { WorkspaceList => "workspace.list", WorkspaceEditor => "workspace.editor", Settings => "settings", WorkspaceCreate => "workspace.create", LaunchProgress => "launch.progress", Capsule => "capsule" });
 bounded_values!(AuthMode { Sync => "sync", ApiKey => "api_key", OauthToken => "oauth_token", Ignore => "ignore" });
 bounded_values!(BackgroundCycleName { BranchContext => "branch_context", PrContext => "pr_context", UsageAccount => "usage_account", ProviderProbe => "provider_probe", InstanceRefresh => "instance_refresh", AgentStatus => "agent_status" });
 bounded_values!(CacheName { RoleRepository => "role_repository", AgentBinary => "agent_binary", CapsuleBinary => "capsule_binary", DerivedImage => "derived_image", UsageSnapshot => "usage_snapshot" });
@@ -29,8 +30,10 @@ bounded_values!(ConfigOperation { Load => "load", Validate => "validate", Migrat
 bounded_values!(ConfigScope { Global => "global", Workspace => "workspace" });
 bounded_values!(ConnectionPeerType { HostDaemon => "host_daemon", CapsuleControl => "capsule_control", CapsuleAttach => "capsule_attach", Docker => "docker", Provider => "provider", Parallax => "parallax" });
 bounded_values!(CredentialSourceType { Environment => "environment", AgentHome => "agent_home", Onepassword => "onepassword", GithubCli => "github_cli", OauthStore => "oauth_store", None => "none" });
+bounded_values!(DbOperationName { Begin => "begin", Select => "select", Insert => "insert", Upsert => "upsert", Update => "update", Delete => "delete" });
 bounded_values!(DindMode { None => "none", Rootless => "rootless", Privileged => "privileged" });
 bounded_values!(GenAiAgentName { Claude => "claude", Codex => "codex", Amp => "amp", Kimi => "kimi", Opencode => "opencode", Grok => "grok" });
+bounded_values!(GenAiProviderName { Anthropic => "anthropic", Openai => "openai", Amp => "amp", Xai => "xai", Zai => "zai", Minimax => "minimax", Kimi => "kimi" });
 bounded_values!(JobType { ImagePrewarm => "image_prewarm", SidecarPrewarm => "sidecar_prewarm" });
 bounded_values!(LaunchStageName { Identity => "identity", Role => "role", Credentials => "credentials", Construct => "construct", AgentBinaries => "agent_binaries", DerivedImage => "derived_image", Workspace => "workspace", Network => "network", Sidecar => "sidecar", Capsule => "capsule", Hardline => "hardline" });
 bounded_values!(LaunchTargetKind { Workspace => "workspace", Directory => "directory" });

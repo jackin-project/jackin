@@ -953,7 +953,14 @@ pub const UI_ACTION_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "app.screen.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
-            allowed_values: &[],
+            allowed_values: &[
+                "workspace.list",
+                "workspace.editor",
+                "settings",
+                "workspace.create",
+                "launch.progress",
+                "capsule",
+            ],
         },
         super::AttributeRequirement {
             name: "app.screen.name",
@@ -1046,7 +1053,14 @@ pub const UI_RENDER_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "app.screen.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
-            allowed_values: &[],
+            allowed_values: &[
+                "workspace.list",
+                "workspace.editor",
+                "settings",
+                "workspace.create",
+                "launch.progress",
+                "capsule",
+            ],
         },
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1086,7 +1100,14 @@ pub const UI_SCREEN_TRANSITION_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "app.screen.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
-            allowed_values: &[],
+            allowed_values: &[
+                "workspace.list",
+                "workspace.editor",
+                "settings",
+                "workspace.create",
+                "launch.progress",
+                "capsule",
+            ],
         },
         super::AttributeRequirement {
             name: "cli.invocation.id",

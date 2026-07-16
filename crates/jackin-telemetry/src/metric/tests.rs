@@ -12,36 +12,75 @@ fn cardinality_rejects_the_257th_set_without_eviction() {
         .build();
     install(&provider.meter("cardinality-test")).expect("test meter installation");
     let before = crate::facade_health().cardinality;
-    for index in 0..limits::MAX_CARDINALITY {
-        let value = index.to_string();
-        histogram(&DB_CLIENT_OPERATION_DURATION)
-            .record(
-                1.0,
-                &[Attr {
-                    key: attrs::std_attrs::DB_OPERATION_NAME,
-                    value: Value::Str(&value),
-                }],
-            )
-            .unwrap();
+    let mut series = Vec::new();
+    for command in schema::enums::CliCommandName::ALL {
+        for outcome in schema::enums::OutcomeValue::ALL {
+            for error in schema::enums::ErrorType::ALL {
+                series.push((command.as_str(), outcome.as_str(), error.as_str()));
+                if series.len() > limits::MAX_CARDINALITY {
+                    break;
+                }
+            }
+            if series.len() > limits::MAX_CARDINALITY {
+                break;
+            }
+        }
+        if series.len() > limits::MAX_CARDINALITY {
+            break;
+        }
     }
-    histogram(&DB_CLIENT_OPERATION_DURATION)
-        .record(
-            2.0,
-            &[Attr {
-                key: attrs::std_attrs::DB_OPERATION_NAME,
-                value: Value::Str("0"),
-            }],
-        )
+    for (command, outcome, error) in &series[..limits::MAX_CARDINALITY] {
+        let attrs = [
+            Attr {
+                key: attrs::CLI_COMMAND_NAME,
+                value: Value::Str(command),
+            },
+            Attr {
+                key: attrs::OUTCOME,
+                value: Value::Str(outcome),
+            },
+            Attr {
+                key: attrs::std_attrs::ERROR_TYPE,
+                value: Value::Str(error),
+            },
+        ];
+        histogram(&CLI_DURATION).record(1.0, &attrs).unwrap();
+    }
+    let existing = series[0];
+    let existing_attrs = [
+        Attr {
+            key: attrs::CLI_COMMAND_NAME,
+            value: Value::Str(existing.0),
+        },
+        Attr {
+            key: attrs::OUTCOME,
+            value: Value::Str(existing.1),
+        },
+        Attr {
+            key: attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(existing.2),
+        },
+    ];
+    histogram(&CLI_DURATION)
+        .record(2.0, &existing_attrs)
         .expect("an existing exact series remains accepted at the cap");
-    let overflow = "overflow";
+    let overflow = series[limits::MAX_CARDINALITY];
+    let overflow_attrs = [
+        Attr {
+            key: attrs::CLI_COMMAND_NAME,
+            value: Value::Str(overflow.0),
+        },
+        Attr {
+            key: attrs::OUTCOME,
+            value: Value::Str(overflow.1),
+        },
+        Attr {
+            key: attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(overflow.2),
+        },
+    ];
     assert_eq!(
-        histogram(&DB_CLIENT_OPERATION_DURATION).record(
-            1.0,
-            &[Attr {
-                key: attrs::std_attrs::DB_OPERATION_NAME,
-                value: Value::Str(overflow)
-            }]
-        ),
+        histogram(&CLI_DURATION).record(1.0, &overflow_attrs),
         Err(Rejection::Cardinality)
     );
     assert_eq!(crate::facade_health().cardinality, before + 1);
@@ -52,7 +91,7 @@ fn cardinality_rejects_the_257th_set_without_eviction() {
         .iter()
         .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
         .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
-        .find(|metric| metric.name() == DB_CLIENT_OPERATION_DURATION.name())
+        .find(|metric| metric.name() == CLI_DURATION.name())
         .and_then(|metric| match metric.data() {
             opentelemetry_sdk::metrics::data::AggregatedMetrics::F64(
                 opentelemetry_sdk::metrics::data::MetricData::Histogram(histogram),

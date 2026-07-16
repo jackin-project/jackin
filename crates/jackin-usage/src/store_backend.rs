@@ -9,28 +9,7 @@ use std::time::Instant;
 
 pub use turso::{Connection, Row, params};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DbOperation {
-    Begin,
-    Select,
-    Insert,
-    Upsert,
-    Update,
-    Delete,
-}
-
-impl DbOperation {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Begin => "begin",
-            Self::Select => "select",
-            Self::Insert => "insert",
-            Self::Upsert => "upsert",
-            Self::Update => "update",
-            Self::Delete => "delete",
-        }
-    }
-}
+pub use jackin_telemetry::schema::enums::DbOperationName as DbOperation;
 
 pub async fn operation<T, E>(
     kind: DbOperation,

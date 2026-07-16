@@ -1095,7 +1095,14 @@ pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
             name: "app.screen.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
-            allowed_values: &[],
+            allowed_values: &[
+                "workspace.list",
+                "workspace.editor",
+                "settings",
+                "workspace.create",
+                "launch.progress",
+                "capsule",
+            ],
         },
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1133,7 +1140,14 @@ pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
             name: "app.screen.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
-            allowed_values: &[],
+            allowed_values: &[
+                "workspace.list",
+                "workspace.editor",
+                "settings",
+                "workspace.create",
+                "launch.progress",
+                "capsule",
+            ],
         },
         super::AttributeRequirement {
             name: "cli.invocation.id",
