@@ -202,6 +202,10 @@ ratchet, dependency-policy, README-freshness, and audit jobs while actionlint,
 formatting, tool warmup, affected-crate selection, and the required-status gate
 still execute. This is not a whole-pipeline result: crate/tool producers remain
 able to repopulate their artifacts on every normal run.
+Producer run `29506850819` published the first marker after executing the full
+policy set. A later normal PR run with unchanged semantic inputs is the required
+warm proof; rerunning the producer attempt is not valid because GitHub may
+replace artifacts attached to that run ID.
 
 Docs prepares the pinned `codebook-lsp` binary once and publishes a seven-day
 platform/tool-contract artifact. The docs and source spell jobs download that
