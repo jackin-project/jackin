@@ -123,6 +123,7 @@ Add `conformance_no_lifetime_spans`: simulate (test-level) a console session wit
 - Begin console/attach sessions only after ownership succeeds. Reattach mints a new ID with the last-ended ID as `session.previous_id`; concurrent ownership cannot overwrite one global ambient session.
 - Governed events and operations merge ambient invocation/session IDs with deterministic duplicate rules, while metrics explicitly reject invocation/session/job/visit/conversation identities.
 - Capsule identity exists before fallible startup, a bounded startup root covers listener readiness and links the launch context, and inactive/failed shutdown always clears paired ambient session state.
+- Capsule daemon configuration and startup failures pass through one top-level `ResultTelemetryExt` boundary while the provider/session guard is alive; handled daemon failures use the typed recovered-degradation warning so raw error values and duplicate terminal ERROR events are never exported.
 
 ## Test plan
 

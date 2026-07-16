@@ -7,8 +7,7 @@
 
 use super::{
     ClientFrame, ClientMsg, ClipboardImageInsertMode, Instant, Multiplexer, PathBuf, Result,
-    ServerMsg, Session, TokenTotals, explicit_redraw_reason, log_clipboard_image_rejection,
-    prefix_mode_for_mux_mode,
+    ServerMsg, Session, TokenTotals, explicit_redraw_reason, prefix_mode_for_mux_mode,
 };
 use jackin_core::container_paths;
 use jackin_protocol::attach::{
@@ -355,7 +354,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::ClipboardImageStart(start) => {
             let size = start.size;
             if let Err(err) = mux.clipboard.clipboard_image_transfers.start(start) {
-                log_clipboard_image_rejection("transfer-start", &err);
+                let _error = jackin_telemetry::record_error(RPC_ERROR);
                 mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             } else if mux.clipboard.clipboard_image_insert_mode
@@ -368,7 +367,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::ClipboardImageChunk(chunk) => {
             if let Err(err) = mux.clipboard.clipboard_image_transfers.chunk(chunk) {
-                log_clipboard_image_rejection("transfer-chunk", &err);
+                let _error = jackin_telemetry::record_error(RPC_ERROR);
                 mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
@@ -379,7 +378,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                     mux.stage_clipboard_image_response(image);
                 }
                 Err(err) => {
-                    log_clipboard_image_rejection("transfer-end", &err);
+                    let _error = jackin_telemetry::record_error(RPC_ERROR);
                     mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                     mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
                 }

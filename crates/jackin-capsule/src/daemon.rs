@@ -37,6 +37,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
+use jackin_telemetry::ResultTelemetryExt as _;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
@@ -533,14 +534,6 @@ impl Multiplexer {
         let input_parser = InputParser::new(input_bindings.prefix, input_bindings.palette_key);
         let workdir = PathBuf::from(&launch_config.workdir);
         let workdir_context = WorkdirContext::resolve(&workdir);
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "workdir-context: git_available={} gh_available={} is_git_repo={} default_branch={:?}",
-            workdir_context.git_available,
-            workdir_context.gh_available,
-            workdir_context.is_git_repo,
-            workdir_context.default_branch
-        );
         let status_identity = crate::container_context::resolve_status_identity();
         let mut status_bar = StatusBar::new_with_role_labels(
             launch_config.role.clone(),
@@ -701,21 +694,11 @@ impl Multiplexer {
             Ok(path) => {
                 let path = path.to_string_lossy();
                 let bytes = image.bytes.len();
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "clipboard-image: staged extension={} bytes={} path={path}",
-                    image.format.extension(),
-                    bytes
-                );
                 if insert_mode == ClipboardImageInsertMode::StageOnly {
                     self.set_clipboard_image_notice(format!(
                         "Image staged: {path} ({bytes} bytes)"
                     ));
                 } else if self.dialog_captures_input() {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "clipboard-image: ignored staged path because a dialog owns input"
-                    );
                     self.set_clipboard_image_notice(format!(
                         "Image staged: {path} ({bytes} bytes; dialog focused; not pasted)"
                     ));
@@ -724,10 +707,6 @@ impl Multiplexer {
                         "Image staged: {path} ({bytes} bytes)"
                     ));
                 } else {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "clipboard-image: staged path not pasted because no writable focused pane was available"
-                    );
                     self.set_clipboard_image_notice(format!(
                         "Image staged: {path} ({bytes} bytes; no writable focused pane; not pasted)"
                     ));
@@ -735,7 +714,7 @@ impl Multiplexer {
                 true
             }
             Err(err) => {
-                log_clipboard_image_rejection("payload", &err);
+                let _error = jackin_telemetry::record_error(RPC_ERROR);
                 self.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
                 false
             }
@@ -748,71 +727,6 @@ pub(crate) enum ClipboardImageInsertMode {
     #[default]
     PastePath,
     StageOnly,
-}
-
-fn log_clipboard_image_rejection(stage: &str, err: &anyhow::Error) {
-    let reason = clipboard_image_error_reason(err);
-    jackin_diagnostics::telemetry_info!(
-        "capsule",
-        "clipboard-image: rejected reason={reason} stage={stage}"
-    );
-    jackin_diagnostics::telemetry_debug!(
-        "capsule",
-        "clipboard-image: rejected stage={stage} detail={err:#}"
-    );
-}
-
-fn clipboard_image_error_reason(err: &anyhow::Error) -> &'static str {
-    classify_clipboard_image_error(&format!("{err:#}"))
-}
-
-fn classify_clipboard_image_error(message: &str) -> &'static str {
-    let lower = message.to_ascii_lowercase();
-    if lower.contains("empty") {
-        "empty"
-    } else if lower.contains("exceeds cap")
-        || lower.contains("too large")
-        || lower.contains("over cap")
-    {
-        "oversize"
-    } else if lower.contains("magic")
-        || lower.contains("signature")
-        || lower.contains("not an image")
-        || lower.contains("unsupported image")
-    {
-        "signature-mismatch"
-    } else if lower.contains("sha-256") || lower.contains("digest") {
-        "digest-mismatch"
-    } else if lower.contains("offset") || lower.contains("did not match expected") {
-        "offset-mismatch"
-    } else if lower.contains("no active start") {
-        "missing-transfer"
-    } else if lower.contains("already active") {
-        "duplicate-transfer"
-    } else if lower.contains("display")
-        || lower.contains("wayland")
-        || lower.contains("xclip")
-        || lower.contains("wl-paste")
-        || lower.contains("wl-copy")
-    {
-        "backend-unavailable"
-    } else if lower.contains("create")
-        || lower.contains("creating")
-        || lower.contains("open")
-        || lower.contains("opening")
-        || lower.contains("write")
-        || lower.contains("writing")
-        || lower.contains("flush")
-        || lower.contains("flushing")
-        || lower.contains("permission")
-        || lower.contains("metadata")
-        || lower.contains("read")
-        || lower.contains("reading")
-    {
-        "staging-io"
-    } else {
-        "invalid-payload"
-    }
 }
 
 #[cfg(test)]
@@ -852,12 +766,6 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     }
     match crate::exit_assess::decide_exit(mux.launch_env.config()).await {
         crate::exit_assess::ExitDecision::Drain => {
-            if let Some(ref r) = reason {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "session: final session exited: {r}"
-                );
-            }
             drain_and_exit_with_reason(mux, reason).await;
             true
         }
@@ -866,6 +774,7 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
             // Write failure is logged but does not block exit — a configured
             // policy path cannot stall indefinitely waiting for a broken fs.
             if let Err(error) = crate::exit_assess::write_exit_action(action) {
+                let _warning = jackin_telemetry::record_recovered_degradation();
                 crate::output::stderr_line(format_args!(
                     "[daemon] exit: failed to write exit-action file, policy will not be applied: {error}"
                 ));
@@ -874,11 +783,6 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
             true
         }
         crate::exit_assess::ExitDecision::ShowModal(repos) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "exit: {} dirty repo(s) with policy ask — showing in-capsule dirty-exit modal",
-                repos.len()
-            );
             let summary = repos
                 .iter()
                 .map(crate::exit_assess::DirtyRepo::summary_line)
@@ -981,11 +885,6 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
         }
     }
     if stale_image_transfers > 0 {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "clipboard-image: cleaned up {stale_image_transfers} idle transfer{}",
-            if stale_image_transfers == 1 { "" } else { "s" }
-        );
         mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
         mux.set_clipboard_image_notice(format!(
             "Image paste interrupted: cleaned up {stale_image_transfers} idle transfer{}",
@@ -1025,29 +924,12 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
         .iter()
         .map(|(id, s)| (id, s.state))
         .collect();
-    for (session_id, session) in mux.session_supervisor.sessions.iter_mut() {
+    for (_, session) in mux.session_supervisor.sessions.iter_mut() {
         // Session::advance_status is the sole state-authoring path; the daemon
         // only reacts to the resulting transition.
         let tick = session.advance_status(rule_registry, now);
         if let Some(transition) = tick.transition {
             emit_agent_state_change(session, &transition, tick.stuck);
-            // Flap-rate telemetry: every public transition is logged with the
-            // deciding evidence so a regression (an agent update breaking a
-            // pack) shows up as a burst.
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "agent-status: session {session_id} {} -> {} (winner={:?})",
-                transition.previous.label(),
-                transition.effective.label(),
-                transition.winner
-            );
-        }
-        if tick.stuck {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "status.stuck: session {session_id} demoted to unknown — \
-                 working claimed with no output/CPU/children past the watchdog window"
-            );
         }
     }
     // Seen/ack: the focused pane is being reviewed, so it must never linger on
@@ -1103,11 +985,7 @@ fn configured_escape_time() -> Duration {
         return DEFAULT_ESCAPE_TIME;
     };
     let Ok(ms) = raw.parse::<u64>() else {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "{ENV_ESCAPE_TIME}={raw:?} ignored (not a positive integer); using default {} ms",
-            DEFAULT_ESCAPE_TIME.as_millis()
-        );
+        let _warning = jackin_telemetry::record_recovered_degradation();
         return DEFAULT_ESCAPE_TIME;
     };
     Duration::from_millis(ms)
@@ -1144,11 +1022,6 @@ pub async fn run_daemon(
     crate::logging::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
-    jackin_diagnostics::telemetry_info!(
-        "capsule",
-        "daemon start: rows={rows} cols={cols} initial_agent={initial_agent:?} workdir={}",
-        launch_config.workdir.as_str()
-    );
 
     let initial_spawn =
         initial_spawn_request(&initial_agent, launch_config.initial_provider.as_ref());
@@ -1168,10 +1041,7 @@ pub async fn run_daemon(
     let rule_registry = match RulePackRegistry::bundled() {
         Ok(registry) => Some(registry),
         Err(e) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "agent-status: rule packs failed to load, screen detection off: {e:#}"
-            );
+            let _warning = jackin_telemetry::record_recovered_degradation();
             mux.open_spawn_failure_dialog(screen_detection_disabled_message(&e));
             None
         }
@@ -1221,6 +1091,7 @@ pub async fn run_daemon(
         // the operator's choice for the host, then drain and exit.
         if let Some(action) = mux.control.exit_request.take() {
             if let Err(error) = crate::exit_assess::write_exit_action(action) {
+                let _warning = jackin_telemetry::record_recovered_degradation();
                 // The operator explicitly chose keep/discard. Draining without
                 // writing the file would lose their choice and silently apply
                 // the wrong host cleanup. Log to stderr (operator-visible) and
@@ -1309,12 +1180,11 @@ pub async fn run_daemon(
                     let response = encode_server(ServerFrame::Shutdown {
                         reason: Some("invalid correlation".to_owned()),
                     });
-                    if let Err(error) = tokio::io::AsyncWriteExt::write_all(&mut stream, &response).await {
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "attach: invalid-correlation response delivery failed: {error}"
-                        );
-                    }
+                    drop(
+                        tokio::io::AsyncWriteExt::write_all(&mut stream, &response)
+                            .await
+                            .record_telemetry_error(RPC_ERROR),
+                    );
                     drop(client_permit);
                     continue;
                 }
@@ -1342,36 +1212,17 @@ pub async fn run_daemon(
                     ),
                 }
                 .ok();
-                jackin_diagnostics::telemetry_debug!("capsule", "resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
                 let capabilities = terminal.attach_capabilities();
                 mux.client_registry.pointer_shapes_supported = capabilities.pointer_shapes;
-                // Attach-handshake outcome (clog tier): the triage line for
-                // "agent themed wrong" reports — None means the client could
-                // not read its terminal's palette and grids keep what they
-                // had. `caps` (with its `sources` provenance) is logged so a
-                // wrong-capability report can be traced to whichever input
-                // (handshake identity, terminfo, color probe, override,
-                // denylist) decided it.
-                jackin_diagnostics::telemetry_info!("capsule",
-                    "attach: client terminal term={:?} colors fg={:?} bg={:?} caps={:?}",
-                    terminal.term,
-                    terminal.default_fg,
-                    terminal.default_bg,
-                    capabilities,
-                );
                 mux.client_registry.attached_terminal = terminal;
                 mux.client_registry.attached_capabilities = capabilities;
                 mux.apply_client_colors_to_sessions();
                 mux.client_registry.pointer_shape = PointerShape::Default;
                 if mux.session_supervisor.sessions.is_empty()
                     && let Some(request) = pending_initial_spawn.take()
-                    && let Err(err) = mux.spawn_request(request.clone(), &[])
+                    && let Err(err) = mux.spawn_request(request, &[])
                 {
-                    jackin_diagnostics::telemetry_info!("capsule",
-                        "initial spawn failed (request={}): {err:#}",
-                        spawn_request_label(&request)
-                    );
                     if let Some(operation) = attach_operation {
                         operation.complete(
                             jackin_telemetry::schema::enums::OutcomeValue::Failure,
@@ -1380,17 +1231,13 @@ pub async fn run_daemon(
                     }
                     return Err(err);
                 }
-                if let Some(target) = focus_session
-                    && !mux.focus_session_globally(target)
-                {
-                    jackin_diagnostics::telemetry_info!("capsule",
-                        "attach: ignoring unknown focus_session={target} (no matching pane)"
-                    );
+                if let Some(target) = focus_session {
+                    let _focused = mux.focus_session_globally(target);
                 }
                 // Honor a spawn intent from `jackin-capsule new
                 // <agent>` / `jackin-capsule new` (shell). Spawn
-                // failures get clog'd and surfaced to the new client
-                // as an Output frame after Welcome so the operator
+                // failures are surfaced to the new client as an Output frame
+                // after Welcome so the operator
                 // sees the reason in their terminal — silently
                 // landing on an empty multiplexer would otherwise be
                 // indistinguishable from "no spawn requested".
@@ -1402,7 +1249,7 @@ pub async fn run_daemon(
                         .prepare_session_spawn(&mux.session_supervisor)
                         .and_then(|()| mux.spawn_request(request, &env).map(|_| ()));
                     if let Err(err) = spawn_result {
-                        jackin_diagnostics::telemetry_info!("capsule", "attach: spawn {label} failed: {err:#}");
+                        let _warning = jackin_telemetry::record_recovered_degradation();
                         pending_spawn_failure = Some(spawn_request_failure_message(&label, &err));
                     }
                 }
@@ -1425,12 +1272,7 @@ pub async fn run_daemon(
                 // scheduled, so the loop bound is exactly "everything
                 // the old task already enqueued." On a first-attach
                 // (no prior task) cmd_rx is already empty.
-                let mut drained = 0u32;
                 while cmd_rx.try_recv().is_ok() {
-                    drained = drained.saturating_add(1);
-                }
-                if drained > 0 {
-                    jackin_diagnostics::telemetry_info!("capsule", "takeover: drained {drained} stale frame(s) from prior client");
                 }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 let (completion_tx, completion_rx) = mpsc::unbounded_channel();
@@ -1491,12 +1333,8 @@ pub async fn run_daemon(
             Some(frame) = cmd_rx.recv() => {
                 // Coalesce consecutive Resize frames: process only the latest size
                 // so a SIGWINCH storm produces one reflow instead of N full repaints.
-                let (frames, coalesced) = coalesce_client_frames(frame, || cmd_rx.try_recv().ok());
-                if coalesced > 0 {
-                    jackin_diagnostics::telemetry_debug!("capsule",
-                        "resize: coalesced {coalesced} pending resize(s), using latest"
-                    );
-                }
+                let (frames, _coalesced) =
+                    coalesce_client_frames(frame, || cmd_rx.try_recv().ok());
                 for frame in frames {
                     handle_client_frame(&mut mux, frame);
                     if mux.client_registry.detach_requested {
@@ -1583,12 +1421,7 @@ pub async fn run_daemon(
                                 .get(session_id)
                                 .and_then(|session| session.diagnostic_tail(12));
                             reason = Some(match tail {
-                                Some(tail) => {
-                                    jackin_diagnostics::telemetry_info!("capsule",
-                                        "session {session_id}: final output tail:\n{tail}"
-                                    );
-                                    format!("{base}\nlast pane output:\n{tail}")
-                                }
+                                Some(tail) => format!("{base}\nlast pane output:\n{tail}"),
                                 None => base,
                             });
                         }

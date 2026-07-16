@@ -8,6 +8,7 @@ use jackin_capsule::{
     client, config, daemon, exec, firewall, mcp_server, output, protocol::attach::SpawnRequest,
     runtime_setup, session::validate_agent_slug, sudo_provision,
 };
+use jackin_telemetry::ResultTelemetryExt as _;
 use std::path::Path;
 
 #[cfg(feature = "dhat-heap")]
@@ -51,11 +52,16 @@ async fn main() -> Result<()> {
     let is_pid1 = std::process::id() == 1 || forced_daemon_mode(&args);
 
     if is_pid1 {
-        let mut telemetry = jackin_capsule::telemetry::init()?;
-        let launch_config = config::load()?;
+        let mut telemetry = jackin_capsule::telemetry::init()
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
+        let launch_config = config::load()
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
         let supported_agents = launch_config.supported_agents();
-        let agent = resolve_initial_agent(&args, &supported_agents)?;
-        daemon::run_daemon(agent, launch_config, &mut telemetry).await
+        let agent = resolve_initial_agent(&args, &supported_agents)
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
+        daemon::run_daemon(agent, launch_config, &mut telemetry)
+            .await
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::LaunchFailed)
     } else {
         let subcommand = args.get(1).map(String::as_str);
         let focus_session = parse_focus_flag(&args);

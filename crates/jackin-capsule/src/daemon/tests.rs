@@ -925,49 +925,6 @@ fn oid(nibble: char) -> Oid {
     Oid::parse(&nibble.to_string().repeat(40)).expect("40 hex chars is a valid Oid")
 }
 
-#[test]
-fn clipboard_image_error_reason_uses_stable_compact_codes() {
-    let cases = [
-        (
-            anyhow::anyhow!("clipboard image transfer is empty"),
-            "empty",
-        ),
-        (
-            anyhow::anyhow!("clipboard image transfer 67108865 bytes exceeds cap 67108864"),
-            "oversize",
-        ),
-        (
-            anyhow::anyhow!("clipboard image magic bytes do not match Png"),
-            "signature-mismatch",
-        ),
-        (
-            anyhow::anyhow!("clipboard image transfer 7 SHA-256 mismatch"),
-            "digest-mismatch",
-        ),
-        (
-            anyhow::anyhow!("clipboard image transfer 7 offset 4 did not match expected 8"),
-            "offset-mismatch",
-        ),
-        (
-            anyhow::anyhow!("clipboard image transfer 7 has no active start"),
-            "missing-transfer",
-        ),
-        (
-            anyhow::anyhow!("Error: Can't open display: (null)"),
-            "backend-unavailable",
-        ),
-        (
-            anyhow::anyhow!("writing /jackin/run/clipboard/clipboard-1.png"),
-            "staging-io",
-        ),
-        (anyhow::anyhow!("unexpected payload"), "invalid-payload"),
-    ];
-
-    for (err, expected) in cases {
-        assert_eq!(clipboard_image_error_reason(&err), expected);
-    }
-}
-
 fn branch(name: &str) -> BranchName {
     BranchName::parse(name).expect("test branch names must parse")
 }
