@@ -273,7 +273,7 @@ fn failed_stage_is_the_active_progress_label() {
         .iter()
         .find(|span| span.content == "derived image")
         .expect("failed stage label should be visible");
-    assert_eq!(failed.style.fg, Some(DANGER_RED));
+    assert_eq!(failed.style.fg, Some(danger_fg()));
 }
 
 #[test]
