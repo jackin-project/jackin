@@ -318,6 +318,295 @@ fn facade_event_exports_native_event_name_once() {
     assert_eq!(logs[0].record.event_name(), Some("session.start"));
 }
 
+fn log_attribute<'a>(
+    record: &'a opentelemetry_sdk::logs::SdkLogRecord,
+    name: &str,
+) -> Option<&'a opentelemetry::logs::AnyValue> {
+    record
+        .attributes_iter()
+        .find_map(|(key, value)| (key.as_str() == name).then_some(value))
+}
+
+#[test]
+fn conformance_single_delivery_preserves_native_shape() {
+    use opentelemetry::logs::{AnyValue, Severity};
+    use opentelemetry::trace::Status;
+
+    let (export, subscriber) = super::test_layers(false, "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        let operation =
+            jackin_telemetry::operation(&jackin_telemetry::operation::CLI_COMMAND, &[]).unwrap();
+        let entered = operation.span().enter();
+        let attrs = [
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::CONFIG_MIGRATION_STEP_COUNT,
+                value: jackin_telemetry::Value::U64(3),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::CONFIG_OPERATION,
+                value: jackin_telemetry::Value::Str("migrate"),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::CONFIG_SCHEMA_VERSION_FROM,
+                value: jackin_telemetry::Value::Str("legacy"),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::CONFIG_SCHEMA_VERSION_TO,
+                value: jackin_telemetry::Value::Str("v1alpha9"),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::CONFIG_SCOPE,
+                value: jackin_telemetry::Value::Str("global"),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::OUTCOME,
+                value: jackin_telemetry::Value::Str("success"),
+            },
+        ];
+        jackin_telemetry::emit_event(
+            &jackin_telemetry::event::CONFIG_OPERATION,
+            jackin_telemetry::FieldSet::new(&attrs, Some("configuration migrated")),
+        )
+        .unwrap();
+        drop(entered);
+        operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    });
+    export.logger_provider.force_flush().unwrap();
+    export.tracer_provider.force_flush().unwrap();
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    let spans = export.spans.get_finished_spans().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(spans.len(), 1);
+    let log = &logs[0];
+    let span = &spans[0];
+    assert_eq!(log.record.event_name(), Some("config.operation"));
+    assert_eq!(log.record.severity_number(), Some(Severity::Info));
+    assert_eq!(
+        log.record.body(),
+        Some(&AnyValue::String("configuration migrated".into()))
+    );
+    assert_eq!(
+        log_attribute(&log.record, "config.migration.step_count"),
+        Some(&AnyValue::Int(3))
+    );
+    assert_eq!(
+        log_attribute(&log.record, "config.operation"),
+        Some(&AnyValue::String("migrate".into()))
+    );
+    assert_eq!(
+        log_attribute(&log.record, "config.scope"),
+        Some(&AnyValue::String("global".into()))
+    );
+    let trace = log.record.trace_context().expect("active log context");
+    assert_eq!(trace.trace_id, span.span_context.trace_id());
+    assert_eq!(trace.span_id, span.span_context.span_id());
+    assert!(
+        span.events.is_empty(),
+        "log event must not become a span event"
+    );
+    assert_eq!(span.status, Status::Unset);
+
+    let resource = log
+        .resource
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.to_string()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        resource.get("service.name").map(String::as_str),
+        Some("jackin")
+    );
+    assert_eq!(
+        resource.get("app.mode").map(String::as_str),
+        Some("one_shot")
+    );
+    assert!(!resource.contains_key("session.id"));
+    assert!(!resource.contains_key("cli.invocation.id"));
+}
+
+#[test]
+fn registered_scalar_and_array_types_round_trip() {
+    use opentelemetry::logs::AnyValue;
+
+    let (export, subscriber) = super::test_layers(false, "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        let jank = [
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::APP_JANK_FRAME_COUNT,
+                value: jackin_telemetry::Value::U64(7),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::APP_JANK_PERIOD,
+                value: jackin_telemetry::Value::F64(0.25),
+            },
+        ];
+        jackin_telemetry::emit_event(
+            &jackin_telemetry::event::APP_JANK,
+            jackin_telemetry::FieldSet::new(&jank, None),
+        )
+        .unwrap();
+
+        let agent = [
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::AGENT_STATE,
+                value: jackin_telemetry::Value::Str("working"),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::AGENT_STATUS_SOURCE,
+                value: jackin_telemetry::Value::Str("reported"),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::AGENT_STATUS_CONFIDENCE,
+                value: jackin_telemetry::Value::Str("authoritative"),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::AGENT_STATUS_STUCK,
+                value: jackin_telemetry::Value::Bool(true),
+            },
+        ];
+        jackin_telemetry::emit_event(
+            &jackin_telemetry::event::AGENT_STATE_CHANGED,
+            jackin_telemetry::FieldSet::new(&agent, None),
+        )
+        .unwrap();
+
+        let values = ["bridge", "typed"];
+        let validation = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::TELEMETRY_VALIDATION_VALUES,
+            value: jackin_telemetry::Value::StrArray(&values),
+        }];
+        jackin_telemetry::emit_event(
+            &jackin_telemetry::event::TELEMETRY_VALIDATE,
+            jackin_telemetry::FieldSet::new(&validation, None),
+        )
+        .unwrap();
+    });
+    export.logger_provider.force_flush().unwrap();
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 3);
+    assert_eq!(
+        log_attribute(&logs[0].record, "app.jank.frame_count"),
+        Some(&AnyValue::Int(7))
+    );
+    assert_eq!(
+        log_attribute(&logs[0].record, "app.jank.period"),
+        Some(&AnyValue::Double(0.25))
+    );
+    assert_eq!(
+        log_attribute(&logs[1].record, "agent.status.stuck"),
+        Some(&AnyValue::Boolean(true))
+    );
+    assert_eq!(
+        log_attribute(&logs[2].record, "telemetry.validation.values"),
+        Some(&AnyValue::ListAny(Box::new(vec![
+            AnyValue::String("bridge".into()),
+            AnyValue::String("typed".into()),
+        ])))
+    );
+}
+
+#[test]
+fn active_run_compatibility_path_does_not_duplicate_operation_log() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
+    let (export, subscriber) = super::test_layers(false, "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        let directory = tempfile::tempdir().expect("temporary diagnostics directory");
+        let paths = jackin_core::JackinPaths::for_tests(directory.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "status").expect("diagnostics run");
+        let _active = run.activate();
+        export.logs.reset();
+        crate::operation_log(
+            crate::OperationLevel::Info,
+            "ignored.compatibility.name",
+            "test",
+            "one delivery",
+            &[],
+        );
+    });
+    export.logger_provider.force_flush().unwrap();
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].record.event_name(), Some("operation.log"));
+}
+
+fn emit_severity_matrix() {
+    let outcome = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::OUTCOME,
+        value: jackin_telemetry::Value::Str("success"),
+    }];
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TIMING_STARTED,
+        jackin_telemetry::FieldSet::new(&outcome, None),
+    )
+    .unwrap();
+    for def in [
+        &jackin_telemetry::event::UI_WIDGET_FOCUSED,
+        &jackin_telemetry::event::SESSION_START,
+        &jackin_telemetry::event::APP_JANK,
+        &jackin_telemetry::event::APP_CRASH,
+    ] {
+        jackin_telemetry::emit_event(def, jackin_telemetry::FieldSet::default()).unwrap();
+    }
+}
+
+#[test]
+fn governed_event_level_gates_are_exact_and_do_not_infer_span_state() {
+    use opentelemetry::trace::Status;
+
+    for (level, expected) in [("info", 3usize), ("debug", 4usize), ("trace", 5usize)] {
+        let (export, subscriber) = super::test_layers_at(level, "unused");
+        tracing::subscriber::with_default(subscriber, || {
+            let operation =
+                jackin_telemetry::operation(&jackin_telemetry::operation::CLI_COMMAND, &[])
+                    .unwrap();
+            let entered = operation.span().enter();
+            emit_severity_matrix();
+            drop(entered);
+            operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+        });
+        export.logger_provider.force_flush().unwrap();
+        export.tracer_provider.force_flush().unwrap();
+        let logs = export.logs.get_emitted_logs().unwrap();
+        let spans = export.spans.get_finished_spans().unwrap();
+        assert_eq!(logs.len(), expected, "{level} log gate");
+        assert_eq!(spans.len(), 1, "{level} span gate");
+        assert!(spans[0].events.is_empty(), "{level} duplicate span events");
+        assert_eq!(spans[0].status, Status::Unset, "{level} inferred status");
+    }
+}
+
+#[test]
+fn governed_unknown_names_and_forged_severity_are_rejected() {
+    let before = jackin_telemetry::facade_health();
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        tracing::event!(
+            name: "unknown.governed.event",
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            tracing::Level::INFO,
+            {}
+        );
+        tracing::event!(
+            name: "session.start",
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            tracing::Level::WARN,
+            {}
+        );
+        let span = tracing::info_span!(
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            "unknown.governed.span"
+        );
+        drop(span);
+    });
+    export.logger_provider.force_flush().unwrap();
+    export.tracer_provider.force_flush().unwrap();
+    assert!(export.logs.get_emitted_logs().unwrap().is_empty());
+    assert!(export.spans.get_finished_spans().unwrap().is_empty());
+    let after = jackin_telemetry::facade_health();
+    assert!(after.unknown_name >= before.unknown_name + 2);
+    assert!(after.invalid_value > before.invalid_value);
+}
+
 #[test]
 fn governed_unknown_attribute_is_dropped() {
     let before = jackin_telemetry::facade_health().unknown_attribute;

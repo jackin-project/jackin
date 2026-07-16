@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tracing::Span;
 
-use crate::logging::{emit_compact_line, emit_debug_line};
+use crate::logging::{emit_operator_notice, format_debug_line};
 use crate::redact::redact_text;
 use jackin_telemetry::schema::enums::OutcomeValue as Outcome;
 
@@ -268,9 +268,13 @@ pub fn operation_log_with_outcome(
     let _event_result =
         jackin_telemetry::emit_event(def, jackin_telemetry::FieldSet::new(&attrs, Some(body)));
     match level {
-        OperationLevel::Debug => emit_debug_line(category, body),
-        OperationLevel::Error => emit_compact_line("error", body),
-        OperationLevel::Info | OperationLevel::Warn => emit_compact_line(category, body),
+        OperationLevel::Debug if crate::is_debug_mode() => {
+            emit_operator_notice(&format_debug_line(category, body));
+        }
+        OperationLevel::Debug => {}
+        OperationLevel::Info | OperationLevel::Warn | OperationLevel::Error => {
+            emit_operator_notice(body);
+        }
     }
 }
 
@@ -310,7 +314,7 @@ pub fn operation_error(
         );
     }
 
-    emit_compact_line("error", body);
+    emit_operator_notice(body);
 }
 
 /// Record a u64 counter add for `name` when a meter provider is installed.

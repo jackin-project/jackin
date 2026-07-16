@@ -502,6 +502,10 @@ fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
             )?,
         ),
         (
+            "crates/jackin-telemetry/src/event_emit.rs".to_owned(),
+            generate_event_emitters(&header, &local_groups)?,
+        ),
+        (
             "crates/jackin-telemetry/src/schema/spans.rs".to_owned(),
             generate_signal_constants(&header, &local_groups, "id", SignalKind::Span, &metadata)?,
         ),
@@ -807,6 +811,94 @@ fn generate_signal_constants(
         "\n#[must_use]\npub fn definition(name: &str) -> Option<&'static super::{}> {{\n    DEFINITIONS.iter().find(|definition| definition.name == name)\n}}\n",
         signal_metadata_type(kind)
     ));
+    Ok(output)
+}
+
+fn generate_event_emitters(header: &str, groups: &[YamlValue]) -> Result<String> {
+    let mut output = header.to_owned();
+    let mut value_types = BTreeSet::new();
+    for group in groups {
+        if group.get("type").and_then(YamlValue::as_str) != Some("event") {
+            continue;
+        }
+        for attribute in yaml_sequence(group, "attributes").unwrap_or_default() {
+            value_types.insert(value_type_variant(yaml_required(attribute, "type")?)?);
+        }
+    }
+    output.push_str("macro_rules! event_field_value {\n");
+    for value_type in value_types {
+        let accessor = match value_type {
+            "String" => "$fields.str($key)",
+            "Integer" => "$fields.integer($key)",
+            "Double" => "$fields.double($key)",
+            "Boolean" => "$fields.boolean($key)",
+            // `tracing` has no array Value variant. Keep the registered field in
+            // metadata but let the synchronous governed processor attach its
+            // typed value through `take_pending_event_arrays`.
+            "StringArray" => "tracing::field::Empty",
+            _ => unreachable!("validated registry value type"),
+        };
+        output.push_str(&format!(
+            "    ($fields:expr, $key:literal, {value_type}) => {{ {accessor} }};\n"
+        ));
+    }
+    output.push_str("}\n\n");
+    let mut events = groups
+        .iter()
+        .filter(|group| group.get("type").and_then(YamlValue::as_str) == Some("event"))
+        .collect::<Vec<_>>();
+    events.sort_by_key(|group| group.get("name").and_then(YamlValue::as_str));
+    let chunks = events.chunks(16).collect::<Vec<_>>();
+    output.push_str("fn emit_registered_event(def: &'static EventDef, fields: FieldSet<'_>) {\n");
+    for (index, chunk) in chunks.iter().enumerate() {
+        let last = chunk
+            .last()
+            .ok_or_else(|| anyhow::anyhow!("event emitter chunk is empty"))?;
+        let last_name = yaml_string(last, "name")?;
+        let prefix = if index == 0 {
+            "    if"
+        } else {
+            "    } else if"
+        };
+        output.push_str(&format!(
+            "{prefix} def.name <= {last_name:?} {{\n        emit_registered_event_{index}(def, fields);\n"
+        ));
+    }
+    output.push_str(
+        "    } else {\n        unreachable!(\"validated event registry\");\n    }\n}\n\n",
+    );
+    for (index, chunk) in chunks.iter().enumerate() {
+        output.push_str(&format!(
+            "fn emit_registered_event_{index}(def: &'static EventDef, fields: FieldSet<'_>) {{\n    match def.name {{\n"
+        ));
+        for group in *chunk {
+            let name = yaml_string(group, "name")?;
+            let constant = rust_constant(name);
+            let emitter = rust_field_identifier(name).replacen("field_", "emit_", 1);
+            output.push_str(&format!(
+                "        schema::events::{constant} => {{ {emitter}(def, fields); }}\n"
+            ));
+        }
+        output.push_str(
+            "        _ => unreachable!(\"validated event registry chunk\"),\n    }\n}\n\n",
+        );
+    }
+    for group in events {
+        let name = yaml_string(group, "name")?;
+        let emitter = rust_field_identifier(name).replacen("field_", "emit_", 1);
+        output.push_str(&format!(
+            "fn {emitter}(def: &'static EventDef, fields: FieldSet<'_>) {{\n    emit_schema_event!({name:?}, def.severity, fields, [\n"
+        ));
+        for attribute in yaml_sequence(group, "attributes").unwrap_or_default() {
+            let attribute_name = yaml_string(attribute, "name")?;
+            let field = rust_field_identifier(attribute_name);
+            let value_type = value_type_variant(yaml_required(attribute, "type")?)?;
+            output.push_str(&format!(
+                "        ({attribute_name:?}, {field}, {value_type}),\n"
+            ));
+        }
+        output.push_str("    ]);\n}\n\n");
+    }
     Ok(output)
 }
 
@@ -1135,6 +1227,18 @@ fn rust_constant(value: &str) -> String {
             }
         })
         .collect()
+}
+
+fn rust_field_identifier(value: &str) -> String {
+    let mut identifier = String::from("field_");
+    identifier.extend(value.chars().map(|character| {
+        if character.is_ascii_alphanumeric() {
+            character.to_ascii_lowercase()
+        } else {
+            '_'
+        }
+    }));
+    identifier
 }
 
 fn rust_pascal(value: &str) -> String {

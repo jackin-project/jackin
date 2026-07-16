@@ -345,7 +345,9 @@ mod otlp {
         build_resource_for_sources, container_id_from_cgroup, semantic_os_type,
         verified_container_id,
     };
+    mod governance;
     mod retry;
+    use governance::{GovernedLogProcessor, GovernedSpanProcessor};
 
     const EXPORT_ATTEMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
 
@@ -978,94 +980,6 @@ mod otlp {
         Ok(Some(tls))
     }
 
-    #[derive(Debug)]
-    struct GovernedLogProcessor<P>(P);
-
-    impl<P: opentelemetry_sdk::logs::LogProcessor> opentelemetry_sdk::logs::LogProcessor
-        for GovernedLogProcessor<P>
-    {
-        fn emit(
-            &self,
-            record: &mut opentelemetry_sdk::logs::SdkLogRecord,
-            instrumentation: &opentelemetry::InstrumentationScope,
-        ) {
-            let governed = instrumentation.name() == jackin_telemetry::TELEMETRY_TARGET
-                || record
-                    .event_name()
-                    .is_some_and(|name| jackin_telemetry::schema::events::ALL.contains(&name));
-            if governed
-                && record
-                    .attributes_iter()
-                    .any(|(key, _)| jackin_telemetry::privacy::validate_key(key.as_str()).is_err())
-            {
-                jackin_telemetry::record_export_rejection(
-                    jackin_telemetry::Rejection::UnknownAttribute,
-                );
-                return;
-            }
-            self.0.emit(record, instrumentation);
-        }
-
-        fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
-            self.0.force_flush()
-        }
-
-        fn shutdown_with_timeout(
-            &self,
-            timeout: std::time::Duration,
-        ) -> opentelemetry_sdk::error::OTelSdkResult {
-            self.0.shutdown_with_timeout(timeout)
-        }
-
-        fn set_resource(&mut self, resource: &Resource) {
-            self.0.set_resource(resource);
-        }
-    }
-
-    #[derive(Debug)]
-    struct GovernedSpanProcessor<P>(P);
-
-    impl<P: opentelemetry_sdk::trace::SpanProcessor> opentelemetry_sdk::trace::SpanProcessor
-        for GovernedSpanProcessor<P>
-    {
-        fn on_start(
-            &self,
-            span: &mut opentelemetry_sdk::trace::Span,
-            context: &opentelemetry::Context,
-        ) {
-            self.0.on_start(span, context);
-        }
-
-        fn on_end(&self, span: opentelemetry_sdk::trace::SpanData) {
-            if jackin_telemetry::schema::spans::ALL.contains(&span.name.as_ref())
-                && span.attributes.iter().any(|attribute| {
-                    jackin_telemetry::privacy::validate_key(attribute.key.as_str()).is_err()
-                })
-            {
-                jackin_telemetry::record_export_rejection(
-                    jackin_telemetry::Rejection::UnknownAttribute,
-                );
-                return;
-            }
-            self.0.on_end(span);
-        }
-
-        fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
-            self.0.force_flush()
-        }
-
-        fn shutdown_with_timeout(
-            &self,
-            timeout: std::time::Duration,
-        ) -> opentelemetry_sdk::error::OTelSdkResult {
-            self.0.shutdown_with_timeout(timeout)
-        }
-
-        fn set_resource(&mut self, resource: &Resource) {
-            self.0.set_resource(resource);
-        }
-    }
-
     pub(super) fn init(
         debug: bool,
         _run_id: &str,
@@ -1127,7 +1041,13 @@ mod otlp {
                     }))
                     .with_filter(EnvFilter::new(span_directive)),
             )
-            .with(log_layer.with_filter(EnvFilter::new(log_directive)))
+            .with(
+                log_layer
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.is_event()
+                    }))
+                    .with_filter(EnvFilter::new(log_directive)),
+            )
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
@@ -1217,7 +1137,13 @@ mod otlp {
                     }))
                     .with_filter(EnvFilter::new(span_directive)),
             )
-            .with(log_layer.with_filter(EnvFilter::new(log_directive)))
+            .with(
+                log_layer
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.is_event()
+                    }))
+                    .with_filter(EnvFilter::new(log_directive)),
+            )
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
@@ -1345,8 +1271,13 @@ mod otlp {
     }
 
     #[cfg(test)]
-    pub(crate) fn test_layers(
-        debug: bool,
+    pub(crate) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
+        test_layers_at(if debug { "debug" } else { "info" }, run_id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_layers_at(
+        test_level: &str,
         _run_id: &str,
     ) -> (TestExport, impl tracing::Subscriber) {
         use opentelemetry::trace::TracerProvider as _;
@@ -1379,7 +1310,6 @@ mod otlp {
             .with_error_events_to_status(false)
             .with_error_fields_to_exceptions(false);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
-        let test_level = if debug { "debug" } else { "info" };
         let span_directive = export_filter_directive(test_level);
         let log_directive = export_filter_directive(test_level);
         let subscriber = tracing_subscriber::registry()
@@ -1390,7 +1320,13 @@ mod otlp {
                     }))
                     .with_filter(EnvFilter::new(span_directive)),
             )
-            .with(log_layer.with_filter(EnvFilter::new(log_directive)));
+            .with(
+                log_layer
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.is_event()
+                    }))
+                    .with_filter(EnvFilter::new(log_directive)),
+            );
 
         (
             TestExport {
@@ -1447,7 +1383,13 @@ mod otlp {
                     }))
                     .with_filter(EnvFilter::new(span_directive)),
             )
-            .with(log_layer.with_filter(EnvFilter::new(log_directive)));
+            .with(
+                log_layer
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.is_event()
+                    }))
+                    .with_filter(EnvFilter::new(log_directive)),
+            );
 
         (
             TestExport {

@@ -1,7 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::cell::RefCell;
+
 use crate::{TELEMETRY_TARGET, health, limits, privacy, schema};
+
+#[doc(hidden)]
+pub type PendingEventArrays = Vec<(&'static str, Vec<String>)>;
+
+thread_local! {
+    static PENDING_EVENT_ARRAYS: RefCell<Option<PendingEventArrays>> =
+        const { RefCell::new(None) };
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(usize)]
@@ -25,9 +35,9 @@ pub enum Severity {
 
 #[derive(Clone, Copy, Debug)]
 pub struct EventDef {
-    pub name: &'static str,
-    pub severity: Severity,
-    pub metadata: &'static schema::EventMetadata,
+    pub(crate) name: &'static str,
+    pub(crate) severity: Severity,
+    pub(crate) metadata: &'static schema::EventMetadata,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -67,6 +77,69 @@ impl<'a> FieldSet<'a> {
             _ => None,
         })
     }
+
+    fn integer(&self, key: &str) -> Option<i64> {
+        self.attrs.iter().find_map(|attr| match attr {
+            Attr {
+                key: candidate,
+                value: Value::I64(value),
+            } if *candidate == key => Some(*value),
+            Attr {
+                key: candidate,
+                value: Value::U64(value),
+            } if *candidate == key => i64::try_from(*value).ok(),
+            _ => None,
+        })
+    }
+
+    fn double(&self, key: &str) -> Option<f64> {
+        self.attrs.iter().find_map(|attr| match attr {
+            Attr {
+                key: candidate,
+                value: Value::F64(value),
+            } if *candidate == key => Some(*value),
+            _ => None,
+        })
+    }
+
+    fn boolean(&self, key: &str) -> Option<bool> {
+        self.attrs.iter().find_map(|attr| match attr {
+            Attr {
+                key: candidate,
+                value: Value::Bool(value),
+            } if *candidate == key => Some(*value),
+            _ => None,
+        })
+    }
+}
+
+fn with_event_arrays(fields: &FieldSet<'_>, emit: impl FnOnce()) {
+    let arrays = fields
+        .attrs
+        .iter()
+        .filter_map(|attr| match attr.value {
+            Value::StrArray(values) => Some((
+                attr.key,
+                values.iter().map(|value| (*value).to_owned()).collect(),
+            )),
+            _ => None,
+        })
+        .collect();
+    PENDING_EVENT_ARRAYS.with(|slot| {
+        let previous = slot.replace(Some(arrays));
+        emit();
+        slot.replace(previous);
+    });
+}
+
+/// Supplies registered array attributes to the synchronous tracing log bridge.
+///
+/// The tracing value model has no array variant, so the standard appender would
+/// otherwise flatten these values through `Debug`. The bridge consumes this
+/// handoff while it is processing the same event on the emitting thread.
+#[doc(hidden)]
+pub fn take_pending_event_arrays() -> PendingEventArrays {
+    PENDING_EVENT_ARRAYS.with(|slot| slot.borrow_mut().take().unwrap_or_default())
 }
 
 pub const SESSION_START: EventDef = EventDef {
@@ -164,7 +237,7 @@ event_def!(
     LAUNCH_STAGE_SKIPPED_DEF,
     Info
 );
-event_def!(TIMING_STARTED, TIMING_STARTED, TIMING_STARTED_DEF, Info);
+event_def!(TIMING_STARTED, TIMING_STARTED, TIMING_STARTED_DEF, Trace);
 event_def!(TIMING_DONE, TIMING_DONE, TIMING_DONE_DEF, Info);
 event_def!(DEBUG_LINE, DEBUG_LINE, DEBUG_LINE_DEF, Debug);
 event_def!(
@@ -251,8 +324,21 @@ pub const ALL: &[EventDef] = &[
     OPERATION_WARN,
 ];
 
+#[must_use]
+pub fn definition(name: &str) -> Option<&'static EventDef> {
+    ALL.iter().find(|definition| definition.name == name)
+}
+
+#[must_use]
+pub fn canonical_severity(name: &str) -> Option<Severity> {
+    definition(name).map(|definition| definition.severity)
+}
+
 fn validate(def: &'static EventDef, fields: &FieldSet<'_>) -> Result<(), Rejection> {
-    if !schema::events::ALL.contains(&def.name) {
+    let Some(canonical) = definition(def.name) else {
+        return Err(Rejection::UnknownName);
+    };
+    if canonical.severity != def.severity || canonical.metadata.name != def.metadata.name {
         return Err(Rejection::UnknownName);
     }
     limits::validate_name(def.name)?;
@@ -322,65 +408,21 @@ const fn value_matches_type(value: Value<'_>, expected: schema::ValueType) -> bo
     )
 }
 
-macro_rules! emit_named {
-    ($name:literal, $level:expr, $fields:expr) => {{
-        let outcome = $fields.str(schema::attrs::OUTCOME);
-        let session_id = $fields.str(schema::attrs::std_attrs::SESSION_ID);
-        let screen_id = $fields.str(schema::attrs::std_attrs::APP_SCREEN_ID);
-        let screen_name = $fields.str(schema::attrs::std_attrs::APP_SCREEN_NAME);
-        let action_name = $fields.str(schema::attrs::UI_ACTION_NAME);
-        let visit_id = $fields.str(schema::attrs::UI_SCREEN_VISIT_ID);
-        let transition_reason = $fields.str(schema::attrs::UI_TRANSITION_REASON);
-        let widget_id = $fields.str(schema::attrs::std_attrs::APP_WIDGET_ID);
-        let agent_name = $fields.str(schema::attrs::std_attrs::GEN_AI_AGENT_NAME);
-        let conversation_id = $fields.str(schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID);
-        let pty_exit_reason = $fields.str(schema::attrs::PTY_EXIT_REASON);
-        let process_exit_code = $fields.attrs.iter().find_map(|attr| match attr {
-            Attr { key: schema::attrs::std_attrs::PROCESS_EXIT_CODE, value: Value::I64(value) } => Some(*value),
-            _ => None,
-        });
-        let jank_frame_count = $fields.attrs.iter().find_map(|attr| match attr {
-            Attr { key: schema::attrs::std_attrs::APP_JANK_FRAME_COUNT, value: Value::U64(value) } => Some(*value),
-            _ => None,
-        });
-        let jank_period = $fields.attrs.iter().find_map(|attr| match attr {
-            Attr { key: schema::attrs::std_attrs::APP_JANK_PERIOD, value: Value::F64(value) } => Some(*value),
-            _ => None,
-        });
-        let jank_threshold = $fields.attrs.iter().find_map(|attr| match attr {
-            Attr { key: schema::attrs::std_attrs::APP_JANK_THRESHOLD, value: Value::F64(value) } => Some(*value),
-            _ => None,
-        });
-        let agent_state = $fields.str(schema::attrs::AGENT_STATE);
-        let agent_status_source = $fields.str(schema::attrs::AGENT_STATUS_SOURCE);
-        let agent_status_confidence = $fields.str(schema::attrs::AGENT_STATUS_CONFIDENCE);
-        let agent_status_stuck = $fields.attrs.iter().find_map(|attr| match attr {
-            Attr { key: schema::attrs::AGENT_STATUS_STUCK, value: Value::Bool(value) } => Some(*value),
-            _ => None,
-        });
-        let navigation_sequence = $fields.attrs.iter().find_map(|attr| match attr {
-            Attr { key: schema::attrs::UI_NAVIGATION_SEQUENCE, value: Value::U64(value) } => Some(*value),
-            _ => None,
-        });
-        let error_type = $fields.str(schema::attrs::std_attrs::ERROR_TYPE);
-        let app_build_id = $fields.str(schema::attrs::std_attrs::APP_BUILD_ID);
-        let app_crash_id = $fields.str(schema::attrs::std_attrs::APP_CRASH_ID);
-        let exception_type = $fields.str(schema::attrs::std_attrs::EXCEPTION_TYPE);
-        let exception_message = $fields.str(schema::attrs::std_attrs::EXCEPTION_MESSAGE);
-        let exception_stacktrace = $fields.str(schema::attrs::std_attrs::EXCEPTION_STACKTRACE);
-        let os_name = $fields.str(schema::attrs::std_attrs::OS_NAME);
-        let os_version = $fields.str(schema::attrs::std_attrs::OS_VERSION);
-        let service_version = $fields.str(schema::attrs::std_attrs::SERVICE_VERSION);
+macro_rules! emit_schema_event {
+    ($name:literal, $severity:expr, $fields:expr, [$(($key:literal, $field:ident, $kind:ident)),* $(,)?]) => {{
+        $(let $field = event_field_value!($fields, $key, $kind);)*
         let body = $fields.body.unwrap_or("");
-        match $level {
-            Severity::Trace => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
-            Severity::Debug => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "error.type" = error_type, message = body),
-            Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "gen_ai.agent.name" = agent_name, "gen_ai.conversation.id" = conversation_id, "agent.state" = agent_state, "agent.status.source" = agent_status_source, "agent.status.confidence" = agent_status_confidence, "agent.status.stuck" = agent_status_stuck, "pty.exit.reason" = pty_exit_reason, "process.exit.code" = process_exit_code, "error.type" = error_type, message = body),
-            Severity::Warn => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "app.jank.frame_count" = jank_frame_count, "app.jank.period" = jank_period, "app.jank.threshold" = jank_threshold, "error.type" = error_type, message = body),
-            Severity::Error => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "app.build_id" = app_build_id, "app.crash.id" = app_crash_id, "exception.type" = exception_type, "exception.message" = exception_message, "exception.stacktrace" = exception_stacktrace, "os.name" = os_name, "os.version" = os_version, "service.version" = service_version, "error.type" = error_type, message = body),
+        match $severity {
+            Severity::Trace => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, $($key = $field,)* message = body),
+            Severity::Debug => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, $($key = $field,)* message = body),
+            Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, $($key = $field,)* message = body),
+            Severity::Warn => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, $($key = $field,)* message = body),
+            Severity::Error => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, $($key = $field,)* message = body),
         }
     }};
 }
+
+include!("event_emit.rs");
 
 pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Rejection> {
     let enabled = match def.severity {
@@ -397,122 +439,6 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
         health::reject(reason);
         return Err(reason);
     }
-    if matches!(
-        def.name,
-        schema::events::SESSION_START
-            | schema::events::SESSION_END
-            | schema::events::UI_SCREEN_ENTERED
-            | schema::events::UI_SCREEN_EXITED
-            | schema::events::UI_WIDGET_FOCUSED
-            | schema::events::UI_WIDGET_UNFOCUSED
-            | schema::events::APP_JANK
-            | schema::events::APP_CRASH
-            | schema::events::AGENT_STATE_CHANGED
-            | schema::events::PTY_SPAWN
-    ) {
-        emit_lifecycle_event(def, fields);
-    } else if matches!(
-        def.name,
-        schema::events::PTY_EXIT
-            | schema::events::TELEMETRY_VALIDATE
-            | schema::events::LAUNCH_STAGE_STARTED
-            | schema::events::LAUNCH_STAGE_DONE
-            | schema::events::LAUNCH_STAGE_FAILED
-            | schema::events::LAUNCH_STAGE_SKIPPED
-            | schema::events::TIMING_STARTED
-            | schema::events::TIMING_DONE
-            | schema::events::DEBUG_LINE
-            | schema::events::PROCESS_SUBPROCESS_DONE
-    ) {
-        emit_progress_event(def, fields);
-    } else {
-        emit_outcome_event(def, fields);
-    }
+    with_event_arrays(&fields, || emit_registered_event(def, fields));
     Ok(())
 }
-
-fn emit_lifecycle_event(def: &EventDef, fields: FieldSet<'_>) {
-    match def.name {
-        schema::events::SESSION_START => emit_session_start(def.severity, fields),
-        schema::events::SESSION_END => emit_session_end(def.severity, fields),
-        schema::events::UI_SCREEN_ENTERED => emit_ui_screen_entered(def.severity, fields),
-        schema::events::UI_SCREEN_EXITED => emit_ui_screen_exited(def.severity, fields),
-        schema::events::UI_WIDGET_FOCUSED => emit_ui_widget_focused(def.severity, fields),
-        schema::events::UI_WIDGET_UNFOCUSED => emit_ui_widget_unfocused(def.severity, fields),
-        schema::events::APP_JANK => emit_app_jank(def.severity, fields),
-        schema::events::APP_CRASH => emit_app_crash(def.severity, fields),
-        schema::events::AGENT_STATE_CHANGED => emit_agent_state_changed(def.severity, fields),
-        schema::events::PTY_SPAWN => emit_pty_spawn(def.severity, fields),
-        _ => unreachable!("validated lifecycle event registry"),
-    }
-}
-
-fn emit_progress_event(def: &EventDef, fields: FieldSet<'_>) {
-    match def.name {
-        schema::events::PTY_EXIT => emit_pty_exit(def.severity, fields),
-        schema::events::TELEMETRY_VALIDATE => emit_telemetry_validate(def.severity, fields),
-        schema::events::LAUNCH_STAGE_STARTED => emit_launch_stage_started(def.severity, fields),
-        schema::events::LAUNCH_STAGE_DONE => emit_launch_stage_done(def.severity, fields),
-        schema::events::LAUNCH_STAGE_FAILED => emit_launch_stage_failed(def.severity, fields),
-        schema::events::LAUNCH_STAGE_SKIPPED => emit_launch_stage_skipped(def.severity, fields),
-        schema::events::TIMING_STARTED => emit_timing_started(def.severity, fields),
-        schema::events::TIMING_DONE => emit_timing_done(def.severity, fields),
-        schema::events::DEBUG_LINE => emit_debug_line(def.severity, fields),
-        schema::events::PROCESS_SUBPROCESS_DONE => emit_process_done(def.severity, fields),
-        _ => unreachable!("validated progress event registry"),
-    }
-}
-
-fn emit_outcome_event(def: &EventDef, fields: FieldSet<'_>) {
-    match def.name {
-        schema::events::RUN_SUMMARY => emit_run_summary(def.severity, fields),
-        schema::events::PERFORMANCE_SLOW_FOREGROUND_WAIT => emit_slow_wait(def.severity, fields),
-        schema::events::CAPSULE_SESSION_DETACH => emit_session_detach(def.severity, fields),
-        schema::events::CAPSULE_SESSION_CLEAN_SHUTDOWN => {
-            emit_session_clean_shutdown(def.severity, fields);
-        }
-        schema::events::ERROR_TYPED => emit_error_typed(def.severity, fields),
-        schema::events::OPERATION_LOG => emit_operation_log(def.severity, fields),
-        schema::events::OPERATION_WARN => emit_operation_warn(def.severity, fields),
-        _ => unreachable!("validated outcome event registry"),
-    }
-}
-
-macro_rules! define_event_emitter {
-    ($function:ident, $name:literal) => {
-        fn $function(severity: Severity, fields: FieldSet<'_>) {
-            emit_named!($name, severity, fields);
-        }
-    };
-}
-
-define_event_emitter!(emit_session_start, "session.start");
-define_event_emitter!(emit_session_end, "session.end");
-define_event_emitter!(emit_ui_screen_entered, "ui.screen.entered");
-define_event_emitter!(emit_ui_screen_exited, "ui.screen.exited");
-define_event_emitter!(emit_ui_widget_focused, "ui.widget.focused");
-define_event_emitter!(emit_ui_widget_unfocused, "ui.widget.unfocused");
-define_event_emitter!(emit_app_jank, "app.jank");
-define_event_emitter!(emit_app_crash, "app.crash");
-define_event_emitter!(emit_agent_state_changed, "agent.state.changed");
-define_event_emitter!(emit_pty_spawn, "pty.spawn");
-define_event_emitter!(emit_pty_exit, "pty.exit");
-define_event_emitter!(emit_telemetry_validate, "telemetry.validate");
-define_event_emitter!(emit_launch_stage_started, "launch.stage.started");
-define_event_emitter!(emit_launch_stage_done, "launch.stage.done");
-define_event_emitter!(emit_launch_stage_failed, "launch.stage.failed");
-define_event_emitter!(emit_launch_stage_skipped, "launch.stage.skipped");
-define_event_emitter!(emit_timing_started, "timing.started");
-define_event_emitter!(emit_timing_done, "timing.done");
-define_event_emitter!(emit_debug_line, "debug.line");
-define_event_emitter!(emit_process_done, "process.subprocess.done");
-define_event_emitter!(emit_run_summary, "run.summary");
-define_event_emitter!(emit_slow_wait, "performance.slow.foreground.wait");
-define_event_emitter!(emit_session_detach, "capsule.session.detach");
-define_event_emitter!(
-    emit_session_clean_shutdown,
-    "capsule.session.clean.shutdown"
-);
-define_event_emitter!(emit_error_typed, "error.typed");
-define_event_emitter!(emit_operation_log, "operation.log");
-define_event_emitter!(emit_operation_warn, "operation.warn");

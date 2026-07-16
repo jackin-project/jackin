@@ -17,27 +17,27 @@ groups:
     name: app.crash
     brief: Application crashed.
     stability: development
-  - { id: event.agent.state.changed, type: event, name: agent.state.changed, brief: Effective coding-agent state changed., stability: development, attributes: [] }
+  - { id: event.agent.state.changed, type: event, name: agent.state.changed, brief: Effective coding-agent state changed., stability: development, attributes: [{ref: agent.state, requirement_level: required}, {ref: agent.status.source, requirement_level: required}, {ref: agent.status.confidence, requirement_level: required}, {ref: agent.status.stuck, requirement_level: required}] }
   - { id: event.pty.spawn, type: event, name: pty.spawn, brief: PTY child process spawned., stability: development, attributes: [] }
   - { id: event.pty.exit, type: event, name: pty.exit, brief: PTY child process exited., stability: development, attributes: [] }
-  - { id: event.telemetry.validate, type: event, name: telemetry.validate, brief: Telemetry delivery validation marker., stability: development, attributes: [] }
-  - { id: event.launch.stage.started, type: event, name: launch.stage.started, brief: Launch stage started., stability: development, attributes: [] }
-  - { id: event.launch.stage.done, type: event, name: launch.stage.done, brief: Launch stage completed., stability: development, attributes: [] }
-  - { id: event.launch.stage.failed, type: event, name: launch.stage.failed, brief: Launch stage failed., stability: development, attributes: [] }
-  - { id: event.launch.stage.skipped, type: event, name: launch.stage.skipped, brief: Launch stage skipped., stability: development, attributes: [] }
-  - { id: event.timing.started, type: event, name: timing.started, brief: Timing interval started., stability: development, attributes: [] }
-  - { id: event.timing.done, type: event, name: timing.done, brief: Timing interval completed., stability: development, attributes: [] }
-  - { id: event.debug.line, type: event, name: debug.line, brief: Governed debug breadcrumb., stability: development, attributes: [] }
-  - { id: event.process.subprocess.done, type: event, name: process.subprocess.done, brief: Subprocess completed., stability: development, attributes: [] }
-  - { id: event.run.summary, type: event, name: run.summary, brief: Invocation summary produced., stability: development, attributes: [] }
-  - { id: event.performance.slow.foreground.wait, type: event, name: performance.slow.foreground.wait, brief: Foreground wait exceeded its threshold., stability: development, attributes: [] }
-  - { id: event.capsule.session.detach, type: event, name: capsule.session.detach, brief: Operator detached from a capsule session., stability: development, attributes: [] }
-  - { id: event.capsule.session.clean.shutdown, type: event, name: capsule.session.clean.shutdown, brief: Capsule session shut down cleanly., stability: development, attributes: [] }
-  - { id: event.error.typed, type: event, name: error.typed, brief: Typed product error occurred., stability: development, attributes: [] }
+  - { id: event.telemetry.validate, type: event, name: telemetry.validate, brief: Telemetry delivery validation marker., stability: development, attributes: [{ref: telemetry.validation.values}] }
+  - { id: event.launch.stage.started, type: event, name: launch.stage.started, brief: Launch stage started., stability: development, attributes: [{ref: outcome, requirement_level: required}] }
+  - { id: event.launch.stage.done, type: event, name: launch.stage.done, brief: Launch stage completed., stability: development, attributes: [{ref: outcome, requirement_level: required}] }
+  - { id: event.launch.stage.failed, type: event, name: launch.stage.failed, brief: Launch stage failed., stability: development, attributes: [{ref: outcome, requirement_level: required}, {ref: error.type}] }
+  - { id: event.launch.stage.skipped, type: event, name: launch.stage.skipped, brief: Launch stage skipped., stability: development, attributes: [{ref: outcome, requirement_level: required}] }
+  - { id: event.timing.started, type: event, name: timing.started, brief: Timing interval started., stability: development, attributes: [{ref: outcome, requirement_level: required}] }
+  - { id: event.timing.done, type: event, name: timing.done, brief: Timing interval completed., stability: development, attributes: [{ref: outcome, requirement_level: required}] }
+  - { id: event.debug.line, type: event, name: debug.line, brief: Governed debug breadcrumb., stability: development, attributes: [{ref: outcome, requirement_level: required}] }
+  - { id: event.process.subprocess.done, type: event, name: process.subprocess.done, brief: Subprocess completed., stability: development, attributes: [{ref: outcome, requirement_level: required}, {ref: error.type}] }
+  - { id: event.run.summary, type: event, name: run.summary, brief: Invocation summary produced., stability: development, attributes: [{ref: outcome, requirement_level: required}] }
+  - { id: event.performance.slow.foreground.wait, type: event, name: performance.slow.foreground.wait, brief: Foreground wait exceeded its threshold., stability: development, attributes: [{ref: outcome, requirement_level: required}] }
+  - { id: event.capsule.session.detach, type: event, name: capsule.session.detach, brief: Operator detached from a capsule session., stability: development, attributes: [{ref: session.id}, {ref: outcome, requirement_level: required}] }
+  - { id: event.capsule.session.clean.shutdown, type: event, name: capsule.session.clean.shutdown, brief: Capsule session shut down cleanly., stability: development, attributes: [{ref: session.id}, {ref: outcome, requirement_level: required}] }
+  - { id: event.error.typed, type: event, name: error.typed, brief: Typed product error occurred., stability: development, attributes: [{ref: outcome, requirement_level: required}, {ref: error.type, requirement_level: required}] }
   - { id: event.config.operation, type: event, name: config.operation, brief: Configuration operation completed., stability: development, attributes: [{ref: config.scope, requirement_level: required}, {ref: config.operation, requirement_level: required}, {ref: config.schema.version.from}, {ref: config.schema.version.to}, {ref: config.migration.step_count}, {ref: outcome, requirement_level: required}, {ref: error.type}] }
   - { id: event.trust.decision, type: event, name: trust.decision, brief: Role-source trust decision applied., stability: development, attributes: [{ref: trust.decision, requirement_level: required}, {ref: trust.source.type, requirement_level: required}, {ref: outcome, requirement_level: required}, {ref: error.type}] }
   - { id: event.isolation.decision, type: event, name: isolation.decision, brief: Workspace isolation and network policy selected., stability: development, attributes: [{ref: workspace.isolation.mode, requirement_level: required}, {ref: network.mode, requirement_level: required}, {ref: dind.mode, requirement_level: required}, {ref: outcome, requirement_level: required}] }
   - { id: event.isolation.firewall.failed, type: event, name: isolation.firewall.failed, brief: Fail-closed firewall application failed., stability: development, attributes: [{ref: network.mode, requirement_level: required}, {ref: outcome, requirement_level: required}, {ref: error.type, requirement_level: required}] }
   - { id: event.cache.decision, type: event, name: cache.decision, brief: Product cache decision made., stability: development, attributes: [{ref: cache.name, requirement_level: required}, {ref: cache.result, requirement_level: required}] }
-  - { id: event.operation.log, type: event, name: operation.log, brief: Bounded operation breadcrumb., stability: development, attributes: [] }
-  - { id: event.operation.warn, type: event, name: operation.warn, brief: Bounded operation warning., stability: development, attributes: [] }
+  - { id: event.operation.log, type: event, name: operation.log, brief: Bounded operation breadcrumb., stability: development, attributes: [{ref: outcome, requirement_level: required}, {ref: session.id}] }
+  - { id: event.operation.warn, type: event, name: operation.warn, brief: Bounded operation warning., stability: development, attributes: [{ref: outcome, requirement_level: required}, {ref: session.id}] }

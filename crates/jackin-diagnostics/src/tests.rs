@@ -116,7 +116,7 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
         );
 
         let span = operation_span(
-            jackin_telemetry::schema::events::ERROR_TYPED,
+            jackin_telemetry::schema::spans::PROCESS_COMMAND,
             &[(
                 jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
                 "true".into(),
@@ -183,7 +183,16 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
         ];
         jackin_telemetry::emit_event(
             &jackin_telemetry::event::OPERATION_LOG,
-            jackin_telemetry::FieldSet::new(&[session_attr], Some("capsule breadcrumb")),
+            jackin_telemetry::FieldSet::new(
+                &[
+                    session_attr,
+                    jackin_telemetry::Attr {
+                        key: jackin_telemetry::schema::attrs::OUTCOME,
+                        value: jackin_telemetry::Value::Str("success"),
+                    },
+                ],
+                Some("capsule breadcrumb"),
+            ),
         )
         .unwrap();
 

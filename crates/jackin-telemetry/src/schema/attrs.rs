@@ -205,6 +205,13 @@ pub const TELEMETRY_SIGNAL_DEF: super::AttributeMetadata = super::AttributeMetad
     description: "OpenTelemetry signal.",
     value_type: super::ValueType::String,
 };
+// registry-type: string[]
+pub const TELEMETRY_VALIDATION_VALUES: &str = "telemetry.validation.values";
+pub const TELEMETRY_VALIDATION_VALUES_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: TELEMETRY_VALIDATION_VALUES,
+    description: "Opaque values used to verify typed telemetry delivery.",
+    value_type: super::ValueType::StringArray,
+};
 // registry-type: enum
 pub const TRUST_DECISION: &str = "trust.decision";
 pub const TRUST_DECISION_DEF: super::AttributeMetadata = super::AttributeMetadata {
@@ -285,6 +292,7 @@ pub const ALL_KEYS: &[&str] = &[
     STREAM_DIRECTION,
     TELEMETRY_REJECTION_REASON,
     TELEMETRY_SIGNAL,
+    TELEMETRY_VALIDATION_VALUES,
     TRUST_DECISION,
     TRUST_SOURCE_TYPE,
     UI_ACTION_NAME,
@@ -324,6 +332,7 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     STREAM_DIRECTION_DEF,
     TELEMETRY_REJECTION_REASON_DEF,
     TELEMETRY_SIGNAL_DEF,
+    TELEMETRY_VALIDATION_VALUES_DEF,
     TRUST_DECISION_DEF,
     TRUST_SOURCE_TYPE_DEF,
     UI_ACTION_NAME_DEF,
