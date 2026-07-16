@@ -96,7 +96,7 @@ ratatui = "0.30"
 # Must stay lockstep-compatible with ratatui 0.30; pinned when workspace was
 # virtualized (#532/#713). Candidate: relax to "0.1" — needs lockfile-refresh PR.
 ratatui-core = "=0.1.2"
-termrock = { git = "https://github.com/tailrocks/termrock.git", rev = "41db0be7a6b166200b4b3661b5594a49700b5570" }
+termrock = { version = "=0.6.0", git = "https://github.com/tailrocks/termrock.git", rev = "41db0be7a6b166200b4b3661b5594a49700b5570" }
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false }
@@ -108,7 +108,6 @@ serde = "1.0"
 serde_json = "=1.0.150"
 serde_yaml_ng = "0.10.0"
 sha2 = "0.11"
-similar = "3"
 smallvec = "1.15"
 syn = { version = "2", features = ["full", "visit"] }
 tabled = "0.21.0"
@@ -124,7 +123,6 @@ toml = "=1.1.2"
 toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-tui-scrollbar = "0.2.4"
 tui-widget-list = "0.15"
 # Pre-release API churn; revisit at first stable 0.7 (or next pre.N after
 # re-running the usage-store suite against the boundary module only).

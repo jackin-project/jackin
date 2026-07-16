@@ -474,7 +474,7 @@ fn top_border_title(buf: &Buffer) -> String {
     let mut in_title = false;
     for x in 0..buf.area.width {
         let sym = buf[(x, 0)].symbol();
-        let is_border = matches!(sym, "┌" | "┐" | "─" | "│");
+        let is_border = matches!(sym, "┌" | "┐" | "─" | "│" | "╔" | "╗" | "═" | "║");
         if is_border {
             if in_title {
                 break;
@@ -731,7 +731,7 @@ fn dialog_button_rows_have_one_blank_row_above() {
             "{name} button row cannot be first row"
         );
         let before = row_text(&buf, button_y - 1);
-        let before_inner = before.trim_matches(['│', ' ']);
+        let before_inner = before.trim_matches(['│', '║', ' ']);
         assert!(
             before_inner.is_empty(),
             "{name} must have one blank row above buttons; got {before:?}",
@@ -847,7 +847,11 @@ fn neighbors(x: u16, y: u16, area: Rect) -> impl Iterator<Item = (u16, u16)> {
 
 fn is_green_border_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
     let cell = &buf[coord];
-    cell.fg == PHOSPHOR_GREEN && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
+    cell.fg == PHOSPHOR_GREEN
+        && matches!(
+            cell.symbol(),
+            "┌" | "┐" | "└" | "┘" | "─" | "│" | "╔" | "╗" | "╚" | "╝" | "═" | "║"
+        )
 }
 
 fn test_cwd() -> std::path::PathBuf {

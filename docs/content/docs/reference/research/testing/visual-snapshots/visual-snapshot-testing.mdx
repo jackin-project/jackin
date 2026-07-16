@@ -11,7 +11,7 @@ Every surface jackin❯ renders is something an operator sees: the operator cons
 There are two concrete blind spots:
 
 - **The console snapshot helper captures glyphs only.** It dumps each cell's `.symbol()` and discards colour and every text attribute (see <RepoFile path="crates/jackin-console/src/tui/view/tests.rs">crates/jackin-console/src/tui/view/tests.rs</RepoFile>). A regression that turns a `Blocked` badge from red to grey, drops the underline on a link, or removes `REVERSED` from a selected row passes every existing snapshot.
-- **The component SVG encoder captures colour but not attributes.** `buffer_to_svg` in <RepoFile path="crates/jackin-tui-lookbook/src/svg.rs">crates/jackin-tui-lookbook/src/svg.rs</RepoFile> encodes `fg`/`bg` but not the `Modifier` bitset (`BOLD`, `DIM`, `ITALIC`, `UNDERLINED`, `SLOW_BLINK`, `RAPID_BLINK`, `REVERSED`, `HIDDEN`, `CROSSED_OUT`). The theme defines `BOLD_WHITE`, `BOLD_GREEN`, and `DANGER` (bold) in <RepoFile path="crates/jackin-tui/src/theme.rs">crates/jackin-tui/src/theme.rs</RepoFile>, and the bold-ness of all of them is currently untested.
+- **The component SVG encoder captures colour but not attributes.** `buffer_to_svg` in `crates/jackin-tui-lookbook/src/svg.rs` encodes `fg`/`bg` but not the `Modifier` bitset (`BOLD`, `DIM`, `ITALIC`, `UNDERLINED`, `SLOW_BLINK`, `RAPID_BLINK`, `REVERSED`, `HIDDEN`, `CROSSED_OUT`). The theme defines `BOLD_WHITE`, `BOLD_GREEN`, and `DANGER` (bold) in `crates/jackin-tui/src/theme.rs`, and the bold-ness of all of them is currently untested.
 
 The goal is a single, deterministic, **PR-diffable snapshot of what is on screen** — for both TUI screens and CLI output — so that every visual change is surfaced as a reviewable before/after in the pull request, and an unintended change fails CI.
 
@@ -55,7 +55,7 @@ The single source of truth for "what the user sees" in a ratatui surface is the 
 
 Two further classes of test pin **intent** independently of pixel output, so a "wrong token used" regression fails even when two tokens look similar:
 
-- **Palette golden.** A single snapshot of every `pub const` colour/style token in <RepoFile path="crates/jackin-tui/src/theme.rs">crates/jackin-tui/src/theme.rs</RepoFile>. Changing `STATUS_BLOCKED_RED_RGB` then shows as one intentional, reviewable diff instead of rippling silently through dozens of screen goldens.
+- **Palette golden.** A single snapshot of every `pub const` colour/style token in `crates/jackin-tui/src/theme.rs`. Changing `STATUS_BLOCKED_RED_RGB` then shows as one intentional, reviewable diff instead of rippling silently through dozens of screen goldens.
 - **Semantic style assertions.** At known coordinates, assert the resolved style of high-value cells (the `Blocked` badge resolves to `STATUS_BLOCKED_RED` + `BOLD`; a link has `UNDERLINED`), separating "the token's value changed" from "the wrong token was applied".
 
 ## Surfaces to cover
@@ -116,7 +116,7 @@ Multi-source, adversarially-verified external research (primary sources: crates.
 
 - **Golden churn.** Style-complete SVG goldens change whenever the render legitimately changes; the `insta`/`--check` review workflow keeps that a one-keystroke accept, but reviewers must actually look at the diff, not rubber-stamp it.
 - **Determinism is load-bearing.** Any unpinned size, theme, clock, or path makes a golden flaky. The harness must land before broad adoption (Phase 2 gates Phases 3–5).
-- **Encoder fidelity.** The SVG encoder must apply the same colour resolution and dim/scaling transform the real renderer uses (see the `scale()` path in <RepoFile path="crates/jackin-tui/src/theme.rs">crates/jackin-tui/src/theme.rs</RepoFile>), or goldens will diverge from on-screen reality.
+- **Encoder fidelity.** The SVG encoder must apply the same colour resolution and dim/scaling transform the real renderer uses (see the `scale()` path in `crates/jackin-tui/src/theme.rs`), or goldens will diverge from on-screen reality.
 - **Scope discipline.** This item owns the *visual render artifact and its regression net*. It must not absorb live-automation or functional-CLI concerns; cross-reference the owning items instead.
 
 ## Open design questions

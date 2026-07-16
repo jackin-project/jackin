@@ -77,7 +77,7 @@ Extraction is bug-compatible: these are recorded at freeze and fixed only after 
 - panel focus signaled by border color alone, with no non-color cue;
 - three parallel color layers (`Rgb` constants, Ratatui `Color` constants, raw ANSI string helpers) plus a fourth duplicated hex table inside the lookbook SVG writer;
 - hyperlink overlays returned as raw post-frame byte vectors from the error and container-info dialogs;
-- <RepoFile path="crates/jackin-tui/COMPONENTS.md">`COMPONENTS.md`</RepoFile> references a lookbook binary and in-crate story module that no longer exist, and the crate-root docs name a `Theme` type that was never implemented — both corrected at freeze;
+- ``COMPONENTS.md`` references a lookbook binary and in-crate story module that no longer exist, and the crate-root docs name a `Theme` type that was never implemented — both corrected at freeze;
 - the lookbook SVG drift check (`tui-lookbook --check`) is a documented CLI command that no CI workflow currently runs, so committed fixtures are not mechanically proven current; wiring it into `jackin❯` CI is a freeze prerequisite.
 
 ## Module-level review rule
@@ -96,12 +96,12 @@ No module moves merely because its filename sounds generic.
 
 ## Signatures that must change before publication
 
-- <RepoFile path="crates/jackin-tui/src/components/select_list.rs">`SelectListState`</RepoFile> owns `Vec<String>`, reports indices, hardcodes ASCII substring filtering and action labels, and measures width with character count rather than display columns. Separate consumer rows from interaction state, use stable IDs, and make filtering/hints inputs.
-- <RepoFile path="crates/jackin-tui/src/components/text_input.rs">`TextField`</RepoFile> combines cursor/edit state, forbidden-value validation, and save/cancel wording. Make editing Unicode/display-width aware and validation/action wording consumer-owned.
-- <RepoFile path="crates/jackin-tui/src/components/status_footer.rs">`StatusFooter`</RepoFile> names container/run/usage concepts. Replace it with generic data-driven slots and retain product composition locally.
-- <RepoFile path="crates/jackin-tui/src/components/container_info.rs">`ContainerInfoState`/`DebugInfo`</RepoFile> combine reusable detail rows with agent, role, container, and version fields. Extract a neutral detail/inspector widget; keep the builder in jackin❯.
-- <RepoFile path="crates/jackin-tui/src/components/modal_rects.rs">modal rectangle modes</RepoFile> expose auth, role, mount, source, scope, and operation cases. Replace them with generic min/preferred/max responsive specifications.
-- <RepoFile path="crates/jackin-tui/src/runtime.rs">runtime helpers</RepoFile> create Tokio channels/tasks and even a fallback runtime. Extract the executor-neutral contracts (`Dirty`, `UpdateResult`, `SubscriptionPoll`, `Subscription`, `Component`, `View`) and the pure Ratatui `drive_frame`/`drive_render` drivers into the base `runtime` module, which is optional by use rather than feature-gated; Tokio receiver implementations and spawn helpers stay in `jackin❯`, connecting to the shared subscription trait through its closure adapter because coherence forbids implementing it directly for Tokio receiver types.
-- <RepoFile path="crates/jackin-tui/src/ownership.rs">terminal ownership</RepoFile> contains jackin❯ process-global flags and title/screen policy. Do not extract it as the generic lifecycle API.
+- ``SelectListState`` owns `Vec<String>`, reports indices, hardcodes ASCII substring filtering and action labels, and measures width with character count rather than display columns. Separate consumer rows from interaction state, use stable IDs, and make filtering/hints inputs.
+- ``TextField`` combines cursor/edit state, forbidden-value validation, and save/cancel wording. Make editing Unicode/display-width aware and validation/action wording consumer-owned.
+- ``StatusFooter`` names container/run/usage concepts. Replace it with generic data-driven slots and retain product composition locally.
+- ``ContainerInfoState`/`DebugInfo`` combine reusable detail rows with agent, role, container, and version fields. Extract a neutral detail/inspector widget; keep the builder in jackin❯.
+- `modal rectangle modes` expose auth, role, mount, source, scope, and operation cases. Replace them with generic min/preferred/max responsive specifications.
+- `runtime helpers` create Tokio channels/tasks and even a fallback runtime. Extract the executor-neutral contracts (`Dirty`, `UpdateResult`, `SubscriptionPoll`, `Subscription`, `Component`, `View`) and the pure Ratatui `drive_frame`/`drive_render` drivers into the base `runtime` module, which is optional by use rather than feature-gated; Tokio receiver implementations and spawn helpers stay in `jackin❯`, connecting to the shared subscription trait through its closure adapter because coherence forbids implementing it directly for Tokio receiver types.
+- `terminal ownership` contains jackin❯ process-global flags and title/screen policy. Do not extract it as the generic lifecycle API.
 
 The proposed replacements and semver constraints are in [06 - Public API and refactoring](/reference/research/shared-tui-extraction/06-public-api-and-refactoring/).
