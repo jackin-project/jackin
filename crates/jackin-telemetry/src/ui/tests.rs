@@ -22,9 +22,35 @@ fn screen_sequence_is_monotonic_and_visits_end() {
     tracker
         .enter(schema::enums::ScreenId::WorkspaceEditor)
         .unwrap();
-    assert_eq!(tracker.sequence(), 2);
+    assert_eq!(tracker.sequence(), 3);
     tracker.exit(schema::enums::TransitionReason::Back).unwrap();
+    assert_eq!(tracker.sequence(), 4);
     assert_eq!(tracker.current_screen(), None);
+}
+
+#[test]
+fn lifecycle_sequence_increases_for_every_enter_and_exit() {
+    let mut tracker = ScreenVisitTracker::new();
+    tracker
+        .enter(schema::enums::ScreenId::WorkspaceList)
+        .unwrap();
+    assert_eq!(tracker.sequence(), 1);
+    tracker
+        .transition(
+            schema::enums::ScreenId::WorkspaceEditor,
+            schema::enums::TransitionReason::Action,
+            None,
+        )
+        .unwrap();
+    assert_eq!(tracker.sequence(), 3);
+    tracker
+        .transition(
+            schema::enums::ScreenId::WorkspaceList,
+            schema::enums::TransitionReason::Back,
+            None,
+        )
+        .unwrap();
+    assert_eq!(tracker.sequence(), 5);
 }
 
 #[test]

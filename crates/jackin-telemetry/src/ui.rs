@@ -198,7 +198,7 @@ impl ScreenVisitTracker {
         if previous == screen {
             return Ok(());
         }
-        let attrs = [
+        let transition_attrs = [
             Attr {
                 key: schema::attrs::UI_SCREEN_PREVIOUS_ID,
                 value: Value::Str(previous.as_str()),
@@ -213,12 +213,25 @@ impl ScreenVisitTracker {
             },
         ];
         let transition = action_parent.and_then(|parent| {
-            parent
-                .in_scope(|| crate::operation(&crate::operation::UI_SCREEN_TRANSITION, &attrs).ok())
+            parent.in_scope(|| {
+                crate::operation(&crate::operation::UI_SCREEN_TRANSITION, &transition_attrs).ok()
+            })
         });
         self.exit(reason)?;
         self.enter_new(screen)?;
-        counter(&metric::UI_TRANSITIONS).add(1, &attrs)?;
+        counter(&metric::UI_TRANSITIONS).add(
+            1,
+            &[
+                Attr {
+                    key: schema::attrs::std_attrs::APP_SCREEN_ID,
+                    value: Value::Str(screen.as_str()),
+                },
+                Attr {
+                    key: schema::attrs::UI_TRANSITION_REASON,
+                    value: Value::Str(reason.as_str()),
+                },
+            ],
+        )?;
         if let Some(transition) = transition {
             transition.complete(schema::enums::OutcomeValue::Success, None);
         }
@@ -258,6 +271,7 @@ impl ScreenVisitTracker {
         let Some(visit) = self.current.take() else {
             return Ok(());
         };
+        self.sequence = self.sequence.saturating_add(1);
         let attrs = [
             Attr {
                 key: schema::attrs::std_attrs::APP_SCREEN_ID,
