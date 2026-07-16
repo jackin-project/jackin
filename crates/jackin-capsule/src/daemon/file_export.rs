@@ -12,6 +12,7 @@ use jackin_protocol::attach::{
     FileExportChunk, FileExportEnd, FileExportStart, MAX_FILE_EXPORT_CHUNK_BYTES,
     MAX_FILE_EXPORT_NAME_BYTES, MAX_FILE_EXPORT_PATH_BYTES, ServerFrame,
 };
+use jackin_telemetry::ResultTelemetryExt as _;
 use sha2::{Digest, Sha256};
 
 use super::Multiplexer;
@@ -28,7 +29,9 @@ impl Multiplexer {
         reveal_after_export: bool,
         open_after_export: bool,
     ) {
-        match self.send_file_export_frames(&requested_path, reveal_after_export, open_after_export)
+        match self
+            .send_file_export_frames(&requested_path, reveal_after_export, open_after_export)
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
         {
             Ok(file_name) => {
                 let action = if open_after_export {
@@ -41,12 +44,6 @@ impl Multiplexer {
                 self.set_clipboard_image_notice(format!("{action}: {file_name}"));
             }
             Err(err) => {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "file-export: rejected source_category={} reason={}",
-                    requested_export_path_category(&requested_path),
-                    compact_export_error_reason(&err)
-                );
                 self.set_clipboard_image_notice(format!("File export rejected: {err:#}"));
             }
         }
@@ -88,11 +85,11 @@ impl Multiplexer {
         let Some(requested_path) = self.export_path_at_mouse_cell(row, col) else {
             return false;
         };
-        if let Err(err) = self.resolve_export_candidate(&requested_path) {
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "file-export: modified-click ignored token={requested_path:?}: {err:#}"
-            );
+        if self
+            .resolve_export_candidate(&requested_path)
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            .is_err()
+        {
             return false;
         }
         self.export_file_to_host(requested_path, false, false);
@@ -130,7 +127,6 @@ impl Multiplexer {
         let source = candidate.source;
         let metadata = candidate.metadata;
         let file_name = candidate.file_name;
-        let canonical_workdir = candidate.canonical_workdir;
         #[expect(
             clippy::disallowed_methods,
             reason = "file export is an explicit bounded operator action, not render emission"
@@ -172,34 +168,11 @@ impl Multiplexer {
             transfer_id,
             sha256,
         }));
-        let source_category = export_source_category(&source, &canonical_workdir);
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "file-export: queued transfer_id={} source_category={} basename={:?} bytes={} sha256={} reveal_after_export={} open_after_export={}",
-            transfer_id,
-            source_category,
-            file_name,
-            metadata.len(),
-            hex::encode(sha256),
-            reveal_after_export,
-            open_after_export
-        );
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "{}",
-            file_export_queue_compact_line(
-                source_category,
-                &file_name,
-                metadata.len(),
-                reveal_after_export,
-                open_after_export
-            )
-        );
         Ok(file_name)
     }
 
     fn resolve_export_candidate(&self, requested_path: &str) -> Result<ExportCandidate> {
-        let (source, canonical_workdir) = self.resolve_export_source(requested_path)?;
+        let (source, _) = self.resolve_export_source(requested_path)?;
         let metadata = source
             .metadata()
             .with_context(|| format!("reading metadata for {}", source.display()))?;
@@ -223,7 +196,6 @@ impl Multiplexer {
             source,
             metadata,
             file_name,
-            canonical_workdir,
         })
     }
 
@@ -256,21 +228,10 @@ impl Multiplexer {
     }
 }
 
-fn export_source_category(source: &Path, canonical_workdir: &Path) -> &'static str {
-    if source.starts_with(canonical_workdir) {
-        return "workspace";
-    }
-    if source.starts_with(Path::new(JACKIN_RUN_DIR)) {
-        return "jackin-run";
-    }
-    "unknown"
-}
-
 struct ExportCandidate {
     source: PathBuf,
     metadata: Metadata,
     file_name: String,
-    canonical_workdir: PathBuf,
 }
 
 /// Extract the trimmed word token straddling `col` in `row`, or `None` when no
@@ -297,55 +258,3 @@ fn next_transfer_id() -> u64 {
             duration.as_nanos().try_into().unwrap_or(duration.as_secs())
         })
 }
-
-fn file_export_queue_compact_line(
-    source_category: &str,
-    file_name: &str,
-    bytes: u64,
-    reveal_after_export: bool,
-    open_after_export: bool,
-) -> String {
-    format!(
-        "file-export: queued source_category={source_category} basename={file_name:?} bytes={bytes} reveal_after_export={reveal_after_export} open_after_export={open_after_export}"
-    )
-}
-
-/// Categorize an export path for diagnostics (INV-D20).
-///
-/// Returns one of: `jackin-run`, `jackin-owned`, `container-absolute`,
-/// `container-relative`.
-pub(crate) fn requested_export_path_category(requested_path: &str) -> &'static str {
-    let trimmed = requested_path.trim();
-    if container_paths::is_run_owned(trimmed) {
-        return "jackin-run";
-    }
-    if container_paths::is_jackin_owned(trimmed) {
-        return "jackin-owned";
-    }
-    if trimmed.starts_with('/') {
-        return "container-absolute";
-    }
-    "container-relative"
-}
-
-fn compact_export_error_reason(err: &anyhow::Error) -> &'static str {
-    let text = err.to_string();
-    if text.contains("only regular files") {
-        "non-regular"
-    } else if text.contains("current export cap") {
-        "oversize"
-    } else if text.contains("workspace or /jackin/run") {
-        "path-policy"
-    } else if text.contains("exceeds export protocol cap") {
-        "protocol-cap"
-    } else if text.contains("empty") {
-        "empty-path"
-    } else if text.contains("resolving") {
-        "not-found"
-    } else {
-        "validation"
-    }
-}
-
-#[cfg(test)]
-mod tests;
