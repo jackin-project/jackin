@@ -1,19 +1,17 @@
 # jackin-core
 
-Universal product vocabulary and side-effect-free cross-surface projections shared across jackin❯ crates. This is the product leaf at the bottom of the workspace dependency graph: no jackin❯ dependencies, no `tokio`, no subprocess, and no filesystem.
+Shared jackin❯ vocabulary and pure cross-surface projections. This L0 leaf has no jackin❯ dependencies, async runtime, filesystem, subprocess, or side effects.
 
 ## What this crate owns
 
 - Domain nouns every other crate speaks in: agent identity, instance, isolation, manifest fragments, env model, status, launch progress, operator notices.
-- Port traits and shared abstractions higher crates implement (e.g. `CommandRunner`, `Clock`), plus the constants, paths, and selector/url/path text helpers reused everywhere.
-- Product-owned operator-information facts and their projection into TermRock's neutral table contract; the visual implementation remains in TermRock.
+- Ports, constants, paths, and selector/URL/path helpers reused by higher crates.
+- Operator-information facts projected into TermRock's neutral table contract.
 - Small self-contained ANSI and host-color tokens re-exported by presentation crates.
-
-Because everything depends on `jackin-core`, it stays free of workspace dependencies and side effects. External value, text, and presentation-contract crates are allowed only for shared product vocabulary or pure projections. Anything that needs `tokio`, the filesystem, a subprocess, or a real adapter belongs in a higher crate.
 
 ## Architecture tier and allowed dependencies
 
-**L0 leaf/domain + pure product projection.** Allowed workspace dependencies: **none**. No `tokio`, no I/O, and no effect execution. TermRock and Ratatui types may appear only in a side-effect-free product projection whose neutral rendering remains TermRock-owned.
+**L0 leaf/domain + pure projections.** No workspace dependencies or effects. TermRock and Ratatui types are limited to pure product projections.
 
 ## Structure
 

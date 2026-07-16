@@ -20,7 +20,7 @@ Launch cockpit TUI — the presentation surface for `jackin load`. Renders build
 | [`launch_output.rs`](src/launch_output.rs) | launch output streaming | — |
 | [`build_log.rs`](src/build_log.rs) | build-log streaming | — |
 | [`standalone_dialog_sink.rs`](src/standalone_dialog_sink.rs) · [`standalone_dialog_sink/`](src/standalone_dialog_sink) | standalone dialog sink | [`tests.rs`](src/standalone_dialog_sink/tests.rs) |
-| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | launch TUI shell plus product-owned output, animation, and chrome policy over TermRock layout/status/dialog widgets and the shared jackin❯ operator-info facade; no copied neutral container-info body | — |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | output, animation, and chrome using TermRock and shared operator-info UI | — |
 
 ## Public API
 

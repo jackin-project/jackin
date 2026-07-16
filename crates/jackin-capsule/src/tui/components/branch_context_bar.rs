@@ -137,12 +137,12 @@ pub(crate) fn branch_context_bar_layout(
     })
 }
 
-fn status_slot<'a>(
+fn status_slot(
     id: BranchBarSlot,
-    content: &'a str,
+    content: &str,
     priority: u8,
     enabled: bool,
-) -> StatusSlot<'a, BranchBarSlot> {
+) -> StatusSlot<'_, BranchBarSlot> {
     StatusSlot {
         id,
         content,
@@ -167,9 +167,11 @@ fn usage_content(width: u16, label: Option<&str>, container: &str, run_id: &str)
         return full;
     }
     let compact = format!(" {} ", compact_usage_status_label(label));
-    (termrock::display_cols(&compact) <= available)
-        .then_some(compact)
-        .unwrap_or_default()
+    if termrock::display_cols(&compact) <= available {
+        compact
+    } else {
+        String::new()
+    }
 }
 
 fn compact_usage_status_label(label: &str) -> String {
@@ -208,22 +210,31 @@ fn compact_usage_status_label(label: &str) -> String {
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "product status projection inputs"
-)]
+pub(crate) struct BranchContextBarView<'a> {
+    pub(crate) branch: Option<&'a str>,
+    pub(crate) usage_status_label: Option<&'a str>,
+    pub(crate) pull_request: Option<&'a PullRequestInfo>,
+    pub(crate) pull_request_loading: bool,
+    pub(crate) debug_run_id: Option<&'a str>,
+    pub(crate) container_name: &'a str,
+    pub(crate) hover_target: Option<crate::tui::model::HoverTarget>,
+}
+
 pub(crate) fn render_branch_context_bar(
     buffer: &mut Buffer,
     area: Rect,
-    branch: Option<&str>,
-    usage_status_label: Option<&str>,
-    pull_request: Option<&PullRequestInfo>,
-    pull_request_loading: bool,
-    debug_run_id: Option<&str>,
-    container_name: &str,
-    hover_target: Option<crate::tui::model::HoverTarget>,
+    view: BranchContextBarView<'_>,
 ) {
     use crate::tui::model::HoverTarget;
+    let BranchContextBarView {
+        branch,
+        usage_status_label,
+        pull_request,
+        pull_request_loading,
+        debug_run_id,
+        container_name,
+        hover_target,
+    } = view;
     let (left_text, left_clickable) = match (pull_request, branch) {
         (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         (None, Some(value)) if pull_request_loading => (format!(" Resolving PR · {value} "), true),

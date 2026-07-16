@@ -327,13 +327,15 @@ fn render_branch_bar_row(
             width: area.width,
             height: 1,
         },
-        branch,
-        usage_status_label,
-        pull_request,
-        pull_request_loading,
-        debug_run_id,
-        instance_id_label,
-        hover_target,
+        crate::tui::components::branch_context_bar::BranchContextBarView {
+            branch,
+            usage_status_label,
+            pull_request,
+            pull_request_loading,
+            debug_run_id,
+            container_name: instance_id_label,
+            hover_target,
+        },
     );
 }
 

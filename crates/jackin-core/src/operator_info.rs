@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Product-owned jackin❯ operator-information vocabulary and TermRock projection.
+//! Product-owned jackin❯ operator-information vocabulary and `TermRock` projection.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -529,11 +529,10 @@ pub fn copy_payload_at(
 ) -> Option<(usize, String)> {
     let (rows, mut table_state, _) = detail_layout(area, state);
     let hit = table_state.activate_at(Position::new(col, row));
-    let id = match hit {
-        DetailTableOutcome::Copy(id) => id,
-        _ => return None,
+    let DetailTableOutcome::Copy(id) = hit else {
+        return None;
     };
-    Some((id, rows[id].value.to_owned()))
+    rows.get(id).map(|row| (id, row.value.to_owned()))
 }
 
 #[must_use]
@@ -545,11 +544,11 @@ pub fn hyperlink_payload_at(
 ) -> Option<(usize, String)> {
     let (rows, mut table_state, _) = detail_layout(area, state);
     let hit = table_state.activate_link_at(Position::new(col, row));
-    let id = match hit {
-        DetailTableOutcome::ActivateLink(id) => id,
-        _ => return None,
+    let DetailTableOutcome::ActivateLink(id) = hit else {
+        return None;
     };
-    rows[id].href.map(|href| (id, href.to_owned()))
+    rows.get(id)
+        .and_then(|row| row.href.map(|href| (id, href.to_owned())))
 }
 
 /// Visible hyperlink cells for the encoder's frame-layer OSC 8 emission:

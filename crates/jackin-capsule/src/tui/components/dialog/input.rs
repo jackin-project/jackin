@@ -12,7 +12,7 @@ use crate::tui::keymap::{RENAME_KEYMAP, RenameAction};
 /// Dispatches advertised keys through [`RENAME_KEYMAP`]: Enter commits,
 /// Esc / Ctrl+C / Ctrl+Q cancel, Backspace removes the trailing char.
 /// Any other printable chunk appends (the keymap `None` arm). Length cap
-/// and printable filter live inside TermRock's canonical text-input state so this
+/// and printable filter live inside `TermRock`'s canonical text-input state so this
 /// handler only needs to dispatch key bytes — the buffer math is shared
 /// with the console TUI surface.
 pub(super) fn rename_tab_handle_key(
