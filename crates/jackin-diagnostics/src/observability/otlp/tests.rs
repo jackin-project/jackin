@@ -915,6 +915,28 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
 }
 
 #[test]
+fn recovered_error_helper_exports_one_typed_warning_without_raw_value() {
+    use opentelemetry::logs::{AnyValue, Severity};
+
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
+    let (export, subscriber) = super::test_layers(false, "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        jackin_telemetry::record_recovered_degradation().expect("recovered warning");
+    });
+    export.logger_provider.force_flush().unwrap();
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].record.event_name(), Some("operation.warn"));
+    assert_eq!(logs[0].record.severity_number(), Some(Severity::Warn));
+    assert_eq!(logs[0].record.body(), None);
+    assert_eq!(
+        log_attribute(&logs[0].record, "error.type"),
+        Some(&AnyValue::String("recovered_degradation".into()))
+    );
+}
+
+#[test]
 fn detached_failure_automatically_exports_one_typed_error() {
     use opentelemetry::logs::AnyValue;
 

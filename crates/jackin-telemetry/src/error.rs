@@ -26,13 +26,21 @@ pub fn record_error(error_type: schema::enums::ErrorType) -> Result<(), Rejectio
 
 /// Record a handled failure that preserved the outer operation's success.
 ///
-/// This is a governed warning without an error body. It must not be used for a
-/// terminal failure; the semantic owner records those through [`record_error`].
+/// This is a governed warning without an error body. Its fixed bounded error
+/// type makes every recovered failure observable without formatting the source
+/// error. It must not be used for a terminal failure; the semantic owner records
+/// those through [`record_error`].
 pub fn record_recovered_degradation() -> Result<(), Rejection> {
-    let attrs = [Attr {
-        key: schema::attrs::OUTCOME,
-        value: Value::Str(schema::enums::OutcomeValue::Success.as_str()),
-    }];
+    let attrs = [
+        Attr {
+            key: schema::attrs::OUTCOME,
+            value: Value::Str(schema::enums::OutcomeValue::Success.as_str()),
+        },
+        Attr {
+            key: schema::attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(schema::enums::ErrorType::RecoveredDegradation.as_str()),
+        },
+    ];
     emit_event(&event::OPERATION_WARN, FieldSet::new(&attrs, None))
 }
 

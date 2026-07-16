@@ -748,7 +748,7 @@ pub const OPERATION_LOG_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,error.type:required,outcome:required,session.id:recommended
 pub const OPERATION_WARN: &str = "operation.warn";
 pub const OPERATION_WARN_DEF: super::EventMetadata = super::EventMetadata {
     name: OPERATION_WARN,
@@ -758,6 +758,12 @@ pub const OPERATION_WARN_DEF: super::EventMetadata = super::EventMetadata {
             name: "cli.invocation.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
             allowed_values: &[],
         },
         super::AttributeRequirement {

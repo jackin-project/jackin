@@ -401,6 +401,7 @@ fn emit_operation_warn(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("cli.invocation.id", field_cli_invocation_id, String),
+            ("error.type", field_error_type, String),
             ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]
