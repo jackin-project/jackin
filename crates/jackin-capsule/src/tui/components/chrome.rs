@@ -102,7 +102,7 @@ fn tab_glyph_style(glyph: TabGlyph, bg: Color) -> Option<Style> {
         TabGlyph::Idle => Some(
             Style::default()
                 .bg(bg)
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(jackin_core::tui_theme::accent_fg())
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Done | TabGlyph::Unknown => None,
@@ -186,7 +186,7 @@ impl Widget for StatusBarWidget<'_> {
         {
             let underline = "━".repeat(active.cell_cols as usize);
             let underline_fg = if self.focused {
-                termrock::style::PHOSPHOR_GREEN
+                jackin_core::tui_theme::accent_fg()
             } else {
                 jackin_core::tui_theme::text_fg()
             };

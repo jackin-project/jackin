@@ -364,7 +364,7 @@ fn apply_tab_codename_tooltip(
         &pill,
         Style::default()
             .bg(jackin_core::tui_theme::tab_inactive_bg())
-            .fg(termrock::style::PHOSPHOR_GREEN)
+            .fg(jackin_core::tui_theme::accent_fg())
             .add_modifier(Modifier::BOLD),
     );
 }

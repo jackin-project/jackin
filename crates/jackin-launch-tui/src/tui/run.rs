@@ -951,7 +951,7 @@ impl RichRenderer {
                     let diff_theme = termrock::Theme::default()
                         .with_role(
                             termrock::style::Role::DiffAdded,
-                            Style::default().fg(termrock::style::PHOSPHOR_GREEN),
+                            Style::default().fg(jackin_core::tui_theme::accent_fg()),
                         )
                         .with_role(
                             termrock::style::Role::DiffRemoved,

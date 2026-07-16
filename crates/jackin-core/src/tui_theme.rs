@@ -47,6 +47,28 @@ fn style_bg(role: Role, fallback: Color) -> Color {
     Theme::default().style(role).bg.unwrap_or(fallback)
 }
 
+/// Foreground RGB for a TermRock role, for raw-ANSI surfaces that cannot paint
+/// Ratatui `Style`s.
+#[must_use]
+pub fn role_rgb(role: Role) -> Rgb {
+    match style_fg(role, Color::White) {
+        Color::Rgb(r, g, b) => Rgb::new(r, g, b),
+        _ => Rgb::new(255, 255, 255),
+    }
+}
+
+/// Scrollbar thumb RGB from `Role::ScrollThumb`.
+#[must_use]
+pub fn scroll_thumb_rgb() -> Rgb {
+    role_rgb(Role::ScrollThumb)
+}
+
+/// Inactive scrollbar / border RGB from `Role::Border`.
+#[must_use]
+pub fn border_rgb() -> Rgb {
+    role_rgb(Role::Border)
+}
+
 // --- Shared presentation via TermRock roles ---
 
 /// Ordinary body text style.
@@ -222,5 +244,20 @@ mod tests {
         assert_ne!(STATUS_BLOCKED_RED, danger_fg());
         assert_ne!(MENU_IDLE_BG, tab_inactive_bg());
         assert_eq!(BRAND_BLOCK, accent_fg());
+    }
+
+    #[test]
+    fn scroll_and_border_rgb_follow_theme_roles() {
+        let thumb = Theme::default().style(Role::ScrollThumb).fg.unwrap();
+        let border = Theme::default().style(Role::Border).fg.unwrap();
+        let Color::Rgb(tr, tg, tb) = thumb else {
+            panic!("ScrollThumb must be RGB");
+        };
+        let Color::Rgb(br, bg, bb) = border else {
+            panic!("Border must be RGB");
+        };
+        assert_eq!(scroll_thumb_rgb(), Rgb::new(tr, tg, tb));
+        assert_eq!(border_rgb(), Rgb::new(br, bg, bb));
+        assert_ne!(scroll_thumb_rgb(), border_rgb());
     }
 }

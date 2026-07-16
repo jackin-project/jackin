@@ -770,10 +770,10 @@ pub fn trust_lines(
         let selected = show_cursor && (selected_row == i);
         let mut style = if selected {
             Style::default()
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(jackin_core::tui_theme::accent_fg())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+            Style::default().fg(jackin_core::tui_theme::accent_fg())
         };
         if !selected && hovered_row == Some(i) {
             style = style.bg(jackin_core::tui_theme::tab_inactive_hover_bg());
@@ -958,10 +958,10 @@ pub fn global_mount_lines(
         let prefix = if is_selected { "\u{25b8} " } else { "  " };
         let base_style = if is_selected {
             Style::default()
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(jackin_core::tui_theme::accent_fg())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+            Style::default().fg(jackin_core::tui_theme::accent_fg())
         };
         let dim_style = Style::default()
             .fg(jackin_core::tui_theme::muted_fg())

@@ -85,10 +85,10 @@ pub(crate) fn mount_lines(
         let prefix = if selected { "\u{25b8} " } else { "  " };
         let base_style = if selected {
             Style::default()
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(jackin_core::tui_theme::accent_fg())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+            Style::default().fg(jackin_core::tui_theme::accent_fg())
         };
         let dim_style = Style::default()
             .fg(jackin_core::tui_theme::muted_fg())

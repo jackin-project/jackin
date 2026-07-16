@@ -27,7 +27,10 @@ fn brand_header_line(label: &str) -> Line<'static> {
         Span::styled(" jackin", block.fg(jackin_core::tui_theme::INK)),
         Span::styled("❯", block.fg(jackin_core::tui_theme::text_fg())),
         Span::styled(" ", block),
-        Span::styled(" · ", Style::default().fg(termrock::style::PHOSPHOR_DARK)),
+        Span::styled(
+            " · ",
+            Style::default().fg(jackin_core::tui_theme::scroll_track_fg()),
+        ),
         Span::styled(label.to_owned(), jackin_core::tui_theme::text_muted()),
     ])
 }

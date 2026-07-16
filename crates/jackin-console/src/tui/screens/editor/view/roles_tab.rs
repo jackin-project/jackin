@@ -58,7 +58,7 @@ pub(crate) fn role_lines(
 ) -> Vec<Line<'static>> {
     let badge_text = if is_all { "  all  " } else { "  custom  " };
     let badge_bg = if is_all {
-        termrock::style::PHOSPHOR_GREEN
+        jackin_core::tui_theme::accent_fg()
     } else {
         jackin_core::tui_theme::text_fg()
     };
@@ -99,10 +99,10 @@ pub(crate) fn role_lines(
         let text = format!("{prefix}{check} {star} {}", row.name);
         let style = if selected {
             Style::default()
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(jackin_core::tui_theme::accent_fg())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+            Style::default().fg(jackin_core::tui_theme::accent_fg())
         };
         lines.push(Line::from(Span::styled(text, style)));
     }

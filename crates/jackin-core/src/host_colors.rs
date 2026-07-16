@@ -1,20 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cross-crate colour types and brand palette tokens.
+//! Cross-crate RGB type and **product-owned** palette tokens.
 //!
-//! Three-byte RGB triple and the canonical phosphor palette, plus the
-//! `owo_rgb` adapter. Originally defined in `jackin-tui`; lifted to
-//! `jackin-core` as part of the A5 port-trait unblock work so
-//! `jackin-runtime` can use the brand palette + colour adapter
-//! without depending on the L3 presentation crate.
+//! Shared neutral presentation (ordinary/strong/muted text, borders, tabs,
+//! inputs, links on dark surfaces, danger/warning, scroll tracks) lives in
+//! TermRock's `Theme` / `Role` API. This module keeps only:
+//!
+//! - brand chrome and launch rain animation colors;
+//! - domain agent/menu/status accents;
+//! - non-TUI brand greens used by `owo_colors` CLI/spinner paths.
 //!
 //! Architecture Invariant: depends only on `std` and the `owo-colors`
 //! crate. No `jackin-*` deps.
 
-/// Three-byte RGB triple. Constructors below are the canonical
-/// phosphor palette used everywhere a jackin TUI surface needs to
-/// pick a colour.
+/// Three-byte RGB triple.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb {
     /// Red channel (0–255).
@@ -39,22 +39,24 @@ pub fn owo_rgb(rgb: Rgb) -> owo_colors::Rgb {
     owo_colors::Rgb(rgb.r, rgb.g, rgb.b)
 }
 
-/// `--jk-brand` — the bright phosphor green used for selection
-/// highlights, the row-0 brand pill, and live indicators.
+// --- Brand phosphor (non-TUI brand paint + rain trail anchors) ---
+
+/// Brand phosphor green — brand pill, rain body, CLI brand paint.
 pub const PHOSPHOR_GREEN: Rgb = Rgb::new(0, 255, 65);
 
-/// Mid-green used for inactive tab labels, dim labels, and "Dyn"
-/// footer text in the console.
+/// Dim brand phosphor — rain dim trail and CLI dim brand paint.
 pub const PHOSPHOR_DIM: Rgb = Rgb::new(0, 140, 30);
 
-/// Dark green used for panel borders and dot separators.
+/// Dark brand phosphor — rain tail.
 pub const PHOSPHOR_DARK: Rgb = Rgb::new(0, 80, 18);
 
 /// Pure black used for raw terminal brand text.
 pub const BLACK: Rgb = Rgb::new(0, 0, 0);
 
-/// White used for titles, keys, and high-contrast text.
+/// White used for rain head and high-contrast brand text on dark surfaces.
 pub const WHITE: Rgb = Rgb::new(255, 255, 255);
+
+// --- Launch rain (product animation) ---
 
 /// Bright launch-animation head.
 pub const RAIN_HEAD: Rgb = WHITE;
@@ -74,44 +76,18 @@ pub const RAIN_DIM: Rgb = PHOSPHOR_DIM;
 /// Dark launch-animation tail.
 pub const RAIN_DARK: Rgb = PHOSPHOR_DARK;
 
+// --- Brand chrome ---
+
 /// Brand pill background.
 pub const BRAND_BLOCK: Rgb = PHOSPHOR_GREEN;
 
-/// Subtle text-input background.
-pub const INPUT_BG_DIM: Rgb = Rgb::new(20, 24, 22);
-
-/// Inactive tab background.
-pub const TAB_BG_INACTIVE: Rgb = Rgb::new(30, 30, 30);
-
-/// Hovered inactive tab background.
-pub const TAB_BG_INACTIVE_HOVER: Rgb = Rgb::new(48, 48, 48);
-
-/// Active tab background.
-pub const TAB_BG_ACTIVE: Rgb = Rgb::new(42, 42, 42);
-
-/// Hovered active tab background.
-pub const TAB_BG_ACTIVE_HOVER: Rgb = Rgb::new(58, 58, 58);
-
-/// Link color on light status bars.
+/// Link color on light status bars (product chrome on white chips).
 pub const LINK_BLUE: Rgb = Rgb::new(0, 80, 180);
 
-/// Link color on dark surfaces.
-pub const LINK_FG: Rgb = Rgb::new(0, 200, 200);
-
-/// Hovered link color on dark surfaces.
-pub const LINK_FG_HOVER: Rgb = Rgb::new(130, 240, 240);
+// --- Domain / agent status ---
 
 /// Debug-mode chrome accent.
 pub const DEBUG_AMBER: Rgb = Rgb::new(204, 92, 0);
-
-/// Neutral inactive-border gray.
-pub const BORDER_GRAY: Rgb = Rgb::new(80, 80, 80);
-
-/// Lighter inactive scrollbar gray.
-pub const BORDER_GRAY_LIGHT: Rgb = Rgb::new(160, 160, 160);
-
-/// Error and danger accent.
-pub const DANGER_RED: Rgb = Rgb::new(255, 94, 122);
 
 /// Blocked-agent status accent.
 pub const STATUS_BLOCKED_RED: Rgb = Rgb::new(255, 60, 60);
@@ -128,17 +104,14 @@ pub const MENU_AWAITING_BG: Rgb = Rgb::new(96, 180, 255);
 /// Hovered awaiting-command menu background.
 pub const MENU_AWAITING_HOVER_BG: Rgb = Rgb::new(132, 202, 255);
 
-/// Live-state cyan.
+/// Live-state cyan for domain status chips.
 pub const CYAN: Rgb = Rgb::new(0, 180, 180);
 
 /// Dim live-state cyan.
 pub const CYAN_DIM: Rgb = Rgb::new(0, 120, 120);
 
-/// Permitted-action accent.
+/// Permitted-action accent (`+ Add …` rows).
 pub const ACTION_ACCENT: Rgb = Rgb::new(180, 255, 180);
 
 /// Disclosure-control accent.
 pub const DISCLOSURE_ACCENT: Rgb = Rgb::new(255, 208, 102);
-
-/// Warning accent.
-pub const WARNING_YELLOW: Rgb = Rgb::new(255, 216, 94);

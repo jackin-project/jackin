@@ -79,8 +79,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use jackin_core::tui_theme::scroll_track_fg;
 use termrock::layout::{DialogBorder, render_dialog_shell};
-use termrock::style::PHOSPHOR_DARK;
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
     let title = format!("Source for {}", state.key);
@@ -124,7 +124,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
             Paragraph::new(Span::styled(
                 "(install op CLI to enable)",
                 Style::default()
-                    .fg(PHOSPHOR_DARK)
+                    .fg(scroll_track_fg())
                     .add_modifier(Modifier::DIM),
             ))
             .alignment(Alignment::Center),

@@ -738,7 +738,7 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
     let heading = Style::default()
         .fg(jackin_core::tui_theme::text_fg())
         .add_modifier(Modifier::BOLD);
-    let value = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
+    let value = Style::default().fg(jackin_core::tui_theme::accent_fg());
     let dim = Style::default().fg(jackin_core::tui_theme::muted_fg());
 
     let mut out: Vec<Line<'static>> = Vec::new();
@@ -1009,9 +1009,9 @@ pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> 
     let heading = Style::default()
         .fg(jackin_core::tui_theme::text_fg())
         .add_modifier(Modifier::BOLD);
-    let add_style = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
+    let add_style = Style::default().fg(jackin_core::tui_theme::accent_fg());
     let remove_style = Style::default().fg(jackin_core::tui_theme::muted_fg());
-    let sep_style = Style::default().fg(termrock::style::PHOSPHOR_DARK);
+    let sep_style = Style::default().fg(jackin_core::tui_theme::scroll_track_fg());
 
     let mut out: Vec<Line<'static>> = Vec::new();
 
