@@ -198,7 +198,7 @@ jobs:
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: cargo bench --workspace --locked -- --quick 2>&1 | tee bench-output.txt
       - name: Accelerated telemetry lifecycle soak
-        run: cargo nextest run --profile soak -p jackin-telemetry --locked --run-ignored ignored-only
+        run: cargo nextest run --profile soak -p jackin-telemetry -p jackin-diagnostics --all-features --locked --run-ignored ignored-only
       - name: Enforce telemetry performance baseline
         run: cargo xtask telemetry-bench --capture
       - name: Upload bench results

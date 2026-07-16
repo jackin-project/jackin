@@ -115,5 +115,9 @@ required-features = ["test-support"]
 name = "wire_shutdown"
 required-features = ["test-support"]
 
+[[test]]
+name = "wire_failure_slow"
+required-features = ["test-support"]
+
 [lints]
 workspace = true
