@@ -5,41 +5,41 @@ groups:
     stability: development
     attributes:
       - { id: app.mode, type: { members: [{id: one_shot, value: one_shot, stability: development}, {id: interactive, value: interactive, stability: development}, {id: daemon, value: daemon, stability: development}, {id: capsule, value: capsule, stability: development}] }, brief: Application mode., stability: development }
-      - { id: cli.invocation.id, type: string, brief: Opaque top-level invocation identifier., stability: development }
-      - { id: cli.command.name, type: string, brief: Registry-backed command path., stability: development }
+      - { id: cli.invocation.id, type: string, examples: [invocation-7f3a], brief: Opaque top-level invocation identifier., stability: development }
+      - { id: cli.command.name, type: string, examples: [load], brief: Registry-backed command path., stability: development }
       - { id: ui.action.name, type: { members: [{id: workspace.open, value: workspace.open, stability: development}, {id: workspace.save, value: workspace.save, stability: development}, {id: workspace.launch, value: workspace.launch, stability: development}, {id: settings.open, value: settings.open, stability: development}, {id: settings.save, value: settings.save, stability: development}, {id: dialog.confirm, value: dialog.confirm, stability: development}, {id: dialog.cancel, value: dialog.cancel, stability: development}, {id: agent.select, value: agent.select, stability: development}, {id: agent.spawn, value: agent.spawn, stability: development}, {id: tab.switch, value: tab.switch, stability: development}, {id: tab.rename, value: tab.rename, stability: development}, {id: tab.close, value: tab.close, stability: development}, {id: pane.split, value: pane.split, stability: development}, {id: pane.focus, value: pane.focus, stability: development}, {id: pane.resize, value: pane.resize, stability: development}, {id: pane.zoom, value: pane.zoom, stability: development}, {id: pane.clear, value: pane.clear, stability: development}, {id: pane.close, value: pane.close, stability: development}, {id: usage.refresh, value: usage.refresh, stability: development}, {id: session.detach, value: session.detach, stability: development}, {id: file.export, value: file.export, stability: development}, {id: image.stage, value: image.stage, stability: development}, {id: link.open, value: link.open, stability: development}, {id: app.exit_request, value: app.exit_request, stability: development}, {id: screen.back, value: screen.back, stability: development}, {id: workspace.create, value: workspace.create, stability: development}, {id: workspace.delete, value: workspace.delete, stability: development}, {id: instance.purge, value: instance.purge, stability: development}] }, brief: Completed semantic UI action., stability: development }
-      - { id: ui.screen.visit.id, type: string, brief: Opaque screen visit identifier., stability: development }
+      - { id: ui.screen.visit.id, type: string, examples: [visit-42], brief: Opaque screen visit identifier., stability: development }
       - { id: ui.navigation.sequence, type: int, brief: Monotonic navigation sequence., stability: development }
-      - { id: ui.transition.reason, type: string, brief: Screen transition reason., stability: development }
+      - { id: ui.transition.reason, type: string, examples: [operator_action], brief: Screen transition reason., stability: development }
       - { id: app.jank.frame_count, type: int, brief: Frames in the jank observation period., stability: development }
-      - { id: app.jank.period, type: string, brief: Bounded jank observation period., stability: development }
+      - { id: app.jank.period, type: string, examples: [frame_window], brief: Bounded jank observation period., stability: development }
       - { id: app.jank.threshold, type: double, brief: Jank threshold in seconds., stability: development }
-      - { id: job.id, type: string, brief: Opaque detached job identifier., stability: development }
-      - { id: job.type, type: string, brief: Detached job class., stability: development }
-      - { id: outcome, type: string, brief: Bounded operation outcome., stability: development }
-      - { id: launch.stage.name, type: string, brief: Launch pipeline stage., stability: development }
-      - { id: launch.target.kind, type: string, brief: Launch target class., stability: development }
-      - { id: background.cycle.name, type: string, brief: Periodic cycle class., stability: development }
-      - { id: connection.peer.type, type: string, brief: Connection peer class., stability: development }
-      - { id: agent.state, type: string, brief: Effective coding-agent state., stability: development }
-      - { id: agent.status.source, type: string, brief: Agent status evidence class., stability: development }
-      - { id: agent.status.confidence, type: string, brief: Agent status confidence., stability: development }
+      - { id: job.id, type: string, examples: [job-19], brief: Opaque detached job identifier., stability: development }
+      - { id: job.type, type: string, examples: [image_prewarm], brief: Detached job class., stability: development }
+      - { id: outcome, type: string, examples: [success], brief: Bounded operation outcome., stability: development }
+      - { id: launch.stage.name, type: string, examples: [workspace], brief: Launch pipeline stage., stability: development }
+      - { id: launch.target.kind, type: string, examples: [workspace], brief: Launch target class., stability: development }
+      - { id: background.cycle.name, type: string, examples: [status_refresh], brief: Periodic cycle class., stability: development }
+      - { id: connection.peer.type, type: string, examples: [capsule], brief: Connection peer class., stability: development }
+      - { id: agent.state, type: string, examples: [working], brief: Effective coding-agent state., stability: development }
+      - { id: agent.status.source, type: string, examples: [process], brief: Agent status evidence class., stability: development }
+      - { id: agent.status.confidence, type: string, examples: [high], brief: Agent status confidence., stability: development }
       - { id: agent.status.stuck, type: boolean, brief: Whether the status authority considers the agent stuck., stability: development }
-      - { id: auth.mode, type: string, brief: Authentication mode., stability: development }
-      - { id: credential.source.type, type: string, brief: Credential source class., stability: development }
-      - { id: workspace.isolation.mode, type: string, brief: Workspace isolation mode., stability: development }
-      - { id: network.mode, type: string, brief: Network policy mode., stability: development }
-      - { id: dind.mode, type: string, brief: Docker-in-Docker mode., stability: development }
-      - { id: config.scope, type: string, brief: Configuration scope., stability: development }
-      - { id: config.operation, type: string, brief: Configuration operation., stability: development }
-      - { id: config.schema.version.from, type: string, brief: Previous configuration schema version., stability: development }
-      - { id: config.schema.version.to, type: string, brief: New configuration schema version., stability: development }
+      - { id: auth.mode, type: string, examples: [token], brief: Authentication mode., stability: development }
+      - { id: credential.source.type, type: string, examples: [one_password], brief: Credential source class., stability: development }
+      - { id: workspace.isolation.mode, type: string, examples: [container], brief: Workspace isolation mode., stability: development }
+      - { id: network.mode, type: string, examples: [isolated], brief: Network policy mode., stability: development }
+      - { id: dind.mode, type: string, examples: [sidecar], brief: Docker-in-Docker mode., stability: development }
+      - { id: config.scope, type: string, examples: [workspace], brief: Configuration scope., stability: development }
+      - { id: config.operation, type: string, examples: [save], brief: Configuration operation., stability: development }
+      - { id: config.schema.version.from, type: string, examples: ['1'], brief: Previous configuration schema version., stability: development }
+      - { id: config.schema.version.to, type: string, examples: ['2'], brief: New configuration schema version., stability: development }
       - { id: config.migration.step_count, type: int, brief: Applied configuration migration count., stability: development }
-      - { id: trust.decision, type: string, brief: Trust decision., stability: development }
-      - { id: trust.source.type, type: string, brief: Trust source class., stability: development }
-      - { id: cache.name, type: string, brief: Product cache class., stability: development }
-      - { id: cache.result, type: string, brief: Cache operation result., stability: development }
-      - { id: pty.exit.reason, type: string, brief: PTY exit reason., stability: development }
-      - { id: stream.direction, type: string, brief: Byte stream direction., stability: development }
-      - { id: telemetry.signal, type: string, brief: OpenTelemetry signal., stability: development }
-      - { id: telemetry.rejection.reason, type: string, brief: Facade rejection reason., stability: development }
+      - { id: trust.decision, type: string, examples: [approved], brief: Trust decision., stability: development }
+      - { id: trust.source.type, type: string, examples: [operator], brief: Trust source class., stability: development }
+      - { id: cache.name, type: string, examples: [derived_image], brief: Product cache class., stability: development }
+      - { id: cache.result, type: string, examples: [hit], brief: Cache operation result., stability: development }
+      - { id: pty.exit.reason, type: string, examples: [process_exit], brief: PTY exit reason., stability: development }
+      - { id: stream.direction, type: string, examples: [input], brief: Byte stream direction., stability: development }
+      - { id: telemetry.signal, type: string, examples: [trace], brief: OpenTelemetry signal., stability: development }
+      - { id: telemetry.rejection.reason, type: string, examples: [privacy], brief: Facade rejection reason., stability: development }
