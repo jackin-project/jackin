@@ -281,11 +281,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         apply_selection_highlight(frame.buffer_mut(), &sel, filled, offset);
     }
     if view.selection_copied {
-        crate::tui::components::toast::render_toast(
-            frame,
-            selection_toast_area(&view),
-            crate::tui::components::toast::Toast::new("Selection copied"),
-        );
+        render_notice_toast(frame, selection_toast_area(&view), "Selection copied");
     }
     render_clipboard_image_notice(frame, &view);
     render_link_hover_notice(frame, &view);
@@ -323,11 +319,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
 
 fn render_clipboard_image_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_>) {
     if let Some(notice) = view.clipboard_image_notice {
-        crate::tui::components::toast::render_toast(
-            frame,
-            selection_toast_area(view),
-            crate::tui::components::toast::Toast::new(notice),
-        );
+        render_notice_toast(frame, selection_toast_area(view), notice);
     }
 }
 
@@ -336,12 +328,16 @@ fn render_link_hover_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_
         return;
     }
     if let Some(notice) = view.link_hover_notice {
-        crate::tui::components::toast::render_toast(
-            frame,
-            selection_toast_area(view),
-            crate::tui::components::toast::Toast::new(notice),
-        );
+        render_notice_toast(frame, selection_toast_area(view), notice);
     }
+}
+
+fn render_notice_toast(frame: &mut Frame<'_>, area: RatatuiRect, message: &str) {
+    let theme = termrock::Theme::default();
+    frame.render_widget(
+        &termrock::widgets::Toast::new(&theme, message, termrock::widgets::Severity::Success),
+        area,
+    );
 }
 
 /// Paint the hovered tab's codename as a dark-bg + phosphor-green pill on the

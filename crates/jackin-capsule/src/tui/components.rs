@@ -18,7 +18,6 @@ pub mod palette;
 pub mod pane;
 pub mod status_bar;
 pub mod status_footer;
-pub mod toast;
 
 pub(crate) fn agent_display_name(slug: &str) -> Option<&'static str> {
     match slug {

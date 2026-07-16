@@ -7,7 +7,7 @@ expression: "render_usage_dialog_snapshot_for_view(100, 28, UsageDialogTab::Prov
 
        ┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
        │         Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax          │
-       │                                                                                    │
+       │                                              ━━━━━                                 │
        │────────────────────────────────────────────────────────────────────────────────────│
        │  xAI                                                        alexey@chainargos.com  │
        │  Updated 4m ago                                                         SuperGrok  │
