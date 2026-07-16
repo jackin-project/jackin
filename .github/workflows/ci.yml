@@ -341,12 +341,31 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - id: ci-tools-cache
-        name: Cache resolved CI tool binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .ci-prebuilt-tools
-          key: ci-tools-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+      - id: ci-tools-artifact
+        name: Restore resolved CI tool binaries
+        shell: bash
+        env:
+          ARTIFACT_NAME: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-prebuilt-tools
+          artifact_id=$(
+            gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=10" \
+              --jq '.artifacts[] | select(.expired == false) | .id' \
+              | head -n 1
+          )
+          if [ -z "$artifact_id" ]; then
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          archive=.ci-prebuilt-tools/.artifact.zip
+          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
+          python3 -m zipfile -e "$archive" .ci-prebuilt-tools
+          rm "$archive"
+          chmod +x .ci-prebuilt-tools/*
+          echo "hit=true" >> "$GITHUB_OUTPUT"
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: "2026.6.11"
@@ -358,7 +377,7 @@ jobs:
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           install_args: >-
             rust
-            ${{ steps.ci-tools-cache.outputs.cache-hit != 'true' &&
+            ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
@@ -381,7 +400,7 @@ jobs:
       - name: Stage shared CI xtask
         run: |
           mkdir -p .ci-prebuilt-tools target/ci-tools
-          if [ "${{ steps.ci-tools-cache.outputs.cache-hit }}" != "true" ]; then
+          if [ "${{ steps.ci-tools-artifact.outputs.hit }}" != "true" ]; then
             for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack; do
               cp "$(mise which "$tool")" ".ci-prebuilt-tools/$tool"
             done
@@ -390,6 +409,16 @@ jobs:
           cp .ci-prebuilt-tools/* target/ci-tools/
           cp target/ci-xtask/debug/jackin-xtask target/ci-tools/jackin-xtask
           strip target/ci-tools/jackin-xtask
+      - name: Publish resolved CI tool binaries
+        if: >-
+          steps.ci-tools-artifact.outputs.hit != 'true' &&
+          (matrix.config.lane == 'GitHub' || inputs.lanes == 'velnor')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          path: .ci-prebuilt-tools/*
+          compression-level: 0
+          retention-days: 7
       - name: Upload shared CI xtask
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
