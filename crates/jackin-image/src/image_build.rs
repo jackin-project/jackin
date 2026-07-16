@@ -12,7 +12,6 @@ use std::collections::HashMap;
 
 use anyhow::Context as _;
 use jackin_core::CommandRunner;
-use serde::Serialize;
 
 pub fn should_stream_build_output(debug: bool) -> bool {
     !debug && !jackin_diagnostics::rich_terminal_owned()
@@ -36,17 +35,12 @@ pub async fn emit_non_containerd_image_store_note(runner: &mut impl CommandRunne
     if docker_info_uses_containerd_store(&info) != Some(false) {
         return;
     }
-    let detail = serde_json::json!({
-        "containerd_image_store": false,
-        "docker_info": info.trim(),
-    })
-    .to_string();
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "docker_image_store",
             jackin_diagnostics::DiagnosticStage::DerivedImage,
             "Docker daemon is not using the containerd image store; local image export/unpack may be slower",
-            Some(&detail),
+            None,
         );
     }
 }
@@ -79,62 +73,29 @@ pub struct BuildContextStats {
     pub bytes: u64,
 }
 
-pub fn emit_build_context_snapshot(context_dir: &std::path::Path, source: &str) {
+pub fn emit_build_context_snapshot(context_dir: &std::path::Path, _source: &str) {
     match build_context_stats(context_dir) {
-        Ok(stats) => {
+        Ok(_) => {
             if let Some(run) = jackin_diagnostics::active_run() {
-                let detail = serde_json::json!({
-                    "source": source,
-                    "files": stats.files,
-                    "bytes": stats.bytes,
-                    "context_dir": context_dir.display().to_string(),
-                })
-                .to_string();
                 run.stage(
                     "build_context_snapshot",
                     jackin_diagnostics::DiagnosticStage::DerivedImage,
-                    &format!(
-                        "derived {source} build context snapshot: {} files, {} bytes",
-                        stats.files, stats.bytes
-                    ),
-                    Some(&detail),
+                    "derived image build context snapshot complete",
+                    None,
                 );
             }
         }
-        Err(error) => emit_compact_image_warning(&format!(
-            "failed to measure derived build context at {}: {error:#}",
-            context_dir.display()
-        )),
+        Err(_) => emit_compact_image_warning("failed to measure derived image build context"),
     }
 }
 
-#[derive(Debug, Serialize)]
-struct ImageBuildSourceDiagnostic<'a> {
-    source: &'a str,
-    reason: &'a str,
-    base_image: Option<&'a str>,
-    pull_base_image: bool,
-}
-
-pub fn emit_image_build_source(base_image: Option<&str>, reason: &str, pull_base_image: bool) {
-    let source = if base_image.is_some() {
-        "published_image"
-    } else {
-        "workspace_dockerfile"
-    };
-    let detail = ImageBuildSourceDiagnostic {
-        source,
-        reason,
-        base_image,
-        pull_base_image,
-    };
-    let detail = serde_json::to_string(&detail).unwrap_or_else(|_| "{}".to_owned());
+pub fn emit_image_build_source(_base_image: Option<&str>, _reason: &str, _pull_base_image: bool) {
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "image_build_source",
             jackin_diagnostics::DiagnosticStage::DerivedImage,
             "derived image build source selected",
-            Some(&detail),
+            None,
         );
     }
 }
@@ -168,14 +129,7 @@ pub fn collect_build_context_stats(
 pub fn dockerfile_requests_github_token_secret(dockerfile_path: &std::path::Path) -> bool {
     match std::fs::read_to_string(dockerfile_path) {
         Ok(body) => dockerfile_body_requests_github_token_secret(&body),
-        Err(error) => {
-            jackin_diagnostics::telemetry_debug!(
-                "image",
-                "could not read DerivedDockerfile {} before token lookup ({error}); resolving GitHub token conservatively",
-                dockerfile_path.display()
-            );
-            true
-        }
+        Err(_) => true,
     }
 }
 
@@ -189,14 +143,7 @@ pub fn dockerfile_body_requests_github_token_secret(dockerfile_body: &str) -> bo
 pub fn dockerfile_requests_role_git_sha_arg(dockerfile_path: &std::path::Path) -> bool {
     match std::fs::read_to_string(dockerfile_path) {
         Ok(body) => dockerfile_body_requests_role_git_sha_arg(&body),
-        Err(error) => {
-            jackin_diagnostics::telemetry_debug!(
-                "image",
-                "could not read DerivedDockerfile {} before ROLE_GIT_SHA arg detection ({error}); omitting unused build arg",
-                dockerfile_path.display()
-            );
-            false
-        }
+        Err(_) => false,
     }
 }
 

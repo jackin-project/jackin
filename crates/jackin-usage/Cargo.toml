@@ -38,7 +38,9 @@ url = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true }
+tracing = { workspace = true }
 
 [[bench]]
 name = "materialize_accounts"

@@ -10,6 +10,7 @@ use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
+use tracing::Instrument as _;
 
 use super::launch_slot::{claim_container_name, claim_known_container_name};
 use super::trust::inject_workspace_mise_env;
@@ -227,17 +228,51 @@ pub fn load_role<'a>(
     runner: &'a mut impl CommandRunner,
     opts: &'a super::LoadOptions,
 ) -> std::pin::Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>> {
-    Box::pin(load_role_with(
-        paths,
-        config,
-        selector,
-        workspace,
-        docker,
-        runner,
-        opts,
-        |_, _| anyhow::bail!("role trust prompt requires the rich launch dialog"),
-        |_, _, _| anyhow::bail!("branch trust prompt requires the rich launch dialog"),
-    ))
+    let target_kind = if config.workspaces.contains_key(workspace.name.as_str()) {
+        jackin_telemetry::schema::enums::LaunchTargetKind::Workspace
+    } else {
+        jackin_telemetry::schema::enums::LaunchTargetKind::Directory
+    };
+    let attrs = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::LAUNCH_TARGET_KIND,
+        value: jackin_telemetry::Value::Str(target_kind.as_str()),
+    }];
+    let operation =
+        jackin_telemetry::operation_or_disabled(&jackin_telemetry::operation::LAUNCH, &attrs);
+    let span = operation.span().clone();
+
+    Box::pin(
+        async move {
+            let result = load_role_with(
+                paths,
+                config,
+                selector,
+                workspace,
+                docker,
+                runner,
+                opts,
+                |_, _| anyhow::bail!("role trust prompt requires the rich launch dialog"),
+                |_, _, _| anyhow::bail!("branch trust prompt requires the rich launch dialog"),
+            )
+            .await;
+            match &result {
+                Ok(()) => {
+                    operation
+                        .complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+                }
+                Err(error) if jackin_core::LaunchCancelled::is_cancel(error) => operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
+                    None,
+                ),
+                Err(_) => operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    Some("launch_failed"),
+                ),
+            }
+            result
+        }
+        .instrument(span),
+    )
 }
 
 #[cfg(test)]

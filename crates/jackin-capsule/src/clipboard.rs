@@ -176,13 +176,18 @@ impl ClipboardImageTransfers {
         Ok(image)
     }
 
+    #[cfg(test)]
     pub(crate) fn abort_idle_older_than(&mut self, max_idle: Duration) -> usize {
-        let now = self.clock.now();
-        let cutoff = now.checked_sub(max_idle).unwrap_or(now);
-        self.abort_idle_before(cutoff)
+        self.abort_idle_ids_older_than(max_idle).len()
     }
 
-    fn abort_idle_before(&mut self, cutoff: Instant) -> usize {
+    pub(crate) fn abort_idle_ids_older_than(&mut self, max_idle: Duration) -> Vec<u64> {
+        let now = self.clock.now();
+        let cutoff = now.checked_sub(max_idle).unwrap_or(now);
+        self.abort_idle_ids_before(cutoff)
+    }
+
+    fn abort_idle_ids_before(&mut self, cutoff: Instant) -> Vec<u64> {
         let stale_ids: Vec<u64> = self
             .active
             .iter()
@@ -190,9 +195,8 @@ impl ClipboardImageTransfers {
                 (active.last_activity <= cutoff).then_some(*transfer_id)
             })
             .collect();
-        let count = stale_ids.len();
-        for transfer_id in stale_ids {
-            if let Some(active) = self.active.remove(&transfer_id) {
+        for transfer_id in &stale_ids {
+            if let Some(active) = self.active.remove(transfer_id) {
                 jackin_diagnostics::telemetry_debug!(
                     "capsule",
                     "clipboard-image: abort stale transfer id={} format={:?} buffered={} expected={}",
@@ -203,7 +207,7 @@ impl ClipboardImageTransfers {
                 );
             }
         }
-        count
+        stale_ids
     }
 }
 

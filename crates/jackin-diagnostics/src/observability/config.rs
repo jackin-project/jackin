@@ -25,7 +25,19 @@ pub(super) struct OtlpConfig {
     pub traces_endpoint: String,
     pub logs_endpoint: String,
     pub metrics_endpoint: String,
-    pub timeout: Duration,
+    pub traces_timeout: Duration,
+    pub logs_timeout: Duration,
+    pub metrics_timeout: Duration,
+    pub traces_tls: TlsConfig,
+    pub logs_tls: TlsConfig,
+    pub metrics_tls: TlsConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct TlsConfig {
+    pub certificate: Option<String>,
+    pub client_key: Option<String>,
+    pub client_certificate: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,10 +58,11 @@ pub(super) enum OtlpConfigError {
     },
     InvalidHeaders {
         variable: &'static str,
-        value: String,
     },
-    InvalidResourceAttribute(String),
+    InvalidResourceAttribute,
+    InvalidEndpoint(&'static str),
     EmptyValue(&'static str),
+    IncompleteClientIdentity(&'static str),
 }
 
 impl fmt::Display for OtlpConfigError {
@@ -78,16 +91,23 @@ impl fmt::Display for OtlpConfigError {
                     "{variable}={value} must be a positive integer millisecond timeout"
                 )
             }
-            Self::InvalidHeaders { variable, value } => {
-                write!(f, "{variable} contains an invalid OTLP header: {value}")
+            Self::InvalidHeaders { variable } => {
+                write!(f, "{variable} contains an invalid OTLP header")
             }
-            Self::InvalidResourceAttribute(value) => {
+            Self::InvalidResourceAttribute => {
+                f.write_str("OTEL_RESOURCE_ATTRIBUTES contains an invalid entry")
+            }
+            Self::InvalidEndpoint(signal) => {
                 write!(
                     f,
-                    "OTEL_RESOURCE_ATTRIBUTES contains an invalid entry: {value}"
+                    "OTLP {signal} endpoint must be an http(s) authority without credentials"
                 )
             }
             Self::EmptyValue(variable) => write!(f, "{variable} must not be empty when set"),
+            Self::IncompleteClientIdentity(signal) => write!(
+                f,
+                "OTLP {signal} client certificate and client key must be configured together"
+            ),
         }
     }
 }
@@ -120,6 +140,12 @@ pub(super) fn resolve_otlp_config(
         "OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE",
         "OTEL_EXPORTER_OTLP_CLIENT_KEY",
         "OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE",
+        "OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY",
+        "OTEL_EXPORTER_OTLP_TRACES_CLIENT_CERTIFICATE",
+        "OTEL_EXPORTER_OTLP_LOGS_CLIENT_KEY",
+        "OTEL_EXPORTER_OTLP_LOGS_CLIENT_CERTIFICATE",
+        "OTEL_EXPORTER_OTLP_METRICS_CLIENT_KEY",
+        "OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE",
     ] {
         validate_nonempty_optional(env, variable)?;
     }
@@ -130,28 +156,70 @@ pub(super) fn resolve_otlp_config(
             .filter(|entry| !entry.trim().is_empty())
         {
             let Some((key, value)) = entry.split_once('=') else {
-                return Err(OtlpConfigError::InvalidResourceAttribute(entry.to_owned()));
+                return Err(OtlpConfigError::InvalidResourceAttribute);
             };
             if key.trim().is_empty() || value.trim().is_empty() {
-                return Err(OtlpConfigError::InvalidResourceAttribute(entry.to_owned()));
+                return Err(OtlpConfigError::InvalidResourceAttribute);
             }
         }
     }
 
-    let timeout = parse_timeout(env)?;
-    parse_headers(env)?;
-    Ok(Some(OtlpConfig {
+    build_otlp_config(env, traces, logs, metrics).map(Some)
+}
+
+fn build_otlp_config(
+    env: &impl Fn(&str) -> Option<String>,
+    traces: Option<String>,
+    logs: Option<String>,
+    metrics: Option<String>,
+) -> Result<OtlpConfig, OtlpConfigError> {
+    // The pinned tonic exporter consumes the standard generic/per-signal header
+    // variables directly. Validate them here before any provider is built.
+    parse_headers(env, "OTEL_EXPORTER_OTLP_TRACES_HEADERS")?;
+    parse_headers(env, "OTEL_EXPORTER_OTLP_LOGS_HEADERS")?;
+    parse_headers(env, "OTEL_EXPORTER_OTLP_METRICS_HEADERS")?;
+    Ok(OtlpConfig {
         traces_endpoint: normalize_endpoint(
             traces.ok_or(OtlpConfigError::MissingSignalEndpoint("traces"))?,
-        ),
+            "traces",
+        )?,
         logs_endpoint: normalize_endpoint(
             logs.ok_or(OtlpConfigError::MissingSignalEndpoint("logs"))?,
-        ),
+            "logs",
+        )?,
         metrics_endpoint: normalize_endpoint(
             metrics.ok_or(OtlpConfigError::MissingSignalEndpoint("metrics"))?,
-        ),
-        timeout,
-    }))
+            "metrics",
+        )?,
+        traces_timeout: parse_timeout(env, "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT")?,
+        logs_timeout: parse_timeout(env, "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT")?,
+        metrics_timeout: parse_timeout(env, "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT")?,
+        traces_tls: tls_config(env, "TRACES", "traces")?,
+        logs_tls: tls_config(env, "LOGS", "logs")?,
+        metrics_tls: tls_config(env, "METRICS", "metrics")?,
+    })
+}
+
+fn tls_config(
+    env: &impl Fn(&str) -> Option<String>,
+    signal_variable: &str,
+    signal_name: &'static str,
+) -> Result<TlsConfig, OtlpConfigError> {
+    let signal = |suffix: &str| {
+        nonempty(env(&format!(
+            "OTEL_EXPORTER_OTLP_{signal_variable}_{suffix}"
+        )))
+    };
+    let generic = |suffix: &str| nonempty(env(&format!("OTEL_EXPORTER_OTLP_{suffix}")));
+    let config = TlsConfig {
+        certificate: signal("CERTIFICATE").or_else(|| generic("CERTIFICATE")),
+        client_key: signal("CLIENT_KEY").or_else(|| generic("CLIENT_KEY")),
+        client_certificate: signal("CLIENT_CERTIFICATE").or_else(|| generic("CLIENT_CERTIFICATE")),
+    };
+    if config.client_key.is_some() != config.client_certificate.is_some() {
+        return Err(OtlpConfigError::IncompleteClientIdentity(signal_name));
+    }
+    Ok(config)
 }
 
 pub(super) fn any_endpoint_configured(env: &impl Fn(&str) -> Option<String>) -> bool {
@@ -196,9 +264,15 @@ fn validate_compression(env: &impl Fn(&str) -> Option<String>) -> Result<(), Otl
     Ok(())
 }
 
-fn parse_timeout(env: &impl Fn(&str) -> Option<String>) -> Result<Duration, OtlpConfigError> {
-    let variable = "OTEL_EXPORTER_OTLP_TIMEOUT";
-    let Some(value) = nonempty(env(variable)) else {
+fn parse_timeout(
+    env: &impl Fn(&str) -> Option<String>,
+    signal_variable: &'static str,
+) -> Result<Duration, OtlpConfigError> {
+    let (variable, value) = if let Some(value) = nonempty(env(signal_variable)) {
+        (signal_variable, value)
+    } else if let Some(value) = nonempty(env("OTEL_EXPORTER_OTLP_TIMEOUT")) {
+        ("OTEL_EXPORTER_OTLP_TIMEOUT", value)
+    } else {
         return Ok(Duration::from_secs(5));
     };
     let millis = value
@@ -215,28 +289,51 @@ fn parse_timeout(env: &impl Fn(&str) -> Option<String>) -> Result<Duration, Otlp
 
 fn parse_headers(
     env: &impl Fn(&str) -> Option<String>,
-) -> Result<Vec<(String, String)>, OtlpConfigError> {
-    let variable = "OTEL_EXPORTER_OTLP_HEADERS";
-    let Some(raw) = nonempty(env(variable)) else {
-        return Ok(Vec::new());
+    signal_variable: &'static str,
+) -> Result<(), OtlpConfigError> {
+    let (variable, raw) = if let Some(raw) = nonempty(env(signal_variable)) {
+        (signal_variable, raw)
+    } else if let Some(raw) = nonempty(env("OTEL_EXPORTER_OTLP_HEADERS")) {
+        ("OTEL_EXPORTER_OTLP_HEADERS", raw)
+    } else {
+        return Ok(());
     };
-    raw.split(',')
-        .map(|entry| {
-            let Some((key, value)) = entry.split_once('=') else {
-                return Err(OtlpConfigError::InvalidHeaders {
-                    variable,
-                    value: entry.to_owned(),
-                });
-            };
-            if key.trim().is_empty() || value.trim().is_empty() {
-                return Err(OtlpConfigError::InvalidHeaders {
-                    variable,
-                    value: entry.to_owned(),
-                });
-            }
-            Ok((key.trim().to_owned(), value.trim().to_owned()))
-        })
-        .collect()
+    raw.split(',').try_for_each(|entry| {
+        let Some((key, value)) = entry.split_once('=') else {
+            return Err(OtlpConfigError::InvalidHeaders { variable });
+        };
+        if key.trim().is_empty() || value.trim().is_empty() {
+            return Err(OtlpConfigError::InvalidHeaders { variable });
+        }
+        let decoded = decode_header_value(value.trim())
+            .ok_or(OtlpConfigError::InvalidHeaders { variable })?;
+        key.trim()
+            .parse::<tonic::metadata::MetadataKey<tonic::metadata::Ascii>>()
+            .map_err(|_| OtlpConfigError::InvalidHeaders { variable })?;
+        decoded
+            .parse::<tonic::metadata::MetadataValue<tonic::metadata::Ascii>>()
+            .map_err(|_| OtlpConfigError::InvalidHeaders { variable })?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+fn decode_header_value(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = bytes.get(index + 1..index + 3)?;
+            let text = std::str::from_utf8(hex).ok()?;
+            decoded.push(u8::from_str_radix(text, 16).ok()?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
 }
 
 fn validate_nonempty_optional(
@@ -253,8 +350,22 @@ fn nonempty(value: Option<String>) -> Option<String> {
     value.filter(|value| !value.trim().is_empty())
 }
 
-fn normalize_endpoint(value: String) -> String {
-    value.trim().trim_end_matches('/').to_owned()
+pub(super) fn normalize_endpoint(
+    value: String,
+    signal: &'static str,
+) -> Result<String, OtlpConfigError> {
+    let endpoint =
+        url::Url::parse(value.trim()).map_err(|_| OtlpConfigError::InvalidEndpoint(signal))?;
+    if !matches!(endpoint.scheme(), "http" | "https")
+        || endpoint.host_str().is_none()
+        || !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+        || endpoint.query().is_some()
+        || endpoint.fragment().is_some()
+    {
+        return Err(OtlpConfigError::InvalidEndpoint(signal));
+    }
+    Ok(endpoint.as_str().trim_end_matches('/').to_owned())
 }
 
 #[cfg(test)]

@@ -10,6 +10,12 @@ use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
 use crate::operation::{SpanDef, root_operation};
 
+#[derive(Clone, Copy, Debug)]
+pub struct DetachedCompletion {
+    pub outcome: crate::schema::enums::OutcomeValue,
+    pub error_type: Option<&'static str>,
+}
+
 pub fn spawn_joined<F>(fut: F) -> JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
@@ -50,6 +56,24 @@ where
         let output = fut.instrument(guard.span().clone()).await;
         guard.complete(crate::schema::enums::OutcomeValue::Success, None);
         output
+    })
+}
+
+pub fn spawn_detached_with_completion<F>(def: &'static SpanDef, fut: F) -> JoinHandle<()>
+where
+    F: Future<Output = DetachedCompletion> + Send + 'static,
+{
+    let parent = Span::current().context().span().span_context().clone();
+    tokio::spawn(async move {
+        let Ok(guard) = root_operation(def, &[]) else {
+            let _ = fut.await;
+            return;
+        };
+        if parent.is_valid() {
+            let _link_result = guard.link(&parent);
+        }
+        let completion = fut.instrument(guard.span().clone()).await;
+        guard.complete(completion.outcome, completion.error_type);
     })
 }
 

@@ -23,176 +23,133 @@ pub enum InstrumentKind {
 #[derive(Clone, Copy, Debug)]
 pub struct InstrumentDef {
     pub name: &'static str,
+    pub description: &'static str,
     pub unit: &'static str,
     pub kind: InstrumentKind,
+    pub boundaries: &'static [f64],
+    pub attributes: &'static [schema::AttributeRequirement],
 }
 
-pub const CLI_INVOCATIONS: InstrumentDef = InstrumentDef {
-    name: "cli.invocations",
-    unit: "{invocation}",
-    kind: InstrumentKind::Counter,
-};
-pub const CLI_DURATION: InstrumentDef = InstrumentDef {
-    name: "cli.duration",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const CLI_FAILURES: InstrumentDef = InstrumentDef {
-    name: "cli.failures",
-    unit: "{failure}",
-    kind: InstrumentKind::Counter,
-};
-pub const UI_TRANSITIONS: InstrumentDef = InstrumentDef {
-    name: "ui.transitions",
-    unit: "{transition}",
-    kind: InstrumentKind::Counter,
-};
-pub const UI_ACTIONS: InstrumentDef = InstrumentDef {
-    name: "ui.actions",
-    unit: "{action}",
-    kind: InstrumentKind::Counter,
-};
-pub const UI_DWELL: InstrumentDef = InstrumentDef {
-    name: "ui.screen.dwell",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const UI_FOCUS_DURATION: InstrumentDef = InstrumentDef {
-    name: "ui.focus.duration",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const UI_RENDER_DURATION: InstrumentDef = InstrumentDef {
-    name: "ui.render.duration",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const LAUNCH_STAGE_DURATION: InstrumentDef = InstrumentDef {
-    name: "launch.stage.duration",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const LAUNCH_CACHE_REUSE: InstrumentDef = InstrumentDef {
-    name: "launch.cache.reuse",
-    unit: "{reuse}",
-    kind: InstrumentKind::Counter,
-};
-pub const PREWARM_JOBS: InstrumentDef = InstrumentDef {
-    name: "prewarm.jobs",
-    unit: "{job}",
-    kind: InstrumentKind::Counter,
-};
-pub const PREWARM_ACTIVE: InstrumentDef = InstrumentDef {
-    name: "prewarm.active",
-    unit: "{job}",
-    kind: InstrumentKind::UpDownCounter,
-};
-pub const PREWARM_DURATION: InstrumentDef = InstrumentDef {
-    name: "prewarm.duration",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const BACKGROUND_CYCLES: InstrumentDef = InstrumentDef {
-    name: "background.cycles",
-    unit: "{cycle}",
-    kind: InstrumentKind::Counter,
-};
-pub const BACKGROUND_CYCLE_DURATION: InstrumentDef = InstrumentDef {
-    name: "background.cycle.duration",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const CONNECTION_ATTEMPTS: InstrumentDef = InstrumentDef {
-    name: "connection.attempts",
-    unit: "{attempt}",
-    kind: InstrumentKind::Counter,
-};
-pub const CONNECTION_ACTIVE: InstrumentDef = InstrumentDef {
-    name: "connection.active",
-    unit: "{connection}",
-    kind: InstrumentKind::UpDownCounter,
-};
-pub const CONNECTION_DURATION: InstrumentDef = InstrumentDef {
-    name: "connection.duration",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const RPC_REQUESTS: InstrumentDef = InstrumentDef {
-    name: "rpc.requests",
-    unit: "{request}",
-    kind: InstrumentKind::Counter,
-};
-pub const RPC_ACTIVE: InstrumentDef = InstrumentDef {
-    name: "rpc.active",
-    unit: "{request}",
-    kind: InstrumentKind::UpDownCounter,
-};
-pub const RPC_DURATION: InstrumentDef = InstrumentDef {
-    name: "rpc.duration",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const AGENT_STATE_TRANSITIONS: InstrumentDef = InstrumentDef {
-    name: "agent.state.transitions",
-    unit: "{transition}",
-    kind: InstrumentKind::Counter,
-};
-pub const AGENT_STATE_STUCK: InstrumentDef = InstrumentDef {
-    name: "agent.state.stuck",
-    unit: "{event}",
-    kind: InstrumentKind::Counter,
-};
-pub const AGENT_STATE_FLAPS: InstrumentDef = InstrumentDef {
-    name: "agent.state.flaps",
-    unit: "{event}",
-    kind: InstrumentKind::Counter,
-};
-pub const TERMINAL_BYTES: InstrumentDef = InstrumentDef {
-    name: "terminal.io.bytes",
-    unit: "By",
-    kind: InstrumentKind::Counter,
-};
-pub const TERMINAL_CURSOR_MOVES: InstrumentDef = InstrumentDef {
-    name: "terminal.cursor.moves",
-    unit: "{move}",
-    kind: InstrumentKind::Counter,
-};
-pub const TERMINAL_RENDER_CELLS: InstrumentDef = InstrumentDef {
-    name: "terminal.render.cells",
-    unit: "{cell}",
-    kind: InstrumentKind::Counter,
-};
-pub const TERMINAL_RENDER_DURATION: InstrumentDef = InstrumentDef {
-    name: "terminal.render.duration",
-    unit: "s",
-    kind: InstrumentKind::Histogram,
-};
-pub const TERMINAL_RENDER_FRAMES: InstrumentDef = InstrumentDef {
-    name: "terminal.render.frames",
-    unit: "{frame}",
-    kind: InstrumentKind::Counter,
-};
-pub const TERMINAL_INPUT_MOUSE: InstrumentDef = InstrumentDef {
-    name: "terminal.input.mouse",
-    unit: "{event}",
-    kind: InstrumentKind::Counter,
-};
-pub const TELEMETRY_REJECTIONS: InstrumentDef = InstrumentDef {
-    name: "telemetry.rejections",
-    unit: "{rejection}",
-    kind: InstrumentKind::Counter,
-};
-pub const TELEMETRY_VALIDATE: InstrumentDef = InstrumentDef {
-    name: "telemetry.validate",
-    unit: "{validation}",
-    kind: InstrumentKind::Counter,
-};
+impl InstrumentDef {
+    const fn generated(metadata: &'static schema::MetricMetadata) -> Self {
+        let kind = match metadata.instrument {
+            schema::MetricInstrument::Counter => InstrumentKind::Counter,
+            schema::MetricInstrument::UpDownCounter => InstrumentKind::UpDownCounter,
+            schema::MetricInstrument::Histogram => InstrumentKind::Histogram,
+        };
+        Self {
+            name: metadata.name,
+            description: metadata.description,
+            unit: metadata.unit,
+            kind,
+            boundaries: metadata.boundaries,
+            attributes: metadata.attributes,
+        }
+    }
+}
+
+macro_rules! generated_instruments {
+    ($($name:ident => $definition:ident),+ $(,)?) => {
+        $(pub const $name: InstrumentDef =
+            InstrumentDef::generated(&schema::metrics::$definition);)+
+        pub const ALL: &[InstrumentDef] = &[$($name),+];
+    };
+}
+
+generated_instruments! {
+    CLI_INVOCATIONS => CLI_INVOCATIONS_DEF,
+    CLI_DURATION => CLI_DURATION_DEF,
+    CLI_FAILURES => CLI_FAILURES_DEF,
+    UI_TRANSITIONS => UI_TRANSITIONS_DEF,
+    UI_ACTIONS => UI_ACTIONS_DEF,
+    UI_DWELL => UI_SCREEN_DWELL_DEF,
+    UI_FOCUS_DURATION => UI_FOCUS_DURATION_DEF,
+    UI_RENDER_DURATION => UI_RENDER_DURATION_DEF,
+    UI_JANK => UI_JANK_DEF,
+    LAUNCH_STAGE_DURATION => LAUNCH_STAGE_DURATION_DEF,
+    LAUNCH_CACHE_REUSE => LAUNCH_CACHE_REUSE_DEF,
+    PREWARM_JOBS => PREWARM_JOBS_DEF,
+    PREWARM_ACTIVE => PREWARM_ACTIVE_DEF,
+    PREWARM_DURATION => PREWARM_DURATION_DEF,
+    BACKGROUND_CYCLES => BACKGROUND_CYCLES_DEF,
+    BACKGROUND_CYCLE_DURATION => BACKGROUND_CYCLE_DURATION_DEF,
+    CONNECTION_ATTEMPTS => CONNECTION_ATTEMPTS_DEF,
+    CONNECTION_ACTIVE => CONNECTION_ACTIVE_DEF,
+    CONNECTION_DURATION => CONNECTION_DURATION_DEF,
+    DB_CLIENT_OPERATION_DURATION => DB_CLIENT_OPERATION_DURATION_DEF,
+    RPC_REQUESTS => RPC_REQUESTS_DEF,
+    RPC_ACTIVE => RPC_ACTIVE_DEF,
+    RPC_DURATION => RPC_DURATION_DEF,
+    AGENT_STATE_TRANSITIONS => AGENT_STATE_TRANSITIONS_DEF,
+    AGENT_STATE_STUCK => AGENT_STATE_STUCK_DEF,
+    AGENT_STATE_FLAPS => AGENT_STATE_FLAPS_DEF,
+    TERMINAL_BYTES => TERMINAL_IO_BYTES_DEF,
+    TERMINAL_CURSOR_MOVES => TERMINAL_CURSOR_MOVES_DEF,
+    TERMINAL_RENDER_CELLS => TERMINAL_RENDER_CELLS_DEF,
+    TERMINAL_RENDER_DURATION => TERMINAL_RENDER_DURATION_DEF,
+    TERMINAL_RENDER_FRAMES => TERMINAL_RENDER_FRAMES_DEF,
+    TERMINAL_INPUT_MOUSE => TERMINAL_INPUT_MOUSE_DEF,
+    TELEMETRY_REJECTIONS => TELEMETRY_REJECTIONS_DEF,
+    TELEMETRY_VALIDATE => TELEMETRY_VALIDATE_DEF,
+}
 
 static METER: OnceLock<Meter> = OnceLock::new();
+static METER_RESERVED: Mutex<bool> = Mutex::new(false);
 static SERIES: OnceLock<Mutex<HashMap<&'static str, HashSet<String>>>> = OnceLock::new();
 
-pub fn install(meter: &Meter) {
-    drop(METER.set(meter.clone()));
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeterInstallError;
+
+impl std::fmt::Display for MeterInstallError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("telemetry facade meter is already installed or reserved")
+    }
+}
+
+impl std::error::Error for MeterInstallError {}
+
+#[must_use = "the reservation must be committed after the subscriber is installed"]
+#[derive(Debug)]
+pub struct MeterReservation {
+    meter: Option<Meter>,
+}
+
+impl MeterReservation {
+    pub fn commit(mut self) -> Result<(), MeterInstallError> {
+        let meter = self.meter.take().ok_or(MeterInstallError)?;
+        let result = METER.set(meter).map_err(|_| MeterInstallError);
+        *METER_RESERVED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+        result
+    }
+}
+
+impl Drop for MeterReservation {
+    fn drop(&mut self) {
+        if self.meter.is_some() {
+            *METER_RESERVED
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+        }
+    }
+}
+
+pub fn reserve_meter(meter: &Meter) -> Result<MeterReservation, MeterInstallError> {
+    let mut reserved = METER_RESERVED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if METER.get().is_some() || *reserved {
+        return Err(MeterInstallError);
+    }
+    *reserved = true;
+    Ok(MeterReservation {
+        meter: Some(meter.clone()),
+    })
+}
+
+pub fn install(meter: &Meter) -> Result<(), MeterInstallError> {
+    reserve_meter(meter)?.commit()
 }
 
 fn key_values(attrs: &[Attr<'_>]) -> Result<Vec<KeyValue>, Rejection> {
@@ -225,6 +182,42 @@ fn validate_instrument(def: &InstrumentDef, expected: InstrumentKind) -> Result<
         return Err(Rejection::UnknownName);
     }
     limits::validate_name(def.name)
+}
+
+fn validate_attributes(def: &InstrumentDef, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+    if def.attributes.is_empty() {
+        return Ok(());
+    }
+    for attr in attrs {
+        let Some(requirement) = def
+            .attributes
+            .iter()
+            .find(|requirement| requirement.name == attr.key)
+        else {
+            return Err(Rejection::UnknownAttribute);
+        };
+        let valid = matches!(
+            (attr.value, requirement.value_type),
+            (Value::Str(_), schema::ValueType::String)
+                | (Value::Bool(_), schema::ValueType::Boolean)
+                | (Value::I64(_) | Value::U64(_), schema::ValueType::Integer)
+                | (Value::F64(_), schema::ValueType::Double)
+                | (Value::StrArray(_), schema::ValueType::StringArray)
+        );
+        if !valid {
+            return Err(Rejection::InvalidValue);
+        }
+    }
+    for requirement in def
+        .attributes
+        .iter()
+        .filter(|requirement| requirement.requirement == schema::RequirementLevel::Required)
+    {
+        if !attrs.iter().any(|attr| attr.key == requirement.name) {
+            return Err(Rejection::InvalidValue);
+        }
+    }
+    Ok(())
 }
 
 fn accept_series(name: &'static str, attrs: &[KeyValue]) -> bool {
@@ -271,6 +264,7 @@ impl Counter {
             return Ok(());
         };
         validate_instrument(self.0, InstrumentKind::Counter)?;
+        validate_attributes(self.0, attrs)?;
         let kv = key_values(attrs).inspect_err(|reason| health::reject(*reason))?;
         if !accept_series(self.0.name, &kv) {
             return Err(Rejection::Cardinality);
@@ -278,6 +272,7 @@ impl Counter {
         meter
             .u64_counter(self.0.name)
             .with_unit(self.0.unit)
+            .with_description(self.0.description)
             .build()
             .add(value, &kv);
         Ok(())
@@ -289,6 +284,7 @@ impl Histogram {
             return Ok(());
         };
         validate_instrument(self.0, InstrumentKind::Histogram)?;
+        validate_attributes(self.0, attrs)?;
         let kv = key_values(attrs).inspect_err(|reason| health::reject(*reason))?;
         if !accept_series(self.0.name, &kv) {
             return Err(Rejection::Cardinality);
@@ -296,6 +292,7 @@ impl Histogram {
         meter
             .f64_histogram(self.0.name)
             .with_unit(self.0.unit)
+            .with_description(self.0.description)
             .build()
             .record(value, &kv);
         Ok(())
@@ -308,6 +305,7 @@ impl UpDownCounter {
             return Ok(());
         };
         validate_instrument(self.0, InstrumentKind::UpDownCounter)?;
+        validate_attributes(self.0, attrs)?;
         let kv = key_values(attrs).inspect_err(|reason| health::reject(*reason))?;
         if !accept_series(self.0.name, &kv) {
             return Err(Rejection::Cardinality);
@@ -315,6 +313,7 @@ impl UpDownCounter {
         meter
             .i64_up_down_counter(self.0.name)
             .with_unit(self.0.unit)
+            .with_description(self.0.description)
             .build()
             .add(value, &kv);
         Ok(())

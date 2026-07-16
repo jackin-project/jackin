@@ -18,7 +18,7 @@ use anyhow::{Context as _, Result, bail};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
-use crate::protocol::control::{ClientMsg, ServerMsg, frame};
+use crate::protocol::control::{ClientMsg, ControlRequest, ServerMsg, frame};
 use crate::socket::SOCKET_PATH;
 
 /// State for the exec credential picker dialog shown by the daemon's TUI.
@@ -144,23 +144,56 @@ pub async fn resolve_credentials(
         return Ok(std::collections::BTreeMap::default());
     }
 
-    let mut stream = UnixStream::connect(host_sock_path)
-        .await
-        .with_context(|| format!("connecting to host credential resolver at {host_sock_path}"))?;
+    const METHOD: &str = "jackin.host.Credentials/Resolve";
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(METHOD),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
+    let result = async {
+        let mut stream = UnixStream::connect(host_sock_path).await.with_context(|| {
+            format!("connecting to host credential resolver at {host_sock_path}")
+        })?;
 
-    let mut ctx = jackin_protocol::TelemetryContext::v1();
-    jackin_telemetry::propagation::inject(&mut ctx);
-    stream.write_all(&frame(&CredRequest { ctx, refs })).await?;
+        let mut ctx = jackin_protocol::TelemetryContext::v1();
+        if let Some(operation) = operation.as_ref() {
+            operation
+                .span()
+                .in_scope(|| jackin_telemetry::propagation::inject(&mut ctx));
+        } else {
+            jackin_telemetry::propagation::inject(&mut ctx);
+        }
+        stream.write_all(&frame(&CredRequest { ctx, refs })).await?;
 
-    const MAX_REPLY: usize = 1024 * 1024;
-    let reply_body = read_framed(&mut stream, MAX_REPLY)
-        .await
-        .context("reading host.sock reply")?;
+        const MAX_REPLY: usize = 1024 * 1024;
+        let reply_body = read_framed(&mut stream, MAX_REPLY)
+            .await
+            .context("reading host.sock reply")?;
 
-    match serde_json::from_slice::<CredReply>(&reply_body).context("parsing host.sock reply")? {
-        CredReply::Ok { values } => Ok(values),
-        CredReply::Error { error } => bail!("{error}"),
+        match serde_json::from_slice::<CredReply>(&reply_body).context("parsing host.sock reply")? {
+            CredReply::Ok { values } => Ok(values),
+            CredReply::Error { error } => bail!("{error}"),
+        }
     }
+    .await;
+    if let Some(operation) = operation {
+        operation.complete(
+            if result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            result.as_ref().err().map(|_| "rpc_error"),
+        );
+    }
+    result
 }
 
 /// Execute a command with the given environment additions.
@@ -279,6 +312,15 @@ pub struct ExecCapture {
     pub denied: Option<String>,
 }
 
+fn exec_control_request(
+    command: String,
+    args: Vec<String>,
+    ctx: jackin_protocol::TelemetryContext,
+) -> ControlRequest {
+    let msg = ClientMsg::ExecCommand { command, args };
+    ControlRequest { ctx, msg }
+}
+
 /// Run `jackin-exec` and return the result as a captured struct instead of
 /// writing to stdout/stderr and calling `process::exit`. Used by the MCP
 /// server to return structured output to Claude Code.
@@ -290,28 +332,68 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
     let command = args[0].clone();
     let cmd_args = args[1..].to_vec();
 
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .with_context(|| format!("connecting to capsule socket at {SOCKET_PATH}"))?;
-
     let msg = ClientMsg::ExecCommand {
         command,
         args: cmd_args,
     };
-    let framed = frame(&msg);
-    stream
-        .write_all(&framed)
-        .await
-        .context("sending ExecCommand")?;
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(msg.rpc_method()),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
+    let mut ctx = jackin_protocol::TelemetryContext::v1();
+    if let Some(operation) = operation.as_ref() {
+        operation
+            .span()
+            .in_scope(|| jackin_telemetry::propagation::inject(&mut ctx));
+    } else {
+        jackin_telemetry::propagation::inject(&mut ctx);
+    }
+    let request = match msg {
+        ClientMsg::ExecCommand { command, args } => exec_control_request(command, args, ctx),
+        _ => unreachable!("constructed ExecCommand above"),
+    };
+    let result = async {
+        let mut stream = UnixStream::connect(SOCKET_PATH)
+            .await
+            .with_context(|| format!("connecting to capsule socket at {SOCKET_PATH}"))?;
+        stream
+            .write_all(&frame(&request))
+            .await
+            .context("sending ExecCommand")?;
 
-    const MAX_REPLY: usize = 8 * 1024 * 1024;
-    let body = read_framed(&mut stream, MAX_REPLY)
-        .await
-        .context("reading ExecResult")?;
+        const MAX_REPLY: usize = 8 * 1024 * 1024;
+        let body = read_framed(&mut stream, MAX_REPLY)
+            .await
+            .context("reading ExecResult")?;
+        serde_json::from_slice::<ServerMsg>(&body).context("parsing ExecResult")
+    }
+    .await;
+    if let Some(operation) = operation {
+        let (outcome, error_type) = match &result {
+            Ok(ServerMsg::ExecResult { exit_code: 0, .. }) => {
+                (jackin_telemetry::schema::enums::OutcomeValue::Success, None)
+            }
+            Ok(ServerMsg::ExecDenied { .. }) => (
+                jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
+                None,
+            ),
+            _ => (
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some("rpc_error"),
+            ),
+        };
+        operation.complete(outcome, error_type);
+    }
 
-    let reply: ServerMsg = serde_json::from_slice(&body).context("parsing ExecResult")?;
-
-    match reply {
+    match result? {
         ServerMsg::ExecResult {
             exit_code,
             stdout,

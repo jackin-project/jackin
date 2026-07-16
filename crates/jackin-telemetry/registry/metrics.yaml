@@ -7,7 +7,8 @@ groups:
   - { id: metric.ui.screen.dwell, type: metric, metric_name: ui.screen.dwell, instrument: histogram, unit: s, brief: UI screen dwell duration., stability: development }
   - { id: metric.ui.focus.duration, type: metric, metric_name: ui.focus.duration, instrument: histogram, unit: s, brief: UI widget focus duration., stability: development }
   - { id: metric.ui.render.duration, type: metric, metric_name: ui.render.duration, instrument: histogram, unit: s, brief: UI render duration., stability: development }
-  - { id: metric.launch.stage.duration, type: metric, metric_name: launch.stage.duration, instrument: histogram, unit: s, brief: Launch stage duration., stability: development }
+  - { id: metric.ui.jank, type: metric, metric_name: ui.jank, instrument: counter, unit: "{crossing}", brief: UI render jank threshold crossings., stability: development }
+  - { id: metric.launch.stage.duration, type: metric, metric_name: launch.stage.duration, instrument: histogram, unit: s, brief: Launch stage duration., stability: development, attributes: [{ref: launch.stage.name, requirement_level: required}, {ref: outcome, requirement_level: required}] }
   - { id: metric.launch.cache.reuse, type: metric, metric_name: launch.cache.reuse, instrument: counter, unit: "{reuse}", brief: Launch cache reuse decisions., stability: development }
   - { id: metric.prewarm.jobs, type: metric, metric_name: prewarm.jobs, instrument: counter, unit: "{job}", brief: Detached prewarm jobs started., stability: development }
   - { id: metric.prewarm.active, type: metric, metric_name: prewarm.active, instrument: updowncounter, unit: "{job}", brief: Active detached prewarm jobs., stability: development }
@@ -17,6 +18,7 @@ groups:
   - { id: metric.connection.attempts, type: metric, metric_name: connection.attempts, instrument: counter, unit: "{attempt}", brief: Connection attempts., stability: development }
   - { id: metric.connection.active, type: metric, metric_name: connection.active, instrument: updowncounter, unit: "{connection}", brief: Active connections., stability: development }
   - { id: metric.connection.duration, type: metric, metric_name: connection.duration, instrument: histogram, unit: s, brief: Connection duration., stability: development }
+  - { id: metric.db.client.operation.duration, type: metric, metric_name: db.client.operation.duration, instrument: histogram, unit: s, brief: Database client operation duration., stability: development, attributes: [{ref: db.operation.name, requirement_level: required}] }
   - { id: metric.rpc.requests, type: metric, metric_name: rpc.requests, instrument: counter, unit: "{request}", brief: RPC requests., stability: development }
   - { id: metric.rpc.active, type: metric, metric_name: rpc.active, instrument: updowncounter, unit: "{request}", brief: Active RPC requests., stability: development }
   - { id: metric.rpc.duration, type: metric, metric_name: rpc.duration, instrument: histogram, unit: s, brief: RPC request duration., stability: development }

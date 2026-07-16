@@ -19,6 +19,7 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-core = { workspace = true }
+jackin-telemetry = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 anyhow = { workspace = true }

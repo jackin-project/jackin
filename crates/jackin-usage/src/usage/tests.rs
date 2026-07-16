@@ -3315,3 +3315,34 @@ fn split_fetch_partitions_ok_err_and_absent() {
     );
     assert_eq!(split_fetch(None::<Result<u64, String>>), (None, None));
 }
+
+#[test]
+fn provider_boundary_exports_only_bounded_request_fields() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let result = provider_request(
+            jackin_telemetry::schema::enums::ProviderName::Openai,
+            "GET",
+            "/backend-api/wham/usage",
+            || Ok::<_, String>("telemetry-private-response"),
+        );
+        assert_eq!(result.unwrap(), "telemetry-private-response");
+    });
+    export.force_flush();
+
+    let spans = export
+        .finished_spans()
+        .into_iter()
+        .filter(|span| span.name == jackin_telemetry::schema::spans::HTTP_CLIENT)
+        .collect::<Vec<_>>();
+    assert_eq!(spans.len(), 1);
+    for prohibited in [
+        "authorization",
+        "account_id",
+        "telemetry-private-response",
+        "?private=query",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}

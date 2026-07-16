@@ -658,13 +658,56 @@ pub fn install_host_panic_hook() {
     let () = HOST_PANIC_HOOK_INSTALLED.get_or_init(|| {
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            if let Some(run) = active_run() {
-                run.error_typed("panic", &format!("PANIC: {info}"), Some("panic"));
-            }
+            emit_panic_crash(info, "host panic");
             crate::observability::shutdown_otlp();
             default_hook(info);
         }));
     });
+}
+
+/// Emit the standard bounded crash event used by both host and capsule panic
+/// hooks. Panic payloads are untrusted free text, so redaction precedes the
+/// four-KiB export cap.
+pub fn emit_panic_crash(info: &std::panic::PanicHookInfo<'_>, context: &str) {
+    const EXCEPTION_MESSAGE_CAP: usize = 4 * 1024;
+
+    let message =
+        crate::redact::redact_and_cap(&format!("{context}: {info}"), EXCEPTION_MESSAGE_CAP);
+    let crash_id = uuid::Uuid::new_v4().to_string();
+    let mut attrs = vec![
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::APP_CRASH_ID,
+            value: jackin_telemetry::Value::Str(&crash_id),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::EXCEPTION_TYPE,
+            value: jackin_telemetry::Value::Str("panic"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::EXCEPTION_MESSAGE,
+            value: jackin_telemetry::Value::Str(&message),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str("failure"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: jackin_telemetry::Value::Str("panic"),
+        },
+    ];
+    let session_id =
+        jackin_telemetry::identity::current_session().map(|session| session.current.to_string());
+    if let Some(session_id) = session_id.as_deref() {
+        attrs.push(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
+            value: jackin_telemetry::Value::Str(session_id),
+        });
+    }
+    let _event_result = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::APP_CRASH,
+        jackin_telemetry::FieldSet::new(&attrs, Some(&message)),
+    );
 }
 
 /// A fresh session id for the capsule's `session.id`. One daemon run is one

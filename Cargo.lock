@@ -2912,6 +2912,7 @@ dependencies = [
  "criterion",
  "directories",
  "jackin-core",
+ "jackin-telemetry",
  "proptest",
  "serde",
  "tempfile",
@@ -3003,6 +3004,7 @@ dependencies = [
  "opentelemetry_sdk",
  "rand 0.10.2",
  "regex",
+ "rustc_version",
  "serde_json",
  "sysinfo",
  "tempfile",
@@ -3011,6 +3013,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
@@ -3032,6 +3035,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3259,6 +3263,7 @@ dependencies = [
  "tokio",
  "toml",
  "toml_edit",
+ "tracing",
 ]
 
 [[package]]
@@ -3268,6 +3273,7 @@ dependencies = [
  "criterion",
  "dhat",
  "opentelemetry",
+ "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "tokio",
  "tracing",
@@ -3319,6 +3325,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tracing",
  "turso",
  "url",
 ]
@@ -5465,6 +5472,7 @@ dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",

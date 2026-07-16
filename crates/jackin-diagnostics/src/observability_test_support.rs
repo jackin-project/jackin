@@ -5,6 +5,16 @@ use opentelemetry::{logs::AnyValue, trace::Status};
 
 use crate::observability::TestExport;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TestSpanSnapshot {
+    pub name: String,
+    pub trace_id: String,
+    pub span_id: String,
+    pub parent_span_id: String,
+    pub sampled: bool,
+    pub error: bool,
+}
+
 impl TestExport {
     pub fn force_flush(&self) {
         self.tracer_provider
@@ -43,5 +53,50 @@ impl TestExport {
             .iter()
             .filter(|span| matches!(span.status, Status::Error { .. }))
             .count()
+    }
+
+    pub fn contains_log_text(&self, needle: &str) -> bool {
+        self.logs
+            .get_emitted_logs()
+            .unwrap_or_default()
+            .iter()
+            .any(|log| {
+                log.record
+                    .body()
+                    .is_some_and(|body| format!("{body:?}").contains(needle))
+                    || log.record.attributes_iter().any(|(key, value)| {
+                        key.as_str().contains(needle) || format!("{value:?}").contains(needle)
+                    })
+            })
+    }
+
+    pub fn contains_span_text(&self, needle: &str) -> bool {
+        self.spans
+            .get_finished_spans()
+            .unwrap_or_default()
+            .iter()
+            .any(|span| {
+                span.name.contains(needle)
+                    || span.attributes.iter().any(|attribute| {
+                        attribute.key.as_str().contains(needle)
+                            || format!("{:?}", attribute.value).contains(needle)
+                    })
+            })
+    }
+
+    pub fn finished_spans(&self) -> Vec<TestSpanSnapshot> {
+        self.spans
+            .get_finished_spans()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|span| TestSpanSnapshot {
+                name: span.name.into_owned(),
+                trace_id: span.span_context.trace_id().to_string(),
+                span_id: span.span_context.span_id().to_string(),
+                parent_span_id: span.parent_span_id.to_string(),
+                sampled: span.span_context.is_sampled(),
+                error: matches!(span.status, Status::Error { .. }),
+            })
+            .collect()
     }
 }

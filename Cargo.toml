@@ -88,10 +88,10 @@ jackin-test-support = { version = "0.6.0-dev", path = "crates/jackin-test-suppor
 jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
 nix = "0.31"
 opentelemetry_sdk = "0.32"
-opentelemetry-semantic-conventions = { version = "0.32", default-features = false }
+opentelemetry-semantic-conventions = { version = "=0.32.1", default-features = false }
 opentelemetry = "0.32"
 opentelemetry-appender-tracing = "0.32"
-opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "logs", "metrics", "grpc-tonic", "gzip-tonic", "tls-roots", "experimental-grpc-retry"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "logs", "metrics", "grpc-tonic", "gzip-tonic", "tls-ring", "tls-roots", "experimental-grpc-retry"] }
 opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic", "trace", "logs", "metrics"] }
 owo-colors = "4"
 portable-pty = "0.9"

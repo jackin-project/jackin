@@ -51,11 +51,13 @@ directories = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
 tempfile = { workspace = true }
+tracing.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["user"] }
 
 [dev-dependencies]
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
 jackin-image = { workspace = true }
 jackin-manifest = { workspace = true }

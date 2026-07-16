@@ -336,30 +336,34 @@ pub(crate) fn fetch_minimax_usage(token: &str) -> Result<MiniMaxUsageResponse, S
     let client = provider_http_client()?;
     let mut last_error = None;
     for url in resolve_minimax_remains_urls() {
-        let response = match client
-            .get(&url)
-            .bearer_auth(token)
-            .header(reqwest::header::ACCEPT, "application/json")
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .header("MM-API-Source", "jackin-capsule")
-            .send()
-        {
-            Ok(response) => response,
-            Err(err) => {
-                last_error = Some(format!("MiniMax usage request failed for {url}: {err}"));
-                continue;
-            }
-        };
-        let status = response.status();
-        if !status.is_success() {
-            last_error = Some(format!("MiniMax usage HTTP {status}"));
-            continue;
+        let result = provider_request(
+            jackin_telemetry::schema::enums::ProviderName::Minimax,
+            "GET",
+            "/v1/api/openplatform/coding_plan/remains",
+            || {
+                let response = client
+                    .get(&url)
+                    .bearer_auth(token)
+                    .header(reqwest::header::ACCEPT, "application/json")
+                    .header(reqwest::header::CONTENT_TYPE, "application/json")
+                    .header("MM-API-Source", "jackin-capsule")
+                    .send()
+                    .map_err(|err| format!("MiniMax usage request failed for {url}: {err}"))?;
+                let status = response.status();
+                if !status.is_success() {
+                    return Err(format!("MiniMax usage HTTP {status}"));
+                }
+                let usage = response
+                    .json::<MiniMaxUsageResponse>()
+                    .map_err(|err| format!("MiniMax usage decode failed: {err}"))?;
+                usage.validate()?;
+                Ok(usage)
+            },
+        );
+        match result {
+            Ok(usage) => return Ok(usage),
+            Err(error) => last_error = Some(error),
         }
-        let usage = response
-            .json::<MiniMaxUsageResponse>()
-            .map_err(|err| format!("MiniMax usage decode failed: {err}"))?;
-        usage.validate()?;
-        return Ok(usage);
     }
     Err(last_error.unwrap_or_else(|| "MiniMax usage endpoint unavailable".to_owned()))
 }

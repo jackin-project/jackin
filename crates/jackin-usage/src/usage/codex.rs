@@ -898,6 +898,8 @@ pub(crate) fn fetch_codex_oauth_usage(
         ));
     }
     get_json_bearer(
+        jackin_telemetry::schema::enums::ProviderName::Openai,
+        "/backend-api/wham/usage",
         "Codex OAuth usage",
         &resolve_codex_usage_url(codex_home),
         &credentials.access_token,
@@ -927,29 +929,36 @@ pub(crate) fn codex_access_token_from_response(value: &serde_json::Value) -> Opt
 }
 
 pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, String> {
-    let client = provider_http_client()?;
-    let response = client
-        .post(CODEX_OAUTH_TOKEN_URL)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header(reqwest::header::ACCEPT, "application/json")
-        .json(&codex_refresh_request_body(refresh_token))
-        .send()
-        .map_err(|err| format!("Codex token refresh request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("Codex token refresh HTTP {status}"));
-    }
-    let value: serde_json::Value = response
-        .json()
-        .map_err(|err| format!("Codex token refresh decode failed: {err}"))?;
-    codex_access_token_from_response(&value)
-        .ok_or_else(|| "Codex token refresh response missing access_token".to_owned())
+    provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Openai,
+        "POST",
+        "/oauth/token",
+        || {
+            let client = provider_http_client()?;
+            let response = client
+                .post(CODEX_OAUTH_TOKEN_URL)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .header(reqwest::header::ACCEPT, "application/json")
+                .json(&codex_refresh_request_body(refresh_token))
+                .send()
+                .map_err(|err| format!("Codex token refresh request failed: {err}"))?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(format!("Codex token refresh HTTP {status}"));
+            }
+            let value: serde_json::Value = response
+                .json()
+                .map_err(|err| format!("Codex token refresh decode failed: {err}"))?;
+            codex_access_token_from_response(&value)
+                .ok_or_else(|| "Codex token refresh response missing access_token".to_owned())
+        },
+    )
 }
 
 /// Fetch Codex usage, transparently re-minting the access token once if the
 /// on-disk token is rejected (HTTP 401/403).
 ///
-/// Root cause this addresses: jackin' reads `auth.json` as-is, while the Codex
+/// Root cause this addresses: jackin❯ reads `auth.json` as-is, while the Codex
 /// CLI refreshes that token only on its own launch — so a token that expired
 /// since the last CLI run would 401 here indefinitely. The refresh is used only
 /// for this read-only fetch and deliberately NOT written back to `auth.json`
@@ -999,6 +1008,8 @@ pub(crate) fn fetch_codex_oauth_reset_credits(
         ));
     }
     let credits: CodexResetCredits = get_json_bearer(
+        jackin_telemetry::schema::enums::ProviderName::Openai,
+        "/backend-api/wham/usage/reset_credits",
         "Codex reset credits",
         &resolve_codex_reset_credits_url(codex_home),
         &credentials.access_token,

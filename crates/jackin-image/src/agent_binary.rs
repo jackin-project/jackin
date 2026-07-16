@@ -93,6 +93,10 @@ async fn ensure_available_impl(
         install_test_stub(paths, agent).context("installing in-process agent binary test stub")?;
     }
     if is_executable_file_async(&stub_path).await {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Hit,
+        );
         record(
             "agent_binary_cache_hit",
             &format!("{} test stub at {}", agent.slug(), stub_path.display()),
@@ -108,6 +112,10 @@ async fn ensure_available_impl(
     // preceding `agent_binary_resolve_started` record is what marks this path
     // in the diagnostics run.
     if let Some(cached_release) = read_cached_release_async(paths, agent).await {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Hit,
+        );
         let cached = cached_binary_path(paths, &cached_release);
         return ensure_binary_or_cached_fallback(
             paths,
@@ -123,6 +131,10 @@ async fn ensure_available_impl(
     if let Some((_, fallback_release, fallback_path)) =
         newest_cached_executable_release_async(paths, agent).await
     {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Stale,
+        );
         spawn_release_metadata_refresh(paths.clone(), agent);
         return ensure_binary_for_release(agent, &fallback_release, &fallback_path).await;
     }
@@ -263,6 +275,10 @@ async fn ensure_binary_for_release(
     cached: &Path,
 ) -> Result<AgentBinary> {
     if is_executable_file_async(cached).await {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Hit,
+        );
         record(
             "agent_binary_cache_hit",
             &format!(
@@ -279,6 +295,10 @@ async fn ensure_binary_for_release(
         });
     }
     if repair_cached_binary_mode_async(cached).await? {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Reuse,
+        );
         record(
             "agent_binary_cache_repaired",
             &format!(
@@ -294,6 +314,10 @@ async fn ensure_binary_for_release(
             version: Some(release.version.clone()),
         });
     }
+    crate::telemetry_boundary::cache_decision(
+        jackin_telemetry::schema::enums::CacheName::AgentBinary,
+        jackin_telemetry::schema::enums::CacheResult::Miss,
+    );
     record(
         "agent_binary_download_started",
         &format!(
@@ -545,7 +569,12 @@ async fn resolve_opencode() -> Result<AgentRelease> {
 
 async fn fetch_text(url: &str) -> Result<String> {
     record("agent_binary_http_get", url);
-    jackin_docker::net::fetch_text(url).await
+    crate::telemetry_boundary::download_request(
+        crate::telemetry_boundary::DownloadRoute::AgentMetadata,
+        url,
+        jackin_docker::net::fetch_text(url),
+    )
+    .await
 }
 
 /// Returns true when `error` is a TCP connect-phase timeout. Unlike a slow
@@ -578,9 +607,8 @@ async fn github_auth_token() -> Option<String> {
 }
 
 async fn github_auth_token_uncached() -> Option<String> {
-    // Degrade to unauthenticated (60 req/hr) on any failure, but log which one:
-    // `gh` missing is expected on CI, while present-but-erroring (not logged in)
-    // is the case an operator hitting a rate-limit 403 needs to see in --debug.
+    // Degrade to unauthenticated (60 req/hr) on any failure. Do not emit the
+    // subprocess error or stderr: either may contain host or account data.
     match tokio::process::Command::new("gh")
         .args(["auth", "token", "--hostname", "github.com"])
         .output()
@@ -590,22 +618,7 @@ async fn github_auth_token_uncached() -> Option<String> {
             let token = String::from_utf8(output.stdout).ok()?.trim().to_owned();
             (!token.is_empty()).then_some(token)
         }
-        Ok(output) => {
-            jackin_diagnostics::telemetry_debug!(
-                "agent_binary",
-                "gh auth token exited {}: {} — proceeding unauthenticated",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-            None
-        }
-        Err(e) => {
-            jackin_diagnostics::telemetry_debug!(
-                "agent_binary",
-                "gh auth token not runnable ({e}) — proceeding unauthenticated"
-            );
-            None
-        }
+        Ok(_) | Err(_) => None,
     }
 }
 
@@ -625,7 +638,13 @@ async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubRelea
         let u = api_url.clone();
         async move {
             record("agent_binary_http_get", &u);
-            jackin_docker::net::get_text(&c, &u).await
+            let telemetry_url = u.clone();
+            crate::telemetry_boundary::download_request(
+                crate::telemetry_boundary::DownloadRoute::AgentMetadata,
+                &telemetry_url,
+                jackin_docker::net::get_text(&c, &u),
+            )
+            .await
         }
     })
     .await
@@ -742,7 +761,15 @@ async fn download_and_cache_inner(
     retry_with_backoff(3, Duration::from_millis(500), || {
         let url = release.url.clone();
         let tmp_download = tmp_download.to_owned();
-        async move { jackin_docker::net::download_parallel(&url, &tmp_download).await }
+        async move {
+            let telemetry_url = url.clone();
+            crate::telemetry_boundary::download_request(
+                crate::telemetry_boundary::DownloadRoute::AgentArtifact,
+                &telemetry_url,
+                jackin_docker::net::download_parallel(&url, &tmp_download),
+            )
+            .await
+        }
     })
     .await
     .with_context(|| format!("downloading {}", release.url))?;
@@ -840,10 +867,11 @@ async fn download_and_cache_inner(
 }
 
 fn record(kind: &str, message: &str) {
+    let _ = message;
     if let Some(run) = jackin_diagnostics::active_run() {
-        run.compact(kind, message);
+        run.compact(kind, kind);
     } else {
-        jackin_diagnostics::telemetry_debug!("agent_binary", "{kind}: {message}");
+        jackin_diagnostics::telemetry_debug!("agent_binary", "{kind}");
     }
 }
 
@@ -909,21 +937,9 @@ fn read_cached_release_at(
 
 async fn read_cached_release_async(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
     let paths = paths.clone();
-    match jackin_telemetry::spawn::joined_blocking(move || read_cached_release(&paths, agent)).await
-    {
-        Ok(release) => release,
-        Err(error) => {
-            // A join error here means the worker was cancelled or panicked; the
-            // read itself is panic-free today, so report it rather than letting a
-            // future panicking read masquerade as a cache miss.
-            jackin_diagnostics::telemetry_debug!(
-                "agent_binary",
-                "cache read worker failed for {}: {error:#}",
-                agent.slug()
-            );
-            None
-        }
-    }
+    jackin_telemetry::spawn::joined_blocking(move || read_cached_release(&paths, agent))
+        .await
+        .unwrap_or_default()
 }
 
 pub fn newest_cached_executable_release(
@@ -958,21 +974,11 @@ async fn newest_cached_executable_release_async(
     agent: Agent,
 ) -> Option<(SystemTime, AgentRelease, PathBuf)> {
     let paths = paths.clone();
-    match jackin_telemetry::spawn::joined_blocking(move || {
+    jackin_telemetry::spawn::joined_blocking(move || {
         newest_cached_executable_release(&paths, agent)
     })
     .await
-    {
-        Ok(found) => found,
-        Err(error) => {
-            jackin_diagnostics::telemetry_debug!(
-                "agent_binary",
-                "cache scan worker failed for {}: {error:#}",
-                agent.slug()
-            );
-            None
-        }
-    }
+    .unwrap_or_default()
 }
 
 fn write_cached_release(paths: &JackinPaths, release: &AgentRelease) -> Result<()> {
@@ -1000,7 +1006,6 @@ fn write_version_release(paths: &JackinPaths, release: &AgentRelease) -> Result<
 async fn persist_release_cache_async(paths: &JackinPaths, release: &AgentRelease) {
     let paths = paths.clone();
     let release = release.clone();
-    let slug = release.agent.slug();
     let result = jackin_telemetry::spawn::joined_blocking(move || {
         (
             write_cached_release(&paths, &release),
@@ -1008,26 +1013,7 @@ async fn persist_release_cache_async(paths: &JackinPaths, release: &AgentRelease
         )
     })
     .await;
-    match result {
-        Ok((cached, version)) => {
-            if let Err(e) = cached {
-                jackin_diagnostics::telemetry_debug!(
-                    "agent_binary",
-                    "caching {slug} release metadata failed: {e:#}"
-                );
-            }
-            if let Err(e) = version {
-                jackin_diagnostics::telemetry_debug!(
-                    "agent_binary",
-                    "writing {slug} version sidecar failed: {e:#}"
-                );
-            }
-        }
-        Err(e) => jackin_diagnostics::telemetry_debug!(
-            "agent_binary",
-            "cache metadata worker failed for {slug}: {e:#}"
-        ),
-    }
+    drop(result);
 }
 
 async fn is_executable_file_async(path: &Path) -> bool {

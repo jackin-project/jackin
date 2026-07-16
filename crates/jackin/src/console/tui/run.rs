@@ -201,10 +201,18 @@ impl ConsoleMouseState {
 fn sync_active_screen(
     state: &ConsoleState,
     tracker: &mut jackin_telemetry::ui::ScreenVisitTracker,
+    action_parent: Option<&jackin_telemetry::ui::ActionParent>,
 ) {
     let screen = screen_of(state);
-    if tracker.current_screen() != Some(screen) {
+    if tracker.current_screen().is_none() {
         let _screen_result = tracker.enter(screen);
+    } else if tracker.current_screen() != Some(screen) {
+        let reason = if action_parent.is_some() {
+            jackin_telemetry::schema::enums::TransitionReason::Action
+        } else {
+            jackin_telemetry::schema::enums::TransitionReason::Completion
+        };
+        let _screen_result = tracker.transition(screen, reason, action_parent);
     }
 }
 
@@ -233,16 +241,54 @@ fn widget_of(state: &ConsoleState) -> Option<&'static str> {
     }
 }
 
-fn sync_widget_focus(state: &ConsoleState, tracker: &mut jackin_telemetry::ui::WidgetFocusTracker) {
+fn input_outcome_action(
+    outcome: &crate::console::tui::InputOutcome,
+) -> Option<jackin_telemetry::schema::enums::UiActionName> {
+    use crate::console::tui::InputOutcome;
+    use jackin_telemetry::schema::enums::UiActionName;
+
+    match outcome {
+        InputOutcome::ExitJackin => Some(UiActionName::AppExitRequest),
+        InputOutcome::LaunchNamed(_)
+        | InputOutcome::LaunchCurrentDir
+        | InputOutcome::LaunchWithAgent(_)
+        | InputOutcome::LaunchWithRuntimeAgent(_)
+        | InputOutcome::LaunchWithProvider { .. } => Some(UiActionName::WorkspaceLaunch),
+        InputOutcome::PrewarmNamed(_) | InputOutcome::NewSessionWithProvider { .. } => {
+            Some(UiActionName::AgentSpawn)
+        }
+        InputOutcome::InstanceAction {
+            action:
+                crate::console::ConsoleInstanceAction::NewSession
+                | crate::console::ConsoleInstanceAction::NewSessionWithAgent(_),
+            ..
+        } => Some(UiActionName::AgentSpawn),
+        InputOutcome::Continue | InputOutcome::InstanceAction { .. } => None,
+    }
+}
+
+fn sync_widget_focus(
+    state: &ConsoleState,
+    tracker: &mut jackin_telemetry::ui::WidgetFocusTracker,
+    action_parent: Option<&jackin_telemetry::ui::ActionParent>,
+) {
     let next = widget_of(state);
     if tracker.current_widget() == next {
         return;
     }
-    if let Some(widget) = next {
-        let _focus_result = tracker.focus(widget);
+    let _focus_result = if let Some(parent) = action_parent {
+        parent.in_scope(|| {
+            if let Some(widget) = next {
+                tracker.focus(widget)
+            } else {
+                tracker.unfocus()
+            }
+        })
+    } else if let Some(widget) = next {
+        tracker.focus(widget)
     } else {
-        let _focus_result = tracker.unfocus();
-    }
+        tracker.unfocus()
+    };
 }
 
 fn drain_background_messages(
@@ -267,6 +313,8 @@ fn draw_console_frame<B>(
     cwd: &std::path::Path,
     mouse_state: &mut ConsoleMouseState,
     container_info_overlay_active: &mut bool,
+    action_parent: Option<&jackin_telemetry::ui::ActionParent>,
+    jank_monitor: &mut jackin_telemetry::ui::JankMonitor,
 ) -> anyhow::Result<()>
 where
     B: ratatui::backend::Backend,
@@ -304,61 +352,83 @@ where
     let confirm_state = state.quit_confirm.as_ref();
     let screen = screen_of(state);
     let render_started = std::time::Instant::now();
-    termrock::runtime::drive_frame(terminal, &view, &*state, main_area, |frame| {
-        if let Some(confirm) = confirm_state {
-            let hint_row = ratatui::layout::Rect {
-                x: main_area.x,
-                y: main_area.bottom().saturating_sub(1),
-                width: main_area.width,
-                height: 1,
-            };
-            let body = ratatui::layout::Rect {
-                height: main_area.height.saturating_sub(1),
-                ..main_area
-            };
-            jackin_console::tui::view::render_modal_backdrop(frame, body);
-            let area = quit_confirm_area(body, confirm);
-            termrock::components::render_confirm_dialog(frame, area, confirm);
-            termrock::components::render_hint_bar(
-                frame,
-                hint_row,
-                &termrock::components::confirm_hint_spans(),
-            );
-        }
-        mouse_state.chrome_hover_tracker.clear();
-        if let Some(bar_area) = debug_bar_area {
-            let active_run = jackin_diagnostics::active_run();
-            let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()), None);
-            let chip_row = debug_chip_row(bar_area);
-            if let Some(chip) =
-                jackin_console::tui::components::status_footer::status_footer_debug_chip_rect(
-                    chip_row, &run_id,
-                )
-            {
-                mouse_state
-                    .chrome_hover_tracker
-                    .register(chip, ConsoleChromeHover::DebugChip);
+    let render_attrs = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
+        value: jackin_telemetry::Value::Str(screen.as_str()),
+    }];
+    let render_operation = action_parent.and_then(|parent| {
+        parent.in_scope(|| {
+            jackin_telemetry::operation(&jackin_telemetry::operation::UI_RENDER, &render_attrs).ok()
+        })
+    });
+    let render_result =
+        termrock::runtime::drive_frame(terminal, &view, &*state, main_area, |frame| {
+            if let Some(confirm) = confirm_state {
+                let hint_row = ratatui::layout::Rect {
+                    x: main_area.x,
+                    y: main_area.bottom().saturating_sub(1),
+                    width: main_area.width,
+                    height: 1,
+                };
+                let body = ratatui::layout::Rect {
+                    height: main_area.height.saturating_sub(1),
+                    ..main_area
+                };
+                jackin_console::tui::view::render_modal_backdrop(frame, body);
+                let area = quit_confirm_area(body, confirm);
+                termrock::components::render_confirm_dialog(frame, area, confirm);
+                termrock::components::render_hint_bar(
+                    frame,
+                    hint_row,
+                    &termrock::components::confirm_hint_spans(),
+                );
             }
-            jackin_console::tui::components::status_footer::render_status_footer_right_group(
-                frame,
-                chip_row,
-                "",
-                jackin_console::tui::components::status_footer::StatusRightGroup {
-                    usage: None,
-                    container: "",
-                    run_id: Some(&run_id),
-                },
-                1.0,
-                jackin_console::tui::components::status_footer::StatusFooterHover {
-                    left: false,
-                    usage: false,
-                    right: false,
-                    right_debug: mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip),
-                },
-            );
-        }
-    })?;
-    jackin_telemetry::ui::record_render(screen, render_started.elapsed().as_secs_f64());
+            mouse_state.chrome_hover_tracker.clear();
+            if let Some(bar_area) = debug_bar_area {
+                let active_run = jackin_diagnostics::active_run();
+                let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()), None);
+                let chip_row = debug_chip_row(bar_area);
+                if let Some(chip) =
+                    jackin_console::tui::components::status_footer::status_footer_debug_chip_rect(
+                        chip_row, &run_id,
+                    )
+                {
+                    mouse_state
+                        .chrome_hover_tracker
+                        .register(chip, ConsoleChromeHover::DebugChip);
+                }
+                jackin_console::tui::components::status_footer::render_status_footer_right_group(
+                    frame,
+                    chip_row,
+                    "",
+                    jackin_console::tui::components::status_footer::StatusRightGroup {
+                        usage: None,
+                        container: "",
+                        run_id: Some(&run_id),
+                    },
+                    1.0,
+                    jackin_console::tui::components::status_footer::StatusFooterHover {
+                        left: false,
+                        usage: false,
+                        right: false,
+                        right_debug: mouse_state.chrome_hover
+                            == Some(ConsoleChromeHover::DebugChip),
+                    },
+                );
+            }
+        });
+    if let Some(operation) = render_operation {
+        operation.complete(
+            if render_result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            render_result.as_ref().err().map(|_| "render_error"),
+        );
+    }
+    render_result?;
+    jank_monitor.record_frame(screen, render_started.elapsed().as_secs_f64());
 
     let ConsoleStage::Manager(ms) = &state.stage;
     if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
@@ -482,6 +552,9 @@ where
     H: InstanceActionHandler<jackin_core::Agent>,
     R: jackin_docker::CommandRunner,
 {
+    if let Some(action) = input_outcome_action(&outcome) {
+        jackin_telemetry::ui::record_action(action, screen_of(state), widget_of(state));
+    }
     match outcome {
         crate::console::tui::InputOutcome::Continue => {
             let ConsoleStage::Manager(ms) = &mut state.stage;
@@ -866,10 +939,12 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
 
     let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
     let mut widget_tracker = jackin_telemetry::ui::WidgetFocusTracker::default();
+    let mut jank_monitor = jackin_telemetry::ui::JankMonitor::default();
 
     let result: anyhow::Result<Option<ConsoleOutcome>> = 'main: loop {
-        sync_active_screen(&state, &mut screen_tracker);
-        sync_widget_focus(&state, &mut widget_tracker);
+        let action_parent = jackin_telemetry::ui::take_action_parent();
+        sync_active_screen(&state, &mut screen_tracker, action_parent.as_ref());
+        sync_widget_focus(&state, &mut widget_tracker, action_parent.as_ref());
 
         // Drain a pending token-generate request before render: suspend the
         // TUI, let the non-TUI effect executor run the interactive mint/write,
@@ -925,6 +1000,8 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 cwd,
                 &mut mouse_state,
                 &mut container_info_overlay_active,
+                action_parent.as_ref(),
+                &mut jank_monitor,
             )?;
             needs_redraw = false;
         }

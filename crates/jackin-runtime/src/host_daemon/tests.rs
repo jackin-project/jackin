@@ -37,6 +37,99 @@ fn layout() -> (tempfile::TempDir, JackinPaths, DaemonLayout) {
     (temp, paths, layout)
 }
 
+fn serialized_daemon_spans(context: TelemetryContext) -> Vec<jackin_diagnostics::TestSpanSnapshot> {
+    let (_temp, _paths, layout) = layout();
+    let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+    let request = DaemonRequest {
+        id: "matrix".to_owned(),
+        protocol_version: DAEMON_PROTOCOL_VERSION,
+        build_id: "test-build".to_owned(),
+        ctx: context,
+        kind: DaemonRequestKind::Status,
+    };
+    let wire = serde_json::to_string(&request).unwrap();
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let response = handle_request_line(
+        &wire,
+        &layout,
+        "test-build",
+        &CoredumpPolicy::Disabled,
+        &mut attention,
+    );
+    assert!(matches!(response.kind, DaemonResponseKind::Status(_)));
+    drop(guard);
+    export.force_flush();
+    export.finished_spans()
+}
+
+#[test]
+fn conformance_serialized_daemon_propagation_matrix_preserves_parentage_sampling_and_rejection() {
+    let trace_id = "4bf92f3577b34da6a3ce929d0e0e4736";
+    let parent_id = "00f067aa0ba902b7";
+    let mut sampled = TelemetryContext::v1();
+    sampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-01"));
+    let spans = serialized_daemon_spans(sampled);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].trace_id, trace_id);
+    assert_eq!(spans[0].parent_span_id, parent_id);
+    assert!(spans[0].sampled);
+
+    for context in [
+        TelemetryContext::v1(),
+        TelemetryContext {
+            traceparent: Some("malformed".to_owned()),
+            ..TelemetryContext::v1()
+        },
+    ] {
+        let spans = serialized_daemon_spans(context);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].parent_span_id, "0000000000000000");
+    }
+
+    let mut unsampled = TelemetryContext::v1();
+    unsampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-00"));
+    assert!(serialized_daemon_spans(unsampled).is_empty());
+
+    let (_temp, _paths, layout) = layout();
+    let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+    let bad_id = DaemonRequest {
+        id: "bad-id".to_owned(),
+        protocol_version: DAEMON_PROTOCOL_VERSION,
+        build_id: "test-build".to_owned(),
+        ctx: TelemetryContext {
+            invocation_id: Some("not-a-uuid".to_owned()),
+            ..TelemetryContext::v1()
+        },
+        kind: DaemonRequestKind::AttentionSnapshot {
+            container_name: "must-not-notify".to_owned(),
+            panes: Vec::new(),
+        },
+    };
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let response = handle_request_line(
+        &serde_json::to_string(&bad_id).unwrap(),
+        &layout,
+        "test-build",
+        &CoredumpPolicy::Disabled,
+        &mut attention,
+    );
+    assert!(matches!(response.kind, DaemonResponseKind::Error { .. }));
+    assert!(attention.notifier.notifications.is_empty());
+    let malformed = handle_request_line(
+        "{not-json",
+        &layout,
+        "test-build",
+        &CoredumpPolicy::Disabled,
+        &mut attention,
+    );
+    assert!(matches!(malformed.kind, DaemonResponseKind::Error { .. }));
+    drop(guard);
+    export.force_flush();
+    assert!(export.finished_spans().is_empty());
+}
+
 #[test]
 fn daemon_layout_uses_private_run_dir() {
     let (_temp, _paths, layout) = layout();

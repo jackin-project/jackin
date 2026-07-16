@@ -29,22 +29,28 @@ pub use metrics::{
     incr_mouse_events, incr_terminal_bytes_received, record_frame, record_render,
 };
 pub use observability::{
-    ContainerOtlp, ServiceIdentity, TelemetryHealth, TelemetrySignalHealth, ValidationFailure,
-    ValidationReport, backend_query_hint, configured_endpoint, configured_endpoint_summary,
-    container_otlp, init_capsule_tracing, init_tracing, init_tracing_for,
-    record_telemetry_rejection, shutdown_capsule_tracing, telemetry_health_snapshot,
-    unsupported_otlp_protocol, validate_delivery,
+    ContainerOtlp, ServiceIdentity, TelemetryFlushStatus, TelemetryHealth, TelemetrySignalHealth,
+    ValidationFailure, ValidationReport, backend_query_hint, configured_endpoint,
+    configured_endpoint_summary, container_otlp, init_capsule_tracing, init_tracing,
+    init_tracing_for, record_telemetry_rejection, shutdown_capsule_tracing,
+    telemetry_health_snapshot, unsupported_otlp_protocol, validate_delivery,
 };
 #[cfg(feature = "test-support")]
-pub use observability::{flush_wire_test_export, init_wire_test_export};
+pub use observability::{
+    flush_wire_test_export, init_wire_test_export, otlp_runtime_active_for_test,
+    otlp_runtime_creation_count_for_test,
+};
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use observability_test_support::TestSpanSnapshot;
 pub use operation::{
     OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,
     operation_metric, operation_record_exit_code, operation_set_i64_attr, operation_span,
 };
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
-    active_subprocess_done, active_timing_done, active_timing_started, install_host_panic_hook,
-    mint_session_id,
+    active_subprocess_done, active_timing_done, active_timing_started, emit_panic_crash,
+    install_host_panic_hook, mint_session_id,
 };
 pub use screen::current_screen_name;
 pub use secret_scrub::scrub_secrets;

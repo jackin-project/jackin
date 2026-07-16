@@ -21,8 +21,8 @@ pub mod ui;
 pub use event::{Attr, EventDef, FieldSet, Rejection, Severity, Value, emit_event};
 pub use health::{FacadeHealth, facade_health, record_export_rejection};
 pub use metric::{
-    Counter, Histogram, InstrumentDef, InstrumentKind, UpDownCounter, counter, histogram, install,
-    up_down_counter,
+    Counter, Histogram, InstrumentDef, InstrumentKind, MeterInstallError, MeterReservation,
+    UpDownCounter, counter, histogram, install, reserve_meter, up_down_counter,
 };
 pub use operation::{
     OperationGuard, SpanDef, operation, operation_or_disabled, operation_with_remote_parent,

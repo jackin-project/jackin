@@ -10,6 +10,10 @@ groups:
   - { id: span.prewarm.attempt, type: span, brief: Detached prewarm job attempt., span_kind: consumer, stability: development, attributes: [{ref: job.id}, {ref: job.type}, {ref: outcome}] }
   - { id: span.connection.attempt, type: span, brief: One connection attempt., span_kind: client, stability: development, attributes: [{ref: outcome}] }
   - { id: span.process.command, type: span, brief: One subprocess command., span_kind: client, stability: development, attributes: [{ref: outcome}] }
+  - { id: span.launch, type: span, brief: One bounded launch pipeline., span_kind: internal, stability: development, attributes: [{ref: launch.target.kind, requirement_level: required}, {ref: outcome}] }
+  - { id: span.launch.stage, type: span, brief: One bounded launch pipeline stage., span_kind: internal, stability: development, attributes: [{ref: launch.stage.name, requirement_level: required}, {ref: outcome}] }
+  - { id: span.http.client, type: span, brief: One bounded HTTP client request., span_kind: client, stability: development, attributes: [{ref: http.request.method, requirement_level: required}, {ref: url.template, requirement_level: required}, {ref: server.address}, {ref: container.id}, {ref: gen_ai.provider.name}, {ref: outcome}] }
+  - { id: span.db.client, type: span, brief: One bounded database client operation., span_kind: client, stability: development, attributes: [{ref: db.system.name, requirement_level: required}, {ref: db.operation.name, requirement_level: required}, {ref: outcome}] }
   - { id: span.rpc.client, type: span, brief: One bounded RPC client request., span_kind: client, stability: development, attributes: [{ref: outcome}] }
   - { id: span.rpc.server, type: span, brief: One bounded RPC server request., span_kind: server, stability: development, attributes: [{ref: outcome}] }
   - { id: span.telemetry.validate, type: span, brief: Telemetry delivery validation., span_kind: internal, stability: development, attributes: [{ref: outcome}] }

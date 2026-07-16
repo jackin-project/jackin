@@ -21,6 +21,7 @@ pub const DAEMON_PROTOCOL_VERSION: u16 = 2;
 pub const MAX_REQUEST_BYTES: u64 = 16 * 1024;
 pub const SOCKET_FILE_NAME: &str = "jackin-daemon.sock";
 pub const PID_FILE_NAME: &str = "jackin-daemon.pid";
+const RPC_ERROR: &str = jackin_telemetry::schema::enums::ErrorType::RpcError.as_str();
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonRequest {
@@ -425,35 +426,71 @@ pub fn request(
     ];
     let operation =
         jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
-    let entered = operation.as_ref().map(|guard| guard.span().enter());
-    let mut stream = UnixStream::connect(socket_path)
-        .with_context(|| format!("connecting to daemon socket {}", socket_path.display()))?;
-    let mut ctx = TelemetryContext::v1();
-    jackin_telemetry::propagation::inject(&mut ctx);
-    let request = DaemonRequest {
-        id: "cli".to_owned(),
-        protocol_version: DAEMON_PROTOCOL_VERSION,
-        build_id: build_id.to_owned(),
-        ctx,
-        kind,
+    let perform_request = || {
+        let mut stream = UnixStream::connect(socket_path)
+            .with_context(|| format!("connecting to daemon socket {}", socket_path.display()))?;
+        let mut ctx = TelemetryContext::v1();
+        jackin_telemetry::propagation::inject(&mut ctx);
+        let request = DaemonRequest {
+            id: "cli".to_owned(),
+            protocol_version: DAEMON_PROTOCOL_VERSION,
+            build_id: build_id.to_owned(),
+            ctx,
+            kind,
+        };
+        serde_json::to_writer(&mut stream, &request).context("writing daemon request")?;
+        stream
+            .write_all(b"\n")
+            .context("terminating daemon request")?;
+        read_response(stream)
     };
-    serde_json::to_writer(&mut stream, &request).context("writing daemon request")?;
-    stream
-        .write_all(b"\n")
-        .context("terminating daemon request")?;
-    let response = read_response(stream);
-    drop(entered);
+    let response = if let Some(operation) = operation.as_ref() {
+        operation.span().in_scope(perform_request)
+    } else {
+        perform_request()
+    }
+    .and_then(|response| {
+        anyhow::ensure!(
+            matches!(response.kind, DaemonResponseKind::Error { .. })
+                || daemon_response_matches_method(method, &response.kind),
+            "daemon replied with a mismatched response for {method}"
+        );
+        Ok(response)
+    });
     if let Some(operation) = operation {
+        let failed = response.as_ref().map_or(true, |response| {
+            matches!(response.kind, DaemonResponseKind::Error { .. })
+        });
         operation.complete(
-            if response.is_ok() {
-                jackin_telemetry::schema::enums::OutcomeValue::Success
-            } else {
+            if failed {
                 jackin_telemetry::schema::enums::OutcomeValue::Failure
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
             },
-            response.as_ref().err().map(|_| "rpc_error"),
+            failed.then_some(RPC_ERROR),
         );
     }
     response
+}
+
+fn daemon_response_matches_method(method: &str, response: &DaemonResponseKind) -> bool {
+    matches!(
+        (method, response),
+        ("jackin.host.Daemon/Hello", DaemonResponseKind::Hello { .. })
+            | ("jackin.host.Daemon/Status", DaemonResponseKind::Status(_))
+            | (
+                "jackin.host.Daemon/TelemetryHealth",
+                DaemonResponseKind::TelemetryHealth(_)
+            )
+            | (
+                "jackin.host.Daemon/AttentionSnapshot",
+                DaemonResponseKind::AttentionAccepted { .. }
+            )
+            | (
+                "jackin.host.Daemon/Shutdown",
+                DaemonResponseKind::Shutdown { .. }
+            )
+    )
 }
 
 pub fn render_unit_files(paths: &JackinPaths, executable: &Path) -> UnitFiles {
@@ -521,10 +558,13 @@ fn handle_stream(
         .take(MAX_REQUEST_BYTES + 1)
         .read_line(&mut line)
         .context("reading daemon request")?;
-    let response = if read as u64 > MAX_REQUEST_BYTES {
-        error_response("unknown", "daemon request exceeds 16384 byte limit")
+    let handled = if read as u64 > MAX_REQUEST_BYTES {
+        HandledResponse::without_operation(error_response(
+            "unknown",
+            "daemon request exceeds 16384 byte limit",
+        ))
     } else {
-        handle_request_line(
+        handle_request_line_inner(
             line.trim_end(),
             layout,
             build_id,
@@ -532,11 +572,56 @@ fn handle_stream(
             attention,
         )
     };
-    serde_json::to_writer(&mut *stream, &response).context("writing daemon response")?;
-    stream
-        .write_all(b"\n")
-        .context("terminating daemon response")?;
+    let response = handled.response;
+    let write_result = (|| {
+        serde_json::to_writer(&mut *stream, &response).context("writing daemon response")?;
+        stream
+            .write_all(b"\n")
+            .context("terminating daemon response")
+    })();
+    if let Some(operation) = handled.operation {
+        let failed =
+            matches!(response.kind, DaemonResponseKind::Error { .. }) || write_result.is_err();
+        operation.complete(
+            if failed {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            },
+            failed.then_some(RPC_ERROR),
+        );
+    }
+    write_result?;
     Ok(response)
+}
+
+struct HandledResponse {
+    response: DaemonResponse,
+    operation: Option<jackin_telemetry::operation::OperationGuard>,
+}
+
+impl HandledResponse {
+    fn without_operation(response: DaemonResponse) -> Self {
+        Self {
+            response,
+            operation: None,
+        }
+    }
+
+    fn complete_without_transport(self) -> DaemonResponse {
+        let failed = matches!(self.response.kind, DaemonResponseKind::Error { .. });
+        if let Some(operation) = self.operation {
+            operation.complete(
+                if failed {
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure
+                } else {
+                    jackin_telemetry::schema::enums::OutcomeValue::Success
+                },
+                failed.then_some(RPC_ERROR),
+            );
+        }
+        self.response
+    }
 }
 
 pub fn handle_request_line(
@@ -546,12 +631,29 @@ pub fn handle_request_line(
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
 ) -> DaemonResponse {
+    handle_request_line_inner(line, layout, build_id, coredump_policy, attention)
+        .complete_without_transport()
+}
+
+fn handle_request_line_inner(
+    line: &str,
+    layout: &DaemonLayout,
+    build_id: &str,
+    coredump_policy: &CoredumpPolicy,
+    attention: &mut impl AttentionNotifierAdapter,
+) -> HandledResponse {
     if line.is_empty() {
-        return error_response("unknown", "empty daemon request");
+        return HandledResponse::without_operation(error_response(
+            "unknown",
+            "empty daemon request",
+        ));
     }
     match serde_json::from_str::<DaemonRequest>(line) {
         Ok(request) => handle_request(request, layout, build_id, coredump_policy, attention),
-        Err(error) => error_response("unknown", format!("invalid daemon request: {error}")),
+        Err(error) => HandledResponse::without_operation(error_response(
+            "unknown",
+            format!("invalid daemon request: {error}"),
+        )),
     }
 }
 
@@ -561,13 +663,16 @@ fn handle_request(
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
-) -> DaemonResponse {
+) -> HandledResponse {
     let extracted = jackin_telemetry::propagation::extract(&request.ctx);
     if matches!(
         extracted,
         jackin_telemetry::propagation::ExtractOutcome::RejectRequest
     ) {
-        return error_response(request.id, "invalid correlation");
+        return HandledResponse::without_operation(error_response(
+            request.id,
+            "invalid correlation",
+        ));
     }
     let method = request.kind.rpc_method();
     let attrs = [
@@ -591,84 +696,82 @@ fn handle_request(
         _ => jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs),
     }
     .ok();
-    let entered = operation.as_ref().map(|guard| guard.span().enter());
-    if request.protocol_version != DAEMON_PROTOCOL_VERSION {
-        return error_response(
-            request.id,
-            format!(
-                "unsupported daemon protocol {}; expected {}",
-                request.protocol_version, DAEMON_PROTOCOL_VERSION
-            ),
-        );
-    }
-    if request.build_id != build_id {
-        return error_response(
-            request.id,
-            format!(
-                "daemon build mismatch: client {}; daemon {}",
-                request.build_id, build_id
-            ),
-        );
-    }
-    let id = request.id;
-    let response = match request.kind {
-        DaemonRequestKind::Hello => DaemonResponse {
-            id,
-            kind: DaemonResponseKind::Hello {
-                protocol_version: DAEMON_PROTOCOL_VERSION,
-                build_id: build_id.to_owned(),
-                capabilities: Vec::new(),
-            },
-        },
-        DaemonRequestKind::Status => DaemonResponse {
-            id,
-            kind: DaemonResponseKind::Status(DaemonStatus {
-                protocol_version: DAEMON_PROTOCOL_VERSION,
-                build_id: build_id.to_owned(),
-                pid: std::process::id(),
-                socket_path: layout.socket_path.clone(),
-                coredump_policy: coredump_policy.clone(),
-                adapters_enabled: if attention.muted() {
-                    Vec::new()
-                } else {
-                    vec!["attention".to_owned()]
-                },
-            }),
-        },
-        DaemonRequestKind::TelemetryHealth => DaemonResponse {
-            id,
-            kind: DaemonResponseKind::TelemetryHealth(telemetry_health_report()),
-        },
-        DaemonRequestKind::AttentionSnapshot {
-            container_name,
-            panes,
-        } => match attention.ingest_panes(&container_name, &panes) {
-            Ok(notifications) => DaemonResponse {
+    let handle = || {
+        if request.protocol_version != DAEMON_PROTOCOL_VERSION {
+            return error_response(
+                request.id,
+                format!(
+                    "unsupported daemon protocol {}; expected {}",
+                    request.protocol_version, DAEMON_PROTOCOL_VERSION
+                ),
+            );
+        }
+        if request.build_id != build_id {
+            return error_response(
+                request.id,
+                format!(
+                    "daemon build mismatch: client {}; daemon {}",
+                    request.build_id, build_id
+                ),
+            );
+        }
+        let id = request.id;
+        match request.kind {
+            DaemonRequestKind::Hello => DaemonResponse {
                 id,
-                kind: DaemonResponseKind::AttentionAccepted {
-                    notifications,
-                    muted: attention.muted(),
+                kind: DaemonResponseKind::Hello {
+                    protocol_version: DAEMON_PROTOCOL_VERSION,
+                    build_id: build_id.to_owned(),
+                    capabilities: Vec::new(),
                 },
             },
-            Err(error) => error_response(id, error.to_string()),
-        },
-        DaemonRequestKind::Shutdown => DaemonResponse {
-            id,
-            kind: DaemonResponseKind::Shutdown { accepted: true },
-        },
-    };
-    drop(entered);
-    if let Some(operation) = operation {
-        operation.complete(
-            if matches!(response.kind, DaemonResponseKind::Error { .. }) {
-                jackin_telemetry::schema::enums::OutcomeValue::Failure
-            } else {
-                jackin_telemetry::schema::enums::OutcomeValue::Success
+            DaemonRequestKind::Status => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::Status(DaemonStatus {
+                    protocol_version: DAEMON_PROTOCOL_VERSION,
+                    build_id: build_id.to_owned(),
+                    pid: std::process::id(),
+                    socket_path: layout.socket_path.clone(),
+                    coredump_policy: coredump_policy.clone(),
+                    adapters_enabled: if attention.muted() {
+                        Vec::new()
+                    } else {
+                        vec!["attention".to_owned()]
+                    },
+                }),
             },
-            None,
-        );
+            DaemonRequestKind::TelemetryHealth => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::TelemetryHealth(telemetry_health_report()),
+            },
+            DaemonRequestKind::AttentionSnapshot {
+                container_name,
+                panes,
+            } => match attention.ingest_panes(&container_name, &panes) {
+                Ok(notifications) => DaemonResponse {
+                    id,
+                    kind: DaemonResponseKind::AttentionAccepted {
+                        notifications,
+                        muted: attention.muted(),
+                    },
+                },
+                Err(error) => error_response(id, error.to_string()),
+            },
+            DaemonRequestKind::Shutdown => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::Shutdown { accepted: true },
+            },
+        }
+    };
+    let response = if let Some(operation) = operation.as_ref() {
+        operation.span().in_scope(handle)
+    } else {
+        handle()
+    };
+    HandledResponse {
+        response,
+        operation,
     }
-    response
 }
 
 fn telemetry_health_report() -> TelemetryHealthReport {

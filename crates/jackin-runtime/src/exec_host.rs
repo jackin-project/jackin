@@ -170,8 +170,9 @@ async fn handle_connection(
     stream.read_exact(&mut body).await?;
 
     let req: CredRequest = serde_json::from_slice(&body).context("parsing CredRequest")?;
+    let extracted = jackin_telemetry::propagation::extract(&req.ctx);
     if matches!(
-        jackin_telemetry::propagation::extract(&req.ctx),
+        extracted,
         jackin_telemetry::propagation::ExtractOutcome::RejectRequest
     ) {
         stream
@@ -181,6 +182,27 @@ async fn handle_connection(
             .await?;
         return Ok(());
     }
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str("jackin.host.Credentials/Resolve"),
+        },
+    ];
+    let operation = match &extracted {
+        jackin_telemetry::propagation::ExtractOutcome::Parent(parent) => {
+            jackin_telemetry::operation_with_remote_parent(
+                &jackin_telemetry::operation::RPC_SERVER,
+                &attrs,
+                parent,
+            )
+        }
+        _ => jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs),
+    }
+    .ok();
 
     // Validate every requested ref against the operator-approved bindings.
     // Reject any ref that wasn't explicitly configured — this prevents a
@@ -193,10 +215,7 @@ async fn handle_connection(
         if !approved {
             jackin_diagnostics::telemetry_debug!(
                 "exec_host",
-                "rejected unauthorized ref: name={:?} kind={:?} source={:?}",
-                r.name,
-                r.kind,
-                r.source
+                "rejected unauthorized credential reference"
             );
             let reply = CredReply::Error {
                 error: format!(
@@ -204,7 +223,14 @@ async fn handle_connection(
                     r.name
                 ),
             };
-            stream.write_all(&frame(&reply)).await?;
+            let write_result = stream.write_all(&frame(&reply)).await;
+            if let Some(operation) = operation {
+                operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    Some("rpc_error"),
+                );
+            }
+            write_result?;
             return Ok(());
         }
     }
@@ -223,7 +249,19 @@ async fn handle_connection(
     };
     // Reuse the canonical control-socket encoder so both ends of host.sock
     // frame identically.
-    stream.write_all(&frame(&reply)).await?;
+    let succeeded = matches!(&reply, CredReply::Ok { .. });
+    let write_result = stream.write_all(&frame(&reply)).await;
+    if let Some(operation) = operation {
+        operation.complete(
+            if succeeded && write_result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            (!succeeded || write_result.is_err()).then_some("rpc_error"),
+        );
+    }
+    write_result?;
     Ok(())
 }
 
@@ -294,7 +332,7 @@ async fn resolve_all(refs: &[ExecBinding]) -> Result<std::collections::BTreeMap<
     let resolved = futures_util::future::try_join_all(refs.iter().map(|r| async move {
         let value = resolve_one(r)
             .await
-            .with_context(|| format!("resolving credential {:?}", r.name))?;
+            .context("resolving approved credential")?;
         Ok::<_, anyhow::Error>((r.name.clone(), value))
     }))
     .await?;

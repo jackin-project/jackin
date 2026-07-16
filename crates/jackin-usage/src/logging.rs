@@ -30,22 +30,7 @@ pub fn init() {
     let () = PANIC_HOOK_INSTALLED.get_or_init(|| {
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            let message = format!("capsule panic: {info}");
-            let body = jackin_diagnostics::redact::redact_text(&message);
-            let attrs = [
-                jackin_telemetry::Attr {
-                    key: jackin_telemetry::schema::attrs::OUTCOME,
-                    value: jackin_telemetry::Value::Str("failure"),
-                },
-                jackin_telemetry::Attr {
-                    key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
-                    value: jackin_telemetry::Value::Str("panic"),
-                },
-            ];
-            let _event_result = jackin_telemetry::emit_event(
-                &jackin_telemetry::event::APP_CRASH,
-                jackin_telemetry::FieldSet::new(&attrs, Some(body.as_ref())),
-            );
+            jackin_diagnostics::emit_panic_crash(info, "capsule panic");
             crate::telemetry::shutdown();
             default_hook(info);
         }));

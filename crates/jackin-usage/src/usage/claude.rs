@@ -827,6 +827,8 @@ pub(crate) fn fetch_claude_oauth_usage(
 ) -> Result<ClaudeOAuthUsageResponse, String> {
     let user_agent = claude_code_user_agent();
     get_json_bearer(
+        jackin_telemetry::schema::enums::ProviderName::Anthropic,
+        "/api/oauth/usage",
         "Claude OAuth usage",
         "https://api.anthropic.com/api/oauth/usage",
         access_token,

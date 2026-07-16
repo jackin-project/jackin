@@ -447,6 +447,18 @@ pub(crate) fn fetch_grok_web_billing(
     auth_path: &Path,
     now: i64,
 ) -> Result<GrokWebBillingSnapshot, String> {
+    provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Xai,
+        "POST",
+        "/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig",
+        || fetch_grok_web_billing_request(auth_path, now),
+    )
+}
+
+fn fetch_grok_web_billing_request(
+    auth_path: &Path,
+    now: i64,
+) -> Result<GrokWebBillingSnapshot, String> {
     let token = grok_bearer_token(auth_path, now)?;
     let client = provider_http_client()?;
     let response = client

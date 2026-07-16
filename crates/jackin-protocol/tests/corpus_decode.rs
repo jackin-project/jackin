@@ -170,7 +170,8 @@ fn assert_client_sample_covers(frame: &ClientFrame) {
         | ClientFrame::ClipboardImageChunk(_)
         | ClientFrame::ClipboardImageEnd(_)
         | ClientFrame::ClipboardImageError(_)
-        | ClientFrame::HostNotice(_) => {}
+        | ClientFrame::HostNotice(_)
+        | ClientFrame::AttachControl(_) => {}
     }
 }
 
@@ -188,7 +189,8 @@ fn assert_server_sample_covers(frame: &ServerFrame) {
         | ServerFrame::HostRevealPath(_)
         | ServerFrame::HostStageImageFromClipboardPath
         | ServerFrame::HostPasteImageFromClipboard
-        | ServerFrame::HostStageImageFromClipboard => {}
+        | ServerFrame::HostStageImageFromClipboard
+        | ServerFrame::AttachControlResponse(_) => {}
     }
 }
 

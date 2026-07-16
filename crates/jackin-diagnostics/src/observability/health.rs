@@ -3,9 +3,9 @@
 
 //! Lock-free outer telemetry health counters.
 
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-static ACTIVE_SIGNALS: AtomicU8 = AtomicU8::new(0);
 static EXPORT_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 static EXPORT_SUCCESSES: AtomicU64 = AtomicU64::new(0);
 static EXPORT_FAILURES: AtomicU64 = AtomicU64::new(0);
@@ -19,14 +19,45 @@ static METRIC_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 static METRIC_SUCCESSES: AtomicU64 = AtomicU64::new(0);
 static METRIC_FAILURES: AtomicU64 = AtomicU64::new(0);
 static FACADE_REJECTIONS: AtomicU64 = AtomicU64::new(0);
-static SHUTDOWN_COMPLETED: AtomicBool = AtomicBool::new(false);
-static SHUTDOWN_SUCCEEDED: AtomicBool = AtomicBool::new(false);
+static LIFECYCLE: Mutex<Lifecycle> = Mutex::new(Lifecycle::new());
+#[cfg(test)]
+pub(super) static TEST_STATE_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(Clone, Copy)]
+struct Lifecycle {
+    generation: u64,
+    active_signals: u8,
+    flush: TelemetryFlushStatus,
+    shutdown_completed: bool,
+    shutdown_succeeded: bool,
+    shutdown_timed_out: bool,
+}
+
+impl Lifecycle {
+    const fn new() -> Self {
+        Self {
+            generation: 0,
+            active_signals: 0,
+            flush: TelemetryFlushStatus::Pending,
+            shutdown_completed: false,
+            shutdown_succeeded: false,
+            shutdown_timed_out: false,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TelemetrySignalHealth {
     pub attempts: u64,
     pub successes: u64,
     pub failures: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TelemetryFlushStatus {
+    Pending,
+    Succeeded,
+    Failed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,24 +70,41 @@ pub struct TelemetryHealth {
     pub logs: TelemetrySignalHealth,
     pub metrics: TelemetrySignalHealth,
     pub facade_rejections: u64,
+    pub flush: TelemetryFlushStatus,
     pub shutdown_completed: bool,
     pub shutdown_succeeded: bool,
+    pub shutdown_timed_out: bool,
 }
 
 #[must_use]
 pub fn telemetry_health_snapshot() -> TelemetryHealth {
+    let lifecycle = *LIFECYCLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     TelemetryHealth {
-        active_signals: ACTIVE_SIGNALS.load(Ordering::Relaxed),
+        active_signals: lifecycle.active_signals,
         export_attempts: EXPORT_ATTEMPTS.load(Ordering::Relaxed),
         export_successes: EXPORT_SUCCESSES.load(Ordering::Relaxed),
         export_failures: EXPORT_FAILURES.load(Ordering::Relaxed),
         traces: signal_snapshot(&TRACE_ATTEMPTS, &TRACE_SUCCESSES, &TRACE_FAILURES),
         logs: signal_snapshot(&LOG_ATTEMPTS, &LOG_SUCCESSES, &LOG_FAILURES),
         metrics: signal_snapshot(&METRIC_ATTEMPTS, &METRIC_SUCCESSES, &METRIC_FAILURES),
-        facade_rejections: FACADE_REJECTIONS.load(Ordering::Relaxed),
-        shutdown_completed: SHUTDOWN_COMPLETED.load(Ordering::Relaxed),
-        shutdown_succeeded: SHUTDOWN_SUCCEEDED.load(Ordering::Relaxed),
+        facade_rejections: FACADE_REJECTIONS.load(Ordering::Relaxed)
+            + facade_rejection_count(jackin_telemetry::facade_health()),
+        flush: lifecycle.flush,
+        shutdown_completed: lifecycle.shutdown_completed,
+        shutdown_succeeded: lifecycle.shutdown_succeeded,
+        shutdown_timed_out: lifecycle.shutdown_timed_out,
     }
+}
+
+const fn facade_rejection_count(health: jackin_telemetry::FacadeHealth) -> u64 {
+    health.unknown_name
+        + health.unknown_attribute
+        + health.invalid_value
+        + health.privacy
+        + health.cardinality
+        + health.size_limit
 }
 
 fn signal_snapshot(
@@ -78,6 +126,7 @@ pub(super) enum Signal {
 }
 
 pub(super) fn record_signal_export(signal: Signal, succeeded: bool) {
+    EXPORT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
     let (attempts, successes, failures) = match signal {
         Signal::Traces => (&TRACE_ATTEMPTS, &TRACE_SUCCESSES, &TRACE_FAILURES),
         Signal::Logs => (&LOG_ATTEMPTS, &LOG_SUCCESSES, &LOG_FAILURES),
@@ -85,36 +134,62 @@ pub(super) fn record_signal_export(signal: Signal, succeeded: bool) {
     };
     attempts.fetch_add(1, Ordering::Relaxed);
     if succeeded {
+        EXPORT_SUCCESSES.fetch_add(1, Ordering::Relaxed);
         successes.fetch_add(1, Ordering::Relaxed);
     } else {
+        EXPORT_FAILURES.fetch_add(1, Ordering::Relaxed);
         failures.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-pub(super) fn set_active_signals(metrics: bool) {
-    ACTIVE_SIGNALS.store(if metrics { 3 } else { 2 }, Ordering::Relaxed);
+pub(super) fn set_active_signals() -> u64 {
+    let mut state = LIFECYCLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    state.generation = state.generation.wrapping_add(1);
+    state.active_signals = 3;
+    state.flush = TelemetryFlushStatus::Pending;
+    state.shutdown_completed = false;
+    state.shutdown_succeeded = false;
+    state.shutdown_timed_out = false;
+    state.generation
 }
 
-pub(super) fn record_export_attempt() {
-    EXPORT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
-}
-
-pub(super) fn record_export_success() {
-    EXPORT_SUCCESSES.fetch_add(1, Ordering::Relaxed);
-}
-
-pub(super) fn record_export_failure() {
-    EXPORT_FAILURES.fetch_add(1, Ordering::Relaxed);
+pub(super) fn record_flush(generation: u64, succeeded: bool) {
+    let mut state = LIFECYCLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if state.generation == generation {
+        state.flush = if succeeded {
+            TelemetryFlushStatus::Succeeded
+        } else {
+            TelemetryFlushStatus::Failed
+        };
+    }
 }
 
 pub fn record_telemetry_rejection() {
     FACADE_REJECTIONS.fetch_add(1, Ordering::Relaxed);
 }
 
-pub(super) fn record_shutdown(succeeded: bool) {
-    SHUTDOWN_SUCCEEDED.store(succeeded, Ordering::Relaxed);
-    SHUTDOWN_COMPLETED.store(true, Ordering::Release);
-    ACTIVE_SIGNALS.store(0, Ordering::Relaxed);
+pub(super) fn record_shutdown_timeout(generation: u64) {
+    let mut state = LIFECYCLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if state.generation == generation {
+        state.shutdown_timed_out = true;
+    }
+}
+
+pub(super) fn record_shutdown(generation: u64, succeeded: bool) {
+    let mut state = LIFECYCLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if state.generation == generation {
+        state.shutdown_succeeded = succeeded;
+        state.shutdown_completed = true;
+        state.active_signals = 0;
+    }
 }
 
 #[cfg(test)]

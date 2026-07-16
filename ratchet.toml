@@ -50,9 +50,6 @@ provider = "expect_per_lint_crate"
 cap = 0
 mode = "enforce"
 [[family.entry]]
-key = "clippy::await_holding_lock@jackin-docker"
-bound = 1
-[[family.entry]]
 key = "clippy::cast_precision_loss@jackin-launch-tui"
 bound = 1
 [[family.entry]]
@@ -69,7 +66,7 @@ key = "clippy::cast_sign_loss@jackin-usage"
 bound = 12
 [[family.entry]]
 key = "clippy::cognitive_complexity@jackin-runtime"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
 bound = 11

@@ -45,9 +45,9 @@ use portable_pty::CommandBuilder;
 
 use crate::agent_status::rules::RulePackRegistry;
 use crate::attach_protocol::{
-    AttachHandshake, ControlRequest, detach_attached_task, detach_client, drain_and_exit,
-    drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
-    spawn_request_label,
+    AttachHandshake, ControlRequest, ControlResponse, detach_attached_task, detach_client,
+    drain_and_exit, drain_and_exit_with_reason, handle_attach_client_with_handshake,
+    initial_spawn_request, perform_handshake, spawn_request_label,
 };
 use crate::clipboard::{
     CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT, ClipboardImageTransfers, cleanup_clipboard_run_dir,
@@ -74,6 +74,8 @@ use crate::session::{
 };
 use crate::socket;
 use crate::token_monitor::{TokenMonitor, TokenTotals};
+
+const RPC_ERROR: &str = jackin_telemetry::schema::enums::ErrorType::RpcError.as_str();
 #[cfg(test)]
 use crate::tui::components::branch_context_bar::branch_context_bar_layout;
 #[cfg(test)]
@@ -141,6 +143,7 @@ use jackin_protocol::control::{ClientMsg, ServerMsg};
 
 mod compositor;
 mod context_mgmt;
+mod control_reply;
 mod dialog_mgmt;
 mod file_export;
 mod input_dispatch;
@@ -151,6 +154,8 @@ mod ports;
 mod resource_metrics;
 mod session_lifecycle;
 mod subsystems;
+
+use control_reply::PendingExecReply;
 
 fn session_display_title(session: &Session) -> String {
     pane_display_title(session.title(), session.cwd(), &session.label)
@@ -273,7 +278,13 @@ pub(super) struct ClipboardState {
     pub(crate) clipboard_image_notice_deadline: Option<Instant>,
     pub(crate) clipboard_image_transfers: ClipboardImageTransfers,
     pub(crate) clipboard_image_insert_mode: ClipboardImageInsertMode,
+    pub(crate) attach_control_operations: HashMap<u64, PendingAttachControl>,
     pub(crate) dialog_copy_feedback_deadline: Option<Instant>,
+}
+
+pub(super) struct PendingAttachControl {
+    pub(crate) request_id: u64,
+    pub(crate) operation: Option<jackin_telemetry::operation::OperationGuard>,
 }
 
 /// Git branch + PR watch cache.
@@ -297,11 +308,48 @@ pub(super) struct UsageState {
 /// Dialog stack, control replies, session event channel.
 pub(super) struct ControlRouting {
     pub(crate) dialog_stack: Vec<Dialog>,
-    pub(crate) pending_exec_reply: Option<tokio::sync::oneshot::Sender<ServerMsg>>,
+    pub(crate) pending_exec_reply: Option<PendingExecReply>,
     pub(crate) exit_request: Option<jackin_protocol::ExitAction>,
     pub(crate) input_parser: InputParser,
     pub(crate) event_tx: mpsc::UnboundedSender<SessionEvent>,
     pub(crate) event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+}
+
+fn handle_control_request(mux: &mut Multiplexer, request: ControlRequest) {
+    let Some(operation) = control_server_operation(&request.ctx, &request.msg) else {
+        drop(request.reply_tx.send(ControlResponse {
+            msg: ServerMsg::Unknown,
+            operation: None,
+            outcome: jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            error_type: Some(RPC_ERROR),
+        }));
+        return;
+    };
+    if let ClientMsg::ExecCommand { command, args } = request.msg {
+        mux.begin_exec_picker(command, args, request.reply_tx, operation);
+        return;
+    }
+    let reply = if let Some(guard) = operation.as_ref() {
+        guard
+            .span()
+            .in_scope(|| control_reply_for_request(mux, request.msg.clone()))
+    } else {
+        control_reply_for_request(mux, request.msg.clone())
+    };
+    let unknown = matches!(reply, ServerMsg::Unknown);
+    let response = ControlResponse {
+        msg: reply,
+        operation,
+        outcome: if unknown {
+            jackin_telemetry::schema::enums::OutcomeValue::Failure
+        } else {
+            jackin_telemetry::schema::enums::OutcomeValue::Success
+        },
+        error_type: unknown.then_some(RPC_ERROR),
+    };
+    if let Err(response) = request.reply_tx.send(response) {
+        response.complete_delivery_failure();
+    }
 }
 
 impl ControlRouting {
@@ -539,6 +587,7 @@ impl Multiplexer {
                 clipboard_image_notice_deadline: None,
                 clipboard_image_transfers: ClipboardImageTransfers::default(),
                 clipboard_image_insert_mode: ClipboardImageInsertMode::PastePath,
+                attach_control_operations: HashMap::new(),
                 dialog_copy_feedback_deadline: None,
             },
             pr_watch: PrWatch {
@@ -631,15 +680,19 @@ impl Multiplexer {
         self.send_protocol_frame(ServerFrame::HostStageImageFromClipboard);
     }
 
-    fn stage_clipboard_image_response(&mut self, image: jackin_protocol::attach::ClipboardImage) {
-        self.stage_clipboard_image_response_with(image, stage_clipboard_image);
+    fn stage_clipboard_image_response(
+        &mut self,
+        image: jackin_protocol::attach::ClipboardImage,
+    ) -> bool {
+        self.stage_clipboard_image_response_with(image, stage_clipboard_image)
     }
 
     fn stage_clipboard_image_response_with<F>(
         &mut self,
         image: jackin_protocol::attach::ClipboardImage,
         stage: F,
-    ) where
+    ) -> bool
+    where
         F: FnOnce(&jackin_protocol::attach::ClipboardImage) -> Result<PathBuf>,
     {
         let insert_mode = std::mem::take(&mut self.clipboard.clipboard_image_insert_mode);
@@ -678,10 +731,12 @@ impl Multiplexer {
                         "Image staged: {path} ({bytes} bytes; no writable focused pane; not pasted)"
                     ));
                 }
+                true
             }
             Err(err) => {
                 log_clipboard_image_rejection("payload", &err);
                 self.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+                false
             }
         }
     }
@@ -904,10 +959,21 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
     // the notice repaints even if no agent state changed this tick (otherwise
     // the no-change return below would leave the frame clean and the notice
     // never painted).
-    let stale_image_transfers = mux
+    let stale_image_transfer_ids = mux
         .clipboard
         .clipboard_image_transfers
-        .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
+        .abort_idle_ids_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
+    let stale_image_transfers = stale_image_transfer_ids.len();
+    for transfer_id in stale_image_transfer_ids {
+        if let Some(pending) = mux.clipboard.attach_control_operations.remove(&transfer_id) {
+            send_attach_control_response(
+                mux,
+                pending.request_id,
+                jackin_protocol::attach::AttachControlResult::Rejected,
+                pending.operation,
+            );
+        }
+    }
     if stale_image_transfers > 0 {
         jackin_diagnostics::telemetry_info!(
             "capsule",
@@ -1208,10 +1274,41 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 );
             }
 
-            Some(request) = control_rx.recv() => {
-                let extracted = jackin_telemetry::propagation::extract(&request.ctx);
-                if matches!(extracted, jackin_telemetry::propagation::ExtractOutcome::RejectRequest) {
-                    drop(request.reply_tx.send(ServerMsg::Unknown));
+            Some(request) = control_rx.recv() => handle_control_request(&mut mux, request),
+
+            // Validated attach handshake from the spawned handshake task.
+            Some(ready) = handshake_rx.recv() => {
+                let AttachHandshake {
+                    stream,
+                    rows,
+                    cols,
+                    spawn,
+                    env,
+                    terminal,
+                    context,
+                    focus_session,
+                    client_permit,
+                } = ready;
+                let extracted = context
+                    .as_ref()
+                    .map_or(jackin_telemetry::propagation::ExtractOutcome::LocalRoot, |ctx| {
+                        jackin_telemetry::propagation::extract(ctx.as_ref())
+                    });
+                if matches!(
+                    extracted,
+                    jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+                ) {
+                    let mut stream = stream;
+                    let response = encode_server(ServerFrame::Shutdown {
+                        reason: Some("invalid correlation".to_owned()),
+                    });
+                    if let Err(error) = tokio::io::AsyncWriteExt::write_all(&mut stream, &response).await {
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
+                            "attach: invalid-correlation response delivery failed: {error}"
+                        );
+                    }
+                    drop(client_permit);
                     continue;
                 }
                 let attrs = [
@@ -1221,10 +1318,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     },
                     jackin_telemetry::Attr {
                         key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
-                        value: jackin_telemetry::Value::Str(request.msg.rpc_method()),
+                        value: jackin_telemetry::Value::Str("jackin.capsule.Attach/Handshake"),
                     },
                 ];
-                let operation = match &extracted {
+                let attach_operation = match &extracted {
                     jackin_telemetry::propagation::ExtractOutcome::Parent(parent) => {
                         jackin_telemetry::operation_with_remote_parent(
                             &jackin_telemetry::operation::RPC_SERVER,
@@ -1238,37 +1335,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     ),
                 }
                 .ok();
-                let entered = operation.as_ref().map(|guard| guard.span().enter());
-                // `jackin-exec` is the one control message with a deferred reply:
-                // it opens the operator credential picker and answers only after
-                // confirm/cancel resolves. Every other message replies inline.
-                if let ClientMsg::ExecCommand { command, args } = request.msg {
-                    mux.begin_exec_picker(command, args, request.reply_tx);
-                } else {
-                    let reply = control_reply_for_request(&mut mux, request.msg);
-                    drop(request.reply_tx.send(reply));
-                }
-                drop(entered);
-                if let Some(operation) = operation {
-                    operation.complete(
-                        jackin_telemetry::schema::enums::OutcomeValue::Success,
-                        None,
-                    );
-                }
-            }
-
-            // Validated attach handshake from the spawned handshake task.
-            Some(ready) = handshake_rx.recv() => {
-                let AttachHandshake {
-                    stream,
-                    rows,
-                    cols,
-                    spawn,
-                    env,
-                    terminal,
-                    focus_session,
-                    client_permit,
-                } = ready;
                 jackin_diagnostics::telemetry_debug!("capsule", "resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
                 let capabilities = terminal.attach_capabilities();
@@ -1299,6 +1365,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         "initial spawn failed (request={}): {err:#}",
                         spawn_request_label(&request)
                     );
+                    if let Some(operation) = attach_operation {
+                        operation.complete(
+                            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                            Some(RPC_ERROR),
+                        );
+                    }
                     return Err(err);
                 }
                 if let Some(target) = focus_session
@@ -1354,7 +1426,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     jackin_diagnostics::telemetry_info!("capsule", "takeover: drained {drained} stale frame(s) from prior client");
                 }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-                mux.client_registry.client.attach(new_out_tx.clone());
+                let (completion_tx, completion_rx) = mpsc::unbounded_channel();
+                mux.client_registry
+                    .client
+                    .attach_with_completions(new_out_tx.clone(), completion_tx);
                 // Build the initial-attach burst as a typed list so a
                 // typo at one call site cannot disagree with the clog
                 // label. A send failure here means the receiver was
@@ -1405,7 +1480,14 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
                 let cmd_tx_for_task = cmd_tx.clone();
                 mux.client_registry.attached_task = Some(jackin_telemetry::spawn::spawn_stream("capsule.attach", async move {
-                    handle_attach_client(stream, new_out_rx, cmd_tx_for_task).await;
+                    handle_attach_client_with_handshake(
+                        stream,
+                        new_out_rx,
+                        completion_rx,
+                        cmd_tx_for_task,
+                        attach_operation,
+                    )
+                    .await;
                     // Hold the concurrency permit alive for the
                     // lifetime of the attach task. Dropping at the
                     // end of the spawned future returns a slot to
@@ -1623,6 +1705,41 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
 
         }
     }
+}
+
+fn control_server_operation(
+    context: &jackin_protocol::TelemetryContext,
+    message: &ClientMsg,
+) -> Option<Option<jackin_telemetry::operation::OperationGuard>> {
+    let extracted = jackin_telemetry::propagation::extract(context);
+    if matches!(
+        extracted,
+        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+    ) {
+        return None;
+    }
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(message.rpc_method()),
+        },
+    ];
+    let operation = match &extracted {
+        jackin_telemetry::propagation::ExtractOutcome::Parent(parent) => {
+            jackin_telemetry::operation_with_remote_parent(
+                &jackin_telemetry::operation::RPC_SERVER,
+                &attrs,
+                parent,
+            )
+        }
+        _ => jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs),
+    }
+    .ok();
+    Some(operation)
 }
 
 mod control;

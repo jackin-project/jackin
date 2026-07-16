@@ -32,6 +32,8 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::TelemetryContext;
 
+mod contextual;
+
 // Client → server tags.
 /// Wire/protocol constant `TAG_HELLO`.
 pub const TAG_HELLO: u8 = 0x01;
@@ -59,6 +61,8 @@ pub const TAG_CLIPBOARD_IMAGE_END: u8 = 0x0b;
 pub const TAG_CLIPBOARD_IMAGE_ERROR: u8 = 0x0c;
 /// Wire/protocol constant `TAG_HOST_NOTICE`.
 pub const TAG_HOST_NOTICE: u8 = 0x0d;
+/// Versioned contextual attach control request.
+pub const TAG_ATTACH_CONTROL: u8 = 0x0e;
 
 // Server → client tags. The top bit is set as a convention so a future
 // reader can tell direction by glancing at the byte.
@@ -88,6 +92,8 @@ pub const TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD: u8 = 0x8b;
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD: u8 = 0x8c;
 /// Wire/protocol constant `TAG_HOST_REVEAL_PATH`.
 pub const TAG_HOST_REVEAL_PATH: u8 = 0x8d;
+/// Bounded attach control acknowledgement.
+pub const TAG_ATTACH_CONTROL_RESPONSE: u8 = 0x8e;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
@@ -117,6 +123,8 @@ pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRAN
 /// paste gets a narrowly-scoped cap because screenshots routinely exceed
 /// 4 MiB while still being small enough for a bounded local frame.
 pub const MAX_CLIPBOARD_IMAGE_BYTES: usize = MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD - 1;
+/// Maximum one-frame image size after reserving bounded contextual-envelope overhead.
+pub const MAX_CONTEXTUAL_CLIPBOARD_IMAGE_BYTES: usize = MAX_CLIPBOARD_IMAGE_BYTES - 2048;
 /// Wire/protocol constant `MAX_HELLO_ENV`.
 pub const MAX_HELLO_ENV: usize = 64;
 /// Per-entry cap on Hello env-value byte length. Operator-supplied env
@@ -523,6 +531,58 @@ pub struct ClipboardImageEnd {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Contextual bounded operation carried over the attach stream.
+pub struct AttachControlRequest {
+    /// Client-unique request identifier used to match the acknowledgement.
+    pub request_id: u64,
+    /// Versioned W3C/product correlation envelope.
+    pub context: TelemetryContext,
+    /// Bounded control operation.
+    pub operation: AttachControlOperation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Operations that are traced on the attach protocol rather than as stream frames.
+pub enum AttachControlOperation {
+    /// Detach the current client.
+    Detach,
+    /// Report outer-terminal focus gained.
+    FocusIn,
+    /// Report outer-terminal focus lost.
+    FocusOut,
+    /// Transfer a bounded image in one frame.
+    ClipboardImage(ClipboardImage),
+    /// Begin a chunked clipboard image transfer.
+    ClipboardImageStart(ClipboardImageStart),
+    /// Continue a chunked clipboard image transfer.
+    ClipboardImageChunk(ClipboardImageChunk),
+    /// Finish a chunked clipboard image transfer.
+    ClipboardImageEnd(ClipboardImageEnd),
+    /// Report a host clipboard probe failure.
+    ClipboardImageError(ClipboardImageError),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Stable result of a bounded attach control request.
+pub enum AttachControlResult {
+    /// The requested operation completed.
+    Success,
+    /// The correlation envelope was invalid and no product side effect ran.
+    InvalidCorrelation,
+    /// The operation was rejected or failed.
+    Rejected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Response paired with [`AttachControlRequest::request_id`].
+pub struct AttachControlResponse {
+    /// Request identifier copied from the request.
+    pub request_id: u64,
+    /// Stable bounded outcome.
+    pub result: AttachControlResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// `FileExportStart` protocol type.
 pub struct FileExportStart {
     /// `transfer_id` field.
@@ -748,6 +808,8 @@ pub enum ClientFrame {
     ClipboardImageError(ClipboardImageError),
     /// `HostNotice` variant.
     HostNotice(String),
+    /// Versioned contextual bounded attach control.
+    AttachControl(AttachControlRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -785,6 +847,8 @@ pub enum ServerFrame {
     HostPasteImageFromClipboard,
     /// `HostStageImageFromClipboard` variant.
     HostStageImageFromClipboard,
+    /// Completion acknowledgement for a bounded attach control.
+    AttachControlResponse(AttachControlResponse),
 }
 
 /// Encode a single attach frame: `[tag][length BE u32][payload]`.
@@ -821,6 +885,7 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::HostStageImageFromClipboard => {
             encode(TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD, &[])
         }
+        ServerFrame::AttachControlResponse(response) => contextual::encode_response(response),
     }
 }
 
@@ -1038,6 +1103,7 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             payload.extend_from_slice(&image.bytes);
             encode(TAG_CLIPBOARD_IMAGE, &payload)
         }
+        ClientFrame::AttachControl(request) => contextual::encode_request(request)?,
     })
 }
 
@@ -1237,7 +1303,7 @@ where
 
 fn max_frame_payload_for_tag(tag: u8) -> usize {
     match tag {
-        TAG_CLIPBOARD_IMAGE => MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD,
+        TAG_CLIPBOARD_IMAGE | TAG_ATTACH_CONTROL => MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD,
         TAG_CLIPBOARD_IMAGE_CHUNK => 16 + MAX_CLIPBOARD_IMAGE_CHUNK_BYTES,
         TAG_FILE_EXPORT_CHUNK => 16 + MAX_FILE_EXPORT_CHUNK_BYTES,
         _ => MAX_FRAME_PAYLOAD,
@@ -1285,6 +1351,13 @@ where
 )]
 /// `decode_client` protocol helper.
 pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
+    if tag == TAG_ATTACH_CONTROL {
+        return contextual::decode_request(&payload).map(ClientFrame::AttachControl);
+    }
+    decode_client_legacy(tag, payload)
+}
+
+fn decode_client_legacy(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
     Ok(match tag {
         TAG_HELLO => {
             if payload.len() < 4 {
@@ -1649,6 +1722,9 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
                 bail!("host stage image request payload must be empty");
             }
             ServerFrame::HostStageImageFromClipboard
+        }
+        TAG_ATTACH_CONTROL_RESPONSE => {
+            ServerFrame::AttachControlResponse(contextual::decode_response(&payload)?)
         }
         other => bail!("unknown server attach tag {other:#04x}"),
     })

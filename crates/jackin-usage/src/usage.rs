@@ -1238,35 +1238,73 @@ pub(crate) fn provider_http_client() -> Result<reqwest::blocking::Client, String
         .map_err(|err| format!("provider HTTP client unavailable: {err}"))
 }
 
+pub(crate) fn provider_request<T>(
+    provider: jackin_telemetry::schema::enums::ProviderName,
+    method: &'static str,
+    template: &'static str,
+    request: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_PROVIDER_NAME,
+            value: jackin_telemetry::Value::Str(provider.as_str()),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::HTTP_REQUEST_METHOD,
+            value: jackin_telemetry::Value::Str(method),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::URL_TEMPLATE,
+            value: jackin_telemetry::Value::Str(template),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation_or_disabled(&jackin_telemetry::operation::HTTP_CLIENT, &attrs);
+    let result = request();
+    operation.complete(
+        if result.is_ok() {
+            jackin_telemetry::schema::enums::OutcomeValue::Success
+        } else {
+            jackin_telemetry::schema::enums::OutcomeValue::Failure
+        },
+        result.as_ref().err().map(|_| "http_error"),
+    );
+    result
+}
+
 /// Shared GET → bearer-auth → JSON skeleton for provider quota endpoints. The
 /// caller supplies the human label (used verbatim in every error string so the
 /// per-provider wording is unchanged), the URL, the bearer token, and any extra
 /// request headers beyond the always-sent `Accept: application/json`. Per-
 /// provider response validation stays at the call site.
 pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
+    provider: jackin_telemetry::schema::enums::ProviderName,
+    template: &'static str,
     label: &str,
     url: &str,
     token: &str,
     extra_headers: &[(reqwest::header::HeaderName, &str)],
 ) -> Result<T, String> {
-    let client = provider_http_client()?;
-    let mut request = client
-        .get(url)
-        .bearer_auth(token)
-        .header(reqwest::header::ACCEPT, "application/json");
-    for (name, value) in extra_headers {
-        request = request.header(name.clone(), *value);
-    }
-    let response = request
-        .send()
-        .map_err(|err| format!("{label} request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("{label} HTTP {status}"));
-    }
-    response
-        .json::<T>()
-        .map_err(|err| format!("{label} decode failed: {err}"))
+    provider_request(provider, "GET", template, || {
+        let client = provider_http_client()?;
+        let mut request = client
+            .get(url)
+            .bearer_auth(token)
+            .header(reqwest::header::ACCEPT, "application/json");
+        for (name, value) in extra_headers {
+            request = request.header(name.clone(), *value);
+        }
+        let response = request
+            .send()
+            .map_err(|err| format!("{label} request failed: {err}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("{label} HTTP {status}"));
+        }
+        response
+            .json::<T>()
+            .map_err(|err| format!("{label} decode failed: {err}"))
+    })
 }
 
 pub(crate) fn epoch_seconds_from_maybe_ms(value: i64) -> i64 {

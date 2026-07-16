@@ -35,7 +35,9 @@ thiserror = { workspace = true }
 jackin-build-meta = { workspace = true }
 
 [dev-dependencies]
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

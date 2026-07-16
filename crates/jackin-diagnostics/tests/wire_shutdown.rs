@@ -13,7 +13,10 @@ fn conformance_shutdown_flushes_session_end_and_is_idempotent() -> anyhow::Resul
         &testbed.endpoint(),
         jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
     )?;
+    jackin_diagnostics::flush_wire_test_export()?;
 
+    // Telemetry emitted after an explicit validation flush still belongs to
+    // the final process flush immediately before provider shutdown.
     let session = jackin_telemetry::identity::SessionGuard::begin();
     let session_id = session.context().current.to_string();
     drop(session);

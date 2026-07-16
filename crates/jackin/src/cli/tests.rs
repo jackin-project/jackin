@@ -4,6 +4,31 @@
 //! Tests for `cli`.
 use super::*;
 
+#[test]
+fn telemetry_command_vocabulary_exactly_matches_live_cli_tree() {
+    use clap::CommandFactory as _;
+    use std::collections::BTreeSet;
+
+    fn collect(command: &clap::Command, prefix: Option<&str>, names: &mut BTreeSet<String>) {
+        for subcommand in command.get_subcommands() {
+            let name = match prefix {
+                Some(prefix) => format!("{prefix}.{}", subcommand.get_name()),
+                None => subcommand.get_name().to_owned(),
+            };
+            names.insert(name.clone());
+            collect(subcommand, Some(&name), names);
+        }
+    }
+
+    let mut live = BTreeSet::new();
+    collect(&Cli::command(), None, &mut live);
+    let governed = jackin_telemetry::schema::enums::CliCommandName::ALL
+        .iter()
+        .map(|name| name.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(governed, live);
+}
+
 /// Strip ANSI escape sequences for clean test assertions.
 fn strip_ansi(s: &str) -> String {
     let mut result = String::with_capacity(s.len());

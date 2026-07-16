@@ -35,6 +35,7 @@ pub(crate) fn assert_scripted_response(
     drop(runtime_guard);
     assert_eq!(testbed.traces().len(), expected_requests);
     assert_eq!(testbed.logs().len(), expected_requests);
+    assert_eq!(testbed.metrics().len(), expected_requests);
     jackin_diagnostics::shutdown_capsule_tracing();
     Ok(())
 }

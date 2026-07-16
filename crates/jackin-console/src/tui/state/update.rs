@@ -93,10 +93,20 @@ pub type ManagerUpdate = crate::tui::update::ConsoleUpdate<ManagerEffect>;
 pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> ManagerUpdate {
     let action = action_of(&message);
     let action_guard = action.and_then(|name| {
-        let attrs = [jackin_telemetry::Attr {
+        let mut attrs = vec![jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
             value: jackin_telemetry::Value::Str(name.as_str()),
         }];
+        attrs.push(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
+            value: jackin_telemetry::Value::Str(telemetry_screen(state).as_str()),
+        });
+        telemetry_widget(state).into_iter().for_each(|widget| {
+            attrs.push(jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_ID,
+                value: jackin_telemetry::Value::Str(widget),
+            });
+        });
         jackin_telemetry::root_operation(&jackin_telemetry::operation::UI_ACTION, &attrs).ok()
     });
     let action_span = action_guard.as_ref().map(|guard| guard.span().enter());
@@ -311,6 +321,7 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
     }
     drop(action_span);
     if let (Some(guard), Some(action)) = (action_guard, action) {
+        jackin_telemetry::ui::remember_action_parent(guard.span());
         guard.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
         let attrs = [jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
@@ -320,6 +331,46 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             jackin_telemetry::counter(&jackin_telemetry::metric::UI_ACTIONS).add(1, &attrs);
     }
     ManagerUpdate::redraw()
+}
+
+fn telemetry_screen(state: &ManagerState<'_>) -> jackin_telemetry::schema::enums::ScreenId {
+    use jackin_telemetry::schema::enums::ScreenId;
+
+    match state.stage {
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => ScreenId::WorkspaceList,
+        ManagerStage::Editor(_) => ScreenId::WorkspaceEditor,
+        ManagerStage::Settings(_) => ScreenId::Settings,
+        ManagerStage::CreatePrelude(_) => ScreenId::WorkspaceCreate,
+    }
+}
+
+fn telemetry_widget(state: &ManagerState<'_>) -> Option<&'static str> {
+    match &state.stage {
+        ManagerStage::Editor(editor) => Some(match editor.active_tab {
+            EditorTab::General => "general",
+            EditorTab::Mounts => "mounts",
+            EditorTab::Roles => "roles",
+            EditorTab::Secrets => "secrets_environments",
+            EditorTab::Auth => "auth",
+        }),
+        ManagerStage::Settings(settings) => Some(match settings.active_tab {
+            SettingsTab::General => "general",
+            SettingsTab::Mounts => "mounts",
+            SettingsTab::Environments => "environments",
+            SettingsTab::Auth => "auth",
+            SettingsTab::Trust => "trust",
+        }),
+        _ => None,
+    }
+}
+
+pub(crate) fn record_manager_action(
+    state: &ManagerState<'_>,
+    action: jackin_telemetry::schema::enums::UiActionName,
+) {
+    jackin_telemetry::ui::record_action(action, telemetry_screen(state), telemetry_widget(state));
 }
 
 pub(crate) const fn action_of(
@@ -333,10 +384,9 @@ pub(crate) const fn action_of(
         | ManagerMessage::MoveSettingsTab { .. }
         | ManagerMessage::SelectSettingsTab(_) => Some(UiActionName::TabSwitch),
         ManagerMessage::EnterCreatePrelude(_) => Some(UiActionName::WorkspaceCreate),
+        ManagerMessage::EnterEditor(_) => Some(UiActionName::WorkspaceOpen),
         ManagerMessage::EnterSettings(_) => Some(UiActionName::SettingsOpen),
         ManagerMessage::ReturnToList => Some(UiActionName::ScreenBack),
-        ManagerMessage::EnterConfirmDelete { .. } => Some(UiActionName::WorkspaceDelete),
-        ManagerMessage::EnterConfirmInstancePurge { .. } => Some(UiActionName::InstancePurge),
         ManagerMessage::DismissSettingsErrorPopup
         | ManagerMessage::DismissStatusPopup
         | ManagerMessage::DismissListModal

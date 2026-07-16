@@ -84,4 +84,75 @@ fn headers_are_parsed_before_provider_start() {
         ]),
         Err(OtlpConfigError::InvalidHeaders { .. })
     ));
+    let error = resolve(&[
+        ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317"),
+        ("OTEL_EXPORTER_OTLP_HEADERS", "authorization=secret%0Avalue"),
+    ])
+    .expect_err("decoded newline must be rejected");
+    assert!(!error.to_string().contains("secret"));
+}
+
+#[test]
+fn signal_timeout_and_standard_header_tls_values_validate() {
+    let config = resolve(&[
+        ("OTEL_EXPORTER_OTLP_ENDPOINT", "https://collector:4317"),
+        ("OTEL_EXPORTER_OTLP_TIMEOUT", "4000"),
+        ("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "250"),
+        ("OTEL_EXPORTER_OTLP_HEADERS", "authorization=generic"),
+        (
+            "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+            "authorization=metrics",
+        ),
+        ("OTEL_EXPORTER_OTLP_CERTIFICATE", "/generic-ca.pem"),
+        ("OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE", "/trace-ca.pem"),
+    ])
+    .expect("valid")
+    .expect("enabled");
+    assert_eq!(config.traces_timeout, Duration::from_secs(4));
+    assert_eq!(config.logs_timeout, Duration::from_millis(250));
+    assert_eq!(
+        config.traces_tls.certificate.as_deref(),
+        Some("/trace-ca.pem")
+    );
+    assert_eq!(
+        config.logs_tls.certificate.as_deref(),
+        Some("/generic-ca.pem")
+    );
+}
+
+#[test]
+fn incomplete_client_identity_is_rejected_without_echoing_secret_paths() {
+    let error = resolve(&[
+        ("OTEL_EXPORTER_OTLP_ENDPOINT", "https://collector:4317"),
+        ("OTEL_EXPORTER_OTLP_CLIENT_KEY", "/secret/client.key"),
+    ])
+    .expect_err("client identity must be paired");
+    assert_eq!(error, OtlpConfigError::IncompleteClientIdentity("traces"));
+    assert!(!error.to_string().contains("/secret/client.key"));
+}
+
+#[test]
+fn endpoints_reject_credentials_without_echoing_them() {
+    let error = resolve(&[(
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "https://operator:super-secret@collector:4317/private",
+    )])
+    .expect_err("embedded endpoint credentials must fail");
+    assert_eq!(error, OtlpConfigError::InvalidEndpoint("traces"));
+    assert!(!error.to_string().contains("operator"));
+    assert!(!error.to_string().contains("super-secret"));
+}
+
+#[test]
+fn invalid_resource_attributes_do_not_echo_values() {
+    let error = resolve(&[
+        ("OTEL_EXPORTER_OTLP_ENDPOINT", "https://collector:4317"),
+        (
+            "OTEL_RESOURCE_ATTRIBUTES",
+            "authorization=super-secret,broken",
+        ),
+    ])
+    .expect_err("invalid resource attributes must fail");
+    assert_eq!(error, OtlpConfigError::InvalidResourceAttribute);
+    assert!(!error.to_string().contains("super-secret"));
 }

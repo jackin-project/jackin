@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 opentelemetry.workspace = true
+opentelemetry-semantic-conventions = { workspace = true, features = ["semconv_experimental"] }
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

@@ -13,7 +13,7 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
-use crate::store_backend::{Connection, Row, connect_local, params};
+use crate::store_backend::{self, Connection, DbOperation, Row, connect_local, params};
 use jackin_core::account_key_hash;
 use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
 #[cfg(test)]
@@ -212,10 +212,12 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
 }
 
 async fn ensure_account_snapshot_columns(conn: &Connection) -> Result<(), String> {
-    let mut rows = conn
-        .query("PRAGMA table_info(account_usage_snapshots)", ())
-        .await
-        .map_err(|err| format!("inspect telemetry snapshot schema failed: {err}"))?;
+    let mut rows = store_backend::operation(
+        DbOperation::Select,
+        conn.query("PRAGMA table_info(account_usage_snapshots)", ()),
+    )
+    .await
+    .map_err(|err| format!("inspect telemetry snapshot schema failed: {err}"))?;
     let mut columns = HashSet::new();
     while let Some(row) = rows
         .next()
@@ -280,13 +282,14 @@ async fn upsert_account_snapshot_rows(
     rows: Vec<StoredAccountUsageSnapshot>,
 ) -> Result<(), String> {
     jackin_diagnostics::incr_db_statement("begin");
-    conn.execute("BEGIN", ())
+    store_backend::operation(DbOperation::Begin, conn.execute("BEGIN", ()))
         .await
         .map_err(|err| format!("begin telemetry snapshot transaction failed: {err}"))?;
     for row in rows {
         jackin_diagnostics::incr_db_statement("upsert_account_usage_snapshot");
-        if let Err(err) = conn
-            .execute(
+        if let Err(err) = store_backend::operation(
+            DbOperation::Upsert,
+            conn.execute(
             "
             INSERT INTO account_usage_snapshots (
                 provider,
@@ -366,6 +369,7 @@ async fn upsert_account_snapshot_rows(
                 row.updated_label,
                 row.status_bar_label,
             ],
+            ),
         )
         .await
         {
@@ -736,8 +740,9 @@ fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapsho
     let path = path.to_path_buf();
     block_on_store(async move {
         let conn = open_store(&path).await?;
-        let mut rows = conn
-            .query(
+        let mut rows = store_backend::operation(
+            DbOperation::Select,
+            conn.query(
                 "
                 SELECT
                     provider,
@@ -769,9 +774,10 @@ fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapsho
                 ORDER BY provider, account_key_hash, source, window_kind
                 ",
                 (),
-            )
-            .await
-            .map_err(|err| format!("query telemetry snapshots failed: {err}"))?;
+            ),
+        )
+        .await
+        .map_err(|err| format!("query telemetry snapshots failed: {err}"))?;
         let mut snapshots = Vec::new();
         while let Some(row) = rows
             .next()
@@ -815,10 +821,12 @@ pub fn schema_version(path: &Path) -> Result<Option<String>, String> {
     let path = path.to_path_buf();
     block_on_store(async move {
         let conn = open_store(&path).await?;
-        let mut rows = conn
-            .query("SELECT value FROM _meta WHERE key = 'schema_version'", ())
-            .await
-            .map_err(|err| format!("query telemetry schema version failed: {err}"))?;
+        let mut rows = store_backend::operation(
+            DbOperation::Select,
+            conn.query("SELECT value FROM _meta WHERE key = 'schema_version'", ()),
+        )
+        .await
+        .map_err(|err| format!("query telemetry schema version failed: {err}"))?;
         rows.next()
             .await
             .map_err(|err| format!("read telemetry schema version failed: {err}"))?

@@ -5,6 +5,30 @@
 use super::*;
 
 #[test]
+fn contextual_attach_control_and_response_roundtrip() {
+    let request = ClientFrame::AttachControl(AttachControlRequest {
+        request_id: 41,
+        context: TelemetryContext::v1(),
+        operation: AttachControlOperation::FocusIn,
+    });
+    let encoded = encode_client(request.clone()).unwrap();
+    assert_eq!(
+        decode_client(encoded[0], encoded[5..].to_vec()).unwrap(),
+        request
+    );
+
+    let response = ServerFrame::AttachControlResponse(AttachControlResponse {
+        request_id: 41,
+        result: AttachControlResult::Success,
+    });
+    let encoded = encode_server(response.clone());
+    assert_eq!(
+        decode_server(encoded[0], encoded[5..].to_vec()).unwrap(),
+        response
+    );
+}
+
+#[test]
 fn hot_path_output_avoids_base64_and_json() {
     // Regression for the first attempt's `base64-inside-JSON` hot path:
     // a 4 KiB chunk of raw PTY bytes must travel through the attach

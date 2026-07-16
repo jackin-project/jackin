@@ -27,6 +27,7 @@ pub enum Severity {
 pub struct EventDef {
     pub name: &'static str,
     pub severity: Severity,
+    pub metadata: &'static schema::EventMetadata,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -71,84 +72,184 @@ impl<'a> FieldSet<'a> {
 pub const SESSION_START: EventDef = EventDef {
     name: schema::events::SESSION_START,
     severity: Severity::Info,
+    metadata: &schema::events::SESSION_START_DEF,
 };
 pub const SESSION_END: EventDef = EventDef {
     name: schema::events::SESSION_END,
     severity: Severity::Info,
+    metadata: &schema::events::SESSION_END_DEF,
 };
 pub const UI_SCREEN_ENTERED: EventDef = EventDef {
     name: schema::events::UI_SCREEN_ENTERED,
     severity: Severity::Info,
+    metadata: &schema::events::UI_SCREEN_ENTERED_DEF,
 };
 pub const UI_SCREEN_EXITED: EventDef = EventDef {
     name: schema::events::UI_SCREEN_EXITED,
     severity: Severity::Info,
+    metadata: &schema::events::UI_SCREEN_EXITED_DEF,
 };
 pub const UI_WIDGET_FOCUSED: EventDef = EventDef {
     name: schema::events::UI_WIDGET_FOCUSED,
     severity: Severity::Debug,
+    metadata: &schema::events::UI_WIDGET_FOCUSED_DEF,
 };
 pub const UI_WIDGET_UNFOCUSED: EventDef = EventDef {
     name: schema::events::UI_WIDGET_UNFOCUSED,
     severity: Severity::Debug,
+    metadata: &schema::events::UI_WIDGET_UNFOCUSED_DEF,
 };
 pub const APP_JANK: EventDef = EventDef {
     name: schema::events::APP_JANK,
     severity: Severity::Warn,
+    metadata: &schema::events::APP_JANK_DEF,
 };
 pub const APP_CRASH: EventDef = EventDef {
     name: schema::events::APP_CRASH,
     severity: Severity::Error,
+    metadata: &schema::events::APP_CRASH_DEF,
 };
 pub const AGENT_STATE_CHANGED: EventDef = EventDef {
     name: schema::events::AGENT_STATE_CHANGED,
     severity: Severity::Info,
+    metadata: &schema::events::AGENT_STATE_CHANGED_DEF,
 };
 pub const PTY_SPAWN: EventDef = EventDef {
     name: schema::events::PTY_SPAWN,
     severity: Severity::Info,
+    metadata: &schema::events::PTY_SPAWN_DEF,
 };
 pub const PTY_EXIT: EventDef = EventDef {
     name: schema::events::PTY_EXIT,
     severity: Severity::Info,
+    metadata: &schema::events::PTY_EXIT_DEF,
 };
 pub const TELEMETRY_VALIDATE: EventDef = EventDef {
     name: schema::events::TELEMETRY_VALIDATE,
     severity: Severity::Info,
+    metadata: &schema::events::TELEMETRY_VALIDATE_DEF,
 };
 
 macro_rules! event_def {
-    ($constant:ident, $name:ident, $severity:ident) => {
+    ($constant:ident, $name:ident, $definition:ident, $severity:ident) => {
         pub const $constant: EventDef = EventDef {
             name: schema::events::$name,
             severity: Severity::$severity,
+            metadata: &schema::events::$definition,
         };
     };
 }
 
-event_def!(LAUNCH_STAGE_STARTED, LAUNCH_STAGE_STARTED, Info);
-event_def!(LAUNCH_STAGE_DONE, LAUNCH_STAGE_DONE, Info);
-event_def!(LAUNCH_STAGE_FAILED, LAUNCH_STAGE_FAILED, Error);
-event_def!(LAUNCH_STAGE_SKIPPED, LAUNCH_STAGE_SKIPPED, Info);
-event_def!(TIMING_STARTED, TIMING_STARTED, Info);
-event_def!(TIMING_DONE, TIMING_DONE, Info);
-event_def!(DEBUG_LINE, DEBUG_LINE, Debug);
-event_def!(PROCESS_SUBPROCESS_DONE, PROCESS_SUBPROCESS_DONE, Info);
-event_def!(RUN_SUMMARY, RUN_SUMMARY, Info);
 event_def!(
-    PERFORMANCE_SLOW_FOREGROUND_WAIT,
-    PERFORMANCE_SLOW_FOREGROUND_WAIT,
-    Warn
-);
-event_def!(CAPSULE_SESSION_DETACH, CAPSULE_SESSION_DETACH, Info);
-event_def!(
-    CAPSULE_SESSION_CLEAN_SHUTDOWN,
-    CAPSULE_SESSION_CLEAN_SHUTDOWN,
+    LAUNCH_STAGE_STARTED,
+    LAUNCH_STAGE_STARTED,
+    LAUNCH_STAGE_STARTED_DEF,
     Info
 );
-event_def!(ERROR_TYPED, ERROR_TYPED, Error);
-event_def!(OPERATION_LOG, OPERATION_LOG, Info);
-event_def!(OPERATION_WARN, OPERATION_WARN, Warn);
+event_def!(
+    LAUNCH_STAGE_DONE,
+    LAUNCH_STAGE_DONE,
+    LAUNCH_STAGE_DONE_DEF,
+    Info
+);
+event_def!(
+    LAUNCH_STAGE_FAILED,
+    LAUNCH_STAGE_FAILED,
+    LAUNCH_STAGE_FAILED_DEF,
+    Error
+);
+event_def!(
+    LAUNCH_STAGE_SKIPPED,
+    LAUNCH_STAGE_SKIPPED,
+    LAUNCH_STAGE_SKIPPED_DEF,
+    Info
+);
+event_def!(TIMING_STARTED, TIMING_STARTED, TIMING_STARTED_DEF, Info);
+event_def!(TIMING_DONE, TIMING_DONE, TIMING_DONE_DEF, Info);
+event_def!(DEBUG_LINE, DEBUG_LINE, DEBUG_LINE_DEF, Debug);
+event_def!(
+    PROCESS_SUBPROCESS_DONE,
+    PROCESS_SUBPROCESS_DONE,
+    PROCESS_SUBPROCESS_DONE_DEF,
+    Info
+);
+event_def!(RUN_SUMMARY, RUN_SUMMARY, RUN_SUMMARY_DEF, Info);
+event_def!(
+    PERFORMANCE_SLOW_FOREGROUND_WAIT,
+    PERFORMANCE_SLOW_FOREGROUND_WAIT,
+    PERFORMANCE_SLOW_FOREGROUND_WAIT_DEF,
+    Warn
+);
+event_def!(
+    CAPSULE_SESSION_DETACH,
+    CAPSULE_SESSION_DETACH,
+    CAPSULE_SESSION_DETACH_DEF,
+    Info
+);
+event_def!(
+    CAPSULE_SESSION_CLEAN_SHUTDOWN,
+    CAPSULE_SESSION_CLEAN_SHUTDOWN,
+    CAPSULE_SESSION_CLEAN_SHUTDOWN_DEF,
+    Info
+);
+event_def!(ERROR_TYPED, ERROR_TYPED, ERROR_TYPED_DEF, Error);
+event_def!(
+    CONFIG_OPERATION,
+    CONFIG_OPERATION,
+    CONFIG_OPERATION_DEF,
+    Info
+);
+event_def!(TRUST_DECISION, TRUST_DECISION, TRUST_DECISION_DEF, Info);
+event_def!(
+    ISOLATION_DECISION,
+    ISOLATION_DECISION,
+    ISOLATION_DECISION_DEF,
+    Info
+);
+event_def!(
+    ISOLATION_FIREWALL_FAILED,
+    ISOLATION_FIREWALL_FAILED,
+    ISOLATION_FIREWALL_FAILED_DEF,
+    Error
+);
+event_def!(CACHE_DECISION, CACHE_DECISION, CACHE_DECISION_DEF, Info);
+event_def!(OPERATION_LOG, OPERATION_LOG, OPERATION_LOG_DEF, Info);
+event_def!(OPERATION_WARN, OPERATION_WARN, OPERATION_WARN_DEF, Warn);
+
+pub const ALL: &[EventDef] = &[
+    SESSION_START,
+    SESSION_END,
+    UI_SCREEN_ENTERED,
+    UI_SCREEN_EXITED,
+    UI_WIDGET_FOCUSED,
+    UI_WIDGET_UNFOCUSED,
+    APP_JANK,
+    APP_CRASH,
+    AGENT_STATE_CHANGED,
+    PTY_SPAWN,
+    PTY_EXIT,
+    TELEMETRY_VALIDATE,
+    LAUNCH_STAGE_STARTED,
+    LAUNCH_STAGE_DONE,
+    LAUNCH_STAGE_FAILED,
+    LAUNCH_STAGE_SKIPPED,
+    TIMING_STARTED,
+    TIMING_DONE,
+    DEBUG_LINE,
+    PROCESS_SUBPROCESS_DONE,
+    RUN_SUMMARY,
+    PERFORMANCE_SLOW_FOREGROUND_WAIT,
+    CAPSULE_SESSION_DETACH,
+    CAPSULE_SESSION_CLEAN_SHUTDOWN,
+    ERROR_TYPED,
+    CONFIG_OPERATION,
+    TRUST_DECISION,
+    ISOLATION_DECISION,
+    ISOLATION_FIREWALL_FAILED,
+    CACHE_DECISION,
+    OPERATION_LOG,
+    OPERATION_WARN,
+];
 
 fn validate(def: &'static EventDef, fields: &FieldSet<'_>) -> Result<(), Rejection> {
     if !schema::events::ALL.contains(&def.name) {
@@ -162,7 +263,63 @@ fn validate(def: &'static EventDef, fields: &FieldSet<'_>) -> Result<(), Rejecti
         privacy::validate_key(attr.key)?;
         limits::validate_value(&attr.value)?;
     }
+    if !def.metadata.attributes.is_empty() {
+        for attr in fields.attrs {
+            let Some(requirement) = def
+                .metadata
+                .attributes
+                .iter()
+                .find(|requirement| requirement.name == attr.key)
+            else {
+                return Err(Rejection::UnknownAttribute);
+            };
+            if !value_matches_type(attr.value, requirement.value_type) {
+                return Err(Rejection::InvalidValue);
+            }
+        }
+        for requirement in def
+            .metadata
+            .attributes
+            .iter()
+            .filter(|requirement| requirement.requirement == schema::RequirementLevel::Required)
+        {
+            if !fields.attrs.iter().any(|attr| attr.key == requirement.name) {
+                return Err(Rejection::InvalidValue);
+            }
+        }
+    }
+    validate_config_schema_versions(fields)?;
     Ok(())
+}
+
+fn validate_config_schema_versions(fields: &FieldSet<'_>) -> Result<(), Rejection> {
+    let from = fields.str(schema::attrs::CONFIG_SCHEMA_VERSION_FROM);
+    let to = fields.str(schema::attrs::CONFIG_SCHEMA_VERSION_TO);
+    if from.is_none() && to.is_none() {
+        return Ok(());
+    }
+    let scope = fields
+        .str(schema::attrs::CONFIG_SCOPE)
+        .ok_or(Rejection::InvalidValue)?;
+    if from.is_some_and(|value| {
+        !schema::valid_config_schema_version(scope, schema::ConfigVersionDirection::From, value)
+    }) || to.is_some_and(|value| {
+        !schema::valid_config_schema_version(scope, schema::ConfigVersionDirection::To, value)
+    }) {
+        return Err(Rejection::InvalidValue);
+    }
+    Ok(())
+}
+
+const fn value_matches_type(value: Value<'_>, expected: schema::ValueType) -> bool {
+    matches!(
+        (value, expected),
+        (Value::Str(_), schema::ValueType::String)
+            | (Value::Bool(_), schema::ValueType::Boolean)
+            | (Value::I64(_) | Value::U64(_), schema::ValueType::Integer)
+            | (Value::F64(_), schema::ValueType::Double)
+            | (Value::StrArray(_), schema::ValueType::StringArray)
+    )
 }
 
 macro_rules! emit_named {
@@ -183,12 +340,15 @@ macro_rules! emit_named {
             _ => None,
         });
         let jank_frame_count = $fields.attrs.iter().find_map(|attr| match attr {
-            Attr { key: schema::attrs::APP_JANK_FRAME_COUNT, value: Value::U64(value) } => Some(*value),
+            Attr { key: schema::attrs::std_attrs::APP_JANK_FRAME_COUNT, value: Value::U64(value) } => Some(*value),
             _ => None,
         });
-        let jank_period = $fields.str(schema::attrs::APP_JANK_PERIOD);
+        let jank_period = $fields.attrs.iter().find_map(|attr| match attr {
+            Attr { key: schema::attrs::std_attrs::APP_JANK_PERIOD, value: Value::F64(value) } => Some(*value),
+            _ => None,
+        });
         let jank_threshold = $fields.attrs.iter().find_map(|attr| match attr {
-            Attr { key: schema::attrs::APP_JANK_THRESHOLD, value: Value::F64(value) } => Some(*value),
+            Attr { key: schema::attrs::std_attrs::APP_JANK_THRESHOLD, value: Value::F64(value) } => Some(*value),
             _ => None,
         });
         let agent_state = $fields.str(schema::attrs::AGENT_STATE);
@@ -203,13 +363,21 @@ macro_rules! emit_named {
             _ => None,
         });
         let error_type = $fields.str(schema::attrs::std_attrs::ERROR_TYPE);
+        let app_build_id = $fields.str(schema::attrs::std_attrs::APP_BUILD_ID);
+        let app_crash_id = $fields.str(schema::attrs::std_attrs::APP_CRASH_ID);
+        let exception_type = $fields.str(schema::attrs::std_attrs::EXCEPTION_TYPE);
+        let exception_message = $fields.str(schema::attrs::std_attrs::EXCEPTION_MESSAGE);
+        let exception_stacktrace = $fields.str(schema::attrs::std_attrs::EXCEPTION_STACKTRACE);
+        let os_name = $fields.str(schema::attrs::std_attrs::OS_NAME);
+        let os_version = $fields.str(schema::attrs::std_attrs::OS_VERSION);
+        let service_version = $fields.str(schema::attrs::std_attrs::SERVICE_VERSION);
         let body = $fields.body.unwrap_or("");
         match $level {
             Severity::Trace => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
             Severity::Debug => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "error.type" = error_type, message = body),
             Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "gen_ai.agent.name" = agent_name, "gen_ai.conversation.id" = conversation_id, "agent.state" = agent_state, "agent.status.source" = agent_status_source, "agent.status.confidence" = agent_status_confidence, "agent.status.stuck" = agent_status_stuck, "pty.exit.reason" = pty_exit_reason, "process.exit.code" = process_exit_code, "error.type" = error_type, message = body),
             Severity::Warn => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "app.jank.frame_count" = jank_frame_count, "app.jank.period" = jank_period, "app.jank.threshold" = jank_threshold, "error.type" = error_type, message = body),
-            Severity::Error => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
+            Severity::Error => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "app.build_id" = app_build_id, "app.crash.id" = app_crash_id, "exception.type" = exception_type, "exception.message" = exception_message, "exception.stacktrace" = exception_stacktrace, "os.name" = os_name, "os.version" = os_version, "service.version" = service_version, "error.type" = error_type, message = body),
         }
     }};
 }

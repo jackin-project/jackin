@@ -212,27 +212,34 @@ impl AmpApiUsage {
 }
 
 pub(crate) fn fetch_amp_api_usage(token: &str) -> Result<AmpApiUsage, String> {
-    let client = provider_http_client()?;
-    let response = client
-        .post("https://ampcode.com/api/internal?userDisplayBalanceInfo")
-        .bearer_auth(token)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .json(&serde_json::json!({
-            "method": "userDisplayBalanceInfo",
-            "params": {}
-        }))
-        .send()
-        .map_err(|err| format!("Amp usage request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("Amp usage HTTP {status}"));
-    }
-    let value = response
-        .json::<serde_json::Value>()
-        .map_err(|err| format!("Amp usage decode failed: {err}"))?;
-    AmpApiUsage::from_value(value)
-        .ok_or_else(|| "Amp usage response did not include balance info".to_owned())
+    provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Amp,
+        "POST",
+        "/api/internal",
+        || {
+            let client = provider_http_client()?;
+            let response = client
+                .post("https://ampcode.com/api/internal?userDisplayBalanceInfo")
+                .bearer_auth(token)
+                .header(reqwest::header::ACCEPT, "application/json")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .json(&serde_json::json!({
+                    "method": "userDisplayBalanceInfo",
+                    "params": {}
+                }))
+                .send()
+                .map_err(|err| format!("Amp usage request failed: {err}"))?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(format!("Amp usage HTTP {status}"));
+            }
+            let value = response
+                .json::<serde_json::Value>()
+                .map_err(|err| format!("Amp usage decode failed: {err}"))?;
+            AmpApiUsage::from_value(value)
+                .ok_or_else(|| "Amp usage response did not include balance info".to_owned())
+        },
+    )
 }
 
 pub(crate) fn load_amp_api_key(path: &Path) -> Option<String> {

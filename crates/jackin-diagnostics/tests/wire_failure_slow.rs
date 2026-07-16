@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
-#[ignore = "scheduled slow-export deadline gate"]
 fn conformance_slow_export_honors_each_signal_deadline() -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -34,10 +33,11 @@ fn conformance_slow_export_honors_each_signal_deadline() -> anyhow::Result<()> {
     let started = std::time::Instant::now();
     assert!(jackin_diagnostics::flush_wire_test_export().is_err());
     let elapsed = started.elapsed();
-    assert!(elapsed >= std::time::Duration::from_secs(5), "{elapsed:?}");
-    // Three signals flush sequentially. Each attempt is capped at five seconds
-    // and the bounded policy permits at most three attempts per signal.
-    assert!(elapsed < std::time::Duration::from_secs(46), "{elapsed:?}");
+    assert!(elapsed >= std::time::Duration::from_secs(3), "{elapsed:?}");
+    assert!(elapsed < std::time::Duration::from_secs(5), "{elapsed:?}");
+    assert!(!testbed.traces().is_empty());
+    assert!(!testbed.logs().is_empty());
+    assert!(!testbed.metrics().is_empty());
     testbed.set_behavior(jackin_otlp_testbed::Behavior::Ok);
     drop(runtime_guard);
     jackin_diagnostics::shutdown_capsule_tracing();

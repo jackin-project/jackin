@@ -25,8 +25,9 @@ async fn clipboard_image_writer_keeps_small_images_single_frame() {
         format: ClipboardImageFormat::Png,
         bytes: b"\x89PNG\r\n\x1a\nsmall".to_vec(),
     };
+    let mut operations = HashMap::new();
 
-    write_clipboard_image_frames(&mut client, image.clone())
+    write_clipboard_image_frames(&mut client, &mut operations, image.clone())
         .await
         .unwrap();
     drop(client);
@@ -37,20 +38,28 @@ async fn clipboard_image_writer_keeps_small_images_single_frame() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(frame, ClientFrame::ClipboardImage(image));
+    let ClientFrame::AttachControl(request) = frame else {
+        panic!("expected contextual clipboard image");
+    };
+    assert_eq!(
+        request.operation,
+        AttachControlOperation::ClipboardImage(image)
+    );
     assert_eq!(server.read(&mut tag).await.unwrap(), 0);
 }
 
 #[tokio::test]
 async fn clipboard_image_writer_chunks_large_images_with_digest() {
-    let mut bytes = vec![b'x'; MAX_CLIPBOARD_IMAGE_BYTES + 1];
+    let mut bytes = vec![b'x'; MAX_CONTEXTUAL_CLIPBOARD_IMAGE_BYTES + 1];
     bytes[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
     let capacity = bytes.len() + 4096;
     let (mut client, mut server) = duplex(capacity);
     let expected_digest: [u8; 32] = Sha256::digest(&bytes).into();
+    let mut operations = HashMap::new();
 
     write_clipboard_image_frames(
         &mut client,
+        &mut operations,
         ClipboardImage {
             format: ClipboardImageFormat::Png,
             bytes: bytes.clone(),
@@ -66,7 +75,10 @@ async fn clipboard_image_writer_chunks_large_images_with_digest() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageStart(start) = start else {
+    let ClientFrame::AttachControl(request) = start else {
+        panic!("expected contextual chunked image start");
+    };
+    let AttachControlOperation::ClipboardImageStart(start) = request.operation else {
         panic!("expected chunked image start");
     };
     assert_eq!(start.format, ClipboardImageFormat::Png);
@@ -80,13 +92,19 @@ async fn clipboard_image_writer_chunks_large_images_with_digest() {
             .unwrap()
             .unwrap();
         match frame {
-            ClientFrame::ClipboardImageChunk(chunk) => {
+            ClientFrame::AttachControl(AttachControlRequest {
+                operation: AttachControlOperation::ClipboardImageChunk(chunk),
+                ..
+            }) => {
                 assert_eq!(chunk.transfer_id, start.transfer_id);
                 assert_eq!(chunk.offset, received.len() as u64);
                 assert!(chunk.bytes.len() <= MAX_CLIPBOARD_IMAGE_CHUNK_BYTES);
                 received.extend(chunk.bytes);
             }
-            ClientFrame::ClipboardImageEnd(end) => {
+            ClientFrame::AttachControl(AttachControlRequest {
+                operation: AttachControlOperation::ClipboardImageEnd(end),
+                ..
+            }) => {
                 assert_eq!(end.transfer_id, start.transfer_id);
                 assert_eq!(end.sha256, expected_digest);
                 break;
@@ -102,9 +120,11 @@ async fn clipboard_image_writer_chunks_large_images_with_digest() {
 #[tokio::test]
 async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
     let (mut client, mut server) = duplex(4096);
+    let mut operations = HashMap::new();
 
     write_clipboard_image_request_result(
         &mut client,
+        &mut operations,
         Err(anyhow::anyhow!(
             "Linux host clipboard image reader needs WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"
         )),
@@ -121,7 +141,11 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageError(error) = frame else {
+    let ClientFrame::AttachControl(AttachControlRequest {
+        operation: AttachControlOperation::ClipboardImageError(error),
+        ..
+    }) = frame
+    else {
         panic!("expected ClipboardImageError");
     };
 
@@ -133,9 +157,11 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
 #[tokio::test]
 async fn explicit_clipboard_path_request_mentions_file_url_support() {
     let (mut client, mut server) = duplex(4096);
+    let mut operations = HashMap::new();
 
     write_clipboard_image_request_result(
         &mut client,
+        &mut operations,
         Ok(None),
         "host clipboard text is not an absolute readable image path or file:// image URL",
         "host clipboard image path probe failed",
@@ -150,7 +176,11 @@ async fn explicit_clipboard_path_request_mentions_file_url_support() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageError(error) = frame else {
+    let ClientFrame::AttachControl(AttachControlRequest {
+        operation: AttachControlOperation::ClipboardImageError(error),
+        ..
+    }) = frame
+    else {
         panic!("expected ClipboardImageError");
     };
 
@@ -479,6 +509,8 @@ fn host_file_export_start_does_not_overwrite_stale_temp_file() {
 
 #[tokio::test]
 async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
+    let (_export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
     let (client, mut server) = duplex(4096);
     let (client_reader, client_writer) = tokio::io::split(client);
     let mut output = Vec::new();
@@ -508,6 +540,10 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
             .unwrap()
             .unwrap();
         server
+            .write_all(&encode_server(ServerFrame::Welcome { session_count: 1 }))
+            .await
+            .unwrap();
+        server
             .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
             .await
             .unwrap();
@@ -530,8 +566,17 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
     .await
     .unwrap();
 
+    let mut received = server_task.await.unwrap();
+    let ClientFrame::Hello { context, .. } = &mut received else {
+        panic!("host attach must begin with Hello")
+    };
+    let propagated = context
+        .as_ref()
+        .expect("Hello must carry telemetry context");
+    assert!(propagated.traceparent.is_some());
+    *context = Some(Box::new(jackin_protocol::TelemetryContext::v1()));
     assert_eq!(
-        server_task.await.unwrap(),
+        received,
         ClientFrame::Hello {
             context: Some(Box::new(jackin_protocol::TelemetryContext::v1())),
             rows: 30,
@@ -718,7 +763,10 @@ async fn attach_protocol_auto_stages_bracketed_image_path_paste() {
     // The pasted host image path is staged as an image frame, not forwarded
     // as the raw path text.
     match server_task.await.unwrap() {
-        ClientFrame::ClipboardImage(image) => {
+        ClientFrame::AttachControl(AttachControlRequest {
+            operation: AttachControlOperation::ClipboardImage(image),
+            ..
+        }) => {
             assert_eq!(image.format, ClipboardImageFormat::Png);
             assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
         }
@@ -790,7 +838,13 @@ async fn attach_protocol_forwards_bytes_around_a_staged_paste() {
     // The image stages, and the coincident mouse report is forwarded rather
     // than dropped with the consumed paste body.
     let (image, trailing) = server_task.await.unwrap();
-    assert!(matches!(image, ClientFrame::ClipboardImage(_)));
+    assert!(matches!(
+        image,
+        ClientFrame::AttachControl(AttachControlRequest {
+            operation: AttachControlOperation::ClipboardImage(_),
+            ..
+        })
+    ));
     assert_eq!(trailing, ClientFrame::Input(b"\x1b[<0;1;1M".to_vec()));
 }
 
@@ -859,7 +913,13 @@ async fn attach_protocol_forwards_typed_prefix_before_a_staged_paste() {
     // wire order.
     let (first, second) = server_task.await.unwrap();
     assert_eq!(first, ClientFrame::Input(b"ab".to_vec()));
-    assert!(matches!(second, ClientFrame::ClipboardImage(_)));
+    assert!(matches!(
+        second,
+        ClientFrame::AttachControl(AttachControlRequest {
+            operation: AttachControlOperation::ClipboardImage(_),
+            ..
+        })
+    ));
 }
 
 #[tokio::test]
@@ -926,7 +986,13 @@ async fn attach_protocol_forwards_prefix_image_suffix_in_wire_order() {
     // Exactly three frames, in wire order: prefix, image, suffix.
     let frames = server_task.await.unwrap();
     assert_eq!(frames[0], ClientFrame::Input(b"ab".to_vec()));
-    assert!(matches!(frames[1], ClientFrame::ClipboardImage(_)));
+    assert!(matches!(
+        frames[1],
+        ClientFrame::AttachControl(AttachControlRequest {
+            operation: AttachControlOperation::ClipboardImage(_),
+            ..
+        })
+    ));
     assert_eq!(frames[2], ClientFrame::Input(b"\x1b[<0;1;1M".to_vec()));
 }
 
@@ -1142,11 +1208,12 @@ async fn host_notice_writer_bounds_overlong_message() {
 async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
     let (mut client, mut server) = duplex(MAX_CLIPBOARD_IMAGE_ERROR_BYTES + 64);
     let message = format!("{}{}", "b".repeat(MAX_CLIPBOARD_IMAGE_ERROR_BYTES), "é");
+    let mut operations = HashMap::new();
 
-    send_clipboard_image_error(&mut client, &message)
+    send_clipboard_image_error(&mut client, &mut operations, &message)
         .await
         .unwrap();
-    send_clipboard_image_error(&mut client, "   ")
+    send_clipboard_image_error(&mut client, &mut operations, "   ")
         .await
         .unwrap();
     drop(client);
@@ -1157,7 +1224,11 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageError(error) = frame else {
+    let ClientFrame::AttachControl(AttachControlRequest {
+        operation: AttachControlOperation::ClipboardImageError(error),
+        ..
+    }) = frame
+    else {
         panic!("expected ClipboardImageError");
     };
     assert_eq!(error.message().len(), MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
@@ -1168,12 +1239,12 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
-        frame,
-        ClientFrame::ClipboardImageError(
-            jackin_protocol::attach::ClipboardImageError::from_message(
-                "Host action failed".to_owned()
-            )
-        )
-    );
+    let ClientFrame::AttachControl(AttachControlRequest {
+        operation: AttachControlOperation::ClipboardImageError(error),
+        ..
+    }) = frame
+    else {
+        panic!("expected contextual ClipboardImageError");
+    };
+    assert_eq!(error.message(), "Host action failed");
 }

@@ -52,6 +52,8 @@ pub struct RichRenderer {
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,
     input: LaunchInput,
+    screen_tracker: jackin_telemetry::ui::ScreenVisitTracker,
+    jank_monitor: jackin_telemetry::ui::JankMonitor,
 }
 
 /// Owns the background render task that ticks the cockpit independently of
@@ -329,6 +331,9 @@ impl RichRenderer {
         // Ancillary status printers (spinners) go silent while this surface
         // owns the alternate screen.
         host.set_rich_surface_active(true);
+        let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
+        let _screen_result =
+            screen_tracker.enter(jackin_telemetry::schema::enums::ScreenId::LaunchProgress);
         Ok(Self {
             terminal,
             no_motion,
@@ -337,6 +342,8 @@ impl RichRenderer {
             host,
             jackin_version,
             input: LaunchInput::spawn(),
+            screen_tracker,
+            jank_monitor: jackin_telemetry::ui::JankMonitor::default(),
         })
     }
 
@@ -407,7 +414,7 @@ impl RichRenderer {
         termrock::runtime::drive_frame(&mut self.terminal, &adapter, view, area, |_| {})
             .map(|_| ())
             .context("rendering launch progress TUI")?;
-        jackin_telemetry::ui::record_render(
+        self.jank_monitor.record_frame(
             jackin_telemetry::schema::enums::ScreenId::LaunchProgress,
             render_started.elapsed().as_secs_f64(),
         );
@@ -1105,6 +1112,9 @@ impl RichRenderer {
 
 impl Drop for RichRenderer {
     fn drop(&mut self) {
+        let _screen_result = self
+            .screen_tracker
+            .exit(jackin_telemetry::schema::enums::TransitionReason::Completion);
         // `restore_terminal()` sets `entered_alt_screen = false` when called
         // explicitly on cancel, making this a no-op for the cancel path.
         self.restore_terminal();

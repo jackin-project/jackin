@@ -93,22 +93,15 @@ impl Multiplexer {
                 // finishes (or fails closed).
                 self.dialog_pop_one();
                 if let Some(reply_tx) = self.control.pending_exec_reply.take() {
-                    jackin_telemetry::spawn::spawn_detached(
-                        &jackin_telemetry::operation::PROCESS_COMMAND,
-                        async move {
-                            drop(reply_tx.send(run_exec_selected(command, args, selected).await));
-                        },
-                    );
+                    reply_tx.spawn(async move { run_exec_selected(command, args, selected).await });
                 }
             }
             DialogAction::ExecCancel => {
                 self.dialog_pop_one();
                 if let Some(reply_tx) = self.control.pending_exec_reply.take() {
-                    drop(
-                        reply_tx.send(jackin_protocol::control::ServerMsg::ExecDenied {
-                            reason: "operator cancelled credential selection".to_owned(),
-                        }),
-                    );
+                    reply_tx.send(jackin_protocol::control::ServerMsg::ExecDenied {
+                        reason: "operator cancelled credential selection".to_owned(),
+                    });
                 }
             }
             DialogAction::ExitDirty(row) => {
@@ -347,15 +340,16 @@ impl Multiplexer {
         &mut self,
         command: String,
         args: Vec<String>,
-        reply_tx: tokio::sync::oneshot::Sender<jackin_protocol::control::ServerMsg>,
+        reply_tx: tokio::sync::oneshot::Sender<crate::attach_protocol::ControlResponse>,
+        operation: Option<jackin_telemetry::operation::OperationGuard>,
     ) {
         // Supersede any picker already in flight: deny its deferred reply (so
         // that client gets an answer instead of a closed socket) and drop its
         // now-stale dialog so confirm/cancel can't act on it.
         if let Some(prev) = self.control.pending_exec_reply.take() {
-            drop(prev.send(jackin_protocol::control::ServerMsg::ExecDenied {
+            prev.send(jackin_protocol::control::ServerMsg::ExecDenied {
                 reason: "superseded by a newer jackin-exec request".to_owned(),
-            }));
+            });
             if matches!(self.dialog_top(), Some(Dialog::ExecPicker(_))) {
                 self.dialog_pop_one();
             }
@@ -365,7 +359,7 @@ impl Multiplexer {
             args,
             &self.launch_env.launch_config.exec_bindings,
         );
-        self.control.pending_exec_reply = Some(reply_tx);
+        self.control.pending_exec_reply = Some(super::PendingExecReply::new(reply_tx, operation));
         self.dialog_push(Dialog::ExecPicker(state));
         self.invalidate(FullRedrawReason::DialogChange);
     }

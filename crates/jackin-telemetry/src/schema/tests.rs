@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{ALL_KEYS, enums, events, metrics, spans};
+use super::{ALL_KEYS, attrs, enums, events, metrics, spans};
 
 #[test]
 fn extension_namespaces_are_neutral_and_unique() {
@@ -25,5 +25,117 @@ fn contract_closed_set_sizes_are_stable() {
     assert_eq!(enums::LaunchStageName::ALL.len(), 11);
     assert_eq!(enums::AgentName::ALL.len(), 6);
     assert_eq!(enums::ScreenId::ALL.len(), 6);
-    assert_eq!(metrics::ALL.len(), 32);
+    assert_eq!(metrics::ALL.len(), 34);
+}
+
+#[test]
+fn upstream_aliases_match_registry_wire_names() {
+    assert!(
+        attrs::std_attrs::UPSTREAM_ALIASES
+            .iter()
+            .all(|(constant, wire_name)| constant == wire_name)
+    );
+    assert_eq!(
+        opentelemetry_semantic_conventions::SCHEMA_URL,
+        attrs::std_attrs::RUST_CRATE_SCHEMA_URL
+    );
+}
+
+#[test]
+fn generated_definition_tables_are_bidirectionally_complete() {
+    let attribute_names = attrs::ALL_DEFINITIONS
+        .iter()
+        .map(|definition| definition.name)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(attribute_names, ALL_KEYS.iter().copied().collect());
+    assert!(
+        ALL_KEYS
+            .iter()
+            .all(|name| attrs::definition(name).is_some())
+    );
+
+    let event_names = events::DEFINITIONS
+        .iter()
+        .map(|definition| definition.name)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(event_names, events::ALL.iter().copied().collect());
+    assert!(
+        events::ALL
+            .iter()
+            .all(|name| events::definition(name).is_some())
+    );
+
+    let span_names = spans::DEFINITIONS
+        .iter()
+        .map(|definition| definition.name)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(span_names, spans::ALL.iter().copied().collect());
+    assert!(
+        spans::ALL
+            .iter()
+            .all(|name| spans::definition(name).is_some())
+    );
+
+    let metric_names = metrics::DEFINITIONS
+        .iter()
+        .map(|definition| definition.name)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(metric_names, metrics::ALL.iter().copied().collect());
+    assert!(
+        metrics::ALL
+            .iter()
+            .all(|name| metrics::definition(name).is_some())
+    );
+}
+
+#[test]
+fn facade_definitions_exactly_cover_generated_events_and_metrics() {
+    let facade_events = crate::event::ALL
+        .iter()
+        .map(|definition| definition.name)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(facade_events, events::ALL.iter().copied().collect());
+    assert!(crate::event::ALL.iter().all(|definition| {
+        let generated = events::definition(definition.name).unwrap();
+        definition.metadata.name == generated.name
+            && definition.metadata.description == generated.description
+            && definition.metadata.attributes.len() == generated.attributes.len()
+    }));
+
+    let facade_metrics = crate::metric::ALL
+        .iter()
+        .map(|definition| definition.name)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(facade_metrics, metrics::ALL.iter().copied().collect());
+}
+
+#[test]
+fn config_version_sets_are_scope_and_direction_specific() {
+    use super::{ConfigVersionDirection, valid_config_schema_version};
+
+    assert!(valid_config_schema_version(
+        "global",
+        ConfigVersionDirection::From,
+        "legacy"
+    ));
+    assert!(valid_config_schema_version(
+        "global",
+        ConfigVersionDirection::To,
+        "v1alpha9"
+    ));
+    assert!(!valid_config_schema_version(
+        "global",
+        ConfigVersionDirection::To,
+        "legacy"
+    ));
+    assert!(!valid_config_schema_version(
+        "workspace",
+        ConfigVersionDirection::From,
+        "v1alpha9"
+    ));
+    assert!(!valid_config_schema_version(
+        "workspace",
+        ConfigVersionDirection::To,
+        "v1alpha9"
+    ));
 }

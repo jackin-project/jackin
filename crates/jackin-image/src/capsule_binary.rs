@@ -60,20 +60,18 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
             ))
             .into());
         }
-        // Operator-trust note: this override path bypasses the
+        // This override path bypasses the
         // SHA-256 verification that the cache-miss download path
         // applies. The operator pointing at a local file is
         // explicitly opting in (typically a `cargo run --bin
         // build-jackin-capsule` artifact, the path that test
         // suites and dev iteration use). Production hosts that
         // never set this env var still get the strong checksum
-        // gate from `download_and_cache`. The note is debug-only so
-        // it never streams over the launch progress surface; the
-        // rich launch screen owns the terminal during this call.
-        jackin_diagnostics::telemetry_debug!(
-            "capsule_binary",
-            "JACKIN_CAPSULE_BIN override at {} (skipping SHA-256 verification)",
-            path.display()
+        // gate from `download_and_cache`. The override path is not emitted as
+        // telemetry because it contains host filesystem data.
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
+            jackin_telemetry::schema::enums::CacheResult::Bypass,
         );
         return Ok(path);
     }
@@ -93,17 +91,16 @@ async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
     let cached = cached_binary_path(&paths.cache_dir, &cache_version, arch);
 
     if is_executable_file(&cached) {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule_binary",
-            "cache hit for jackin-capsule {REQUIRED_VERSION} linux/{arch} (cache key {cache_version})"
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
+            jackin_telemetry::schema::enums::CacheResult::Hit,
         );
         return Ok(cached);
     }
     if repair_executable_file(&cached)? {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule_binary",
-            "repaired executable bit for cached jackin-capsule {REQUIRED_VERSION} linux/{arch} (cache key {cache_version}) at {}",
-            cached.display()
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
+            jackin_telemetry::schema::enums::CacheResult::Reuse,
         );
         record(
             "capsule_binary_cache_repaired",
@@ -133,10 +130,9 @@ async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
     }
 
     if let Some(packaged) = packaged_binary_path(REQUIRED_VERSION, arch).await {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule_binary",
-            "using packaged jackin-capsule {REQUIRED_VERSION} linux/{arch} at {}",
-            packaged.display()
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
+            jackin_telemetry::schema::enums::CacheResult::Reuse,
         );
         return Ok(packaged);
     }
@@ -146,6 +142,10 @@ async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
             .with_context(|| format!("failed to create cache dir {}", parent.display()))?;
     }
 
+    crate::telemetry_boundary::cache_decision(
+        jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
+        jackin_telemetry::schema::enums::CacheResult::Miss,
+    );
     download_and_cache(REQUIRED_VERSION, arch, &cached).await?;
     Ok(cached)
 }
@@ -172,10 +172,11 @@ fn cache_key_version(version: &str) -> String {
 }
 
 fn record(kind: &str, message: &str) {
+    let _ = message;
     if let Some(run) = jackin_diagnostics::active_run() {
-        run.compact(kind, message);
+        run.compact(kind, kind);
     } else {
-        jackin_diagnostics::telemetry_debug!("capsule_binary", "{kind}: {message}");
+        jackin_diagnostics::telemetry_debug!("capsule_binary", "{kind}");
     }
 }
 
@@ -185,13 +186,11 @@ async fn packaged_binary_path(version: &str, arch: &str) -> Option<PathBuf> {
         if !is_executable_file(&candidate) {
             continue;
         }
-        match verify_version(&candidate, version, is_preview).await {
-            Ok(()) => return Some(candidate),
-            Err(err) => jackin_diagnostics::telemetry_debug!(
-                "capsule_binary",
-                "ignoring packaged jackin-capsule at {}: {err}",
-                candidate.display()
-            ),
+        if verify_version(&candidate, version, is_preview)
+            .await
+            .is_ok()
+        {
+            return Some(candidate);
         }
     }
     None
@@ -235,14 +234,10 @@ fn packaged_binary_path_for_keg(keg_root: &Path, arch: &str) -> PathBuf {
 /// observable regardless of `--debug`, and the operator can manually remove the
 /// stale file to recover disk space.
 fn remove_with_debug_log(path: &Path) {
-    if let Err(e) = std::fs::remove_file(path) {
+    if std::fs::remove_file(path).is_err() {
         jackin_diagnostics::emit_compact_line(
             "warning",
-            &format!(
-                "[jackin] warning: failed to remove temp file at {}: {e} \
-                 (manual cleanup may be needed)",
-                path.display()
-            ),
+            "[jackin❯] warning: temporary download file cleanup failed; manual cleanup may be needed",
         );
     }
 }
@@ -250,10 +245,6 @@ fn remove_with_debug_log(path: &Path) {
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let base_url = base_download_url(version);
-    jackin_diagnostics::telemetry_debug!(
-        "capsule_binary",
-        "downloading jackin-capsule {version} for linux/{arch}"
-    );
     let tmp_archive = dest.with_extension("tar.gz.tmp");
     let tmp = dest.with_extension("tmp");
 
@@ -265,7 +256,11 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     let is_preview = is_preview_version(version);
     let (expected_sha_result, download_result) = tokio::join!(
         fetch_and_verify_manifest(version, &base_url, arch, is_preview),
-        jackin_docker::net::download_parallel(&url, &tmp_archive),
+        crate::telemetry_boundary::download_request(
+            crate::telemetry_boundary::DownloadRoute::CapsuleArtifact,
+            &url,
+            jackin_docker::net::download_parallel(&url, &tmp_archive),
+        ),
     );
 
     // Either failure must remove the partial archive so a retry starts clean —
@@ -402,12 +397,6 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         });
     }
 
-    jackin_diagnostics::telemetry_debug!(
-        "capsule_binary",
-        "jackin-capsule {version} cached at {} (sha256 {})",
-        dest.display(),
-        &actual_sha[..16.min(actual_sha.len())]
-    );
     Ok(())
 }
 
@@ -741,14 +730,17 @@ async fn fetch_and_verify_manifest(
     let manifest_url = format!("{base_url}/capsule-manifest.json");
     let bundle_url = format!("{base_url}/capsule-manifest.json.bundle");
 
-    jackin_diagnostics::telemetry_debug!(
-        "capsule_binary",
-        "fetching signed capsule manifest for jackin-capsule {version} linux/{arch}"
-    );
-
     let (manifest_result, bundle_result) = tokio::join!(
-        jackin_docker::net::fetch_text(&manifest_url),
-        jackin_docker::net::fetch_text(&bundle_url),
+        crate::telemetry_boundary::download_request(
+            crate::telemetry_boundary::DownloadRoute::CapsuleManifest,
+            &manifest_url,
+            jackin_docker::net::fetch_text(&manifest_url),
+        ),
+        crate::telemetry_boundary::download_request(
+            crate::telemetry_boundary::DownloadRoute::CapsuleManifestBundle,
+            &bundle_url,
+            jackin_docker::net::fetch_text(&bundle_url),
+        ),
     );
 
     let manifest_text =
@@ -809,11 +801,6 @@ async fn fetch_and_verify_manifest(
         .into());
     }
 
-    jackin_diagnostics::telemetry_debug!(
-        "capsule_binary",
-        "capsule manifest signature verified for {version} linux/{arch}: signer = {san}"
-    );
-
     // Parse the verified manifest, bind its version, and return the SHA256 for this arch.
     let manifest: CapsuleManifest =
         serde_json::from_str(&manifest_text).context("parsing verified capsule-manifest.json")?;
@@ -823,13 +810,7 @@ async fn fetch_and_verify_manifest(
     // tag, manifest always overwritten). For preview the host version is a -dev or
     // -preview. build and may legitimately differ from the capsule build version, so
     // we log it rather than assert equality.
-    if is_preview {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule_binary",
-            "signed capsule manifest version: {} (host version: {version})",
-            manifest.version
-        );
-    } else if manifest.version != version {
+    if !is_preview && manifest.version != version {
         return Err(ImageError::msg(format!(
             "signed capsule manifest carries version {:?} but expected {version:?}; \
              the release asset may have been replaced or the manifest is stale",

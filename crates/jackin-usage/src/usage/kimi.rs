@@ -257,6 +257,8 @@ pub(crate) fn kimi_window_seconds(label: &str, window: Option<&KimiWindow>) -> O
 
 pub(crate) fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
     get_json_bearer(
+        jackin_telemetry::schema::enums::ProviderName::Kimi,
+        "/coding/v1/usages",
         "Kimi usage",
         "https://api.kimi.com/coding/v1/usages",
         token,

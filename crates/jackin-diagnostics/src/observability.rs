@@ -7,8 +7,10 @@ use tracing_subscriber::prelude::*;
 
 mod config;
 mod health;
+mod resource;
 pub use health::{
-    TelemetryHealth, TelemetrySignalHealth, record_telemetry_rejection, telemetry_health_snapshot,
+    TelemetryFlushStatus, TelemetryHealth, TelemetrySignalHealth, record_telemetry_rejection,
+    telemetry_health_snapshot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,15 +84,10 @@ pub fn validate_delivery() -> Result<ValidationReport, ValidationFailure> {
 /// standard OTLP endpoint, spans, logs, and metrics are exported directly and
 /// correlated by governed invocation and session attributes.
 ///
-/// Returns `Ok(true)` when OTLP export was installed (the backend is the active
-/// sink), `Ok(false)` when only the JSONL diagnostics layer is installed (no
-/// endpoint configured). Returns `Err` when a configured OTLP endpoint's
-/// exporter fails to build or the subscriber is already set; on the exporter
-/// failure path the JSONL-only layer is still installed as a fallback so the run
-/// file (now the active sink) keeps capturing events.
-// `allow`, not `expect`: the body is trivially const only in the default
-// (no-otlp) build; the otlp build does non-const setup, so the lint fires in one
-// cfg and not the other and a single non-const signature is required.
+/// Returns `Ok(true)` when all three OTLP providers were installed and
+/// `Ok(false)` when no endpoint is configured. Returns `Err` when configured
+/// providers fail to build or the subscriber is already set. The owning
+/// [`RunDiagnostics`](crate::RunDiagnostics) keeps product execution fail-open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServiceIdentity {
     pub service_name: &'static str,
@@ -149,7 +146,7 @@ pub fn init_tracing_for(
 /// Install real OTLP providers against an explicit test receiver endpoint.
 #[cfg(feature = "test-support")]
 pub fn init_wire_test_export(endpoint: &str, identity: ServiceIdentity) -> anyhow::Result<()> {
-    let endpoints = otlp::OtlpEndpoints::new(endpoint, endpoint, Some(endpoint));
+    let endpoints = otlp::OtlpEndpoints::new(endpoint, endpoint, endpoint);
     otlp::init(false, "wire-conformance", identity, &endpoints)
 }
 
@@ -157,6 +154,18 @@ pub fn init_wire_test_export(endpoint: &str, identity: ServiceIdentity) -> anyho
 #[cfg(feature = "test-support")]
 pub fn flush_wire_test_export() -> Result<(), ValidationFailure> {
     otlp::validate_flush()
+}
+
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn otlp_runtime_creation_count_for_test() -> u64 {
+    otlp::runtime_creation_count()
+}
+
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn otlp_runtime_active_for_test() -> bool {
+    otlp::runtime_is_active()
 }
 
 /// The first explicitly-requested OTLP protocol jackin cannot honor, when an
@@ -178,7 +187,7 @@ pub fn unsupported_otlp_protocol() -> Option<String> {
 /// this call silently drops its last spans, log records, and metrics. Invoked
 /// from `ActiveRunGuard::drop` so it runs on every exit path out of the run —
 /// including `?` error early-returns — rather than only the success path.
-/// No-op in default builds and when no endpoint was configured.
+/// No-op when no endpoint was configured.
 pub(crate) fn shutdown_otlp() {
     otlp::shutdown();
 }
@@ -221,7 +230,7 @@ pub fn configured_endpoint_summary() -> Option<String> {
 }
 
 /// Operator-facing backend query line for an invocation id, when an OTLP endpoint is
-/// configured. Returns `None` when export is off (the JSONL path is enough).
+/// configured. Returns `None` when export is off.
 ///
 /// Renders `parallax run <id>` when the endpoint summary looks like the
 /// Parallax reference backend; otherwise a backend-neutral
@@ -311,7 +320,6 @@ mod tests;
 /// so there is zero link-time cost. No `fmt` layer is attached: OTLP export is
 /// a separate sink from the operator's screen, which stays free of the firehose.
 mod otlp {
-    use opentelemetry::KeyValue;
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
     use opentelemetry_otlp::{Compression, WithExportConfig, WithTonicConfig};
@@ -331,30 +339,29 @@ mod otlp {
 
     use super::ServiceIdentity;
     use super::health;
+    use super::resource::build_resource_for;
+    #[cfg(test)]
+    use super::resource::{
+        build_resource_for_sources, container_id_from_cgroup, semantic_os_type,
+        verified_container_id,
+    };
     mod retry;
+
+    const EXPORT_ATTEMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
 
     /// The three SDK providers for one run, flushed together at shutdown.
     /// Named (not a positional tuple) so the flush sequence can't transpose
     /// tracer/logger/meter — all three expose identical `force_flush`/`shutdown`
     /// signatures, so a tuple destructure in the wrong order would compile
-    /// silently. The meter is optional: metrics are best-effort.
+    /// silently. All three providers are required and activated atomically.
     struct OtlpProviders {
         tracer: SdkTracerProvider,
         logger: SdkLoggerProvider,
-        meter: Option<SdkMeterProvider>,
+        meter: SdkMeterProvider,
+        generation: u64,
     }
 
     impl OtlpProviders {
-        fn shutdown_only(&self) {
-            let timeout = std::time::Duration::from_secs(1);
-            drop(self.tracer.shutdown_with_timeout(timeout));
-            drop(self.logger.shutdown_with_timeout(timeout));
-            if let Some(meter) = &self.meter {
-                drop(meter.shutdown_with_timeout(timeout));
-            }
-            health::record_shutdown(true);
-        }
-
         /// Flush buffered telemetry, then shut the exporters down. Called once,
         /// from `ActiveRunGuard::drop`, on every run exit path.
         ///
@@ -366,59 +373,107 @@ mod otlp {
         /// wrong-protocol backend would fail completely silently. `shutdown`
         /// errors stay quiet — by then the data is already flushed-or-lost and a
         /// second notice adds only noise.
-        fn flush_and_shutdown(&self) {
-            health::record_export_attempt();
+        fn flush_and_shutdown(&self, deadline: std::time::Instant) -> bool {
+            let (trace_flush, log_flush, metric_flush) = self.force_flush_all(deadline);
             #[cfg(test)]
             SHUTDOWN_ORDER
                 .lock()
                 .expect("shutdown order lock")
                 .push("tracer");
-            let trace_flush = self.tracer.force_flush();
-            health::record_signal_export(health::Signal::Traces, trace_flush.is_ok());
-            drop(
-                self.tracer
-                    .shutdown_with_timeout(std::time::Duration::from_secs(1)),
-            );
+            let trace_shutdown = with_remaining(deadline, |timeout| {
+                self.tracer.shutdown_with_timeout(timeout)
+            });
             #[cfg(test)]
             SHUTDOWN_ORDER
                 .lock()
                 .expect("shutdown order lock")
                 .push("logger");
-            let log_flush = self.logger.force_flush();
-            health::record_signal_export(health::Signal::Logs, log_flush.is_ok());
-            drop(
-                self.logger
-                    .shutdown_with_timeout(std::time::Duration::from_secs(1)),
-            );
-            let metric_flush = self.meter.as_ref().map(|meter| {
-                #[cfg(test)]
-                SHUTDOWN_ORDER
-                    .lock()
-                    .expect("shutdown order lock")
-                    .push("meter");
-                let flushed = meter.force_flush();
-                health::record_signal_export(health::Signal::Metrics, flushed.is_ok());
-                drop(meter.shutdown_with_timeout(std::time::Duration::from_secs(1)));
-                flushed
+            let log_shutdown = with_remaining(deadline, |timeout| {
+                self.logger.shutdown_with_timeout(timeout)
+            });
+            #[cfg(test)]
+            SHUTDOWN_ORDER
+                .lock()
+                .expect("shutdown order lock")
+                .push("meter");
+            let metric_shutdown = with_remaining(deadline, |timeout| {
+                self.meter.shutdown_with_timeout(timeout)
             });
             let failed = trace_flush
                 .err()
                 .or_else(|| log_flush.err())
-                .or_else(|| metric_flush.and_then(Result::err));
-            if let Some(error) = failed {
-                health::record_export_failure();
+                .or_else(|| metric_flush.err());
+            let flushed = failed.is_none();
+            health::record_flush(self.generation, flushed);
+            if failed.is_some() {
                 // Direct to stderr, not the deferred buffer: this fires at final
                 // teardown where the run guard may outlive the terminal session,
                 // so a buffered notice could never be drained. The TUI is already
                 // gone by now, so stderr can't corrupt it.
-                crate::logging::emit_teardown_notice(&format!(
-                    "telemetry export failed to reach the backend (run telemetry may be incomplete): {error}"
-                ));
-            } else {
-                health::record_export_success();
+                crate::logging::emit_teardown_notice(
+                    "telemetry export failed to reach the backend (run telemetry may be incomplete)",
+                );
             }
-            health::record_shutdown(true);
+            flushed && trace_shutdown.is_ok() && log_shutdown.is_ok() && metric_shutdown.is_ok()
         }
+
+        fn force_flush_all(
+            &self,
+            deadline: std::time::Instant,
+        ) -> (Result<(), String>, Result<(), String>, Result<(), String>) {
+            #[cfg(test)]
+            SHUTDOWN_ORDER.lock().expect("shutdown order lock").extend([
+                "flush.tracer",
+                "flush.logger",
+                "flush.meter",
+            ]);
+            let tracer = self.tracer.clone();
+            let logger = self.logger.clone();
+            let meter = self.meter.clone();
+            let traces = jackin_telemetry::spawn::thread_joined(move || tracer.force_flush());
+            let logs = jackin_telemetry::spawn::thread_joined(move || logger.force_flush());
+            let metrics = jackin_telemetry::spawn::thread_joined(move || meter.force_flush());
+            let join =
+                |handle: std::thread::JoinHandle<opentelemetry_sdk::error::OTelSdkResult>| {
+                    handle
+                        .join()
+                        .map_err(|_| "telemetry flush worker panicked".to_owned())?
+                        .map_err(|_| "telemetry flush failed".to_owned())
+                };
+            let results = (join(traces), join(logs), join(metrics));
+            if std::time::Instant::now() > deadline {
+                let exhausted = || Err("telemetry flush budget exhausted".to_owned());
+                (exhausted(), exhausted(), exhausted())
+            } else {
+                results
+            }
+        }
+    }
+
+    fn with_remaining<F>(deadline: std::time::Instant, operation: F) -> Result<(), String>
+    where
+        F: FnOnce(std::time::Duration) -> opentelemetry_sdk::error::OTelSdkResult,
+    {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let expired = remaining.is_zero();
+        let result = operation(remaining.max(std::time::Duration::from_millis(1)))
+            .map_err(|_| "telemetry shutdown failed".to_owned());
+        if expired || std::time::Instant::now() > deadline {
+            Err("telemetry shutdown budget exhausted".to_owned())
+        } else {
+            result
+        }
+    }
+
+    #[cfg(test)]
+    fn flush_before<F>(deadline: std::time::Instant, operation: F) -> Result<(), String>
+    where
+        F: FnOnce() -> opentelemetry_sdk::error::OTelSdkResult,
+    {
+        if std::time::Instant::now() >= deadline {
+            return Err("telemetry shutdown budget exhausted".to_owned());
+        }
+        operation().map_err(|_| "telemetry flush failed".to_owned())
     }
 
     pub(super) fn validate_flush() -> Result<(), super::ValidationFailure> {
@@ -428,17 +483,12 @@ mod otlp {
         let providers = providers
             .as_ref()
             .ok_or(super::ValidationFailure::Inactive)?;
-        let trace = providers.tracer.force_flush();
-        health::record_signal_export(health::Signal::Traces, trace.is_ok());
-        let logs = providers.logger.force_flush();
-        health::record_signal_export(health::Signal::Logs, logs.is_ok());
-        let metrics = providers
-            .meter
-            .as_ref()
-            .ok_or(super::ValidationFailure::Inactive)?
-            .force_flush();
-        VALIDATION_FLUSHED.store(true, std::sync::atomic::Ordering::Release);
-        health::record_signal_export(health::Signal::Metrics, metrics.is_ok());
+        let (trace, logs, metrics) = providers
+            .force_flush_all(std::time::Instant::now() + std::time::Duration::from_secs(5));
+        health::record_flush(
+            providers.generation,
+            trace.is_ok() && logs.is_ok() && metrics.is_ok(),
+        );
         if trace.is_err() {
             return Err(super::ValidationFailure::Export("traces"));
         }
@@ -452,8 +502,6 @@ mod otlp {
     }
 
     static PROVIDERS: std::sync::Mutex<Option<OtlpProviders>> = std::sync::Mutex::new(None);
-    static VALIDATION_FLUSHED: std::sync::atomic::AtomicBool =
-        std::sync::atomic::AtomicBool::new(false);
     #[cfg(test)]
     static SHUTDOWN_ORDER: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
 
@@ -465,7 +513,9 @@ mod otlp {
     /// a single run's telemetry volume.
     static OTEL_RUNTIME: std::sync::Mutex<Option<tokio::runtime::Runtime>> =
         std::sync::Mutex::new(None);
-    #[cfg(test)]
+    static PENDING_TEARDOWNS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+        std::sync::Mutex::new(Vec::new());
+    #[cfg(any(test, feature = "test-support"))]
     static OTEL_RUNTIME_CREATIONS: std::sync::atomic::AtomicU64 =
         std::sync::atomic::AtomicU64::new(0);
 
@@ -486,18 +536,33 @@ mod otlp {
                     .build()
                     .map_err(|e| anyhow::anyhow!("OTLP telemetry runtime init failed: {e}"))?,
             );
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             OTEL_RUNTIME_CREATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         Ok(runtime)
+    }
+
+    fn rollback_runtime() {
+        if let Some(runtime) = OTEL_RUNTIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            runtime.shutdown_background();
+        }
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub(super) struct OtlpEndpoints {
         traces: String,
         logs: String,
-        metrics: Option<String>,
-        timeout: std::time::Duration,
+        metrics: String,
+        traces_timeout: std::time::Duration,
+        logs_timeout: std::time::Duration,
+        metrics_timeout: std::time::Duration,
+        traces_tls: super::config::TlsConfig,
+        logs_tls: super::config::TlsConfig,
+        metrics_tls: super::config::TlsConfig,
     }
 
     impl OtlpEndpoints {
@@ -505,8 +570,13 @@ mod otlp {
             Self {
                 traces: config.traces_endpoint.clone(),
                 logs: config.logs_endpoint.clone(),
-                metrics: Some(config.metrics_endpoint.clone()),
-                timeout: config.timeout,
+                metrics: config.metrics_endpoint.clone(),
+                traces_timeout: config.traces_timeout,
+                logs_timeout: config.logs_timeout,
+                metrics_timeout: config.metrics_timeout,
+                traces_tls: config.traces_tls.clone(),
+                logs_tls: config.logs_tls.clone(),
+                metrics_tls: config.metrics_tls.clone(),
             }
         }
 
@@ -515,19 +585,24 @@ mod otlp {
         /// so — unlike OTLP/HTTP — no `/v1/<signal>` path is appended and all
         /// three share `base`.
         fn from_base(base: &str) -> Self {
-            Self::new(base, base, Some(base))
+            Self::new(base, base, base)
         }
 
         /// The one construction choke point. Every field is run through
         /// [`grpc_endpoint`] here so the "normalized gRPC channel target"
         /// invariant has a single enforcement site rather than being re-asserted
         /// at each caller (where one could silently drift).
-        pub(super) fn new(traces: &str, logs: &str, metrics: Option<&str>) -> Self {
+        pub(super) fn new(traces: &str, logs: &str, metrics: &str) -> Self {
             Self {
                 traces: grpc_endpoint(traces),
                 logs: grpc_endpoint(logs),
-                metrics: metrics.map(grpc_endpoint),
-                timeout: std::time::Duration::from_secs(5),
+                metrics: grpc_endpoint(metrics),
+                traces_timeout: std::time::Duration::from_secs(5),
+                logs_timeout: std::time::Duration::from_secs(5),
+                metrics_timeout: std::time::Duration::from_secs(5),
+                traces_tls: super::config::TlsConfig::default(),
+                logs_tls: super::config::TlsConfig::default(),
+                metrics_tls: super::config::TlsConfig::default(),
             }
         }
     }
@@ -536,20 +611,11 @@ mod otlp {
     /// `OTEL_EXPORTER_OTLP_ENDPOINT` provides a base for every signal; the
     /// per-signal endpoint vars wrappers commonly inject override it per signal.
     pub(super) fn endpoints() -> Option<OtlpEndpoints> {
-        if sdk_disabled() {
-            return None;
-        }
-        resolve_endpoints(
-            std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
-            std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").ok(),
-            std::env::var("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").ok(),
-            std::env::var("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT").ok(),
-        )
-    }
-
-    fn sdk_disabled() -> bool {
-        std::env::var("OTEL_SDK_DISABLED")
-            .is_ok_and(|value| value.trim().eq_ignore_ascii_case("true"))
+        let env = |key: &str| std::env::var(key).ok();
+        super::config::resolve_otlp_config(&env)
+            .ok()
+            .flatten()
+            .map(|config| OtlpEndpoints::from_config(&config))
     }
 
     fn validate_standard_env() -> anyhow::Result<()> {
@@ -599,8 +665,8 @@ mod otlp {
     }
 
     pub(super) fn base_endpoint() -> Option<String> {
-        resolve_endpoint(std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok())
-            .map(|endpoint| grpc_endpoint(&endpoint))
+        let endpoint = resolve_endpoint(std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok())?;
+        super::config::normalize_endpoint(endpoint, "base").ok()
     }
 
     pub(super) fn endpoint_summary() -> Option<String> {
@@ -610,14 +676,28 @@ mod otlp {
         if let Some(base) = base_endpoint()
             && endpoints == OtlpEndpoints::from_base(&base)
         {
-            return Some(base);
+            return sanitized_authority(&base);
         }
         Some(format!(
             "traces={}, logs={}, metrics={}",
-            endpoints.traces,
-            endpoints.logs,
-            endpoints.metrics.as_deref().unwrap_or("disabled")
+            sanitized_authority(&endpoints.traces)?,
+            sanitized_authority(&endpoints.logs)?,
+            sanitized_authority(&endpoints.metrics)?,
         ))
+    }
+
+    fn sanitized_authority(endpoint: &str) -> Option<String> {
+        let endpoint = url::Url::parse(endpoint).ok()?;
+        let host = endpoint.host_str()?;
+        let host = if host.contains(':') {
+            format!("[{host}]")
+        } else {
+            host.to_owned()
+        };
+        let port = endpoint
+            .port()
+            .map_or_else(String::new, |port| format!(":{port}"));
+        Some(format!("{}://{host}{port}", endpoint.scheme()))
     }
 
     /// The configured base endpoint, if any. An exported-but-empty var must not
@@ -625,29 +705,6 @@ mod otlp {
     /// OTLP layer is installed.
     fn resolve_endpoint(otel: Option<String>) -> Option<String> {
         otel.filter(|s| !s.is_empty())
-    }
-
-    fn resolve_endpoints(
-        otel: Option<String>,
-        traces: Option<String>,
-        logs: Option<String>,
-        metrics: Option<String>,
-    ) -> Option<OtlpEndpoints> {
-        let generic = resolve_endpoint(otel);
-        // OTLP/gRPC: a per-signal endpoint var (if set) wins, else the generic
-        // base. `OtlpEndpoints::new` applies `grpc_endpoint` normalization; this
-        // closure only resolves which raw value to use. No `/v1/<signal>` path is
-        // appended (an OTLP/HTTP convention; gRPC routes by service name).
-        let signal = |specific: Option<String>| {
-            specific
-                .filter(|s| !s.is_empty())
-                .or_else(|| generic.clone())
-        };
-        Some(OtlpEndpoints::new(
-            &signal(traces)?,
-            &signal(logs)?,
-            signal(metrics).as_deref(),
-        ))
     }
 
     /// Normalize a gRPC endpoint: strip trailing slashes. The OTLP/gRPC exporter
@@ -694,51 +751,6 @@ mod otlp {
         Ok(())
     }
 
-    /// Stable source identity only; invocation and session identities remain
-    /// signal attributes so repeated executions share Resource identity.
-    fn resource(_run_id: &str, identity: ServiceIdentity) -> Resource {
-        build_resource_for(identity)
-    }
-
-    fn build_resource_for(identity: ServiceIdentity) -> Resource {
-        use jackin_telemetry::schema::attrs::{self, std_attrs};
-
-        let executable_name = std::env::current_exe()
-            .ok()
-            .and_then(|path| {
-                path.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-            })
-            .unwrap_or_else(|| identity.service_name.to_owned());
-        let mut attributes = vec![
-            KeyValue::new(std_attrs::SERVICE_NAMESPACE, "jackin"),
-            KeyValue::new(std_attrs::SERVICE_NAME, identity.service_name),
-            KeyValue::new(std_attrs::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-            KeyValue::new(
-                std_attrs::SERVICE_INSTANCE_ID,
-                uuid::Uuid::new_v4().to_string(),
-            ),
-            KeyValue::new(std_attrs::PROCESS_PID, i64::from(std::process::id())),
-            KeyValue::new(std_attrs::PROCESS_EXECUTABLE_NAME, executable_name),
-            KeyValue::new(attrs::APP_MODE, identity.app_mode.as_str()),
-            KeyValue::new(std_attrs::OS_TYPE, std::env::consts::OS),
-            KeyValue::new(std_attrs::PROCESS_RUNTIME_NAME, "rust"),
-        ];
-        if let Some(version) = sysinfo::System::long_os_version() {
-            attributes.push(KeyValue::new(std_attrs::OS_VERSION, version));
-        }
-        if let Some(version) = option_env!("RUSTC_VERSION") {
-            attributes.push(KeyValue::new(std_attrs::PROCESS_RUNTIME_VERSION, version));
-        }
-        if identity == ServiceIdentity::CAPSULE
-            && let Ok(container_id) = std::env::var("HOSTNAME")
-            && !container_id.trim().is_empty()
-        {
-            attributes.push(KeyValue::new(std_attrs::CONTAINER_ID, container_id));
-        }
-        Resource::builder().with_attributes(attributes).build()
-    }
-
     /// Shared OTLP tracer/logger provider construction for host and capsule.
     ///
     /// Owns the protocol check, the dedicated telemetry runtime enter-guard, and
@@ -748,9 +760,7 @@ mod otlp {
     /// entering the telemetry runtime (for tokio gauges).
     fn build_otlp_providers(
         resource: Resource,
-        traces_endpoint: &str,
-        logs_endpoint: &str,
-        timeout: std::time::Duration,
+        endpoints: &OtlpEndpoints,
     ) -> anyhow::Result<(
         SdkTracerProvider,
         SdkLoggerProvider,
@@ -771,22 +781,40 @@ mod otlp {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
         let _runtime_guard = runtime.enter();
-        let span_exporter = opentelemetry_otlp::SpanExporter::builder()
+        let mut span_builder = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
-            .with_endpoint(traces_endpoint.to_owned())
-            .with_timeout(timeout)
+            .with_endpoint(endpoints.traces.clone())
+            .with_timeout(endpoints.traces_timeout)
             .with_compression(Compression::Gzip)
-            .with_retry_policy(retry::policy())
+            .with_retry_policy(retry::policy());
+        if let Some(tls) = exporter_tls(
+            &endpoints.traces_tls,
+            "traces",
+            &endpoints.traces,
+            endpoints.traces_timeout,
+        )? {
+            span_builder = span_builder.with_tls_config(tls);
+        }
+        let span_exporter = span_builder
             .build()
-            .map_err(|e| anyhow::anyhow!("OTLP span exporter init failed: {e}"))?;
-        let log_exporter = opentelemetry_otlp::LogExporter::builder()
+            .map_err(|_| anyhow::anyhow!("OTLP span exporter init failed"))?;
+        let mut log_builder = opentelemetry_otlp::LogExporter::builder()
             .with_tonic()
-            .with_endpoint(logs_endpoint.to_owned())
-            .with_timeout(timeout)
+            .with_endpoint(endpoints.logs.clone())
+            .with_timeout(endpoints.logs_timeout)
             .with_compression(Compression::Gzip)
-            .with_retry_policy(retry::policy())
+            .with_retry_policy(retry::policy());
+        if let Some(tls) = exporter_tls(
+            &endpoints.logs_tls,
+            "logs",
+            &endpoints.logs,
+            endpoints.logs_timeout,
+        )? {
+            log_builder = log_builder.with_tls_config(tls);
+        }
+        let log_exporter = log_builder
             .build()
-            .map_err(|e| anyhow::anyhow!("OTLP log exporter init failed: {e}"))?;
+            .map_err(|_| anyhow::anyhow!("OTLP log exporter init failed"))?;
 
         // Attribute limits: generous but finite (observed max attrs + headroom).
         // Prevents unbounded dimension growth; DroppedAttributesCount must stay 0.
@@ -794,20 +822,20 @@ mod otlp {
             .with_max_queue_size(2_048)
             .with_max_export_batch_size(512)
             .with_scheduled_delay(std::time::Duration::from_secs(1))
-            .with_max_export_timeout(std::time::Duration::from_secs(5))
+            .with_max_export_timeout(EXPORT_ATTEMPT_TIMEOUT)
             .build();
         let log_batch = LogBatchConfigBuilder::default()
             .with_max_queue_size(4_096)
             .with_max_export_batch_size(512)
             .with_scheduled_delay(std::time::Duration::from_secs(1))
-            .with_max_export_timeout(std::time::Duration::from_secs(5))
+            .with_max_export_timeout(EXPORT_ATTEMPT_TIMEOUT)
             .build();
         let tracer_provider = SdkTracerProvider::builder()
             .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOn)))
             .with_max_attributes_per_span(64)
             .with_max_attributes_per_event(32)
             .with_span_processor(GovernedSpanProcessor(
-                BatchSpanProcessor::builder(span_exporter, Tokio)
+                BatchSpanProcessor::builder(CountingSpanExporter(span_exporter), Tokio)
                     .with_batch_config(span_batch)
                     .build(),
             ))
@@ -815,13 +843,139 @@ mod otlp {
             .build();
         let logger_provider = SdkLoggerProvider::builder()
             .with_log_processor(GovernedLogProcessor(
-                BatchLogProcessor::builder(log_exporter, Tokio)
+                BatchLogProcessor::builder(CountingLogExporter(log_exporter), Tokio)
                     .with_batch_config(log_batch)
                     .build(),
             ))
             .with_resource(resource)
             .build();
         Ok((tracer_provider, logger_provider, app_handle))
+    }
+
+    #[derive(Debug)]
+    struct CountingSpanExporter(opentelemetry_otlp::SpanExporter);
+
+    impl opentelemetry_sdk::trace::SpanExporter for CountingSpanExporter {
+        async fn export(
+            &self,
+            batch: Vec<opentelemetry_sdk::trace::SpanData>,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            let result = self.0.export(batch).await;
+            health::record_signal_export(health::Signal::Traces, result.is_ok());
+            result
+        }
+
+        fn shutdown_with_timeout(
+            &self,
+            timeout: std::time::Duration,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.shutdown_with_timeout(timeout)
+        }
+
+        fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.force_flush()
+        }
+
+        fn set_resource(&mut self, resource: &Resource) {
+            self.0.set_resource(resource);
+        }
+    }
+
+    #[derive(Debug)]
+    struct CountingLogExporter(opentelemetry_otlp::LogExporter);
+
+    impl opentelemetry_sdk::logs::LogExporter for CountingLogExporter {
+        async fn export(
+            &self,
+            batch: opentelemetry_sdk::logs::LogBatch<'_>,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            let result = self.0.export(batch).await;
+            health::record_signal_export(health::Signal::Logs, result.is_ok());
+            result
+        }
+
+        fn shutdown_with_timeout(
+            &self,
+            timeout: std::time::Duration,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.shutdown_with_timeout(timeout)
+        }
+
+        fn event_enabled(
+            &self,
+            level: opentelemetry::logs::Severity,
+            target: &str,
+            name: Option<&str>,
+        ) -> bool {
+            self.0.event_enabled(level, target, name)
+        }
+
+        fn set_resource(&mut self, resource: &Resource) {
+            self.0.set_resource(resource);
+        }
+    }
+
+    #[derive(Debug)]
+    struct CountingMetricExporter(opentelemetry_otlp::MetricExporter);
+
+    impl opentelemetry_sdk::metrics::exporter::PushMetricExporter for CountingMetricExporter {
+        async fn export(
+            &self,
+            metrics: &opentelemetry_sdk::metrics::data::ResourceMetrics,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            let result = self.0.export(metrics).await;
+            health::record_signal_export(health::Signal::Metrics, result.is_ok());
+            result
+        }
+
+        fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.force_flush()
+        }
+
+        fn shutdown_with_timeout(
+            &self,
+            timeout: std::time::Duration,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.shutdown_with_timeout(timeout)
+        }
+
+        fn temporality(&self) -> opentelemetry_sdk::metrics::Temporality {
+            self.0.temporality()
+        }
+    }
+
+    fn exporter_tls(
+        config: &super::config::TlsConfig,
+        signal: &'static str,
+        endpoint: &str,
+        timeout: std::time::Duration,
+    ) -> anyhow::Result<Option<opentelemetry_otlp::tonic_types::transport::ClientTlsConfig>> {
+        use opentelemetry_otlp::tonic_types::transport::{Certificate, ClientTlsConfig, Identity};
+
+        if !endpoint.starts_with("https://")
+            && config.certificate.is_none()
+            && config.client_key.is_none()
+            && config.client_certificate.is_none()
+        {
+            return Ok(None);
+        }
+        let mut tls = ClientTlsConfig::new().with_enabled_roots().timeout(timeout);
+        if let Some(path) = &config.certificate {
+            let pem = std::fs::read(path).map_err(|error| {
+                anyhow::anyhow!("failed to read OTLP {signal} CA certificate: {error}")
+            })?;
+            tls = tls.ca_certificate(Certificate::from_pem(pem));
+        }
+        if let (Some(certificate), Some(key)) = (&config.client_certificate, &config.client_key) {
+            let certificate = std::fs::read(certificate).map_err(|error| {
+                anyhow::anyhow!("failed to read OTLP {signal} client certificate: {error}")
+            })?;
+            let key = std::fs::read(key).map_err(|error| {
+                anyhow::anyhow!("failed to read OTLP {signal} client key: {error}")
+            })?;
+            tls = tls.identity(Identity::from_pem(certificate, key));
+        }
+        Ok(Some(tls))
     }
 
     #[derive(Debug)]
@@ -914,30 +1068,36 @@ mod otlp {
 
     pub(super) fn init(
         debug: bool,
-        run_id: &str,
+        _run_id: &str,
         identity: ServiceIdentity,
         endpoints: &OtlpEndpoints,
     ) -> anyhow::Result<()> {
-        let resource = resource(run_id, identity);
-        let (tracer_provider, logger_provider, app_handle) = build_otlp_providers(
-            resource.clone(),
-            &endpoints.traces,
-            &endpoints.logs,
-            endpoints.timeout,
-        )?;
-        // Metrics are best-effort: a failed exporter build must never block
-        // span/log telemetry or the run itself. Defer reporting the failure —
-        // emitting here would predate `try_init()` and the message would hit no
-        // subscriber, so the one diagnostic this branch exists to surface would
-        // be dropped on the floor.
-        let (meter_provider, metric_error) =
-            if let Some(metrics_endpoint) = endpoints.metrics.as_deref() {
-                match init_metrics(&resource, metrics_endpoint, app_handle) {
-                    Ok(provider) => (Some(provider), None),
-                    Err(error) => (None, Some(error)),
+        let resource = build_resource_for(identity);
+        let (tracer_provider, logger_provider, app_handle) =
+            match build_otlp_providers(resource.clone(), endpoints) {
+                Ok(providers) => providers,
+                Err(error) => {
+                    rollback_runtime();
+                    return Err(error);
                 }
-            } else {
-                (None, None)
+            };
+        let meter_provider = match init_metrics(&resource, endpoints, app_handle) {
+            Ok(provider) => provider,
+            Err(error) => {
+                cleanup_partial(&tracer_provider, &logger_provider, None);
+                rollback_runtime();
+                return Err(error);
+            }
+        };
+        use opentelemetry::metrics::MeterProvider as _;
+        let meter_reservation =
+            match jackin_telemetry::reserve_meter(&meter_provider.meter("jackin")) {
+                Ok(reservation) => reservation,
+                Err(error) => {
+                    cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+                    rollback_runtime();
+                    return Err(error.into());
+                }
             };
 
         let tracer = tracer_provider.tracer("jackin");
@@ -971,27 +1131,26 @@ mod otlp {
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
-            VALIDATION_FLUSHED.store(false, std::sync::atomic::Ordering::Release);
-            let metrics_active = meter_provider.is_some();
+            if let Err(error) = meter_reservation.commit() {
+                cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+                rollback_runtime();
+                return Err(error.into());
+            }
+            let generation = health::set_active_signals();
             *PROVIDERS
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(OtlpProviders {
                 tracer: tracer_provider,
                 logger: logger_provider,
                 meter: meter_provider,
+                generation,
             });
-            health::set_active_signals(metrics_active);
-            if let Some(error) = metric_error {
-                // Subscriber is live now, so a `--debug` run captures this.
-                tracing::debug!("OTLP metric exporter unavailable: {error}");
-            }
+        } else {
+            drop(meter_reservation);
+            cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+            rollback_runtime();
         }
         installed
-    }
-
-    /// Capsule Resource is stable source identity only (same as host).
-    fn capsule_resource() -> Resource {
-        build_resource_for(ServiceIdentity::CAPSULE)
     }
 
     /// Install OTLP export for the capsule. Mirrors `init` but composes no
@@ -1001,14 +1160,34 @@ mod otlp {
         _traceparent: Option<&str>,
         config: &super::config::OtlpConfig,
     ) -> anyhow::Result<()> {
-        let resource = capsule_resource();
-        let (tracer_provider, logger_provider, app_handle) = build_otlp_providers(
-            resource.clone(),
-            &config.traces_endpoint,
-            &config.logs_endpoint,
-            config.timeout,
-        )?;
-        let meter_provider = init_metrics(&resource, &config.metrics_endpoint, app_handle).ok();
+        let resource = build_resource_for(ServiceIdentity::CAPSULE);
+        let endpoints = OtlpEndpoints::from_config(config);
+        let (tracer_provider, logger_provider, app_handle) =
+            match build_otlp_providers(resource.clone(), &endpoints) {
+                Ok(providers) => providers,
+                Err(error) => {
+                    rollback_runtime();
+                    return Err(error);
+                }
+            };
+        let meter_provider = match init_metrics(&resource, &endpoints, app_handle) {
+            Ok(provider) => provider,
+            Err(error) => {
+                cleanup_partial(&tracer_provider, &logger_provider, None);
+                rollback_runtime();
+                return Err(error);
+            }
+        };
+        use opentelemetry::metrics::MeterProvider as _;
+        let meter_reservation =
+            match jackin_telemetry::reserve_meter(&meter_provider.meter("jackin")) {
+                Ok(reservation) => reservation,
+                Err(error) => {
+                    cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+                    rollback_runtime();
+                    return Err(error.into());
+                }
+            };
 
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer()
@@ -1030,20 +1209,6 @@ mod otlp {
             crate::TelemetrySink::OtlpLogs,
             capsule_debug(),
         ));
-        // Surface OTLP exporter/SDK diagnostics (export failures, refused
-        // endpoint, gRPC errors) to the capsule's stderr — captured by
-        // `docker logs`. The OTLP span/log
-        // layers above keep `opentelemetry*=off`, so these diagnostics never
-        // feed back through the exporter: no export-error → log → export loop.
-        // Without this sink, a failing in-container export is silently dropped
-        // (a silent failure), making "no capsule telemetry in the backend"
-        // impossible to diagnose.
-        let otlp_diag_layer = tracing_subscriber::fmt::layer()
-            .with_ansi(false)
-            .with_writer(std::io::stderr)
-            .with_filter(EnvFilter::new(
-                "off,opentelemetry=warn,opentelemetry_sdk=warn,opentelemetry_otlp=warn",
-            ));
         let installed = tracing_subscriber::registry()
             .with(
                 span_layer
@@ -1053,20 +1218,48 @@ mod otlp {
                     .with_filter(EnvFilter::new(span_directive)),
             )
             .with(log_layer.with_filter(EnvFilter::new(log_directive)))
-            .with(otlp_diag_layer)
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
-            VALIDATION_FLUSHED.store(false, std::sync::atomic::Ordering::Release);
+            if let Err(error) = meter_reservation.commit() {
+                cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+                rollback_runtime();
+                return Err(error.into());
+            }
+            let generation = health::set_active_signals();
             *PROVIDERS
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(OtlpProviders {
                 tracer: tracer_provider,
                 logger: logger_provider,
                 meter: meter_provider,
+                generation,
             });
+        } else {
+            drop(meter_reservation);
+            cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+            rollback_runtime();
         }
         installed
+    }
+
+    fn cleanup_partial(
+        tracer: &SdkTracerProvider,
+        logger: &SdkLoggerProvider,
+        meter: Option<&SdkMeterProvider>,
+    ) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        drop(with_remaining(deadline, |timeout| {
+            tracer.shutdown_with_timeout(timeout)
+        }));
+        drop(with_remaining(deadline, |timeout| {
+            logger.shutdown_with_timeout(timeout)
+        }));
+        if let Some(meter) = meter {
+            drop(with_remaining(deadline, |timeout| {
+                meter.shutdown_with_timeout(timeout)
+            }));
+        }
     }
 
     /// Capsule OTLP filter debug gate — uses the shared telemetry resolver
@@ -1152,12 +1345,15 @@ mod otlp {
     }
 
     #[cfg(test)]
-    pub(crate) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
+    pub(crate) fn test_layers(
+        debug: bool,
+        _run_id: &str,
+    ) -> (TestExport, impl tracing::Subscriber) {
         use opentelemetry::trace::TracerProvider as _;
 
         let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
         let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
-        let resource = resource(run_id, ServiceIdentity::HOST_ONE_SHOT);
+        let resource = build_resource_for(ServiceIdentity::HOST_ONE_SHOT);
         let tracer_provider = SdkTracerProvider::builder()
             .with_max_attributes_per_span(64)
             .with_max_attributes_per_event(32)
@@ -1207,14 +1403,14 @@ mod otlp {
         )
     }
 
-    /// Capsule-side in-memory bootstrap without the host JSONL layer.
+    /// Capsule-side in-memory bootstrap for layer conformance tests.
     #[cfg(any(test, feature = "test-support"))]
     pub fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber) {
         use opentelemetry::trace::TracerProvider as _;
 
         let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
         let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
-        let resource = capsule_resource();
+        let resource = build_resource_for(ServiceIdentity::CAPSULE);
         let tracer_provider = SdkTracerProvider::builder()
             .with_max_attributes_per_span(64)
             .with_max_attributes_per_event(32)
@@ -1319,7 +1515,7 @@ mod otlp {
         }
     }
 
-    /// Process and runtime metrics, exported every 5 s: CPU utilization and
+    /// Process and runtime metrics: CPU utilization and
     /// memory via `sysinfo`, plus the stable tokio runtime counters (workers,
     /// alive tasks, global queue depth) read from `app_handle` — jackin❯'s *app*
     /// runtime handle, captured by the caller before entering the dedicated
@@ -1328,7 +1524,7 @@ mod otlp {
     /// yield `None`.
     fn init_metrics(
         resource: &Resource,
-        metrics_endpoint: &str,
+        endpoints: &OtlpEndpoints,
         app_handle: Option<tokio::runtime::Handle>,
     ) -> anyhow::Result<SdkMeterProvider> {
         use opentelemetry::metrics::MeterProvider as _;
@@ -1339,30 +1535,36 @@ mod otlp {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
         let _runtime_guard = runtime.enter();
-        let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
+        let mut metric_builder = opentelemetry_otlp::MetricExporter::builder()
             .with_tonic()
             .with_temporality(opentelemetry_sdk::metrics::Temporality::Cumulative)
-            .with_endpoint(metrics_endpoint.to_owned())
+            .with_endpoint(endpoints.metrics.clone())
+            .with_timeout(endpoints.metrics_timeout)
             .with_compression(Compression::Gzip)
-            .with_retry_policy(retry::policy())
+            .with_retry_policy(retry::policy());
+        if let Some(tls) = exporter_tls(
+            &endpoints.metrics_tls,
+            "metrics",
+            &endpoints.metrics,
+            endpoints.metrics_timeout,
+        )? {
+            metric_builder = metric_builder.with_tls_config(tls);
+        }
+        let metric_exporter = metric_builder
             .build()
-            .map_err(|e| anyhow::anyhow!("OTLP metric exporter init failed: {e}"))?;
-        let reader = PeriodicReader::builder(metric_exporter, Tokio)
+            .map_err(|_| anyhow::anyhow!("OTLP metric exporter init failed"))?;
+        let reader = PeriodicReader::builder(CountingMetricExporter(metric_exporter), Tokio)
             .with_interval(std::time::Duration::from_secs(30))
+            .with_timeout(EXPORT_ATTEMPT_TIMEOUT)
             .build();
         let governed_view = |instrument: &opentelemetry_sdk::metrics::Instrument| {
-            if !jackin_telemetry::schema::metrics::ALL.contains(&instrument.name()) {
-                return None;
-            }
+            let definition = jackin_telemetry::schema::metrics::definition(instrument.name())?;
             let mut stream = opentelemetry_sdk::metrics::Stream::builder()
                 .with_cardinality_limit(jackin_telemetry::limits::MAX_CARDINALITY);
             if instrument.kind() == opentelemetry_sdk::metrics::InstrumentKind::Histogram {
                 stream = stream.with_aggregation(
                     opentelemetry_sdk::metrics::Aggregation::ExplicitBucketHistogram {
-                        boundaries: vec![
-                            0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0,
-                            10.0, 30.0, 60.0,
-                        ],
+                        boundaries: definition.boundaries.to_vec(),
                         record_min_max: false,
                     },
                 );
@@ -1375,7 +1577,6 @@ mod otlp {
             .with_resource(resource.clone())
             .build();
         let meter = provider.meter("jackin");
-
         if let Ok(pid) = sysinfo::get_current_pid() {
             let cpu_count =
                 std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get) as f64;
@@ -1386,7 +1587,7 @@ mod otlp {
                 cached: None,
             }));
             let cpu_sampler = std::sync::Arc::clone(&sampler);
-            let _ = meter
+            let _cpu_gauge = meter
                 // semconv: process.cpu.utilization, unit "1", 0..1 fraction
                 // of the CPUs available to the process.
                 .f64_observable_gauge(
@@ -1404,7 +1605,7 @@ mod otlp {
                     }
                 })
                 .build();
-            let _ = meter
+            let _memory_counter = meter
                 // semconv: process.memory.usage is an UpDownCounter (rises
                 // and falls), not a gauge.
                 .i64_observable_up_down_counter(
@@ -1424,7 +1625,7 @@ mod otlp {
 
         if let Some(handle) = app_handle {
             let workers = handle.clone();
-            let _ = meter
+            let _worker_gauge = meter
                 .u64_observable_gauge("tokio.runtime.workers")
                 .with_description("Worker threads driving the tokio runtime")
                 .with_callback(move |observer| {
@@ -1432,14 +1633,14 @@ mod otlp {
                 })
                 .build();
             let alive = handle.clone();
-            let _ = meter
+            let _alive_gauge = meter
                 .u64_observable_gauge("tokio.runtime.alive_tasks")
                 .with_description("Tasks currently alive in the tokio runtime")
                 .with_callback(move |observer| {
                     observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
                 })
                 .build();
-            let _ = meter
+            let _queue_gauge = meter
                 .u64_observable_gauge("tokio.runtime.global_queue.depth")
                 .with_description("Tasks waiting in the tokio runtime's global queue")
                 .with_callback(move |observer| {
@@ -1448,30 +1649,87 @@ mod otlp {
                 .build();
         }
 
-        jackin_telemetry::install(&meter);
-
         Ok(provider)
     }
 
     pub(super) fn shutdown() {
+        reap_teardowns();
         let providers = PROVIDERS.lock().ok().and_then(|mut slot| slot.take());
-        if let Some(providers) = providers {
-            if VALIDATION_FLUSHED.swap(false, std::sync::atomic::Ordering::AcqRel) {
-                providers.shutdown_only();
-            } else {
-                providers.flush_and_shutdown();
-            }
+        let generation = providers.as_ref().map(|providers| providers.generation);
+        let runtime = OTEL_RUNTIME.lock().ok().and_then(|mut slot| slot.take());
+        if providers.is_none() && runtime.is_none() {
+            return;
         }
-        if let Ok(mut runtime) = OTEL_RUNTIME.lock()
-            && let Some(runtime) = runtime.take()
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let handle = jackin_telemetry::spawn::thread_joined(move || {
+            let mut succeeded = true;
+            if let Some(providers) = providers {
+                succeeded = providers.flush_and_shutdown(deadline);
+            }
+            if let Some(runtime) = runtime {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    succeeded = false;
+                    runtime.shutdown_background();
+                } else {
+                    runtime.shutdown_timeout(remaining);
+                }
+            }
+            if sender.send(succeeded).is_err() {
+                // The caller exhausted its budget; the governed worker still
+                // owns and completes exporter/runtime teardown.
+            }
+            if let Some(generation) = generation {
+                health::record_shutdown(generation, succeeded);
+            }
+        });
+        if let Ok(succeeded) =
+            receiver.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
         {
-            runtime.shutdown_background();
+            let joined = handle.join().is_ok();
+            if (!succeeded || !joined)
+                && let Some(generation) = generation
+            {
+                health::record_shutdown(generation, false);
+            }
+        } else {
+            if let Some(generation) = generation {
+                health::record_shutdown_timeout(generation);
+            }
+            PENDING_TEARDOWNS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(handle);
         }
     }
 
-    #[cfg(test)]
-    fn runtime_creation_count() -> u64 {
+    fn reap_teardowns() {
+        let mut pending = PENDING_TEARDOWNS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut unfinished = Vec::new();
+        for handle in pending.drain(..) {
+            if handle.is_finished() {
+                drop(handle.join());
+            } else {
+                unfinished.push(handle);
+            }
+        }
+        *pending = unfinished;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn runtime_creation_count() -> u64 {
         OTEL_RUNTIME_CREATIONS.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(super) fn runtime_is_active() -> bool {
+        OTEL_RUNTIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_some()
     }
 
     /// Thin counter recorder for the operation facade. Plan 042 replaces this.
@@ -1486,13 +1744,10 @@ mod otlp {
         let Ok(providers) = PROVIDERS.lock() else {
             return;
         };
-        let Some(meter_provider) = providers
-            .as_ref()
-            .and_then(|providers| providers.meter.as_ref())
-        else {
+        let Some(providers) = providers.as_ref() else {
             return;
         };
-        let meter = meter_provider.meter("jackin");
+        let meter = providers.meter.meter("jackin");
         let counter = meter.u64_counter(name).build();
         let kvs: Vec<KeyValue> = attrs
             .iter()

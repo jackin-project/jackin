@@ -10,6 +10,7 @@ pub const TELEMETRY_CONTEXT_VERSION: u16 = 1;
 
 /// W3C trace context plus bounded product correlation identifiers.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct TelemetryContext {
     /// Envelope version (`1` for this layout).
     pub v: u16,

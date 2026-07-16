@@ -421,6 +421,14 @@ impl Multiplexer {
         if old == new {
             return;
         }
+        let attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::UiActionName::PaneFocus.as_str(),
+            ),
+        }];
+        let operation =
+            jackin_telemetry::operation(&jackin_telemetry::operation::UI_ACTION, &attrs).ok();
         // Synthetic `\x1b[I` / `\x1b[O` to the agent's PTY only
         // when the agent enabled focus-event reporting (DEC ?1004).
         // Shells and pre-mount agents leave it off; writing the
@@ -439,6 +447,9 @@ impl Multiplexer {
             && s.focus_events_enabled()
         {
             s.send_input(b"\x1b[I");
+        }
+        if let Some(operation) = operation {
+            operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
         }
     }
 

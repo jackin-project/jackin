@@ -68,13 +68,17 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 # `observability::otlp::otel_runtime`); `Handle::metrics()` feeds the tokio
 # runtime gauges from the app's handle, captured at subscriber init.
 tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
+tonic = { workspace = true }
+url = { workspace = true }
+
+[build-dependencies]
+rustc_version = "0.4"
 
 [dev-dependencies]
 jackin-otlp-testbed = { workspace = true }
 opentelemetry-proto = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace", "logs", "metrics"] }
 tempfile = { workspace = true }
-tonic = { workspace = true }
 
 [[test]]
 name = "wire_conformance"
@@ -106,6 +110,18 @@ required-features = ["test-support"]
 
 [[test]]
 name = "wire_shutdown"
+required-features = ["test-support"]
+
+[[test]]
+name = "wire_failure_subscriber"
+required-features = ["test-support"]
+
+[[test]]
+name = "wire_failure_tls"
+required-features = ["test-support"]
+
+[[test]]
+name = "wire_disabled"
 required-features = ["test-support"]
 
 [[test]]

@@ -77,6 +77,27 @@ async fn roundtrip_with_auth(
 }
 
 #[tokio::test]
+async fn unauthorized_credential_payload_is_absent_from_telemetry() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let secret_name = "PRIVATE_TOKEN_NAME";
+    let secret_source = "op://private-vault/private-item/private-field";
+    let reply = roundtrip(
+        Vec::new(),
+        serde_json::json!([{
+            "name": secret_name,
+            "kind": "op",
+            "source": secret_source,
+        }]),
+    )
+    .await;
+    assert!(reply.get("error").is_some());
+    export.force_flush();
+    assert!(!export.contains_log_text(secret_name));
+    assert!(!export.contains_log_text(secret_source));
+}
+
+#[tokio::test]
 async fn approved_literal_ref_resolves() {
     let allowed = vec![ExecBinding {
         name: "TOKEN".into(),

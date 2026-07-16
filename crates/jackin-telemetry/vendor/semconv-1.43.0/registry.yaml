@@ -1,0 +1,26 @@
+groups:
+  - id: registry.app.vendored
+    type: attribute_group
+    brief: Vendored application attributes required by the selected upstream events.
+    stability: development
+    attributes:
+      - { id: app.build_id, type: string, brief: "Unique identifier for a particular build or compilation of the application.", stability: development, examples: [my-app-1.0.0-code-123] }
+      - { id: app.crash.id, type: string, brief: A unique identifier representing an instance of an end-user facing app crash., stability: development, examples: [083d3d2d-9a0e-47f8-be3d-bc3c5538ba38] }
+      - { id: app.jank.frame_count, type: int, brief: A number of frame renders that experienced jank., stability: development }
+      - { id: app.jank.threshold, type: double, brief: "The minimum rendering threshold for this jank, in seconds.", stability: development }
+      - { id: app.jank.period, type: double, brief: "The time period, in seconds, for which this jank is being reported.", stability: development }
+      - { id: exception.type, type: string, brief: The type of the exception., stability: stable, examples: [java.net.ConnectException] }
+      - { id: exception.message, type: string, brief: The exception message., stability: stable, examples: [Division by zero] }
+      - { id: exception.stacktrace, type: string, brief: A stacktrace as a string in the natural representation for the language runtime., stability: stable, examples: ["Exception in thread main"] }
+      - { id: container.id, type: string, brief: Container ID., stability: development, examples: [a3bf90e006b2] }
+      - { id: db.operation.name, type: string, brief: The name of the database operation or command being executed., stability: stable, examples: [findAndModify, HMSET, SELECT] }
+      - { id: db.system.name, type: string, brief: The database management system product as identified by the client instrumentation., stability: stable, examples: [postgresql, sqlite] }
+      - { id: error.type, type: string, brief: Describes a class of error the operation ended with., stability: stable, examples: [timeout, java.net.UnknownHostException] }
+      - { id: gen_ai.provider.name, type: string, brief: The Generative AI provider as identified by the client or server instrumentation., stability: development, examples: [openai, anthropic] }
+      - { id: http.request.method, type: string, brief: HTTP request method., stability: stable, examples: [GET, POST] }
+      - { id: server.address, type: string, brief: Server domain name if available without reverse DNS lookup; otherwise IP address or Unix socket name., stability: stable, examples: [example.com, 10.1.2.80] }
+      - { id: url.template, type: string, brief: Low-cardinality representation of a URL path., stability: development, examples: ["/users/{id}"] }
+      - { id: os.name, type: string, brief: Human readable operating system name., stability: development, examples: [Ubuntu] }
+      - { id: os.version, type: string, brief: The version string of the operating system as defined by the operating system., stability: development, examples: ["14.2.1"] }
+      - { id: service.version, type: string, brief: The version string of the service API or implementation., stability: stable, examples: ["2.0.0"] }
+      - { id: session.id, type: string, brief: A unique id to identify a session., stability: development, examples: [00112233-4455-6677-8899-aabbccddeeff] }

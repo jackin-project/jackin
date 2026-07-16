@@ -4,6 +4,169 @@
 //! Unit tests for `jackin-capsule` daemon: input dispatch, session management,
 //! tab lifecycle, git context, status-bar rendering, and PTY session behavior.
 use super::*;
+
+fn serialized_control_spans(
+    context: jackin_protocol::TelemetryContext,
+) -> (bool, Vec<jackin_diagnostics::TestSpanSnapshot>) {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let wire = serde_json::to_vec(&jackin_protocol::control::ControlRequest {
+        ctx: context,
+        msg: ClientMsg::Status,
+    })
+    .unwrap();
+    let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
+    let operation = control_server_operation(&decoded.ctx, &decoded.msg);
+    let accepted = operation.is_some();
+    if let Some(Some(operation)) = operation {
+        operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    }
+    drop(guard);
+    export.force_flush();
+    (accepted, export.finished_spans())
+}
+
+#[test]
+fn conformance_serialized_control_propagation_matrix_preserves_parentage_and_rejection() {
+    let trace_id = "4bf92f3577b34da6a3ce929d0e0e4736";
+    let parent_id = "00f067aa0ba902b7";
+    let mut sampled = jackin_protocol::TelemetryContext::v1();
+    sampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-01"));
+    let (accepted, spans) = serialized_control_spans(sampled);
+    assert!(accepted);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].trace_id, trace_id);
+    assert_eq!(spans[0].parent_span_id, parent_id);
+    assert!(spans[0].sampled);
+
+    for context in [
+        jackin_protocol::TelemetryContext::v1(),
+        jackin_protocol::TelemetryContext {
+            traceparent: Some("malformed".to_owned()),
+            ..jackin_protocol::TelemetryContext::v1()
+        },
+    ] {
+        let (accepted, spans) = serialized_control_spans(context);
+        assert!(accepted);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].parent_span_id, "0000000000000000");
+    }
+
+    let mut unsampled = jackin_protocol::TelemetryContext::v1();
+    unsampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-00"));
+    let (accepted, spans) = serialized_control_spans(unsampled);
+    assert!(accepted);
+    assert!(
+        spans.is_empty(),
+        "unsampled remote parent must suppress export"
+    );
+
+    let bad_id = jackin_protocol::TelemetryContext {
+        invocation_id: Some("not-a-uuid".to_owned()),
+        ..jackin_protocol::TelemetryContext::v1()
+    };
+    let (accepted, spans) = serialized_control_spans(bad_id);
+    assert!(!accepted);
+    assert!(spans.is_empty());
+
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.session_supervisor.sessions.insert(1, session);
+    mux.session_supervisor.tabs[0] = Tab::new_single("Codex", 1, "test");
+    let wire = serde_json::to_vec(&jackin_protocol::control::ControlRequest {
+        ctx: jackin_protocol::TelemetryContext {
+            invocation_id: Some("not-a-uuid".to_owned()),
+            ..jackin_protocol::TelemetryContext::v1()
+        },
+        msg: ClientMsg::UsageRefreshFocused,
+    })
+    .unwrap();
+    let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
+    if control_server_operation(&decoded.ctx, &decoded.msg).is_some() {
+        control_reply_for_request(&mut mux, decoded.msg);
+    }
+    assert!(
+        mux.usage.pending_usage_refresh.is_none(),
+        "rejected correlation must not queue the provider refresh side effect"
+    );
+}
+
+#[test]
+fn conformance_exec_command_rpc_spans_exclude_command_and_args() {
+    let command_secret = "PRIVATE_EXECUTABLE_PAYLOAD";
+    let argument_secret = "PRIVATE_ARGUMENT_PAYLOAD";
+    let request = jackin_protocol::control::ControlRequest {
+        ctx: jackin_protocol::TelemetryContext::v1(),
+        msg: ClientMsg::ExecCommand {
+            command: command_secret.to_owned(),
+            args: vec![argument_secret.to_owned()],
+        },
+    };
+    let wire = serde_json::to_vec(&request).unwrap();
+    let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    if let Some(Some(server)) = control_server_operation(&decoded.ctx, &decoded.msg) {
+        server.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    }
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(decoded.msg.rpc_method()),
+        },
+    ];
+    if let Ok(client) =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs)
+    {
+        client.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    }
+    drop(guard);
+    export.force_flush();
+    assert!(!export.contains_span_text(command_secret));
+    assert!(!export.contains_span_text(argument_secret));
+}
+
+#[test]
+fn conformance_invalid_attach_control_has_no_detach_side_effect() {
+    let mut mux = test_mux(24, 80);
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+    let (completion_tx, _completion_rx) = mpsc::unbounded_channel();
+    mux.client_registry
+        .client
+        .attach_with_completions(out_tx, completion_tx);
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::AttachControl(jackin_protocol::attach::AttachControlRequest {
+            request_id: 77,
+            context: jackin_protocol::TelemetryContext {
+                invocation_id: Some("not-a-uuid".to_owned()),
+                ..jackin_protocol::TelemetryContext::v1()
+            },
+            operation: jackin_protocol::attach::AttachControlOperation::Detach,
+        }),
+    );
+    assert!(!mux.client_registry.detach_requested);
+    let encoded = out_rx
+        .try_recv()
+        .expect("rejection response must be queued");
+    let response = jackin_protocol::attach::decode_server(encoded[0], encoded[5..].to_vec())
+        .expect("response must decode");
+    assert_eq!(
+        response,
+        ServerFrame::AttachControlResponse(jackin_protocol::attach::AttachControlResponse {
+            request_id: 77,
+            result: jackin_protocol::attach::AttachControlResult::InvalidCorrelation,
+        })
+    );
+}
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -208,15 +371,18 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
 fn begin_exec_picker_supersedes_pending_reply_and_dialog() {
     let mut mux = test_mux(40, 20);
     let (tx1, mut rx1) = tokio::sync::oneshot::channel();
-    mux.begin_exec_picker("cmd1".to_owned(), vec![], tx1);
+    mux.begin_exec_picker("cmd1".to_owned(), vec![], tx1, None);
 
     // A second jackin-exec request arrives while the first picker is pending.
     let (tx2, _rx2) = tokio::sync::oneshot::channel();
-    mux.begin_exec_picker("cmd2".to_owned(), vec![], tx2);
+    mux.begin_exec_picker("cmd2".to_owned(), vec![], tx2, None);
 
     // The prior client must get a structured denial, not a hung/closed socket.
     match rx1.try_recv() {
-        Ok(ServerMsg::ExecDenied { reason }) => {
+        Ok(ControlResponse {
+            msg: ServerMsg::ExecDenied { reason },
+            ..
+        }) => {
             assert!(reason.contains("superseded"), "unexpected reason: {reason}");
         }
         other => panic!("expected ExecDenied for the superseded request, got {other:?}"),
@@ -3702,12 +3868,15 @@ async fn drain_and_exit_delivers_shutdown_before_closing_attach_socket() {
     let mut mux = test_mux(24, 80);
     let (daemon_stream, mut client_stream) = tokio::net::UnixStream::pair().unwrap();
     let (out_tx, out_rx) = mpsc::unbounded_channel();
+    let (_completion_tx, completion_rx) = mpsc::unbounded_channel();
     let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(out_tx);
-    mux.client_registry.attached_task = Some(tokio::spawn(handle_attach_client(
+    mux.client_registry.attached_task = Some(tokio::spawn(handle_attach_client_with_handshake(
         daemon_stream,
         out_rx,
+        completion_rx,
         cmd_tx,
+        None,
     )));
 
     let read_shutdown = async {

@@ -167,7 +167,9 @@ pub async fn run_client(
                     | ServerFrame::FileExportEnd(_) => {
                         jackin_diagnostics::telemetry_debug!("capsule","attach-client: ignoring host file-export frame");
                     }
-                    ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
+                    ServerFrame::Welcome { .. }
+                    | ServerFrame::SessionList(_)
+                    | ServerFrame::AttachControlResponse(_) => {}
                 }
             }
 

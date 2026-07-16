@@ -12,6 +12,7 @@ pub mod image_build;
 pub mod image_decision;
 pub mod image_recipe;
 pub mod naming;
+mod telemetry_boundary;
 pub mod version_check;
 
 pub use error::ImageError;

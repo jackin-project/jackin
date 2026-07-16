@@ -286,16 +286,10 @@ async fn read_payload_lazy(
     Ok(buf)
 }
 
-pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) {
+pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) -> Result<()> {
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => {
-            jackin_diagnostics::telemetry_info!("capsule", "control reply write failed: {e}");
-        }
-        Err(_) => jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "control reply write timed out after 2 s"
-        ),
+        Ok(result) => result.context("control reply write failed"),
+        Err(_) => anyhow::bail!("control reply write timed out after 2 s"),
     }
 }
 

@@ -71,7 +71,8 @@ pub(crate) fn ensure_hot_path_test_rig() -> bool {
         let exporter = InMemoryMetricExporter::default();
         let reader = PeriodicReader::builder(exporter.clone()).build();
         let provider = SdkMeterProvider::builder().with_reader(reader).build();
-        jackin_telemetry::install(&provider.meter("jackin-telemetry-test"));
+        jackin_telemetry::install(&provider.meter("jackin-telemetry-test"))
+            .expect("test meter installation");
         TestRig { provider, exporter }
     });
     true

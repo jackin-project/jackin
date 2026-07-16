@@ -20,10 +20,11 @@ use directories::UserDirs;
 use jackin_core::JackinPaths;
 use jackin_core::container_paths;
 use jackin_protocol::attach::{
-    ClientFrame, ClientTerminal, ClipboardImage, ClipboardImageChunk, ClipboardImageEnd,
-    ClipboardImageStart, FileExportChunk, FileExportEnd, FileExportStart,
-    MAX_CLIPBOARD_IMAGE_BYTES, MAX_CLIPBOARD_IMAGE_CHUNK_BYTES, MAX_CLIPBOARD_IMAGE_ERROR_BYTES,
-    MAX_HOST_NOTICE_BYTES, ServerFrame, SpawnRequest, encode_client, read_server_frame,
+    AttachControlOperation, AttachControlRequest, AttachControlResult, ClientFrame, ClientTerminal,
+    ClipboardImage, ClipboardImageChunk, ClipboardImageEnd, ClipboardImageStart, FileExportChunk,
+    FileExportEnd, FileExportStart, MAX_CLIPBOARD_IMAGE_CHUNK_BYTES,
+    MAX_CLIPBOARD_IMAGE_ERROR_BYTES, MAX_CONTEXTUAL_CLIPBOARD_IMAGE_BYTES, MAX_HOST_NOTICE_BYTES,
+    ServerFrame, SpawnRequest, encode_client, read_server_frame,
 };
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -55,6 +56,7 @@ const RESET_CLEAR_HOME: &[u8] = b"\x1b[0m\x1b[2J\x1b[H";
 const CLIENT_OWNED_MODE_STATE: &[u8] =
     b"\x1b[?7l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h";
 const HOST_FILE_EXPORT_DESTINATION_CATEGORY: &str = "host-downloads-jackin-instance";
+const RPC_ERROR: &str = jackin_telemetry::schema::enums::ErrorType::RpcError.as_str();
 
 fn log_clipboard_image_paste_trigger() {
     jackin_diagnostics::emit_compact_line(
@@ -205,12 +207,6 @@ where
               the protocol phases."
 )]
 #[expect(
-    clippy::cognitive_complexity,
-    reason = "Same justification as the too_many_lines allow: attach protocol \
-              async loop branching tracks the request/response routing arms, \
-              not algorithmic complexity."
-)]
-#[expect(
     clippy::too_many_arguments,
     reason = "Attach-protocol call site propagates the four server/terminal stream \
               handles plus geometry, request payload, initial input, and the winch \
@@ -234,8 +230,26 @@ where
     I: AsyncRead + Unpin,
     O: Write,
 {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str("jackin.capsule.Attach/Handshake"),
+        },
+    ];
+    let mut handshake_operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
     let mut context = jackin_protocol::TelemetryContext::v1();
-    jackin_telemetry::propagation::inject(&mut context);
+    if let Some(operation) = handshake_operation.as_ref() {
+        operation
+            .span()
+            .in_scope(|| jackin_telemetry::propagation::inject(&mut context));
+    } else {
+        jackin_telemetry::propagation::inject(&mut context);
+    }
     let hello = encode_client(ClientFrame::Hello {
         rows,
         cols,
@@ -245,28 +259,51 @@ where
         focus_session: request.focus_session,
         context: Some(Box::new(context)),
     })
-    .context("encoding attach Hello frame")?;
-    server_writer
+    .context("encoding attach Hello frame");
+    let hello = match hello {
+        Ok(hello) => hello,
+        Err(error) => {
+            if let Some(operation) = handshake_operation {
+                operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    Some(RPC_ERROR),
+                );
+            }
+            return Err(error);
+        }
+    };
+    let hello_result = server_writer
         .write_all(&hello)
         .await
-        .context("sending attach Hello frame")?;
-    if !initial_input.is_empty() {
-        let msg = encode_client(ClientFrame::Input(initial_input))
-            .context("encoding pre-attach Input frame")?;
-        server_writer
-            .write_all(&msg)
-            .await
-            .context("attach socket write failed (pre-attach input)")?;
+        .context("sending attach Hello frame");
+    if let Err(error) = hello_result {
+        if let Some(operation) = handshake_operation {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(RPC_ERROR),
+            );
+        }
+        return Err(error);
     }
-
     let mut stdin_buf = [0u8; 4096];
     let mut tag_buf = [0u8; 1];
     let mut file_exports = HostFileExports::new(request.export_subdir.clone());
+    let mut attach_operations = HashMap::new();
+    let mut detach_request = None;
     let mut export_cleanup_tick = tokio::time::interval(HOST_FILE_EXPORT_CLEANUP_TICK);
     export_cleanup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    loop {
-        tokio::select! {
+    let result: Result<()> = async {
+        if !initial_input.is_empty() {
+            let msg = encode_client(ClientFrame::Input(initial_input))
+                .context("encoding pre-attach Input frame")?;
+            server_writer
+                .write_all(&msg)
+                .await
+                .context("attach socket write failed (pre-attach input)")?;
+        }
+        loop {
+            tokio::select! {
             result = server_reader.read_exact(&mut tag_buf) => {
                 if let Err(e) = result {
                     break Err(anyhow::anyhow!("attach socket closed unexpectedly: {e}"));
@@ -328,6 +365,7 @@ where
                     ServerFrame::HostStageImageFromClipboardPath => {
                         write_clipboard_image_request_result(
                             &mut server_writer,
+                            &mut attach_operations,
                             read_host_clipboard_text_path_image().await,
                             "host clipboard text is not an absolute readable image path or file:// image URL",
                             "host clipboard image path probe failed",
@@ -341,6 +379,7 @@ where
                     | ServerFrame::HostStageImageFromClipboard => {
                         write_clipboard_image_request_result(
                             &mut server_writer,
+                            &mut attach_operations,
                             read_host_clipboard_image().await,
                             "host clipboard does not contain a readable image",
                             "host clipboard image probe failed",
@@ -402,17 +441,76 @@ where
                             );
                         }
                     }
-                    ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
+                    ServerFrame::Welcome { .. } => {
+                        if let Some(operation) = handshake_operation.take() {
+                            operation.complete(
+                                jackin_telemetry::schema::enums::OutcomeValue::Success,
+                                None,
+                            );
+                        }
+                    }
+                    ServerFrame::SessionList(_) => {}
+                    ServerFrame::AttachControlResponse(response) => {
+                        if let Some(operation) = attach_operations.remove(&response.request_id) {
+                            let succeeded = response.result == AttachControlResult::Success;
+                            operation.complete(
+                                if succeeded {
+                                    jackin_telemetry::schema::enums::OutcomeValue::Success
+                                } else {
+                                    jackin_telemetry::schema::enums::OutcomeValue::Failure
+                                },
+                                (!succeeded).then_some(RPC_ERROR),
+                            );
+                        }
+                        if detach_request == Some(response.request_id) {
+                            break Ok(());
+                        }
+                    }
                 }
             }
 
-            result = terminal_input.read(&mut stdin_buf) => {
+            result = terminal_input.read(&mut stdin_buf), if detach_request.is_none() => {
                 let n = match result {
-                    Ok(0) => break Ok(()),
+                    Ok(0) => {
+                        let (request_id, context) = begin_attach_control(
+                            &mut attach_operations,
+                            "jackin.capsule.Attach/Detach",
+                        );
+                        write_attach_control(
+                            &mut server_writer,
+                            &mut attach_operations,
+                            request_id,
+                            &context,
+                            AttachControlOperation::Detach,
+                        )
+                        .await?;
+                        detach_request = Some(request_id);
+                        continue;
+                    }
                     Err(e) => break Err(anyhow::anyhow!("stdin read failed: {e}")),
                     Ok(n) => n,
                 };
                 let input = &stdin_buf[..n];
+                if matches!(input, b"\x1b[I" | b"\x1b[O") {
+                    let (request_id, context) = begin_attach_control(
+                        &mut attach_operations,
+                        "jackin.capsule.Attach/Focus",
+                    );
+                    let operation = if input == b"\x1b[I" {
+                        AttachControlOperation::FocusIn
+                    } else {
+                        AttachControlOperation::FocusOut
+                    };
+                    write_attach_control(
+                        &mut server_writer,
+                        &mut attach_operations,
+                        request_id,
+                        &context,
+                        operation,
+                    )
+                    .await?;
+                    continue;
+                }
                 // The two image sources are mutually exclusive by construction:
                 // Ctrl+V is the lone trigger byte (no surrounding bytes), while the
                 // pasted-path probe matches a bracketed paste. Branch on the trigger
@@ -478,7 +576,13 @@ where
                     if !prefix.is_empty() {
                         write_input_frame(&mut server_writer, prefix, "paste prefix").await?;
                     }
-                    match write_clipboard_image_frames(&mut server_writer, image).await {
+                    match write_clipboard_image_frames(
+                        &mut server_writer,
+                        &mut attach_operations,
+                        image,
+                    )
+                    .await
+                    {
                         Ok(()) => {
                             if !suffix.is_empty() {
                                 write_input_frame(&mut server_writer, suffix, "paste suffix").await?;
@@ -526,8 +630,23 @@ where
                     }
                 }
             }
+            }
         }
     }
+    .await;
+    for (_, operation) in attach_operations {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(RPC_ERROR),
+        );
+    }
+    if let Some(operation) = handshake_operation {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(RPC_ERROR),
+        );
+    }
+    result
 }
 
 struct HostFileExports {
@@ -839,83 +958,166 @@ where
     Ok(())
 }
 
-async fn write_clipboard_image_frames<W>(writer: &mut W, image: ClipboardImage) -> Result<()>
+fn begin_attach_control(
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
+    method: &'static str,
+) -> (u64, jackin_protocol::TelemetryContext) {
+    static NEXT_REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let request_id = NEXT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(method),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
+    let mut context = jackin_protocol::TelemetryContext::v1();
+    if let Some(operation) = operation.as_ref() {
+        operation
+            .span()
+            .in_scope(|| jackin_telemetry::propagation::inject(&mut context));
+    } else {
+        jackin_telemetry::propagation::inject(&mut context);
+    }
+    if let Some(operation) = operation {
+        operations.insert(request_id, operation);
+    }
+    (request_id, context)
+}
+
+async fn write_attach_control<W>(
+    writer: &mut W,
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
+    request_id: u64,
+    context: &jackin_protocol::TelemetryContext,
+    operation: AttachControlOperation,
+) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
-    if image.bytes.len() <= MAX_CLIPBOARD_IMAGE_BYTES {
-        let msg = encode_client(ClientFrame::ClipboardImage(image))
-            .context("encoding ClipboardImage frame")?;
-        writer
-            .write_all(&msg)
-            .await
-            .context("attach socket write failed (clipboard image)")?;
-        return Ok(());
+    let result: Result<()> = async {
+        let frame = encode_client(ClientFrame::AttachControl(AttachControlRequest {
+            request_id,
+            context: context.clone(),
+            operation,
+        }))?;
+        writer.write_all(&frame).await?;
+        Ok(())
+    }
+    .await;
+    if result.is_err()
+        && let Some(operation) = operations.remove(&request_id)
+    {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(RPC_ERROR),
+        );
+    }
+    result.context("attach control socket write failed")
+}
+
+async fn write_clipboard_image_frames<W>(
+    writer: &mut W,
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
+    image: ClipboardImage,
+) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let (request_id, context) =
+        begin_attach_control(operations, "jackin.capsule.Attach/ClipboardImageTransfer");
+    if image.bytes.len() <= MAX_CONTEXTUAL_CLIPBOARD_IMAGE_BYTES {
+        return write_attach_control(
+            writer,
+            operations,
+            request_id,
+            &context,
+            AttachControlOperation::ClipboardImage(image),
+        )
+        .await;
     }
 
     let transfer_id = next_host_transfer_id();
     let size = u64::try_from(image.bytes.len()).context("clipboard image length overflow")?;
-    let start = encode_client(ClientFrame::ClipboardImageStart(ClipboardImageStart {
-        transfer_id,
-        format: image.format.clone(),
-        size,
-    }))
-    .context("encoding ClipboardImageStart frame")?;
-    writer
-        .write_all(&start)
-        .await
-        .context("attach socket write failed (clipboard image start)")?;
+    write_attach_control(
+        writer,
+        operations,
+        request_id,
+        &context,
+        AttachControlOperation::ClipboardImageStart(ClipboardImageStart {
+            transfer_id,
+            format: image.format.clone(),
+            size,
+        }),
+    )
+    .await?;
 
     let mut hasher = Sha256::new();
     let mut offset = 0u64;
     for chunk in image.bytes.chunks(MAX_CLIPBOARD_IMAGE_CHUNK_BYTES) {
         hasher.update(chunk);
-        let msg = encode_client(ClientFrame::ClipboardImageChunk(ClipboardImageChunk {
-            transfer_id,
-            offset,
-            bytes: chunk.to_vec(),
-        }))
-        .context("encoding ClipboardImageChunk frame")?;
-        writer
-            .write_all(&msg)
-            .await
-            .context("attach socket write failed (clipboard image chunk)")?;
+        write_attach_control(
+            writer,
+            operations,
+            request_id,
+            &context,
+            AttachControlOperation::ClipboardImageChunk(ClipboardImageChunk {
+                transfer_id,
+                offset,
+                bytes: chunk.to_vec(),
+            }),
+        )
+        .await?;
         offset = offset
             .checked_add(u64::try_from(chunk.len()).context("clipboard image chunk overflow")?)
             .ok_or_else(|| anyhow::anyhow!("clipboard image offset overflow"))?;
     }
 
     let sha256 = hasher.finalize().into();
-    let end = encode_client(ClientFrame::ClipboardImageEnd(ClipboardImageEnd {
-        transfer_id,
-        sha256,
-    }))
-    .context("encoding ClipboardImageEnd frame")?;
-    writer
-        .write_all(&end)
-        .await
-        .context("attach socket write failed (clipboard image end)")?;
-    Ok(())
+    write_attach_control(
+        writer,
+        operations,
+        request_id,
+        &context,
+        AttachControlOperation::ClipboardImageEnd(ClipboardImageEnd {
+            transfer_id,
+            sha256,
+        }),
+    )
+    .await
 }
 
-async fn send_clipboard_image_error<W>(writer: &mut W, message: &str) -> Result<()>
+async fn send_clipboard_image_error<W>(
+    writer: &mut W,
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
+    message: &str,
+) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
     let message = bounded_attach_message(message, MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
-    let msg = encode_client(ClientFrame::ClipboardImageError(
-        jackin_protocol::attach::ClipboardImageError::from_message(message),
-    ))
-    .context("encoding ClipboardImageError frame")?;
-    writer
-        .write_all(&msg)
-        .await
-        .context("attach socket write failed (clipboard image error)")?;
-    Ok(())
+    let (request_id, context) =
+        begin_attach_control(operations, "jackin.capsule.Attach/ClipboardImageTransfer");
+    write_attach_control(
+        writer,
+        operations,
+        request_id,
+        &context,
+        AttachControlOperation::ClipboardImageError(
+            jackin_protocol::attach::ClipboardImageError::from_message(message),
+        ),
+    )
+    .await
 }
 
 async fn write_clipboard_image_request_result<W>(
     writer: &mut W,
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
     image: Result<Option<ClipboardImage>>,
     empty_message: &str,
     probe_log_message: &str,
@@ -924,11 +1126,12 @@ async fn write_clipboard_image_request_result<W>(
     W: AsyncWrite + Unpin,
 {
     let result = match image {
-        Ok(Some(image)) => write_clipboard_image_frames(writer, image).await,
-        Ok(None) => send_clipboard_image_error(writer, empty_message).await,
+        Ok(Some(image)) => write_clipboard_image_frames(writer, operations, image).await,
+        Ok(None) => send_clipboard_image_error(writer, operations, empty_message).await,
         Err(err) => {
             jackin_diagnostics::telemetry_debug!("attach", "{probe_log_message}: {err:#}");
-            send_clipboard_image_error(writer, &format!("{probe_log_message}: {err:#}")).await
+            send_clipboard_image_error(writer, operations, &format!("{probe_log_message}: {err:#}"))
+                .await
         }
     };
     if let Err(err) = result {

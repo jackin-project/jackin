@@ -66,6 +66,24 @@ fn selected_refs_wire_shape_is_stable() {
     );
 }
 
+#[test]
+fn exec_command_uses_control_request_codec() {
+    let framed = frame(&exec_control_request(
+        "gh".to_owned(),
+        vec!["auth".to_owned(), "status".to_owned()],
+        jackin_protocol::TelemetryContext::v1(),
+    ));
+    let declared = u32::from_be_bytes(framed[..4].try_into().unwrap()) as usize;
+    assert_eq!(declared, framed.len() - 4);
+    let decoded: ControlRequest = serde_json::from_slice(&framed[4..]).unwrap();
+    assert_eq!(decoded.ctx.v, 1);
+    assert!(matches!(
+        decoded.msg,
+        ClientMsg::ExecCommand { command, args }
+            if command == "gh" && args == ["auth", "status"]
+    ));
+}
+
 #[tokio::test]
 async fn execute_command_redacts_secret_straddling_1mib_cap() {
     // The redact-before-cap ordering exists so a secret straddling the 1 MiB

@@ -260,16 +260,9 @@ fn rich_surface_closes_stdin_for_noninteractive_commands() {
 
 #[cfg(unix)]
 #[tokio::test]
-#[expect(
-    clippy::await_holding_lock,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 async fn capture_secret_suppresses_stdout_debug_echo() {
-    use std::sync::Mutex;
-    static LOCK: Mutex<()> = Mutex::new(());
-    let _guard = LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
 
     let dir = tempfile::tempdir().unwrap();
     let token_file = dir.path().join("t.txt");
@@ -296,6 +289,36 @@ async fn capture_secret_suppresses_stdout_debug_echo() {
             "secret must not appear in debug output: {line}"
         );
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn debug_capture_does_not_emit_command_arguments_or_output() {
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
+
+    jackin_diagnostics::set_debug_mode(true);
+    jackin_diagnostics::begin_debug_buffering();
+    let mut runner = ShellRunner { debug: true };
+    let output = runner
+        .capture(
+            "sh",
+            &[
+                "-c",
+                "printf telemetry-private-output",
+                "telemetry-private-argument",
+            ],
+            None,
+        )
+        .await
+        .unwrap();
+    let lines = jackin_diagnostics::drain_debug_buffer_for_test();
+    jackin_diagnostics::set_debug_mode(false);
+
+    assert_eq!(output, "telemetry-private-output");
+    let exported = lines.join("\n");
+    assert!(!exported.contains("telemetry-private-output"));
+    assert!(!exported.contains("telemetry-private-argument"));
 }
 
 #[cfg(unix)]
@@ -337,6 +360,108 @@ async fn run_emits_process_execute_span_name_on_success() {
         .run("true", &[], None, &RunOptions::default())
         .await
         .expect("true succeeds");
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn captured_run_exports_one_privacy_safe_process_span() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let mut runner = ShellRunner::default();
+    let temp = tempfile::tempdir().unwrap();
+    let private_cwd = temp.path().join("telemetry-private-cwd");
+    std::fs::create_dir(&private_cwd).unwrap();
+    let opts = RunOptions {
+        capture_stdout: true,
+        ..RunOptions::default()
+    };
+    runner
+        .run(
+            "sh",
+            &[
+                "-c",
+                "printf telemetry-private-output",
+                "telemetry-private-argument",
+            ],
+            Some(&private_cwd),
+            &opts,
+        )
+        .await
+        .unwrap();
+    drop(guard);
+    export.force_flush();
+
+    let process_spans = export
+        .finished_spans()
+        .into_iter()
+        .filter(|span| span.name == jackin_telemetry::schema::spans::PROCESS_COMMAND)
+        .collect::<Vec<_>>();
+    assert_eq!(process_spans.len(), 1);
+    for prohibited in [
+        "telemetry-private-output",
+        "telemetry-private-argument",
+        "telemetry-private-cwd",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+#[test]
+fn process_execute_completion_classifies_success() {
+    let result = Ok::<_, anyhow::Error>("captured output");
+    assert_eq!(
+        process_execute_completion(&result),
+        (jackin_telemetry::schema::enums::OutcomeValue::Success, None)
+    );
+}
+
+#[test]
+fn process_execute_completion_classifies_timeout() {
+    let result = Err::<(), _>(
+        DockerError::CommandTimeout {
+            secs: 1.0,
+            program: "tool".to_owned(),
+        }
+        .into(),
+    );
+    assert_eq!(
+        process_execute_completion(&result),
+        (
+            jackin_telemetry::schema::enums::OutcomeValue::Timeout,
+            Some("timeout")
+        )
+    );
+}
+
+#[test]
+fn process_execute_completion_classifies_nonzero_exit() {
+    let result = Err::<(), _>(
+        DockerError::CommandFailed {
+            program: "tool".to_owned(),
+            args: "--private user-value".to_owned(),
+        }
+        .into(),
+    );
+    assert_eq!(
+        process_execute_completion(&result),
+        (
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some("process_exit_nonzero")
+        )
+    );
+}
+
+#[test]
+fn process_execute_completion_classifies_spawn_failure() {
+    let result = Err::<(), _>(anyhow::anyhow!("spawn failed for /private/path"));
+    assert_eq!(
+        process_execute_completion(&result),
+        (
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some("process_spawn_error")
+        )
+    );
 }
 
 #[test]

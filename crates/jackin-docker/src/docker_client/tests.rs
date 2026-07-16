@@ -360,3 +360,38 @@ fn container_state_short_label() {
         );
     }
 }
+
+#[test]
+fn docker_http_routes_are_static_bounded_templates() {
+    let routes = [
+        PING,
+        CONTAINER_INSPECT,
+        CONTAINER_REMOVE,
+        CONTAINER_LIST,
+        CONTAINER_CREATE,
+        CONTAINER_START,
+        VOLUME_REMOVE,
+        NETWORK_CREATE,
+        NETWORK_REMOVE,
+        NETWORK_LIST,
+        NETWORK_INSPECT,
+        IMAGE_LIST,
+        IMAGE_REMOVE,
+        IMAGE_INSPECT,
+        IMAGE_PULL,
+        EXEC_CREATE,
+        EXEC_START,
+        EXEC_INSPECT,
+    ];
+    for route in routes {
+        assert!(matches!(route.method, "GET" | "POST" | "DELETE"));
+        assert!(route.template.starts_with('/'));
+        assert!(!route.template.contains('?'));
+        assert!(!route.template.contains("private"));
+        for segment in route.template.split('/') {
+            if segment.starts_with('{') {
+                assert!(matches!(segment, "{id}" | "{name}"));
+            }
+        }
+    }
+}

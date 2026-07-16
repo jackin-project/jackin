@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::{
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    time::Instant,
+};
 
 use opentelemetry::trace::{SpanContext, Status};
 use tracing::Span;
@@ -50,6 +53,18 @@ pub const CONNECTION_ATTEMPT: SpanDef = SpanDef {
 pub const PROCESS_COMMAND: SpanDef = SpanDef {
     name: schema::spans::PROCESS_COMMAND,
 };
+pub const LAUNCH: SpanDef = SpanDef {
+    name: schema::spans::LAUNCH,
+};
+pub const LAUNCH_STAGE: SpanDef = SpanDef {
+    name: schema::spans::LAUNCH_STAGE,
+};
+pub const HTTP_CLIENT: SpanDef = SpanDef {
+    name: schema::spans::HTTP_CLIENT,
+};
+pub const DB_CLIENT: SpanDef = SpanDef {
+    name: schema::spans::DB_CLIENT,
+};
 pub const RPC_CLIENT: SpanDef = SpanDef {
     name: schema::spans::RPC_CLIENT,
 };
@@ -65,6 +80,56 @@ pub struct OperationGuard {
     span: Span,
     completed: AtomicBool,
     links: AtomicUsize,
+    rpc: Option<RpcLifecycle>,
+}
+
+#[derive(Debug)]
+struct RpcLifecycle {
+    method: String,
+    started_at: Instant,
+}
+
+impl RpcLifecycle {
+    fn start(method: &str) -> Self {
+        let attrs = [Attr {
+            key: schema::attrs::std_attrs::RPC_METHOD,
+            value: Value::Str(method),
+        }];
+        let _active_result = crate::up_down_counter(&crate::metric::RPC_ACTIVE).add(1, &attrs);
+        Self {
+            method: method.to_owned(),
+            started_at: Instant::now(),
+        }
+    }
+
+    fn finish(&self, outcome: schema::enums::OutcomeValue, error_type: Option<&'static str>) {
+        let active_attrs = [Attr {
+            key: schema::attrs::std_attrs::RPC_METHOD,
+            value: Value::Str(&self.method),
+        }];
+        let _active_result =
+            crate::up_down_counter(&crate::metric::RPC_ACTIVE).add(-1, &active_attrs);
+
+        let mut attrs = vec![
+            Attr {
+                key: schema::attrs::std_attrs::RPC_METHOD,
+                value: Value::Str(&self.method),
+            },
+            Attr {
+                key: schema::attrs::OUTCOME,
+                value: Value::Str(outcome.as_str()),
+            },
+        ];
+        if let Some(error_type) = error_type {
+            attrs.push(Attr {
+                key: schema::attrs::std_attrs::ERROR_TYPE,
+                value: Value::Str(error_type),
+            });
+        }
+        let _request_result = crate::counter(&crate::metric::RPC_REQUESTS).add(1, &attrs);
+        let _duration_result = crate::histogram(&crate::metric::RPC_DURATION)
+            .record(self.started_at.elapsed().as_secs_f64(), &attrs);
+    }
 }
 
 impl OperationGuard {
@@ -73,6 +138,7 @@ impl OperationGuard {
             span: Span::none(),
             completed: AtomicBool::new(false),
             links: AtomicUsize::new(0),
+            rpc: None,
         }
     }
 
@@ -138,6 +204,9 @@ impl OperationGuard {
         ) {
             self.span.set_status(Status::error(outcome.as_str()));
         }
+        if let Some(rpc) = &self.rpc {
+            rpc.finish(outcome, error_type);
+        }
     }
 }
 
@@ -188,8 +257,26 @@ fn make_root_span(name: &str) -> Option<Span> {
         schema::spans::CONNECTION_ATTEMPT => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "connection.attempt")
         }
+        _ => return make_root_execution_span(name),
+    })
+}
+
+fn make_root_execution_span(name: &str) -> Option<Span> {
+    Some(match name {
         schema::spans::PROCESS_COMMAND => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "process.command", otel.kind = "client")
+        }
+        schema::spans::LAUNCH => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "launch")
+        }
+        schema::spans::LAUNCH_STAGE => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "launch.stage")
+        }
+        schema::spans::HTTP_CLIENT => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "http.client", otel.kind = "client")
+        }
+        schema::spans::DB_CLIENT => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "db.client", otel.kind = "client")
         }
         schema::spans::RPC_CLIENT => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "rpc.client", otel.kind = "client")
@@ -236,8 +323,26 @@ fn make_child_span(name: &str) -> Option<Span> {
         schema::spans::CONNECTION_ATTEMPT => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "connection.attempt", otel.kind = "client")
         }
+        _ => return make_child_execution_span(name),
+    })
+}
+
+fn make_child_execution_span(name: &str) -> Option<Span> {
+    Some(match name {
         schema::spans::PROCESS_COMMAND => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "process.command", otel.kind = "client")
+        }
+        schema::spans::LAUNCH => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "launch")
+        }
+        schema::spans::LAUNCH_STAGE => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "launch.stage")
+        }
+        schema::spans::HTTP_CLIENT => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "http.client", otel.kind = "client")
+        }
+        schema::spans::DB_CLIENT => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "db.client", otel.kind = "client")
         }
         schema::spans::RPC_CLIENT => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "rpc.client", otel.kind = "client")
@@ -306,14 +411,31 @@ fn operation_inner(
         health::reject(Rejection::UnknownName);
         return Err(Rejection::UnknownName);
     };
-    let guard = OperationGuard {
+    let mut guard = OperationGuard {
         span,
         completed: AtomicBool::new(false),
         links: AtomicUsize::new(0),
+        rpc: None,
     };
     for attr in attrs {
         guard.set_attr(*attr)?;
     }
+    let rpc = matches!(
+        def.name,
+        schema::spans::RPC_CLIENT | schema::spans::RPC_SERVER
+    )
+    .then(|| {
+        attrs.iter().find_map(|attr| {
+            (attr.key == schema::attrs::std_attrs::RPC_METHOD)
+                .then_some(attr.value)
+                .and_then(|value| match value {
+                    Value::Str(method) => Some(RpcLifecycle::start(method)),
+                    _ => None,
+                })
+        })
+    })
+    .flatten();
+    guard.rpc = rpc;
     Ok(guard)
 }
 
