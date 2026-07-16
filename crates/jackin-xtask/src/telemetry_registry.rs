@@ -22,13 +22,10 @@ use crate::docs::repo_root;
 // must use the governed facade/spawn helpers from its first commit.
 const RAW_SPAWN_ALLOWLIST: &[&str] = &[];
 
-const RAW_SCOPED_THREAD_ALLOWLIST: &[&str] = &[
-    "crates/jackin/src/console/services.rs",
-    "crates/jackin-env/src/resolve.rs",
-    "crates/jackin-instance/src/lib.rs",
+const RAW_SCOPED_THREAD_ALLOWLIST: &[(&str, &str)] = &[(
     "crates/jackin-process/src/lib.rs",
-    "crates/jackin-runtime/src/runtime/launch/launch_slot.rs",
-];
+    "T0 process transport cannot depend on peer T0 telemetry facade",
+)];
 
 const RAW_TRACING_ALLOWLIST: &[&str] = &[];
 
@@ -525,7 +522,9 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
             ) || node.method == "spawn" && self.spawn_method_receiver(&node.receiver))
         {
             let scoped_allowlisted = node.method == "spawn"
-                && RAW_SCOPED_THREAD_ALLOWLIST.contains(&self.path)
+                && RAW_SCOPED_THREAD_ALLOWLIST
+                    .iter()
+                    .any(|(path, _reason)| *path == self.path)
                 && matches!(node.receiver.as_ref(), syn::Expr::Path(path) if path.path.segments.last().is_some_and(|segment| matches!(segment.ident.to_string().as_str(), "scope" | "s")));
             if !scoped_allowlisted {
                 self.reject(node.span(), "unmanaged async/thread spawn");

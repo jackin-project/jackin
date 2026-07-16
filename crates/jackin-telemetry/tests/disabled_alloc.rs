@@ -14,6 +14,25 @@ fn disabled_alloc_facade_fast_paths_allocate_nothing() {
         jackin_telemetry::spawn::spawn_joined(async {})
             .await
             .expect("warm governed spawn");
+        jackin_telemetry::spawn::spawn_cycle("warm.cycle", async {})
+            .await
+            .expect("warm cycle");
+        jackin_telemetry::spawn::spawn_stream("warm.stream", async {})
+            .await
+            .expect("warm stream");
+        tokio::task::spawn_blocking(|| {})
+            .await
+            .expect("warm direct blocking");
+        jackin_telemetry::spawn::joined_blocking(|| {})
+            .await
+            .expect("warm governed blocking");
+        jackin_telemetry::spawn::spawn_detached(
+            &jackin_telemetry::operation::PROCESS_COMMAND,
+            async {},
+            |()| jackin_telemetry::spawn::DetachedCompletion::success(),
+        )
+        .await
+        .expect("warm detached");
     });
     let _profiler = dhat::Profiler::builder().testing().build();
 
@@ -42,6 +61,52 @@ fn disabled_alloc_facade_fast_paths_allocate_nothing() {
         jackin_telemetry::spawn::spawn_joined(async {})
             .await
             .expect("governed spawn");
+        let governed = dhat::HeapStats::get().total_blocks - before.total_blocks;
+        dhat::assert_eq!(governed, direct);
+
+        let before = dhat::HeapStats::get();
+        tokio::spawn(async {}).await.expect("direct cycle baseline");
+        let direct = dhat::HeapStats::get().total_blocks - before.total_blocks;
+        let before = dhat::HeapStats::get();
+        jackin_telemetry::spawn::spawn_cycle("disabled.cycle", async {})
+            .await
+            .expect("governed cycle");
+        let governed = dhat::HeapStats::get().total_blocks - before.total_blocks;
+        dhat::assert_eq!(governed, direct);
+
+        let before = dhat::HeapStats::get();
+        tokio::spawn(async {}).await.expect("direct stream baseline");
+        let direct = dhat::HeapStats::get().total_blocks - before.total_blocks;
+        let before = dhat::HeapStats::get();
+        jackin_telemetry::spawn::spawn_stream("disabled.stream", async {})
+            .await
+            .expect("governed stream");
+        let governed = dhat::HeapStats::get().total_blocks - before.total_blocks;
+        dhat::assert_eq!(governed, direct);
+
+        let before = dhat::HeapStats::get();
+        tokio::task::spawn_blocking(|| {})
+            .await
+            .expect("direct blocking baseline");
+        let direct = dhat::HeapStats::get().total_blocks - before.total_blocks;
+        let before = dhat::HeapStats::get();
+        jackin_telemetry::spawn::joined_blocking(|| {})
+            .await
+            .expect("governed blocking");
+        let governed = dhat::HeapStats::get().total_blocks - before.total_blocks;
+        dhat::assert_eq!(governed, direct);
+
+        let before = dhat::HeapStats::get();
+        tokio::spawn(async {}).await.expect("direct detached baseline");
+        let direct = dhat::HeapStats::get().total_blocks - before.total_blocks;
+        let before = dhat::HeapStats::get();
+        jackin_telemetry::spawn::spawn_detached(
+            &jackin_telemetry::operation::PROCESS_COMMAND,
+            async {},
+            |()| jackin_telemetry::spawn::DetachedCompletion::success(),
+        )
+        .await
+        .expect("governed detached");
         let governed = dhat::HeapStats::get().total_blocks - before.total_blocks;
         dhat::assert_eq!(governed, direct);
     });

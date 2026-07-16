@@ -89,7 +89,7 @@ where
     if tokio::runtime::Handle::try_current().is_ok() {
         drop(jackin_telemetry::spawn::joined_blocking(run));
     } else {
-        drop(jackin_telemetry::spawn::thread_stream_named(name, run));
+        drop(jackin_telemetry::spawn::thread_joined_named(name, run));
     }
     BlockingSubscription(rx)
 }

@@ -552,7 +552,7 @@ pub(super) mod instances {
                     .iter()
                     .map(|container| {
                         let container = container.clone();
-                        s.spawn(move || {
+                        jackin_telemetry::spawn::thread_scoped_joined(s, move || {
                             let result =
                                 jackin_runtime::runtime::snapshot::fetch_snapshot_with_transport(
                                     paths, &container,

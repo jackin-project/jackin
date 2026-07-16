@@ -428,7 +428,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
             Some(&detail),
         );
     }
-    Some(jackin_telemetry::spawn::spawn_detached(
+    Some(jackin_telemetry::spawn::spawn_detached_with_completion(
         &jackin_telemetry::operation::BACKGROUND_CYCLE,
         async move {
             if let Some(run) = &active_run {
@@ -465,7 +465,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 );
             }
             if let Some(run) = active_run {
-                match result {
+                match &result {
                     Ok(prepared) => run.stage(
                         "runtime_prewarm_done",
                         jackin_diagnostics::DiagnosticStage::AgentBinaries,
@@ -479,6 +479,13 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                         Some(&format!("{error:#}")),
                     ),
                 }
+            }
+            if result.is_ok() {
+                jackin_telemetry::spawn::DetachedCompletion::success()
+            } else {
+                jackin_telemetry::spawn::DetachedCompletion::failure(
+                    jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                )
             }
         },
     ))
@@ -536,7 +543,7 @@ pub(super) fn spawn_sibling_image_prewarm(
         let selector = selector.clone();
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
-        jackin_telemetry::spawn::spawn_detached(
+        jackin_telemetry::spawn::spawn_detached_with_completion(
             &jackin_telemetry::operation::BACKGROUND_CYCLE,
             async move {
                 let agents = siblings
@@ -592,6 +599,13 @@ pub(super) fn spawn_sibling_image_prewarm(
                             Some(&failed.join("; ")),
                         );
                     }
+                }
+                if failed.is_empty() {
+                    jackin_telemetry::spawn::DetachedCompletion::success()
+                } else {
+                    jackin_telemetry::spawn::DetachedCompletion::failure(
+                        jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                    )
                 }
             },
         );
@@ -670,7 +684,7 @@ pub(super) fn spawn_selected_image_refresh(
         let selector = selector.clone();
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
-        jackin_telemetry::spawn::spawn_detached(
+        jackin_telemetry::spawn::spawn_detached_with_completion(
             &jackin_telemetry::operation::BACKGROUND_CYCLE,
             async move {
                 if let Some(run) = jackin_diagnostics::active_run() {
@@ -708,7 +722,7 @@ pub(super) fn spawn_selected_image_refresh(
                 );
 
                 if let Some(run) = jackin_diagnostics::active_run() {
-                    match result {
+                    match &result {
                         Ok(row) => run.stage(
                             "selected_image_refresh_done",
                             jackin_diagnostics::DiagnosticStage::DerivedImage,
@@ -727,6 +741,13 @@ pub(super) fn spawn_selected_image_refresh(
                             Some(&format!("{}: {error:#}", selected_agent.slug())),
                         ),
                     }
+                }
+                if result.is_ok() {
+                    jackin_telemetry::spawn::DetachedCompletion::success()
+                } else {
+                    jackin_telemetry::spawn::DetachedCompletion::failure(
+                        jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                    )
                 }
             },
         );
@@ -775,7 +796,7 @@ pub(super) fn spawn_reuse_staleness_sentinel(
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
         let image = image.to_owned();
-        jackin_telemetry::spawn::spawn_detached(
+        jackin_telemetry::spawn::spawn_detached_with_completion(
             &jackin_telemetry::operation::BACKGROUND_CYCLE,
             async move {
                 if let Some(run) = jackin_diagnostics::active_run() {
@@ -799,7 +820,7 @@ pub(super) fn spawn_reuse_staleness_sentinel(
                 .await;
 
                 if let Some(run) = jackin_diagnostics::active_run() {
-                    match result {
+                    match &result {
                         Ok(Some(row)) => run.stage(
                             "reuse_staleness_sentinel_done",
                             jackin_diagnostics::DiagnosticStage::DerivedImage,
@@ -824,6 +845,13 @@ pub(super) fn spawn_reuse_staleness_sentinel(
                             Some(&format!("{}: {error:#}", selected_agent.slug())),
                         ),
                     }
+                }
+                if result.is_ok() {
+                    jackin_telemetry::spawn::DetachedCompletion::success()
+                } else {
+                    jackin_telemetry::spawn::DetachedCompletion::failure(
+                        jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                    )
                 }
             },
         );

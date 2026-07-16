@@ -133,7 +133,7 @@ pub(crate) async fn perform_handshake(
     client_permit: tokio::sync::OwnedSemaphorePermit,
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
     control_tx: mpsc::UnboundedSender<ControlRequest>,
-) {
+) -> jackin_telemetry::spawn::DetachedCompletion {
     // Bound the handshake reads. A client that opens the socket and
     // never sends a byte otherwise holds the `OwnedSemaphorePermit`
     // forever — sixteen silent peers would starve the
@@ -149,7 +149,9 @@ pub(crate) async fn perform_handshake(
                 "attach: handshake read_exact(first byte) failed: {e}"
             );
             drop(client_permit);
-            return;
+            return jackin_telemetry::spawn::DetachedCompletion::error(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
+            );
         }
         Err(_) => {
             jackin_diagnostics::telemetry_info!(
@@ -157,11 +159,11 @@ pub(crate) async fn perform_handshake(
                 "attach: handshake first byte not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
             );
             drop(client_permit);
-            return;
+            return jackin_telemetry::spawn::DetachedCompletion::timeout();
         }
     }
     if first[0] == 0x00 {
-        perform_control_handshake(
+        return perform_control_handshake(
             stream,
             first[0],
             client_permit,
@@ -169,7 +171,6 @@ pub(crate) async fn perform_handshake(
             HANDSHAKE_TIMEOUT,
         )
         .await;
-        return;
     }
     let initial_frame = match tokio::time::timeout(
         HANDSHAKE_TIMEOUT,
@@ -184,7 +185,9 @@ pub(crate) async fn perform_handshake(
                 "attach: handshake EOF before initial frame"
             );
             drop(client_permit);
-            return;
+            return jackin_telemetry::spawn::DetachedCompletion::failure(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
+            );
         }
         Ok(Err(e)) => {
             jackin_diagnostics::telemetry_info!(
@@ -192,7 +195,9 @@ pub(crate) async fn perform_handshake(
                 "attach: handshake frame decode failed: {e}"
             );
             drop(client_permit);
-            return;
+            return jackin_telemetry::spawn::DetachedCompletion::error(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
+            );
         }
         Err(_) => {
             jackin_diagnostics::telemetry_info!(
@@ -200,7 +205,7 @@ pub(crate) async fn perform_handshake(
                 "attach: handshake Hello frame not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
             );
             drop(client_permit);
-            return;
+            return jackin_telemetry::spawn::DetachedCompletion::timeout();
         }
     };
     let ClientFrame::Hello {
@@ -218,7 +223,9 @@ pub(crate) async fn perform_handshake(
             "attach: rejected client whose first frame was not Hello: {initial_frame:?}"
         );
         drop(client_permit);
-        return;
+        return jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
     };
     if context.as_ref().is_some_and(|ctx| {
         matches!(
@@ -231,7 +238,9 @@ pub(crate) async fn perform_handshake(
             "attach: rejected invalid telemetry correlation"
         );
         drop(client_permit);
-        return;
+        return jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
     }
     let handshake = AttachHandshake {
         stream,
@@ -249,7 +258,11 @@ pub(crate) async fn perform_handshake(
             "capsule",
             "attach: handshake channel closed; daemon shutting down"
         );
+        return jackin_telemetry::spawn::DetachedCompletion::error(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
     }
+    jackin_telemetry::spawn::DetachedCompletion::success()
 }
 
 async fn perform_control_handshake(
@@ -258,7 +271,7 @@ async fn perform_control_handshake(
     client_permit: tokio::sync::OwnedSemaphorePermit,
     control_tx: mpsc::UnboundedSender<ControlRequest>,
     timeout: Duration,
-) {
+) -> jackin_telemetry::spawn::DetachedCompletion {
     let request = match socket::read_control_msg(&mut stream, first_tag).await {
         Ok(request) => request,
         Err(error) => {
@@ -266,7 +279,9 @@ async fn perform_control_handshake(
                 "capsule",
                 "control: rejecting malformed request: {error:#}"
             );
-            return;
+            return jackin_telemetry::spawn::DetachedCompletion::failure(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
+            );
         }
     };
     let (reply_tx, reply_rx) = oneshot::channel();
@@ -282,9 +297,11 @@ async fn perform_control_handshake(
             "capsule",
             "control: daemon loop unavailable while handling request"
         );
-        return;
+        return jackin_telemetry::spawn::DetachedCompletion::error(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
     }
-    match tokio::time::timeout(timeout, reply_rx).await {
+    let completion = match tokio::time::timeout(timeout, reply_rx).await {
         Ok(Ok(response)) => {
             let write_result = socket::write_control_reply(stream, &response.msg).await;
             if let Err(error) = &write_result {
@@ -293,18 +310,35 @@ async fn perform_control_handshake(
                     "control reply delivery failed: {error:#}"
                 );
             }
+            let completion = if write_result.is_ok() {
+                jackin_telemetry::spawn::DetachedCompletion::success()
+            } else {
+                jackin_telemetry::spawn::DetachedCompletion::error(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                )
+            };
             response.complete(&write_result);
+            completion
         }
-        Ok(Err(_)) => jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "control: reply channel closed before response"
-        ),
-        Err(_) => jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "control: daemon reply timed out after {timeout:?}"
-        ),
-    }
+        Ok(Err(_)) => {
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "control: reply channel closed before response"
+            );
+            jackin_telemetry::spawn::DetachedCompletion::error(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
+            )
+        }
+        Err(_) => {
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "control: daemon reply timed out after {timeout:?}"
+            );
+            jackin_telemetry::spawn::DetachedCompletion::timeout()
+        }
+    };
     drop(client_permit);
+    completion
 }
 
 pub(crate) async fn drain_and_exit(mux: &mut Multiplexer) {

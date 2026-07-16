@@ -609,36 +609,40 @@ where
         let mut handles = Vec::with_capacity(attributed.len());
         for (key, (layer, value)) in &attributed {
             let host_env = &host_env;
-            handles.push(scope.spawn(move || {
-                let layer_label = format!("{layer}");
-                let timing_name = format!("operator_env:{key}");
-                let value_kind = ValueKind::of_env_value(value).as_timing_detail();
-                jackin_diagnostics::active_timing_started(
-                    jackin_diagnostics::DiagnosticStage::Credentials,
-                    &timing_name,
-                    Some(value_kind),
-                );
-                let result =
-                    resolve_env_value(&layer_label, key, value, op_runner, |name| host_env(name));
-                match result {
-                    Ok(value) => {
-                        jackin_diagnostics::active_timing_done(
-                            jackin_diagnostics::DiagnosticStage::Credentials,
-                            &timing_name,
-                            Some(value_kind),
-                        );
-                        (key.clone(), Ok(value))
+            handles.push(jackin_telemetry::spawn::thread_scoped_joined(
+                scope,
+                move || {
+                    let layer_label = format!("{layer}");
+                    let timing_name = format!("operator_env:{key}");
+                    let value_kind = ValueKind::of_env_value(value).as_timing_detail();
+                    jackin_diagnostics::active_timing_started(
+                        jackin_diagnostics::DiagnosticStage::Credentials,
+                        &timing_name,
+                        Some(value_kind),
+                    );
+                    let result = resolve_env_value(&layer_label, key, value, op_runner, |name| {
+                        host_env(name)
+                    });
+                    match result {
+                        Ok(value) => {
+                            jackin_diagnostics::active_timing_done(
+                                jackin_diagnostics::DiagnosticStage::Credentials,
+                                &timing_name,
+                                Some(value_kind),
+                            );
+                            (key.clone(), Ok(value))
+                        }
+                        Err(error) => {
+                            jackin_diagnostics::active_timing_done(
+                                jackin_diagnostics::DiagnosticStage::Credentials,
+                                &timing_name,
+                                Some("error"),
+                            );
+                            (key.clone(), Err(error))
+                        }
                     }
-                    Err(error) => {
-                        jackin_diagnostics::active_timing_done(
-                            jackin_diagnostics::DiagnosticStage::Credentials,
-                            &timing_name,
-                            Some("error"),
-                        );
-                        (key.clone(), Err(error))
-                    }
-                }
-            }));
+                },
+            ));
         }
 
         for handle in handles {

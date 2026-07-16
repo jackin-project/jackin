@@ -161,6 +161,17 @@ impl Multiplexer {
                     "capsule",
                     "{label}: event channel closed before result reached main loop"
                 );
+                return Err(());
+            }
+            Ok(())
+        };
+        let classify = |result: &Result<(), ()>| {
+            if result.is_ok() {
+                jackin_telemetry::spawn::DetachedCompletion::success()
+            } else {
+                jackin_telemetry::spawn::DetachedCompletion::error(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                )
             }
         };
         // Fire-and-forget worker — no `await`, no tokio context needed.
@@ -173,6 +184,7 @@ impl Multiplexer {
                 drop(jackin_telemetry::spawn::detached_blocking(
                     &jackin_telemetry::operation::BACKGROUND_CYCLE,
                     emit,
+                    classify,
                 ));
             }
             Err(_) => {
@@ -180,6 +192,7 @@ impl Multiplexer {
                     format!("capsule-blocking[{label}]"),
                     &jackin_telemetry::operation::BACKGROUND_CYCLE,
                     emit,
+                    classify,
                 ) {
                     jackin_diagnostics::telemetry_info!(
                         "capsule",
@@ -244,6 +257,7 @@ impl Multiplexer {
                         // pick up the default branch via inotify or periodic poll.
                         drop(resolve_default_branch(&workdir));
                     },
+                    |()| jackin_telemetry::spawn::DetachedCompletion::success(),
                 ));
             } else {
                 self.launch_env.workdir_context.default_branch = resolve_default_branch(&workdir);

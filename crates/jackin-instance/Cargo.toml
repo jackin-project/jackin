@@ -24,6 +24,7 @@ jackin-config      = { workspace = true }
 jackin-manifest    = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-process     = { workspace = true }
+jackin-telemetry   = { workspace = true }
 
 anyhow       = { workspace = true }
 thiserror    = { workspace = true }

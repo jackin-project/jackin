@@ -186,7 +186,7 @@ fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
         drop((paths, agent));
     }
     #[cfg(not(test))]
-    jackin_telemetry::spawn::spawn_detached(
+    jackin_telemetry::spawn::spawn_detached_with_completion(
         &jackin_telemetry::operation::BACKGROUND_CYCLE,
         async move {
             record(
@@ -205,6 +205,7 @@ fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
                         ),
                     );
                     persist_release_cache_async(&paths, &release).await;
+                    jackin_telemetry::spawn::DetachedCompletion::success()
                 }
                 Err(error) => {
                     record(
@@ -214,6 +215,9 @@ fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
                             agent.slug()
                         ),
                     );
+                    jackin_telemetry::spawn::DetachedCompletion::failure(
+                        jackin_telemetry::schema::enums::ErrorType::HttpError,
+                    )
                 }
             }
         },

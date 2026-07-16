@@ -81,7 +81,7 @@ where
     if tokio::runtime::Handle::try_current().is_ok() {
         drop(jackin_telemetry::spawn::joined_blocking(run));
     } else {
-        drop(jackin_telemetry::spawn::thread_stream_named(name, run));
+        drop(jackin_telemetry::spawn::thread_joined_named(name, run));
     }
     BlockingSubscription(rx)
 }
@@ -100,7 +100,7 @@ where
     if tokio::runtime::Handle::try_current().is_ok() {
         drop(jackin_telemetry::spawn::spawn_joined(run));
     } else {
-        drop(jackin_telemetry::spawn::thread_stream_named(
+        drop(jackin_telemetry::spawn::thread_joined_named(
             name,
             move || {
                 if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()

@@ -501,7 +501,7 @@ impl RoleState {
                 let sync_src = sync_src.clone();
                 let supported = *supported;
                 let mode = *mode;
-                let handle = scope.spawn(move || {
+                let handle = jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
                     Self::provision_agent_auth_slot(
                         &root,
                         &home_dir,
@@ -528,7 +528,7 @@ impl RoleState {
                     );
                     GithubProvisionOutcome::Skipped
                 } else {
-                    let gh_handle = scope.spawn({
+                    let gh_handle = jackin_telemetry::spawn::thread_scoped_joined(scope, {
                         let hosts_yml = hosts_yml.clone();
                         let host_home = host_home_path.clone();
                         move || Self::provision_github_slot(&hosts_yml, &github_context, &host_home)
@@ -665,7 +665,7 @@ impl RoleState {
                     let sync_src = sync_src.clone();
                     let supported = *supported;
                     let mode = *mode;
-                    scope.spawn(move || {
+                    jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
                         Self::provision_agent_auth_slot(
                             &root,
                             &home_dir,

@@ -228,37 +228,40 @@ pub(crate) fn resolve_github_env_map(
         let mut handles = Vec::with_capacity(declarations.len());
         for (key, value) in declarations {
             let host_env_fn = &host_env_fn;
-            handles.push(scope.spawn(move || {
-                let timing_name = format!("github_env:{key}");
-                let value_kind = github_env_value_kind(value);
-                jackin_diagnostics::active_timing_started(
-                    jackin_diagnostics::DiagnosticStage::Credentials,
-                    &timing_name,
-                    Some(value_kind),
-                );
-                let result =
-                    jackin_env::resolve_env_value("[github.env]", key, value, runner, |name| {
-                        host_env_fn(name)
-                    });
-                match result {
-                    Ok(value) => {
-                        jackin_diagnostics::active_timing_done(
-                            jackin_diagnostics::DiagnosticStage::Credentials,
-                            &timing_name,
-                            Some(value_kind),
-                        );
-                        (key.clone(), Ok(value))
+            handles.push(jackin_telemetry::spawn::thread_scoped_joined(
+                scope,
+                move || {
+                    let timing_name = format!("github_env:{key}");
+                    let value_kind = github_env_value_kind(value);
+                    jackin_diagnostics::active_timing_started(
+                        jackin_diagnostics::DiagnosticStage::Credentials,
+                        &timing_name,
+                        Some(value_kind),
+                    );
+                    let result =
+                        jackin_env::resolve_env_value("[github.env]", key, value, runner, |name| {
+                            host_env_fn(name)
+                        });
+                    match result {
+                        Ok(value) => {
+                            jackin_diagnostics::active_timing_done(
+                                jackin_diagnostics::DiagnosticStage::Credentials,
+                                &timing_name,
+                                Some(value_kind),
+                            );
+                            (key.clone(), Ok(value))
+                        }
+                        Err(error) => {
+                            jackin_diagnostics::active_timing_done(
+                                jackin_diagnostics::DiagnosticStage::Credentials,
+                                &timing_name,
+                                Some("error"),
+                            );
+                            (key.clone(), Err(error))
+                        }
                     }
-                    Err(error) => {
-                        jackin_diagnostics::active_timing_done(
-                            jackin_diagnostics::DiagnosticStage::Credentials,
-                            &timing_name,
-                            Some("error"),
-                        );
-                        (key.clone(), Err(error))
-                    }
-                }
-            }));
+                },
+            ));
         }
         for handle in handles {
             match handle
