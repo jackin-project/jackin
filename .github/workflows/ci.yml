@@ -137,6 +137,7 @@ jobs:
             rust:
               - '.cargo/**'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/rust-nextest.yml'
               - 'scripts/ci/crate-test-contract.sh'
               - 'Cargo.toml'
               - 'Cargo.lock'
