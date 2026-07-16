@@ -32,7 +32,7 @@ No daemon of its own: the engine runs inside the existing `jackin-capsule` proce
 
 ## Storage
 
-All under `/jackin/state/context/` (container-only, honoring the `/jackin/` layout rule), using **turso** (already in-workspace via <RepoFile path="crates/jackin-usage/src/telemetry_store.rs">crates/jackin-usage/src/telemetry_store.rs</RepoFile>, schema-versioned):
+All under `/jackin/state/context/` (container-only, honoring the `/jackin/` layout rule), using **turso** (already in-workspace via <RepoFile path="crates/jackin-usage/src/usage_snapshot_store.rs">crates/jackin-usage/src/usage_snapshot_store.rs</RepoFile>, schema-versioned):
 
 - `archive.db` — CCR store: `ccr_entries(hash TEXT PRIMARY KEY, original BLOB, created_at, ttl_seconds)` + FTS index; blake3 keys, first 24 hex chars; wire marker `<<ccr:HASH>>` kept byte-compatible with headroom so mixed environments interoperate.
 - `ledger.db` — savings events (per-transform, per-tool, per-session), bounce events (negative entries), injection-overhead entries; optional hash-chaining for tamper evidence (lean-ctx pattern) off by default.

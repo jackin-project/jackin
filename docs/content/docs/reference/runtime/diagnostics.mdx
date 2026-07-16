@@ -17,7 +17,7 @@ Provider construction is best-effort and product work stays fail-open. Export us
 
 ## Schema authority
 
-<RepoFile path="crates/jackin-telemetry/registry/registry_manifest.yaml">`crates/jackin-telemetry/registry`</RepoFile> is a closed Weaver-validated OpenTelemetry semantic-convention 1.43 extension registry. Generated names and bounded enums are the only signal vocabulary. The governed facade rejects unknown names, unknown attributes, invalid bounded values, privacy violations, oversized fields, excess links/events, and cardinality overflow.
+<RepoFile path="crates/jackin-telemetry/registry/manifest.yaml">`crates/jackin-telemetry/registry`</RepoFile> is a closed Weaver-validated OpenTelemetry semantic-convention 1.43 extension registry. Generated names and bounded enums are the only signal vocabulary. The governed facade rejects unknown names, unknown attributes, invalid bounded values, privacy violations, oversized fields, excess links/events, and cardinality overflow.
 
 Product code emits through `jackin-telemetry`: registered events, operation guards, metric handles, and ownership-aware spawn helpers. Direct OpenTelemetry SDK use and arbitrary `tracing` telemetry targets are architecture-gate violations. Operator-facing prose remains a separate output port.
 

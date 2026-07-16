@@ -64,6 +64,7 @@ jackin❯ is a functional proof of concept, not a stable product line. **`Claude
 - Capsule usage overlay — read-only per-provider account quota interface for `jackin-capsule` (overview plus per-provider tabs, status-bar headline mapping, cache-backed refresh, honest stale/refreshing/unavailable states, real reset epochs, and the focused-agent tab model built on the shared `TabStrip` component) is fully shipped; see [Capsule reference](/reference/capsule/).
 - Claude Fable and `limits`-array usage windows — the Capsule usage overlay parses Anthropic's `limits` array, surfaces per-model weekly windows such as Fable on both OAuth and CLI fallback paths, backfills partial responses from legacy named windows, and names model-scoped bottlenecks in compact status rows; see [Capsule reference](/reference/capsule/).
 - [Parallel Agent Coordination](/guides/parallel-agent-coordination/) — per-tab `JACKIN_AGENT_CODENAME` identity, read-only `jackin-capsule agents` registry (human + `--format json`), tab-hover codename tooltip, and host `jackin status` per-agent codename table all shipped.
+- [Unified OpenTelemetry observability](/roadmap/unified-otel-observability/) — governed semantic-convention-first traces, logs, and metrics now export directly over OTLP/gRPC from each process; bounded operations, lifecycle events, W3C propagation and detached links, typed health, privacy enforcement, and local-artifact removal are complete.
 
 ## Partially implemented
 
@@ -132,7 +133,6 @@ jackin❯ is a functional proof of concept, not a stable product line. **`Claude
 
 ### Codebase health
 
-- **[Unified OpenTelemetry observability](/roadmap/unified-otel-observability/)** — implementation-ready OTLP-only application refactor: governed Rust `tracing` spans/events bridged to OTel traces/logs, explicit OTel metrics/context, semantic-convention-first fields without a project attribute prefix, bounded action/request/job traces, screen lifecycle events and dwell metrics, direct Parallax export, and no local telemetry/log artifacts or raw emission bypasses (status: open — implementation-ready design)
 - **[Open review findings catalog](/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations; five confirmed findings currently need fixes (two previously-cataloged rows were verified resolved and dropped). Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning") (status: open)
 
 ### Documentation infrastructure

@@ -251,7 +251,7 @@ The **shared renderer** (`render_scrollable_block`, `render_scrollable_block_foc
 
 Any dialog or info panel that displays a long value (file path, container ID, URL, error message) must not silently truncate it with no way for the operator to see the full content. Three acceptable approaches, in priority order:
 
-1. **OSC 8 hyperlink** (preferred for file system paths and URLs). Render the path as a terminal hyperlink via `]8;;file:///full/path\visible text]8;;\`. The operator clicks to open the file. The visible text can be abbreviated; the href carries the full path. The failure popup's "run diagnostics" and "docker output" rows must use this approach, and its `R` key reveal action must use the same row values instead of re-deriving paths.
+1. **OSC 8 hyperlink** (preferred for file system paths and URLs). Render the path as a terminal hyperlink via `]8;;file:///full/path\visible text]8;;\`. The operator clicks to open the file. The visible text can be abbreviated; the href carries the full path. Telemetry correlation values are copy targets rather than file hyperlinks because jackin❯ creates no local telemetry artifacts.
 
 2. **Word-wrap onto multiple lines**. If the value is a long string (not a path), wrap it within the dialog width. `ErrorPopup` owns the row wrapping, height estimate, scroll offset, and value-cell rectangles so render, OSC 8 overlays, and copy/reveal hit-testing stay aligned.
 

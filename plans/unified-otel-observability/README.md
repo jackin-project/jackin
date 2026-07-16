@@ -24,7 +24,7 @@ Execute in the order below unless the dependency graph says otherwise. Each exec
 | [012](012-diagnostics-validate-health.md) | `jackin diagnostics validate` + typed health over daemon protocols | P2 | M | 002, 004, 006, 007 | IN PROGRESS |
 | [013](013-artifact-removal-cutover.md) | Cutover: remove all telemetry files, readers, log commands, legacy keys | P1 | L | 007, 011, 012 | IN PROGRESS |
 | [014](014-verification-suite.md) | OTLP wire receiver, conformance matrix, soak, 5% perf gate | P1 | L | 002+ (harness), 013 (final acceptance) | IN PROGRESS |
-| [015](015-docs-and-closure.md) | Docs cutover + roadmap status flip to Resolved | P1 | M | 012, 013, 014 | TODO |
+| [015](015-docs-and-closure.md) | Docs cutover + roadmap status flip to Resolved | P1 | M | 012, 013, 014 | IN PROGRESS |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

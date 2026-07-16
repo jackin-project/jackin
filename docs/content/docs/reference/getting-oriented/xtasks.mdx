@@ -46,7 +46,7 @@ Source the generated env file before smoke testing the PR. `jackin-dev` runs as 
 
 ## PTY fixture extraction
 
-`cargo xtask pty-fixture <run.jsonl> <session-label> <out.bin>` (source: <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs">crates/jackin-xtask/src/pty_fixture.rs</RepoFile>) turns a trace-level run log into a replayable terminal-fixture file. It scans for the capsule's `session feed_pty bytes:` TRACE lines, filters them to one session label (the `label=` field, e.g. `Codex`), decodes the hex byte dumps, and concatenates them in order into a binary fixture for the render-conformance harness in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs">crates/jackin-capsule/src/daemon/tests.rs</RepoFile>.
+`cargo xtask pty-fixture <capture> <out.bin>` (source: <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs">crates/jackin-xtask/src/pty_fixture.rs</RepoFile>) copies an explicitly captured raw PTY byte stream into a replayable terminal fixture. Set `JACKIN_PTY_FIXTURE_CAPTURE=<path>` only for the deliberate capture run, then place the resulting fixture under the capsule test fixtures. Telemetry never carries terminal bytes.
 
 The extractor accepts only a raw file created through the explicit `JACKIN_PTY_FIXTURE_CAPTURE` test gate. Fixtures land under <RepoFile path="crates/jackin-capsule/tests/fixtures/pty/README.md">crates/jackin-capsule/tests/fixtures/pty/README.md</RepoFile> by convention; the review and wiring flow is documented in <RepoFile path="TESTING.md">TESTING.md</RepoFile>. Production telemetry never supplies PTY fixture bytes.
 

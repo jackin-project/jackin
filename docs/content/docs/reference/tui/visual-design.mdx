@@ -134,7 +134,7 @@ The capsule's ANSI renderer uses two flavors of the color-encoding helpers in <R
 
 ## Copyable values — link style, hover, click-to-copy
 
-Any value the operator can click to copy (a file path, run id, container id, URL) must read as a link and behave identically on every surface, following the W3C native-link convention:
+Any value the operator can click to copy (an invocation ID, container ID, file path, or URL) must read as a link and behave identically on every surface, following the W3C native-link convention:
 
 - **Colour:** `LINK_FG` (cyan) on a dark dialog surface — never blue, never the same as plain or emphasised text. `LINK_BLUE` is reserved for clickable text on the *white* status bar, where cyan lacks contrast; do not use it on dark dialog surfaces.
 - **Underline:** always underlined, with or without an OSC 8 hyperlink. Underline is the resting affordance that marks the value as a link; underlining only the hyperlinked rows is a violation.

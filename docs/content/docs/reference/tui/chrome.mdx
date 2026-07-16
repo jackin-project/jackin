@@ -47,7 +47,7 @@ Container ID, versions, role, agent, and target follow it in canonical order.
 
 **Trigger:** A clickable chip in the status bar or status footer opens this dialog. The chip is always clickable — in non-debug mode it shows the instance/container ID chip; in debug mode it shows the combined `run_id:instance_id` chip. One click → one dialog.
 
-### Status bar chips — instance ID and run ID
+### Status bar chips — instance ID and invocation ID
 
 The right side of every jackin❯ status bar carries up to two clickable chips:
 
@@ -63,7 +63,7 @@ The right side of every jackin❯ status bar carries up to two clickable chips:
 
 **Both chips open the same dialog:** The instance ID chip is always available and gives operational context. The invocation ID chip is debug-mode-only and gives correlation context. They are triggers for the same Debug info surface, not separate dialog types.
 
-**Implementation applies to all status bar surfaces:** the capsule bottom bar, the host console bottom bar, and the launch cockpit status bar. Any status bar that shows an instance ID or run ID must wire the click handlers to the appropriate dialog.
+**Implementation applies to all status bar surfaces:** the capsule bottom bar, the host console bottom bar, and the launch cockpit status bar. Any status bar that shows an instance ID or invocation ID must wire the click handlers to the appropriate dialog.
 
 ### Status bar usage headline — windows + spend
 
@@ -86,11 +86,11 @@ jackin-capsule:  0.6.0-dev+d4998f5
 
 This matches `jackin --version` output (which prints `jackin <version>`) and `jackin-capsule --version` output. Never combine them on one line with a separator (e.g. `host x · capsule y`) — the two-line format is cleaner and matches what the operator sees on the CLI.
 
-### Status bar is always white; debug run ID is a red chip
+### Status bar is always white; debug invocation ID is a red chip
 
 **The bottom status bar must always render on a white background.** This is invariant regardless of debug mode, surface, or content. The white band is the visual anchor that separates TUI chrome from terminal content — a non-white status bar is a design violation.
 
-**The debug run ID is a compact red chip right-aligned on the status bar.** When `--debug` is active, the run ID appears as a `DANGER_RED` background chip on the right side of the status bar. Only the chip itself gets the red background. The rest of the bar stays white. The chip contains only the run ID string (e.g. `740709`), nothing else.
+**The debug invocation ID is a compact red chip right-aligned on the status bar.** When `--debug` is active, the opaque invocation ID appears as a `DANGER_RED` background chip on the right side of the status bar. Only the chip itself gets the red background. The rest of the bar stays white.
 
 **Implementation:** render via `StatusFooter::new("").right_debug(Some(&run_id))`. This applies to every screen — console manager, editor, settings, launch cockpit, and capsule — so the chip is always present in `--debug` mode regardless of which surface the operator is on. The capsule branch/PR context bar uses the same `StatusFooter` renderer for the left context segment, usage headline, container chip, and debug chip; it keeps only hit-region derivation local. The chip is clickable and opens the shared Debug info dialog.
 
@@ -100,7 +100,7 @@ This matches `jackin --version` output (which prints `jackin <version>`) and `ja
 ^─────────────────── white ─────────────────^ chip ^
 ```
 
-This applies to the host console debug bar and any other surface that surfaces a run ID in debug mode.
+This applies to the host console debug bar and any other surface that exposes an invocation ID in debug mode.
 
 ### Confirm buttons share paint and hit-testing
 
