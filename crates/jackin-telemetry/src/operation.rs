@@ -274,13 +274,6 @@ fn operation_inner(
     attrs: &[Attr<'_>],
     root: bool,
 ) -> Result<OperationGuard, Rejection> {
-    if !tracing::enabled!(target: crate::TELEMETRY_TARGET, tracing::Level::INFO) {
-        return Ok(OperationGuard {
-            span: Span::none(),
-            completed: AtomicBool::new(false),
-            links: AtomicUsize::new(0),
-        });
-    }
     if attrs.len() > limits::MAX_SPAN_ATTRIBUTES {
         health::reject(Rejection::SizeLimit);
         return Err(Rejection::SizeLimit);

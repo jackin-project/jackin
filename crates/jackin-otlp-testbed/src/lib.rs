@@ -42,6 +42,7 @@ struct State {
     logs: Mutex<Vec<ExportLogsServiceRequest>>,
     metrics: Mutex<Vec<ExportMetricsServiceRequest>>,
     behavior: Mutex<Behavior>,
+    received: tokio::sync::Notify,
 }
 
 impl State {
@@ -78,6 +79,7 @@ impl TraceService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
+        self.0.received.notify_one();
         let behavior = self.0.behavior();
         State::apply(&behavior).await?;
         let partial_success =
@@ -102,6 +104,7 @@ impl LogsService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
+        self.0.received.notify_one();
         let behavior = self.0.behavior();
         State::apply(&behavior).await?;
         let partial_success =
@@ -124,6 +127,7 @@ impl MetricsService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
+        self.0.received.notify_one();
         let behavior = self.0.behavior();
         State::apply(&behavior).await?;
         let partial_success =
@@ -155,9 +159,18 @@ impl Testbed {
         let (shutdown, shutdown_rx) = oneshot::channel();
         tokio::spawn(async move {
             let result = Server::builder()
-                .add_service(TraceServiceServer::new(services.clone()))
-                .add_service(LogsServiceServer::new(services.clone()))
-                .add_service(MetricsServiceServer::new(services))
+                .add_service(
+                    TraceServiceServer::new(services.clone())
+                        .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
+                )
+                .add_service(
+                    LogsServiceServer::new(services.clone())
+                        .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
+                )
+                .add_service(
+                    MetricsServiceServer::new(services)
+                        .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
+                )
                 .serve_with_incoming_shutdown(incoming, async { drop(shutdown_rx.await) })
                 .await;
             assert!(result.is_ok(), "OTLP testbed server failed: {result:?}");
@@ -212,6 +225,23 @@ impl Testbed {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+
+    /// Wait until at least one request for every signal has arrived.
+    pub async fn wait_for_all_signals(&self, timeout: std::time::Duration) -> bool {
+        tokio::time::timeout(timeout, async {
+            loop {
+                if !self.traces().is_empty()
+                    && !self.logs().is_empty()
+                    && !self.metrics().is_empty()
+                {
+                    return;
+                }
+                self.state.received.notified().await;
+            }
+        })
+        .await
+        .is_ok()
     }
 }
 

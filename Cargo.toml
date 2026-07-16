@@ -134,7 +134,7 @@ toml_edit = "0.25"
 tracing = "0.1"
 tracing-opentelemetry = "0.33"
 tracing-subscriber = "0.3"
-tonic = { version = "0.14.1", default-features = false, features = ["transport", "router", "codegen"] }
+tonic = { version = "0.14.1", default-features = false, features = ["transport", "router", "codegen", "gzip"] }
 tui-scrollbar = "0.2.4"
 tui-widget-list = "0.15"
 # Pre-release API churn; revisit at first stable 0.7 (or next pre.N after

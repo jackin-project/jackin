@@ -148,6 +148,19 @@ pub fn init_tracing_for(
     Ok(false)
 }
 
+/// Install real OTLP providers against an explicit test receiver endpoint.
+#[cfg(feature = "test-support")]
+pub fn init_wire_test_export(endpoint: &str, identity: ServiceIdentity) -> anyhow::Result<()> {
+    let endpoints = otlp::OtlpEndpoints::new(endpoint, endpoint, Some(endpoint));
+    otlp::init(false, "wire-conformance", identity, &endpoints)
+}
+
+/// Force all three wire-test providers to deliver their current batches.
+#[cfg(feature = "test-support")]
+pub fn flush_wire_test_export() -> Result<(), ValidationFailure> {
+    otlp::validate_flush()
+}
+
 /// The first explicitly-requested OTLP protocol jackin cannot honor, when an
 /// OTLP endpoint is configured (i.e. export is intended). `None` means the
 /// configuration is exportable (grpc or unset) or no endpoint is set. Callers
@@ -490,7 +503,7 @@ mod otlp {
         /// [`grpc_endpoint`] here so the "normalized gRPC channel target"
         /// invariant has a single enforcement site rather than being re-asserted
         /// at each caller (where one could silently drift).
-        fn new(traces: &str, logs: &str, metrics: Option<&str>) -> Self {
+        pub(super) fn new(traces: &str, logs: &str, metrics: Option<&str>) -> Self {
             Self {
                 traces: grpc_endpoint(traces),
                 logs: grpc_endpoint(logs),
@@ -908,6 +921,10 @@ mod otlp {
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer()
             .with_tracer(tracer)
+            .with_location(false)
+            .with_threads(false)
+            .with_target(false)
+            .with_tracked_inactivity(false)
             .with_error_records_to_exceptions(false)
             .with_error_events_to_status(false)
             .with_error_fields_to_exceptions(false);
@@ -971,6 +988,10 @@ mod otlp {
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer()
             .with_tracer(tracer)
+            .with_location(false)
+            .with_threads(false)
+            .with_target(false)
+            .with_tracked_inactivity(false)
             .with_error_records_to_exceptions(false)
             .with_error_events_to_status(false)
             .with_error_fields_to_exceptions(false);
@@ -1126,6 +1147,10 @@ mod otlp {
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer()
             .with_tracer(tracer)
+            .with_location(false)
+            .with_threads(false)
+            .with_target(false)
+            .with_tracked_inactivity(false)
             .with_error_records_to_exceptions(false)
             .with_error_events_to_status(false)
             .with_error_fields_to_exceptions(false);
@@ -1179,6 +1204,10 @@ mod otlp {
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer()
             .with_tracer(tracer)
+            .with_location(false)
+            .with_threads(false)
+            .with_target(false)
+            .with_tracked_inactivity(false)
             .with_error_records_to_exceptions(false)
             .with_error_events_to_status(false)
             .with_error_fields_to_exceptions(false);

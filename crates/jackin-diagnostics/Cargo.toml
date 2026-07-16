@@ -77,8 +77,13 @@ tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
+jackin-otlp-testbed = { path = "../jackin-otlp-testbed" }
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace", "logs", "metrics"] }
 tempfile = { workspace = true }
+
+[[test]]
+name = "wire_conformance"
+required-features = ["test-support"]
 
 [lints]
 workspace = true

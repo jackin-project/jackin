@@ -35,6 +35,8 @@ pub use observability::{
     record_telemetry_rejection, shutdown_capsule_tracing, telemetry_health_snapshot,
     unsupported_otlp_protocol, validate_delivery,
 };
+#[cfg(feature = "test-support")]
+pub use observability::{flush_wire_test_export, init_wire_test_export};
 pub use operation::{
     OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,
     operation_metric, operation_record_exit_code, operation_set_i64_attr, operation_span,

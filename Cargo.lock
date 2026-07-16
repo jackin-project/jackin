@@ -2968,6 +2968,7 @@ dependencies = [
  "anyhow",
  "criterion",
  "jackin-core",
+ "jackin-otlp-testbed",
  "jackin-telemetry",
  "jackin-tui",
  "opentelemetry",
