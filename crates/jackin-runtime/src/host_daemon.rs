@@ -122,8 +122,18 @@ pub struct TelemetryHealthSnapshot {
     pub logs: TelemetrySignalHealth,
     pub metrics: TelemetrySignalHealth,
     pub facade_rejections: u64,
+    pub flush: TelemetryFlushStatus,
     pub shutdown_completed: bool,
     pub shutdown_succeeded: bool,
+    pub shutdown_timed_out: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryFlushStatus {
+    Pending,
+    Succeeded,
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -785,6 +795,11 @@ fn telemetry_health_report() -> TelemetryHealthReport {
         successes: value.successes,
         failures: value.failures,
     };
+    let flush = match health.flush {
+        jackin_diagnostics::TelemetryFlushStatus::Pending => TelemetryFlushStatus::Pending,
+        jackin_diagnostics::TelemetryFlushStatus::Succeeded => TelemetryFlushStatus::Succeeded,
+        jackin_diagnostics::TelemetryFlushStatus::Failed => TelemetryFlushStatus::Failed,
+    };
     TelemetryHealthReport {
         fingerprint: SanitizedConfigFingerprint {
             endpoint_authority: jackin_diagnostics::configured_endpoint()
@@ -806,8 +821,10 @@ fn telemetry_health_report() -> TelemetryHealthReport {
             logs: signal(health.logs),
             metrics: signal(health.metrics),
             facade_rejections: health.facade_rejections,
+            flush,
             shutdown_completed: health.shutdown_completed,
             shutdown_succeeded: health.shutdown_succeeded,
+            shutdown_timed_out: health.shutdown_timed_out,
         },
     }
 }

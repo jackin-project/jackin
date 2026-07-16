@@ -214,10 +214,26 @@ pub struct TelemetryHealthSnapshot {
     pub metrics: TelemetrySignalHealth,
     /// Governed facade rejection count.
     pub facade_rejections: u64,
+    /// Latest orderly flush outcome.
+    pub flush: TelemetryFlushStatus,
     /// Whether orderly shutdown completed.
     pub shutdown_completed: bool,
     /// Whether orderly shutdown succeeded.
     pub shutdown_succeeded: bool,
+    /// Whether orderly shutdown exceeded its bounded deadline.
+    pub shutdown_timed_out: bool,
+}
+
+/// Typed orderly-flush state exposed over control protocols.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryFlushStatus {
+    /// No flush outcome has been recorded yet.
+    Pending,
+    /// The latest flush completed successfully.
+    Succeeded,
+    /// The latest flush failed.
+    Failed,
 }
 
 /// Outer observations for one OTLP signal.

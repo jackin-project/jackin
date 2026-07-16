@@ -284,6 +284,8 @@ fn telemetry_health_round_trip_is_typed_and_sanitized() {
     );
     assert_eq!(report.fingerprint.service_name, "jackin-daemon");
     assert_eq!(report.fingerprint.app_mode, "daemon");
+    assert_eq!(report.health.flush, TelemetryFlushStatus::Pending);
+    assert!(!report.health.shutdown_timed_out);
     let json = serde_json::to_string(&report).unwrap().to_ascii_lowercase();
     assert!(!json.contains("authorization"));
     assert!(!json.contains("header"));

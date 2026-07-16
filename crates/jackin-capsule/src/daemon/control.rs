@@ -206,14 +206,27 @@ fn telemetry_health_snapshot(
             failures: health.failures,
         }
     }
+    let flush = match health.flush {
+        jackin_diagnostics::TelemetryFlushStatus::Pending => {
+            jackin_protocol::control::TelemetryFlushStatus::Pending
+        }
+        jackin_diagnostics::TelemetryFlushStatus::Succeeded => {
+            jackin_protocol::control::TelemetryFlushStatus::Succeeded
+        }
+        jackin_diagnostics::TelemetryFlushStatus::Failed => {
+            jackin_protocol::control::TelemetryFlushStatus::Failed
+        }
+    };
     jackin_protocol::control::TelemetryHealthSnapshot {
         active_signals: health.active_signals,
         traces: signal(health.traces),
         logs: signal(health.logs),
         metrics: signal(health.metrics),
         facade_rejections: health.facade_rejections,
+        flush,
         shutdown_completed: health.shutdown_completed,
         shutdown_succeeded: health.shutdown_succeeded,
+        shutdown_timed_out: health.shutdown_timed_out,
     }
 }
 

@@ -596,6 +596,11 @@ fn control_reply_exposes_typed_telemetry_health() {
         panic!("expected telemetry health");
     };
     assert!(report.active_signals <= 3);
+    assert_eq!(
+        report.flush,
+        jackin_protocol::control::TelemetryFlushStatus::Pending
+    );
+    assert!(!report.shutdown_timed_out);
 }
 
 #[test]
