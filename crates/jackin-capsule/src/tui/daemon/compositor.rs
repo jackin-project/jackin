@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Compositor methods for the Multiplexer.
+//! TUI compositor methods for the daemon-owned `Multiplexer`.
 //!
 //! Moved from daemon.rs to separate this concern from session lifecycle and
 //! input dispatch. All methods are impl Multiplexer blocks.
@@ -800,4 +800,5 @@ fn cell_sgr_metadata(cell: &jackin_term::Cell) -> SgrMetadata {
 }
 
 #[cfg(test)]
+#[path = "compositor/tests.rs"]
 mod tests;

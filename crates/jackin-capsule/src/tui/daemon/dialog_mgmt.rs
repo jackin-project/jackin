@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Dialog stack management for the Multiplexer.
+//! TUI dialog stack management for the daemon-owned `Multiplexer`.
 
 use super::{
     Dialog, GithubContextView, Instant, Multiplexer, MuxMode, MuxModeState,

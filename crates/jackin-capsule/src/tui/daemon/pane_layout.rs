@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pane layout, resize, focus, and split methods for the Multiplexer.
+//! TUI pane layout, resize, focus, and split methods for the daemon-owned `Multiplexer`.
 
 use super::{
     ArrowDir, Direction, Multiplexer, Rect, Result, STATUS_BAR_ROWS, Session, SplitDirection,

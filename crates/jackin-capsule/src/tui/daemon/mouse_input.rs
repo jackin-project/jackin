@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
+//! TUI mouse, pointer, hover, and text-selection methods for the daemon-owned `Multiplexer`.
 
 use jackin_protocol::attach::ServerFrame;
 use ratatui::layout::Rect;
