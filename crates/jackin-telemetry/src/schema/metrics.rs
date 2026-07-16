@@ -889,6 +889,41 @@ pub const PREWARM_JOBS_DEF: super::MetricMetadata = super::MetricMetadata {
     boundaries: &[],
     attributes: &[],
 };
+// registry: instrument=counter; unit=s; attributes=cpu.mode:required
+pub const PROCESS_CPU_TIME: &str = "process.cpu.time";
+pub const PROCESS_CPU_TIME_DEF: super::MetricMetadata = super::MetricMetadata {
+    name: PROCESS_CPU_TIME,
+    description: "Total CPU time consumed by the process.",
+    instrument: super::MetricInstrument::Counter,
+    unit: "s",
+    boundaries: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "cpu.mode",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &["user", "system"],
+    }],
+};
+// registry: instrument=updowncounter; unit=By; attributes=
+pub const PROCESS_MEMORY_USAGE: &str = "process.memory.usage";
+pub const PROCESS_MEMORY_USAGE_DEF: super::MetricMetadata = super::MetricMetadata {
+    name: PROCESS_MEMORY_USAGE,
+    description: "Resident set size of the jackin process.",
+    instrument: super::MetricInstrument::UpDownCounter,
+    unit: "By",
+    boundaries: &[],
+    attributes: &[],
+};
+// registry: instrument=gauge; unit=s; attributes=
+pub const PROCESS_UPTIME: &str = "process.uptime";
+pub const PROCESS_UPTIME_DEF: super::MetricMetadata = super::MetricMetadata {
+    name: PROCESS_UPTIME,
+    description: "Process uptime.",
+    instrument: super::MetricInstrument::Gauge,
+    unit: "s",
+    boundaries: &[],
+    attributes: &[],
+};
 // registry: instrument=updowncounter; unit={request}; attributes=rpc.method:required
 pub const RPC_ACTIVE: &str = "rpc.active";
 pub const RPC_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
@@ -1364,6 +1399,9 @@ pub const ALL: &[&str] = &[
     PREWARM_ACTIVE,
     PREWARM_DURATION,
     PREWARM_JOBS,
+    PROCESS_CPU_TIME,
+    PROCESS_MEMORY_USAGE,
+    PROCESS_UPTIME,
     RPC_ACTIVE,
     RPC_DURATION,
     RPC_REQUESTS,
@@ -1403,6 +1441,9 @@ pub const DEFINITIONS: &[super::MetricMetadata] = &[
     PREWARM_ACTIVE_DEF,
     PREWARM_DURATION_DEF,
     PREWARM_JOBS_DEF,
+    PROCESS_CPU_TIME_DEF,
+    PROCESS_MEMORY_USAGE_DEF,
+    PROCESS_UPTIME_DEF,
     RPC_ACTIVE_DEF,
     RPC_DURATION_DEF,
     RPC_REQUESTS_DEF,

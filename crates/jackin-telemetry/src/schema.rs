@@ -70,6 +70,7 @@ pub struct SpanMetadata {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MetricInstrument {
     Counter,
+    Gauge,
     UpDownCounter,
     Histogram,
 }

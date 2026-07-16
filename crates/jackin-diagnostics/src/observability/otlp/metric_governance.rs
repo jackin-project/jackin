@@ -30,6 +30,7 @@ pub(super) fn metric_contract_fields(
     ) = if let Some(definition) = metrics::definition(name) {
         let shape = match definition.instrument {
             MetricInstrument::Counter => MetricShape::SumU64,
+            MetricInstrument::Gauge => MetricShape::GaugeF64,
             MetricInstrument::UpDownCounter => MetricShape::SumI64,
             MetricInstrument::Histogram => MetricShape::HistogramF64,
         };

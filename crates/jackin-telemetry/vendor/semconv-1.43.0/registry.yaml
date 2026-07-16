@@ -13,6 +13,7 @@ groups:
       - { id: exception.message, type: string, brief: The exception message., stability: stable, examples: [Division by zero] }
       - { id: exception.stacktrace, type: string, brief: A stacktrace as a string in the natural representation for the language runtime., stability: stable, examples: ["Exception in thread main"] }
       - { id: container.id, type: string, brief: Container ID., stability: development, examples: [a3bf90e006b2] }
+      - { id: cpu.mode, type: { members: [{id: user, value: user, stability: stable}, {id: system, value: system, stability: stable}] }, brief: The mode of the CPU., stability: stable }
       - { id: db.operation.name, type: string, brief: The name of the database operation or command being executed., stability: stable, examples: [findAndModify, HMSET, SELECT] }
       - { id: db.system.name, type: string, brief: The database management system product as identified by the client instrumentation., stability: stable, examples: [postgresql, sqlite] }
       - { id: error.type, type: string, brief: Describes a class of error the operation ended with., stability: stable, examples: [timeout, java.net.UnknownHostException] }

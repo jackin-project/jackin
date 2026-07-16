@@ -28,8 +28,8 @@ pub use event::{
 };
 pub use health::{FacadeHealth, Signal, facade_health, record_export_rejection};
 pub use metric::{
-    Counter, Histogram, InstrumentDef, InstrumentKind, MeterInstallError, MeterReservation,
-    UpDownCounter, counter, histogram, install, reserve_meter, up_down_counter,
+    Counter, Gauge, Histogram, InstrumentDef, InstrumentKind, MeterInstallError, MeterReservation,
+    UpDownCounter, counter, gauge, histogram, install, reserve_meter, up_down_counter,
 };
 pub use operation::{
     OperationGuard, SpanDef, operation, operation_or_disabled, operation_with_remote_parent,

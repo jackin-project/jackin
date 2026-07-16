@@ -9,8 +9,8 @@ use std::{
 use opentelemetry::{
     KeyValue,
     metrics::{
-        Counter as OtelCounter, Histogram as OtelHistogram, Meter, ObservableCounter,
-        UpDownCounter as OtelUpDownCounter,
+        Counter as OtelCounter, Gauge as OtelGauge, Histogram as OtelHistogram, Meter,
+        ObservableCounter, UpDownCounter as OtelUpDownCounter,
     },
 };
 
@@ -22,6 +22,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InstrumentKind {
     Counter,
+    Gauge,
     UpDownCounter,
     Histogram,
 }
@@ -40,6 +41,7 @@ impl InstrumentDef {
     const fn generated(metadata: &'static schema::MetricMetadata) -> Self {
         let kind = match metadata.instrument {
             schema::MetricInstrument::Counter => InstrumentKind::Counter,
+            schema::MetricInstrument::Gauge => InstrumentKind::Gauge,
             schema::MetricInstrument::UpDownCounter => InstrumentKind::UpDownCounter,
             schema::MetricInstrument::Histogram => InstrumentKind::Histogram,
         };
@@ -116,6 +118,9 @@ generated_instruments! {
     AGENT_STATE_TRANSITIONS => AGENT_STATE_TRANSITIONS_DEF,
     AGENT_STATE_STUCK => AGENT_STATE_STUCK_DEF,
     AGENT_STATE_FLAPS => AGENT_STATE_FLAPS_DEF,
+    PROCESS_CPU_TIME => PROCESS_CPU_TIME_DEF,
+    PROCESS_MEMORY_USAGE => PROCESS_MEMORY_USAGE_DEF,
+    PROCESS_UPTIME => PROCESS_UPTIME_DEF,
     TERMINAL_BYTES => TERMINAL_IO_BYTES_DEF,
     TERMINAL_CURSOR_MOVES => TERMINAL_CURSOR_MOVES_DEF,
     TERMINAL_RENDER_CELLS => TERMINAL_RENDER_CELLS_DEF,
@@ -129,6 +134,7 @@ generated_instruments! {
 #[derive(Debug)]
 struct InstalledInstruments {
     counters: HashMap<&'static str, OtelCounter<u64>>,
+    gauges: HashMap<&'static str, OtelGauge<f64>>,
     histograms: HashMap<&'static str, OtelHistogram<f64>>,
     up_down_counters: HashMap<&'static str, OtelUpDownCounter<i64>>,
     _health: ObservableCounter<u64>,
@@ -207,6 +213,7 @@ pub fn install(meter: &Meter) -> Result<(), MeterInstallError> {
 
 fn build_instruments(meter: &Meter) -> InstalledInstruments {
     let mut counters = HashMap::new();
+    let mut gauges = HashMap::new();
     let mut histograms = HashMap::new();
     let mut up_down_counters = HashMap::new();
     for definition in ALL {
@@ -231,7 +238,17 @@ fn build_instruments(meter: &Meter) -> InstalledInstruments {
                         .build(),
                 );
             }
-            InstrumentKind::UpDownCounter => {
+            InstrumentKind::Gauge => {
+                gauges.insert(
+                    definition.name,
+                    meter
+                        .f64_gauge(definition.name)
+                        .with_unit(definition.unit)
+                        .with_description(definition.description)
+                        .build(),
+                );
+            }
+            InstrumentKind::UpDownCounter if definition.name != PROCESS_MEMORY_USAGE.name => {
                 up_down_counters.insert(
                     definition.name,
                     meter
@@ -241,7 +258,7 @@ fn build_instruments(meter: &Meter) -> InstalledInstruments {
                         .build(),
                 );
             }
-            InstrumentKind::Counter => {}
+            InstrumentKind::Counter | InstrumentKind::UpDownCounter => {}
         }
     }
     let dimensions = health_dimensions();
@@ -257,6 +274,7 @@ fn build_instruments(meter: &Meter) -> InstalledInstruments {
         .build();
     InstalledInstruments {
         counters,
+        gauges,
         histograms,
         up_down_counters,
         _health: health,
@@ -443,6 +461,8 @@ fn series_identity_with_order(attrs: &[Attr<'_>], order: &[usize]) -> SeriesIden
 #[derive(Clone, Copy, Debug)]
 pub struct Counter(&'static InstrumentDef);
 #[derive(Clone, Copy, Debug)]
+pub struct Gauge(&'static InstrumentDef);
+#[derive(Clone, Copy, Debug)]
 pub struct Histogram(&'static InstrumentDef);
 #[derive(Clone, Copy, Debug)]
 pub struct UpDownCounter(&'static InstrumentDef);
@@ -450,6 +470,10 @@ pub struct UpDownCounter(&'static InstrumentDef);
 #[must_use]
 pub const fn counter(def: &'static InstrumentDef) -> Counter {
     Counter(def)
+}
+#[must_use]
+pub const fn gauge(def: &'static InstrumentDef) -> Gauge {
+    Gauge(def)
 }
 #[must_use]
 pub const fn histogram(def: &'static InstrumentDef) -> Histogram {
@@ -493,6 +517,25 @@ impl Histogram {
         let kv = key_values(attrs)
             .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
         instruments.histograms[&self.0.name].record(value, &kv);
+        Ok(())
+    }
+}
+
+impl Gauge {
+    pub fn record(self, value: f64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        reject_identity_dimensions(attrs)?;
+        let Some(instruments) = INSTRUMENTS.get() else {
+            return Ok(());
+        };
+        validate_instrument(self.0, InstrumentKind::Gauge)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        validate_attributes(self.0, attrs)?;
+        if !accept_series(self.0.name, attrs) {
+            return Err(Rejection::Cardinality);
+        }
+        let kv = key_values(attrs)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        instruments.gauges[&self.0.name].record(value, &kv);
         Ok(())
     }
 }

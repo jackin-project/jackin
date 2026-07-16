@@ -768,6 +768,7 @@ pub mod std_attrs {
     pub use opentelemetry_semantic_conventions::attribute::CODE_FUNCTION_NAME;
     pub use opentelemetry_semantic_conventions::attribute::CODE_LINE_NUMBER;
     pub use opentelemetry_semantic_conventions::attribute::CONTAINER_ID;
+    pub use opentelemetry_semantic_conventions::attribute::CPU_MODE;
     pub use opentelemetry_semantic_conventions::attribute::DB_OPERATION_NAME;
     pub use opentelemetry_semantic_conventions::attribute::DB_SYSTEM_NAME;
     pub use opentelemetry_semantic_conventions::attribute::ERROR_TYPE;
@@ -816,6 +817,7 @@ pub mod std_attrs {
         CODE_FUNCTION_NAME,
         CODE_LINE_NUMBER,
         CONTAINER_ID,
+        CPU_MODE,
         DB_OPERATION_NAME,
         DB_SYSTEM_NAME,
         ERROR_TYPE,
@@ -862,6 +864,7 @@ pub mod std_attrs {
         (CODE_FUNCTION_NAME, "code.function.name"),
         (CODE_LINE_NUMBER, "code.line.number"),
         (CONTAINER_ID, "container.id"),
+        (CPU_MODE, "cpu.mode"),
         (DB_OPERATION_NAME, "db.operation.name"),
         (DB_SYSTEM_NAME, "db.system.name"),
         (ERROR_TYPE, "error.type"),

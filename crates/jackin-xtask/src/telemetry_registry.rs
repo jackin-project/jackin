@@ -1256,9 +1256,8 @@ fn generate_event_emitters(header: &str, groups: &[YamlValue]) -> Result<String>
             "Integer" => "$fields.integer($key)",
             "Double" => "$fields.double($key)",
             "Boolean" => "$fields.boolean($key)",
-            // `tracing` has no array Value variant. Keep the registered field in
-            // metadata but let the synchronous governed processor attach its
-            // typed value through `take_pending_event_arrays`.
+            // `tracing` has no array Value variant. The governed processor adds
+            // the registered typed value through `take_pending_event_arrays`.
             "StringArray" => "tracing::field::Empty",
             _ => unreachable!("validated registry value type"),
         };
@@ -1371,6 +1370,7 @@ const fn signal_metadata_type(kind: SignalKind) -> &'static str {
 fn metric_instrument_variant(value: &str) -> Result<&'static str> {
     match value {
         "counter" => Ok("Counter"),
+        "gauge" => Ok("Gauge"),
         "updowncounter" => Ok("UpDownCounter"),
         "histogram" => Ok("Histogram"),
         other => bail!("unsupported metric instrument {other}"),

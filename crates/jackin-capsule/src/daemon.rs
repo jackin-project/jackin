@@ -860,7 +860,7 @@ fn emit_agent_state_change(
 }
 
 async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePackRegistry>) {
-    mux.log_resource_metrics().await;
+    mux.record_resource_metrics().await;
     mux.maybe_spawn_pull_request_context_lookup(Instant::now());
     // Reap idle clipboard-image transfers and surface a notice. Must NOT
     // short-circuit the tick: agent-state advancement below is the 1 Hz floor —
