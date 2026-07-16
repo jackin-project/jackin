@@ -314,6 +314,15 @@ rather than paying that producer path. Docs performed a required full link
 proof because the contributor README added new source links; the following
 prose-only evidence update is the semantic-proof migration test.
 
+Run `29540800595` completed that corrected Cargo proof: warmup took 28 seconds,
+affected routing 31 seconds, the one complete changed-crate job 43 seconds, and
+`ci-required` 10 seconds. Sibling Docs run `29540800474` migrated the semantic
+proof without a site build: link check took 8 seconds, repository links 19
+seconds, and `docs-required` 13 seconds. Construct run `29540800481` finally
+published the reusable result after its Rust auditor passed; its required gate
+took 8 seconds. The following prose-only commit is the preserved-artifact test
+for all three workflow boundaries.
+
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses
 for all 26 crates. The crate-test contract now retains the last validated
