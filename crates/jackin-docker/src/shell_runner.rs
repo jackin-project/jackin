@@ -389,9 +389,8 @@ impl CommandRunner for ShellRunner {
             } else if self.debug || jackin_diagnostics::rich_terminal_owned() {
                 // This arm would otherwise inherit the terminal and stream raw
                 // command output straight to the screen — which floods a rich TUI
-                // and a --debug run. Capture both streams instead so the output
-                // lands in the diagnostics file (under --debug) and never on the
-                // screen.
+                // and a --debug run. Capture both streams instead so raw output
+                // never corrupts the screen or enters telemetry.
                 let captured = RunOptions {
                     capture_stdout: true,
                     capture_stderr: true,
@@ -467,11 +466,9 @@ impl ShellRunner {
         };
         let stdout_pipe = child.stdout.take();
         let stderr_pipe = child.stderr.take();
-        // Never stream child output to the terminal while a debug run is
-        // capturing (it belongs in the diagnostics file, not the screen) or
-        // while a rich full-screen TUI owns the terminal (it would corrupt
-        // the frame). In both cases the output is captured and, under
-        // --debug. Captured output is deliberately not emitted as telemetry:
+        // Never stream child output while debug handling or a rich full-screen
+        // TUI owns the terminal because it would corrupt the frame. Captured
+        // output is deliberately not emitted as telemetry:
         // command output and arguments may contain user or provider data.
         let stream = opts.stream_captured_output
             && !self.debug

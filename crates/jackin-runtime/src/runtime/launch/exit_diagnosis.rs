@@ -115,16 +115,10 @@ pub(crate) async fn diagnose_with_state(
                     "container {container_name} {phase_label} ({reason}) and produced no log output"
                 )
             };
-            // Emit a structured container exit event with the crash evidence so
-            // the run JSONL is self-contained (Defect 41).
+            // Emit only bounded typed exit state. Raw Docker output remains on the
+            // explicit operator error surface and never becomes telemetry.
             if let Some(run) = jackin_diagnostics::active_run() {
-                run.container_exited(
-                    container_name,
-                    (*exit_code).into(),
-                    *oom_killed,
-                    "(no local telemetry artifact)",
-                    logs.as_deref(),
-                );
+                run.container_exited((*exit_code).into(), *oom_killed);
             }
             Some(anyhow::anyhow!(body))
         }

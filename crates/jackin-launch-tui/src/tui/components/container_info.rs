@@ -395,10 +395,6 @@ pub fn debug_info_hint_spans(
     spans.push(termrock::HintSpan::Key("↵"));
     spans.push(termrock::HintSpan::Text("copy value"));
     spans.push(termrock::HintSpan::GroupSep);
-    // UNREGISTERABLE(container-info-reveal): R/O toggle reveals diagnostics inline; no ContainerInfo keymap.
-    spans.push(termrock::HintSpan::Key("R/O"));
-    spans.push(termrock::HintSpan::Text("reveal diagnostics"));
-    spans.push(termrock::HintSpan::GroupSep);
     // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
     spans.push(termrock::HintSpan::Key("Esc"));
     spans.push(termrock::HintSpan::Text("dismiss"));
@@ -705,4 +701,25 @@ fn container_info_line(
         ));
     }
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod hint_tests {
+    use super::*;
+
+    #[test]
+    fn debug_info_hints_have_no_local_artifact_actions() {
+        let hints = debug_info_hint_spans(termrock::components::ScrollAxes::default());
+        let text = hints
+            .iter()
+            .filter_map(|hint| match hint {
+                termrock::HintSpan::Key(value) | termrock::HintSpan::Text(value) => Some(*value),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(text.contains("copy value"));
+        assert!(!text.contains("R/O"));
+        assert!(!text.contains("reveal diagnostics"));
+    }
 }

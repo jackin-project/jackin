@@ -21,7 +21,7 @@ fn views(n: usize) -> Vec<FocusedUsageView> {
 
 fn bench_upsert(c: &mut Criterion) {
     let tmp = TempDir::new().unwrap_or_else(|e| panic!("{e}"));
-    let db = tmp.path().join("telemetry.db");
+    let db = tmp.path().join("snapshots.db");
     let n = 32usize;
     let batch = views(n);
 

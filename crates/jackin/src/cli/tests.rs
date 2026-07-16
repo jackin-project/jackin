@@ -94,6 +94,56 @@ fn root_help_shows_all_commands() {
     }
 }
 
+#[test]
+fn removed_local_artifact_commands_stay_out_of_help() {
+    let root = help_text(&["jackin", "--help"]);
+    assert!(
+        !root.contains("\n  logs"),
+        "root help revived `logs`: {root}"
+    );
+
+    let diagnostics = help_text(&["jackin", "diagnostics", "--help"]);
+    assert!(diagnostics.contains("\n  validate"));
+    for removed in ["summary", "compare", "follow", "reveal", "bundle"] {
+        assert!(
+            !diagnostics.contains(&format!("\n  {removed}")),
+            "diagnostics help revived `{removed}`: {diagnostics}"
+        );
+    }
+
+    #[cfg(unix)]
+    {
+        let daemon = help_text(&["jackin", "daemon", "--help"]);
+        assert!(
+            !daemon.contains("\n  logs"),
+            "daemon help revived `logs`: {daemon}"
+        );
+    }
+}
+
+#[test]
+fn removed_local_artifact_commands_stay_rejected_by_parser() {
+    let mut removed = vec![
+        vec!["jackin", "logs"],
+        vec!["jackin", "diagnostics", "summary"],
+        vec!["jackin", "diagnostics", "compare"],
+        vec!["jackin", "diagnostics", "follow"],
+        vec!["jackin", "diagnostics", "reveal"],
+        vec!["jackin", "diagnostics", "bundle"],
+    ];
+    #[cfg(unix)]
+    removed.push(vec!["jackin", "daemon", "logs"]);
+
+    for args in removed {
+        let error = Cli::try_parse_from(&args).expect_err("removed command must not parse");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::InvalidSubcommand,
+            "unexpected parser result for {args:?}: {error}"
+        );
+    }
+}
+
 // ── help subcommand disabled ────────────────────────────────────────
 
 #[test]

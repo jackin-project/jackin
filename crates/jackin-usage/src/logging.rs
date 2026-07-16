@@ -10,10 +10,9 @@ static PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
 static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// `true` when the effective capsule telemetry level is debug or trace.
-/// Captured once at `init()` time so per-line emit
-/// paths can branch on it cheaply. Verbose governed DEBUG events callers compile
-/// the format args lazily and skip the file write when `false` —
-/// production runs stay quiet, `--debug` runs get the firehose.
+/// Captured once at `init()` time so event emitters can branch on it cheaply.
+/// Verbose governed DEBUG callers compile format arguments lazily; production
+/// runs stay quiet while debug runs receive the governed detail tier.
 pub fn debug_enabled() -> bool {
     DEBUG_ENABLED.load(Ordering::Relaxed)
 }

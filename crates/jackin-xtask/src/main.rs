@@ -61,8 +61,7 @@ enum Command {
     /// Use as `cargo xtask pr body`.
     #[command(subcommand)]
     Pr(pr::PrCommand),
-    /// Extract a PTY byte-stream fixture from a `--debug` run log for the
-    /// capsule render-conformance harness.
+    /// Copy an explicitly captured PTY byte stream into a conformance fixture.
     PtyFixture(pty_fixture::PtyFixtureArgs),
     /// Measure console first-frame and input-to-frame latency through a PTY.
     FrameTiming(frame_timing::FrameTimingArgs),

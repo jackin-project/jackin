@@ -40,6 +40,65 @@ impl ConformanceExport {
     }
 }
 
+fn collect_files(root: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, files);
+        } else {
+            files.push(path);
+        }
+    }
+}
+
+#[test]
+fn conformance_no_local_artifacts() {
+    let _lock = DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let temp = tempfile::tempdir().expect("tempdir");
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().expect("test path layout");
+
+    let retained_usage = paths.jackin_home.join("state/usage/snapshots.db");
+    fs::create_dir_all(retained_usage.parent().expect("usage store parent"))
+        .expect("usage store directory");
+    fs::write(&retained_usage, b"retained application state").expect("usage state fixture");
+    let ratchet = temp.path().join("target/telemetry-volume.json");
+    fs::create_dir_all(ratchet.parent().expect("ratchet parent")).expect("ratchet directory");
+    fs::write(&ratchet, b"{}").expect("ratchet fixture");
+
+    let (_export, subscriber) = crate::observability::test_layers(false, "artifact-check");
+    tracing::subscriber::with_default(subscriber, || {
+        let run = RunDiagnostics::start(&paths, true, "diagnostics").expect("run start");
+        let guard = run.activate();
+        run.compact("artifact_check", "bounded in-memory event");
+        run.stage(
+            "stage_started",
+            crate::DiagnosticStage::Prepare,
+            "preparing",
+            None,
+        );
+        run.stage("stage_done", crate::DiagnosticStage::Prepare, "ready", None);
+        run.emit_run_summary();
+        drop(guard);
+    });
+
+    let mut files = Vec::new();
+    collect_files(temp.path(), &mut files);
+    let unexpected = files
+        .into_iter()
+        .filter(|path| path != &retained_usage && path != &ratchet)
+        .collect::<Vec<_>>();
+    assert!(
+        unexpected.is_empty(),
+        "telemetry lifecycle created local artifacts: {unexpected:?}"
+    );
+}
+
 /// Workspace `target/telemetry-volume.json` (plan 009 measured export-volume).
 fn telemetry_volume_artifact_path() -> std::path::PathBuf {
     if let Some(path) = std::env::var_os("JACKIN_TELEMETRY_VOLUME_PATH") {
@@ -178,7 +237,7 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
             session_attr,
             jackin_telemetry::Attr {
                 key: jackin_telemetry::schema::attrs::OUTCOME,
-                value: jackin_telemetry::Value::Str("expected_close"),
+                value: jackin_telemetry::Value::Str("cancellation"),
             },
         ];
         jackin_telemetry::emit_event(

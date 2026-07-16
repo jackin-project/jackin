@@ -178,7 +178,7 @@ pub(crate) const AMP_HANDOFF_SECRETS_PATH: &str = container_paths::AMP_SECRETS;
 pub(crate) const KIMI_HANDOFF_HOME: &str = container_paths::KIMI_CODE_DIR;
 pub(crate) const GROK_HANDOFF_AUTH_PATH: &str = container_paths::GROK_AUTH;
 pub(crate) const CLAUDE_HANDOFF_CREDENTIALS_PATH: &str = container_paths::CLAUDE_CREDENTIALS;
-pub const TELEMETRY_STORE_PATH: &str = container_paths::TELEMETRY_STORE;
+pub const USAGE_SNAPSHOT_STORE_PATH: &str = container_paths::USAGE_SNAPSHOT_STORE;
 
 #[derive(Debug, Clone)]
 pub struct UsageCache {
@@ -580,7 +580,7 @@ impl Default for UsageCache {
             codex_rpc_gate: ManagedCliLaunchGate::default(),
             grok_rpc_gate: ManagedCliLaunchGate::default(),
             refresh_schedule: UsageRefreshSchedule::default(),
-            usage_snapshot_store_path: PathBuf::from(TELEMETRY_STORE_PATH),
+            usage_snapshot_store_path: PathBuf::from(USAGE_SNAPSHOT_STORE_PATH),
             accounts_materialize_path: PathBuf::from(MATERIALIZED_USAGE_ACCOUNTS_PATH),
             telemetry_persist_failed: false,
             accounts_materialize_failed: false,

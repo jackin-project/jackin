@@ -59,11 +59,10 @@ pub const USAGE_ACCOUNTS: &str = "/jackin/run/usage/accounts.json";
 
 /// Git hooks install directory.
 pub const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
-/// Multiplexer log path.
 /// Exit-action handoff file.
 pub const EXIT_ACTION: &str = "/jackin/state/exit-action.json";
-/// Usage telemetry store.
-pub const TELEMETRY_STORE: &str = "/jackin/state/usage/telemetry.db";
+/// Persistent usage snapshot store.
+pub const USAGE_SNAPSHOT_STORE: &str = "/jackin/state/usage/snapshots.db";
 /// Agent-status capture directory.
 pub const AGENT_STATUS_CAPTURES_DIR: &str = "/jackin/state/agent-status/captures";
 /// Container init done marker.

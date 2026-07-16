@@ -124,6 +124,10 @@ fn launch_debug_info_keeps_status_footer_visible() {
         "Debug info hint should render in the reserved hint row: {hint:?}"
     );
     assert!(
+        !hint.contains("R/O") && !hint.contains("reveal diagnostics"),
+        "Debug info must not advertise removed artifact actions: {hint:?}"
+    );
+    assert!(
         separator.trim().is_empty(),
         "separator row should stay blank between hint and footer: {separator:?}"
     );
@@ -166,6 +170,10 @@ fn launch_debug_info_hides_status_footer_when_debug_disabled() {
     assert!(
         bottom.contains("copy value") && bottom.contains("Esc"),
         "Debug info hint should use the bottom row in non-debug: {bottom:?}"
+    );
+    assert!(
+        !bottom.contains("R/O") && !bottom.contains("reveal diagnostics"),
+        "Debug info must not advertise removed artifact actions: {bottom:?}"
     );
     assert!(
         !bottom.contains("jk-run-c46709") && !bottom.contains("2y0t4aw6"),

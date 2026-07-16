@@ -270,7 +270,7 @@ These can live in the daemon protocol first. Capsule should consume a narrow rea
 
 Capsule-local implementation note: the `jackin-capsule` control channel now has
 `UsageFocused` / `UsageRefreshFocused` and `UsageAccountList` message variants.
-These read the Capsule daemon cache and `/jackin/state/usage/telemetry.db`.
+These read the Capsule daemon cache and `/jackin/state/usage/snapshots.db`.
 The Capsule daemon persists account quota buckets only. It no longer persists
 local-log samples, token-bearing runtime-stream JSON samples, workspace
 summaries, session summaries, or invented price-table estimates. These APIs are

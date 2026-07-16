@@ -3,7 +3,7 @@
 
 //! Bounded in-memory invocation progress and timing state.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 #[cfg(test)]
 use std::sync::Weak;
@@ -16,9 +16,6 @@ use jackin_core::JackinPaths;
 
 #[cfg(test)]
 mod tests;
-
-const CRASH_EVIDENCE_EXPORT_CAP: usize = 4096;
-const MAX_HISTOGRAM_SAMPLES: usize = 1024;
 
 static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
 static HOST_PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
@@ -45,14 +42,10 @@ pub struct RunDiagnostics {
     debug: bool,
     /// Per-stage start timestamps for wall-clock timing (Defect 47.5).
     stage_starts: Mutex<HashMap<String, Instant>>,
-    /// Per-stage tracing spans so all progress events for a launch stage share
-    /// a stable span id in the JSONL.
+    /// Per-stage tracing spans so progress events for one stage stay correlated.
     stage_spans: Mutex<HashMap<crate::DiagnosticStage, tracing::Span>>,
     /// Fine-grained timing starts nested under broad launch stages.
     timing_starts: Mutex<HashMap<String, Instant>>,
-    /// Accumulated per-stage durations for the end-of-run summary.
-    stage_durations_ms: Mutex<Vec<(String, u64)>>,
-    metrics: Mutex<DiagnosticsMetrics>,
 }
 
 #[derive(Debug)]
@@ -81,51 +74,6 @@ impl Drop for ActiveRunGuard {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-struct DiagnosticsMetrics {
-    event_counts: BTreeMap<String, u64>,
-    stage_duration_ms: BTreeMap<String, Vec<u64>>,
-    timing_duration_ms: BTreeMap<String, Vec<u64>>,
-    stage_duration_dropped: BTreeMap<String, u64>,
-    timing_duration_dropped: BTreeMap<String, u64>,
-    cache_hits: u64,
-    cache_misses: u64,
-}
-
-impl DiagnosticsMetrics {
-    fn push_stage_duration(&mut self, key: String, value: u64) {
-        push_capped_sample(
-            &mut self.stage_duration_ms,
-            &mut self.stage_duration_dropped,
-            key,
-            value,
-        );
-    }
-
-    fn push_timing_duration(&mut self, key: String, value: u64) {
-        push_capped_sample(
-            &mut self.timing_duration_ms,
-            &mut self.timing_duration_dropped,
-            key,
-            value,
-        );
-    }
-}
-
-fn push_capped_sample(
-    histograms: &mut BTreeMap<String, Vec<u64>>,
-    dropped: &mut BTreeMap<String, u64>,
-    key: String,
-    value: u64,
-) {
-    let samples = histograms.entry(key.clone()).or_default();
-    if samples.len() < MAX_HISTOGRAM_SAMPLES {
-        samples.push(value);
-    } else {
-        *dropped.entry(key).or_default() += 1;
-    }
-}
-
 fn display_unclosed_key(key: &str) -> String {
     key.replace('\0', "/")
 }
@@ -150,16 +98,15 @@ impl RunDiagnostics {
                 // "already installed" is benign (a test harness set its own
                 // subscriber); treat as inactive with no operator-facing error.
                 Err(error) if error.to_string().contains("already installed") => (false, None),
-                // A configured endpoint whose exporter fails / unsupported protocol
-                // is a real loss of telemetry the operator asked for: fall back to
-                // the file and surface one compact breadcrumb.
+                // A configured endpoint whose exporter fails or uses an unsupported
+                // protocol is a real loss of requested telemetry. Surface one
+                // compact operator breadcrumb while product work remains fail-open.
                 Err(error) => (false, Some(error.to_string())),
             };
         // Export not installed, no build error, yet endpoint vars ARE set: the
         // config is incomplete (e.g. a metrics endpoint with no traces/logs base,
         // which can't satisfy the mandatory traces+logs signals). Surface it as a
-        // breadcrumb rather than silently writing the file as if export was never
-        // requested — the exact silent-no-deliver this observability work closes.
+        // breadcrumb rather than treating export as never requested.
         let otlp_error = otlp_error.or_else(|| {
             (!otlp_active && crate::observability::otlp_endpoint_configured()).then(|| {
                 "OTLP endpoint configured but incomplete (traces and logs endpoints required)"
@@ -173,13 +120,10 @@ impl RunDiagnostics {
             stage_starts: Mutex::new(HashMap::new()),
             stage_spans: Mutex::new(HashMap::new()),
             timing_starts: Mutex::new(HashMap::new()),
-            stage_durations_ms: Mutex::new(Vec::new()),
-            metrics: Mutex::new(DiagnosticsMetrics::default()),
         });
         if let Some(error) = otlp_error {
-            // Record into the run file (on by construction here, since OTLP is
-            // inactive) and emit the compact operator notice (stderr / deferred
-            // under a rich TUI). Visibility never depends on the file alone.
+            // Emit the compact operator notice on stderr, or defer it while a rich
+            // TUI owns the terminal. There is no local telemetry fallback.
             let line = format!("OTLP export disabled: {error}");
             run.compact("otlp", &line);
             crate::logging::emit_compact_line("otlp", &line);
@@ -243,7 +187,7 @@ impl RunDiagnostics {
         kind: &str,
         stage: crate::DiagnosticStage,
         message: &str,
-        detail: Option<&str>,
+        _detail: Option<&str>,
     ) {
         let stage_label = stage.as_str();
         // Track wall-clock stage timings for the end-of-run summary (Defect 47.5).
@@ -252,37 +196,22 @@ impl RunDiagnostics {
         // explain any wait over the threshold (acceptance: explain every
         // foreground wait over 500ms).
         let mut foreground_wait_ms: Option<u64> = None;
-        let enriched_detail = match kind {
+        match kind {
             "stage_started" => {
                 locked(&self.stage_starts).insert(stage_label.to_owned(), Instant::now());
                 locked(&self.stage_spans).insert(stage, launch_stage_span(stage));
-                detail.map(String::from)
             }
             "stage_done" => {
                 let elapsed_ms = locked(&self.stage_starts)
                     .remove(stage_label)
                     .map(|t| t.elapsed().as_millis() as u64);
-                elapsed_ms.map_or_else(
-                    || detail.map(String::from),
-                    |ms| {
-                        foreground_wait_ms = Some(ms);
-                        locked(&self.stage_durations_ms).push((stage_label.to_owned(), ms));
-                        locked(&self.metrics).push_stage_duration(stage_label.to_owned(), ms);
-                        let base = detail.unwrap_or("");
-                        if base.is_empty() {
-                            Some(format!("{{\"duration_ms\":{ms}}}"))
-                        } else {
-                            Some(format!("{{\"duration_ms\":{ms},\"detail\":{base:?}}}"))
-                        }
-                    },
-                )
+                foreground_wait_ms = elapsed_ms;
             }
             "stage_failed" | "stage_skipped" => {
                 let _ = locked(&self.stage_starts).remove(stage_label);
-                detail.map(String::from)
             }
-            _ => detail.map(String::from),
-        };
+            _ => {}
+        }
         let span = self.stage_span_for(kind, stage);
         if kind == "stage_failed" {
             span.record("otel.status_code", "ERROR");
@@ -295,7 +224,7 @@ impl RunDiagnostics {
                 kind,
                 message,
                 Some(stage_label),
-                enriched_detail.as_deref(),
+                None,
                 None,
             );
         } else {
@@ -304,7 +233,7 @@ impl RunDiagnostics {
                 kind,
                 message,
                 Some(stage_label),
-                enriched_detail.as_deref(),
+                None,
             );
         }
         if let Some(ms) = foreground_wait_ms {
@@ -334,15 +263,14 @@ impl RunDiagnostics {
             "slow_foreground_wait",
             &wait.message,
             Some(label),
-            Some(&wait.detail),
+            None,
         );
     }
 
-    pub fn timing_started(&self, stage: crate::DiagnosticStage, name: &str, detail: Option<&str>) {
+    pub fn timing_started(&self, stage: crate::DiagnosticStage, name: &str, _detail: Option<&str>) {
         let stage_label = stage.as_str();
         let key = timing_key(stage_label, name);
         locked(&self.timing_starts).insert(key, Instant::now());
-        let event_detail = timing_detail(name, None, detail);
         let span = self.current_stage_span(stage);
         let _entered = span.as_ref().map(tracing::Span::enter);
         crate::observability::emit_progress_event(
@@ -350,20 +278,16 @@ impl RunDiagnostics {
             "timing_started",
             &format!("{name} started"),
             Some(stage_label),
-            Some(&event_detail),
+            None,
         );
     }
 
-    pub fn timing_done(&self, stage: crate::DiagnosticStage, name: &str, detail: Option<&str>) {
+    pub fn timing_done(&self, stage: crate::DiagnosticStage, name: &str, _detail: Option<&str>) {
         let stage_label = stage.as_str();
         let key = timing_key(stage_label, name);
         let elapsed_ms = locked(&self.timing_starts)
             .remove(&key)
             .map(|start| start.elapsed().as_millis() as u64);
-        if let Some(ms) = elapsed_ms {
-            locked(&self.metrics).push_timing_duration(format!("{stage_label}/{name}"), ms);
-        }
-        let event_detail = timing_detail(name, elapsed_ms, detail);
         let span = self.current_stage_span(stage);
         let _entered = span.as_ref().map(tracing::Span::enter);
         crate::observability::emit_progress_event(
@@ -371,7 +295,7 @@ impl RunDiagnostics {
             "timing_done",
             &format!("{name} done"),
             Some(stage_label),
-            Some(&event_detail),
+            None,
         );
         if let Some(ms) = elapsed_ms {
             self.explain_foreground_wait(&key, ms);
@@ -396,36 +320,15 @@ impl RunDiagnostics {
         }
     }
 
-    /// Emit a summary event at the end of the run with per-stage wall-clock durations.
+    /// Close any unfinished in-memory timing state and emit a bounded summary event.
     pub fn emit_run_summary(&self) {
-        let durations_snapshot: Vec<(String, u64)> = {
-            let durs = locked(&self.stage_durations_ms);
-            durs.clone()
-        };
-        let stage_durations: serde_json::Value = durations_snapshot
-            .iter()
-            .map(|(s, ms)| (s.clone(), serde_json::Value::from(*ms)))
-            .collect::<serde_json::Map<_, _>>()
-            .into();
-        let metrics = locked(&self.metrics).clone();
         let unclosed = self.drain_unclosed_keys();
-        let summary = serde_json::json!({
-            "stage_durations_ms": stage_durations,
-            "stage_duration_histograms_ms": metrics.stage_duration_ms,
-            "timing_duration_histograms_ms": metrics.timing_duration_ms,
-            "stage_duration_dropped": metrics.stage_duration_dropped,
-            "timing_duration_dropped": metrics.timing_duration_dropped,
-            "event_counts": metrics.event_counts,
-            "cache_hits": metrics.cache_hits,
-            "cache_misses": metrics.cache_misses,
-        })
-        .to_string();
         crate::observability::emit_progress_event(
             &self.run_id,
             "run_summary",
-            "stage durations and counters",
+            "invocation progress completed",
             None,
-            Some(&summary),
+            None,
         );
         if !unclosed.is_empty() {
             crate::observability::emit_progress_event(
@@ -484,128 +387,53 @@ impl RunDiagnostics {
         true
     }
 
-    /// Emit a structured `container_started` event.
-    ///
-    /// Call this immediately after the `docker run -d` succeeds. Records the
-    /// container name and the host path of the capsule diagnostics log so an
-    /// agent reading the run JSONL can follow the pointer without knowing the
-    /// on-disk layout.
-    pub fn container_started(&self, container_name: &str, capsule_log_path: &str) {
-        let detail = serde_json::json!({
-            "container_name": container_name,
-            "capsule_log": capsule_log_path,
-        })
-        .to_string();
-        crate::observability::emit_progress_event(
-            &self.run_id,
-            "container_started",
-            &format!("container {container_name} started"),
-            Some(container_name),
-            Some(&detail),
-        );
-    }
-
     /// Emit a structured `container_exited` or `container_crash` event.
     ///
     /// Call this when the container exits non-normally (pre-attach crash,
     /// OOM kill, or non-zero post-attach exit). For clean `exit 0` post-attach
     /// shutdowns, no event is needed.
     ///
-    /// `crash_evidence` is the last N lines of `docker logs` or the
-    /// Capsule process-log tail — passed in by the caller which already fetched
-    /// it for the user-facing error message. When `crash_evidence` is `Some`,
-    /// an additional `container_crash_log` event is written so the full cause
-    /// is self-contained in the run JSONL.
-    pub fn container_exited(
-        &self,
-        container_name: &str,
-        exit_code: i64,
-        oom_killed: bool,
-        capsule_log_path: &str,
-        crash_evidence: Option<&str>,
-    ) {
-        let detail = serde_json::json!({
-            "container_name": container_name,
-            "exit_code": exit_code,
-            "oom_killed": oom_killed,
-            "capsule_log": capsule_log_path,
-        })
-        .to_string();
+    pub fn container_exited(&self, exit_code: i64, oom_killed: bool) {
         let kind = if exit_code != 0 || oom_killed {
             "container_crash"
         } else {
             "container_exited"
         };
         let msg = if oom_killed {
-            format!("container {container_name} OOM killed")
+            "container OOM killed".to_owned()
         } else {
-            format!("container {container_name} exited (exit {exit_code})")
+            format!("container exited (exit {exit_code})")
         };
         if kind == "container_crash" {
-            crate::observability::emit_progress_error(
-                &self.run_id,
-                kind,
-                &msg,
-                Some(container_name),
-                Some(&detail),
-            );
+            crate::observability::emit_progress_error(&self.run_id, kind, &msg, None, None);
         } else {
-            crate::observability::emit_progress_event(
-                &self.run_id,
-                kind,
-                &msg,
-                Some(container_name),
-                Some(&detail),
-            );
-        }
-        if let Some(evidence) = crash_evidence.filter(|s| !s.is_empty()) {
-            let capped_evidence = cap_crash_evidence_for_export(evidence);
-            crate::observability::emit_progress_error(
-                &self.run_id,
-                "container_crash_log",
-                &format!("container {container_name} crash evidence"),
-                Some(container_name),
-                Some(&capped_evidence),
-            );
+            crate::observability::emit_progress_event(&self.run_id, kind, &msg, None, None);
         }
     }
 
     pub fn docker_build_step(
         &self,
-        step: &str,
-        label: &str,
-        duration_ms: Option<u64>,
-        cached: bool,
+        _step: &str,
+        _label: &str,
+        _duration_ms: Option<u64>,
+        _cached: bool,
     ) {
-        let detail = serde_json::json!({
-            "step": step,
-            "label": label,
-            "duration_ms": duration_ms,
-            "cached": cached,
-        })
-        .to_string();
         crate::observability::emit_progress_event(
             &self.run_id,
             "docker_build_step",
-            &format!("docker build step {step} {label}"),
-            Some("derived image"),
-            Some(&detail),
+            "docker build step completed",
+            None,
+            None,
         );
     }
 
-    pub fn subprocess_done(&self, program: &str, elapsed_ms: u64, exit_code: Option<i32>) {
-        let detail = serde_json::json!({
-            "program": program,
-            "elapsed_ms": elapsed_ms,
-            "exit_code": exit_code,
-        })
-        .to_string();
+    pub fn subprocess_done(&self, _program: &str, _elapsed_ms: u64, _exit_code: Option<i32>) {
         crate::observability::emit_progress_event(
             &self.run_id,
             "subprocess_done",
             "subprocess exited",
-            Some(program),
-            Some(&detail),
+            None,
+            None,
         );
     }
 }
@@ -750,12 +578,8 @@ fn launch_stage_span(stage: crate::DiagnosticStage) -> tracing::Span {
     span
 }
 
-/// A `slow_foreground_wait` diagnostic ready to emit. Named fields instead of a
-/// `(String, String)` tuple so the operator message and the JSON detail — both
-/// `String` — can't be transposed at the call site.
 struct SlowForegroundWait {
     message: String,
-    detail: String,
 }
 
 /// Build the `slow_foreground_wait` payload when `ms` exceeds `threshold`; `None`
@@ -771,28 +595,7 @@ fn slow_foreground_wait_payload(
     }
     let message =
         format!("{label} held the foreground launch path for {ms}ms (over {threshold}ms)");
-    let detail = serde_json::json!({
-        "label": label,
-        "duration_ms": ms,
-        "threshold_ms": threshold,
-    })
-    .to_string();
-    Some(SlowForegroundWait { message, detail })
-}
-
-fn timing_detail(name: &str, duration_ms: Option<u64>, detail: Option<&str>) -> String {
-    let mut value = serde_json::json!({ "name": name });
-    if let Some(ms) = duration_ms {
-        value["duration_ms"] = serde_json::Value::from(ms);
-    }
-    if let Some(detail) = detail.filter(|detail| !detail.is_empty()) {
-        value["detail"] = serde_json::Value::from(detail);
-    }
-    value.to_string()
-}
-
-fn cap_crash_evidence_for_export(evidence: &str) -> String {
-    crate::redact::redact_and_cap(evidence, CRASH_EVIDENCE_EXPORT_CAP)
+    Some(SlowForegroundWait { message })
 }
 
 impl jackin_core::LaunchDiagnostics for RunDiagnostics {

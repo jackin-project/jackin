@@ -370,9 +370,8 @@ fn emit_migration_result(
 /// Read `path`, run any pending migrations, write the result back atomically.
 ///
 /// Returns `Some(old_version)` when a migration ran, `None` when the file
-/// was already at `current_raw`. Records `{label} migrated {old} ->
-/// {current_raw}` in the run diagnostics log (debug runs only) — never on
-/// screen, since the operator did not ask for the upgrade. Wrappers
+/// was already at `current_raw`. Emits a governed configuration-operation event
+/// without configuration values or paths. Wrappers
 /// (e.g. `manifest::migrations::migrate_manifest_file`) project the
 /// `SchemaVersion` into display strings for callers that need to print
 /// both ends.
