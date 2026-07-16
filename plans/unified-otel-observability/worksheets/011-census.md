@@ -90,8 +90,8 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-usage/src/telemetry.rs` | 0 | 3 | 1 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-usage/src/token_monitor.rs` | 0 | 0 | 1 | 0 | 0 | 0 | REPLACE — `ResultTelemetryExt` emits typed `io_error`; collector absence owns behavior; provider labels, host paths, and raw errors prohibited |
 | `crates/jackin-usage/src/token_monitor/opencode.rs` | 0 | 0 | 3 | 0 | 0 | 0 | REPLACE — `ResultTelemetryExt` emits typed `db_error`; collector false outcome owns behavior; database path and raw errors prohibited |
-| `crates/jackin-usage/src/usage.rs` | 0 | 4 | 1 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
-| `crates/jackin-usage/src/usage/codex.rs` | 0 | 2 | 2 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
+| `crates/jackin-usage/src/usage.rs` | 0 | 4 | 1 | 0 | 0 | 0 | REPLACE remaining credential failures — typed `io_error`/`config_error`; expected absence stays silent; credential paths and raw errors prohibited |
+| `crates/jackin-usage/src/usage/codex.rs` | 0 | 2 | 2 | 0 | 0 | 0 | REPLACE remaining provider failures — typed `http_error`/`rpc_error`/`io_error`; config paths and raw dependency errors prohibited |
 | `crates/jackin-usage/src/usage/refresh.rs` | 0 | 9 | 2 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-usage/src/usage_snapshot_store.rs` | 0 | 0 | 1 | 0 | 0 | 0 | REPLACE — `ResultTelemetryExt` emits typed `db_error`; original upsert error remains the returned owner; raw rollback error prohibited |
 | `crates/jackin/src/console/effects.rs` | 14 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production census after the isolation, instance, host, image-fallback, launch-TUI, and usage-collector migration passes: 158 `telemetry_info!`, 261 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 433 sites remain open.
+Current production census after the isolation, instance, host, image-fallback, launch-TUI, and usage-collector migration passes: 155 `telemetry_info!`, 259 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 428 sites remain open.

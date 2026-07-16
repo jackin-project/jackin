@@ -22,6 +22,7 @@ use jackin_protocol::control::{
     AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView,
     StatusSlot, UsageConfidence, UsageProviderTab, UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
+use jackin_telemetry::ResultTelemetryExt as _;
 use serde::Serialize;
 
 mod format;
@@ -1000,37 +1001,19 @@ pub(crate) fn first_credential<T>(
     first_credential_with_path(paths, load).map(|(_, value)| value)
 }
 
-/// Read and parse a JSON credential/config file, distinguishing "absent"
-/// (expected — `None`, no log) from "present but broken" (a real error the
-/// operator must see — logged via the always-on governed INFO event, then `None`). The
-/// `.ok()?` idiom these loaders previously used collapsed both cases, so a
-/// corrupt or permission-denied token file looked identical to a logged-out
-/// provider and surfaced no diagnostic.
+/// Read and parse a JSON credential/config file, distinguishing expected
+/// absence from a present-but-broken typed telemetry error.
 pub(crate) fn read_json_file(path: &Path) -> Option<serde_json::Value> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
-        Err(error) => {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "usage credential read failed for {}: {error}",
-                    path.display()
-                );
-            }
-            return None;
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        result => result
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            .ok()?,
     };
-    match serde_json::from_str(&text) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "usage credential parse failed for {}: {error}",
-                path.display()
-            );
-            None
-        }
-    }
+    serde_json::from_str(&text)
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)
+        .ok()
 }
 
 /// Resolve a provider credential (with the winning path, for the `Auth:`

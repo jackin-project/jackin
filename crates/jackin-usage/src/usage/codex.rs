@@ -127,12 +127,7 @@ pub(crate) fn codex_snapshot(
     let (oauth_quota, oauth_error) = split_fetch(credentials.as_ref().map(|credentials| {
         fetch_codex_oauth_usage_refreshing(credentials, &codex_home).map(|mut usage| {
             usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
-                .inspect_err(|error| {
-                    jackin_diagnostics::telemetry_debug!(
-                        "capsule",
-                        "codex reset-credits fetch failed: {error}"
-                    );
-                })
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::HttpError)
                 .ok();
             usage
         })
@@ -775,11 +770,8 @@ pub(crate) fn fetch_codex_rpc_usage(
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )?;
-        // The account label is non-essential (rate limits already succeeded), so
-        // an RPC failure here degrades to no label rather than failing the whole
-        // snapshot. Logged at the firehose tier (visible at telemetry debug): an
-        // absent account is usually a legitimate plan shape, not a fault, so this
-        // does not warrant always-on governed INFO event noise on every refresh.
+        // The account label is non-essential, so a typed RPC failure degrades to
+        // no label rather than failing rate-limit collection.
         let account_value = codex_rpc_request(
             &mut stdin,
             &rx,
@@ -788,16 +780,7 @@ pub(crate) fn fetch_codex_rpc_usage(
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )
-        .inspect_err(|error| {
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "codex account/read RPC failed: {error}"
-            );
-            jackin_diagnostics::operation::telemetry_error_line(
-                jackin_telemetry::schema::enums::ErrorType::RpcError,
-                "codex account/read RPC failed",
-            );
-        })
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::RpcError)
         .ok();
         let limits = serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value)
             .map_err(|err| format!("Codex app-server rate limit decode failed: {err}"))?;
@@ -1039,19 +1022,10 @@ pub(crate) fn resolve_codex_reset_credits_url(codex_home: &Path) -> String {
 pub(crate) fn resolve_codex_base_url(codex_home: &Path) -> String {
     let config_path = codex_home.join("config.toml");
     let contents = match fs::read_to_string(&config_path) {
-        Ok(contents) => Some(contents),
-        Err(error) => {
-            // A config.toml that exists but is unreadable silently drops the
-            // operator's custom base-URL override back to the public default.
-            if error.kind() != std::io::ErrorKind::NotFound {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "codex config.toml read failed for {}: {error}",
-                    config_path.display()
-                );
-            }
-            None
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        result => result
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            .ok(),
     };
     let base = contents
         .and_then(|contents| parse_chatgpt_base_url(&contents))
