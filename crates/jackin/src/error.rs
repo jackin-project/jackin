@@ -181,7 +181,7 @@ pub enum JackinError {
     #[error("Worktree materialization conflict: {path}")]
     WorktreeConflict { path: String },
 
-    #[error("Unsupported OTLP protocol: {requested}")]
+    #[error("Unsupported OTLP protocol configured via {requested}")]
     UnsupportedOtlpProtocol { requested: String },
 }
 
@@ -284,7 +284,7 @@ impl JackinError {
                 "Unsupported OTLP protocol",
                 "jackin exports OTLP over gRPC only. Set OTEL_EXPORTER_OTLP_PROTOCOL=grpc (point OTEL_EXPORTER_OTLP_ENDPOINT at the gRPC endpoint, e.g. http://localhost:4317), or unset the OTLP endpoint vars to disable export.",
             ).with_detail(format!(
-                "Requested protocol {requested:?} via OTEL_EXPORTER_OTLP_*_PROTOCOL; supported: grpc."
+                "Unsupported value configured via {requested}; supported: grpc."
             )),
         }
     }

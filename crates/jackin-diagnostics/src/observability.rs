@@ -177,7 +177,7 @@ pub fn otlp_runtime_active_for_test() -> bool {
 pub fn unsupported_otlp_protocol() -> Option<String> {
     let env = |key: &str| std::env::var(key).ok();
     match config::resolve_otlp_config(&env) {
-        Err(config::OtlpConfigError::UnsupportedProtocol { value, .. }) => Some(value),
+        Err(config::OtlpConfigError::UnsupportedProtocol { variable }) => Some(variable.to_owned()),
         _ => None,
     }
 }
@@ -390,24 +390,27 @@ mod otlp {
                 .lock()
                 .expect("shutdown order lock")
                 .push("tracer");
-            let trace_shutdown = with_remaining(deadline, |timeout| {
-                self.tracer.shutdown_with_timeout(timeout)
+            let tracer = self.tracer.clone();
+            let trace_shutdown = sdk_operation_before(deadline, move |timeout| {
+                tracer.shutdown_with_timeout(timeout)
             });
             #[cfg(test)]
             SHUTDOWN_ORDER
                 .lock()
                 .expect("shutdown order lock")
                 .push("logger");
-            let log_shutdown = with_remaining(deadline, |timeout| {
-                self.logger.shutdown_with_timeout(timeout)
+            let logger = self.logger.clone();
+            let log_shutdown = sdk_operation_before(deadline, move |timeout| {
+                logger.shutdown_with_timeout(timeout)
             });
             #[cfg(test)]
             SHUTDOWN_ORDER
                 .lock()
                 .expect("shutdown order lock")
                 .push("meter");
-            let metric_shutdown = with_remaining(deadline, |timeout| {
-                self.meter.shutdown_with_timeout(timeout)
+            let meter = self.meter.clone();
+            let metric_shutdown = sdk_operation_before(deadline, move |timeout| {
+                meter.shutdown_with_timeout(timeout)
             });
             let failed = trace_flush
                 .err()
@@ -440,39 +443,76 @@ mod otlp {
             let tracer = self.tracer.clone();
             let logger = self.logger.clone();
             let meter = self.meter.clone();
-            let traces = jackin_telemetry::spawn::thread_joined(move || tracer.force_flush());
-            let logs = jackin_telemetry::spawn::thread_joined(move || logger.force_flush());
-            let metrics = jackin_telemetry::spawn::thread_joined(move || meter.force_flush());
-            let join =
-                |handle: std::thread::JoinHandle<opentelemetry_sdk::error::OTelSdkResult>| {
-                    handle
+            let traces = FlushTask::spawn(move || tracer.force_flush());
+            let logs = FlushTask::spawn(move || logger.force_flush());
+            let metrics = FlushTask::spawn(move || meter.force_flush());
+            (
+                traces.finish_before(deadline),
+                logs.finish_before(deadline),
+                metrics.finish_before(deadline),
+            )
+        }
+    }
+
+    struct FlushTask {
+        receiver: std::sync::mpsc::Receiver<opentelemetry_sdk::error::OTelSdkResult>,
+        handle: std::thread::JoinHandle<()>,
+    }
+
+    impl FlushTask {
+        fn spawn(
+            operation: impl FnOnce() -> opentelemetry_sdk::error::OTelSdkResult + Send + 'static,
+        ) -> Self {
+            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+            let handle = jackin_telemetry::spawn::thread_joined(move || {
+                drop(sender.send(operation()));
+            });
+            Self { receiver, handle }
+        }
+
+        fn finish_before(self, deadline: std::time::Instant) -> Result<(), String> {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                retain_flush_worker(self.handle);
+                return Err("telemetry flush budget exhausted".to_owned());
+            }
+            match self.receiver.recv_timeout(remaining) {
+                Ok(result) => {
+                    self.handle
                         .join()
-                        .map_err(|_| "telemetry flush worker panicked".to_owned())?
-                        .map_err(|_| "telemetry flush failed".to_owned())
-                };
-            let results = (join(traces), join(logs), join(metrics));
-            if std::time::Instant::now() > deadline {
-                let exhausted = || Err("telemetry flush budget exhausted".to_owned());
-                (exhausted(), exhausted(), exhausted())
-            } else {
-                results
+                        .map_err(|_| "telemetry flush worker panicked".to_owned())?;
+                    result.map_err(|_| "telemetry flush failed".to_owned())
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    retain_flush_worker(self.handle);
+                    Err("telemetry flush budget exhausted".to_owned())
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => self
+                    .handle
+                    .join()
+                    .map_err(|_| "telemetry flush worker panicked".to_owned())
+                    .and(Err("telemetry flush failed".to_owned())),
             }
         }
     }
 
-    fn with_remaining<F>(deadline: std::time::Instant, operation: F) -> Result<(), String>
+    fn sdk_operation_before<F>(deadline: std::time::Instant, operation: F) -> Result<(), String>
     where
-        F: FnOnce(std::time::Duration) -> opentelemetry_sdk::error::OTelSdkResult,
+        F: FnOnce(std::time::Duration) -> opentelemetry_sdk::error::OTelSdkResult + Send + 'static,
     {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        let expired = remaining.is_zero();
-        let result = operation(remaining.max(std::time::Duration::from_millis(1)))
-            .map_err(|_| "telemetry shutdown failed".to_owned());
-        if expired || std::time::Instant::now() > deadline {
-            Err("telemetry shutdown budget exhausted".to_owned())
-        } else {
-            result
+        if remaining.is_zero() {
+            return Err("telemetry shutdown budget exhausted".to_owned());
         }
+        FlushTask::spawn(move || operation(remaining))
+            .finish_before(deadline)
+            .map_err(|error| {
+                if error == "telemetry flush failed" {
+                    "telemetry shutdown failed".to_owned()
+                } else {
+                    error
+                }
+            })
     }
 
     #[cfg(test)]
@@ -511,7 +551,10 @@ mod otlp {
         Ok(())
     }
 
+    static ACTIVATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     static PROVIDERS: std::sync::Mutex<Option<OtlpProviders>> = std::sync::Mutex::new(None);
+    static PENDING_FLUSH_WORKERS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+        std::sync::Mutex::new(Vec::new());
     #[cfg(test)]
     static SHUTDOWN_ORDER: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
 
@@ -523,8 +566,6 @@ mod otlp {
     /// a single run's telemetry volume.
     static OTEL_RUNTIME: std::sync::Mutex<Option<tokio::runtime::Runtime>> =
         std::sync::Mutex::new(None);
-    static PENDING_TEARDOWNS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
-        std::sync::Mutex::new(Vec::new());
     #[cfg(any(test, feature = "test-support"))]
     static OTEL_RUNTIME_CREATIONS: std::sync::atomic::AtomicU64 =
         std::sync::atomic::AtomicU64::new(0);
@@ -560,6 +601,21 @@ mod otlp {
         {
             runtime.shutdown_background();
         }
+    }
+
+    fn ensure_inactive() -> anyhow::Result<()> {
+        if PROVIDERS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_some()
+            || OTEL_RUNTIME
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_some()
+        {
+            anyhow::bail!("OTLP providers are already active");
+        }
+        Ok(())
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -633,10 +689,7 @@ mod otlp {
             && !sampler.trim().is_empty()
             && sampler.trim() != "parentbased_always_on"
         {
-            anyhow::bail!(
-                "OTEL_TRACES_SAMPLER={} conflicts with required parentbased_always_on",
-                sampler.trim()
-            );
+            anyhow::bail!("OTEL_TRACES_SAMPLER conflicts with required parentbased_always_on");
         }
         for var in [
             "OTEL_EXPORTER_OTLP_COMPRESSION",
@@ -648,7 +701,7 @@ mod otlp {
                 && !value.trim().is_empty()
                 && value.trim() != "gzip"
             {
-                anyhow::bail!("{var}={} is unsupported; expected gzip", value.trim());
+                anyhow::bail!("{var} is unsupported; expected gzip");
             }
         }
         for var in [
@@ -998,6 +1051,10 @@ mod otlp {
         identity: ServiceIdentity,
         endpoints: &OtlpEndpoints,
     ) -> anyhow::Result<()> {
+        let _activation = ACTIVATION_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        ensure_inactive()?;
         let resource = build_resource_for(identity);
         let (tracer_provider, logger_provider, app_handle) =
             match build_otlp_providers(resource.clone(), endpoints) {
@@ -1092,6 +1149,10 @@ mod otlp {
         _traceparent: Option<&str>,
         config: &super::config::OtlpConfig,
     ) -> anyhow::Result<()> {
+        let _activation = ACTIVATION_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        ensure_inactive()?;
         let resource = build_resource_for(ServiceIdentity::CAPSULE);
         let endpoints = OtlpEndpoints::from_config(config);
         let (tracer_provider, logger_provider, app_handle) =
@@ -1187,14 +1248,17 @@ mod otlp {
         meter: Option<&SdkMeterProvider>,
     ) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        drop(with_remaining(deadline, |timeout| {
+        let tracer = tracer.clone();
+        drop(sdk_operation_before(deadline, move |timeout| {
             tracer.shutdown_with_timeout(timeout)
         }));
-        drop(with_remaining(deadline, |timeout| {
+        let logger = logger.clone();
+        drop(sdk_operation_before(deadline, move |timeout| {
             logger.shutdown_with_timeout(timeout)
         }));
         if let Some(meter) = meter {
-            drop(with_remaining(deadline, |timeout| {
+            let meter = meter.clone();
+            drop(sdk_operation_before(deadline, move |timeout| {
                 meter.shutdown_with_timeout(timeout)
             }));
         }
@@ -1606,7 +1670,10 @@ mod otlp {
     }
 
     pub(super) fn shutdown() {
-        reap_teardowns();
+        let _activation = ACTIVATION_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        reap_flush_workers();
         let providers = PROVIDERS.lock().ok().and_then(|mut slot| slot.take());
         let generation = providers.as_ref().map(|providers| providers.generation);
         let runtime = OTEL_RUNTIME.lock().ok().and_then(|mut slot| slot.take());
@@ -1614,51 +1681,35 @@ mod otlp {
             return;
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        let handle = jackin_telemetry::spawn::thread_joined(move || {
-            let mut succeeded = true;
-            if let Some(providers) = providers {
-                succeeded = providers.flush_and_shutdown(deadline);
+        let mut succeeded = providers
+            .as_ref()
+            .is_none_or(|providers| providers.flush_and_shutdown(deadline));
+        if let Some(runtime) = runtime {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                succeeded = false;
             }
-            if let Some(runtime) = runtime {
-                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-                if remaining.is_zero() {
-                    succeeded = false;
-                    runtime.shutdown_background();
-                } else {
-                    runtime.shutdown_timeout(remaining);
-                }
-            }
-            if sender.send(succeeded).is_err() {
-                // The caller exhausted its budget; the governed worker still
-                // owns and completes exporter/runtime teardown.
-            }
-            if let Some(generation) = generation {
-                health::record_shutdown(generation, succeeded);
-            }
-        });
-        if let Ok(succeeded) =
-            receiver.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
-        {
-            let joined = handle.join().is_ok();
-            if (!succeeded || !joined)
-                && let Some(generation) = generation
-            {
-                health::record_shutdown(generation, false);
-            }
-        } else {
-            if let Some(generation) = generation {
+            runtime.shutdown_timeout(remaining);
+        }
+        let timed_out = std::time::Instant::now() >= deadline;
+        if let Some(generation) = generation {
+            if timed_out {
                 health::record_shutdown_timeout(generation);
             }
-            PENDING_TEARDOWNS
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(handle);
+            health::record_shutdown(generation, succeeded && !timed_out);
         }
+        reap_flush_workers();
     }
 
-    fn reap_teardowns() {
-        let mut pending = PENDING_TEARDOWNS
+    fn retain_flush_worker(handle: std::thread::JoinHandle<()>) {
+        PENDING_FLUSH_WORKERS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(handle);
+    }
+
+    fn reap_flush_workers() {
+        let mut pending = PENDING_FLUSH_WORKERS
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut unfinished = Vec::new();

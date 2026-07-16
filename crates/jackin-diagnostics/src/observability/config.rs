@@ -43,22 +43,11 @@ pub(super) struct TlsConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum OtlpConfigError {
     MissingSignalEndpoint(&'static str),
-    UnsupportedProtocol {
-        variable: &'static str,
-        value: String,
-    },
-    ConflictingSampler(String),
-    UnsupportedCompression {
-        variable: &'static str,
-        value: String,
-    },
-    InvalidTimeout {
-        variable: &'static str,
-        value: String,
-    },
-    InvalidHeaders {
-        variable: &'static str,
-    },
+    UnsupportedProtocol { variable: &'static str },
+    ConflictingSampler,
+    UnsupportedCompression { variable: &'static str },
+    InvalidTimeout { variable: &'static str },
+    InvalidHeaders { variable: &'static str },
     InvalidResourceAttribute,
     InvalidEndpoint(&'static str),
     EmptyValue(&'static str),
@@ -74,21 +63,21 @@ impl fmt::Display for OtlpConfigError {
                     "OTLP {signal} endpoint is required when telemetry is enabled"
                 )
             }
-            Self::UnsupportedProtocol { variable, value } => write!(
+            Self::UnsupportedProtocol { variable } => write!(
                 f,
-                "{variable}={value} is unsupported; jackin exports OTLP over grpc only"
+                "{variable} is unsupported; jackin exports OTLP over grpc only"
             ),
-            Self::ConflictingSampler(value) => write!(
+            Self::ConflictingSampler => write!(
                 f,
-                "OTEL_TRACES_SAMPLER={value} conflicts with required parentbased_always_on"
+                "OTEL_TRACES_SAMPLER conflicts with required parentbased_always_on"
             ),
-            Self::UnsupportedCompression { variable, value } => {
-                write!(f, "{variable}={value} is unsupported; expected gzip")
+            Self::UnsupportedCompression { variable } => {
+                write!(f, "{variable} is unsupported; expected gzip")
             }
-            Self::InvalidTimeout { variable, value } => {
+            Self::InvalidTimeout { variable } => {
                 write!(
                     f,
-                    "{variable}={value} must be a positive integer millisecond timeout"
+                    "{variable} must be a positive integer millisecond timeout"
                 )
             }
             Self::InvalidHeaders { variable } => {
@@ -233,7 +222,7 @@ fn validate_protocols(env: &impl Fn(&str) -> Option<String>) -> Result<(), OtlpC
         if let Some(value) = nonempty(env(variable))
             && value.trim() != "grpc"
         {
-            return Err(OtlpConfigError::UnsupportedProtocol { variable, value });
+            return Err(OtlpConfigError::UnsupportedProtocol { variable });
         }
     }
     Ok(())
@@ -243,7 +232,7 @@ fn validate_sampler(env: &impl Fn(&str) -> Option<String>) -> Result<(), OtlpCon
     if let Some(value) = nonempty(env("OTEL_TRACES_SAMPLER"))
         && value.trim() != "parentbased_always_on"
     {
-        return Err(OtlpConfigError::ConflictingSampler(value));
+        return Err(OtlpConfigError::ConflictingSampler);
     }
     Ok(())
 }
@@ -258,7 +247,7 @@ fn validate_compression(env: &impl Fn(&str) -> Option<String>) -> Result<(), Otl
         if let Some(value) = nonempty(env(variable))
             && value.trim() != "gzip"
         {
-            return Err(OtlpConfigError::UnsupportedCompression { variable, value });
+            return Err(OtlpConfigError::UnsupportedCompression { variable });
         }
     }
     Ok(())
@@ -280,10 +269,7 @@ fn parse_timeout(
         .parse::<u64>()
         .ok()
         .filter(|millis| *millis > 0)
-        .ok_or_else(|| OtlpConfigError::InvalidTimeout {
-            variable,
-            value: value.clone(),
-        })?;
+        .ok_or(OtlpConfigError::InvalidTimeout { variable })?;
     Ok(Duration::from_millis(millis.min(5_000)))
 }
 

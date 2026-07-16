@@ -129,6 +129,10 @@ name = "wire_failure_slow"
 required-features = ["test-support"]
 
 [[test]]
+name = "wire_reentry"
+required-features = ["test-support"]
+
+[[test]]
 name = "wire_propagation"
 required-features = ["test-support"]
 

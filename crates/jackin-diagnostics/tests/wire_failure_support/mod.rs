@@ -17,6 +17,7 @@ pub(crate) fn assert_scripted_response(
         &testbed.endpoint(),
         jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
     )?;
+    let before = jackin_diagnostics::telemetry_health_snapshot();
 
     let operation =
         jackin_telemetry::root_operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
@@ -32,10 +33,38 @@ pub(crate) fn assert_scripted_response(
 
     let result = jackin_diagnostics::flush_wire_test_export();
     assert_eq!(result.is_ok(), flush_succeeds);
+    let flushed = jackin_diagnostics::telemetry_health_snapshot();
+    assert_signal_delta(before.traces, flushed.traces, flush_succeeds);
+    assert_signal_delta(before.logs, flushed.logs, flush_succeeds);
+    assert_signal_delta(before.metrics, flushed.metrics, flush_succeeds);
+    assert_eq!(flushed.export_attempts, before.export_attempts + 3);
+    assert_eq!(
+        flushed.export_successes,
+        before.export_successes + if flush_succeeds { 3 } else { 0 }
+    );
+    assert_eq!(
+        flushed.export_failures,
+        before.export_failures + if flush_succeeds { 0 } else { 3 }
+    );
     drop(runtime_guard);
     assert_eq!(testbed.traces().len(), expected_requests);
     assert_eq!(testbed.logs().len(), expected_requests);
     assert_eq!(testbed.metrics().len(), expected_requests);
     jackin_diagnostics::shutdown_capsule_tracing();
+    let shutdown = jackin_diagnostics::telemetry_health_snapshot();
+    assert_eq!(shutdown.active_signals, 0);
+    assert!(shutdown.shutdown_completed);
+    assert_eq!(shutdown.shutdown_succeeded, flush_succeeds);
+    assert!(!shutdown.shutdown_timed_out);
     Ok(())
+}
+
+fn assert_signal_delta(
+    before: jackin_diagnostics::TelemetrySignalHealth,
+    after: jackin_diagnostics::TelemetrySignalHealth,
+    succeeded: bool,
+) {
+    assert_eq!(after.attempts, before.attempts + 1);
+    assert_eq!(after.successes, before.successes + u64::from(succeeded));
+    assert_eq!(after.failures, before.failures + u64::from(!succeeded));
 }

@@ -54,7 +54,7 @@ fn protocol_sampler_compression_and_timeout_are_typed() {
     ));
     assert_eq!(
         resolve(&[endpoint, ("OTEL_TRACES_SAMPLER", "always_off")]),
-        Err(OtlpConfigError::ConflictingSampler("always_off".to_owned()))
+        Err(OtlpConfigError::ConflictingSampler)
     );
     assert!(matches!(
         resolve(&[endpoint, ("OTEL_EXPORTER_OTLP_COMPRESSION", "none")]),
@@ -64,6 +64,33 @@ fn protocol_sampler_compression_and_timeout_are_typed() {
         resolve(&[endpoint, ("OTEL_EXPORTER_OTLP_TIMEOUT", "zero")]),
         Err(OtlpConfigError::InvalidTimeout { .. })
     ));
+}
+
+#[test]
+fn invalid_scalar_configuration_never_echoes_values() {
+    let endpoint = ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317");
+    for (variable, secret) in [
+        ("OTEL_EXPORTER_OTLP_PROTOCOL", "secret-protocol"),
+        ("OTEL_TRACES_SAMPLER", "secret-sampler"),
+        ("OTEL_EXPORTER_OTLP_COMPRESSION", "secret-compression"),
+        ("OTEL_EXPORTER_OTLP_TIMEOUT", "secret-timeout"),
+    ] {
+        let oversized = format!("{secret}-{}", "x".repeat(16_384));
+        let values = HashMap::from([
+            (endpoint.0, endpoint.1.to_owned()),
+            (variable, oversized.clone()),
+        ]);
+        let error = resolve_otlp_config(&|key| values.get(key).cloned())
+            .expect_err("invalid configuration must fail");
+        let rendered = error.to_string();
+        assert!(rendered.contains(variable), "{rendered}");
+        assert!(!rendered.contains(secret), "{rendered}");
+        assert!(
+            rendered.len() < 256,
+            "unbounded error: {} bytes",
+            rendered.len()
+        );
+    }
 }
 
 #[test]

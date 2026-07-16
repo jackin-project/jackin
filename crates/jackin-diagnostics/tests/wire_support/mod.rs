@@ -14,6 +14,7 @@ pub(crate) fn assert_three_signal_delivery(
     let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
     let runtime_guard = runtime.enter();
     jackin_diagnostics::init_wire_test_export(&testbed.endpoint(), identity)?;
+    let before = jackin_diagnostics::telemetry_health_snapshot();
 
     let operation =
         jackin_telemetry::root_operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
@@ -40,6 +41,19 @@ pub(crate) fn assert_three_signal_delivery(
     drop(span_guard);
     operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
     jackin_diagnostics::flush_wire_test_export()?;
+    let flushed = jackin_diagnostics::telemetry_health_snapshot();
+    for (before, after) in [
+        (before.traces, flushed.traces),
+        (before.logs, flushed.logs),
+        (before.metrics, flushed.metrics),
+    ] {
+        assert_eq!(after.attempts, before.attempts + 1);
+        assert_eq!(after.successes, before.successes + 1);
+        assert_eq!(after.failures, before.failures);
+    }
+    assert_eq!(flushed.export_attempts, before.export_attempts + 3);
+    assert_eq!(flushed.export_successes, before.export_successes + 3);
+    assert_eq!(flushed.export_failures, before.export_failures);
     drop(runtime_guard);
     assert!(
         runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))),
@@ -114,6 +128,11 @@ pub(crate) fn assert_three_signal_delivery(
         assert_resource_contract(resource, identity.service_name);
     }
     jackin_diagnostics::shutdown_capsule_tracing();
+    let shutdown = jackin_diagnostics::telemetry_health_snapshot();
+    assert_eq!(shutdown.active_signals, 0);
+    assert!(shutdown.shutdown_completed);
+    assert!(shutdown.shutdown_succeeded);
+    assert!(!shutdown.shutdown_timed_out);
     std::env::set_current_dir(original_dir)?;
     assert!(
         std::fs::read_dir(home.path())?.next().is_none(),
