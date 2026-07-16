@@ -15,6 +15,11 @@ on:
         required: false
         default: '["jackin","jackin-agent-status","jackin-build-meta","jackin-capsule","jackin-config","jackin-console","jackin-console-oppicker","jackin-core","jackin-dev","jackin-diagnostics","jackin-docker","jackin-env","jackin-host","jackin-image","jackin-instance","jackin-isolation","jackin-launch-tui","jackin-manifest","jackin-pr-trailers","jackin-process","jackin-protocol","jackin-runtime","jackin-term","jackin-test-support","jackin-usage","jackin-xtask"]'
         type: string
+      package-cache-keys-json:
+        description: JSON object mapping crate names to forward-dependency cache keys.
+        required: false
+        default: '{}'
+        type: string
       all-features:
         description: Run each package with all Cargo features enabled.
         required: true
@@ -119,9 +124,9 @@ jobs:
             target/**/jackin
             target/**/jackin-*
             target/**/jackin_*
-          key: workspace-crate-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'crates/**/Cargo.toml', 'crates/**/src/**', 'crates/**/tests/**', 'crates/**/benches/**', 'crates/**/fuzz/**', 'docker/runtime/**') }}
+          key: workspace-crate-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] || github.sha }}
           restore-keys: |
-            workspace-crate-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
+            workspace-crate-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
       - name: Run package tests
         shell: bash
         run: |

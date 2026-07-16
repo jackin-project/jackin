@@ -14,11 +14,23 @@ fn graph() -> WorkspaceGraph {
             ("app-id".into(), PathBuf::from("crates/app")),
             ("tool-id".into(), PathBuf::from("crates/tool")),
         ]),
+        dependencies: BTreeMap::from([
+            ("runtime-id".into(), BTreeSet::from(["core-id".into()])),
+            ("app-id".into(), BTreeSet::from(["runtime-id".into()])),
+        ]),
         dependents: BTreeMap::from([
             ("core-id".into(), BTreeSet::from(["runtime-id".into()])),
             ("runtime-id".into(), BTreeSet::from(["app-id".into()])),
         ]),
     }
+}
+
+#[test]
+fn cache_closure_follows_workspace_dependencies() {
+    assert_eq!(
+        graph().forward_closure("app-id"),
+        BTreeSet::from(["app-id".into(), "core-id".into(), "runtime-id".into()])
+    );
 }
 
 #[test]

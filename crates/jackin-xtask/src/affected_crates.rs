@@ -1,11 +1,13 @@
 //! Select CI test crates from changed paths and workspace dependencies.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use clap::Args;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 use crate::cmd;
 
@@ -20,6 +22,9 @@ pub(crate) struct AffectedCratesArgs {
     /// Select every workspace crate (for manual/full CI runs).
     #[arg(long)]
     all: bool,
+    /// Emit a JSON object of crate names to dependency-closure cache keys.
+    #[arg(long)]
+    cache_keys: bool,
 }
 
 #[derive(Deserialize)]
@@ -55,6 +60,7 @@ struct Dependency {
 struct WorkspaceGraph {
     names: BTreeMap<String, String>,
     roots: BTreeMap<String, PathBuf>,
+    dependencies: BTreeMap<String, BTreeSet<String>>,
     dependents: BTreeMap<String, BTreeSet<String>>,
 }
 
@@ -68,13 +74,12 @@ pub(crate) fn run(args: AffectedCratesArgs) -> Result<()> {
         graph.affected(&changed_paths(base, &args.head)?)
     };
 
-    #[expect(
-        clippy::print_stdout,
-        reason = "the command's stdout is its machine-readable CI output"
-    )]
-    {
-        println!("{}", serde_json::to_string(&selected)?);
-    }
+    let output = if args.cache_keys {
+        serde_json::to_string(&graph.cache_keys(&selected, &args.head)?)?
+    } else {
+        serde_json::to_string(&selected)?
+    };
+    writeln!(io::stdout().lock(), "{output}").context("writing affected crate JSON")?;
     Ok(())
 }
 
@@ -131,6 +136,7 @@ impl WorkspaceGraph {
         }
 
         let mut dependents = BTreeMap::<String, BTreeSet<String>>::new();
+        let mut dependencies = BTreeMap::<String, BTreeSet<String>>::new();
         let resolve = metadata
             .resolve
             .context("cargo metadata omitted resolve graph")?;
@@ -140,6 +146,10 @@ impl WorkspaceGraph {
             }
             for dependency in node.deps {
                 if names.contains_key(&dependency.pkg) {
+                    dependencies
+                        .entry(node.id.clone())
+                        .or_default()
+                        .insert(dependency.pkg.clone());
                     dependents
                         .entry(dependency.pkg)
                         .or_default()
@@ -150,6 +160,7 @@ impl WorkspaceGraph {
         Ok(Self {
             names,
             roots,
+            dependencies,
             dependents,
         })
     }
@@ -193,6 +204,72 @@ impl WorkspaceGraph {
         names.sort();
         names
     }
+
+    fn cache_keys(&self, selected: &[String], head: &str) -> Result<BTreeMap<String, String>> {
+        let ids_by_name = self
+            .names
+            .iter()
+            .map(|(id, name)| (name.as_str(), id.as_str()))
+            .collect::<BTreeMap<_, _>>();
+        let mut tree_ids = BTreeMap::new();
+        for (id, root) in &self.roots {
+            tree_ids.insert(id, git_object_id(head, root)?);
+        }
+        let global_ids = [
+            Path::new("Cargo.lock"),
+            Path::new("Cargo.toml"),
+            Path::new("rust-toolchain.toml"),
+            Path::new(".cargo"),
+        ]
+        .into_iter()
+        .map(|path| git_object_id(head, path))
+        .collect::<Result<Vec<_>>>()?;
+
+        selected
+            .iter()
+            .map(|name| {
+                let id = ids_by_name
+                    .get(name.as_str())
+                    .with_context(|| format!("selected crate {name} is absent from metadata"))?;
+                let closure = self.forward_closure(id);
+                let mut hash = Sha256::new();
+                for object_id in &global_ids {
+                    hash.update(object_id.as_bytes());
+                }
+                for dependency in closure {
+                    hash.update(
+                        tree_ids
+                            .get(&dependency)
+                            .context("workspace dependency has no Git tree id")?
+                            .as_bytes(),
+                    );
+                }
+                Ok((name.clone(), hex::encode(hash.finalize())))
+            })
+            .collect()
+    }
+
+    fn forward_closure(&self, root: &str) -> BTreeSet<String> {
+        let mut selected = BTreeSet::from([root.to_owned()]);
+        let mut queue = VecDeque::from([root.to_owned()]);
+        while let Some(package) = queue.pop_front() {
+            for dependency in self.dependencies.get(&package).into_iter().flatten() {
+                if selected.insert(dependency.clone()) {
+                    queue.push_back(dependency.clone());
+                }
+            }
+        }
+        selected
+    }
+}
+
+fn git_object_id(head: &str, path: &Path) -> Result<String> {
+    let revision = format!("{head}:{}", path.to_string_lossy());
+    Ok(
+        cmd::output_string(cmd::command("git").args(["rev-parse", &revision]))?
+            .trim()
+            .to_owned(),
+    )
 }
 
 fn is_workspace_wide(path: &Path) -> bool {

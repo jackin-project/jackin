@@ -334,6 +334,7 @@ jobs:
     name: cargo registry warmup (${{ matrix.config.lane }})
     outputs:
       affected-packages: ${{ steps.affected-crates.outputs.packages }}
+      package-cache-keys: ${{ steps.affected-crates.outputs.cache-keys }}
     env:
       CARGO_TARGET_DIR: target/ci-xtask
       CARGO_TERM_COLOR: always
@@ -473,16 +474,21 @@ jobs:
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             packages=$(target/ci-tools/jackin-xtask affected-crates --all)
+            cache_keys=$(target/ci-tools/jackin-xtask affected-crates --all --cache-keys)
           elif [ -n "$BASE_REF" ]; then
             git fetch --no-tags --depth=1 origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
             packages=$(target/ci-tools/jackin-xtask affected-crates --base "origin/$BASE_REF")
+            cache_keys=$(target/ci-tools/jackin-xtask affected-crates --base "origin/$BASE_REF" --cache-keys)
           elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
             packages=$(target/ci-tools/jackin-xtask affected-crates --base "$BEFORE_SHA")
+            cache_keys=$(target/ci-tools/jackin-xtask affected-crates --base "$BEFORE_SHA" --cache-keys)
           else
             packages=$(target/ci-tools/jackin-xtask affected-crates --all)
+            cache_keys=$(target/ci-tools/jackin-xtask affected-crates --all --cache-keys)
           fi
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          echo "cache-keys=$cache_keys" >> "$GITHUB_OUTPUT"
       - name: Publish resolved CI tool binaries
         if: >-
           steps.ci-tools-artifact.outputs.hit != 'true' &&
@@ -736,6 +742,7 @@ jobs:
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       packages-json: ${{ needs.cargo-registry-warmup.outputs.affected-packages }}
+      package-cache-keys-json: ${{ needs.cargo-registry-warmup.outputs.package-cache-keys }}
       all-features: true
       cache-shared-key: ci-all-features-dev-workspace-v2
       save-target-cache: false
