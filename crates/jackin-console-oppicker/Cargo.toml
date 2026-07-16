@@ -14,7 +14,7 @@ crossterm = { workspace = true }
 jackin-core = { workspace = true }
 jackin-diagnostics = { workspace = true }
 termrock = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync"] }
 tui-widget-list = { workspace = true }
 
 [lints]

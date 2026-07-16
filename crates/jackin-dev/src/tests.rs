@@ -153,7 +153,9 @@ fn path_only_prep_explains_capsule_dependency_without_checkout() {
     assert!(!auto.construct.required);
     assert_eq!(
         auto.capsule.reasons,
-        vec!["crates/jackin-capsule/src/tui/components.rs: jackin-capsule is used by jackin-capsule"]
+        vec![
+            "crates/jackin-capsule/src/tui/components.rs: jackin-capsule is used by jackin-capsule"
+        ]
     );
 }
 
