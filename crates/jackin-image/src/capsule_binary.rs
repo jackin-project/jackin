@@ -175,8 +175,6 @@ fn record(kind: &str, message: &str) {
     let _ = message;
     if let Some(run) = jackin_diagnostics::active_run() {
         run.compact(kind, kind);
-    } else {
-        jackin_diagnostics::telemetry_debug!("capsule_binary", "{kind}");
     }
 }
 

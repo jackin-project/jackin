@@ -53,8 +53,8 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-docker/src/net.rs` | 4 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-host/src/caffeinate.rs` | 1 | 0 | 0 | 0 | 0 | 0 | DELETE — command result and typed error own teardown semantics; process identifiers prohibited |
 | `crates/jackin-host/src/host_clipboard.rs` | 2 | 0 | 0 | 0 | 0 | 0 | DELETE — return value owns implicit-paste resolution; host paths prohibited |
-| `crates/jackin-image/src/agent_binary.rs` | 8 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-image/src/capsule_binary.rs` | 11 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-image/src/agent_binary.rs` | 8 | 0 | 0 | 0 | 0 | 0 | DELETE generic fallback — registered cache/download boundaries and active-run compact records own semantics; agent/version/URL/path/error detail prohibited |
+| `crates/jackin-image/src/capsule_binary.rs` | 11 | 0 | 0 | 0 | 0 | 0 | DELETE generic fallback — registered cache boundary and active-run compact records own semantics; version/architecture/path detail prohibited |
 | `crates/jackin-image/src/image_build.rs` | 2 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-image/src/image_decision.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-instance/src/auth.rs` | 7 | 0 | 0 | 0 | 0 | 0 | DELETE — typed auth outcome owns semantics; credential paths, CLI stderr, and credential-file parse details prohibited |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production census after the isolation, instance, and host deletion passes: 158 `telemetry_info!`, 269 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 441 sites remain open.
+Current production census after the isolation, instance, host, and image-fallback deletion passes: 158 `telemetry_info!`, 267 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 439 sites remain open.
