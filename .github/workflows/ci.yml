@@ -738,7 +738,9 @@ jobs:
       packages-json: ${{ needs.cargo-registry-warmup.outputs.affected-packages }}
       package-cache-keys-json: ${{ needs.cargo-registry-warmup.outputs.package-cache-keys }}
       all-features: true
-      cache-shared-key: ci-all-features-dev-workspace-v2
+      # First immutable family populated after every crate-specific profile
+      # (test, default, clippy, powerset, bench, fuzz, and MSRV) was consolidated.
+      cache-shared-key: ci-crate-complete-deps-v1
       save-target-cache: false
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
