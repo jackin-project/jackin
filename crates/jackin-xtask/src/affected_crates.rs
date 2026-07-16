@@ -79,7 +79,10 @@ fn cargo_metadata() -> Result<Metadata> {
 }
 
 fn changed_paths(base: &str, head: &str) -> Result<Vec<PathBuf>> {
-    let range = format!("{base}...{head}");
+    // CI checks out the PR merge result and fetches only the base tip. A
+    // two-tree diff is exact for that shape and avoids downloading history
+    // solely to reconstruct a merge base.
+    let range = format!("{base}..{head}");
     let output =
         cmd::output(cmd::command("git").args(["diff", "--name-only", "-z", &range, "--"]))?;
     output
