@@ -9,6 +9,7 @@ pub mod launch_output;
 pub mod output;
 pub mod progress;
 pub mod standalone_dialog_sink;
+pub mod terminal_protocol;
 pub mod tui;
 
 pub use launch_output::LaunchTuiOutputSink;

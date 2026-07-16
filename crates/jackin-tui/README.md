@@ -14,7 +14,7 @@ Cross-surface jackin❯ product presentation shared by the console, launch, and 
 
 ## Architecture tier and allowed dependencies
 
-**L1 presentation.** Workspace deps: `jackin-core`. External: `termrock`, `ratatui`, `crossterm`.
+**L1 presentation.** Workspace deps: `jackin-brand`, `jackin-core`. External: `termrock`, `ratatui`, `crossterm`.
 
 ## Structure
 

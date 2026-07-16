@@ -32,6 +32,7 @@ name = "jackin-capsule"
 path = "src/main.rs"
 
 [dependencies]
+jackin-brand = { workspace = true }
 anyhow = { workspace = true }
 jackin-agent-status = { workspace = true }
 jackin-core = { workspace = true }

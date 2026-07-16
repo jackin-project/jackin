@@ -35,6 +35,7 @@ use crate::report::{self, FormatArgs};
 /// ownership headers against this table.
 pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-core", 0),
+    ("jackin-brand", 0),
     ("jackin-dev", 0),
     ("jackin-process", 0),
     ("jackin-term", 0),

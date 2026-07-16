@@ -2,21 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "jackin-tui"
+name = "jackin-brand"
 version = "0.6.0-dev"
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-crossterm = { workspace = true }
-jackin-brand = { workspace = true }
-jackin-core = { workspace = true }
-ratatui = { workspace = true }
-termrock = { workspace = true }
+owo-colors = { workspace = true, features = ["supports-colors"] }
 
 [lints]
 workspace = true

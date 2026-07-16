@@ -14,17 +14,18 @@ colors (brand pill, menu chips, status accents) live in `jackin_tui::tokens`.
 
 Product-owned tokens only — brand pill, launch rain, debug amber, blocked status,
 menu button states, action/disclosure accents, and light-bar `LINK_BLUE` — live
-in `jackin-core`'s `host_colors.rs` and are adapted in `tui_theme.rs`. Never
+as renderer-neutral RGB values in `jackin-brand` and are adapted for Ratatui by
+`jackin_tui::tokens`. Never
 define a second surface-local palette, and never import raw shared phosphor or
 neutral RGB constants for generic TUI painting.
 
 | Source | Examples | Usage |
 |---|---|---|
-| TermRock `Role` | `Text`, `TextStrong`, `TextMuted`, `Border`, `BorderFocused`, `Accent`, `Danger`, `Warning`, `Tab*`, `Link*`, `Scroll*` | Shared presentation via `Theme::default().style(role)` or `tui_theme` helpers |
+| TermRock `Role` | `Text`, `TextStrong`, `TextMuted`, `Border`, `BorderFocused`, `Accent`, `Danger`, `Warning`, `Tab*`, `Link*`, `Scroll*` | Shared presentation via `Theme::default().style(role)` |
 | Product tokens | `BRAND_BLOCK`, `DEBUG_AMBER`, `STATUS_BLOCKED_RED`, `MENU_*`, `ACTION_ACCENT`, `DISCLOSURE_ACCENT`, `LINK_BLUE`, rain RGB | Brand chrome and domain/agent states only |
 | TermRock escape hatch | `termrock::style::PHOSPHOR_GREEN`, `PREVIEW_CARD` | When the documented preset color itself is required (rare) |
 
-**No inline `Color::Rgb(...)` literals outside `host_colors.rs` / `tui_theme.rs`.**
+**No inline product `Color::Rgb(...)` literals outside `jackin_tui::tokens`.**
 Lookbook preview cards use TermRock's `PREVIEW_CARD` token.
 
 ### Background fills use the terminal default, never forced black

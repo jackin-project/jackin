@@ -9,13 +9,14 @@ Launch cockpit TUI — the presentation surface for `jackin load`. Renders build
 
 ## Architecture tier and allowed dependencies
 
-**Presentation crate.** Allowed workspace dependencies include `jackin-core`, `jackin-diagnostics`, TermRock, and `jackin-build-meta`. No runtime or infrastructure dependencies — it renders progress events emitted by `jackin-runtime`; it does not orchestrate.
+**Presentation crate.** Allowed workspace dependencies include `jackin-brand`, `jackin-core`, `jackin-diagnostics`, TermRock, and `jackin-build-meta`. No runtime or infrastructure dependencies — it renders progress events emitted by `jackin-runtime`; it does not orchestrate.
 
 ## Structure
 
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`terminal_protocol.rs`](src/terminal_protocol.rs) | typed TermRock OSC encoding for the host launch adapter | — |
 | [`progress.rs`](src/progress.rs) · [`progress/`](src/progress) | `LaunchProgress` stage machine + test renderer | [`tests.rs`](src/progress/tests.rs) |
 | [`launch_output.rs`](src/launch_output.rs) | launch output streaming | — |
 | [`build_log.rs`](src/build_log.rs) | build-log streaming | — |

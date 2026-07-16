@@ -62,7 +62,7 @@ or a parallel TUI model/update/view. Calling this boundary `adapter` is
 mandatory; a second root `console/tui/` tree would falsely claim presentation
 ownership and is rejected by the architecture gate.
 
-`jackin-core` remains terminal-library-free. It owns product facts and raw domain tokens, never Ratatui, Crossterm, or TermRock types.
+`jackin-core` remains terminal-library-free and owns domain facts, never product palettes, Ratatui, Crossterm, or TermRock types. Renderer-neutral identity tokens live in `jackin-brand`; `jackin-tui` adapts the TUI subset to Ratatui.
 
 **Single-screen crate layout** (`jackin-capsule`, `jackin-launch`):
 ```

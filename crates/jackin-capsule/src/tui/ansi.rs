@@ -1,6 +1,6 @@
 //! Capsule-local raw ANSI helpers.
 
-use jackin_core::Rgb;
+use jackin_brand::Rgb;
 use std::io::Write as _;
 use termrock::{Theme, style::Role};
 

@@ -12,7 +12,7 @@ This crate is broad by design; the code-health program tracks decomposing it int
 
 ## Architecture tier and allowed dependencies
 
-**L1 application / orchestration.** Allowed workspace dependencies: `jackin-core`, `jackin-config`, `jackin-env`, `jackin-manifest`, `jackin-docker`, `jackin-image`, `jackin-diagnostics`, `jackin-launch`, `jackin-host`, `jackin-protocol`, `jackin-isolation`, `jackin-instance`, `jackin-build-meta`. Host attach uses `crossterm` for raw mode only. Launch TUI presentation and its product tests live in `jackin-launch` / `jackin-tui` — not here.
+**L1 application / orchestration.** Allowed workspace dependencies: `jackin-brand`, `jackin-core`, `jackin-config`, `jackin-env`, `jackin-manifest`, `jackin-docker`, `jackin-image`, `jackin-diagnostics`, `jackin-launch`, `jackin-host`, `jackin-protocol`, `jackin-isolation`, `jackin-instance`, `jackin-build-meta`. Host attach uses `crossterm` for raw mode only. Launch TUI presentation and its product tests live in `jackin-launch` / `jackin-tui` — not here.
 
 ## Structure
 

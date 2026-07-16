@@ -5,8 +5,8 @@ use super::*;
 
 #[test]
 fn adapters_preserve_product_rgb_tokens() {
-    assert_eq!(BRAND_BLOCK, color(jackin_core::BRAND_BLOCK));
-    assert_eq!(DEBUG_AMBER, color(jackin_core::DEBUG_AMBER));
-    assert_eq!(STATUS_BLOCKED_RED, color(jackin_core::STATUS_BLOCKED_RED));
-    assert_eq!(ACTION_ACCENT, color(jackin_core::ACTION_ACCENT));
+    assert_eq!(BRAND_BLOCK, color(jackin_brand::BRAND_BLOCK));
+    assert_eq!(DEBUG_AMBER, color(jackin_brand::DEBUG_AMBER));
+    assert_eq!(STATUS_BLOCKED_RED, color(jackin_brand::STATUS_BLOCKED_RED));
+    assert_eq!(ACTION_ACCENT, color(jackin_brand::ACTION_ACCENT));
 }

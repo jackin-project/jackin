@@ -6,7 +6,7 @@ Shared jackin❯ vocabulary and pure cross-surface projections. This L0 leaf has
 
 - Domain nouns every other crate speaks in: agent identity, instance, isolation, manifest fragments, env model, status, launch progress, operator notices.
 - Ports, constants, paths, and selector/URL/path helpers reused by higher crates.
-- Small self-contained ANSI and product brand/domain RGB tokens (`host_colors`) used by CLI/spinner and re-exported by presentation.
+- Renderer-neutral product identity tokens live in [`jackin-brand`](../jackin-brand/); terminal protocol encoding and Ratatui adapters live in their presentation owners.
 
 Cross-surface **product presentation** (Debug-info paint, product brand/domain Ratatui tokens, shared product chrome composition) lives in [`jackin-tui`](../jackin-tui/), not here.
 
@@ -41,8 +41,6 @@ Cross-surface **product presentation** (Debug-info paint, product brand/domain R
 | [`docker_security.rs`](src/docker_security.rs) · [`docker_security/`](src/docker_security) | docker security | [`tests.rs`](src/docker_security/tests.rs) |
 | [`debug_log.rs`](src/debug_log.rs) | `debug_log` stub | — |
 | [`build_log_sink.rs`](src/build_log_sink.rs) | build-log sink stub | — |
-| [`host_colors.rs`](src/host_colors.rs) | product brand/domain RGB tokens | — |
-| [`ansi_tokens.rs`](src/ansi_tokens.rs) | ansi tokens | — |
 | [`standalone_dialog.rs`](src/standalone_dialog.rs) · [`standalone_dialog/`](src/standalone_dialog) | standalone dialog **port** (trait + sink; render impl in `jackin-launch`) | [`tests.rs`](src/standalone_dialog/tests.rs) |
 | [`url_text.rs`](src/url_text.rs) | url text | — |
 | [`path_text.rs`](src/path_text.rs) · [`path_text/`](src/path_text) | path text | [`tests.rs`](src/path_text/tests.rs) |

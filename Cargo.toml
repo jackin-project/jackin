@@ -6,6 +6,7 @@ members = [
     "crates/jackin",
     "crates/jackin-agent-status",
     "crates/jackin-build-meta",
+    "crates/jackin-brand",
     "crates/jackin-capsule",
     "crates/jackin-config",
     "crates/jackin-console",
@@ -64,6 +65,7 @@ futures-util = "0.3"
 hex = "0.4"
 insta = "=1.48.0"
 jackin-build-meta = { version = "0.6.0-dev", path = "crates/jackin-build-meta" }
+jackin-brand = { version = "0.6.0-dev", path = "crates/jackin-brand" }
 jackin-agent-status = { version = "0.6.0-dev", path = "crates/jackin-agent-status" }
 jackin-config = { version = "0.6.0-dev", path = "crates/jackin-config" }
 jackin-console = { version = "0.6.0-dev", path = "crates/jackin-console" }

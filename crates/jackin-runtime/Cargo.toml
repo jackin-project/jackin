@@ -18,6 +18,7 @@ name = "jackin_runtime"
 path = "src/lib.rs"
 
 [dependencies]
+jackin-brand = { workspace = true }
 jackin-core = { workspace = true }
 jackin-config = { workspace = true }
 jackin-env = { workspace = true }

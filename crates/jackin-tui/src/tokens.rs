@@ -6,7 +6,7 @@
 //! Neutral presentation is resolved directly through TermRock semantic roles
 //! by each consumer. This module deliberately contains no theme facade.
 
-use jackin_core::{
+use jackin_brand::{
     ACTION_ACCENT as ACTION_ACCENT_RGB, BRAND_BLOCK as BRAND_BLOCK_RGB, CYAN as CYAN_RGB,
     CYAN_DIM as CYAN_DIM_RGB, DEBUG_AMBER as DEBUG_AMBER_RGB,
     DISCLOSURE_ACCENT as DISCLOSURE_ACCENT_RGB, LINK_BLUE as LINK_BLUE_RGB,
