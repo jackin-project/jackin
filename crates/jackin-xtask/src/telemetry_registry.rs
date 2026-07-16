@@ -574,9 +574,10 @@ fn generate_attributes(
             "// registry-type: {kind}\npub const {constant}: &str = \"{id}\";\n"
         ));
         output.push_str(&format!(
-            "pub const {constant}_DEF: super::AttributeMetadata = super::AttributeMetadata {{ name: {constant}, description: {:?}, value_type: super::ValueType::{} }};\n",
+            "pub const {constant}_DEF: super::AttributeMetadata = super::AttributeMetadata {{ name: {constant}, description: {:?}, value_type: super::ValueType::{}, allowed_values: {} }};\n",
             yaml_string(attribute, "brief")?,
-            value_type_variant(yaml_required(attribute, "type")?)?
+            value_type_variant(yaml_required(attribute, "type")?)?,
+            allowed_values(yaml_required(attribute, "type")?)?
         ));
         definitions.push(format!("{constant}_DEF"));
         names.push(constant);
@@ -792,6 +793,10 @@ fn generate_signal_constants(
                 "            requirement: super::RequirementLevel::{},\n",
                 rust_pascal(requirement_level_name(attribute))
             ));
+            output.push_str(&format!(
+                "            allowed_values: {},\n",
+                allowed_values(yaml_required(attribute, "type")?)?
+            ));
             output.push_str("        },\n");
         }
         output.push_str("    ],\n};\n");
@@ -965,6 +970,17 @@ fn value_type_variant(value: &YamlValue) -> Result<&'static str> {
         "string[]" => Ok("StringArray"),
         other => bail!("unsupported registry attribute type {other}"),
     }
+}
+
+fn allowed_values(value: &YamlValue) -> Result<String> {
+    let Some(members) = yaml_sequence(value, "members") else {
+        return Ok("&[]".to_owned());
+    };
+    let values = members
+        .iter()
+        .map(|member| yaml_string(member, "value").map(|value| format!("{value:?}")))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(format!("&[{}]", values.join(", ")))
 }
 
 fn requirement_level_name(attribute: &YamlValue) -> &str {

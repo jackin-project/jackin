@@ -132,6 +132,7 @@ pub const DB_CLIENT_OPERATION_DURATION_DEF: super::MetricMetadata = super::Metri
         name: "db.operation.name",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &[],
     }],
 };
 // registry: instrument=counter; unit={reuse}; attributes=
@@ -159,11 +160,32 @@ pub const LAUNCH_STAGE_DURATION_DEF: super::MetricMetadata = super::MetricMetada
             name: "launch.stage.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "identity",
+                "role",
+                "credentials",
+                "construct",
+                "agent_binaries",
+                "derived_image",
+                "workspace",
+                "network",
+                "sidecar",
+                "capsule",
+                "hardline",
+            ],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
@@ -244,11 +266,20 @@ pub const TELEMETRY_REJECTIONS_DEF: super::MetricMetadata = super::MetricMetadat
             name: "telemetry.rejection.reason",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "unknown_name",
+                "unknown_attribute",
+                "invalid_value",
+                "privacy",
+                "cardinality",
+                "size_limit",
+            ],
         },
         super::AttributeRequirement {
             name: "telemetry.signal",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["log", "trace", "metric"],
         },
     ],
 };
@@ -294,6 +325,7 @@ pub const TERMINAL_IO_BYTES_DEF: super::MetricMetadata = super::MetricMetadata {
         name: "stream.direction",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &["input", "output"],
     }],
 };
 // registry: instrument=counter; unit={cell}; attributes=
@@ -328,7 +360,7 @@ pub const TERMINAL_RENDER_FRAMES_DEF: super::MetricMetadata = super::MetricMetad
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=counter; unit={action}; attributes=
+// registry: instrument=counter; unit={action}; attributes=ui.action.name:required
 pub const UI_ACTIONS: &str = "ui.actions";
 pub const UI_ACTIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_ACTIONS,
@@ -336,9 +368,43 @@ pub const UI_ACTIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     instrument: super::MetricInstrument::Counter,
     unit: "{action}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "ui.action.name",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "workspace.open",
+            "workspace.save",
+            "workspace.launch",
+            "settings.open",
+            "settings.save",
+            "dialog.confirm",
+            "dialog.cancel",
+            "agent.select",
+            "agent.spawn",
+            "tab.switch",
+            "tab.rename",
+            "tab.close",
+            "pane.split",
+            "pane.focus",
+            "pane.resize",
+            "pane.zoom",
+            "pane.clear",
+            "pane.close",
+            "usage.refresh",
+            "session.detach",
+            "file.export",
+            "image.stage",
+            "link.open",
+            "app.exit_request",
+            "screen.back",
+            "workspace.create",
+            "workspace.delete",
+            "instance.purge",
+        ],
+    }],
 };
-// registry: instrument=histogram; unit=s; attributes=
+// registry: instrument=histogram; unit=s; attributes=app.widget.id:required
 pub const UI_FOCUS_DURATION: &str = "ui.focus.duration";
 pub const UI_FOCUS_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_FOCUS_DURATION,
@@ -348,9 +414,14 @@ pub const UI_FOCUS_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     boundaries: &[
         0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
     ],
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "app.widget.id",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[],
+    }],
 };
-// registry: instrument=counter; unit={crossing}; attributes=
+// registry: instrument=counter; unit={crossing}; attributes=app.screen.id:required
 pub const UI_JANK: &str = "ui.jank";
 pub const UI_JANK_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_JANK,
@@ -358,9 +429,14 @@ pub const UI_JANK_DEF: super::MetricMetadata = super::MetricMetadata {
     instrument: super::MetricInstrument::Counter,
     unit: "{crossing}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "app.screen.id",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[],
+    }],
 };
-// registry: instrument=histogram; unit=s; attributes=
+// registry: instrument=histogram; unit=s; attributes=app.screen.id:required
 pub const UI_RENDER_DURATION: &str = "ui.render.duration";
 pub const UI_RENDER_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_RENDER_DURATION,
@@ -370,9 +446,14 @@ pub const UI_RENDER_DURATION_DEF: super::MetricMetadata = super::MetricMetadata 
     boundaries: &[
         0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
     ],
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "app.screen.id",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[],
+    }],
 };
-// registry: instrument=histogram; unit=s; attributes=
+// registry: instrument=histogram; unit=s; attributes=app.screen.id:required,ui.transition.reason:required
 pub const UI_SCREEN_DWELL: &str = "ui.screen.dwell";
 pub const UI_SCREEN_DWELL_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_SCREEN_DWELL,
@@ -382,9 +463,32 @@ pub const UI_SCREEN_DWELL_DEF: super::MetricMetadata = super::MetricMetadata {
     boundaries: &[
         0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
     ],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "app.screen.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "ui.transition.reason",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "action",
+                "launch",
+                "attach",
+                "detach",
+                "back",
+                "cancel",
+                "completion",
+                "failure",
+                "shutdown",
+            ],
+        },
+    ],
 };
-// registry: instrument=counter; unit={transition}; attributes=
+// registry: instrument=counter; unit={transition}; attributes=app.screen.id:required,ui.transition.reason:required
 pub const UI_TRANSITIONS: &str = "ui.transitions";
 pub const UI_TRANSITIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_TRANSITIONS,
@@ -392,7 +496,30 @@ pub const UI_TRANSITIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     instrument: super::MetricInstrument::Counter,
     unit: "{transition}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "app.screen.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "ui.transition.reason",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "action",
+                "launch",
+                "attach",
+                "detach",
+                "back",
+                "cancel",
+                "completion",
+                "failure",
+                "shutdown",
+            ],
+        },
+    ],
 };
 
 pub const ALL: &[&str] = &[

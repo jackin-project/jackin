@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 
-use crate::{TELEMETRY_TARGET, health, limits, privacy, schema};
+use crate::{TELEMETRY_TARGET, health, limits, schema, validation};
 
 #[doc(hidden)]
 pub type PendingEventArrays = Vec<(&'static str, Vec<String>)>;
@@ -342,38 +342,11 @@ fn validate(def: &'static EventDef, fields: &FieldSet<'_>) -> Result<(), Rejecti
         return Err(Rejection::UnknownName);
     }
     limits::validate_name(def.name)?;
-    if fields.attrs.len() > limits::MAX_LOG_ATTRIBUTES {
-        return Err(Rejection::SizeLimit);
-    }
-    for attr in fields.attrs {
-        privacy::validate_key(attr.key)?;
-        limits::validate_value(&attr.value)?;
-    }
-    if !def.metadata.attributes.is_empty() {
-        for attr in fields.attrs {
-            let Some(requirement) = def
-                .metadata
-                .attributes
-                .iter()
-                .find(|requirement| requirement.name == attr.key)
-            else {
-                return Err(Rejection::UnknownAttribute);
-            };
-            if !value_matches_type(attr.value, requirement.value_type) {
-                return Err(Rejection::InvalidValue);
-            }
-        }
-        for requirement in def
-            .metadata
-            .attributes
-            .iter()
-            .filter(|requirement| requirement.requirement == schema::RequirementLevel::Required)
-        {
-            if !fields.attrs.iter().any(|attr| attr.key == requirement.name) {
-                return Err(Rejection::InvalidValue);
-            }
-        }
-    }
+    validation::attributes(
+        def.metadata.attributes,
+        fields.attrs,
+        limits::MAX_LOG_ATTRIBUTES,
+    )?;
     validate_config_schema_versions(fields)?;
     Ok(())
 }
@@ -397,27 +370,20 @@ fn validate_config_schema_versions(fields: &FieldSet<'_>) -> Result<(), Rejectio
     Ok(())
 }
 
-const fn value_matches_type(value: Value<'_>, expected: schema::ValueType) -> bool {
-    matches!(
-        (value, expected),
-        (Value::Str(_), schema::ValueType::String)
-            | (Value::Bool(_), schema::ValueType::Boolean)
-            | (Value::I64(_) | Value::U64(_), schema::ValueType::Integer)
-            | (Value::F64(_), schema::ValueType::Double)
-            | (Value::StrArray(_), schema::ValueType::StringArray)
-    )
-}
-
 macro_rules! emit_schema_event {
     ($name:literal, $severity:expr, $fields:expr, [$(($key:literal, $field:ident, $kind:ident)),* $(,)?]) => {{
         $(let $field = event_field_value!($fields, $key, $kind);)*
-        let body = $fields.body.unwrap_or("");
-        match $severity {
-            Severity::Trace => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, $($key = $field,)* message = body),
-            Severity::Debug => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, $($key = $field,)* message = body),
-            Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, $($key = $field,)* message = body),
-            Severity::Warn => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, $($key = $field,)* message = body),
-            Severity::Error => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, $($key = $field,)* message = body),
+        match ($severity, $fields.body) {
+            (Severity::Trace, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, $($key = $field,)* message = body),
+            (Severity::Debug, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, $($key = $field,)* message = body),
+            (Severity::Info, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, $($key = $field,)* message = body),
+            (Severity::Warn, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, $($key = $field,)* message = body),
+            (Severity::Error, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, $($key = $field,)* message = body),
+            (Severity::Trace, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, { $($key = $field,)* }),
+            (Severity::Debug, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, { $($key = $field,)* }),
+            (Severity::Info, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, { $($key = $field,)* }),
+            (Severity::Warn, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, { $($key = $field,)* }),
+            (Severity::Error, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, { $($key = $field,)* }),
         }
     }};
 }
@@ -436,9 +402,11 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
         return Ok(());
     }
     if let Err(reason) = validate(def, &fields) {
-        health::reject(reason);
+        health::reject(health::Signal::Log, reason);
         return Err(reason);
     }
-    with_event_arrays(&fields, || emit_registered_event(def, fields));
+    let body = fields.body.map(limits::redact_and_clamp);
+    let sanitized = FieldSet::new(fields.attrs, body.as_deref());
+    with_event_arrays(&sanitized, || emit_registered_event(def, sanitized));
     Ok(())
 }

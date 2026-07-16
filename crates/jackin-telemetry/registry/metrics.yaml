@@ -2,12 +2,12 @@ groups:
   - { id: metric.cli.invocations, type: metric, metric_name: cli.invocations, instrument: counter, unit: "{invocation}", brief: CLI invocations started., stability: development }
   - { id: metric.cli.duration, type: metric, metric_name: cli.duration, instrument: histogram, unit: s, brief: CLI invocation duration., stability: development }
   - { id: metric.cli.failures, type: metric, metric_name: cli.failures, instrument: counter, unit: "{failure}", brief: CLI invocations ending in failure., stability: development }
-  - { id: metric.ui.transitions, type: metric, metric_name: ui.transitions, instrument: counter, unit: "{transition}", brief: UI screen transitions., stability: development }
-  - { id: metric.ui.actions, type: metric, metric_name: ui.actions, instrument: counter, unit: "{action}", brief: Completed UI actions., stability: development }
-  - { id: metric.ui.screen.dwell, type: metric, metric_name: ui.screen.dwell, instrument: histogram, unit: s, brief: UI screen dwell duration., stability: development }
-  - { id: metric.ui.focus.duration, type: metric, metric_name: ui.focus.duration, instrument: histogram, unit: s, brief: UI widget focus duration., stability: development }
-  - { id: metric.ui.render.duration, type: metric, metric_name: ui.render.duration, instrument: histogram, unit: s, brief: UI render duration., stability: development }
-  - { id: metric.ui.jank, type: metric, metric_name: ui.jank, instrument: counter, unit: "{crossing}", brief: UI render jank threshold crossings., stability: development }
+  - { id: metric.ui.transitions, type: metric, metric_name: ui.transitions, instrument: counter, unit: "{transition}", brief: UI screen transitions., stability: development, attributes: [{ref: app.screen.id, requirement_level: required}, {ref: ui.transition.reason, requirement_level: required}] }
+  - { id: metric.ui.actions, type: metric, metric_name: ui.actions, instrument: counter, unit: "{action}", brief: Completed UI actions., stability: development, attributes: [{ref: ui.action.name, requirement_level: required}] }
+  - { id: metric.ui.screen.dwell, type: metric, metric_name: ui.screen.dwell, instrument: histogram, unit: s, brief: UI screen dwell duration., stability: development, attributes: [{ref: app.screen.id, requirement_level: required}, {ref: ui.transition.reason, requirement_level: required}] }
+  - { id: metric.ui.focus.duration, type: metric, metric_name: ui.focus.duration, instrument: histogram, unit: s, brief: UI widget focus duration., stability: development, attributes: [{ref: app.widget.id, requirement_level: required}] }
+  - { id: metric.ui.render.duration, type: metric, metric_name: ui.render.duration, instrument: histogram, unit: s, brief: UI render duration., stability: development, attributes: [{ref: app.screen.id, requirement_level: required}] }
+  - { id: metric.ui.jank, type: metric, metric_name: ui.jank, instrument: counter, unit: "{crossing}", brief: UI render jank threshold crossings., stability: development, attributes: [{ref: app.screen.id, requirement_level: required}] }
   - { id: metric.launch.stage.duration, type: metric, metric_name: launch.stage.duration, instrument: histogram, unit: s, brief: Launch stage duration., stability: development, attributes: [{ref: launch.stage.name, requirement_level: required}, {ref: outcome, requirement_level: required}] }
   - { id: metric.launch.cache.reuse, type: metric, metric_name: launch.cache.reuse, instrument: counter, unit: "{reuse}", brief: Launch cache reuse decisions., stability: development }
   - { id: metric.prewarm.jobs, type: metric, metric_name: prewarm.jobs, instrument: counter, unit: "{job}", brief: Detached prewarm jobs started., stability: development }

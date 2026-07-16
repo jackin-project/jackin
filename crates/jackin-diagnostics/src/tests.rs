@@ -396,9 +396,9 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
     assert!(
         logs.iter().any(|log| {
             log.record.event_name() == Some("capsule.session.detach")
-                && conformance_log_attr(&log.record, "outcome").as_deref() == Some("expected_close")
+                && conformance_log_attr(&log.record, "outcome").as_deref() == Some("cancellation")
         }),
-        "expected_close detach must come from capsule bootstrap"
+        "expected cancellation detach must come from capsule bootstrap"
     );
     assert!(
         export

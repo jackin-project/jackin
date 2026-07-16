@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::OnceLock};
 
 use crate::event::{Rejection, Value};
 
@@ -14,6 +14,22 @@ pub const MAX_STRING_ATTRIBUTE_BYTES: usize = 1024;
 pub const MAX_ARRAY_ELEMENTS: usize = 32;
 pub const MAX_NAME_BYTES: usize = 128;
 pub const MAX_CARDINALITY: usize = 256;
+
+type Redactor = for<'a> fn(&'a str) -> Cow<'a, str>;
+static REDACTOR: OnceLock<Redactor> = OnceLock::new();
+
+pub fn install_redactor(redactor: Redactor) {
+    let _already_installed = REDACTOR.set(redactor);
+}
+
+#[must_use]
+pub fn redact_and_clamp(body: &str) -> Cow<'_, str> {
+    clamp_body(body, |value| {
+        REDACTOR
+            .get()
+            .map_or(Cow::Borrowed(value), |redact| redact(value))
+    })
+}
 
 #[must_use]
 pub fn clamp_body<'a>(body: &'a str, redact: impl FnOnce(&'a str) -> Cow<'a, str>) -> Cow<'a, str> {

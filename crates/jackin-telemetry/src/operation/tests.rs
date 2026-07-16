@@ -8,10 +8,10 @@ use tracing_subscriber::prelude::*;
 
 use super::*;
 
-fn exported_status(
+fn exported_span(
     outcome: Option<schema::enums::OutcomeValue>,
     error_type: Option<&'static str>,
-) -> Status {
+) -> opentelemetry_sdk::trace::SpanData {
     let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
@@ -32,7 +32,13 @@ fn exported_status(
         .expect("export")
         .pop()
         .expect("span")
-        .status
+}
+
+fn exported_status(
+    outcome: Option<schema::enums::OutcomeValue>,
+    error_type: Option<&'static str>,
+) -> Status {
+    exported_span(outcome, error_type).status
 }
 
 #[test]
@@ -57,8 +63,38 @@ fn outcome_status_mapping_is_explicit() {
 }
 
 #[test]
-fn drop_records_cancellation_without_error_status() {
-    assert_eq!(exported_status(None, None), Status::Unset);
+fn abandoned_guard_records_instrumentation_fault() {
+    let span = exported_span(None, None);
+    assert!(matches!(span.status, Status::Error { .. }));
+    assert!(span.attributes.iter().any(|attribute| {
+        attribute.key.as_str() == schema::attrs::std_attrs::ERROR_TYPE
+            && attribute.value.as_str() == "telemetry_instrumentation_fault"
+    }));
+}
+
+#[test]
+fn rejected_initial_shape_exports_no_span() {
+    let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+    tracing::subscriber::with_default(subscriber, || {
+        assert_eq!(
+            operation(
+                &LAUNCH,
+                &[Attr {
+                    key: schema::attrs::LAUNCH_TARGET_KIND,
+                    value: Value::Str("not-registered"),
+                }]
+            )
+            .map(drop),
+            Err(Rejection::InvalidValue)
+        );
+    });
+    provider.force_flush().unwrap();
+    assert!(exporter.get_finished_spans().unwrap().is_empty());
 }
 
 #[test]

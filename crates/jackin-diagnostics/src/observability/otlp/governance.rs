@@ -23,16 +23,25 @@ impl<P: opentelemetry_sdk::logs::LogProcessor> opentelemetry_sdk::logs::LogProce
                 .is_some_and(|target| EXPORT_TARGETS.contains(&target.as_ref()));
         if governed {
             let Some(event_name) = record.event_name() else {
-                reject(jackin_telemetry::Rejection::UnknownName);
+                reject(
+                    jackin_telemetry::Signal::Log,
+                    jackin_telemetry::Rejection::UnknownName,
+                );
                 return;
             };
             let Some(canonical_severity) = jackin_telemetry::event::canonical_severity(event_name)
             else {
-                reject(jackin_telemetry::Rejection::UnknownName);
+                reject(
+                    jackin_telemetry::Signal::Log,
+                    jackin_telemetry::Rejection::UnknownName,
+                );
                 return;
             };
             if record.severity_number() != Some(otel_log_severity(canonical_severity)) {
-                reject(jackin_telemetry::Rejection::InvalidValue);
+                reject(
+                    jackin_telemetry::Signal::Log,
+                    jackin_telemetry::Rejection::InvalidValue,
+                );
                 return;
             }
             for (key, values) in jackin_telemetry::event::take_pending_event_arrays() {
@@ -46,14 +55,17 @@ impl<P: opentelemetry_sdk::logs::LogProcessor> opentelemetry_sdk::logs::LogProce
                     )),
                 );
             }
-        }
-        if governed
-            && record
-                .attributes_iter()
-                .any(|(key, _)| jackin_telemetry::privacy::validate_key(key.as_str()).is_err())
-        {
-            reject(jackin_telemetry::Rejection::UnknownAttribute);
-            return;
+            let Some(definition) = jackin_telemetry::schema::events::definition(event_name) else {
+                reject(
+                    jackin_telemetry::Signal::Log,
+                    jackin_telemetry::Rejection::UnknownName,
+                );
+                return;
+            };
+            if let Err(reason) = validate_log_record(record, definition) {
+                reject(jackin_telemetry::Signal::Log, reason);
+                return;
+            }
         }
         self.0.emit(record, instrumentation);
     }
@@ -89,14 +101,16 @@ impl<P: opentelemetry_sdk::trace::SpanProcessor> opentelemetry_sdk::trace::SpanP
     }
 
     fn on_end(&self, span: opentelemetry_sdk::trace::SpanData) {
-        if !jackin_telemetry::schema::spans::ALL.contains(&span.name.as_ref()) {
-            reject(jackin_telemetry::Rejection::UnknownName);
+        let Some(definition) = jackin_telemetry::schema::spans::definition(span.name.as_ref())
+        else {
+            reject(
+                jackin_telemetry::Signal::Trace,
+                jackin_telemetry::Rejection::UnknownName,
+            );
             return;
-        }
-        if span.attributes.iter().any(|attribute| {
-            jackin_telemetry::privacy::validate_key(attribute.key.as_str()).is_err()
-        }) {
-            reject(jackin_telemetry::Rejection::UnknownAttribute);
+        };
+        if let Err(reason) = validate_span(&span, definition) {
+            reject(jackin_telemetry::Signal::Trace, reason);
             return;
         }
         self.0.on_end(span);
@@ -118,8 +132,172 @@ impl<P: opentelemetry_sdk::trace::SpanProcessor> opentelemetry_sdk::trace::SpanP
     }
 }
 
-fn reject(rejection: jackin_telemetry::Rejection) {
-    jackin_telemetry::record_export_rejection(rejection);
+fn validate_log_record(
+    record: &opentelemetry_sdk::logs::SdkLogRecord,
+    definition: &jackin_telemetry::schema::EventMetadata,
+) -> Result<(), jackin_telemetry::Rejection> {
+    use opentelemetry::logs::AnyValue;
+
+    if record.attributes_iter().count() > jackin_telemetry::limits::MAX_LOG_ATTRIBUTES {
+        return Err(jackin_telemetry::Rejection::SizeLimit);
+    }
+    if matches!(record.body(), Some(AnyValue::String(body)) if body.as_str().len() > jackin_telemetry::limits::MAX_BODY_BYTES)
+    {
+        return Err(jackin_telemetry::Rejection::SizeLimit);
+    }
+    for (index, (key, value)) in record.attributes_iter().enumerate() {
+        if record
+            .attributes_iter()
+            .take(index)
+            .any(|(prior, _)| prior == key)
+        {
+            return Err(jackin_telemetry::Rejection::InvalidValue);
+        }
+        let Some(requirement) = definition
+            .attributes
+            .iter()
+            .find(|requirement| requirement.name == key.as_str())
+        else {
+            return Err(jackin_telemetry::Rejection::UnknownAttribute);
+        };
+        validate_log_value(key.as_str(), value, requirement)?;
+    }
+    validate_required(definition.attributes, |required| {
+        record
+            .attributes_iter()
+            .any(|(key, _)| key.as_str() == required)
+    })
+}
+
+fn validate_log_value(
+    key: &str,
+    value: &opentelemetry::logs::AnyValue,
+    requirement: &jackin_telemetry::schema::AttributeRequirement,
+) -> Result<(), jackin_telemetry::Rejection> {
+    use jackin_telemetry::schema::ValueType;
+    use opentelemetry::logs::AnyValue;
+
+    let valid_type = matches!(
+        (value, requirement.value_type),
+        (AnyValue::String(_), ValueType::String)
+            | (AnyValue::Boolean(_), ValueType::Boolean)
+            | (AnyValue::Int(_), ValueType::Integer)
+            | (AnyValue::Double(_), ValueType::Double)
+            | (AnyValue::ListAny(_), ValueType::StringArray)
+    );
+    if !valid_type {
+        return Err(jackin_telemetry::Rejection::InvalidValue);
+    }
+    let maximum = if matches!(key, "exception.message" | "exception.stacktrace") {
+        jackin_telemetry::limits::MAX_BODY_BYTES
+    } else {
+        jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES
+    };
+    match value {
+        AnyValue::String(value) if value.as_str().len() > maximum => {
+            Err(jackin_telemetry::Rejection::SizeLimit)
+        }
+        AnyValue::String(value)
+            if !requirement.allowed_values.is_empty()
+                && !requirement.allowed_values.contains(&value.as_str()) =>
+        {
+            Err(jackin_telemetry::Rejection::InvalidValue)
+        }
+        AnyValue::ListAny(values)
+            if values.len() > jackin_telemetry::limits::MAX_ARRAY_ELEMENTS
+                || values.iter().any(|value| {
+                    !matches!(value, AnyValue::String(item) if item.as_str().len() <= maximum)
+                }) =>
+        {
+            Err(jackin_telemetry::Rejection::SizeLimit)
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_span(
+    span: &opentelemetry_sdk::trace::SpanData,
+    definition: &jackin_telemetry::schema::SpanMetadata,
+) -> Result<(), jackin_telemetry::Rejection> {
+    if span.attributes.len() > jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES
+        || span.links.len() > jackin_telemetry::limits::MAX_SPAN_LINKS
+    {
+        return Err(jackin_telemetry::Rejection::SizeLimit);
+    }
+    for (index, attribute) in span.attributes.iter().enumerate() {
+        if span.attributes[..index]
+            .iter()
+            .any(|prior| prior.key == attribute.key)
+        {
+            return Err(jackin_telemetry::Rejection::InvalidValue);
+        }
+        if attribute.key.as_str() == jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE {
+            continue;
+        }
+        let Some(requirement) = definition
+            .attributes
+            .iter()
+            .find(|requirement| requirement.name == attribute.key.as_str())
+        else {
+            return Err(jackin_telemetry::Rejection::UnknownAttribute);
+        };
+        validate_span_value(&attribute.value, requirement)?;
+    }
+    validate_required(definition.attributes, |required| {
+        span.attributes
+            .iter()
+            .any(|attribute| attribute.key.as_str() == required)
+    })?;
+    Ok(())
+}
+
+fn validate_span_value(
+    value: &opentelemetry::Value,
+    requirement: &jackin_telemetry::schema::AttributeRequirement,
+) -> Result<(), jackin_telemetry::Rejection> {
+    use jackin_telemetry::schema::ValueType;
+    use opentelemetry::{Array, Value};
+    let valid = matches!(
+        (value, requirement.value_type),
+        (Value::String(_), ValueType::String)
+            | (Value::Bool(_), ValueType::Boolean)
+            | (Value::I64(_), ValueType::Integer)
+            | (Value::F64(_), ValueType::Double)
+            | (Value::Array(Array::String(_)), ValueType::StringArray)
+    );
+    if !valid {
+        return Err(jackin_telemetry::Rejection::InvalidValue);
+    }
+    if matches!(value, Value::String(value) if value.as_str().len() > jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES)
+    {
+        return Err(jackin_telemetry::Rejection::SizeLimit);
+    }
+    if matches!(value, Value::String(value) if !requirement.allowed_values.is_empty() && !requirement.allowed_values.contains(&value.as_str()))
+    {
+        return Err(jackin_telemetry::Rejection::InvalidValue);
+    }
+    Ok(())
+}
+
+fn validate_required(
+    requirements: &[jackin_telemetry::schema::AttributeRequirement],
+    mut contains: impl FnMut(&str) -> bool,
+) -> Result<(), jackin_telemetry::Rejection> {
+    if requirements
+        .iter()
+        .filter(|requirement| {
+            requirement.requirement == jackin_telemetry::schema::RequirementLevel::Required
+        })
+        .any(|requirement| !contains(requirement.name))
+    {
+        Err(jackin_telemetry::Rejection::InvalidValue)
+    } else {
+        Ok(())
+    }
+}
+
+fn reject(signal: jackin_telemetry::Signal, rejection: jackin_telemetry::Rejection) {
+    jackin_telemetry::record_export_rejection(signal, rejection);
 }
 
 const fn otel_log_severity(

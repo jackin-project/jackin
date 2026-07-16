@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
     time::Instant,
 };
 
@@ -12,17 +15,26 @@ use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
 use crate::{
     event::{Attr, Rejection, Value},
-    health, limits, privacy, schema,
+    health, limits, schema, validation,
 };
 
 #[derive(Clone, Copy, Debug)]
 pub struct SpanDef {
-    pub name: &'static str,
+    pub(crate) name: &'static str,
+    pub(crate) metadata: &'static schema::SpanMetadata,
 }
 
-pub const CLI_COMMAND: SpanDef = SpanDef {
-    name: schema::spans::CLI_COMMAND,
-};
+macro_rules! span_def {
+    ($constant:ident, $definition:ident) => {
+        pub const $constant: SpanDef = SpanDef {
+            name: schema::spans::$constant,
+            metadata: &schema::spans::$definition,
+        };
+    };
+}
+
+span_def!(CLI_COMMAND, CLI_COMMAND_DEF);
+/*
 pub const APP_STARTUP: SpanDef = SpanDef {
     name: schema::spans::APP_STARTUP,
 };
@@ -74,12 +86,33 @@ pub const RPC_SERVER: SpanDef = SpanDef {
 pub const TELEMETRY_VALIDATE: SpanDef = SpanDef {
     name: schema::spans::TELEMETRY_VALIDATE,
 };
+*/
+span_def!(APP_STARTUP, APP_STARTUP_DEF);
+span_def!(APP_SHUTDOWN, APP_SHUTDOWN_DEF);
+span_def!(UI_ACTION, UI_ACTION_DEF);
+span_def!(UI_SCREEN_TRANSITION, UI_SCREEN_TRANSITION_DEF);
+span_def!(UI_RENDER, UI_RENDER_DEF);
+span_def!(BACKGROUND_CYCLE, BACKGROUND_CYCLE_DEF);
+span_def!(PREWARM_SCHEDULE, PREWARM_SCHEDULE_DEF);
+span_def!(PREWARM_ATTEMPT, PREWARM_ATTEMPT_DEF);
+span_def!(CONNECTION_ATTEMPT, CONNECTION_ATTEMPT_DEF);
+span_def!(PROCESS_COMMAND, PROCESS_COMMAND_DEF);
+span_def!(LAUNCH, LAUNCH_DEF);
+span_def!(LAUNCH_STAGE, LAUNCH_STAGE_DEF);
+span_def!(HTTP_CLIENT, HTTP_CLIENT_DEF);
+span_def!(DB_CLIENT, DB_CLIENT_DEF);
+span_def!(RPC_CLIENT, RPC_CLIENT_DEF);
+span_def!(RPC_SERVER, RPC_SERVER_DEF);
+span_def!(TELEMETRY_VALIDATE, TELEMETRY_VALIDATE_DEF);
 
 #[derive(Debug)]
 pub struct OperationGuard {
+    definition: &'static SpanDef,
     span: Span,
     completed: AtomicBool,
     links: AtomicUsize,
+    attributes: AtomicUsize,
+    attribute_keys: Mutex<Vec<&'static str>>,
     rpc: Option<RpcLifecycle>,
 }
 
@@ -135,9 +168,12 @@ impl RpcLifecycle {
 impl OperationGuard {
     fn disabled() -> Self {
         Self {
+            definition: &TELEMETRY_VALIDATE,
             span: Span::none(),
             completed: AtomicBool::new(false),
             links: AtomicUsize::new(0),
+            attributes: AtomicUsize::new(0),
+            attribute_keys: Mutex::new(Vec::new()),
             rpc: None,
         }
     }
@@ -148,12 +184,24 @@ impl OperationGuard {
     }
 
     pub fn set_attr(&self, attr: Attr<'_>) -> Result<(), Rejection> {
-        if let Err(reason) =
-            privacy::validate_key(attr.key).and_then(|()| limits::validate_value(&attr.value))
-        {
-            health::reject(reason);
+        if let Err(reason) = validation::attribute(self.definition.metadata.attributes, attr) {
+            health::reject(health::Signal::Trace, reason);
             return Err(reason);
         }
+        let mut keys = self
+            .attribute_keys
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if keys.contains(&attr.key) {
+            health::reject(health::Signal::Trace, Rejection::InvalidValue);
+            return Err(Rejection::InvalidValue);
+        }
+        if self.attributes.load(Ordering::Relaxed) >= limits::MAX_SPAN_ATTRIBUTES - 2 {
+            health::reject(health::Signal::Trace, Rejection::SizeLimit);
+            return Err(Rejection::SizeLimit);
+        }
+        keys.push(attr.key);
+        self.attributes.fetch_add(1, Ordering::Relaxed);
         let value = match attr.value {
             Value::Str(value) => opentelemetry::Value::String(value.to_owned().into()),
             Value::Bool(value) => opentelemetry::Value::Bool(value),
@@ -173,7 +221,7 @@ impl OperationGuard {
     pub fn link(&self, context: &SpanContext) -> Result<(), Rejection> {
         if self.links.fetch_add(1, Ordering::Relaxed) >= limits::MAX_SPAN_LINKS {
             self.links.fetch_sub(1, Ordering::Relaxed);
-            health::reject(Rejection::SizeLimit);
+            health::reject(health::Signal::Trace, Rejection::SizeLimit);
             return Err(Rejection::SizeLimit);
         }
         self.span.add_link(context.clone());
@@ -190,19 +238,33 @@ impl OperationGuard {
         outcome: schema::enums::OutcomeValue,
         error_type: Option<&'static str>,
     ) {
+        let failure = matches!(
+            outcome,
+            schema::enums::OutcomeValue::Failure
+                | schema::enums::OutcomeValue::Error
+                | schema::enums::OutcomeValue::Timeout
+        );
+        let valid_error_type = error_type.filter(|value| {
+            schema::enums::ErrorType::ALL
+                .iter()
+                .any(|candidate| candidate.as_str() == *value)
+        });
+        let error_type = if failure && valid_error_type.is_none() {
+            health::reject(health::Signal::Trace, Rejection::InvalidValue);
+            Some("telemetry_instrumentation_fault")
+        } else {
+            valid_error_type
+        };
         self.span
             .set_attribute(schema::attrs::OUTCOME, outcome.as_str());
         if let Some(error_type) = error_type {
             self.span
                 .set_attribute(schema::attrs::std_attrs::ERROR_TYPE, error_type);
         }
-        if matches!(
-            outcome,
-            schema::enums::OutcomeValue::Failure
-                | schema::enums::OutcomeValue::Error
-                | schema::enums::OutcomeValue::Timeout
-        ) {
-            self.span.set_status(Status::error(outcome.as_str()));
+        if failure {
+            let description = limits::redact_and_clamp(error_type.unwrap_or(outcome.as_str()));
+            self.span
+                .set_status(Status::error(description.into_owned()));
         }
         if let Some(rpc) = &self.rpc {
             rpc.finish(outcome, error_type);
@@ -213,7 +275,10 @@ impl OperationGuard {
 impl Drop for OperationGuard {
     fn drop(&mut self) {
         if !self.completed.load(Ordering::Acquire) {
-            self.record_completion(schema::enums::OutcomeValue::Cancellation, None);
+            self.record_completion(
+                schema::enums::OutcomeValue::Error,
+                Some("telemetry_instrumentation_fault"),
+            );
         }
     }
 }
@@ -358,10 +423,6 @@ fn make_child_execution_span(name: &str) -> Option<Span> {
 }
 
 pub fn operation(def: &'static SpanDef, attrs: &[Attr<'_>]) -> Result<OperationGuard, Rejection> {
-    if attrs.len() > limits::MAX_SPAN_ATTRIBUTES {
-        health::reject(Rejection::SizeLimit);
-        return Err(Rejection::SizeLimit);
-    }
     operation_inner(def, attrs, false)
 }
 
@@ -403,18 +464,41 @@ fn operation_inner(
     attrs: &[Attr<'_>],
     root: bool,
 ) -> Result<OperationGuard, Rejection> {
-    if attrs.len() > limits::MAX_SPAN_ATTRIBUTES {
-        health::reject(Rejection::SizeLimit);
-        return Err(Rejection::SizeLimit);
+    let canonical = schema::spans::definition(def.name)
+        .filter(|metadata| {
+            metadata.name == def.metadata.name
+                && metadata.kind == def.metadata.kind
+                && metadata.description == def.metadata.description
+        })
+        .ok_or(Rejection::UnknownName);
+    let metadata = match canonical {
+        Ok(metadata) => metadata,
+        Err(reason) => {
+            health::reject(health::Signal::Trace, reason);
+            return Err(reason);
+        }
+    };
+    if attrs.iter().any(|attr| attr.key == schema::attrs::OUTCOME) {
+        health::reject(health::Signal::Trace, Rejection::InvalidValue);
+        return Err(Rejection::InvalidValue);
+    }
+    if let Err(reason) =
+        validation::attributes(metadata.attributes, attrs, limits::MAX_SPAN_ATTRIBUTES - 2)
+    {
+        health::reject(health::Signal::Trace, reason);
+        return Err(reason);
     }
     let Some(span) = make_span(def.name, root) else {
-        health::reject(Rejection::UnknownName);
+        health::reject(health::Signal::Trace, Rejection::UnknownName);
         return Err(Rejection::UnknownName);
     };
     let mut guard = OperationGuard {
+        definition: def,
         span,
         completed: AtomicBool::new(false),
         links: AtomicUsize::new(0),
+        attributes: AtomicUsize::new(0),
+        attribute_keys: Mutex::new(Vec::with_capacity(attrs.len())),
         rpc: None,
     };
     for attr in attrs {

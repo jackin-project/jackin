@@ -390,11 +390,37 @@ fn emit_process_subprocess_done(def: &'static EventDef, fields: FieldSet<'_>) {
 }
 
 fn emit_pty_exit(def: &'static EventDef, fields: FieldSet<'_>) {
-    emit_schema_event!("pty.exit", def.severity, fields, []);
+    emit_schema_event!(
+        "pty.exit",
+        def.severity,
+        fields,
+        [
+            ("gen_ai.agent.name", field_gen_ai_agent_name, String),
+            (
+                "gen_ai.conversation.id",
+                field_gen_ai_conversation_id,
+                String
+            ),
+            ("process.exit_code", field_process_exit_code, Integer),
+            ("pty.exit.reason", field_pty_exit_reason, String),
+        ]
+    );
 }
 
 fn emit_pty_spawn(def: &'static EventDef, fields: FieldSet<'_>) {
-    emit_schema_event!("pty.spawn", def.severity, fields, []);
+    emit_schema_event!(
+        "pty.spawn",
+        def.severity,
+        fields,
+        [
+            ("gen_ai.agent.name", field_gen_ai_agent_name, String),
+            (
+                "gen_ai.conversation.id",
+                field_gen_ai_conversation_id,
+                String
+            ),
+        ]
+    );
 }
 
 fn emit_run_summary(def: &'static EventDef, fields: FieldSet<'_>) {
@@ -407,11 +433,27 @@ fn emit_run_summary(def: &'static EventDef, fields: FieldSet<'_>) {
 }
 
 fn emit_session_end(def: &'static EventDef, fields: FieldSet<'_>) {
-    emit_schema_event!("session.end", def.severity, fields, []);
+    emit_schema_event!(
+        "session.end",
+        def.severity,
+        fields,
+        [
+            ("session.id", field_session_id, String),
+            ("session.previous_id", field_session_previous_id, String),
+        ]
+    );
 }
 
 fn emit_session_start(def: &'static EventDef, fields: FieldSet<'_>) {
-    emit_schema_event!("session.start", def.severity, fields, []);
+    emit_schema_event!(
+        "session.start",
+        def.severity,
+        fields,
+        [
+            ("session.id", field_session_id, String),
+            ("session.previous_id", field_session_previous_id, String),
+        ]
+    );
 }
 
 fn emit_telemetry_validate(def: &'static EventDef, fields: FieldSet<'_>) {
@@ -460,17 +502,54 @@ fn emit_trust_decision(def: &'static EventDef, fields: FieldSet<'_>) {
 }
 
 fn emit_ui_screen_entered(def: &'static EventDef, fields: FieldSet<'_>) {
-    emit_schema_event!("ui.screen.entered", def.severity, fields, []);
+    emit_schema_event!(
+        "ui.screen.entered",
+        def.severity,
+        fields,
+        [
+            ("app.screen.id", field_app_screen_id, String),
+            (
+                "ui.navigation.sequence",
+                field_ui_navigation_sequence,
+                Integer
+            ),
+            ("ui.screen.visit.id", field_ui_screen_visit_id, String),
+        ]
+    );
 }
 
 fn emit_ui_screen_exited(def: &'static EventDef, fields: FieldSet<'_>) {
-    emit_schema_event!("ui.screen.exited", def.severity, fields, []);
+    emit_schema_event!(
+        "ui.screen.exited",
+        def.severity,
+        fields,
+        [
+            ("app.screen.id", field_app_screen_id, String),
+            (
+                "ui.navigation.sequence",
+                field_ui_navigation_sequence,
+                Integer
+            ),
+            ("ui.screen.visit.id", field_ui_screen_visit_id, String),
+            ("ui.transition.reason", field_ui_transition_reason, String),
+        ]
+    );
 }
 
 fn emit_ui_widget_focused(def: &'static EventDef, fields: FieldSet<'_>) {
-    emit_schema_event!("ui.widget.focused", def.severity, fields, []);
+    emit_schema_event!(
+        "ui.widget.focused",
+        def.severity,
+        fields,
+        [("app.widget.id", field_app_widget_id, String),]
+    );
 }
 
 fn emit_ui_widget_unfocused(def: &'static EventDef, fields: FieldSet<'_>) {
-    emit_schema_event!("ui.widget.unfocused", def.severity, fields, []);
+    emit_schema_event!(
+        "ui.widget.unfocused",
+        def.severity,
+        fields,
+        [("app.widget.id", field_app_widget_id, String),]
+    );
 }

@@ -6,7 +6,10 @@ use super::{TelemetryFlushStatus, record_telemetry_rejection, telemetry_health_s
 #[test]
 fn facade_rejection_is_visible_in_snapshot() {
     let before = telemetry_health_snapshot().facade_rejections;
-    jackin_telemetry::record_export_rejection(jackin_telemetry::Rejection::Privacy);
+    jackin_telemetry::record_export_rejection(
+        jackin_telemetry::Signal::Log,
+        jackin_telemetry::Rejection::Privacy,
+    );
     assert_eq!(telemetry_health_snapshot().facade_rejections, before + 1);
 
     let before = telemetry_health_snapshot().facade_rejections;

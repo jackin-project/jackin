@@ -306,9 +306,13 @@ fn tls_file_errors_do_not_expose_configured_paths() {
 fn facade_event_exports_native_event_name_once() {
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
+        let attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
+            value: jackin_telemetry::Value::Str("session-test"),
+        }];
         jackin_telemetry::emit_event(
             &jackin_telemetry::event::SESSION_START,
-            jackin_telemetry::FieldSet::default(),
+            jackin_telemetry::FieldSet::new(&attrs, None),
         )
         .unwrap();
     });
@@ -539,9 +543,17 @@ fn emit_severity_matrix() {
         jackin_telemetry::FieldSet::new(&outcome, None),
     )
     .unwrap();
-    for def in [
+    let widget = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_ID,
+        value: jackin_telemetry::Value::Str("matrix.widget"),
+    }];
+    jackin_telemetry::emit_event(
         &jackin_telemetry::event::UI_WIDGET_FOCUSED,
-        &jackin_telemetry::event::SESSION_START,
+        jackin_telemetry::FieldSet::new(&widget, None),
+    )
+    .unwrap();
+    for def in [
+        &jackin_telemetry::event::PTY_SPAWN,
         &jackin_telemetry::event::APP_JANK,
         &jackin_telemetry::event::APP_CRASH,
     ] {

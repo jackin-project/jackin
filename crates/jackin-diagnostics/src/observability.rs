@@ -126,6 +126,7 @@ pub fn init_tracing_for(
     run_id: &str,
     identity: ServiceIdentity,
 ) -> anyhow::Result<bool> {
+    jackin_telemetry::limits::install_redactor(crate::redact::redact_text);
     let env = |key: &str| std::env::var(key).ok();
     if let Some(config) = config::resolve_otlp_config(&env)? {
         let endpoints = otlp::OtlpEndpoints::from_config(&config);
@@ -205,6 +206,7 @@ pub fn shutdown_capsule_tracing() {
 /// `Ok(true)` when export was activated,
 /// `Ok(false)` when no endpoint is configured (the common, no-op case).
 pub fn init_capsule_tracing(traceparent: Option<&str>) -> anyhow::Result<bool> {
+    jackin_telemetry::limits::install_redactor(crate::redact::redact_text);
     let env = |key: &str| std::env::var(key).ok();
     let activated = match config::resolve_otlp_config(&env)? {
         Some(config) => {
@@ -1770,8 +1772,8 @@ fn emit_progress_event_inner(kind: &str, message: &str, error_type: Option<&str>
         ),
         "run_summary" => (&event::RUN_SUMMARY, "success"),
         "slow_foreground_wait" => (&event::PERFORMANCE_SLOW_FOREGROUND_WAIT, "success"),
-        "session_detach" => (&event::CAPSULE_SESSION_DETACH, "expected_close"),
-        "clean_shutdown" => (&event::CAPSULE_SESSION_CLEAN_SHUTDOWN, "expected_close"),
+        "session_detach" => (&event::CAPSULE_SESSION_DETACH, "cancellation"),
+        "clean_shutdown" => (&event::CAPSULE_SESSION_CLEAN_SHUTDOWN, "success"),
         _ => (&event::ERROR_TYPED, "failure"),
     };
     let message = crate::redact::redact_text(message);

@@ -96,7 +96,8 @@ values = [
   "timeout", "connection_refused", "rpc_error", "panic",
   "process_exit_nonzero", "process_spawn_error", "http_error", "db_error",
   "firewall_apply_failed", "config_error", "trust_error", "launch_failed",
-  "launch_stage_failed",
+  "launch_stage_failed", "deadline_exceeded", "dependency_cancelled",
+  "telemetry_instrumentation_fault", "recovered_degradation",
 ]
 
 [[scoped_enum]]

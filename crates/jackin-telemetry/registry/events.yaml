@@ -1,10 +1,10 @@
 groups:
-  - { id: event.session.start, type: event, name: session.start, brief: Interactive session started., stability: development, attributes: [] }
-  - { id: event.session.end, type: event, name: session.end, brief: Interactive session ended., stability: development, attributes: [] }
-  - { id: event.ui.screen.entered, type: event, name: ui.screen.entered, brief: Screen visit entered., stability: development, attributes: [] }
-  - { id: event.ui.screen.exited, type: event, name: ui.screen.exited, brief: Screen visit exited., stability: development, attributes: [] }
-  - { id: event.ui.widget.focused, type: event, name: ui.widget.focused, brief: Widget gained focus., stability: development, attributes: [] }
-  - { id: event.ui.widget.unfocused, type: event, name: ui.widget.unfocused, brief: Widget lost focus., stability: development, attributes: [] }
+  - { id: event.session.start, type: event, name: session.start, brief: Interactive session started., stability: development, attributes: [{ref: session.id, requirement_level: required}, {ref: session.previous_id}] }
+  - { id: event.session.end, type: event, name: session.end, brief: Interactive session ended., stability: development, attributes: [{ref: session.id, requirement_level: required}, {ref: session.previous_id}] }
+  - { id: event.ui.screen.entered, type: event, name: ui.screen.entered, brief: Screen visit entered., stability: development, attributes: [{ref: app.screen.id, requirement_level: required}, {ref: ui.screen.visit.id, requirement_level: required}, {ref: ui.navigation.sequence, requirement_level: required}] }
+  - { id: event.ui.screen.exited, type: event, name: ui.screen.exited, brief: Screen visit exited., stability: development, attributes: [{ref: app.screen.id, requirement_level: required}, {ref: ui.screen.visit.id, requirement_level: required}, {ref: ui.navigation.sequence, requirement_level: required}, {ref: ui.transition.reason, requirement_level: required}] }
+  - { id: event.ui.widget.focused, type: event, name: ui.widget.focused, brief: Widget gained focus., stability: development, attributes: [{ref: app.widget.id, requirement_level: required}] }
+  - { id: event.ui.widget.unfocused, type: event, name: ui.widget.unfocused, brief: Widget lost focus., stability: development, attributes: [{ref: app.widget.id, requirement_level: required}] }
   - id: event.jackin.app.jank
     extends: event.app.jank
     type: event
@@ -18,8 +18,8 @@ groups:
     brief: Application crashed.
     stability: development
   - { id: event.agent.state.changed, type: event, name: agent.state.changed, brief: Effective coding-agent state changed., stability: development, attributes: [{ref: agent.state, requirement_level: required}, {ref: agent.status.source, requirement_level: required}, {ref: agent.status.confidence, requirement_level: required}, {ref: agent.status.stuck, requirement_level: required}] }
-  - { id: event.pty.spawn, type: event, name: pty.spawn, brief: PTY child process spawned., stability: development, attributes: [] }
-  - { id: event.pty.exit, type: event, name: pty.exit, brief: PTY child process exited., stability: development, attributes: [] }
+  - { id: event.pty.spawn, type: event, name: pty.spawn, brief: PTY child process spawned., stability: development, attributes: [{ref: gen_ai.agent.name}, {ref: gen_ai.conversation.id}] }
+  - { id: event.pty.exit, type: event, name: pty.exit, brief: PTY child process exited., stability: development, attributes: [{ref: pty.exit.reason, requirement_level: required}, {ref: process.exit_code}, {ref: gen_ai.agent.name}, {ref: gen_ai.conversation.id}] }
   - { id: event.telemetry.validate, type: event, name: telemetry.validate, brief: Telemetry delivery validation marker., stability: development, attributes: [{ref: telemetry.validation.values}] }
   - { id: event.launch.stage.started, type: event, name: launch.stage.started, brief: Launch stage started., stability: development, attributes: [{ref: outcome, requirement_level: required}] }
   - { id: event.launch.stage.done, type: event, name: launch.stage.done, brief: Launch stage completed., stability: development, attributes: [{ref: outcome, requirement_level: required}] }

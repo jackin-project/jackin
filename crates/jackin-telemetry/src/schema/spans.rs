@@ -12,6 +12,14 @@ pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=internal; attributes=outcome:recommended
@@ -24,6 +32,14 @@ pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=internal; attributes=outcome:recommended
@@ -36,6 +52,14 @@ pub const BACKGROUND_CYCLE_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=internal; attributes=outcome:recommended
@@ -48,6 +72,14 @@ pub const CLI_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=client; attributes=outcome:recommended
@@ -60,6 +92,14 @@ pub const CONNECTION_ATTEMPT_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=client; attributes=db.operation.name:required,db.system.name:required,outcome:recommended
@@ -73,16 +113,26 @@ pub const DB_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "db.operation.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "db.system.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
@@ -97,31 +147,44 @@ pub const HTTP_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "container.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "gen_ai.provider.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "http.request.method",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
         super::AttributeRequirement {
             name: "server.address",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "url.template",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
         },
     ],
 };
@@ -136,11 +199,20 @@ pub const LAUNCH_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "launch.target.kind",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["workspace", "directory"],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
@@ -155,11 +227,32 @@ pub const LAUNCH_STAGE_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "launch.stage.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "identity",
+                "role",
+                "credentials",
+                "construct",
+                "agent_binaries",
+                "derived_image",
+                "workspace",
+                "network",
+                "sidecar",
+                "capsule",
+                "hardline",
+            ],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
@@ -174,16 +267,26 @@ pub const PREWARM_ATTEMPT_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "job.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "job.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &["image_prewarm", "sidecar_prewarm"],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
@@ -198,30 +301,62 @@ pub const PREWARM_SCHEDULE_DEF: super::SpanMetadata = super::SpanMetadata {
             name: "job.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "job.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &["image_prewarm", "sidecar_prewarm"],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
-// registry: kind=client; attributes=outcome:recommended
+// registry: kind=client; attributes=outcome:recommended,process.executable.name:recommended,process.exit_code:recommended
 pub const PROCESS_COMMAND: &str = "process.command";
 pub const PROCESS_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
     name: PROCESS_COMMAND,
     description: "One subprocess command.",
     kind: super::SpanKind::Client,
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Recommended,
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "process.executable.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "process.exit_code",
+            value_type: super::ValueType::Integer,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
 // registry: kind=client; attributes=outcome:recommended
 pub const RPC_CLIENT: &str = "rpc.client";
@@ -233,6 +368,14 @@ pub const RPC_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=server; attributes=outcome:recommended
@@ -245,6 +388,14 @@ pub const RPC_SERVER_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=internal; attributes=outcome:recommended
@@ -257,6 +408,14 @@ pub const TELEMETRY_VALIDATE_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=internal; attributes=outcome:recommended
@@ -269,6 +428,14 @@ pub const UI_ACTION_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=internal; attributes=outcome:recommended
@@ -281,6 +448,14 @@ pub const UI_RENDER_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: kind=internal; attributes=outcome:recommended
@@ -293,6 +468,14 @@ pub const UI_SCREEN_TRANSITION_DEF: super::SpanMetadata = super::SpanMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 

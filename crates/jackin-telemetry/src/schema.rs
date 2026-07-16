@@ -27,11 +27,12 @@ pub enum RequirementLevel {
     ConditionallyRequired,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AttributeRequirement {
     pub name: &'static str,
     pub value_type: ValueType,
     pub requirement: RequirementLevel,
+    pub allowed_values: &'static [&'static str],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -39,6 +40,7 @@ pub struct AttributeMetadata {
     pub name: &'static str,
     pub description: &'static str,
     pub value_type: ValueType,
+    pub allowed_values: &'static [&'static str],
 }
 
 #[derive(Clone, Copy, Debug)]

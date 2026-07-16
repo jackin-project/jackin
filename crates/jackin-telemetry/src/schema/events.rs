@@ -12,21 +12,31 @@ pub const AGENT_STATE_CHANGED_DEF: super::EventMetadata = super::EventMetadata {
             name: "agent.state",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["working", "blocked", "done", "idle", "unknown"],
         },
         super::AttributeRequirement {
             name: "agent.status.confidence",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["unknown", "weak", "strong", "authoritative"],
         },
         super::AttributeRequirement {
             name: "agent.status.source",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "none",
+                "visible_screen",
+                "shell_integration",
+                "foreground_process",
+                "reported",
+            ],
         },
         super::AttributeRequirement {
             name: "agent.status.stuck",
             value_type: super::ValueType::Boolean,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
         },
     ],
 };
@@ -40,11 +50,19 @@ pub const CACHE_DECISION_DEF: super::EventMetadata = super::EventMetadata {
             name: "cache.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "role_repository",
+                "agent_binary",
+                "capsule_binary",
+                "derived_image",
+                "usage_snapshot",
+            ],
         },
         super::AttributeRequirement {
             name: "cache.result",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["hit", "miss", "stale", "reuse", "bypass"],
         },
     ],
 };
@@ -58,11 +76,20 @@ pub const CAPSULE_SESSION_CLEAN_SHUTDOWN_DEF: super::EventMetadata = super::Even
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
         super::AttributeRequirement {
             name: "session.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
     ],
 };
@@ -76,11 +103,20 @@ pub const CAPSULE_SESSION_DETACH_DEF: super::EventMetadata = super::EventMetadat
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
         super::AttributeRequirement {
             name: "session.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
     ],
 };
@@ -94,36 +130,50 @@ pub const CONFIG_OPERATION_DEF: super::EventMetadata = super::EventMetadata {
             name: "config.migration.step_count",
             value_type: super::ValueType::Integer,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "config.operation",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["load", "validate", "migrate", "save"],
         },
         super::AttributeRequirement {
             name: "config.schema.version.from",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "config.schema.version.to",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "config.scope",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["global", "workspace"],
         },
         super::AttributeRequirement {
             name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
@@ -136,6 +186,14 @@ pub const DEBUG_LINE_DEF: super::EventMetadata = super::EventMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: attributes=error.type:required,outcome:required
@@ -148,11 +206,20 @@ pub const ERROR_TYPED_DEF: super::EventMetadata = super::EventMetadata {
             name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
@@ -166,21 +233,32 @@ pub const ISOLATION_DECISION_DEF: super::EventMetadata = super::EventMetadata {
             name: "dind.mode",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["none", "rootless", "privileged"],
         },
         super::AttributeRequirement {
             name: "network.mode",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["none", "allowlist", "open"],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
         super::AttributeRequirement {
             name: "workspace.isolation.mode",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["shared", "worktree", "clone"],
         },
     ],
 };
@@ -194,16 +272,26 @@ pub const ISOLATION_FIREWALL_FAILED_DEF: super::EventMetadata = super::EventMeta
             name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "network.mode",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["none", "allowlist", "open"],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
@@ -217,46 +305,55 @@ pub const APP_CRASH_DEF: super::EventMetadata = super::EventMetadata {
             name: "app.build_id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::ConditionallyRequired,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "app.crash.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "exception.message",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "exception.stacktrace",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "exception.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "os.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::ConditionallyRequired,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "os.version",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::ConditionallyRequired,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "service.version",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::ConditionallyRequired,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "session.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
     ],
 };
@@ -270,16 +367,19 @@ pub const APP_JANK_DEF: super::EventMetadata = super::EventMetadata {
             name: "app.jank.frame_count",
             value_type: super::ValueType::Integer,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "app.jank.period",
             value_type: super::ValueType::Double,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "app.jank.threshold",
             value_type: super::ValueType::Double,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
     ],
 };
@@ -292,6 +392,14 @@ pub const LAUNCH_STAGE_DONE_DEF: super::EventMetadata = super::EventMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: attributes=error.type:recommended,outcome:required
@@ -304,11 +412,20 @@ pub const LAUNCH_STAGE_FAILED_DEF: super::EventMetadata = super::EventMetadata {
             name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
@@ -321,6 +438,14 @@ pub const LAUNCH_STAGE_SKIPPED_DEF: super::EventMetadata = super::EventMetadata 
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: attributes=outcome:required
@@ -332,6 +457,14 @@ pub const LAUNCH_STAGE_STARTED_DEF: super::EventMetadata = super::EventMetadata 
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: attributes=outcome:required,session.id:recommended
@@ -344,11 +477,20 @@ pub const OPERATION_LOG_DEF: super::EventMetadata = super::EventMetadata {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
         super::AttributeRequirement {
             name: "session.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
     ],
 };
@@ -362,11 +504,20 @@ pub const OPERATION_WARN_DEF: super::EventMetadata = super::EventMetadata {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
         super::AttributeRequirement {
             name: "session.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
     ],
 };
@@ -379,6 +530,14 @@ pub const PERFORMANCE_SLOW_FOREGROUND_WAIT_DEF: super::EventMetadata = super::Ev
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: attributes=error.type:recommended,outcome:required
@@ -391,27 +550,80 @@ pub const PROCESS_SUBPROCESS_DONE_DEF: super::EventMetadata = super::EventMetada
             name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
     ],
 };
-// registry: attributes=
+// registry: attributes=gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended,process.exit_code:recommended,pty.exit.reason:required
 pub const PTY_EXIT: &str = "pty.exit";
 pub const PTY_EXIT_DEF: super::EventMetadata = super::EventMetadata {
     name: PTY_EXIT,
     description: "PTY child process exited.",
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "gen_ai.agent.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "gen_ai.conversation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "process.exit_code",
+            value_type: super::ValueType::Integer,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "pty.exit.reason",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "clean",
+                "signal",
+                "nonzero_exit",
+                "wait_failed",
+                "cancelled",
+            ],
+        },
+    ],
 };
-// registry: attributes=
+// registry: attributes=gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended
 pub const PTY_SPAWN: &str = "pty.spawn";
 pub const PTY_SPAWN_DEF: super::EventMetadata = super::EventMetadata {
     name: PTY_SPAWN,
     description: "PTY child process spawned.",
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "gen_ai.agent.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "gen_ai.conversation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
 // registry: attributes=outcome:required
 pub const RUN_SUMMARY: &str = "run.summary";
@@ -422,21 +634,55 @@ pub const RUN_SUMMARY_DEF: super::EventMetadata = super::EventMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
-// registry: attributes=
+// registry: attributes=session.id:required,session.previous_id:recommended
 pub const SESSION_END: &str = "session.end";
 pub const SESSION_END_DEF: super::EventMetadata = super::EventMetadata {
     name: SESSION_END,
     description: "Interactive session ended.",
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.previous_id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=
+// registry: attributes=session.id:required,session.previous_id:recommended
 pub const SESSION_START: &str = "session.start";
 pub const SESSION_START_DEF: super::EventMetadata = super::EventMetadata {
     name: SESSION_START,
     description: "Interactive session started.",
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.previous_id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
 // registry: attributes=telemetry.validation.values:recommended
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
@@ -447,6 +693,7 @@ pub const TELEMETRY_VALIDATE_DEF: super::EventMetadata = super::EventMetadata {
         name: "telemetry.validation.values",
         value_type: super::ValueType::StringArray,
         requirement: super::RequirementLevel::Recommended,
+        allowed_values: &[],
     }],
 };
 // registry: attributes=outcome:required
@@ -458,6 +705,14 @@ pub const TIMING_DONE_DEF: super::EventMetadata = super::EventMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: attributes=outcome:required
@@ -469,6 +724,14 @@ pub const TIMING_STARTED_DEF: super::EventMetadata = super::EventMetadata {
         name: "outcome",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "success",
+            "failure",
+            "error",
+            "timeout",
+            "skip",
+            "cancellation",
+        ],
     }],
 };
 // registry: attributes=error.type:recommended,outcome:required,trust.decision:required,trust.source.type:required
@@ -481,51 +744,126 @@ pub const TRUST_DECISION_DEF: super::EventMetadata = super::EventMetadata {
             name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
         },
         super::AttributeRequirement {
             name: "trust.decision",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["granted", "revoked", "rejected"],
         },
         super::AttributeRequirement {
             name: "trust.source.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &["builtin", "external"],
         },
     ],
 };
-// registry: attributes=
+// registry: attributes=app.screen.id:required,ui.navigation.sequence:required,ui.screen.visit.id:required
 pub const UI_SCREEN_ENTERED: &str = "ui.screen.entered";
 pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_ENTERED,
     description: "Screen visit entered.",
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "app.screen.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "ui.navigation.sequence",
+            value_type: super::ValueType::Integer,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "ui.screen.visit.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=
+// registry: attributes=app.screen.id:required,ui.navigation.sequence:required,ui.screen.visit.id:required,ui.transition.reason:required
 pub const UI_SCREEN_EXITED: &str = "ui.screen.exited";
 pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_EXITED,
     description: "Screen visit exited.",
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "app.screen.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "ui.navigation.sequence",
+            value_type: super::ValueType::Integer,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "ui.screen.visit.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "ui.transition.reason",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "action",
+                "launch",
+                "attach",
+                "detach",
+                "back",
+                "cancel",
+                "completion",
+                "failure",
+                "shutdown",
+            ],
+        },
+    ],
 };
-// registry: attributes=
+// registry: attributes=app.widget.id:required
 pub const UI_WIDGET_FOCUSED: &str = "ui.widget.focused";
 pub const UI_WIDGET_FOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_FOCUSED,
     description: "Widget gained focus.",
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "app.widget.id",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[],
+    }],
 };
-// registry: attributes=
+// registry: attributes=app.widget.id:required
 pub const UI_WIDGET_UNFOCUSED: &str = "ui.widget.unfocused";
 pub const UI_WIDGET_UNFOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_UNFOCUSED,
     description: "Widget lost focus.",
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "app.widget.id",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[],
+    }],
 };
 
 pub const ALL: &[&str] = &[

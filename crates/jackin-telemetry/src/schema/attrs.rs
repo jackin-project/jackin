@@ -8,6 +8,7 @@ pub const AGENT_STATE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: AGENT_STATE,
     description: "Effective coding-agent state.",
     value_type: super::ValueType::String,
+    allowed_values: &["working", "blocked", "done", "idle", "unknown"],
 };
 // registry-type: enum
 pub const AGENT_STATUS_CONFIDENCE: &str = "agent.status.confidence";
@@ -15,6 +16,7 @@ pub const AGENT_STATUS_CONFIDENCE_DEF: super::AttributeMetadata = super::Attribu
     name: AGENT_STATUS_CONFIDENCE,
     description: "Agent status confidence.",
     value_type: super::ValueType::String,
+    allowed_values: &["unknown", "weak", "strong", "authoritative"],
 };
 // registry-type: enum
 pub const AGENT_STATUS_SOURCE: &str = "agent.status.source";
@@ -22,6 +24,13 @@ pub const AGENT_STATUS_SOURCE_DEF: super::AttributeMetadata = super::AttributeMe
     name: AGENT_STATUS_SOURCE,
     description: "Agent status evidence class.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "none",
+        "visible_screen",
+        "shell_integration",
+        "foreground_process",
+        "reported",
+    ],
 };
 // registry-type: boolean
 pub const AGENT_STATUS_STUCK: &str = "agent.status.stuck";
@@ -29,6 +38,7 @@ pub const AGENT_STATUS_STUCK_DEF: super::AttributeMetadata = super::AttributeMet
     name: AGENT_STATUS_STUCK,
     description: "Whether the status authority considers the agent stuck.",
     value_type: super::ValueType::Boolean,
+    allowed_values: &[],
 };
 // registry-type: enum
 pub const APP_MODE: &str = "app.mode";
@@ -36,6 +46,23 @@ pub const APP_MODE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: APP_MODE,
     description: "Application mode.",
     value_type: super::ValueType::String,
+    allowed_values: &["one_shot", "interactive", "daemon", "capsule"],
+};
+// registry-type: string
+pub const APP_SCREEN_ID: &str = "app.screen.id";
+pub const APP_SCREEN_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: APP_SCREEN_ID,
+    description: "Stable application screen identifier.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
+};
+// registry-type: string
+pub const APP_WIDGET_ID: &str = "app.widget.id";
+pub const APP_WIDGET_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: APP_WIDGET_ID,
+    description: "Stable application widget identifier.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
 };
 // registry-type: enum
 pub const AUTH_MODE: &str = "auth.mode";
@@ -43,6 +70,7 @@ pub const AUTH_MODE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: AUTH_MODE,
     description: "Authentication mode.",
     value_type: super::ValueType::String,
+    allowed_values: &["sync", "api_key", "oauth_token", "ignore"],
 };
 // registry-type: enum
 pub const BACKGROUND_CYCLE_NAME: &str = "background.cycle.name";
@@ -50,6 +78,14 @@ pub const BACKGROUND_CYCLE_NAME_DEF: super::AttributeMetadata = super::Attribute
     name: BACKGROUND_CYCLE_NAME,
     description: "Periodic cycle class.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "branch_context",
+        "pr_context",
+        "usage_account",
+        "provider_probe",
+        "instance_refresh",
+        "agent_status",
+    ],
 };
 // registry-type: enum
 pub const CACHE_NAME: &str = "cache.name";
@@ -57,6 +93,13 @@ pub const CACHE_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: CACHE_NAME,
     description: "Product cache class.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "role_repository",
+        "agent_binary",
+        "capsule_binary",
+        "derived_image",
+        "usage_snapshot",
+    ],
 };
 // registry-type: enum
 pub const CACHE_RESULT: &str = "cache.result";
@@ -64,6 +107,7 @@ pub const CACHE_RESULT_DEF: super::AttributeMetadata = super::AttributeMetadata 
     name: CACHE_RESULT,
     description: "Cache operation result.",
     value_type: super::ValueType::String,
+    allowed_values: &["hit", "miss", "stale", "reuse", "bypass"],
 };
 // registry-type: enum
 pub const CLI_COMMAND_NAME: &str = "cli.command.name";
@@ -71,6 +115,84 @@ pub const CLI_COMMAND_NAME_DEF: super::AttributeMetadata = super::AttributeMetad
     name: CLI_COMMAND_NAME,
     description: "Registry-backed command path.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "load",
+        "hardline",
+        "eject",
+        "exile",
+        "purge",
+        "prewarm",
+        "prune",
+        "console",
+        "role",
+        "workspace",
+        "config",
+        "daemon",
+        "doctor",
+        "diagnostics",
+        "status",
+        "usage",
+        "help",
+        "role.validate",
+        "role.migrate",
+        "role.create",
+        "role.construct-version",
+        "role.published-image",
+        "role.published-image-repository",
+        "role.publish-labels",
+        "daemon.serve",
+        "daemon.install",
+        "daemon.uninstall",
+        "daemon.start",
+        "daemon.stop",
+        "daemon.restart",
+        "daemon.status",
+        "diagnostics.validate",
+        "workspace.create",
+        "workspace.list",
+        "workspace.show",
+        "workspace.edit",
+        "workspace.prune",
+        "workspace.remove",
+        "workspace.env",
+        "workspace.env.set",
+        "workspace.env.unset",
+        "workspace.env.list",
+        "workspace.claude-token",
+        "workspace.claude-token.setup",
+        "workspace.claude-token.rotate",
+        "workspace.claude-token.revoke",
+        "workspace.claude-token.doctor",
+        "config.mount",
+        "config.mount.add",
+        "config.mount.remove",
+        "config.mount.list",
+        "config.trust",
+        "config.trust.grant",
+        "config.trust.revoke",
+        "config.trust.list",
+        "config.auth",
+        "config.auth.set",
+        "config.auth.show",
+        "config.env",
+        "config.env.set",
+        "config.env.unset",
+        "config.env.list",
+        "config.git",
+        "config.git.coauthor-trailer",
+        "config.git.coauthor-trailer.enable",
+        "config.git.coauthor-trailer.disable",
+        "config.git.dco",
+        "config.git.dco.enable",
+        "config.git.dco.disable",
+        "prune.roles",
+        "prune.cache",
+        "prune.images",
+        "prune.instances",
+        "prune.system",
+        "usage.accounts",
+        "usage.verify",
+    ],
 };
 // registry-type: string
 pub const CLI_INVOCATION_ID: &str = "cli.invocation.id";
@@ -78,6 +200,7 @@ pub const CLI_INVOCATION_ID_DEF: super::AttributeMetadata = super::AttributeMeta
     name: CLI_INVOCATION_ID,
     description: "Opaque top-level invocation identifier.",
     value_type: super::ValueType::String,
+    allowed_values: &[],
 };
 // registry-type: int
 pub const CONFIG_MIGRATION_STEP_COUNT: &str = "config.migration.step_count";
@@ -85,6 +208,7 @@ pub const CONFIG_MIGRATION_STEP_COUNT_DEF: super::AttributeMetadata = super::Att
     name: CONFIG_MIGRATION_STEP_COUNT,
     description: "Applied configuration migration count.",
     value_type: super::ValueType::Integer,
+    allowed_values: &[],
 };
 // registry-type: enum
 pub const CONFIG_OPERATION: &str = "config.operation";
@@ -92,6 +216,7 @@ pub const CONFIG_OPERATION_DEF: super::AttributeMetadata = super::AttributeMetad
     name: CONFIG_OPERATION,
     description: "Configuration operation.",
     value_type: super::ValueType::String,
+    allowed_values: &["load", "validate", "migrate", "save"],
 };
 // registry-type: string
 pub const CONFIG_SCHEMA_VERSION_FROM: &str = "config.schema.version.from";
@@ -99,6 +224,7 @@ pub const CONFIG_SCHEMA_VERSION_FROM_DEF: super::AttributeMetadata = super::Attr
     name: CONFIG_SCHEMA_VERSION_FROM,
     description: "Previous configuration schema version, validated against config.scope.",
     value_type: super::ValueType::String,
+    allowed_values: &[],
 };
 // registry-type: string
 pub const CONFIG_SCHEMA_VERSION_TO: &str = "config.schema.version.to";
@@ -106,6 +232,7 @@ pub const CONFIG_SCHEMA_VERSION_TO_DEF: super::AttributeMetadata = super::Attrib
     name: CONFIG_SCHEMA_VERSION_TO,
     description: "New configuration schema version, validated against config.scope and never legacy.",
     value_type: super::ValueType::String,
+    allowed_values: &[],
 };
 // registry-type: enum
 pub const CONFIG_SCOPE: &str = "config.scope";
@@ -113,6 +240,7 @@ pub const CONFIG_SCOPE_DEF: super::AttributeMetadata = super::AttributeMetadata 
     name: CONFIG_SCOPE,
     description: "Configuration scope.",
     value_type: super::ValueType::String,
+    allowed_values: &["global", "workspace"],
 };
 // registry-type: enum
 pub const CONNECTION_PEER_TYPE: &str = "connection.peer.type";
@@ -120,6 +248,14 @@ pub const CONNECTION_PEER_TYPE_DEF: super::AttributeMetadata = super::AttributeM
     name: CONNECTION_PEER_TYPE,
     description: "Connection peer class.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "host_daemon",
+        "capsule_control",
+        "capsule_attach",
+        "docker",
+        "provider",
+        "parallax",
+    ],
 };
 // registry-type: enum
 pub const CREDENTIAL_SOURCE_TYPE: &str = "credential.source.type";
@@ -127,6 +263,14 @@ pub const CREDENTIAL_SOURCE_TYPE_DEF: super::AttributeMetadata = super::Attribut
     name: CREDENTIAL_SOURCE_TYPE,
     description: "Credential source class.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "environment",
+        "agent_home",
+        "onepassword",
+        "github_cli",
+        "oauth_store",
+        "none",
+    ],
 };
 // registry-type: enum
 pub const DIND_MODE: &str = "dind.mode";
@@ -134,6 +278,23 @@ pub const DIND_MODE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: DIND_MODE,
     description: "Docker-in-Docker mode.",
     value_type: super::ValueType::String,
+    allowed_values: &["none", "rootless", "privileged"],
+};
+// registry-type: string
+pub const GEN_AI_AGENT_NAME: &str = "gen_ai.agent.name";
+pub const GEN_AI_AGENT_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: GEN_AI_AGENT_NAME,
+    description: "Generative AI agent name.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
+};
+// registry-type: string
+pub const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";
+pub const GEN_AI_CONVERSATION_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: GEN_AI_CONVERSATION_ID,
+    description: "Generative AI conversation identifier.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
 };
 // registry-type: string
 pub const JOB_ID: &str = "job.id";
@@ -141,6 +302,7 @@ pub const JOB_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: JOB_ID,
     description: "Opaque detached job identifier.",
     value_type: super::ValueType::String,
+    allowed_values: &[],
 };
 // registry-type: enum
 pub const JOB_TYPE: &str = "job.type";
@@ -148,6 +310,7 @@ pub const JOB_TYPE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: JOB_TYPE,
     description: "Detached job class.",
     value_type: super::ValueType::String,
+    allowed_values: &["image_prewarm", "sidecar_prewarm"],
 };
 // registry-type: enum
 pub const LAUNCH_STAGE_NAME: &str = "launch.stage.name";
@@ -155,6 +318,19 @@ pub const LAUNCH_STAGE_NAME_DEF: super::AttributeMetadata = super::AttributeMeta
     name: LAUNCH_STAGE_NAME,
     description: "Launch pipeline stage.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "identity",
+        "role",
+        "credentials",
+        "construct",
+        "agent_binaries",
+        "derived_image",
+        "workspace",
+        "network",
+        "sidecar",
+        "capsule",
+        "hardline",
+    ],
 };
 // registry-type: enum
 pub const LAUNCH_TARGET_KIND: &str = "launch.target.kind";
@@ -162,6 +338,7 @@ pub const LAUNCH_TARGET_KIND_DEF: super::AttributeMetadata = super::AttributeMet
     name: LAUNCH_TARGET_KIND,
     description: "Launch target class.",
     value_type: super::ValueType::String,
+    allowed_values: &["workspace", "directory"],
 };
 // registry-type: enum
 pub const NETWORK_MODE: &str = "network.mode";
@@ -169,6 +346,7 @@ pub const NETWORK_MODE_DEF: super::AttributeMetadata = super::AttributeMetadata 
     name: NETWORK_MODE,
     description: "Network policy mode.",
     value_type: super::ValueType::String,
+    allowed_values: &["none", "allowlist", "open"],
 };
 // registry-type: enum
 pub const OUTCOME: &str = "outcome";
@@ -176,6 +354,30 @@ pub const OUTCOME_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: OUTCOME,
     description: "Bounded operation outcome.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "success",
+        "failure",
+        "error",
+        "timeout",
+        "skip",
+        "cancellation",
+    ],
+};
+// registry-type: string
+pub const PROCESS_EXECUTABLE_NAME: &str = "process.executable.name";
+pub const PROCESS_EXECUTABLE_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: PROCESS_EXECUTABLE_NAME,
+    description: "Process executable name without its path.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
+};
+// registry-type: int
+pub const PROCESS_EXIT_CODE: &str = "process.exit_code";
+pub const PROCESS_EXIT_CODE_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: PROCESS_EXIT_CODE,
+    description: "Process exit code.",
+    value_type: super::ValueType::Integer,
+    allowed_values: &[],
 };
 // registry-type: enum
 pub const PTY_EXIT_REASON: &str = "pty.exit.reason";
@@ -183,6 +385,21 @@ pub const PTY_EXIT_REASON_DEF: super::AttributeMetadata = super::AttributeMetada
     name: PTY_EXIT_REASON,
     description: "PTY exit reason.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "clean",
+        "signal",
+        "nonzero_exit",
+        "wait_failed",
+        "cancelled",
+    ],
+};
+// registry-type: string
+pub const SESSION_PREVIOUS_ID: &str = "session.previous_id";
+pub const SESSION_PREVIOUS_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: SESSION_PREVIOUS_ID,
+    description: "Previous session id when a session is reattached.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
 };
 // registry-type: enum
 pub const STREAM_DIRECTION: &str = "stream.direction";
@@ -190,6 +407,7 @@ pub const STREAM_DIRECTION_DEF: super::AttributeMetadata = super::AttributeMetad
     name: STREAM_DIRECTION,
     description: "Byte stream direction.",
     value_type: super::ValueType::String,
+    allowed_values: &["input", "output"],
 };
 // registry-type: enum
 pub const TELEMETRY_REJECTION_REASON: &str = "telemetry.rejection.reason";
@@ -197,6 +415,14 @@ pub const TELEMETRY_REJECTION_REASON_DEF: super::AttributeMetadata = super::Attr
     name: TELEMETRY_REJECTION_REASON,
     description: "Facade rejection reason.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "unknown_name",
+        "unknown_attribute",
+        "invalid_value",
+        "privacy",
+        "cardinality",
+        "size_limit",
+    ],
 };
 // registry-type: enum
 pub const TELEMETRY_SIGNAL: &str = "telemetry.signal";
@@ -204,6 +430,7 @@ pub const TELEMETRY_SIGNAL_DEF: super::AttributeMetadata = super::AttributeMetad
     name: TELEMETRY_SIGNAL,
     description: "OpenTelemetry signal.",
     value_type: super::ValueType::String,
+    allowed_values: &["log", "trace", "metric"],
 };
 // registry-type: string[]
 pub const TELEMETRY_VALIDATION_VALUES: &str = "telemetry.validation.values";
@@ -211,6 +438,7 @@ pub const TELEMETRY_VALIDATION_VALUES_DEF: super::AttributeMetadata = super::Att
     name: TELEMETRY_VALIDATION_VALUES,
     description: "Opaque values used to verify typed telemetry delivery.",
     value_type: super::ValueType::StringArray,
+    allowed_values: &[],
 };
 // registry-type: enum
 pub const TRUST_DECISION: &str = "trust.decision";
@@ -218,6 +446,7 @@ pub const TRUST_DECISION_DEF: super::AttributeMetadata = super::AttributeMetadat
     name: TRUST_DECISION,
     description: "Trust decision.",
     value_type: super::ValueType::String,
+    allowed_values: &["granted", "revoked", "rejected"],
 };
 // registry-type: enum
 pub const TRUST_SOURCE_TYPE: &str = "trust.source.type";
@@ -225,6 +454,7 @@ pub const TRUST_SOURCE_TYPE_DEF: super::AttributeMetadata = super::AttributeMeta
     name: TRUST_SOURCE_TYPE,
     description: "Trust source class.",
     value_type: super::ValueType::String,
+    allowed_values: &["builtin", "external"],
 };
 // registry-type: enum
 pub const UI_ACTION_NAME: &str = "ui.action.name";
@@ -232,6 +462,36 @@ pub const UI_ACTION_NAME_DEF: super::AttributeMetadata = super::AttributeMetadat
     name: UI_ACTION_NAME,
     description: "Completed semantic UI action.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "workspace.open",
+        "workspace.save",
+        "workspace.launch",
+        "settings.open",
+        "settings.save",
+        "dialog.confirm",
+        "dialog.cancel",
+        "agent.select",
+        "agent.spawn",
+        "tab.switch",
+        "tab.rename",
+        "tab.close",
+        "pane.split",
+        "pane.focus",
+        "pane.resize",
+        "pane.zoom",
+        "pane.clear",
+        "pane.close",
+        "usage.refresh",
+        "session.detach",
+        "file.export",
+        "image.stage",
+        "link.open",
+        "app.exit_request",
+        "screen.back",
+        "workspace.create",
+        "workspace.delete",
+        "instance.purge",
+    ],
 };
 // registry-type: int
 pub const UI_NAVIGATION_SEQUENCE: &str = "ui.navigation.sequence";
@@ -239,6 +499,7 @@ pub const UI_NAVIGATION_SEQUENCE_DEF: super::AttributeMetadata = super::Attribut
     name: UI_NAVIGATION_SEQUENCE,
     description: "Monotonic navigation sequence.",
     value_type: super::ValueType::Integer,
+    allowed_values: &[],
 };
 // registry-type: string
 pub const UI_SCREEN_VISIT_ID: &str = "ui.screen.visit.id";
@@ -246,6 +507,7 @@ pub const UI_SCREEN_VISIT_ID_DEF: super::AttributeMetadata = super::AttributeMet
     name: UI_SCREEN_VISIT_ID,
     description: "Opaque screen visit identifier.",
     value_type: super::ValueType::String,
+    allowed_values: &[],
 };
 // registry-type: enum
 pub const UI_TRANSITION_REASON: &str = "ui.transition.reason";
@@ -253,6 +515,17 @@ pub const UI_TRANSITION_REASON_DEF: super::AttributeMetadata = super::AttributeM
     name: UI_TRANSITION_REASON,
     description: "Screen transition reason.",
     value_type: super::ValueType::String,
+    allowed_values: &[
+        "action",
+        "launch",
+        "attach",
+        "detach",
+        "back",
+        "cancel",
+        "completion",
+        "failure",
+        "shutdown",
+    ],
 };
 // registry-type: enum
 pub const WORKSPACE_ISOLATION_MODE: &str = "workspace.isolation.mode";
@@ -260,6 +533,7 @@ pub const WORKSPACE_ISOLATION_MODE_DEF: super::AttributeMetadata = super::Attrib
     name: WORKSPACE_ISOLATION_MODE,
     description: "Workspace isolation mode.",
     value_type: super::ValueType::String,
+    allowed_values: &["shared", "worktree", "clone"],
 };
 
 pub const ALL_KEYS: &[&str] = &[
@@ -268,6 +542,8 @@ pub const ALL_KEYS: &[&str] = &[
     AGENT_STATUS_SOURCE,
     AGENT_STATUS_STUCK,
     APP_MODE,
+    APP_SCREEN_ID,
+    APP_WIDGET_ID,
     AUTH_MODE,
     BACKGROUND_CYCLE_NAME,
     CACHE_NAME,
@@ -282,13 +558,18 @@ pub const ALL_KEYS: &[&str] = &[
     CONNECTION_PEER_TYPE,
     CREDENTIAL_SOURCE_TYPE,
     DIND_MODE,
+    GEN_AI_AGENT_NAME,
+    GEN_AI_CONVERSATION_ID,
     JOB_ID,
     JOB_TYPE,
     LAUNCH_STAGE_NAME,
     LAUNCH_TARGET_KIND,
     NETWORK_MODE,
     OUTCOME,
+    PROCESS_EXECUTABLE_NAME,
+    PROCESS_EXIT_CODE,
     PTY_EXIT_REASON,
+    SESSION_PREVIOUS_ID,
     STREAM_DIRECTION,
     TELEMETRY_REJECTION_REASON,
     TELEMETRY_SIGNAL,
@@ -308,6 +589,8 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     AGENT_STATUS_SOURCE_DEF,
     AGENT_STATUS_STUCK_DEF,
     APP_MODE_DEF,
+    APP_SCREEN_ID_DEF,
+    APP_WIDGET_ID_DEF,
     AUTH_MODE_DEF,
     BACKGROUND_CYCLE_NAME_DEF,
     CACHE_NAME_DEF,
@@ -322,13 +605,18 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     CONNECTION_PEER_TYPE_DEF,
     CREDENTIAL_SOURCE_TYPE_DEF,
     DIND_MODE_DEF,
+    GEN_AI_AGENT_NAME_DEF,
+    GEN_AI_CONVERSATION_ID_DEF,
     JOB_ID_DEF,
     JOB_TYPE_DEF,
     LAUNCH_STAGE_NAME_DEF,
     LAUNCH_TARGET_KIND_DEF,
     NETWORK_MODE_DEF,
     OUTCOME_DEF,
+    PROCESS_EXECUTABLE_NAME_DEF,
+    PROCESS_EXIT_CODE_DEF,
     PTY_EXIT_REASON_DEF,
+    SESSION_PREVIOUS_ID_DEF,
     STREAM_DIRECTION_DEF,
     TELEMETRY_REJECTION_REASON_DEF,
     TELEMETRY_SIGNAL_DEF,
