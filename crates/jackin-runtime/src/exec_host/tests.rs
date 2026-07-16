@@ -241,10 +241,13 @@ async fn exec_socket_marks_server_failure_when_peer_closes_before_reply() {
         .expect("close client socket");
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let guard = tracing::subscriber::set_default(subscriber);
-    assert!(handle_connection(server, &[], caller_auth).await.is_err());
+    handle_connection(server, &[], caller_auth)
+        .await
+        .expect("reply-write failure is consumed by the RPC owner");
     drop(guard);
     export.force_flush();
     assert_eq!(export.error_span_count(), 1);
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
 }
 
 #[tokio::test]
@@ -264,6 +267,7 @@ async fn unauthorized_credential_payload_is_absent_from_telemetry() {
     .await;
     assert!(reply.get("error").is_some());
     export.force_flush();
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
     assert!(!export.contains_log_text(secret_name));
     assert!(!export.contains_log_text(secret_source));
 }
@@ -335,6 +339,8 @@ async fn unapproved_source_is_rejected() {
 
 #[tokio::test]
 async fn resolution_failure_reply_does_not_echo_the_credential_source() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
     let secret_source = "not-an-op-uri/private-vault/private-item/private-field";
     let allowed = vec![ExecBinding {
         name: "TOKEN".into(),
@@ -348,6 +354,9 @@ async fn resolution_failure_reply_does_not_echo_the_credential_source() {
     .await;
     assert_eq!(reply["error"], "credential resolution failed");
     assert!(!reply.to_string().contains(secret_source));
+    export.force_flush();
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
+    assert!(!export.contains_log_text(secret_source));
 }
 
 #[tokio::test]

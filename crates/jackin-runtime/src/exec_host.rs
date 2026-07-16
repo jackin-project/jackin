@@ -61,14 +61,17 @@ pub fn start(
     allowed_bindings: Vec<ExecBinding>,
 ) -> tokio::task::JoinHandle<()> {
     jackin_telemetry::spawn::spawn_stream("exec_host.connection", async move {
-        if let Err(e) = run_listener(&sock_path, &allowed_bindings, CallerAuth::CapsuleDaemon).await
+        if run_listener(&sock_path, &allowed_bindings, CallerAuth::CapsuleDaemon)
+            .await
+            .is_err()
         {
             // A returned error is a startup failure (bind/chmod/mkdir) — the
             // accept loop never returns otherwise. It means jackin-exec
             // credential resolution is unavailable for the whole session, so
             // surface it on the always-on tier rather than only under --debug.
-            eprintln!("[jackin] warning: jackin-exec credential resolver unavailable: {e:#}");
-            jackin_diagnostics::telemetry_debug!("exec_host", "listener error: {e:#}");
+            eprintln!("[jackin] warning: jackin-exec credential resolver unavailable");
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         }
     })
 }
@@ -123,25 +126,21 @@ async fn run_listener(
     let listener = UnixListener::bind(sock_path)
         .with_context(|| format!("binding host.sock at {}", sock_path.display()))?;
 
-    jackin_diagnostics::telemetry_debug!(
-        "exec_host",
-        "listening at {} with {} allowed bindings",
-        sock_path.display(),
-        allowed_bindings.len()
-    );
-
     loop {
-        match listener.accept().await {
-            Ok((stream, _)) => {
-                if let Err(e) = handle_connection(stream, allowed_bindings, caller_auth).await {
-                    jackin_diagnostics::telemetry_debug!("exec_host", "connection error: {e:#}");
-                }
+        if let Ok((stream, _)) = listener.accept().await {
+            if handle_connection(stream, allowed_bindings, caller_auth)
+                .await
+                .is_err()
+            {
+                let _error = jackin_telemetry::record_error(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                );
             }
-            Err(e) => {
-                jackin_diagnostics::telemetry_debug!("exec_host", "accept error: {e:#}");
-                // Brief back-off to avoid tight loop on persistent errors.
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
+        } else {
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+            // Brief back-off to avoid tight loop on persistent errors.
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
 }
@@ -152,11 +151,9 @@ async fn handle_connection(
     caller_auth: CallerAuth,
 ) -> Result<()> {
     const MAX_REQ: usize = 512 * 1024;
-    if let Err(error) = authenticate_caller(&stream, caller_auth) {
-        jackin_diagnostics::telemetry_debug!(
-            "exec_host",
-            "rejected unauthenticated caller: {error:#}"
-        );
+    if authenticate_caller(&stream, caller_auth).is_err() {
+        let _error =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::RpcError);
         return Ok(());
     }
 
@@ -175,6 +172,8 @@ async fn handle_connection(
         extracted,
         jackin_telemetry::propagation::ExtractOutcome::RejectRequest
     ) {
+        let _error =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::RpcError);
         stream
             .write_all(&frame(&CredReply::Error {
                 error: "invalid correlation".to_owned(),
@@ -213,10 +212,7 @@ async fn handle_connection(
             .iter()
             .any(|b| b.name == r.name && b.kind == r.kind && b.source == r.source);
         if !approved {
-            jackin_diagnostics::telemetry_debug!(
-                "exec_host",
-                "rejected unauthorized credential reference"
-            );
+            record_rpc_error(operation.as_ref());
             let reply = CredReply::Error {
                 error: "credential reference is not approved".to_owned(),
             };
@@ -227,27 +223,25 @@ async fn handle_connection(
                     Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
                 );
             }
-            write_result?;
+            drop(write_result);
             return Ok(());
         }
     }
 
-    jackin_diagnostics::telemetry_debug!(
-        "exec_host",
-        "resolving {} approved credential(s)",
-        req.refs.len()
-    );
-
-    let reply = match resolve_all(&req.refs).await {
-        Ok(values) => CredReply::Ok { values },
-        Err(_) => CredReply::Error {
+    let reply = if let Ok(values) = resolve_all(&req.refs).await {
+        CredReply::Ok { values }
+    } else {
+        CredReply::Error {
             error: "credential resolution failed".to_owned(),
-        },
+        }
     };
     // Reuse the canonical control-socket encoder so both ends of host.sock
     // frame identically.
     let succeeded = matches!(&reply, CredReply::Ok { .. });
     let write_result = stream.write_all(&frame(&reply)).await;
+    if !succeeded || write_result.is_err() {
+        record_rpc_error(operation.as_ref());
+    }
     if let Some(operation) = operation {
         operation.complete(
             if succeeded && write_result.is_ok() {
@@ -259,8 +253,20 @@ async fn handle_connection(
                 .then_some(jackin_telemetry::schema::enums::ErrorType::RpcError),
         );
     }
-    write_result?;
+    drop(write_result);
     Ok(())
+}
+
+fn record_rpc_error(operation: Option<&jackin_telemetry::OperationGuard>) {
+    let record = || {
+        let _error =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::RpcError);
+    };
+    if let Some(operation) = operation {
+        operation.span().in_scope(record);
+    } else {
+        record();
+    }
 }
 
 fn authenticate_caller(stream: &UnixStream, caller_auth: CallerAuth) -> Result<()> {
@@ -299,10 +305,6 @@ fn authenticate_capsule_daemon_peer(stream: &UnixStream) -> Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 fn authenticate_capsule_daemon_peer(_stream: &UnixStream) -> Result<()> {
-    jackin_diagnostics::telemetry_debug!(
-        "exec_host",
-        "peer credential daemon authentication unavailable on this host OS"
-    );
     Ok(())
 }
 
