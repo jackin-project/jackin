@@ -75,6 +75,11 @@ pub(crate) fn assert_three_signal_delivery(
             .any(|name| name == "telemetry.validate"),
         "governed validation metric missing"
     );
+    assert_eq!(
+        testbed.legacy_namespace_violations(),
+        Vec::<String>::new(),
+        "legacy namespace escaped onto the OTLP wire"
+    );
     for resource in traces
         .iter()
         .flat_map(|request| &request.resource_spans)

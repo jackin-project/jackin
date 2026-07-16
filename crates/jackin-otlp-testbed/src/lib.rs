@@ -272,6 +272,62 @@ impl Testbed {
             .collect()
     }
 
+    /// Report forbidden backend/product namespaces anywhere in decoded OTLP.
+    #[must_use]
+    pub fn legacy_namespace_violations(&self) -> Vec<String> {
+        let mut violations = Vec::new();
+        for request in self.traces() {
+            for resource in &request.resource_spans {
+                scan_resource(resource.resource.as_ref(), &mut violations);
+            }
+            for span in request
+                .resource_spans
+                .iter()
+                .flat_map(|resource| &resource.scope_spans)
+                .flat_map(|scope| &scope.spans)
+            {
+                scan_name(&span.name, &mut violations);
+                scan_attributes(&span.attributes, &mut violations);
+                for event in &span.events {
+                    scan_name(&event.name, &mut violations);
+                    scan_attributes(&event.attributes, &mut violations);
+                }
+                for link in &span.links {
+                    scan_attributes(&link.attributes, &mut violations);
+                }
+            }
+        }
+        for request in self.logs() {
+            for resource in &request.resource_logs {
+                scan_resource(resource.resource.as_ref(), &mut violations);
+            }
+            for record in request
+                .resource_logs
+                .iter()
+                .flat_map(|resource| &resource.scope_logs)
+                .flat_map(|scope| &scope.log_records)
+            {
+                scan_name(&record.event_name, &mut violations);
+                scan_attributes(&record.attributes, &mut violations);
+            }
+        }
+        for request in self.metrics() {
+            for resource in &request.resource_metrics {
+                scan_resource(resource.resource.as_ref(), &mut violations);
+            }
+            for metric in request
+                .resource_metrics
+                .iter()
+                .flat_map(|resource| &resource.scope_metrics)
+                .flat_map(|scope| &scope.metrics)
+            {
+                scan_name(&metric.name, &mut violations);
+                scan_metric_points(metric.data.as_ref(), &mut violations);
+            }
+        }
+        violations
+    }
+
     /// Stop the receiver while retaining captured requests for assertions.
     pub fn stop(&mut self) {
         if let Some(shutdown) = self.shutdown.take()
@@ -294,6 +350,65 @@ impl Testbed {
         })
         .await
         .is_ok()
+    }
+}
+
+fn scan_resource(
+    resource: Option<&opentelemetry_proto::tonic::resource::v1::Resource>,
+    violations: &mut Vec<String>,
+) {
+    if let Some(resource) = resource {
+        scan_attributes(&resource.attributes, violations);
+    }
+}
+
+fn scan_attributes(
+    attributes: &[opentelemetry_proto::tonic::common::v1::KeyValue],
+    violations: &mut Vec<String>,
+) {
+    for attribute in attributes {
+        scan_name(&attribute.key, violations);
+    }
+}
+
+fn scan_name(name: &str, violations: &mut Vec<String>) {
+    if name.starts_with("jackin.") || name.starts_with("parallax.") {
+        violations.push(name.to_owned());
+    }
+}
+
+fn scan_metric_points(
+    data: Option<&opentelemetry_proto::tonic::metrics::v1::metric::Data>,
+    violations: &mut Vec<String>,
+) {
+    use opentelemetry_proto::tonic::metrics::v1::metric::Data;
+    match data {
+        Some(Data::Gauge(value)) => {
+            for point in &value.data_points {
+                scan_attributes(&point.attributes, violations);
+            }
+        }
+        Some(Data::Sum(value)) => {
+            for point in &value.data_points {
+                scan_attributes(&point.attributes, violations);
+            }
+        }
+        Some(Data::Histogram(value)) => {
+            for point in &value.data_points {
+                scan_attributes(&point.attributes, violations);
+            }
+        }
+        Some(Data::ExponentialHistogram(value)) => {
+            for point in &value.data_points {
+                scan_attributes(&point.attributes, violations);
+            }
+        }
+        Some(Data::Summary(value)) => {
+            for point in &value.data_points {
+                scan_attributes(&point.attributes, violations);
+            }
+        }
+        None => {}
     }
 }
 
@@ -358,5 +473,16 @@ mod tests {
                 .map(|partial| partial.rejected_spans),
             Some(1)
         );
+    }
+
+    #[test]
+    fn namespace_detector_rejects_synthetic_legacy_attribute() {
+        let attributes = [opentelemetry_proto::tonic::common::v1::KeyValue {
+            key: "jackin.synthetic".to_owned(),
+            ..Default::default()
+        }];
+        let mut violations = Vec::new();
+        scan_attributes(&attributes, &mut violations);
+        assert_eq!(violations, ["jackin.synthetic"]);
     }
 }
