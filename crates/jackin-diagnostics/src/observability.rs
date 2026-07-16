@@ -1941,11 +1941,16 @@ fn emit_progress_event_inner(kind: &str, message: &str, error_type: Option<&str>
     use jackin_telemetry::event;
     use jackin_telemetry::{Attr, FieldSet, Value};
 
+    // Launch stages use the shared paired guard, which owns their typed events,
+    // span, and metrics in both rich and headless paths.
+    if matches!(
+        kind,
+        "stage_started" | "stage_done" | "stage_failed" | "stage_skipped"
+    ) {
+        return;
+    }
+
     let (def, outcome) = match kind {
-        "stage_started" => (&event::LAUNCH_STAGE_STARTED, "success"),
-        "stage_done" => (&event::LAUNCH_STAGE_DONE, "success"),
-        "stage_failed" => (&event::LAUNCH_STAGE_FAILED, "failure"),
-        "stage_skipped" => (&event::LAUNCH_STAGE_SKIPPED, "cancelled"),
         "timing_started" => (&event::TIMING_STARTED, "success"),
         "timing_done" => (&event::TIMING_DONE, "success"),
         "debug" => (&event::DEBUG_LINE, "success"),

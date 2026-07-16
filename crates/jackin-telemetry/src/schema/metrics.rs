@@ -625,7 +625,34 @@ pub const LAUNCH_CACHE_REUSE_DEF: super::MetricMetadata = super::MetricMetadata 
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=histogram; unit=s; attributes=launch.stage.name:required,outcome:required
+// registry: instrument=updowncounter; unit={execution}; attributes=launch.stage.name:required
+pub const LAUNCH_STAGE_ACTIVE: &str = "launch.stage.active";
+pub const LAUNCH_STAGE_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
+    name: LAUNCH_STAGE_ACTIVE,
+    description: "Active launch stage executions.",
+    instrument: super::MetricInstrument::UpDownCounter,
+    unit: "{execution}",
+    boundaries: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "launch.stage.name",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "identity",
+            "role",
+            "credentials",
+            "construct",
+            "agent_binaries",
+            "derived_image",
+            "workspace",
+            "network",
+            "sidecar",
+            "capsule",
+            "hardline",
+        ],
+    }],
+};
+// registry: instrument=histogram; unit=s; attributes=error.type:recommended,launch.stage.name:required,outcome:required
 pub const LAUNCH_STAGE_DURATION: &str = "launch.stage.duration";
 pub const LAUNCH_STAGE_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: LAUNCH_STAGE_DURATION,
@@ -636,6 +663,60 @@ pub const LAUNCH_STAGE_DURATION_DEF: super::MetricMetadata = super::MetricMetada
         0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
     ],
     attributes: &[
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "launch.stage.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "identity",
+                "role",
+                "credentials",
+                "construct",
+                "agent_binaries",
+                "derived_image",
+                "workspace",
+                "network",
+                "sidecar",
+                "capsule",
+                "hardline",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+    ],
+};
+// registry: instrument=counter; unit={execution}; attributes=error.type:recommended,launch.stage.name:required,outcome:required
+pub const LAUNCH_STAGE_EXECUTIONS: &str = "launch.stage.executions";
+pub const LAUNCH_STAGE_EXECUTIONS_DEF: super::MetricMetadata = super::MetricMetadata {
+    name: LAUNCH_STAGE_EXECUTIONS,
+    description: "Launch stage executions.",
+    instrument: super::MetricInstrument::Counter,
+    unit: "{execution}",
+    boundaries: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "launch.stage.name",
             value_type: super::ValueType::String,
@@ -1170,7 +1251,9 @@ pub const ALL: &[&str] = &[
     CONNECTION_DURATION,
     DB_CLIENT_OPERATION_DURATION,
     LAUNCH_CACHE_REUSE,
+    LAUNCH_STAGE_ACTIVE,
     LAUNCH_STAGE_DURATION,
+    LAUNCH_STAGE_EXECUTIONS,
     PREWARM_ACTIVE,
     PREWARM_DURATION,
     PREWARM_JOBS,
@@ -1207,7 +1290,9 @@ pub const DEFINITIONS: &[super::MetricMetadata] = &[
     CONNECTION_DURATION_DEF,
     DB_CLIENT_OPERATION_DURATION_DEF,
     LAUNCH_CACHE_REUSE_DEF,
+    LAUNCH_STAGE_ACTIVE_DEF,
     LAUNCH_STAGE_DURATION_DEF,
+    LAUNCH_STAGE_EXECUTIONS_DEF,
     PREWARM_ACTIVE_DEF,
     PREWARM_DURATION_DEF,
     PREWARM_JOBS_DEF,

@@ -331,6 +331,7 @@ fn emit_launch_stage_done(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("cli.invocation.id", field_cli_invocation_id, String),
+            ("launch.stage.name", field_launch_stage_name, String),
             ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]
@@ -345,6 +346,7 @@ fn emit_launch_stage_failed(def: &'static EventDef, fields: FieldSet<'_>) {
         [
             ("cli.invocation.id", field_cli_invocation_id, String),
             ("error.type", field_error_type, String),
+            ("launch.stage.name", field_launch_stage_name, String),
             ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]
@@ -358,6 +360,7 @@ fn emit_launch_stage_skipped(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("cli.invocation.id", field_cli_invocation_id, String),
+            ("launch.stage.name", field_launch_stage_name, String),
             ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]
@@ -371,6 +374,7 @@ fn emit_launch_stage_started(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("cli.invocation.id", field_cli_invocation_id, String),
+            ("launch.stage.name", field_launch_stage_name, String),
             ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]

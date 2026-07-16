@@ -10,7 +10,6 @@
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
 
@@ -39,19 +38,20 @@ const fn stage_index(stage: LaunchStage) -> usize {
     }
 }
 
-const fn stage_name(stage: LaunchStage) -> &'static str {
+const fn telemetry_stage(stage: LaunchStage) -> jackin_telemetry::schema::enums::LaunchStageName {
+    use jackin_telemetry::schema::enums::LaunchStageName as TelemetryStage;
     match stage {
-        LaunchStage::Identity => "identity",
-        LaunchStage::Role => "role",
-        LaunchStage::Credentials => "credentials",
-        LaunchStage::Construct => "construct",
-        LaunchStage::AgentBinaries => "agent_binaries",
-        LaunchStage::DerivedImage => "derived_image",
-        LaunchStage::Workspace => "workspace",
-        LaunchStage::Network => "network",
-        LaunchStage::Sidecar => "sidecar",
-        LaunchStage::Capsule => "capsule",
-        LaunchStage::Hardline => "hardline",
+        LaunchStage::Identity => TelemetryStage::Identity,
+        LaunchStage::Role => TelemetryStage::Role,
+        LaunchStage::Credentials => TelemetryStage::Credentials,
+        LaunchStage::Construct => TelemetryStage::Construct,
+        LaunchStage::AgentBinaries => TelemetryStage::AgentBinaries,
+        LaunchStage::DerivedImage => TelemetryStage::DerivedImage,
+        LaunchStage::Workspace => TelemetryStage::Workspace,
+        LaunchStage::Network => TelemetryStage::Network,
+        LaunchStage::Sidecar => TelemetryStage::Sidecar,
+        LaunchStage::Capsule => TelemetryStage::Capsule,
+        LaunchStage::Hardline => TelemetryStage::Hardline,
     }
 }
 
@@ -65,12 +65,7 @@ pub struct LaunchProgress {
     view: SharedView,
     host: &'static dyn LaunchHostTerminal,
     cancel_token: CancellationToken,
-    stage_telemetry: [Option<StageTelemetry>; 11],
-}
-
-struct StageTelemetry {
-    operation: jackin_telemetry::OperationGuard,
-    started: Instant,
+    stage_telemetry: [Option<jackin_telemetry::launch::StageGuard>; 11],
 }
 
 enum Renderer {
@@ -232,23 +227,14 @@ impl LaunchProgress {
     fn start_stage_telemetry(&mut self, stage: LaunchStage) {
         let index = stage_index(stage);
         if let Some(previous) = self.stage_telemetry[index].take() {
-            previous.operation.complete(
+            previous.complete(
                 jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
                 None,
             );
         }
-        let stage_name = stage_name(stage);
-        let attrs = [jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::LAUNCH_STAGE_NAME,
-            value: jackin_telemetry::Value::Str(stage_name),
-        }];
-        self.stage_telemetry[index] = Some(StageTelemetry {
-            operation: jackin_telemetry::operation_or_disabled(
-                &jackin_telemetry::operation::LAUNCH_STAGE,
-                &attrs,
-            ),
-            started: Instant::now(),
-        });
+        self.stage_telemetry[index] = Some(jackin_telemetry::launch::StageGuard::start(
+            telemetry_stage(stage),
+        ));
     }
 
     fn finish_stage_telemetry(
@@ -264,20 +250,7 @@ impl LaunchProgress {
         let Some(telemetry) = self.stage_telemetry[index].take() else {
             return;
         };
-        telemetry.operation.complete(outcome, error_type);
-        let attrs = [
-            jackin_telemetry::Attr {
-                key: jackin_telemetry::schema::attrs::LAUNCH_STAGE_NAME,
-                value: jackin_telemetry::Value::Str(stage_name(stage)),
-            },
-            jackin_telemetry::Attr {
-                key: jackin_telemetry::schema::attrs::OUTCOME,
-                value: jackin_telemetry::Value::Str(outcome.as_str()),
-            },
-        ];
-        let _duration =
-            jackin_telemetry::histogram(&jackin_telemetry::metric::LAUNCH_STAGE_DURATION)
-                .record(telemetry.started.elapsed().as_secs_f64(), &attrs);
+        telemetry.complete(outcome, error_type);
     }
 
     pub fn opening_hardline(&mut self) {

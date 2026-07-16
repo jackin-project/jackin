@@ -505,7 +505,7 @@ pub const APP_JANK_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,launch.stage.name:required,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_DONE: &str = "launch.stage.done";
 pub const LAUNCH_STAGE_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_DONE,
@@ -516,6 +516,24 @@ pub const LAUNCH_STAGE_DONE_DEF: super::EventMetadata = super::EventMetadata {
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "launch.stage.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "identity",
+                "role",
+                "credentials",
+                "construct",
+                "agent_binaries",
+                "derived_image",
+                "workspace",
+                "network",
+                "sidecar",
+                "capsule",
+                "hardline",
+            ],
         },
         super::AttributeRequirement {
             name: "outcome",
@@ -538,7 +556,7 @@ pub const LAUNCH_STAGE_DONE_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,error.type:recommended,outcome:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,error.type:recommended,launch.stage.name:required,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_FAILED: &str = "launch.stage.failed";
 pub const LAUNCH_STAGE_FAILED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_FAILED,
@@ -557,6 +575,24 @@ pub const LAUNCH_STAGE_FAILED_DEF: super::EventMetadata = super::EventMetadata {
             allowed_values: &[],
         },
         super::AttributeRequirement {
+            name: "launch.stage.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "identity",
+                "role",
+                "credentials",
+                "construct",
+                "agent_binaries",
+                "derived_image",
+                "workspace",
+                "network",
+                "sidecar",
+                "capsule",
+                "hardline",
+            ],
+        },
+        super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -577,7 +613,7 @@ pub const LAUNCH_STAGE_FAILED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,launch.stage.name:required,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_SKIPPED: &str = "launch.stage.skipped";
 pub const LAUNCH_STAGE_SKIPPED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_SKIPPED,
@@ -590,6 +626,24 @@ pub const LAUNCH_STAGE_SKIPPED_DEF: super::EventMetadata = super::EventMetadata 
             allowed_values: &[],
         },
         super::AttributeRequirement {
+            name: "launch.stage.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "identity",
+                "role",
+                "credentials",
+                "construct",
+                "agent_binaries",
+                "derived_image",
+                "workspace",
+                "network",
+                "sidecar",
+                "capsule",
+                "hardline",
+            ],
+        },
+        super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -610,7 +664,7 @@ pub const LAUNCH_STAGE_SKIPPED_DEF: super::EventMetadata = super::EventMetadata 
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,launch.stage.name:required,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_STARTED: &str = "launch.stage.started";
 pub const LAUNCH_STAGE_STARTED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_STARTED,
@@ -621,6 +675,24 @@ pub const LAUNCH_STAGE_STARTED_DEF: super::EventMetadata = super::EventMetadata 
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "launch.stage.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "identity",
+                "role",
+                "credentials",
+                "construct",
+                "agent_binaries",
+                "derived_image",
+                "workspace",
+                "network",
+                "sidecar",
+                "capsule",
+                "hardline",
+            ],
         },
         super::AttributeRequirement {
             name: "outcome",
