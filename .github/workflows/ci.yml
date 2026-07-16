@@ -485,7 +485,8 @@ jobs:
       - name: Use the prepared current Rust toolchain
         run: |
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          echo "RUSTUP_TOOLCHAIN=$(scripts/ci/find-installed-rust-toolchain.sh "$version")" >> "$GITHUB_ENV"
+          toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
+          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
       - run: cargo fmt --check
 
   cargo-registry-warmup:
@@ -635,7 +636,8 @@ jobs:
       - name: Use the prepared current Rust toolchain
         run: |
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          echo "RUSTUP_TOOLCHAIN=$(scripts/ci/find-installed-rust-toolchain.sh "$version")" >> "$GITHUB_ENV"
+          toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
+          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
@@ -881,7 +883,8 @@ jobs:
       - name: Use the prepared current Rust toolchain
         run: |
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          echo "RUSTUP_TOOLCHAIN=$(scripts/ci/find-installed-rust-toolchain.sh "$version")" >> "$GITHUB_ENV"
+          toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
+          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
@@ -963,7 +966,8 @@ jobs:
       - name: Use the prepared current Rust toolchain
         run: |
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          echo "RUSTUP_TOOLCHAIN=$(scripts/ci/find-installed-rust-toolchain.sh "$version")" >> "$GITHUB_ENV"
+          toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
+          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
