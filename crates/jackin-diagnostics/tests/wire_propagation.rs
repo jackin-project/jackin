@@ -46,6 +46,7 @@ fn conformance_wire_preserves_remote_parent_and_detached_link() -> anyhow::Resul
     let job = jackin_telemetry::spawn::spawn_prewarm_job(
         jackin_telemetry::schema::enums::JobType::ImagePrewarm,
         async {},
+        |()| jackin_telemetry::spawn::DetachedCompletion::success(),
     );
     drop(runtime_guard);
     runtime.block_on(job)?;
