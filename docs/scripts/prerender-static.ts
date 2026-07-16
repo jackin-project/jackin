@@ -8,7 +8,6 @@ const outDir = join(root, '.output', 'public')
 const host = '127.0.0.1'
 const port = 4173
 const origin = `http://${host}:${port}`
-const fetchConcurrency = 32
 
 function docsSlugs(dir = contentRoot): string[] {
   const entries = readdirSync(dir, { withFileTypes: true })
@@ -69,18 +68,6 @@ async function fetchStatic(path: string) {
   await writeFile(target, Buffer.from(await response.arrayBuffer()))
 }
 
-async function fetchAllStatic(paths: string[]) {
-  let next = 0
-  const workers = Array.from({ length: Math.min(fetchConcurrency, paths.length) }, async () => {
-    while (next < paths.length) {
-      const index = next
-      next += 1
-      await fetchStatic(paths[index])
-    }
-  })
-  await Promise.all(workers)
-}
-
 async function copySsrAssets() {
   const ssrAssetsDir = join(root, 'node_modules', '.nitro', 'vite', 'services', 'ssr', 'assets')
   const publicAssetsDir = join(outDir, 'assets')
@@ -126,7 +113,7 @@ const child = Bun.spawn(
 
 try {
   await waitForServer()
-  await fetchAllStatic(paths)
+  await Promise.all(paths.map(fetchStatic))
   await copySsrAssets()
   await rm(join(outDir, '404', 'index.html'), { force: true })
   console.log(`[prerender-static] wrote ${paths.length} static routes`)

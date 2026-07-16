@@ -53,9 +53,6 @@ function prerenderPages() {
 }
 
 export default defineConfig({
-  build: {
-    reportCompressedSize: false,
-  },
   server: {
     port: 3000,
   },
