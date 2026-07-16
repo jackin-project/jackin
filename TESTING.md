@@ -82,12 +82,13 @@ reverse workspace dependents. Workspace-wide inputs and unrecognized Rust paths
 fail safe to every crate. Each selected crate owns one job and one target-cache
 namespace, including default/all-feature checks, clippy, nextest, doctests,
 MSRV, applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
-Scheduling follows the reverse dependency closure; the compact compiled-output
-cache key follows the forward dependency closure. That cache stores only
-first-party fingerprints, libraries, binaries, build outputs, and test
-executables and third-party outputs are published together as a seven-day,
-input-identical crate target artifact. Artifacts keep the crate-specific Cargo
-feature and profile variants reusable without placing 26 mostly overlapping
+Scheduling follows the reverse dependency closure; the input-identical target
+artifact key follows the forward dependency closure. Each seven-day artifact
+stores the crate's first-party and third-party fingerprints, libraries,
+binaries, build outputs, and test executables. MSRV outputs live under
+`target/msrv`, so the older compiler cannot overwrite current-toolchain
+artifacts immediately before packing. This preserves crate-specific Cargo
+feature, profile, and toolchain variants without placing 26 mostly overlapping
 archives in GitHub's small repository cache quota. GitHub is the canonical
 artifact producer; both GitHub and Velnor restore the same output.
 

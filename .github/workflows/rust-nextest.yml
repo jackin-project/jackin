@@ -86,7 +86,7 @@ jobs:
         id: crate-target
         shell: bash
         env:
-          ARTIFACT_NAME: ci-crate-target-${{ inputs.all-features && 'v1' || 'default-v1' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          ARTIFACT_NAME: ci-crate-target-${{ inputs.all-features && 'v2' || 'default-v2' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -155,6 +155,7 @@ jobs:
           "$CI_XTASK" lint ratchet --only export-volume
       - name: Check crate on MSRV
         env:
+          CARGO_TARGET_DIR: target/msrv
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
         run: cargo check -p "${{ matrix.package }}" --all-targets --locked --offline
       - name: Upload junit + timing
@@ -343,7 +344,7 @@ jobs:
             github.event.pull_request.head.repo.full_name == github.repository))
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ci-crate-target-${{ inputs.all-features && 'v1' || 'default-v1' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          name: ci-crate-target-${{ inputs.all-features && 'v2' || 'default-v2' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
           path: target.tar.zst
           compression-level: 0
           retention-days: 7
