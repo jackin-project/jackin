@@ -67,6 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      published: ${{ steps.published.outputs.published }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -95,7 +96,32 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Reuse a completely published release
+        id: published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          formula=$(
+            curl -fsSL --max-time 30 \
+              "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin.rb"
+          )
+          formula_version=$(printf '%s\n' "$formula" | sed -n 's/^[[:space:]]*version "\(.*\)"/\1/p' | head -1)
+          if [ "$formula_version" = "$VERSION" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "jackin❯ v${VERSION} release and formula already exist; reusing the published result"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
+    if: needs.check-version.outputs.published != 'true'
     needs: [check-version, matrix-setup]
     uses: ./.github/workflows/rust-nextest.yml
     with:
@@ -104,6 +130,7 @@ jobs:
     secrets: inherit
 
   build:
+    if: needs.check-version.outputs.published != 'true'
     needs: [check-version, matrix-setup]
     strategy:
       fail-fast: false
@@ -198,6 +225,7 @@ jobs:
           sccache-stats-heading: sccache release jackin ${{ matrix.target.triple }} (${{ matrix.config.lane }})
 
   build-jackin-capsule:
+    if: needs.check-version.outputs.published != 'true'
     needs: [check-version, matrix-setup]
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
@@ -270,7 +298,9 @@ jobs:
           sccache-stats-heading: sccache release capsule ${{ matrix.target.triple }} (${{ matrix.config.lane }})
 
   release:
-    if: needs.matrix-setup.outputs.has_github == 'true'
+    if: >-
+      needs.matrix-setup.outputs.has_github == 'true' &&
+      needs.check-version.outputs.published != 'true'
     needs: [check-version, matrix-setup, test, build, build-jackin-capsule]
     runs-on: ubuntu-latest
     timeout-minutes: 60

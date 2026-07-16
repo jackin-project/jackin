@@ -182,25 +182,47 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      published: ${{ steps.result.outputs.published || steps.off-main.outputs.published }}
     permissions:
       contents: read
     steps:
-      - name: Assert jackin-dev version is unpublished
+      - name: Reuse a completely published version
+        id: result
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          if gh release view "jackin-dev-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "jackin-dev-v${VERSION} already exists; bump crates/jackin-dev/Cargo.toml"
+          set -euo pipefail
+          if ! gh release view "jackin-dev-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          formula=$(
+            curl -fsSL --max-time 30 \
+              "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin-dev.rb"
+          )
+          formula_version=$(printf '%s\n' "$formula" | sed -n 's/^[[:space:]]*version "\(.*\)"/\1/p' | head -1)
+          if [ "$formula_version" != "$VERSION" ]; then
+            echo "::error::jackin-dev-v${VERSION} exists but the Homebrew formula publishes ${formula_version:-no version}"
             exit 1
           fi
+
+          echo "published=true" >> "$GITHUB_OUTPUT"
+          echo "jackin-dev v${VERSION} release and formula already exist; reusing the published result"
       - name: Skip unpublished-version assertion off main
+        id: off-main
         if: github.ref != 'refs/heads/main'
-        run: echo "jackin-dev version publication is checked only on main"
+        run: |
+          echo "published=false" >> "$GITHUB_OUTPUT"
+          echo "jackin-dev version publication is checked only on main"
 
   build:
-    if: github.event_name != 'pull_request'
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.assert-version.outputs.published != 'true'
     needs: [version, matrix-setup, assert-version]
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
@@ -337,7 +359,10 @@ jobs:
             jackin-dev-*.tar.gz.sbom.json
 
   publish:
-    if: github.ref == 'refs/heads/main' && needs.matrix-setup.outputs.has_github == 'true'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.matrix-setup.outputs.has_github == 'true' &&
+      needs.assert-version.outputs.published != 'true'
     needs: [version, matrix-setup, assert-version, build]
     runs-on: ubuntu-latest
     timeout-minutes: 60
