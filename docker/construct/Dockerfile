@@ -95,14 +95,31 @@ RUN case "${TARGETARCH}" in \
     cd / && \
     rm -rf "${workdir}"
 
-# Install mise with the official standalone installer. MISE_VERSION is pinned
-# in versions.env so Renovate bumps invalidate this layer. The installer
-# downloads the checksummed release asset from GitHub, where every version
-# stays available — the mise apt repository only serves the latest package,
-# so an apt version pin breaks on every upstream release.
+# Install the pinned mise release directly. Avoid the `mise.run | sh` pipe:
+# it can block without emitting BuildKit progress when a version invalidates
+# this layer. The release archive and its published checksum are both fetched
+# with bounded retries, so failures are visible and terminate promptly.
 ARG MISE_VERSION
 RUN test -n "${MISE_VERSION}" || { echo "MISE_VERSION build arg is required" >&2; exit 1; } && \
-    curl -fsSL https://mise.run | MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh && \
+    case "${TARGETARCH}" in \
+      amd64) mise_arch=x64 ;; \
+      arm64) mise_arch=arm64 ;; \
+      *) printf 'unsupported TARGETARCH for mise: %s\n' "${TARGETARCH}" >&2 && exit 1 ;; \
+    esac && \
+    archive="mise-v${MISE_VERSION}-linux-${mise_arch}.tar.gz" && \
+    base="https://github.com/jdx/mise/releases/download/v${MISE_VERSION}" && \
+    workdir="$(mktemp -d)" && \
+    cd "${workdir}" && \
+    curl --fail --location --show-error --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
+      --output "${archive}" "${base}/${archive}" && \
+    curl --fail --location --show-error --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
+      --output SHASUMS256.txt "${base}/SHASUMS256.txt" && \
+    grep "  ./${archive}$" SHASUMS256.txt | sed 's#  \./#  #' > checksums-mise.txt && \
+    sha256sum -c checksums-mise.txt && \
+    tar -xzf "${archive}" --strip-components=2 -C /usr/local/bin mise/bin/mise && \
+    chmod 0755 /usr/local/bin/mise && \
+    cd / && \
+    rm -rf "${workdir}" && \
     mise --version
 
 # Install Docker CLI, Buildx, and Compose plugins
