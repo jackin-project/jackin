@@ -318,7 +318,7 @@ fn hit_rejects_columns_outside_region() {
 #[test]
 fn hover_highlights_click_targets() {
     let pr = pull_request_fixture(434);
-    let hover_fg = jackin_core::tui_theme::DEBUG_AMBER;
+    let hover_fg = jackin_ui::theme::DEBUG_AMBER;
     let (_, ctx) = widget_bar(
         120,
         Some("asa/pr-context"),

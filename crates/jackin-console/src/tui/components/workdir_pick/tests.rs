@@ -167,13 +167,13 @@ fn selected_row_uses_shared_full_width_highlight() {
     for x in 1..59 {
         assert_eq!(
             buffer[(x, selected_y)].bg,
-            jackin_core::tui_theme::accent_fg(),
+            jackin_ui::theme::accent_fg(),
             "x={x}"
         );
     }
     assert_ne!(
         buffer[(59, selected_y)].bg,
-        jackin_core::tui_theme::accent_fg(),
+        jackin_ui::theme::accent_fg(),
         "selection must not paint the dialog border"
     );
 }

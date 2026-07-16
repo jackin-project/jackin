@@ -127,7 +127,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::{muted_fg, text_fg};
+use jackin_ui::theme::{muted_fg, text_fg};
 use termrock::layout::render_dialog_shell;
 use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{List, ListRow, RowRole};
@@ -153,7 +153,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no directories",
-                jackin_core::tui_theme::text_muted(),
+                jackin_ui::theme::text_muted(),
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],

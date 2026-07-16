@@ -951,11 +951,11 @@ impl RichRenderer {
                     let diff_theme = termrock::Theme::default()
                         .with_role(
                             termrock::style::Role::DiffAdded,
-                            Style::default().fg(jackin_core::tui_theme::accent_fg()),
+                            Style::default().fg(jackin_ui::theme::accent_fg()),
                         )
                         .with_role(
                             termrock::style::Role::DiffRemoved,
-                            Style::default().fg(jackin_core::tui_theme::danger_fg()),
+                            Style::default().fg(jackin_ui::theme::danger_fg()),
                         );
                     frame.render_stateful_widget(
                         &DiffView::new(&lines, &diff_theme),
@@ -1122,17 +1122,16 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
     context
         .iter()
         .map(|line| match line {
-            PromptContextLine::Emphasis(text) => Line::from(Span::styled(
-                text.clone(),
-                jackin_core::tui_theme::text_strong(),
-            )),
+            PromptContextLine::Emphasis(text) => {
+                Line::from(Span::styled(text.clone(), jackin_ui::theme::text_strong()))
+            }
             PromptContextLine::Muted(text) => Line::from(Span::styled(
                 text.clone(),
-                Style::default().fg(jackin_core::tui_theme::muted_fg()),
+                Style::default().fg(jackin_ui::theme::muted_fg()),
             )),
             PromptContextLine::Path(text) => Line::from(Span::styled(
                 text.clone(),
-                Style::default().fg(jackin_core::tui_theme::LINK_BLUE),
+                Style::default().fg(jackin_ui::theme::LINK_BLUE),
             )),
             PromptContextLine::Plain(text) => Line::from(text.clone()),
             PromptContextLine::Blank => Line::from(String::new()),

@@ -35,6 +35,7 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 jackin-agent-status = { workspace = true }
 jackin-core = { workspace = true }
+jackin-ui = { workspace = true }
 # OTLP export for the in-container session, runtime-gated on the endpoint the
 # host injects. Pulls the opentelemetry stack into the capsule image.
 jackin-diagnostics = { workspace = true, features = ["otlp"] }

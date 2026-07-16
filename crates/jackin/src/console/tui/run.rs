@@ -308,13 +308,13 @@ where
                 min_width: 0,
                 enabled: true,
                 style: ratatui::style::Style::default()
-                    .bg(jackin_core::tui_theme::danger_fg())
-                    .fg(jackin_core::tui_theme::text_fg())
+                    .bg(jackin_ui::theme::danger_fg())
+                    .fg(jackin_ui::theme::text_fg())
                     .add_modifier(ratatui::style::Modifier::BOLD),
                 hover_style: Some(
                     ratatui::style::Style::default()
-                        .bg(jackin_core::tui_theme::text_fg())
-                        .fg(jackin_core::tui_theme::danger_fg())
+                        .bg(jackin_ui::theme::text_fg())
+                        .fg(jackin_ui::theme::danger_fg())
                         .add_modifier(ratatui::style::Modifier::BOLD),
                 ),
             }];
@@ -326,8 +326,8 @@ where
             let theme = termrock::Theme::default().with_role(
                 termrock::style::Role::StatusBar,
                 ratatui::style::Style::default()
-                    .bg(jackin_core::tui_theme::text_fg())
-                    .fg(jackin_core::tui_theme::INK),
+                    .bg(jackin_ui::theme::text_fg())
+                    .fg(jackin_ui::theme::INK),
             );
             frame.render_stateful_widget(
                 &termrock::widgets::StatusBar::new(&[], &slots, &theme),

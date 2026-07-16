@@ -55,8 +55,6 @@ mod selector;
 mod session_id;
 mod standalone_dialog;
 mod status;
-/// Ratatui adapters for the product-owned jackin❯ palette.
-pub mod tui_theme;
 mod url_text;
 mod workspace_label;
 mod workspace_name;
@@ -105,8 +103,3 @@ pub use url_text::*;
 pub use workspace_label::*;
 pub use workspace_name::*;
 pub use worktree_dirty::*;
-#[expect(
-    missing_docs,
-    reason = "operator-information projection is documented as one cohesive product facade"
-)]
-pub mod operator_info;

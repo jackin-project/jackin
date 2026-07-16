@@ -10,13 +10,13 @@ use ratatui::{
 
 use crate::tui::op_breadcrumb::parse_path_breadcrumb;
 
-use jackin_core::tui_theme::{accent_fg, text_fg};
+use jackin_ui::theme::{accent_fg, text_fg};
 
 /// Render an `OpRef.path` as `vault / item [subtitle] / section -> field ?query`.
 pub fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
-    let dim = jackin_core::tui_theme::text_muted();
+    let dim = jackin_ui::theme::text_muted();
     let white_style = Style::default().fg(text_fg());
-    let green = jackin_core::tui_theme::accent();
+    let green = jackin_ui::theme::accent();
     let green_bold = Style::default()
         .fg(accent_fg())
         .add_modifier(Modifier::BOLD);

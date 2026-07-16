@@ -11,5 +11,11 @@ publish = false
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+crossterm = { workspace = true }
+jackin-core = { workspace = true }
+ratatui = { workspace = true }
+termrock = { workspace = true }
+
 [lints]
 workspace = true

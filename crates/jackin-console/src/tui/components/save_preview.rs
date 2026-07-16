@@ -491,7 +491,7 @@ pub fn workspace_mount_preview_row(
 
 #[must_use]
 pub fn collapse_section_lines(collapses: &[(String, String)]) -> Vec<Line<'static>> {
-    let style = Style::default().fg(jackin_core::tui_theme::muted_fg());
+    let style = Style::default().fg(jackin_ui::theme::muted_fg());
     collapses
         .iter()
         .map(|(child, parent)| {
@@ -735,9 +735,9 @@ pub struct TrustPreviewRow {
               per-section readability."
 )]
 pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>> {
-    let heading = jackin_core::tui_theme::text_strong();
-    let value = Style::default().fg(jackin_core::tui_theme::accent_fg());
-    let dim = Style::default().fg(jackin_core::tui_theme::muted_fg());
+    let heading = jackin_ui::theme::text_strong();
+    let value = Style::default().fg(jackin_ui::theme::accent_fg());
+    let dim = Style::default().fg(jackin_ui::theme::muted_fg());
 
     let mut out: Vec<Line<'static>> = Vec::new();
 
@@ -1004,10 +1004,10 @@ fn allowed_roles_summary(preview: &WorkspaceSavePreview) -> String {
 
 #[must_use]
 pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> {
-    let heading = jackin_core::tui_theme::text_strong();
-    let add_style = Style::default().fg(jackin_core::tui_theme::accent_fg());
-    let remove_style = Style::default().fg(jackin_core::tui_theme::muted_fg());
-    let sep_style = Style::default().fg(jackin_core::tui_theme::scroll_track_fg());
+    let heading = jackin_ui::theme::text_strong();
+    let add_style = Style::default().fg(jackin_ui::theme::accent_fg());
+    let remove_style = Style::default().fg(jackin_ui::theme::muted_fg());
+    let sep_style = Style::default().fg(jackin_ui::theme::scroll_track_fg());
 
     let mut out: Vec<Line<'static>> = Vec::new();
 

@@ -127,9 +127,9 @@ pub fn draw_scrollbar(
     // Active pane uses TermRock scroll-thumb accent; inactive panes use the
     // inactive border role so thumbs match Panel border semantics.
     let thumb_color = if focused {
-        jackin_core::tui_theme::scroll_thumb_rgb()
+        jackin_ui::theme::scroll_thumb_rgb()
     } else {
-        jackin_core::tui_theme::border_rgb()
+        jackin_ui::theme::border_rgb()
     };
 
     // Thumb rows are 0-based relative to the interior; skip the top

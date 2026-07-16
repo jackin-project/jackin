@@ -9,7 +9,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::{muted_fg, text_fg};
+use jackin_ui::theme::{muted_fg, text_fg};
 
 /// "Mode" header is 4 chars; pad row values so the Type column stays aligned.
 pub const MOUNT_MODE_COL_WIDTH: usize = 4;
@@ -38,12 +38,12 @@ pub fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec<Line<'
             Span::raw(format!("  {:<path_w$}  ", row.destination)),
             Span::styled(
                 format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                jackin_core::tui_theme::text_muted(),
+                jackin_ui::theme::text_muted(),
             ),
             Span::raw("  "),
             Span::styled(
                 format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
-                jackin_core::tui_theme::text_muted(),
+                jackin_ui::theme::text_muted(),
             ),
             Span::raw("  "),
             Span::styled(
@@ -56,7 +56,7 @@ pub fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec<Line<'
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
                 format!("  {host_source:<path_w$}"),
-                jackin_core::tui_theme::text_muted(),
+                jackin_ui::theme::text_muted(),
             )));
         }
     }
@@ -77,12 +77,12 @@ pub fn render_global_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec
     for row in rows {
         lines.push(Line::from(vec![
             Span::raw(format!("  {:<path_w$}  ", row.destination)),
-            Span::styled(row.mode.to_owned(), jackin_core::tui_theme::text_muted()),
+            Span::styled(row.mode.to_owned(), jackin_ui::theme::text_muted()),
         ]));
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
                 format!("  {host_source:<path_w$}"),
-                jackin_core::tui_theme::text_muted(),
+                jackin_ui::theme::text_muted(),
             )));
         }
     }

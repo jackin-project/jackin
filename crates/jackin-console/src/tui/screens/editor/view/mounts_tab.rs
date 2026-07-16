@@ -77,7 +77,7 @@ pub(crate) fn mount_lines(
         let hovered = !selected && hovered_row == Some(i);
         let hb = |s: Style| {
             if hovered {
-                s.bg(jackin_core::tui_theme::tab_inactive_hover_bg())
+                s.bg(jackin_ui::theme::tab_inactive_hover_bg())
             } else {
                 s
             }
@@ -85,13 +85,13 @@ pub(crate) fn mount_lines(
         let prefix = if selected { "\u{25b8} " } else { "  " };
         let base_style = if selected {
             Style::default()
-                .fg(jackin_core::tui_theme::accent_fg())
+                .fg(jackin_ui::theme::accent_fg())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(jackin_core::tui_theme::accent_fg())
+            Style::default().fg(jackin_ui::theme::accent_fg())
         };
         let dim_style = Style::default()
-            .fg(jackin_core::tui_theme::muted_fg())
+            .fg(jackin_ui::theme::muted_fg())
             .add_modifier(Modifier::ITALIC);
         lines.push(Line::from(vec![
             Span::styled(
@@ -100,12 +100,12 @@ pub(crate) fn mount_lines(
             ),
             Span::styled(
                 format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                hb(Style::default().fg(jackin_core::tui_theme::muted_fg())),
+                hb(Style::default().fg(jackin_ui::theme::muted_fg())),
             ),
             Span::styled("  ", hb(Style::default())),
             Span::styled(
                 format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
-                hb(Style::default().fg(jackin_core::tui_theme::muted_fg())),
+                hb(Style::default().fg(jackin_ui::theme::muted_fg())),
             ),
             Span::styled("  ", hb(Style::default())),
             Span::styled(row.kind.clone(), hb(dim_style)),
@@ -113,7 +113,7 @@ pub(crate) fn mount_lines(
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
                 format!("  {host_source:<path_w$}"),
-                Style::default().fg(jackin_core::tui_theme::muted_fg()),
+                Style::default().fg(jackin_ui::theme::muted_fg()),
             )));
         }
     }

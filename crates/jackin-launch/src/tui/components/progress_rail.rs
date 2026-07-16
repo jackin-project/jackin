@@ -3,7 +3,7 @@
 
 //! Launch stage progress rail and label animation.
 
-use jackin_core::tui_theme::{accent_fg, danger_fg, scroll_track_fg, text_fg};
+use jackin_ui::theme::{accent_fg, danger_fg, scroll_track_fg, text_fg};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -195,8 +195,8 @@ pub fn label_strip(
 fn label_style_for_stage(status: StageStatus, active: bool, bright: bool) -> Style {
     if active {
         return match status {
-            StageStatus::Failed => jackin_core::tui_theme::danger(),
-            _ if bright => jackin_core::tui_theme::text_strong(),
+            StageStatus::Failed => jackin_ui::theme::danger(),
+            _ if bright => jackin_ui::theme::text_strong(),
             _ => Style::default()
                 .fg(accent_fg())
                 .add_modifier(Modifier::BOLD),
@@ -204,9 +204,9 @@ fn label_style_for_stage(status: StageStatus, active: bool, bright: bool) -> Sty
     }
 
     match status {
-        StageStatus::Done | StageStatus::Skipped => jackin_core::tui_theme::text_muted(),
+        StageStatus::Done | StageStatus::Skipped => jackin_ui::theme::text_muted(),
         StageStatus::Failed => Style::default().fg(danger_fg()),
-        StageStatus::Running | StageStatus::Blocked => jackin_core::tui_theme::accent(),
+        StageStatus::Running | StageStatus::Blocked => jackin_ui::theme::accent(),
         StageStatus::Queued => Style::default().fg(scroll_track_fg()),
     }
 }

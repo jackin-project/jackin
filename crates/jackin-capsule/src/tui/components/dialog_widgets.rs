@@ -17,7 +17,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
-use jackin_core::tui_theme::accent_fg;
+use jackin_ui::theme::accent_fg;
 use termrock::Theme;
 use termrock::widgets::{
     Action, ChoiceDialog, ChoiceDialogState, DetailTableState, Dialog as MessageShell, List,

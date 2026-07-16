@@ -17,7 +17,7 @@ use crate::tui::layout::list::list_names_content_width;
 use crate::tui::state::{ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag};
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
-use jackin_core::tui_theme::{accent_fg, tab_inactive_hover_bg};
+use jackin_ui::theme::{accent_fg, tab_inactive_hover_bg};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;

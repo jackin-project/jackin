@@ -3,7 +3,7 @@
 
 //! Launch cockpit header rendering.
 
-use jackin_core::tui_theme::text_fg;
+use jackin_ui::theme::text_fg;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -15,17 +15,17 @@ use crate::tui::components::cells::coalesce_cells;
 
 fn brand_header_line(label: &str) -> Line<'static> {
     let block = Style::default()
-        .bg(jackin_core::tui_theme::BRAND_BLOCK)
+        .bg(jackin_ui::theme::BRAND_BLOCK)
         .add_modifier(Modifier::BOLD);
     Line::from(vec![
-        Span::styled(" jackin", block.fg(jackin_core::tui_theme::INK)),
+        Span::styled(" jackin", block.fg(jackin_ui::theme::INK)),
         Span::styled("❯", block.fg(text_fg())),
         Span::styled(" ", block),
         Span::styled(
             " · ",
-            Style::default().fg(jackin_core::tui_theme::scroll_track_fg()),
+            Style::default().fg(jackin_ui::theme::scroll_track_fg()),
         ),
-        Span::styled(label.to_owned(), jackin_core::tui_theme::text_muted()),
+        Span::styled(label.to_owned(), jackin_ui::theme::text_muted()),
     ])
 }
 

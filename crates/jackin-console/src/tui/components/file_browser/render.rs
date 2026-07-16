@@ -63,7 +63,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         frame.render_widget(
             Paragraph::new(Span::styled(
                 format!("\u{2717} {reason}"),
-                jackin_core::tui_theme::danger(),
+                jackin_ui::theme::danger(),
             ))
             .alignment(Alignment::Center),
             chunks[0],

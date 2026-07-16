@@ -13,7 +13,7 @@ pub fn render_dialog_backdrop(frame: &mut Frame<'_>, area: Rect) {
     let backdrop = termrock::widgets::Backdrop::new().style(
         Style::default()
             .fg(Color::Reset)
-            .bg(jackin_core::tui_theme::DIALOG_BACKDROP),
+            .bg(jackin_ui::theme::DIALOG_BACKDROP),
     );
     frame.render_widget(backdrop, area);
 }

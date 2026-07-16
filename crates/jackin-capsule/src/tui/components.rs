@@ -11,12 +11,12 @@ pub mod branch_context_bar;
 pub mod chrome;
 pub mod container_info_dialog;
 pub mod container_info_surface {
-    pub use jackin_core::operator_info::clamp_dialog_scroll as clamp_container_info_scroll;
-    pub use jackin_core::operator_info::copy_payload_at as container_info_copy_payload_at;
-    pub use jackin_core::operator_info::hyperlink_payload_at as container_info_hyperlink_payload_at;
-    pub use jackin_core::operator_info::hyperlink_regions as container_info_hyperlink_regions;
-    pub use jackin_core::operator_info::required_height as container_info_required_height;
-    pub use jackin_core::operator_info::*;
+    pub use jackin_ui::operator_info::clamp_dialog_scroll as clamp_container_info_scroll;
+    pub use jackin_ui::operator_info::copy_payload_at as container_info_copy_payload_at;
+    pub use jackin_ui::operator_info::hyperlink_payload_at as container_info_hyperlink_payload_at;
+    pub use jackin_ui::operator_info::hyperlink_regions as container_info_hyperlink_regions;
+    pub use jackin_ui::operator_info::required_height as container_info_required_height;
+    pub use jackin_ui::operator_info::*;
 }
 pub mod dialog;
 pub mod dialog_widgets;

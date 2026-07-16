@@ -79,7 +79,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use jackin_core::tui_theme::scroll_track_fg;
+use jackin_ui::theme::scroll_track_fg;
 use termrock::layout::render_dialog_shell;
 use termrock::widgets::PanelEmphasis;
 

@@ -22,12 +22,8 @@ impl Dialog {
     ) -> Option<ratatui::style::Color> {
         match severity {
             jackin_protocol::control::UsageSeverity::Normal => None,
-            jackin_protocol::control::UsageSeverity::Warn => {
-                Some(jackin_core::tui_theme::DEBUG_AMBER)
-            }
-            jackin_protocol::control::UsageSeverity::Danger => {
-                Some(jackin_core::tui_theme::danger_fg())
-            }
+            jackin_protocol::control::UsageSeverity::Warn => Some(jackin_ui::theme::DEBUG_AMBER),
+            jackin_protocol::control::UsageSeverity::Danger => Some(jackin_ui::theme::danger_fg()),
         }
     }
 

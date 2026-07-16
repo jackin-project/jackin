@@ -25,7 +25,7 @@ use crate::tui::components::editor_rows::{
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
-use jackin_core::tui_theme::{accent_fg, muted_fg, text_fg};
+use jackin_ui::theme::{accent_fg, muted_fg, text_fg};
 
 // Structural exception: auth panels are multi-field credential forms with
 // breadcrumb, source, input, and action rows, so they cannot use the flat picker
@@ -447,7 +447,7 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
             label_style(),
         ),
         Span::raw(" "),
-        Span::styled(mode_text.to_owned(), jackin_core::tui_theme::accent()),
+        Span::styled(mode_text.to_owned(), jackin_ui::theme::accent()),
     ])));
 
     if form.shows_source_folder() {
@@ -478,7 +478,7 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
 
 fn source_folder_line<V: AuthCredential>(form: &AuthForm<V>, selected: bool) -> Line<'static> {
     let label_style = if selected {
-        jackin_core::tui_theme::text_strong()
+        jackin_ui::theme::text_strong()
     } else {
         Style::default().fg(text_fg())
     };
@@ -489,7 +489,7 @@ fn source_folder_line<V: AuthCredential>(form: &AuthForm<V>, selected: bool) -> 
             label_style,
         ),
         Span::raw(" "),
-        Span::styled(source_folder_text(form), jackin_core::tui_theme::accent()),
+        Span::styled(source_folder_text(form), jackin_ui::theme::accent()),
     ])
 }
 
@@ -513,7 +513,7 @@ fn credential_env_line<R: AuthCredentialRef>(
     selected: bool,
 ) -> Line<'static> {
     let label_style = if selected {
-        jackin_core::tui_theme::text_strong()
+        jackin_ui::theme::text_strong()
     } else {
         Style::default().fg(text_fg())
     };
@@ -529,7 +529,7 @@ fn credential_env_line<R: AuthCredentialRef>(
         CredentialInput::None => {
             spans.push(Span::styled(
                 "required".to_owned(),
-                jackin_core::tui_theme::danger(),
+                jackin_ui::theme::danger(),
             ));
         }
         CredentialInput::Literal(value) => {
@@ -539,9 +539,9 @@ fn credential_env_line<R: AuthCredentialRef>(
                 "●".repeat(value.chars().count().clamp(1, 12))
             };
             let style = if value.is_empty() {
-                jackin_core::tui_theme::danger()
+                jackin_ui::theme::danger()
             } else {
-                jackin_core::tui_theme::accent()
+                jackin_ui::theme::accent()
             };
             spans.push(Span::styled(masked, style));
         }
@@ -570,7 +570,7 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
             "  Cancel  ".to_owned(),
             selected_button_style(
                 focus == AuthFormFocus::Cancel,
-                jackin_core::tui_theme::text_strong(),
+                jackin_ui::theme::text_strong(),
             ),
         ),
         Span::raw("    "),
@@ -578,14 +578,14 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
             "  Reset  ".to_owned(),
             selected_button_style(
                 focus == AuthFormFocus::Reset,
-                jackin_core::tui_theme::text_strong(),
+                jackin_ui::theme::text_strong(),
             ),
         ),
     ])
 }
 
 fn label_style() -> Style {
-    jackin_core::tui_theme::text_strong()
+    jackin_ui::theme::text_strong()
 }
 
 fn selected_button_style(selected: bool, style: Style) -> Style {

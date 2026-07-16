@@ -60,7 +60,7 @@ fn status_bar_renders_shared_tab_underline() {
     let tab_start = u16::try_from(termrock::text::display_cols(" jackin❯ ")).unwrap() + 1;
 
     assert_eq!(buf[(tab_start, 1)].symbol(), "━");
-    assert_eq!(buf[(tab_start, 1)].fg, jackin_core::tui_theme::text_fg());
+    assert_eq!(buf[(tab_start, 1)].fg, jackin_ui::theme::text_fg());
 }
 
 #[test]
@@ -142,11 +142,11 @@ fn status_bar_renders_working_idle_done_and_unknown_glyphs() {
 
     assert_eq!(
         glyph_cell(&plan.cells[0]),
-        ("▶".to_owned(), jackin_core::tui_theme::DEBUG_AMBER)
+        ("▶".to_owned(), jackin_ui::theme::DEBUG_AMBER)
     );
     assert_eq!(
         glyph_cell(&plan.cells[1]),
-        ("◆".to_owned(), jackin_core::tui_theme::accent_fg())
+        ("◆".to_owned(), jackin_ui::theme::accent_fg())
     );
     assert_eq!(glyph_cell(&plan.cells[2]).0, "○");
     assert_eq!(glyph_cell(&plan.cells[3]).0, " ");
@@ -223,7 +223,7 @@ fn dynamic_key_hint_uses_key_style() {
     let key_cell = (0..area.width)
         .find(|x| buf[(*x, y)].symbol() == "C")
         .expect("key rendered");
-    assert_eq!(buf[(key_cell, y)].fg, jackin_core::tui_theme::text_fg());
+    assert_eq!(buf[(key_cell, y)].fg, jackin_ui::theme::text_fg());
     assert!(
         buf[(key_cell, y)]
             .style()
@@ -252,5 +252,5 @@ fn separator_hint_uses_shared_border_gray() {
     let sep_cell = (0..area.width)
         .find(|x| buf[(*x, y)].symbol() == "·")
         .expect("separator rendered");
-    assert_eq!(buf[(sep_cell, y)].fg, jackin_core::tui_theme::border_fg());
+    assert_eq!(buf[(sep_cell, y)].fg, jackin_ui::theme::border_fg());
 }

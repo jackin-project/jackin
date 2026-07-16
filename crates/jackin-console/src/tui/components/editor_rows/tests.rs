@@ -3,7 +3,7 @@
 
 //! Tests for `editor_rows`.
 use super::*;
-use jackin_core::tui_theme::{ACTION_ACCENT, accent_fg};
+use jackin_ui::theme::{ACTION_ACCENT, accent_fg};
 use ratatui::style::{Color, Modifier};
 
 #[test]

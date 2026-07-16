@@ -15,7 +15,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::{accent_fg, text_fg, text_muted};
+use jackin_ui::theme::{accent_fg, text_fg, text_muted};
 
 pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
     Rect {
@@ -296,7 +296,7 @@ pub(crate) fn usage_lines_for_row(
         "Focused agent" | "Focused account" => {
             lines.push(Line::from(vec![
                 usage_content_indent(),
-                Span::styled(value.to_owned(), jackin_core::tui_theme::text_strong()),
+                Span::styled(value.to_owned(), jackin_ui::theme::text_strong()),
             ]));
         }
         "Provider" | "Account" | "Username" | "Plan" | "Auth" | "Status" | "Updated"
@@ -347,7 +347,7 @@ pub(crate) fn usage_legacy_overview_provider_lines(
     let status = parts[2];
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(label.to_owned(), jackin_core::tui_theme::text_strong()),
+        Span::styled(label.to_owned(), jackin_ui::theme::text_strong()),
         Span::raw("  "),
         Span::styled(account.to_owned(), Style::default().fg(text_fg())),
         Span::raw("  "),
@@ -432,9 +432,9 @@ pub(crate) fn usage_header_lines(
     let account = account.map(str::trim).filter(|value| !value.is_empty());
     lines.push(usage_header_two_column(
         value,
-        jackin_core::tui_theme::text_strong(),
+        jackin_ui::theme::text_strong(),
         account.unwrap_or(""),
-        jackin_core::tui_theme::text_strong(),
+        jackin_ui::theme::text_strong(),
         width,
     ));
 
@@ -512,7 +512,7 @@ pub(crate) fn usage_quota_bucket_lines(
     }
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(display_label, jackin_core::tui_theme::text_strong()),
+        Span::styled(display_label, jackin_ui::theme::text_strong()),
     ]));
 
     let Some(first) = value.split(" · ").find(|part| !part.trim().is_empty()) else {
@@ -583,7 +583,7 @@ pub(crate) fn usage_limit_reset_credit_lines(
     let right = parts.first().copied().unwrap_or_default();
     lines.push(usage_header_two_column(
         "Limit Reset Credits",
-        jackin_core::tui_theme::text_strong(),
+        jackin_ui::theme::text_strong(),
         right,
         text_muted(),
         width,
@@ -737,7 +737,7 @@ pub(crate) fn usage_quota_bucket_compact_lines(
     let detail = compact_bucket_detail_for_width(label, &detail, width);
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(label.to_owned(), jackin_core::tui_theme::text_strong()),
+        Span::styled(label.to_owned(), jackin_ui::theme::text_strong()),
         Span::styled("  ", text_muted()),
         Span::styled(detail, Style::default().fg(text_fg())),
     ]));

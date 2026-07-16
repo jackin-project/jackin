@@ -246,18 +246,18 @@ pub(crate) fn render_branch_context_bar(
         .map(|value| format!(" {value} "))
         .unwrap_or_default();
     let usage = usage_content(area.width, usage_status_label, &container, &run);
-    let white_bg = Style::default().bg(jackin_core::tui_theme::text_fg());
+    let white_bg = Style::default().bg(jackin_ui::theme::text_fg());
     let left = [StatusSlot {
         style: white_bg
             .fg(if left_clickable {
-                jackin_core::tui_theme::LINK_BLUE
+                jackin_ui::theme::LINK_BLUE
             } else {
-                jackin_core::tui_theme::INK
+                jackin_ui::theme::INK
             })
             .add_modifier(Modifier::BOLD),
         hover_style: Some(
             white_bg
-                .fg(jackin_core::tui_theme::DEBUG_AMBER)
+                .fg(jackin_ui::theme::DEBUG_AMBER)
                 .add_modifier(Modifier::BOLD),
         ),
         ..status_slot(BranchBarSlot::Context, &left_text, 1, left_clickable)
@@ -265,22 +265,22 @@ pub(crate) fn render_branch_context_bar(
     let right = [
         StatusSlot {
             style: white_bg
-                .fg(jackin_core::tui_theme::INK)
+                .fg(jackin_ui::theme::INK)
                 .add_modifier(Modifier::BOLD),
             hover_style: Some(
                 white_bg
-                    .fg(jackin_core::tui_theme::DEBUG_AMBER)
+                    .fg(jackin_ui::theme::DEBUG_AMBER)
                     .add_modifier(Modifier::BOLD),
             ),
             ..status_slot(BranchBarSlot::Usage, &usage, 2, !usage.is_empty())
         },
         StatusSlot {
             style: white_bg
-                .fg(jackin_core::tui_theme::LINK_BLUE)
+                .fg(jackin_ui::theme::LINK_BLUE)
                 .add_modifier(Modifier::BOLD),
             hover_style: Some(
                 white_bg
-                    .fg(jackin_core::tui_theme::DEBUG_AMBER)
+                    .fg(jackin_ui::theme::DEBUG_AMBER)
                     .add_modifier(Modifier::BOLD),
             ),
             ..status_slot(
@@ -292,13 +292,13 @@ pub(crate) fn render_branch_context_bar(
         },
         StatusSlot {
             style: Style::default()
-                .bg(jackin_core::tui_theme::danger_fg())
-                .fg(jackin_core::tui_theme::text_fg())
+                .bg(jackin_ui::theme::danger_fg())
+                .fg(jackin_ui::theme::text_fg())
                 .add_modifier(Modifier::BOLD),
             hover_style: Some(
                 Style::default()
-                    .bg(jackin_core::tui_theme::text_fg())
-                    .fg(jackin_core::tui_theme::danger_fg())
+                    .bg(jackin_ui::theme::text_fg())
+                    .fg(jackin_ui::theme::danger_fg())
                     .add_modifier(Modifier::BOLD),
             ),
             ..status_slot(BranchBarSlot::RunId, &run, 4, !run.is_empty())
@@ -313,7 +313,7 @@ pub(crate) fn render_branch_context_bar(
     };
     let theme = termrock::Theme::default().with_role(
         termrock::style::Role::StatusBar,
-        white_bg.fg(jackin_core::tui_theme::INK),
+        white_bg.fg(jackin_ui::theme::INK),
     );
     (&StatusBar::new(&left, &right, &theme)).render(
         area,

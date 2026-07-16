@@ -6,3 +6,6 @@
 //! Neutral widgets and interaction mechanics belong to TermRock. Surface
 //! application state belongs to each surface crate. This crate contains only
 //! jackin❯-specific presentation shared by multiple surfaces.
+
+pub mod operator_info;
+pub mod theme;

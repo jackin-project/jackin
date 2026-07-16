@@ -12,8 +12,6 @@ use std::io::Write;
 use std::time::Duration;
 
 pub use jackin_core::LaunchCancelled;
-#[cfg(test)]
-use jackin_core::tui_theme::danger_fg;
 use jackin_core::{LaunchHostTerminal, LaunchOutputSink};
 use jackin_launch::LaunchTuiOutputSink;
 pub use jackin_launch::progress::LaunchProgress;
@@ -50,6 +48,8 @@ pub use jackin_launch::{
     LaunchView, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     active_stage_index, initial_view, update_launch_view, update_stage,
 };
+#[cfg(test)]
+use jackin_ui::theme::danger_fg;
 #[cfg(test)]
 use ratatui::Frame;
 #[cfg(test)]

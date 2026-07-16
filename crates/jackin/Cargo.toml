@@ -31,6 +31,7 @@ path = "src/bin/build_jackin_capsule/main.rs"
 anyhow = { workspace = true }
 jackin-config = { workspace = true }
 jackin-core = { workspace = true }
+jackin-ui = { workspace = true }
 jackin-docker = { workspace = true }
 jackin-manifest = { workspace = true }
 jackin-diagnostics = { workspace = true }

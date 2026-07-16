@@ -3,7 +3,7 @@
 
 //! Launch docker-build log overlay helpers.
 
-use jackin_core::tui_theme::DIALOG_SURFACE;
+use jackin_ui::theme::DIALOG_SURFACE;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
@@ -67,7 +67,7 @@ pub fn build_log_wrapped_lines(raw: &[String], width: usize) -> Vec<Line<'static
     if raw.is_empty() {
         vec![Line::from(Span::styled(
             "(waiting for docker build output…)",
-            jackin_core::tui_theme::text_muted(),
+            jackin_ui::theme::text_muted(),
         ))]
     } else {
         wrap_build_log_lines(raw, width)
@@ -202,7 +202,7 @@ pub fn render_build_log_dialog(
     debug_mode: bool,
 ) {
     frame.render_widget(
-        Block::default().style(Style::default().bg(jackin_core::tui_theme::DIALOG_BACKDROP)),
+        Block::default().style(Style::default().bg(jackin_ui::theme::DIALOG_BACKDROP)),
         area,
     );
     let chrome = launch_overlay_chrome_areas(area, debug_mode);
@@ -329,7 +329,7 @@ fn push_wrapped_build_line(
             0,
             Span::styled(
                 BUILD_LOG_WRAP_PREFIX,
-                jackin_core::tui_theme::text_muted().bg(DIALOG_SURFACE),
+                jackin_ui::theme::text_muted().bg(DIALOG_SURFACE),
             ),
         );
     }

@@ -370,8 +370,8 @@ fn apply_tab_codename_tooltip(
         tooltip_row,
         &pill,
         Style::default()
-            .bg(jackin_core::tui_theme::tab_inactive_bg())
-            .fg(jackin_core::tui_theme::accent_fg())
+            .bg(jackin_ui::theme::tab_inactive_bg())
+            .fg(jackin_ui::theme::accent_fg())
             .add_modifier(Modifier::BOLD),
     );
 }

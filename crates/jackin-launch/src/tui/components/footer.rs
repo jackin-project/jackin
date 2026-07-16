@@ -122,11 +122,11 @@ pub fn render_footer(
         min_width: 0,
         enabled: true,
         style: Style::default()
-            .bg(jackin_core::tui_theme::text_fg())
+            .bg(jackin_ui::theme::text_fg())
             .fg(if view.footer_hover.left {
-                jackin_core::tui_theme::LINK_BLUE
+                jackin_ui::theme::LINK_BLUE
             } else {
-                jackin_core::tui_theme::INK
+                jackin_ui::theme::INK
             })
             .add_modifier(Modifier::BOLD),
         hover_style: None,
@@ -139,11 +139,11 @@ pub fn render_footer(
             min_width: 0,
             enabled: !instance.is_empty(),
             style: Style::default()
-                .bg(jackin_core::tui_theme::text_fg())
+                .bg(jackin_ui::theme::text_fg())
                 .fg(if view.footer_hover.right {
-                    jackin_core::tui_theme::DEBUG_AMBER
+                    jackin_ui::theme::DEBUG_AMBER
                 } else {
-                    jackin_core::tui_theme::LINK_BLUE
+                    jackin_ui::theme::LINK_BLUE
                 })
                 .add_modifier(Modifier::BOLD),
             hover_style: None,
@@ -156,14 +156,14 @@ pub fn render_footer(
             enabled: debug_chip.is_some_and(|value| !value.is_empty()),
             style: Style::default()
                 .bg(if view.footer_hover.right_debug {
-                    jackin_core::tui_theme::text_fg()
+                    jackin_ui::theme::text_fg()
                 } else {
-                    jackin_core::tui_theme::danger_fg()
+                    jackin_ui::theme::danger_fg()
                 })
                 .fg(if view.footer_hover.right_debug {
-                    jackin_core::tui_theme::danger_fg()
+                    jackin_ui::theme::danger_fg()
                 } else {
-                    jackin_core::tui_theme::text_fg()
+                    jackin_ui::theme::text_fg()
                 })
                 .add_modifier(Modifier::BOLD),
             hover_style: None,
@@ -172,8 +172,8 @@ pub fn render_footer(
     let theme = termrock::Theme::default().with_role(
         termrock::style::Role::StatusBar,
         Style::default()
-            .bg(jackin_core::tui_theme::text_fg())
-            .fg(jackin_core::tui_theme::INK),
+            .bg(jackin_ui::theme::text_fg())
+            .fg(jackin_ui::theme::INK),
     );
     frame.render_stateful_widget(
         &StatusBar::new(&left, &right, &theme).alpha(alpha),
