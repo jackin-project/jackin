@@ -14,27 +14,19 @@ repository=${REPOSITORY:-${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}}
 if [ "$all_features" = true ]; then
   version=v5
   latest_version=latest-v5
-  legacy_version=v4
-  legacy_latest_version=latest-v4
 else
   version=default-v5
   latest_version=default-latest-v5
-  legacy_version=default-v4
-  legacy_latest_version=default-latest-v4
 fi
 
 artifact_prefix="ci-crate-target-${version}-${runner_os}-${runner_arch}-${package}-${cache_key}"
 latest_marker_name="ci-crate-target-${latest_version}-${runner_os}-${runner_arch}-${package}"
 latest_prefix_base="ci-crate-target-${version}-${runner_os}-${runner_arch}-${package}-"
-legacy_prefix="ci-crate-target-${legacy_version}-${runner_os}-${runner_arch}-${package}-${cache_key}"
-legacy_marker_name="ci-crate-target-${legacy_latest_version}-${runner_os}-${runner_arch}-${package}-ready"
-legacy_prefix_base="ci-crate-target-${legacy_version}-${runner_os}-${runner_arch}-${package}-"
 
 hit=false
 canonical_hit=false
 format=none
 download_prefix=
-legacy_name=
 run_id=
 
 artifact_run() {
@@ -65,14 +57,7 @@ if [ -n "$run_id" ]; then
   format=v5
   download_prefix=$artifact_prefix
 else
-  # Temporary read compatibility seeds the first single-archive producer from
-  # v4. Delete this branch once v5 artifacts exist on main.
-  run_id=$(artifact_run "${legacy_prefix}-ready")
-  if [ -n "$run_id" ]; then
-    hit=true
-    format=v4
-    download_prefix=$legacy_prefix
-  fi
+  run_id=
 fi
 
 if [ "$hit" != true ]; then
@@ -91,29 +76,12 @@ if [ "$hit" != true ]; then
   fi
 fi
 
-if [ "$hit" != true ]; then
-  candidate=$(read_pointer "$legacy_marker_name" || true)
-  if [ -n "$candidate" ]; then
-    if [[ ! "$candidate" =~ ^${legacy_prefix_base}[0-9a-f]{64}$ ]]; then
-      echo "invalid legacy latest-target prefix for ${package}" >&2
-      exit 1
-    fi
-    run_id=$(artifact_run "${candidate}-ready")
-    if [ -n "$run_id" ]; then
-      hit=true
-      format=v4
-      download_prefix=$candidate
-    fi
-  fi
-fi
-
 jq -cn \
   --arg prefix "$artifact_prefix" \
   --argjson hit "$hit" \
   --argjson canonical_hit "$canonical_hit" \
   --arg format "$format" \
   --arg download_prefix "$download_prefix" \
-  --arg legacy_name "$legacy_name" \
   --arg run_id "$run_id" \
   '{prefix: $prefix, hit: $hit, canonical_hit: $canonical_hit, format: $format,
-    download_prefix: $download_prefix, legacy_name: $legacy_name, run_id: $run_id}'
+    download_prefix: $download_prefix, run_id: $run_id}'

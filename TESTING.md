@@ -96,17 +96,16 @@ per-crate commands or acceptance criteria change; cache transport, artifact
 lookup, and reporting changes keep the identifier and reuse prior proofs. Each
 selected cache miss owns one job and one
 target-cache namespace, including default/all-feature checks, clippy, nextest, doctests,
-MSRV, applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
+applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
 When changed construct inputs require a fresh image, the `jackin` crate job
 builds that image in its own Docker daemon before its E2E smoke test. There is
 no separate construct-image test job or large tar artifact handoff.
 Scheduling follows the reverse dependency closure; the input-identical target
 artifact key follows the forward dependency closure. Each seven-day artifact
 stores the crate's first-party and third-party fingerprints, libraries,
-binaries, build outputs, and test executables. MSRV outputs live under
-`target/msrv`, so the older compiler cannot overwrite current-toolchain
-artifacts immediately before packing. This preserves crate-specific Cargo
-feature, profile, and toolchain variants without placing 26 mostly overlapping
+binaries, build outputs, and test executables. CI uses only the newest pinned
+stable compiler, so no older-toolchain outputs or compatibility cache are
+created. This preserves crate-specific Cargo feature and profile variants without placing 26 mostly overlapping
 archives in GitHub's small repository cache quota. The configured canonical
 writer publishes one output for both GitHub and Velnor to restore.
 
@@ -120,8 +119,8 @@ exist. It also resolves target-artifact metadata once for every selected miss,
 so GitHub and Velnor do not repeat the same repository API search before
 restoring the identical target archive. Both lanes download that one archive
 through the same GitHub REST artifact path; target transport does not depend on a
-runner-specific Results Service action adapter. A runner with existing current
-and MSRV Cargo targets uses that local state as the first seed and lets Cargo
+runner-specific Results Service action adapter. A runner with an existing current
+Cargo target uses that local state as the first seed and lets Cargo
 validate it; an incomplete or empty runner restores the portable artifact. This is one shared
 fallback order, not a lane-specific verification path.
 
@@ -142,7 +141,7 @@ latest-target pointer; it does not duplicate the target archive.
 | One crate | `cargo nextest run -p <crate>` + `cargo clippy -p <crate> --all-targets -- -D warnings` | before commit |
 | Cross-crate Rust | `cargo xtask ci --fast` | before PR |
 | Full non-Docker gate | `cargo xtask ci` | merge readiness |
-| One CI partition | `cargo xtask ci --only <lint\|policy\|tests\|snapshots\|docs\|msrv\|powerset>` | inner loop mirroring a CI lane |
+| One CI partition | `cargo xtask ci --only <lint\|policy\|tests\|snapshots\|docs\|powerset>` | inner loop mirroring a CI lane |
 | Scoped feature powerset | `cargo hack check -p jackin -p jackin-diagnostics -p jackin-capsule -p jackin-agent-status -p jackin-term -p jackin-runtime --feature-powerset --all-targets --locked` | optional-feature crates (PR gate) |
 | Container/runtime behavior | `cargo xtask ci --e2e` (Docker running) | capsule/runtime PRs |
 | Docs/roadmap | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | any docs edit |
@@ -210,7 +209,7 @@ Does not apply to:
 
 ### Flake policy
 
-CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate that requires testing; an input-identical successful result is resolved before matrix expansion and does not consume a runner. It has no shards, multi-crate buckets, or second jobs for crate-specific MSRV, clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
+CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate that requires testing; an input-identical successful result is resolved before matrix expansion and does not consume a runner. It has no shards, multi-crate buckets, older-toolchain lanes, or second jobs for crate-specific clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
 An input-identical successful crate result is reused for seven days before any
 toolchain, registry, or target restore. Its key includes the crate's forward

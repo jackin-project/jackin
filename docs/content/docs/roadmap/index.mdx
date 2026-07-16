@@ -37,7 +37,7 @@ jackin❯ is a functional proof of concept, not a stable product line. **`Claude
 - Agent source trust model (trust-on-first-use verification for third-party role repos)
 - DinD TLS authentication with auto-generated certificates — see the [Security model](/guides/security-model/) and [Architecture](/reference/getting-oriented/architecture/)
 - `JACKIN_DEBUG` environment variable — verbose tracing for shell commands and jackin❯ internals; documented inline in every command page
-- MSRV toolchain pin — `rust-toolchain.toml` enforced in CI
+- Latest stable Rust toolchain pin — `rust-toolchain.toml` enforced in CI
 - Worktree cleanup on container removal — orphaned host-side worktrees no longer accumulate
 - `jackin eject` — stop and clean per-container state (with `--all` and `--purge`)
 - `jackin prune` family — orphaned roles, derived images, cache, and instance state

@@ -6,7 +6,7 @@ Apply these rules to every workflow under this directory. They define the reposi
 
 - Install every CI tool with `jdx/mise-action`; `mise.toml`, `mise.lock`, and `rust-toolchain.toml` are the version sources. Do not add language-specific setup actions.
 - Add Rust components and cross-compilation targets after mise. Use `cargo:<crate>` keys directly in `mise.toml` and `install_args` for Cargo tools.
-- The MSRV job reads `Cargo.toml`'s `rust-version` at runtime; it never hardcodes a version.
+- CI uses only the newest pinned stable Rust toolchain. Keep `Cargo.toml`'s `rust-version` aligned with `rust-toolchain.toml`; do not add older-compiler lanes or compatibility caches.
 
 ## Caches
 

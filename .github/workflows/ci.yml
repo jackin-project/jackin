@@ -70,7 +70,6 @@ jobs:
       nextest-contract: ${{ steps.contracts.outputs.nextest }}
       registry-contract: ${{ steps.contracts.outputs.registry }}
       rustup-contract: ${{ steps.contracts.outputs.rustup }}
-      rustup-ci-contract: ${{ steps.contracts.outputs.rustup-ci }}
       result-reuse: ${{ steps.ci-result.outputs.hit }}
       result-name: ${{ steps.ci-result.outputs.name }}
       policy-reuse: ${{ steps.policy-result.outputs.hit }}
@@ -90,7 +89,6 @@ jobs:
           DOCKER: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
           REGISTRY: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
           RUSTUP: ${{ hashFiles('rust-toolchain.toml') }}
-          RUSTUP_CI: ${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
         run: |
           {
             echo "audit=$AUDIT"
@@ -100,7 +98,6 @@ jobs:
             echo "nextest=$(scripts/ci/crate-test-contract.sh)"
             echo "registry=$REGISTRY"
             echo "rustup=$RUSTUP"
-            echo "rustup-ci=$RUSTUP_CI"
           } >> "$GITHUB_OUTPUT"
 
       - name: Reject pending insta snapshots
@@ -475,9 +472,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: "2026.6.11"
@@ -506,9 +503,6 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Read MSRV
-        id: msrv
-        run: echo "version=$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
       - id: ci-xtask-artifact
         name: Restore input-identical CI xtask
         shell: bash
@@ -573,9 +567,7 @@ jobs:
             "${{ runner.os }}" "${{ runner.arch }}")
           {
             echo "hit=$(jq -r '.hit' <<< "$result")"
-            echo "format=$(jq -r '.format' <<< "$result")"
             echo "download-prefix=$(jq -r '.download_prefix' <<< "$result")"
-            echo "legacy-name=$(jq -r '.legacy_name' <<< "$result")"
             echo "run-id=$(jq -r '.run_id' <<< "$result")"
           } >> "$GITHUB_OUTPUT"
       - name: Download latest successful jackin-xtask target
@@ -589,9 +581,7 @@ jobs:
         run: |
           scripts/ci/download-crate-target.sh \
             "${{ steps.xtask-target-seed.outputs.run-id }}" \
-            "${{ steps.xtask-target-seed.outputs.format }}" \
             "${{ steps.xtask-target-seed.outputs.download-prefix }}" \
-            "${{ steps.xtask-target-seed.outputs.legacy-name }}" \
             target/.ci-restore
       - name: Restore latest successful jackin-xtask target
         if: >-
@@ -602,14 +592,8 @@ jobs:
           set -euo pipefail
           target_dir=${CARGO_TARGET_DIR:-target}
           mkdir -p "$target_dir"
-          if [ "${{ steps.xtask-target-seed.outputs.format }}" = v4 ]; then
-            for archive in target/.ci-restore/target.part-*; do
-              tar --zstd --strip-components=1 -C "$target_dir" -xf "$archive"
-            done
-          else
-            tar --zstd --strip-components=1 -C "$target_dir" \
-              -xf target/.ci-restore/target.tar.zst
-          fi
+          tar --zstd --strip-components=1 -C "$target_dir" \
+            -xf target/.ci-restore/target.tar.zst
           rm -rf target/.ci-restore
           git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
       - name: Check prepared Rust toolchains
@@ -619,7 +603,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           lookup-only: true
       - name: Use the minimal Rust CI profile
         if: steps.toolchain-lookup.outputs.cache-hit != 'true'
@@ -631,9 +615,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: "2026.6.11"
@@ -645,7 +629,6 @@ jobs:
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           install_args: >-
             rust
-            rust@${{ steps.msrv.outputs.version }}
             ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -885,9 +868,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: "2026.6.11"
@@ -920,6 +903,7 @@ jobs:
       packages-json: ${{ needs.affected-crates.outputs.packages }}
       package-cache-keys-json: ${{ needs.affected-crates.outputs.cache-keys }}
       package-target-results-json: ${{ needs.affected-crates.outputs.target-results }}
+      refresh-package: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh-package || '' }}
       all-features: true
       ci-tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
       ci-xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
@@ -929,7 +913,6 @@ jobs:
       nextest-contract: ${{ needs.changes.outputs.nextest-contract }}
       registry-contract: ${{ needs.changes.outputs.registry-contract }}
       rustup-contract: ${{ needs.changes.outputs.rustup-contract }}
-      rustup-ci-contract: ${{ needs.changes.outputs.rustup-ci-contract }}
     secrets: inherit
   audit:
     # Advisories are also covered daily by hygiene.yml (cargo deny check
@@ -959,9 +942,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
       - name: Cache audit indexes
         id: audit-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

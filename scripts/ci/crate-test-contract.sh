@@ -7,4 +7,4 @@ set -euo pipefail
 # Bump this identifier only when the commands or acceptance criteria in the
 # per-crate test contract change. Cache transport and artifact plumbing must
 # keep reusing successful results from the same semantic contract.
-printf '%s\n' a7bd699bf895e2125fcd7cc287f9123aca282f7c4e26a5274fcab7645fa4c94c
+printf '%s\n' 2c87e22194a8df9228603249e7d4efdee1df4ab829909d9350b0194d8b0ab83b

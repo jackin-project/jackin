@@ -12,6 +12,7 @@ Primary branch: `main`.
 - **Brand is always `jackin❯`.** The product/project name is *always* written `jackin❯` (lowercase letters + the `❯` chevron) in every rich-text surface — prose, docs, UI, comments, commit/PR descriptions, marketing. Never `jackin'`, `Jackin`, `Jackin'`, or bare `jackin` for the brand. Only proven plaintext-only surfaces may fall back to `jackin>`. Use the no-chevron literal `jackin` *exclusively* for code identifiers, commands, binaries, crates, packages, env vars, config keys, file paths, URLs, and labels (`jackin`, `jackin-capsule`, `JACKIN_DEBUG`, `~/.jackin/`). If the chevron makes a possessive awkward, rewrite the sentence. → [RULES.md](RULES.md)
 - **Every commit: sign `-s`, push immediately.** → [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Pre-release: breaking changes OK, no migration shims.** Exception: `config.toml`, per-workspace files, `jackin.role.toml` versioned; schema changes ship 5 artifacts under one version bump per PR. → [PRERELEASE.md](PRERELEASE.md)
+- **Latest-only engineering.** Dependencies, toolchains, actions, formats, and configuration use their newest stable releases and current standards. Do not retain older-version lanes, compatibility readers, or migration shims unless a versioned persisted-schema rule explicitly requires one. Backward compatibility is not a release goal before 1.0.
 
 ## Commits & Branching
 
