@@ -77,10 +77,7 @@ Velnor-only dispatch. Both lanes restore that same portable output.
 A cold bootstrap is recorded as a cache miss, not hidden by raising the target.
 Fan-out jobs stay offline and consume the warmup result. Cross-run compiler
 result sharing is deferred to the [Shared CI compiler cache](<docs/content/docs/roadmap/(infrastructure)/shared-ci-compiler-cache.mdx>)
-roadmap item. An exact successful CI revision, event mode, and lane selection
-is memoized for seven days; rerunning that immutable revision executes only the
-result lookup and stable required-status aggregation. For a changed revision,
-`jackin-xtask affected-crates` reads the
+roadmap item. `jackin-xtask affected-crates` reads the
 Cargo metadata graph and maps a diff to changed crates plus their transitive
 reverse workspace dependents. Workspace-wide inputs and unrecognized Rust paths
 fail safe to every crate. Each selected cache miss owns one job and one
@@ -193,12 +190,6 @@ Velnor to consume. Docker inputs and
 execution modes affect only the `jackin` result, because that crate owns the
 single conditional Docker E2E path.
 
-The pipeline-level marker is deliberately narrower than crate-result reuse. It
-requires the identical source SHA, event type, and requested lane set, so it
-cannot substitute a GitHub-only result for a parity run or carry a pull-request
-mode result into `main`. Crate closure markers remain the cross-revision layer
-that avoids retesting unchanged crates and their unchanged dependencies.
-
 Construct Image uses the same pattern at its own correctness boundary. Its
 seven-day marker covers the construct sources, Docker and Cargo/tool inputs,
 publish-versus-rehearsal mode, and requested runner lanes. An unrelated commit
@@ -209,6 +200,9 @@ Docs prepares the pinned `codebook-lsp` binary once and publishes a seven-day
 platform/tool-contract artifact. The docs and source spell jobs download that
 same binary instead of each invoking Cargo through mise; only a genuinely new
 Codebook version or platform may take the source-build fallback.
+The repository-link job restores the same prepared `jackin-xtask` artifact as
+CI and installs only lychee, so it does not maintain a second Rust build/cache
+path for identical source inputs.
 
 Required PR/main CI runs the real
 `jackin_load_ctrl_q_yes_exits_cold_build_quickly` Docker smoke inside the
