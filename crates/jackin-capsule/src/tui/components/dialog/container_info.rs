@@ -74,7 +74,6 @@ impl Dialog {
             agent: Some(agent_label),
             target: (!workdir.is_empty()).then(|| workdir.clone()),
             run_id: debug.then(|| diagnostics.invocation_id.clone()),
-            diagnostics_log_path: None,
         }
         .into_state();
         if let Some(row) = *copied_row {
