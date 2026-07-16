@@ -161,6 +161,54 @@ jobs:
             echo "name=$name"
           } >> "$GITHUB_OUTPUT"
 
+  deployment-state:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      reuse: ${{ steps.deployed.outputs.reuse }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Find semantically identical successful Pages deployment
+        id: deployed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          reuse=false
+          deployments=$(
+            gh api "repos/${REPOSITORY}/deployments?environment=github-pages&per_page=10" \
+              --jq '.[] | [.id, .sha] | @tsv'
+          )
+          while IFS=$'\t' read -r deployment_id source_sha; do
+            if [ -z "$deployment_id" ] || [ -z "$source_sha" ]; then
+              continue
+            fi
+            state=$(
+              gh api "repos/${REPOSITORY}/deployments/${deployment_id}/statuses?per_page=1" \
+                --jq '.[0].state // empty'
+            )
+            if [ "$state" != success ]; then
+              continue
+            fi
+            if ! git cat-file -e "$source_sha^{commit}" 2>/dev/null && \
+               ! git fetch --no-tags --depth=1 origin "$source_sha"; then
+              break
+            fi
+            if [ "$(scripts/ci/docs-site-contract.sh "$source_sha")" = \
+                 "$(scripts/ci/docs-site-contract.sh)" ]; then
+              echo "::notice::reusing semantically identical successful Pages deployment"
+              reuse=true
+            fi
+            break
+          done <<< "$deployments"
+          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
+
   # The docs site links to repository files via the <RepoFile path="…" />
   # component, which renders a `blob/main` URL that lychee remaps to the
   # PR checkout. A source-only PR that renames or deletes a referenced
@@ -618,11 +666,12 @@ jobs:
     # artifact, then accept the same artifact/SHA on the next deployment.
     # Keep retries scoped to that opaque Pages handoff instead of rerunning
     # the whole workflow or retrying source/build/link validation.
-    needs: [docs-link-check, repo-link-check]
+    needs: [docs-link-check, repo-link-check, deployment-state]
     if: >-
       always() &&
       (github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) &&
+      needs.deployment-state.outputs.reuse != 'true' &&
       needs.docs-link-check.result == 'success' &&
       (needs.repo-link-check.result == 'success' ||
        needs.repo-link-check.result == 'skipped')
@@ -680,8 +729,13 @@ jobs:
           exit 1
 
   verify-deployed:
-    needs: deploy
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    needs: [deploy, deployment-state]
+    if: >-
+      always() &&
+      needs.deployment-state.outputs.reuse != 'true' &&
+      needs.deploy.result == 'success' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -739,7 +793,7 @@ jobs:
   # one-job aggregator on schedule has no value.
   docs-required:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, repo-link-check, docs-link-check, prepare-codebook, spell-check-docs, spell-check-source, deploy, verify-deployed, check-deployed]
+    needs: [changes, deployment-state, repo-link-check, docs-link-check, prepare-codebook, spell-check-docs, spell-check-source, deploy, verify-deployed, check-deployed]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
