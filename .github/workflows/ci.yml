@@ -759,7 +759,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: construct-e2e-image-${{ matrix.config.lane }}-workspace-v2
+          shared-key: construct-e2e-image-workspace-v2
           cache-all-crates: "false"
           cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"

@@ -170,8 +170,8 @@ jobs:
       # without this, an unrelated tool's install (e.g. a flaky rustup
       # component download for cargo-zigbuild) reds the construct build.
       MISE_TASK_RUN_AUTO_INSTALL: "false"
-      DOCKERHUB_USERNAME: ${{ matrix.config.lane == 'GitHub' && secrets.DOCKERHUB_USERNAME || '' }}
-      DOCKERHUB_TOKEN: ${{ matrix.config.lane == 'GitHub' && secrets.DOCKERHUB_TOKEN || '' }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -230,7 +230,7 @@ jobs:
           path: docker/construct/prebuilt
           key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ hashFiles('rust-toolchain.toml') }}
       - name: Log in to Docker Hub
-        if: matrix.config.lane == 'GitHub' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
@@ -254,11 +254,11 @@ jobs:
         run: mise run construct-init-buildx
 
       - name: Expose GitHub Actions cache runtime
-        if: matrix.config.lane == 'GitHub' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
+        if: matrix.config.lane != 'GitHub' || needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
 
-      - name: Build ${{ matrix.config.platform }} without push (GitHub)
-        if: matrix.config.lane == 'GitHub' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
+      - name: Build ${{ matrix.config.platform }} without push
+        if: matrix.config.lane != 'GitHub' || needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         env:
           # Registry buildcache (written by main) is the primary warm source — avoids a cold
           # GHA start when the scope is empty or evicted. GHA scope is secondary,
@@ -266,13 +266,7 @@ jobs:
           CACHE_FROM: |
             type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
             type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }}
-          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=min
-        run: mise run construct-build-platform ${{ matrix.config.platform }}
-
-      - name: Build ${{ matrix.config.platform }} without push (Velnor)
-        if: matrix.config.lane == 'Velnor' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
-        env:
-          CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
+          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=min,ignore-error=true
         run: mise run construct-build-platform ${{ matrix.config.platform }}
 
       - name: Push ${{ matrix.config.platform }} image by digest
