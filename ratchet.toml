@@ -89,9 +89,6 @@ bound = 3
 key = "clippy::disallowed_methods@jackin-dev"
 bound = 1
 [[family.entry]]
-key = "clippy::disallowed_methods@jackin-diagnostics"
-bound = 6
-[[family.entry]]
 key = "clippy::disallowed_methods@jackin-docker"
 bound = 1
 [[family.entry]]
@@ -108,7 +105,7 @@ key = "clippy::disallowed_methods@jackin-instance"
 bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
-bound = 11
+bound = 6
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-term"
 bound = 1
@@ -117,7 +114,7 @@ key = "clippy::disallowed_methods@jackin-tui"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage"
-bound = 5
+bound = 4
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
 bound = 1
@@ -181,9 +178,6 @@ bound = 2
 [[family.entry]]
 key = "clippy::expect_used@jackin-console-oppicker"
 bound = 3
-[[family.entry]]
-key = "clippy::expect_used@jackin-diagnostics"
-bound = 1
 [[family.entry]]
 key = "clippy::expect_used@jackin-image"
 bound = 3
@@ -282,7 +276,7 @@ key = "clippy::print_stderr@jackin-pr-trailers"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-runtime"
-bound = 8
+bound = 7
 [[family.entry]]
 key = "clippy::print_stderr@jackin-xtask"
 bound = 2
@@ -297,9 +291,6 @@ key = "clippy::print_stdout@jackin-dev"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stdout@jackin-pr-trailers"
-bound = 1
-[[family.entry]]
-key = "clippy::print_stdout@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stdout@jackin-term"
@@ -369,7 +360,7 @@ key = "clippy::too_many_arguments@jackin-isolation"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-launch-tui"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
 bound = 11
@@ -382,9 +373,6 @@ bound = 8
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-console"
 bound = 7
-[[family.entry]]
-key = "clippy::too_many_lines@jackin-diagnostics"
-bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-env"
 bound = 1
@@ -422,9 +410,6 @@ bound = 2
 key = "clippy::unnecessary_wraps@jackin-runtime"
 bound = 1
 [[family.entry]]
-key = "clippy::unused_self@jackin-diagnostics"
-bound = 1
-[[family.entry]]
 key = "clippy::unwrap_used@jackin"
 bound = 12
 [[family.entry]]
@@ -451,9 +436,6 @@ bound = 1
 [[family.entry]]
 key = "dead_code@jackin-core"
 bound = 4
-[[family.entry]]
-key = "dead_code@jackin-diagnostics"
-bound = 2
 [[family.entry]]
 key = "dead_code@jackin-env"
 bound = 3
