@@ -51,22 +51,17 @@ fn activate(version: &str, repair: bool) -> Result<()> {
         return Ok(());
     }
 
-    let install = mise_install(version)?;
-    if !valid_toolchain(&install) {
-        if !repair {
-            bail!(
-                "prepared Rust toolchain {version} is unavailable; the warmup job must repair it"
-            );
-        }
-        if install.exists() {
-            fs::remove_dir_all(&install)
-                .with_context(|| format!("removing incomplete {}", install.display()))?;
-        }
-        let tool = format!("rust@{version}");
-        let _uninstall = cmd::run_streaming(Command::new("mise").args(["uninstall", &tool]));
-        cmd::run_streaming(Command::new("mise").args(["install", &tool]))
-            .with_context(|| format!("installing Rust {version} with mise"))?;
+    if !repair {
+        bail!("prepared Rust toolchain {version} is unavailable; the warmup job must repair it");
     }
+    cmd::run_streaming(Command::new("rustup").args([
+        "toolchain",
+        "install",
+        version,
+        "--profile",
+        "minimal",
+    ]))
+    .with_context(|| format!("installing Rust {version} with rustup"))?;
     if let Some(toolchain) = find_rustup_toolchain(version)? {
         append_github_file("GITHUB_ENV", &format!("RUSTUP_TOOLCHAIN={toolchain}"))?;
         writeln!(
@@ -75,18 +70,7 @@ fn activate(version: &str, repair: bool) -> Result<()> {
         )?;
         return Ok(());
     }
-    if !valid_toolchain(&install) {
-        bail!(
-            "mise reported Rust {version} installed, but {} is incomplete",
-            install.display()
-        );
-    }
-    append_github_file("GITHUB_PATH", &install.join("bin").to_string_lossy())?;
-    writeln!(
-        io::stdout().lock(),
-        "prepared Rust toolchain {version} from mise storage"
-    )?;
-    Ok(())
+    bail!("rustup reported Rust {version} installed, but its toolchain is incomplete")
 }
 
 fn pinned_version() -> Result<String> {
@@ -130,11 +114,6 @@ fn find_rustup_toolchain(version: &str) -> Result<Option<String>> {
         .collect::<Vec<_>>();
     candidates.sort_unstable();
     Ok(candidates.pop())
-}
-
-fn mise_install(version: &str) -> Result<PathBuf> {
-    let data = env::var_os("MISE_DATA_DIR").context("MISE_DATA_DIR must be set")?;
-    Ok(PathBuf::from(data).join("installs/rust").join(version))
 }
 
 fn valid_toolchain(path: &Path) -> bool {
