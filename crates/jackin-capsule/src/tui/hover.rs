@@ -68,3 +68,17 @@ impl<K: Clone + PartialEq> HoverTracker<K> {
         self.hovered(col, row).is_some()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_and_hit_returns_product_identity() {
+        let mut tracker = HoverTracker::new();
+        tracker.register(Rect::new(2, 3, 4, 1), "menu");
+        assert_eq!(tracker.hovered(3, 3), Some(&"menu"));
+        assert!(tracker.any_hovered(3, 3));
+        assert!(tracker.hovered(9, 9).is_none());
+    }
+}
