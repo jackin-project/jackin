@@ -296,10 +296,53 @@ where
     V: View<M>,
     F: FnOnce(&mut ratatui::Frame<'_>),
 {
-    terminal.draw(|frame| {
+    drive_frame_inner(terminal, view, model, area, overlay, None)
+}
+
+/// Drive and measure one frame for a registry-backed application screen.
+pub fn drive_frame_for<'a, B, M, V, F>(
+    terminal: &'a mut ratatui::Terminal<B>,
+    view: &V,
+    model: &M,
+    area: ratatui::layout::Rect,
+    overlay: F,
+    screen: jackin_telemetry::schema::enums::ScreenId,
+) -> Result<ratatui::CompletedFrame<'a>, B::Error>
+where
+    B: ratatui::backend::Backend,
+    V: View<M>,
+    F: FnOnce(&mut ratatui::Frame<'_>),
+{
+    drive_frame_inner(terminal, view, model, area, overlay, Some(screen))
+}
+
+fn drive_frame_inner<'a, B, M, V, F>(
+    terminal: &'a mut ratatui::Terminal<B>,
+    view: &V,
+    model: &M,
+    area: ratatui::layout::Rect,
+    overlay: F,
+    screen: Option<jackin_telemetry::schema::enums::ScreenId>,
+) -> Result<ratatui::CompletedFrame<'a>, B::Error>
+where
+    B: ratatui::backend::Backend,
+    V: View<M>,
+    F: FnOnce(&mut ratatui::Frame<'_>),
+{
+    let started = std::time::Instant::now();
+    let result = terminal.draw(|frame| {
         view.render(model, frame, area);
         overlay(frame);
-    })
+    });
+    if let Some(screen) = screen {
+        let attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
+            value: jackin_telemetry::Value::Str(screen.as_str()),
+        }];
+        let _ = jackin_telemetry::histogram(&jackin_telemetry::metric::UI_RENDER_DURATION)
+            .record(started.elapsed().as_secs_f64(), &attrs);
+    }
+    result
 }
 
 struct ClosureView<F>(std::cell::RefCell<Option<F>>);

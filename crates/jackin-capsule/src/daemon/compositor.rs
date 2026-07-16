@@ -510,12 +510,13 @@ impl Multiplexer {
             height: term_rows,
         };
         // Shared drive_frame (plan 021) — CapsuleView is the View adapter.
-        let result = jackin_tui::runtime::drive_frame(
+        let result = jackin_tui::runtime::drive_frame_for(
             &mut self.render.ratatui_terminal,
             &crate::tui::runtime::CapsuleView,
             &frame_model,
             area,
             |_| {},
+            jackin_telemetry::schema::enums::ScreenId::Capsule,
         );
 
         // Keep tab/menu click regions in sync with the columns the widget

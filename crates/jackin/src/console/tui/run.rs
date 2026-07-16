@@ -302,58 +302,66 @@ where
         context: jackin_console::tui::runtime::ConsoleViewContext { config, cwd },
     };
     let confirm_state = state.quit_confirm.as_ref();
-    jackin_tui::runtime::drive_frame(terminal, &view, &*state, main_area, |frame| {
-        if let Some(confirm) = confirm_state {
-            let hint_row = ratatui::layout::Rect {
-                x: main_area.x,
-                y: main_area.bottom().saturating_sub(1),
-                width: main_area.width,
-                height: 1,
-            };
-            let body = ratatui::layout::Rect {
-                height: main_area.height.saturating_sub(1),
-                ..main_area
-            };
-            jackin_console::tui::view::render_modal_backdrop(frame, body);
-            let area = quit_confirm_area(body, confirm);
-            jackin_tui::components::render_confirm_dialog(frame, area, confirm);
-            jackin_tui::components::render_hint_bar(
-                frame,
-                hint_row,
-                &jackin_tui::components::confirm_hint_spans(),
-            );
-        }
-        mouse_state.chrome_hover_tracker.clear();
-        if let Some(bar_area) = debug_bar_area {
-            let active_run = jackin_diagnostics::active_run();
-            let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()), None);
-            let chip_row = debug_chip_row(bar_area);
-            if let Some(chip) =
-                jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id)
-            {
-                mouse_state
-                    .chrome_hover_tracker
-                    .register(chip, ConsoleChromeHover::DebugChip);
+    jackin_tui::runtime::drive_frame_for(
+        terminal,
+        &view,
+        &*state,
+        main_area,
+        |frame| {
+            if let Some(confirm) = confirm_state {
+                let hint_row = ratatui::layout::Rect {
+                    x: main_area.x,
+                    y: main_area.bottom().saturating_sub(1),
+                    width: main_area.width,
+                    height: 1,
+                };
+                let body = ratatui::layout::Rect {
+                    height: main_area.height.saturating_sub(1),
+                    ..main_area
+                };
+                jackin_console::tui::view::render_modal_backdrop(frame, body);
+                let area = quit_confirm_area(body, confirm);
+                jackin_tui::components::render_confirm_dialog(frame, area, confirm);
+                jackin_tui::components::render_hint_bar(
+                    frame,
+                    hint_row,
+                    &jackin_tui::components::confirm_hint_spans(),
+                );
             }
-            jackin_tui::components::render_status_footer_right_group(
-                frame,
-                chip_row,
-                "",
-                jackin_tui::components::StatusRightGroup {
-                    usage: None,
-                    container: "",
-                    run_id: Some(&run_id),
-                },
-                1.0,
-                jackin_tui::components::StatusFooterHover {
-                    left: false,
-                    usage: false,
-                    right: false,
-                    right_debug: mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip),
-                },
-            );
-        }
-    })?;
+            mouse_state.chrome_hover_tracker.clear();
+            if let Some(bar_area) = debug_bar_area {
+                let active_run = jackin_diagnostics::active_run();
+                let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()), None);
+                let chip_row = debug_chip_row(bar_area);
+                if let Some(chip) =
+                    jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id)
+                {
+                    mouse_state
+                        .chrome_hover_tracker
+                        .register(chip, ConsoleChromeHover::DebugChip);
+                }
+                jackin_tui::components::render_status_footer_right_group(
+                    frame,
+                    chip_row,
+                    "",
+                    jackin_tui::components::StatusRightGroup {
+                        usage: None,
+                        container: "",
+                        run_id: Some(&run_id),
+                    },
+                    1.0,
+                    jackin_tui::components::StatusFooterHover {
+                        left: false,
+                        usage: false,
+                        right: false,
+                        right_debug: mouse_state.chrome_hover
+                            == Some(ConsoleChromeHover::DebugChip),
+                    },
+                );
+            }
+        },
+        screen_of(state),
+    )?;
 
     let ConsoleStage::Manager(ms) = &state.stage;
     if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =

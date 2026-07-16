@@ -403,9 +403,16 @@ impl RichRenderer {
         };
         // Progress frame via shared drive_frame (plan 021); OSC 8 post-pass
         // remains caller-owned per drive_frame contract.
-        jackin_tui::runtime::drive_frame(&mut self.terminal, &adapter, view, area, |_| {})
-            .map(|_| ())
-            .context("rendering launch progress TUI")?;
+        jackin_tui::runtime::drive_frame_for(
+            &mut self.terminal,
+            &adapter,
+            view,
+            area,
+            |_| {},
+            jackin_telemetry::schema::enums::ScreenId::LaunchProgress,
+        )
+        .map(|_| ())
+        .context("rendering launch progress TUI")?;
         if let Some(size) = size {
             let overlays = launch_hyperlink_overlays(
                 Rect::new(0, 0, size.width, size.height),
