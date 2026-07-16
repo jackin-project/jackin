@@ -3,6 +3,7 @@
   "pages": [
     "jackin",
     "jackin-agent-status",
+    "jackin-brand",
     "jackin-build-meta",
     "jackin-capsule",
     "jackin-config",
