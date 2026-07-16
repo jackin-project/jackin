@@ -303,10 +303,41 @@ jobs:
           # the shared package-test cache.
       - name: Download construct image for E2E
         if: inputs.construct-image-changed
-        uses: ./.github/actions/download-run-artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: construct-trixie-image-${{ matrix.config.lane }}
           path: target/construct-image
+      - name: Recover construct image through the Actions API
+        if: inputs.construct-image-changed
+        shell: bash
+        env:
+          ARTIFACT_NAME: construct-trixie-image-${{ matrix.config.lane }}
+          ARTIFACT_PATH: target/construct-image
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_PATH"
+          if [ -f "$ARTIFACT_PATH/construct-trixie.tar" ]; then
+            exit 0
+          fi
+
+          artifact_id=$(
+            gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
+              --paginate \
+              --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" \
+              | head -n 1
+          )
+          if [ -z "$artifact_id" ]; then
+            echo "::error::artifact not found: ${ARTIFACT_NAME}"
+            exit 1
+          fi
+
+          archive="$ARTIFACT_PATH/.artifact.zip"
+          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
+          python3 -m zipfile -e "$archive" "$ARTIFACT_PATH"
+          rm "$archive"
       - name: Load construct image for E2E
         if: inputs.construct-image-changed
         run: docker load --input target/construct-image/construct-trixie.tar
