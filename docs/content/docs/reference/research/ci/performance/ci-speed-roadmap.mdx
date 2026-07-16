@@ -306,6 +306,15 @@ REST downloader: it lists artifacts from the already-resolved owning run,
 downloads matching parts concurrently through `gh api`, extracts them
 concurrently, and applies the same validation and restore path on both lanes.
 
+Replacement run `29517188550` proved the REST transport itself on both lanes,
+but rejected unconditional remote restoration as the warm-runner strategy:
+GitHub transferred the five parts in 28 seconds, while Velnor spent more than
+two minutes transferring a target already present on persistent disk. The
+shared workflow now prefers a non-empty runner-local Cargo target as an L0
+seed, without backdating source files, and falls back to the portable REST
+artifact only on an empty runner. Cargo performs the same fingerprint
+validation and crate commands in either case.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the

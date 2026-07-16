@@ -203,8 +203,23 @@ jobs:
             echo "legacy-name=$(jq -r '.legacy_name' <<< "$result")"
             echo "run-id=$(jq -r '.run_id' <<< "$result")"
           } >> "$GITHUB_OUTPUT"
-      - name: Download input-identical crate target
+      - name: Use runner-local target seed
+        id: local-target
         if: steps.crate-target.outputs.hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_dir=${CARGO_TARGET_DIR:-target}
+          hit=false
+          if [ -f "$target_dir/.rustc_info.json" ] &&
+             [ -d "$target_dir/debug/deps" ] &&
+             find "$target_dir/debug/deps" -maxdepth 1 -type f -name '*.rlib' -print -quit | grep -q .; then
+            hit=true
+            echo "::notice::using runner-local Cargo target as a validated seed"
+          fi
+          echo "hit=$hit" >> "$GITHUB_OUTPUT"
+      - name: Download input-identical crate target
+        if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -217,7 +232,7 @@ jobs:
             "${{ steps.crate-target.outputs.legacy-name }}" \
             target/.ci-restore
       - name: Restore input-identical crate target
-        if: steps.crate-target.outputs.hit == 'true'
+        if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail

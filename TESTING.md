@@ -112,7 +112,10 @@ exist. It also resolves target-artifact metadata once for every selected miss,
 so GitHub and Velnor do not repeat the same repository API search before
 restoring identical target parts. Both lanes download those parts through the
 same GitHub REST artifact path; target transport does not depend on a
-runner-specific Results Service action adapter.
+runner-specific Results Service action adapter. A runner with an existing
+Cargo target uses that local state as the first seed and lets Cargo validate
+it; an empty runner restores the portable artifact. This is one shared
+fallback order, not a lane-specific verification path.
 
 An exact target-key miss first restores that crate's latest successful target
 as a seed. Cargo still validates every fingerprint and rebuilds changed
