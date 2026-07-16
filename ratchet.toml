@@ -358,7 +358,7 @@ key = "clippy::too_many_arguments@jackin-usage"
 bound = 2
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-capsule"
-bound = 8
+bound = 7
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-console"
 bound = 7
