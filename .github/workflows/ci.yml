@@ -770,6 +770,7 @@ jobs:
           lane: GitHub
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "false"
       - id: select
         name: Select affected crate tests once
         shell: bash
@@ -818,6 +819,7 @@ jobs:
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "false"
       - name: Fetch base branch
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - run: |
@@ -840,6 +842,7 @@ jobs:
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "false"
       # Gate: codebase-health lint checks via the umbrella `lint --strict`
       # command. The file-size ratchet (file-size-budget.toml: production
       # ≤1850L production / ≤10000L tests via ratchet.toml + file-size-budget.toml) and the test-file-layout ratchet
@@ -877,6 +880,7 @@ jobs:
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "false"
       - name: Fetch base branch
         run: git fetch --no-tags origin "${{ github.base_ref }}"
       - name: README freshness gate

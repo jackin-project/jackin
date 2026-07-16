@@ -39,12 +39,15 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p "$ARTIFACT_PATH"
-        artifact_id=$(
-          gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
-            --paginate \
-            --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" \
-            | head -n 1
-        )
+        artifact_id=
+        if [ "$INCLUDE_TOOLS" = "true" ]; then
+          artifact_id=$(
+            gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
+              --paginate \
+              --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" \
+              | head -n 1
+          )
+        fi
         if [ -n "$artifact_id" ]; then
           archive="$ARTIFACT_PATH/.artifact.zip"
           gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
