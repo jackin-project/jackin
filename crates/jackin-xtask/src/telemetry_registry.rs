@@ -68,6 +68,7 @@ fn validate_source_policy(root: &Path) -> Result<()> {
         ];
         if raw_spawn.iter().any(|needle| source.contains(needle))
             && !path.starts_with("crates/jackin-telemetry/src/spawn.rs")
+            && !path.starts_with("crates/jackin-otlp-testbed/")
             && !RAW_SPAWN_ALLOWLIST.contains(&path.as_ref())
         {
             violations.push(format!("{path}: unmanaged async/thread spawn"));

@@ -91,6 +91,15 @@ pub type ManagerUpdate = crate::tui::update::ConsoleUpdate<ManagerEffect>;
               branch. Inline shape preserves the per-message-arm state machine."
 )]
 pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> ManagerUpdate {
+    let action = action_of(&message);
+    let action_guard = action.and_then(|name| {
+        let attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
+            value: jackin_telemetry::Value::Str(name.as_str()),
+        }];
+        jackin_telemetry::root_operation(&jackin_telemetry::operation::UI_ACTION, &attrs).ok()
+    });
+    let action_span = action_guard.as_ref().map(|guard| guard.span().enter());
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
         ManagerMessage::ClearEditorAuthKind => clear_editor_auth_kind(state),
@@ -300,7 +309,43 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             );
         }
     }
+    drop(action_span);
+    if let (Some(guard), Some(action)) = (action_guard, action) {
+        guard.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+        let attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
+            value: jackin_telemetry::Value::Str(action.as_str()),
+        }];
+        let _ = jackin_telemetry::counter(&jackin_telemetry::metric::UI_ACTIONS).add(1, &attrs);
+    }
     ManagerUpdate::redraw()
+}
+
+pub(crate) const fn action_of(
+    message: &ManagerMessage,
+) -> Option<jackin_telemetry::schema::enums::UiActionName> {
+    use jackin_telemetry::schema::enums::UiActionName;
+
+    match message {
+        ManagerMessage::MoveEditorTab { .. }
+        | ManagerMessage::SelectEditorTab(_)
+        | ManagerMessage::MoveSettingsTab { .. }
+        | ManagerMessage::SelectSettingsTab(_) => Some(UiActionName::TabSwitch),
+        ManagerMessage::EnterCreatePrelude(_) => Some(UiActionName::WorkspaceCreate),
+        ManagerMessage::EnterSettings(_) => Some(UiActionName::SettingsOpen),
+        ManagerMessage::ReturnToList => Some(UiActionName::ScreenBack),
+        ManagerMessage::EnterConfirmDelete { .. } => Some(UiActionName::WorkspaceDelete),
+        ManagerMessage::EnterConfirmInstancePurge { .. } => Some(UiActionName::InstancePurge),
+        ManagerMessage::DismissSettingsErrorPopup
+        | ManagerMessage::DismissStatusPopup
+        | ManagerMessage::DismissListModal
+        | ManagerMessage::DismissInlineSessionPicker
+        | ManagerMessage::DismissInlineRolePicker
+        | ManagerMessage::DismissInlineAgentPicker
+        | ManagerMessage::DismissInlineProviderPicker
+        | ManagerMessage::DismissLaunchProviderPicker => Some(UiActionName::DialogCancel),
+        _ => None,
+    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
