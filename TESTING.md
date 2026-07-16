@@ -220,6 +220,9 @@ to a pull-request merge ref, so the matching `main` push can reuse the PR build.
 An exact hit installs only lychee and skips Bun/Node setup, dependency
 installation, and site build; the miss path rebuilds and republishes the same
 output for link checking and Pages upload.
+Producer run `29508089018` published the first cross-ref site artifact. Warm
+proof must come from a later normal run whose site-contract inputs are
+unchanged, followed by the matching post-merge `main` run.
 The repository-link job restores the same prepared `jackin-xtask` artifact as
 CI and installs only lychee, so it does not maintain a second Rust build/cache
 path for identical source inputs. Because Docs and CI are independent workflows
