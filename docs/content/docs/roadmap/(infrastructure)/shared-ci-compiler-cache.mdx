@@ -1,0 +1,114 @@
+---
+title: "Shared CI Compiler Cache"
+---
+
+**Status**: Deferred to the next CI performance iteration — design and bake-off required
+
+## Problem
+
+The GitHub-hosted and Velnor lanes currently reuse Cargo registry and target
+archives, but neither archive is a dependable compiler-result service shared by
+independent jobs and runs. A cache eviction, branch-scope boundary, or a new
+target-cache key can therefore make several jobs compile the same unchanged
+third-party crates. The same failure also appears after a pull request merges:
+GitHub Actions cache scope can make the pull request's warm archive unavailable
+to the first `main` run.
+
+That behavior violates the CI service-level objective: a warm-input job must not
+download an upstream dependency or compile an unchanged third-party crate, each
+job should finish within one minute, and the required pipeline should finish
+within one minute once an equivalent dependency graph has completed before.
+Cold bootstrap runs remain measurable exceptions until the shared service in
+this item exists; they must populate one cache owner rather than making every
+fan-out job repeat the bootstrap.
+
+## Why a shared compiler cache
+
+Cargo target archives are large snapshots coupled to a job's profile, flags,
+workspace paths, and branch cache scope. They are useful as a compatibility
+fallback, but restoring many multi-gigabyte archives consumes the repository's
+cache quota and causes eviction churn. A content-addressed compiler cache stores
+the output of an individual compiler invocation. That lets `check`, `clippy`,
+nextest, documentation tests, benchmark-build, MSRV, preview, and release jobs reuse matching
+work without transferring an entire `target/` tree.
+
+The service must preserve one pipeline definition for both runner lanes.
+GitHub-hosted and Velnor jobs use the same wrapper, keys, endpoint policy, and
+failure behavior. Velnor may be faster because its runner-local L0 cache and
+filesystem survive between jobs; it must not receive a different verification
+workflow or a privileged skip.
+
+## `sccache` and `kache` comparison
+
+| Criterion | `sccache` | `kache` | Consequence for jackin❯ |
+| --- | --- | --- | --- |
+| Rust model | Compiler wrapper with stable Rust support and local/remote cache backends | Content-addressed Rust/C/C++ build wrapper using copy-on-write links, hard links, or copies for local materialization | Both can eliminate repeated Rust compilation; `sccache` has the longer production history |
+| Remote sharing | S3, Redis, GCS, Azure, HTTP/WebDAV and other documented backends; multi-level cache chains | GitHub Actions cache or S3 synchronization, with daemon-driven prefetch/upload | S3-compatible storage is the common bake-off backend and avoids GitHub's repository cache quota |
+| Local hot path | Local disk cache with an explicit size cap | Zero-copy local cache plus SQLite index and LRU size limit | Benchmark Velnor warm hits separately, but keep configuration identical across lanes |
+| CI observability | Hit/miss and error statistics are mature and already collected by jackin❯ jobs | Reports and miss explanations are first-class features | `kache` may provide better miss diagnosis; acceptance still depends on measured hit rate and wall time |
+| Ecosystem risk | Mature, widely deployed, current multi-level-cache support | Newer project with a smaller adoption base and evolving remote-planner features | Default to `sccache` unless `kache` wins the measured trial without correctness or operations regressions |
+| GitHub cache mode | Available, but jackin❯ trials produced write errors and zero useful hits under fan-out | The action defaults to GitHub cache and therefore inherits its quota and ref-scoping constraints | Do not select either tool's GitHub-cache mode as the shared backend |
+
+Sources: [`sccache` repository and backend documentation](https://github.com/mozilla/sccache),
+[`sccache` configuration reference](https://github.com/mozilla/sccache/blob/main/docs/Configuration.md),
+[`kache` repository](https://github.com/kunobi-ninja/kache), and
+[`kache-action`](https://github.com/kunobi-ninja/kache-action).
+
+## Proposed setup
+
+1. Provision a dedicated, private S3-compatible bucket close to both runner
+   pools. Use immutable object versioning or an isolated disposable namespace;
+   cached compiler output is never a release artifact or source of truth.
+2. Authenticate GitHub through short-lived OIDC credentials. Give Velnor an
+   equivalently scoped workload identity. Neither lane receives long-lived
+   repository secrets or permission to enumerate unrelated buckets.
+3. Configure the same local-L0 plus remote-L1 cache chain in both lanes. Bound
+   the local cache, remote retention, object size, request concurrency, and
+   retry budget. A remote outage falls back to normal compilation and reports a
+   degraded-cache annotation; it must not make verification incorrect.
+4. Namespace keys by cache schema, repository, Rust compiler identity, target
+   triple, compiler flags, profile, and relevant environment. Do not namespace
+   by workflow job or branch: identical compiler inputs must converge across
+   pull request, merge, preview, and release runs.
+5. Run `sccache` and `kache` as mutually exclusive experimental matrices over
+   representative `check`, `clippy`, nextest, and archive builds. Record cold
+   population time, warm wall time, bytes transferred, hit rate, miss reasons,
+   storage growth, concurrency behavior, and outage behavior.
+6. Select a backend only after two consecutive warm runs meet the no-download,
+   no-third-party-compile contract and every tested job stays below one minute.
+   Keep the existing Cargo registry cache for offline resolution; compiler
+   caching does not replace crate source availability.
+
+## Acceptance criteria
+
+- One wrapper and cache configuration is exercised on GitHub and Velnor.
+- A pull request cache entry is reusable by the matching `main` dependency
+  graph without relying on pull-request-scoped GitHub cache visibility.
+- Warm job logs contain no crates.io update/download markers and no compilation
+  of unchanged registry/git dependencies.
+- Cache stats are uploaded even on failure and distinguish miss, error,
+  timeout, eviction, and non-cacheable compilation.
+- Remote credentials are short lived, least privilege, and unavailable to
+  untrusted fork pull requests; those runs fall back safely.
+- Remote storage has a documented budget, retention policy, purge procedure,
+  and incident-disable switch.
+- Two consecutive warm parity runs keep every required job and the required
+  pipeline at or below one minute.
+
+## Tasks
+
+1. Build the S3-compatible test backend and OIDC policies outside this change.
+2. Add a pinned `sccache` remote configuration pilot without changing the
+   verification graph.
+3. Add an equivalent pinned `kache` pilot and collect the same metrics.
+4. Publish the bake-off data and choose the implementation through review.
+5. Roll out to non-release jobs, then preview/release after provenance checks.
+6. Reduce or remove redundant Cargo target archives once remote hit rates prove
+   they are unnecessary, preventing another cache-quota eviction cycle.
+
+## Related work
+
+- [Rust build cache hygiene](/roadmap/rust-build-cache-hygiene/) owns local disk
+  budgets, visibility, and pruning; this item owns cross-run CI compiler reuse.
+- [CI/CD speed roadmap](/reference/research/ci/performance/ci-speed-roadmap/)
+  contains the measured history behind the current cache and runner choices.

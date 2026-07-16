@@ -5,6 +5,7 @@
     "context-engine",
     "instant-launch-architecture",
     "registry-configurations",
+    "shared-ci-compiler-cache",
     "workspace-registry-cache",
     "platform-support-and-freshness",
     "../rust-build-cache-hygiene"
