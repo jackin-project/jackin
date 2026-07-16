@@ -459,7 +459,10 @@ jobs:
 
   fmt:
     needs: [changes, matrix-setup, cargo-registry-warmup]
-    if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
+    if: >-
+      needs.changes.outputs.rust == 'true' &&
+      needs.changes.outputs.result-reuse != 'true' &&
+      needs.changes.outputs.policy-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -755,7 +758,7 @@ jobs:
           retention-days: 1
 
   affected-crates:
-    needs: [changes, cargo-registry-warmup]
+    needs: [changes]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
