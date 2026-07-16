@@ -8,7 +8,7 @@
 //! its keymap here. `Keymap::dispatch(chord)` replaces plan-function calls in
 //! `input/*.rs`; `Keymap::hint_spans()` derives footer hints.
 
-use jackin_tui::components::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
+use termrock::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
 
 // ── Editor global (fired in both tab-bar and content modes) ──────────────────
 
@@ -903,7 +903,7 @@ pub(crate) static AUTH_EDIT_SOURCE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding
 /// folds in runtime context the table cannot carry (list-scroll focus, the
 /// selected row's type) to produce the final `WorkspaceListKeyPlan`. Footer
 /// builders pull each advertised key's glyph from this same table via
-/// [`jackin_tui::components::Keymap::glyph_for`], so an advertised key cannot
+/// [`termrock::components::Keymap::glyph_for`], so an advertised key cannot
 /// drift from the dispatched key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkspaceListAction {

@@ -3,16 +3,16 @@
 
 //! Launch failure popup rendering and hit-testing.
 
-use jackin_tui::HintSpan;
-use jackin_tui::components::{
-    ErrorPopupRow, ErrorPopupState, ModalBackdrop, ModalRectSpec, dialog_inner_chunks,
-    error_popup_hyperlink_overlay, error_popup_row_value_rect_groups, modal_rect,
-    render_error_dialog_in, render_hint_bar, required_height,
-};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
+use termrock::HintSpan;
+use termrock::components::{
+    ErrorPopupRow, ErrorPopupState, dialog_inner_chunks, error_popup_row_value_rect_groups,
+    render_error_dialog_in, required_height,
+};
 
+use crate::tui::components::dialog::{exact_dialog_rect, render_dialog_backdrop};
 use crate::tui::components::footer::launch_overlay_chrome_areas;
 use crate::{FailureCopyTarget, LaunchFailure, LaunchView};
 
@@ -84,7 +84,7 @@ fn failure_error_state(
 fn failure_error_state_with_feedback(
     failure: &LaunchFailure,
     run_id: &str,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
     revealed: Option<FailureCopyTarget>,
@@ -117,7 +117,10 @@ fn failure_error_state_with_feedback(
     let mut state =
         ErrorPopupState::new(failure.title.clone(), failure.summary.clone()).with_rows(rows);
     if let Some(scroll) = scroll {
-        state.scroll = scroll;
+        state.scroll = termrock::components::DialogBodyScroll {
+            scroll_x: scroll.scroll_x,
+            scroll_y: scroll.scroll_y,
+        };
     }
     state
 }
@@ -130,13 +133,7 @@ fn failure_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
         popup_w.saturating_sub(2),
         area.height.saturating_sub(2).max(7),
     );
-    modal_rect(
-        area,
-        ModalRectSpec::Exact {
-            width: popup_w,
-            height,
-        },
-    )
+    exact_dialog_rect(area, popup_w, height)
 }
 
 #[must_use]
@@ -169,7 +166,7 @@ fn failure_popup_body_rect(rect: Rect, state: &ErrorPopupState) -> Rect {
         horizontal: 1,
         vertical: 1,
     });
-    let content_rows = jackin_tui::components::estimated_message_rows(state, inner.width)
+    let content_rows = termrock::components::estimated_message_rows(state, inner.width)
         .min(inner.height.saturating_sub(4));
     let chunks = dialog_inner_chunks(inner, Some(content_rows));
     chunks[1]
@@ -190,7 +187,7 @@ pub fn failure_popup_value_rect_scrolled(
     rect: Rect,
     rows: &[FailurePopupRow],
     target: FailureCopyTarget,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
 ) -> Option<Rect> {
     // Structural exception: copy hit-testing derives rects from wrapped failure rows rendered by this dialog.
     failure_popup_value_rects(rect, rows, target, scroll)
@@ -202,7 +199,7 @@ fn failure_popup_value_rects(
     rect: Rect,
     rows: &[FailurePopupRow],
     target: FailureCopyTarget,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
 ) -> Vec<Rect> {
     let display_rows = rows
         .iter()
@@ -222,7 +219,10 @@ fn failure_popup_value_rects(
         .map_or("", |row| row.value.as_str());
     let mut state = ErrorPopupState::new("Build failed", message).with_rows(display_rows);
     if let Some(scroll) = scroll {
-        state.scroll = scroll;
+        state.scroll = termrock::components::DialogBodyScroll {
+            scroll_x: scroll.scroll_x,
+            scroll_y: scroll.scroll_y,
+        };
     }
     let inner = rect.inner(ratatui::layout::Margin {
         horizontal: 1,
@@ -253,7 +253,7 @@ pub fn failure_copy_target_at(
     debug_mode: bool,
     col: u16,
     row: u16,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
 ) -> Option<FailureCopyTarget> {
     let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
     let state =
@@ -304,7 +304,7 @@ pub fn failure_popup_body_metrics(
     let state = failure_error_state(failure, run_id, None);
     let rect = failure_popup_rect(body_area, &state);
     let body = failure_popup_body_rect(rect, &state);
-    let content_height = usize::from(jackin_tui::components::estimated_message_rows(
+    let content_height = usize::from(termrock::components::estimated_message_rows(
         &state, body.width,
     ));
     (body, content_height)
@@ -344,7 +344,7 @@ pub fn render_failure_popup(
     debug_mode: bool,
 ) {
     let chrome = launch_overlay_chrome_areas(area, debug_mode);
-    frame.render_widget(ModalBackdrop, chrome.body);
+    render_dialog_backdrop(frame, chrome.body);
 
     let state = failure_error_state(failure, run_id, Some(view));
     let rect = failure_popup_rect(chrome.body, &state);
@@ -355,7 +355,7 @@ pub fn render_failure_popup(
     if !debug_mode {
         frame.render_widget(Clear, chrome.hint);
     }
-    render_hint_bar(frame, chrome.hint, &failure_hint_spans());
+    termrock::widgets::render_hint_bar(frame, chrome.hint, &failure_hint_spans());
 }
 
 #[must_use]
@@ -368,7 +368,7 @@ pub fn failure_popup_hyperlink_overlay(
     failure: &LaunchFailure,
     run_id: &str,
     debug_mode: bool,
-    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+    scroll: Option<termrock::scroll::DialogScroll>,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
     revealed: Option<FailureCopyTarget>,
@@ -383,7 +383,35 @@ pub fn failure_popup_hyperlink_overlay(
         horizontal: 1,
         vertical: 1,
     });
-    error_popup_hyperlink_overlay(inner, &state)
+    encode_error_hyperlink_overlay(inner, &state)
+}
+
+fn encode_error_hyperlink_overlay(inner: Rect, state: &ErrorPopupState) -> Vec<u8> {
+    let groups = state.row_value_rect_groups(inner);
+    let mut out = Vec::new();
+    for (row, rects) in state.rows.iter().zip(groups) {
+        let Some(href) = row.href.as_deref() else {
+            continue;
+        };
+        let mut remaining = row.value.as_str();
+        for rect in rects {
+            let visible = termrock::display_cols_slice(remaining, 0, usize::from(rect.width));
+            if visible.is_empty() {
+                break;
+            }
+            remaining = &remaining[visible.len()..];
+            out.extend_from_slice(format!("\x1b[{};{}H", rect.y + 1, rect.x + 1).as_bytes());
+            out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, href));
+            let color = termrock::LINK_FG;
+            out.extend_from_slice(
+                format!("\x1b[38;2;{};{};{}m\x1b[1;4m", color.r, color.g, color.b).as_bytes(),
+            );
+            out.extend_from_slice(visible.as_bytes());
+            out.extend_from_slice(&termrock::osc::encode_hyperlink_close());
+            out.extend_from_slice(b"\x1b[0m");
+        }
+    }
+    out
 }
 
 /// Footer-hint keys for the launch failure popup. The dismiss group derives

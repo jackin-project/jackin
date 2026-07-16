@@ -1,2 +1,0 @@
-- Backend-neutral by design: token types, component state, and render helpers stay free of a specific backend. The `runtime` traits are operational, not type-only: loops render through `runtime::drive_frame` + their `View` impl (console does today; capsule/launch conversions must reuse that exact pattern — never fork a second driver variant).
-- Cross-cutting TUI behavior is documented: focusability, navigation, color, modal sizing, and hints live under `docs/content/docs/reference/tui/`; a behavior change ships the matching doc update in the same PR.

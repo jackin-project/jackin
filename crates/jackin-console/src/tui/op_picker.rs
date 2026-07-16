@@ -19,11 +19,11 @@ pub fn cli_available() -> bool {
 
 pub fn start_ref_validation(
     op_ref: jackin_core::OpRef,
-) -> jackin_tui::runtime::BlockingSubscription<anyhow::Result<()>> {
+) -> crate::tui::runtime::BlockingSubscription<anyhow::Result<()>> {
     use jackin_env::OpRunner as _;
     let runner = jackin_env::OpCli::new().with_account(op_ref.account.clone());
     let op = op_ref.op;
-    jackin_tui::runtime::spawn_blocking_subscription(move || runner.read(&op).map(|_| ()))
+    crate::tui::runtime::spawn_blocking_subscription(move || runner.read(&op).map(|_| ()))
 }
 
 /// Concrete selection type for the picker: all five type parameters are bound

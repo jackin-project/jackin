@@ -3,13 +3,13 @@
 
 //! Launch cockpit top-level frame composition.
 
-use jackin_tui::components::{BOTTOM_CHROME_ROWS, bottom_chrome_areas, render_hint_bar};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::Clear;
 
 use crate::LaunchView;
 use crate::tui::components::build_log_dialog::render_build_log_dialog;
+use crate::tui::components::chrome::{BOTTOM_CHROME_ROWS, bottom_chrome_areas};
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state, render_launch_container_info,
 };
@@ -75,7 +75,7 @@ pub fn render_launch_frame(
 
     render_cockpit_header(frame, rows[0], view, frozen);
     render_body(frame, rows[1], view, frozen, rain);
-    render_hint_bar(
+    termrock::widgets::render_hint_bar(
         frame,
         chrome.hint,
         &crate::tui::keymap::cockpit_global_hint_spans(),
@@ -146,7 +146,7 @@ fn launch_container_info_hyperlink_overlay_bytes(
     }
     let state = launch_container_info_state(view, run_id, debug_mode, jackin_version);
     let rect = launch_container_info_rect(area, &state, debug_mode);
-    jackin_tui::components::container_info_hyperlink_overlay(rect, &state)
+    crate::tui::components::container_info::hyperlink_overlay(rect, &state)
 }
 
 fn failure_popup_hyperlink_overlay_bytes(

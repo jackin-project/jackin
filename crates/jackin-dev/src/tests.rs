@@ -79,9 +79,13 @@ fn auto_prep_treats_protocol_change_as_capsule() {
 }
 
 #[test]
-fn auto_prep_treats_tui_dependency_change_as_capsule() {
+fn auto_prep_treats_capsule_tui_change_as_capsule() {
     let repo = test_repo_root();
-    let auto = auto_prep(&repo, &["crates/jackin-tui/src/lib.rs".to_owned()]).unwrap();
+    let auto = auto_prep(
+        &repo,
+        &["crates/jackin-capsule/src/tui/components.rs".to_owned()],
+    )
+    .unwrap();
 
     assert!(auto.capsule.required);
     assert!(!auto.construct.required);
@@ -143,13 +147,15 @@ fn capsule_decision_explains_broad_workspace_inputs() {
 
 #[test]
 fn path_only_prep_explains_capsule_dependency_without_checkout() {
-    let auto = auto_prep_from_paths(&["crates/jackin-tui/src/lib.rs".to_owned()]);
+    let auto = auto_prep_from_paths(&["crates/jackin-capsule/src/tui/components.rs".to_owned()]);
 
     assert!(auto.capsule.required);
     assert!(!auto.construct.required);
     assert_eq!(
         auto.capsule.reasons,
-        vec!["crates/jackin-tui/src/lib.rs: jackin-tui is used by jackin-capsule"]
+        vec![
+            "crates/jackin-capsule/src/tui/components.rs: jackin-capsule is used by jackin-capsule"
+        ]
     );
 }
 

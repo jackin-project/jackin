@@ -7,9 +7,8 @@
 //! container info). The dispatch in `subscriptions.rs` uses these tables instead of
 //! ad-hoc `KeyCode` match arms so that handled keys and advertised keys are coupled.
 
-use jackin_tui::HintSpan;
-use jackin_tui::components::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
-use jackin_tui::keymap::glyph;
+use termrock::HintSpan;
+use termrock::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility, glyph};
 
 // ── Cockpit main ─────────────────────────────────────────────────────────────
 
@@ -124,7 +123,8 @@ pub static BUILD_LOG_KEYMAP: Keymap<BuildLogAction> = Keymap::new(&[
 /// Build the hint spans for the build-log overlay, gating scroll/page on whether
 /// the content overflows vertically (matching `build_log_scroll_axes`).
 pub fn build_log_hint_spans(vertical: bool) -> Vec<HintSpan<'static>> {
-    use jackin_tui::components::{SCROLL_HINT_KEYMAP as SCROLL_KEYMAP, ScrollAxes};
+    use termrock::keymap::SCROLL_HINT_KEYMAP as SCROLL_KEYMAP;
+    use termrock::scroll::ScrollAxes;
     let mut spans = SCROLL_KEYMAP.hint_spans_for_axes(ScrollAxes {
         vertical,
         horizontal: false,
@@ -136,7 +136,7 @@ pub fn build_log_hint_spans(vertical: bool) -> Vec<HintSpan<'static>> {
     }
     BUILD_LOG_KEYMAP.push_spans_for(BuildLogAction::Close, &mut spans);
     spans.push(HintSpan::GroupSep);
-    spans.extend(cockpit_global_hint_spans());
+    spans.extend(COCKPIT_KEYMAP.hint_spans());
     spans
 }
 

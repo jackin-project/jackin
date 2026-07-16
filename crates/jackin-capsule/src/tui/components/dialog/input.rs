@@ -3,7 +3,7 @@
 
 //! Key, filter, and list-hit helpers for capsule dialogs.
 
-use jackin_tui::components::raw_bytes_to_chord;
+use crate::tui::keymap::raw_bytes_to_chord;
 
 use super::{CLOSE_TARGET_ITEMS, DialogAction, SPLIT_DIRECTION_ITEMS};
 use crate::tui::keymap::{RENAME_KEYMAP, RenameAction};
@@ -12,12 +12,12 @@ use crate::tui::keymap::{RENAME_KEYMAP, RenameAction};
 /// Dispatches advertised keys through [`RENAME_KEYMAP`]: Enter commits,
 /// Esc / Ctrl+C / Ctrl+Q cancel, Backspace removes the trailing char.
 /// Any other printable chunk appends (the keymap `None` arm). Length cap
-/// and printable filter live inside `jackin_tui::TextField` so this
+/// and printable filter live inside `termrock::components::TextField` so this
 /// handler only needs to dispatch key bytes — the buffer math is shared
 /// with the console TUI surface.
 pub(super) fn rename_tab_handle_key(
     tab_idx: usize,
-    input: &mut jackin_tui::TextField,
+    input: &mut termrock::components::TextField,
     key: &[u8],
 ) -> DialogAction {
     text_input_handle_key(input, key, |value| DialogAction::RenameTab {
@@ -27,7 +27,7 @@ pub(super) fn rename_tab_handle_key(
 }
 
 pub(super) fn export_file_handle_key(
-    input: &mut jackin_tui::TextField,
+    input: &mut termrock::components::TextField,
     reveal_after_export: bool,
     open_after_export: bool,
     key: &[u8],
@@ -40,7 +40,7 @@ pub(super) fn export_file_handle_key(
 }
 
 fn text_input_handle_key(
-    input: &mut jackin_tui::TextField,
+    input: &mut termrock::components::TextField,
     key: &[u8],
     commit: impl FnOnce(String) -> DialogAction,
 ) -> DialogAction {
@@ -173,7 +173,7 @@ impl PickerRow {
 /// A group whose items have all been filtered out is dropped entirely
 /// (label included) so the dialog never paints a "shells" header
 /// with no items underneath it. Each item passes the filter when its
-/// display label (via `jackin_tui::agent_display_name` for agents,
+/// display label (via `crate::tui::components::agent_display_name` for agents,
 /// the literal `"Shell"` for the shell row) contains the filter as a
 /// case-insensitive substring.
 pub(super) fn picker_filtered_rows(agents: &[String], filter: &str) -> Vec<PickerRow> {
@@ -182,7 +182,8 @@ pub(super) fn picker_filtered_rows(agents: &[String], filter: &str) -> Vec<Picke
         .iter()
         .enumerate()
         .filter(|(_, slug)| {
-            let label = jackin_tui::agent_display_name(slug.as_str()).unwrap_or(slug.as_str());
+            let label =
+                crate::tui::components::agent_display_name(slug.as_str()).unwrap_or(slug.as_str());
             needle.is_empty() || label.to_ascii_lowercase().contains(&needle)
         })
         .map(|(idx, _)| PickerRow::Agent(idx))

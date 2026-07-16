@@ -10,8 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use jackin_tui::components::TextInputState;
-use jackin_tui::runtime::BlockingSubscription;
+use crate::{BlockingSubscription, TextInputState};
 use tui_widget_list::ListState;
 
 use crate::{

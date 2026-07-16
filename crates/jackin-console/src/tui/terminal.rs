@@ -65,11 +65,13 @@ pub fn flush_terminal_input_queue() {
 pub fn flush_terminal_input_queue() {}
 
 pub fn enable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
-    jackin_tui::terminal_modes::enable_mouse_capture(out)
+    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h")?;
+    out.flush()
 }
 
 pub fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
-    jackin_tui::terminal_modes::disable_mouse_capture(out)
+    out.write_all(b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")?;
+    out.flush()
 }
 
 /// Owns the terminal for an entire launch flow so it never flashes the shell.

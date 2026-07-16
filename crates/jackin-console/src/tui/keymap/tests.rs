@@ -12,7 +12,7 @@ use super::{
     SettingsEnvTabAction, SettingsGeneralTabAction, SettingsGlobalMountsTabAction,
     SettingsTabBarAction, SettingsTrustTabAction, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
 };
-use jackin_tui::components::{KeyChord, LogicalKey};
+use termrock::keymap::{KeyChord, LogicalKey};
 
 // ── Workspace list ────────────────────────────────────────────────────────────
 
@@ -154,7 +154,7 @@ fn preview_pane_hint_spans_advertise_shown_keys_only() {
         .hint_spans()
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -643,7 +643,7 @@ fn editor_general_rename_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -661,7 +661,7 @@ fn editor_general_workdir_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -678,7 +678,7 @@ fn editor_general_toggle_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -695,7 +695,7 @@ fn editor_role_new_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -716,7 +716,7 @@ fn settings_general_toggle_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -733,7 +733,7 @@ fn settings_trust_toggle_hint() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()

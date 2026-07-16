@@ -9,23 +9,27 @@ use std::sync::{Arc, Mutex};
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
-use jackin_tui::ModalOutcome;
-use jackin_tui::components::KeyChord;
-use jackin_tui::components::{ModalClickResult, ScrollAxes, StatusFooterHover, classify_click};
 use ratatui::layout::Rect;
+use termrock::ModalOutcome;
+use termrock::keymap::KeyChord;
+use termrock::scroll::ScrollAxes;
 use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::build_log_dialog::{
-    build_log_scrollbar_top_offset_for_row_cached, refresh_build_log_layout,
+    build_log_scrollbar_top_offset_for_row_cached, refresh_build_log_layout, viewport_height,
+    viewport_width,
 };
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state,
 };
+use crate::tui::components::dialog::dialog_scroll_axes;
 use crate::tui::components::failure_dialog::{
     failure_copy_payload, failure_copy_target_at, failure_popup_block_rect,
     failure_popup_body_metrics,
 };
-use crate::tui::components::footer::{footer_instance, format_activity};
+use crate::tui::components::footer::{
+    FooterSlot, StatusFooterHover, footer_instance, footer_regions, format_activity,
+};
 use crate::tui::input::{LaunchInput, is_ctrl_c_event};
 use crate::tui::terminal::current_terminal_area;
 use crate::{LaunchHostTerminal, LaunchMessage, LaunchView, update_launch_view};
@@ -70,7 +74,7 @@ fn apply_quit_confirm_key(view: &mut LaunchView, key: event::KeyEvent) -> QuitCo
     let Some(confirm) = view.quit_confirm.as_mut() else {
         return QuitConfirmOutcome::Pending;
     };
-    match confirm.handle_key(key) {
+    match confirm.handle_key(key.into()) {
         ModalOutcome::Commit(true) => {
             view.quit_confirm = None;
             QuitConfirmOutcome::Confirmed
@@ -109,11 +113,11 @@ fn clamp_container_info_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
         ctx.jackin_version,
     );
     let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
-    jackin_tui::components::clamp_container_info_scroll(
-        &mut view.container_info_scroll,
-        state.content_width(),
+    view.container_info_scroll.clamp(
         state.content_height(),
-        rect,
+        usize::from(rect.height.saturating_sub(2)),
+        state.content_width(),
+        usize::from(rect.width.saturating_sub(2)),
     );
 }
 
@@ -162,7 +166,7 @@ fn apply_failure_body_wheel_scroll(
     let axes = failure_body_scroll_axes(view, ctx);
     if view
         .failure_scroll
-        .on_mouse_scroll_for_axes(kind, modifiers, axes)
+        .handle_mouse(kind.into(), modifiers.into(), axes)
     {
         clamp_failure_scroll(view, ctx);
     }
@@ -186,7 +190,7 @@ fn apply_failure_body_key_scroll(
         horizontal: false,
     };
     let _consumed = view.failure_scroll.handle_key_for_axes(
-        key,
+        key.into(),
         content_height,
         viewport_h,
         usize::MAX,
@@ -209,8 +213,8 @@ fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
 
 fn build_log_scroll_axes(view: &LaunchView, area: Rect) -> ScrollAxes {
     let box_area = crate::tui::components::build_log_dialog::build_log_box_area(area);
-    let viewport_w = jackin_tui::components::viewport_width(box_area);
-    let viewport_h = jackin_tui::components::viewport_height(box_area);
+    let viewport_w = viewport_width(box_area);
+    let viewport_h = viewport_height(box_area);
     ScrollAxes {
         vertical: view.build_log_filled > 0
             && view.build_log_wrapped_width == viewport_w
@@ -226,9 +230,9 @@ fn update_build_log_mouse_scroll(
     modifiers: KeyModifiers,
 ) -> bool {
     refresh_build_log_layout(view, area, false);
-    let Some(delta) = jackin_tui::components::mouse_scroll_delta(
-        kind,
-        modifiers,
+    let Some(delta) = termrock::scroll::mouse_scroll_delta(
+        kind.into(),
+        modifiers.into(),
         build_log_scroll_axes(view, area),
     ) else {
         return false;
@@ -288,28 +292,20 @@ fn hit_footer_container_chip(
         width: area.width,
         height: 1,
     };
-    let debug_chip = debug_mode.then_some(run_id);
-    let hit_instance =
-        jackin_tui::components::status_footer_right_chip_rect(footer_row, &instance, debug_chip)
-            .is_some_and(|rect| {
-                row >= rect.y
-                    && row < rect.y.saturating_add(rect.height)
-                    && col >= rect.x
-                    && col < rect.x.saturating_add(rect.width)
-            });
-    // The debug chip (rightmost) opens the same container-info dialog as the
-    // instance-ID chip — both show the same content, just from different entry
-    // points. Check it too so clicking either chip works.
-    let hit_debug = debug_mode
-        && jackin_tui::components::status_footer_debug_chip_rect(footer_row, run_id).is_some_and(
-            |rect| {
-                row >= rect.y
-                    && row < rect.y.saturating_add(rect.height)
-                    && col >= rect.x
-                    && col < rect.x.saturating_add(rect.width)
-            },
-        );
-    hit_instance || hit_debug
+    footer_regions(
+        footer_row,
+        &format_activity(&view.status),
+        &instance,
+        debug_mode.then_some(run_id),
+    )
+    .into_iter()
+    .any(|region| {
+        matches!(region.id, FooterSlot::Container | FooterSlot::RunId)
+            && row >= region.area.y
+            && row < region.area.bottom()
+            && col >= region.area.x
+            && col < region.area.right()
+    })
 }
 
 fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u16, row: u16) {
@@ -321,11 +317,11 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.jackin_version,
         );
         let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
-        if classify_click(rect, col, row) == ModalClickResult::OutsideDismiss {
+        if !rect.contains(ratatui::layout::Position { x: col, y: row }) {
             // Click outside the dialog → dismiss (Defect 11).
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoClosed);
         } else if let Some((copy_row, payload)) =
-            jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
+            crate::tui::components::container_info::copy_payload_at(rect, &state, col, row)
         {
             // Click inside on a copyable value → copy.
             if ctx.terminal.copy_to_clipboard(&payload) {
@@ -343,33 +339,30 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         let failure_scroll = v.failure_scroll.clone();
         let popup_rect =
             failure_popup_block_rect(ctx.area, failure, ctx.run_id, ctx.terminal.is_debug_mode());
-        match classify_click(popup_rect, col, row) {
-            ModalClickResult::OutsideDismiss => {
-                let _dirty = update_launch_view(v, LaunchMessage::FailureAcknowledged);
-                ctx.terminal.set_pointer_shape(false);
-            }
-            ModalClickResult::InsideHit => {
-                if let Some(target) = failure_copy_target_at(
-                    ctx.area,
-                    failure,
-                    ctx.run_id,
-                    ctx.terminal.is_debug_mode(),
-                    col,
-                    row,
-                    Some(failure_scroll),
-                ) && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
-                {
-                    if ctx.terminal.copy_to_clipboard(&payload) {
-                        let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
-                    } else {
-                        ctx.terminal.emit_compact_line(
-                            "failure-popup-copy",
-                            "OSC 52 clipboard write failed — badge suppressed",
-                        );
-                    }
+        if popup_rect.contains(ratatui::layout::Position { x: col, y: row }) {
+            if let Some(target) = failure_copy_target_at(
+                ctx.area,
+                failure,
+                ctx.run_id,
+                ctx.terminal.is_debug_mode(),
+                col,
+                row,
+                Some(failure_scroll),
+            ) && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
+            {
+                if ctx.terminal.copy_to_clipboard(&payload) {
+                    let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
+                } else {
+                    ctx.terminal.emit_compact_line(
+                        "failure-popup-copy",
+                        "OSC 52 clipboard write failed — badge suppressed",
+                    );
                 }
-                // Inside non-target click → swallowed (no overlay behavior).
             }
+            // Inside non-target click → swallowed (no overlay behavior).
+        } else {
+            let _dirty = update_launch_view(v, LaunchMessage::FailureAcknowledged);
+            ctx.terminal.set_pointer_shape(false);
         }
     } else if v.build_log_open {
         refresh_build_log_layout(v, ctx.area, false);
@@ -408,7 +401,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.jackin_version,
         );
         let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
-        let hover = jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
+        let hover = crate::tui::components::container_info::copy_payload_at(rect, &state, col, row)
             .map(|(idx, _)| idx);
         if hover != v.container_info_hover {
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoHovered(hover));
@@ -447,21 +440,24 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
     let debug_chip_hovering = ctx.terminal.is_debug_mode()
         && !v.build_log_open
         && v.failure.is_none()
-        && !footer_instance(v).is_empty()
-        && jackin_tui::components::status_footer_debug_chip_rect(
+        && footer_regions(
             Rect {
                 x: 0,
                 y: ctx.area.height.saturating_sub(1),
                 width: ctx.area.width,
                 height: 1,
             },
-            ctx.run_id,
+            &format_activity(&v.status),
+            &footer_instance(v),
+            Some(ctx.run_id),
         )
-        .is_some_and(|rect| {
-            row >= rect.y
-                && row < rect.y.saturating_add(rect.height)
-                && col >= rect.x
-                && col < rect.x.saturating_add(rect.width)
+        .into_iter()
+        .any(|region| {
+            region.id == FooterSlot::RunId
+                && row >= region.area.y
+                && row < region.area.bottom()
+                && col >= region.area.x
+                && col < region.area.right()
         });
     let hover = StatusFooterHover {
         left: activity_hovering,
@@ -575,10 +571,12 @@ pub fn handle_cockpit_input(
             // answered. No/Esc resumes launch; Yes hard-exits immediately.
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
-                    && crate::tui::keymap::COCKPIT_KEYMAP.dispatch(KeyChord::from(k))
+                    && crate::tui::keymap::COCKPIT_KEYMAP
+                        .dispatch(KeyChord::from(termrock::crossterm::key(k)))
                         == Some(crate::tui::keymap::CockpitAction::OpenQuitConfirm) =>
             {
-                v.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
+                v.quit_confirm =
+                    Some(termrock::components::ConfirmState::new("Exit jackin❯?").with_focus_yes());
                 return CockpitOutcome::Continue;
             }
             Event::Mouse(m) => {
@@ -642,14 +640,13 @@ pub fn handle_cockpit_input(
                             &state,
                             ctx.terminal.is_debug_mode(),
                         );
-                        let axes = jackin_tui::components::dialog_scroll_axes(
-                            state.content_width(),
-                            state.content_height(),
-                            rect,
-                        );
-                        if v.container_info_scroll
-                            .on_mouse_scroll_for_axes(kind, m.modifiers, axes)
-                        {
+                        let axes =
+                            dialog_scroll_axes(state.content_width(), state.content_height(), rect);
+                        if v.container_info_scroll.handle_mouse(
+                            kind.into(),
+                            m.modifiers.into(),
+                            axes,
+                        ) {
                             clamp_container_info_scroll(&mut v, ctx);
                         }
                     }
@@ -677,13 +674,9 @@ pub fn handle_cockpit_input(
                 );
                 let rect =
                     launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
-                let axes = jackin_tui::components::dialog_scroll_axes(
-                    state.content_width(),
-                    state.content_height(),
-                    rect,
-                );
+                let axes = dialog_scroll_axes(state.content_width(), state.content_height(), rect);
                 let _consumed = v.container_info_scroll.handle_key_for_axes(
-                    k,
+                    k.into(),
                     state.content_height(),
                     usize::from(rect.height.saturating_sub(2)),
                     state.content_width(),
@@ -694,7 +687,7 @@ pub fn handle_cockpit_input(
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.container_info_open => {
                 use crate::tui::keymap::{CONTAINER_INFO_KEYMAP, ContainerInfoAction};
-                match CONTAINER_INFO_KEYMAP.dispatch(KeyChord::from(k)) {
+                match CONTAINER_INFO_KEYMAP.dispatch(KeyChord::from(termrock::crossterm::key(k))) {
                     Some(ContainerInfoAction::CopyValue) => {
                         let state = launch_container_info_state(
                             &v,
@@ -739,7 +732,7 @@ pub fn handle_cockpit_input(
                 if k.kind == KeyEventKind::Press
                     && v.failure.is_some()
                     && crate::tui::keymap::FAILURE_KEYMAP
-                        .dispatch(KeyChord::from(k))
+                        .dispatch(KeyChord::from(termrock::crossterm::key(k)))
                         .is_some() =>
             {
                 // Failure popup is modal over the cockpit; Enter/Esc acknowledges
@@ -750,7 +743,7 @@ pub fn handle_cockpit_input(
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => {
                 use crate::tui::keymap::{BUILD_LOG_KEYMAP, BuildLogAction};
                 let vertical = build_log_scroll_axes(&v, area).vertical;
-                match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(k)) {
+                match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(termrock::crossterm::key(k))) {
                     Some(BuildLogAction::Close) => {
                         let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
                     }

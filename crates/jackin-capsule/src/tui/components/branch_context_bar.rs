@@ -11,8 +11,10 @@
 //! must reserve; rendering writes ANSI escape sequences directly into the
 //! caller-supplied `buf` using absolute cursor positions.
 
-use jackin_tui::components::{StatusRightChunk, StatusRightGroup, status_right_group_layout};
-use jackin_tui::{display_cols, take_display_cols};
+use crate::tui::components::status_footer::{
+    StatusRightChunk, StatusRightGroup, status_right_group_layout,
+};
+use termrock::{display_cols, take_display_cols};
 
 use crate::pull_request::PullRequestInfo;
 

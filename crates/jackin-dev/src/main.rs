@@ -15,13 +15,12 @@ use serde_json::Value;
 
 const DEFAULT_REPO: &str = "jackin-project/jackin";
 const REPO_DIR_NAME: &str = "jackin";
-const CAPSULE_PATH_DEPS: [(&str, &str); 7] = [
+const CAPSULE_PATH_DEPS: [(&str, &str); 6] = [
     ("crates/jackin-capsule/", "jackin-capsule"),
     ("crates/jackin-core/", "jackin-core"),
     ("crates/jackin-diagnostics/", "jackin-diagnostics"),
     ("crates/jackin-protocol/", "jackin-protocol"),
     ("crates/jackin-term/", "jackin-term"),
-    ("crates/jackin-tui/", "jackin-tui"),
     ("crates/jackin-build-meta/", "jackin-build-meta"),
 ];
 // Local construct image registry + stable tag — must match the

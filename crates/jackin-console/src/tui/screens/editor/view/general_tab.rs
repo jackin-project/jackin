@@ -94,7 +94,7 @@ pub(crate) fn general_state_geometry<
     >,
 ) -> super::EditorTabContentGeometry {
     let name_value = editor_name_value(&state.mode, state.pending_name.as_deref(), "(new)");
-    let workdir_display = jackin_tui::shorten_home(&state.pending.workdir);
+    let workdir_display = jackin_core::shorten_home(&state.pending.workdir);
     super::EditorTabContentGeometry {
         content_width: editor_general_content_width(
             &name_value,
@@ -168,7 +168,7 @@ pub(crate) fn general_state_lines<
 ) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
     let name_value = editor_name_value(&state.mode, state.pending_name.as_deref(), "(new)");
-    let workdir_display = jackin_tui::shorten_home(&state.pending.workdir);
+    let workdir_display = jackin_core::shorten_home(&state.pending.workdir);
 
     general_lines(
         cursor,

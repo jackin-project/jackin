@@ -734,7 +734,7 @@ fn measure_perf_dhat_budgets(root: &Path) -> Result<BTreeMap<String, usize>> {
 /// running the conformance volume test so lint/ratchet (which runs before nextest
 /// in `ci --fast`) still enforces measured counts.
 fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>> {
-    let artifact = root.join("target/telemetry-volume.json");
+    let artifact = root.join("target/telemetry-volume-ratchet.json");
     if !artifact.is_file() {
         ensure_telemetry_volume_artifact(root)?;
     }
@@ -766,6 +766,7 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
 
 /// Run the conformance volume test to produce `target/telemetry-volume.json`.
 fn ensure_telemetry_volume_artifact(root: &Path) -> Result<()> {
+    let artifact = root.join("target/telemetry-volume-ratchet.json");
     let mut command = crate::cmd::command("cargo");
     command
         .args([
@@ -776,10 +777,10 @@ fn ensure_telemetry_volume_artifact(root: &Path) -> Result<()> {
             "--locked",
             "conformance_export_volume",
         ])
+        .env("JACKIN_TELEMETRY_VOLUME_PATH", &artifact)
         .current_dir(root);
     crate::cmd::output(&mut command)
         .context("failed to generate target/telemetry-volume.json via conformance_export_volume")?;
-    let artifact = root.join("target/telemetry-volume.json");
     if !artifact.is_file() {
         bail!(
             "conformance_export_volume ran but did not write {}",

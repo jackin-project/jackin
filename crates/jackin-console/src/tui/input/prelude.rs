@@ -137,7 +137,7 @@ pub fn handle_prelude_modal(
         }
         CreatePreludeModalStep::TextInputDst => {
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
-                state.handle_key(key)
+                state.handle_key(key.into())
             } else {
                 return PreludeModalOutcome::Continue;
             };
@@ -191,7 +191,7 @@ pub fn handle_prelude_modal(
         }
         CreatePreludeModalStep::TextInputName => {
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
-                state.handle_key(key)
+                state.handle_key(key.into())
             } else {
                 return PreludeModalOutcome::Continue;
             };

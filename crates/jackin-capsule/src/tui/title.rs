@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use jackin_tui::sanitize_terminal_title;
+use termrock::sanitize_terminal_title;
 
 use crate::pull_request::PullRequestInfo;
 
@@ -24,7 +24,7 @@ pub(crate) fn pane_display_title(
     fallback_label: &str,
 ) -> String {
     let title = title.filter(|title| !title.trim().is_empty());
-    let cwd = cwd.map(jackin_tui::shorten_home);
+    let cwd = cwd.map(jackin_core::shorten_home);
     title
         .map(str::to_owned)
         .or(cwd)

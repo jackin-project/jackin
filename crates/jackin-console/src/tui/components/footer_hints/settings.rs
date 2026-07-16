@@ -4,15 +4,15 @@
 //! Settings + mount + secret + auth-form hint-span builders for the
 //! settings screen's per-row contextual footer.
 
-use jackin_tui::components::ScrollAxes;
-use jackin_tui::{HintSpan, keymap::glyph};
+use termrock::components::ScrollAxes;
+use termrock::{HintSpan, keymap::glyph};
 
 use super::common::append_open_in_github;
 use crate::tui::keymap::{
     SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TOGGLE_KEYMAP, SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP,
     SETTINGS_TRUST_TOGGLE_KEYMAP, SettingsEnvTabAction, SettingsGlobalMountsTabAction,
 };
-use jackin_tui::components::scroll_hint_spans;
+use termrock::components::scroll_hint_spans;
 
 #[must_use]
 pub fn settings_general_row_footer_items() -> Vec<HintSpan<'static>> {

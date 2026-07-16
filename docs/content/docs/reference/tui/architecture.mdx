@@ -17,7 +17,7 @@ Each layer has a strict scope:
 | Effect / Subscription | `tui/effect.rs`, `tui/subscriptions.rs` | Typed descriptions of non-TUI work and long-lived event sources; they describe work but do not execute external commands |
 | View | `tui/view.rs`, screen `view.rs` | Pure Ratatui frame composition from the current model; capsule-only terminal protocol reconciliation such as cursor/mode state, outer-terminal title, OSC passthrough, and pointer-shape hints stays in the backend/writer layer around the frame |
 | Terminal / run loop | `tui/run.rs`, `tui/terminal.rs` | Terminal lifecycle, backend adapter, event-loop wiring, and routing of completed effects back into messages |
-| Components | `tui/components/` | Surface-local visual components not reusable enough for `jackin-tui` |
+| Components | `tui/components/` | Surface-local visual components not reusable enough for TermRock |
 
 **Messages and central update.** Every state change that could be driven by a test goes through a semantic `Message` and an update function instead of mutating model state inline in the event handler. Event handlers translate terminal input into messages; update applies the message and returns dirty state plus typed effects. Existing console code may still use names such as `ManagerMessage`, `ManagerState`, `update_manager`, and `UpdateResult`, but new structure should use the same pattern under the owning surface's `src/tui/`.
 
@@ -27,7 +27,7 @@ Each layer has a strict scope:
 
 **Async event loop.** Event loops should use async event streams and `tokio::select!` where the surface already runs inside Tokio, so background work can advance between terminal events. Animation ticks drive periodic redraws for spinners and animated components. Synchronous adapters are allowed only at the terminal/backend edge; they must still route state changes through messages.
 
-**Component library.** Repeated cross-surface visual patterns live in `crates/jackin-tui/src/components/`. Surface-specific components live under that surface's `src/tui/components/` and graduate to `jackin-tui` only when multiple surfaces should consume the same implementation. New screens compose existing components; they do not hand-roll a second panel, picker, confirm dialog, hint bar, or text input. Every reusable `jackin-tui` component has a lookbook story in `crates/jackin-tui-lookbook/` visible in the terminal browser (`cargo run -p jackin-tui-lookbook -- --terminal`) and a generated SVG in the docs site that must never drift from the real widget.
+**Component library.** Repeated product-neutral visual patterns live in [TermRock](https://github.com/tailrocks/termrock). Surface-specific components live under that surface's `src/tui/components/` and graduate upstream only when multiple consumers need the same neutral implementation. TermRock owns its terminal lookbook, generated SVG catalog, and drift checks; jackin❯ owns product compositions and their render tests.
 
 **Refactor safety.** Moving code into this structure is primarily a refactor. Existing workflows must keep the same command semantics, launch flow, capsule attach behavior, saved state, keyboard/mouse contracts, error handling, and visual affordances unless a PR explicitly calls out and justifies a behavior change. Capture or verify the current behavior before structural moves and rerun the relevant checks afterward.
 
@@ -48,7 +48,7 @@ crates/<surface-crate>/src/tui/
 
 **Rule: TUI code has exactly two homes:**
 
-1. **`crates/jackin-tui/`** — Shared component library. Panels, pickers, scrollable blocks, hint bars, confirm dialogs, tab strips, tokens, theme adapters, and geometry helpers. Nothing surface-specific. Consumed by every other TUI crate.
+1. **[TermRock](https://github.com/tailrocks/termrock)** — Exact-revision external library for neutral panels, lists, scroll, hints, dialogs, tabs, tokens, adapters, and geometry.
 
 2. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop wiring. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
 

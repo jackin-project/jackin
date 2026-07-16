@@ -6,7 +6,7 @@ use super::*;
 use std::sync::Arc;
 
 use jackin_diagnostics::RunDiagnostics;
-use jackin_tui::components::StatusFooterHover;
+use jackin_launch_tui::tui::components::footer::StatusFooterHover;
 use ratatui::backend::TestBackend;
 
 fn test_diagnostics() -> Arc<RunDiagnostics> {
@@ -416,7 +416,7 @@ fn build_log_lines_wrap_with_visible_continuation() {
     let lines = wrap_build_log_lines(&raw, 32);
 
     assert!(lines.len() > 1);
-    assert!(jackin_tui::components::max_line_width(&lines) <= 32);
+    assert!(termrock::components::max_line_width(&lines) <= 32);
     let rendered = lines
         .iter()
         .map(|line| {
@@ -466,7 +466,7 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
         failure_ack: false,
         frame: 0,
         build_log_open: true,
-        build_log_scroll: jackin_tui::scroll::TailScroll::default(),
+        build_log_scroll: termrock::scroll::TailScroll::default(),
         build_log_scroll_dragging: false,
         build_log_lines: jackin_diagnostics::build_log::snapshot(),
         build_log_wrapped_lines: Vec::new(),
@@ -480,11 +480,11 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
         failure_copied: None,
         failure_revealed: None,
         failure_opened: None,
-        failure_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        failure_scroll: termrock::scroll::DialogScroll::new(),
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
-        container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        container_info_scroll: termrock::scroll::DialogScroll::new(),
         last_dialog_mouse_cell: None,
         quit_confirm: None,
     };
@@ -528,7 +528,7 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
         failure_ack: false,
         frame: 0,
         build_log_open: true,
-        build_log_scroll: jackin_tui::scroll::TailScroll::new(usize::MAX),
+        build_log_scroll: termrock::scroll::TailScroll::new(usize::MAX),
         build_log_scroll_dragging: false,
         build_log_lines: lines,
         build_log_wrapped_lines: Vec::new(),
@@ -542,11 +542,11 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
         failure_copied: None,
         failure_revealed: None,
         failure_opened: None,
-        failure_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        failure_scroll: termrock::scroll::DialogScroll::new(),
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
-        container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        container_info_scroll: termrock::scroll::DialogScroll::new(),
         last_dialog_mouse_cell: None,
         quit_confirm: None,
     };
@@ -595,7 +595,7 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
         failure_ack: false,
         frame: 0,
         build_log_open: false,
-        build_log_scroll: jackin_tui::scroll::TailScroll::default(),
+        build_log_scroll: termrock::scroll::TailScroll::default(),
         build_log_scroll_dragging: false,
         build_log_lines: Vec::new(),
         build_log_wrapped_lines: Vec::new(),
@@ -609,11 +609,11 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
         failure_copied: None,
         failure_revealed: None,
         failure_opened: None,
-        failure_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        failure_scroll: termrock::scroll::DialogScroll::new(),
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
-        container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        container_info_scroll: termrock::scroll::DialogScroll::new(),
         last_dialog_mouse_cell: None,
         quit_confirm: None,
     };

@@ -168,19 +168,19 @@ fn quit_intercept_ignores_letter_input_and_allows_ctrl_q_everywhere() {
 #[test]
 fn quit_confirm_plan_routes_confirm_outcomes() {
     assert_eq!(
-        quit_confirm_plan(jackin_tui::ModalOutcome::Commit(true)),
+        quit_confirm_plan(termrock::ModalOutcome::Commit(true)),
         QuitConfirmPlan::Exit
     );
     assert_eq!(
-        quit_confirm_plan(jackin_tui::ModalOutcome::Commit(false)),
+        quit_confirm_plan(termrock::ModalOutcome::Commit(false)),
         QuitConfirmPlan::Dismiss
     );
     assert_eq!(
-        quit_confirm_plan(jackin_tui::ModalOutcome::Cancel),
+        quit_confirm_plan(termrock::ModalOutcome::Cancel),
         QuitConfirmPlan::Dismiss
     );
     assert_eq!(
-        quit_confirm_plan(jackin_tui::ModalOutcome::Continue),
+        quit_confirm_plan(termrock::ModalOutcome::Continue),
         QuitConfirmPlan::Continue
     );
 }
@@ -589,19 +589,19 @@ fn debug_chip_activation_requires_click_hover_and_run() {
 fn console_pointer_shape_uses_chrome_or_base_clickability() {
     assert_eq!(
         console_pointer_shape(false, false),
-        jackin_tui::PointerShape::Default
+        termrock::PointerShape::Default
     );
     assert_eq!(
         console_pointer_shape(true, false),
-        jackin_tui::PointerShape::Pointer
+        termrock::PointerShape::Pointer
     );
     assert_eq!(
         console_pointer_shape(false, true),
-        jackin_tui::PointerShape::Pointer
+        termrock::PointerShape::Pointer
     );
     assert_eq!(
         console_pointer_shape(true, true),
-        jackin_tui::PointerShape::Pointer
+        termrock::PointerShape::Pointer
     );
 }
 

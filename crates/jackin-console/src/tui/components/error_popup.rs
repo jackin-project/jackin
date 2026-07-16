@@ -8,8 +8,8 @@ use crate::tui::screens::workspaces::update::WorkspaceInstanceAction;
 pub fn error_popup_state(
     title: impl Into<String>,
     message: impl Into<String>,
-) -> jackin_tui::components::ErrorPopupState {
-    jackin_tui::components::ErrorPopupState::new(title, message)
+) -> termrock::components::ErrorPopupState {
+    termrock::components::ErrorPopupState::new(title, message)
 }
 
 /// Shared error dialog for a rejected auth source folder. Used by both the
@@ -17,13 +17,13 @@ pub fn error_popup_state(
 /// rejection looks and reads identically on either surface.
 pub fn invalid_source_folder_error_popup_state(
     reason: impl Into<String>,
-) -> jackin_tui::components::ErrorPopupState {
+) -> termrock::components::ErrorPopupState {
     error_popup_state("Invalid source folder", reason)
 }
 
 pub fn role_load_error_popup_state(
     message: impl Into<String>,
-) -> jackin_tui::components::ErrorPopupState {
+) -> termrock::components::ErrorPopupState {
     error_popup_state("Load role failed", message)
 }
 
@@ -78,14 +78,14 @@ pub fn role_input_misroute_error_message() -> &'static str {
 
 pub fn editor_action_error_popup_state(
     err: impl std::fmt::Display,
-) -> jackin_tui::components::ErrorPopupState {
+) -> termrock::components::ErrorPopupState {
     error_popup_state(
         "Could not apply change",
         format!("The change could not be saved.\n\n{err}"),
     )
 }
 
-pub fn no_github_url_error_popup_state() -> jackin_tui::components::ErrorPopupState {
+pub fn no_github_url_error_popup_state() -> termrock::components::ErrorPopupState {
     error_popup_state(
         "No GitHub URL",
         "This mount has no GitHub remote URL.\n\nOnly git repositories with a GitHub origin support browser preview.",
@@ -94,7 +94,7 @@ pub fn no_github_url_error_popup_state() -> jackin_tui::components::ErrorPopupSt
 
 pub fn save_failed_error_popup_state(
     message: impl Into<String>,
-) -> jackin_tui::components::ErrorPopupState {
+) -> termrock::components::ErrorPopupState {
     error_popup_state("Save failed", message)
 }
 
@@ -104,7 +104,7 @@ pub fn token_generation_failed_error_title() -> &'static str {
 
 pub fn token_generation_failed_error_popup_state(
     error: impl std::fmt::Display,
-) -> jackin_tui::components::ErrorPopupState {
+) -> termrock::components::ErrorPopupState {
     error_popup_state(token_generation_failed_error_title(), error.to_string())
 }
 
@@ -114,7 +114,7 @@ pub fn failed_to_open_url_error_title() -> &'static str {
 
 pub fn failed_to_open_url_error_popup_state(
     error: impl std::fmt::Display,
-) -> jackin_tui::components::ErrorPopupState {
+) -> termrock::components::ErrorPopupState {
     error_popup_state(failed_to_open_url_error_title(), error.to_string())
 }
 
@@ -128,7 +128,7 @@ pub fn file_browser_failed_error_title() -> &'static str {
 
 pub fn op_read_failed_error_popup_state(
     error: impl std::fmt::Display,
-) -> jackin_tui::components::ErrorPopupState {
+) -> termrock::components::ErrorPopupState {
     error_popup_state("1Password read failed", error.to_string())
 }
 

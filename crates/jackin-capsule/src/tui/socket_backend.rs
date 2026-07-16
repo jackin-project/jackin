@@ -317,10 +317,10 @@ impl Backend for SocketBackend {
                 .position(|(rect, _)| rect.contains(Position { x, y }));
             if desired_link != open_link {
                 if open_link.is_some() {
-                    jackin_tui::ansi::emit_osc8_close(&mut self.output);
+                    crate::tui::ansi::emit_osc8_close(&mut self.output);
                 }
                 if let Some(idx) = desired_link {
-                    jackin_tui::ansi::emit_osc8_open(&mut self.output, &regions[idx].1);
+                    crate::tui::ansi::emit_osc8_open(&mut self.output, &regions[idx].1);
                 }
                 open_link = desired_link;
             }
@@ -362,7 +362,7 @@ impl Backend for SocketBackend {
             }
         }
         if open_link.is_some() {
-            jackin_tui::ansi::emit_osc8_close(&mut self.output);
+            crate::tui::ansi::emit_osc8_close(&mut self.output);
         }
         Ok(())
     }

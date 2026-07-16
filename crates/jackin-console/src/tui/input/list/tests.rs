@@ -86,7 +86,8 @@ fn handle_key(
             else {
                 return Ok(InputOutcome::Continue);
             };
-            let plan = instance_purge_key_plan(confirm_state.handle_key(key), container.clone());
+            let plan =
+                instance_purge_key_plan(confirm_state.handle_key(key.into()), container.clone());
             match plan {
                 InstancePurgeKeyPlan::Purge { container } => {
                     drop(update_manager(state, ManagerMessage::ReturnToList));
@@ -1219,13 +1220,19 @@ fn container_info_enter_copies_default_value_without_dismissing() {
     let mut config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
     state.list_modal = Some(Modal::ContainerInfo {
-        state: jackin_tui::components::ContainerInfoState::new(
+        state: crate::tui::components::container_info_surface::ContainerInfoState::new(
             "Debug info",
             vec![
-                jackin_tui::components::ContainerInfoRow::new("jackin version", "0.6.0-dev"),
-                jackin_tui::components::ContainerInfoRow::new("Invocation ID", "jk-run-123")
-                    .copyable()
-                    .emphasised(),
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "jackin version",
+                    "0.6.0-dev",
+                ),
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Run ID",
+                    "jk-run-123",
+                )
+                .copyable()
+                .emphasised(),
             ],
         ),
     });

@@ -218,7 +218,7 @@ pub fn handle_key(
         };
         let dismiss = settings.error_popup.as_mut().is_some_and(|p| {
             matches!(
-                dismissible_modal_plan(p.handle_key(key)),
+                dismissible_modal_plan(p.handle_key(key.into())),
                 DismissibleModalPlan::Dismiss
             )
         });
@@ -396,7 +396,7 @@ fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent
     else {
         return InputOutcome::Continue;
     };
-    let plan = instance_purge_key_plan(confirm_state.handle_key(key), container.clone());
+    let plan = instance_purge_key_plan(confirm_state.handle_key(key.into()), container.clone());
     match plan {
         InstancePurgeKeyPlan::Purge { container } => {
             drop(update_manager(state, ManagerMessage::ReturnToList));
@@ -425,7 +425,7 @@ fn handle_confirm_delete_key(
     else {
         return InputOutcome::Continue;
     };
-    let plan = workspace_delete_key_plan(confirm_state.handle_key(key), name.clone());
+    let plan = workspace_delete_key_plan(confirm_state.handle_key(key.into()), name.clone());
     match plan {
         WorkspaceDeleteKeyPlan::RemoveWorkspace { name } => {
             drop(update_manager(state, ManagerMessage::ReturnToList));

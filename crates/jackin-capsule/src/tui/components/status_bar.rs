@@ -7,7 +7,7 @@
 //! Not responsible for: tab lifecycle or focus state mutation — caller passes
 //! snapshot state and receives a rendered byte buffer.
 //!
-//! Key invariant: tab cell sizing uses `jackin_tui::lay_out_tabs` so the
+//! Key invariant: tab cell sizing uses `termrock::lay_out_tabs` so the
 //! capsule and host console TUI cannot drift on cell widths or click regions.
 
 /// Status bar state and click-region planner for rows 0–1 of the host terminal.
@@ -29,10 +29,10 @@
 /// green, so it stays distinct from the ` jackin❯ ` brand pill, plus
 /// the row-1 white underline.
 ///
-/// Layout columns come from `jackin_tui::lay_out_tabs`, so the
+/// Layout columns come from `termrock::lay_out_tabs`, so the
 /// console TUI and the multiplexer cannot drift on cell sizing /
 /// click-region maths.
-use jackin_tui::components::TabStrip;
+use termrock::components::TabStrip;
 
 use crate::tui::layout::Tab;
 use crate::tui::model::{MuxMode, VisibleAgentState};
@@ -44,7 +44,7 @@ use crate::tui::model::{MuxMode, VisibleAgentState};
 /// the click-region maths from drifting on CJK / emoji / combining
 /// marks.
 fn display_cols(s: &str) -> u16 {
-    u16::try_from(jackin_tui::display_cols(s)).unwrap_or(u16::MAX)
+    u16::try_from(termrock::display_cols(s)).unwrap_or(u16::MAX)
 }
 
 const BRAND_TEXT: &str = " jackin❯ ";

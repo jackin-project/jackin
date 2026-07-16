@@ -298,7 +298,7 @@ fn handle_workspace_list(config: &AppConfig, list_args: cli::WorkspaceFormatArgs
         table.with(Style::modern());
         println!("{table}");
         println!();
-        jackin_tui::output::hint("Run ", "jackin workspace show <name>", " for details.");
+        jackin_launch_tui::output::hint("Run ", "jackin workspace show <name>", " for details.");
     }
     Ok(())
 }

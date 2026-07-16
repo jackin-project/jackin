@@ -24,8 +24,6 @@ members = [
     "crates/jackin-runtime",
     "crates/jackin-term",
     "crates/jackin-telemetry",
-    "crates/jackin-tui",
-    "crates/jackin-tui-lookbook",
     "crates/jackin-xtask",
     "crates/jackin-pr-trailers",
     "crates/jackin-usage",
@@ -88,7 +86,6 @@ jackin-runtime = { version = "0.6.0-dev", path = "crates/jackin-runtime" }
 jackin-telemetry = { version = "0.6.0-dev", path = "crates/jackin-telemetry" }
 jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
 jackin-test-support = { version = "0.6.0-dev", path = "crates/jackin-test-support" }
-jackin-tui = { version = "0.6.0-dev", path = "crates/jackin-tui" }
 jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
 nix = "0.31"
 opentelemetry_sdk = "0.32"
@@ -108,6 +105,7 @@ ratatui = "0.30"
 # Must stay lockstep-compatible with ratatui 0.30; pinned when workspace was
 # virtualized (#532/#713). Candidate: relax to "0.1" — needs lockfile-refresh PR.
 ratatui-core = "=0.1.2"
+termrock = { version = "=0.6.0", git = "https://github.com/tailrocks/termrock.git", rev = "41482e9fe9b8254f82c7803692ef9dbd7d4cf87c" }
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false }
@@ -119,7 +117,6 @@ serde = "1.0"
 serde_json = "=1.0.150"
 serde_yaml_ng = "0.10.0"
 sha2 = "0.11"
-similar = "3"
 smallvec = "1.15"
 syn = { version = "2", features = ["full", "visit"] }
 tabled = "0.21.0"
@@ -137,7 +134,6 @@ tracing = "0.1"
 tracing-opentelemetry = "0.33"
 tracing-subscriber = "0.3"
 tonic = { version = "0.14.1", default-features = false, features = ["transport", "router", "codegen", "gzip"] }
-tui-scrollbar = "0.2.4"
 tui-widget-list = "0.15"
 # Pre-release API churn; revisit at first stable 0.7 (or next pre.N after
 # re-running the usage-store suite against the boundary module only).

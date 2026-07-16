@@ -50,11 +50,11 @@ pub mod terminal {
         }
 
         fn set_host_screen_owned(&self, owned: bool) {
-            jackin_tui::ownership::set_host_screen_owned(owned);
+            crate::terminal_ownership::set_host_screen_owned(owned);
         }
 
         fn host_screen_owned(&self) -> bool {
-            jackin_tui::ownership::host_screen_owned()
+            crate::terminal_ownership::host_screen_owned()
         }
     }
 

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_config::{AppConfig, WorkspaceConfig};
-use jackin_tui::{HintSpan, keymap::glyph};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
+use termrock::{HintSpan, keymap::glyph};
 
 use super::workspace_screen_footer_items_for_state;
 use crate::tui::components::file_browser::FileBrowserState;

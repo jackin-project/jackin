@@ -15,6 +15,17 @@ use crossterm::terminal::LeaveAlternateScreen;
 
 const DOUBLE_CTRL_C_WINDOW: Duration = Duration::from_millis(750);
 const HARD_EXIT_DRAIN_LIMIT: usize = 16_384;
+pub(super) const ANSI_RESET: &str = "\x1b[0m";
+
+pub(super) fn enable_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
+    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h")?;
+    out.flush()
+}
+
+pub(super) fn disable_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
+    out.write_all(b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")?;
+    out.flush()
+}
 
 #[derive(Debug)]
 pub struct LaunchInput {
@@ -145,9 +156,11 @@ pub(super) fn restore_terminal_for_process_exit() {
 }
 
 pub(super) fn write_forced_terminal_restore<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
-    out.write_all(jackin_tui::ansi::RESET.as_bytes())?;
-    out.write_all(jackin_tui::ansi::POINTER_DEFAULT.as_bytes())?;
-    jackin_tui::terminal_modes::disable_mouse_capture(out)?;
+    out.write_all(ANSI_RESET.as_bytes())?;
+    out.write_all(&termrock::osc::encode_pointer(
+        termrock::osc::PointerShape::Default,
+    ))?;
+    disable_mouse_capture(out)?;
     // Defensive teardown for modes used by hosted agent UIs. The launch
     // surface does not enable all of them, but a hard process exit must leave
     // the operator's terminal cooked even when it interrupts a transition.

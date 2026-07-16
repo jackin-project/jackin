@@ -304,7 +304,7 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         return Ok(());
     }
 
-    crate::output::stdout_fragment(format_args!("{}", jackin_tui::ansi::BRAND_BANNER));
+    crate::output::stdout_fragment(format_args!("{}", crate::tui::ansi::BRAND_BANNER));
     crate::output::stdout_line(format_args!("agent registry"));
     if let Some(r) = records.iter().find(|r| r.is_self) {
         crate::output::stdout_line(format_args!(

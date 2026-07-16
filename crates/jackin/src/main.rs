@@ -57,7 +57,7 @@ async fn main() {
         Action::PrintHelpAndExit => {
             // Bare `jackin` on a non-interactive stdout: one-line pill (the
             // root command no longer carries clap's `before_help`), then help.
-            print!("{}", jackin_tui::ansi::BRAND_BANNER);
+            print!("{}", jackin::brand_output::BRAND_BANNER);
             let mut cmd = Cli::command();
             drop(cmd.print_help());
             println!();
@@ -97,7 +97,7 @@ fn handle_parse_error(err: clap::Error) -> ! {
             // Interactive `--version`: brand splash instead of clap's plain
             // `jackin <version>` line. Piped output falls through to clap.
             let version = Cli::command().get_version().unwrap_or_default().to_owned();
-            print!("{}", jackin_tui::ansi::version_splash(&version));
+            print!("{}", jackin::brand_output::version_splash(&version));
             std::process::exit(0);
         }
         _ => {}
@@ -129,11 +129,11 @@ fn print_root_help_banner() {
     let interactive = std::io::stdout().is_terminal();
     match crossterm::terminal::size() {
         Ok((cols, rows))
-            if interactive && cols >= jackin_tui::ansi::HELP_BANNER_MIN_COLS && rows >= 20 =>
+            if interactive && cols >= jackin::brand_output::HELP_BANNER_MIN_COLS && rows >= 20 =>
         {
-            print!("{}", jackin_tui::ansi::help_banner(cols));
+            print!("{}", jackin::brand_output::help_banner(cols));
         }
-        _ => print!("{}", jackin_tui::ansi::BRAND_BANNER),
+        _ => print!("{}", jackin::brand_output::BRAND_BANNER),
     }
 }
 
@@ -168,6 +168,6 @@ fn render_error(error: &anyhow::Error, debug: bool) {
             eprintln!("  {} {error:#}", "detail:".dimmed());
         }
     } else {
-        jackin_tui::output::fatal(&format!("{error:#}"));
+        jackin_launch_tui::output::fatal(&format!("{error:#}"));
     }
 }

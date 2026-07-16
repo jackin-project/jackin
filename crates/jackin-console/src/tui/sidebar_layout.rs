@@ -3,8 +3,8 @@
 
 //! Pure sidebar rectangle allocation for the workspace list preview pane.
 
-use jackin_tui::components::ScrollAxes;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use termrock::components::ScrollAxes;
 
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::mount_display::{
@@ -466,7 +466,7 @@ where
 {
     role_keys
         .into_iter()
-        .map(|key| jackin_tui::display_cols(key.as_ref()) + 4)
+        .map(|key| termrock::display_cols(key.as_ref()) + 4)
         .max()
         .unwrap_or(0)
 }
@@ -529,19 +529,19 @@ fn mount_data_row_count(same_path_rows: impl IntoIterator<Item = bool>) -> Optio
 }
 
 fn clamp_scroll_x(content: usize, viewport: usize, value: &mut u16) {
-    jackin_tui::components::scrollable_panel::clamp_scroll_offset(content, viewport, value);
+    termrock::components::scrollable_panel::clamp_scroll_offset(content, viewport, value);
 }
 
 fn scroll_viewport_width(area: Rect) -> usize {
-    jackin_tui::components::scrollable_panel::viewport_width(area)
+    termrock::components::scrollable_panel::viewport_width(area)
 }
 
 fn scroll_viewport_height(area: Rect) -> usize {
-    jackin_tui::components::scrollable_panel::viewport_height(area)
+    termrock::components::scrollable_panel::viewport_height(area)
 }
 
 fn is_scrollable(content: usize, viewport: usize) -> bool {
-    jackin_tui::components::scrollable_panel::is_scrollable(content, viewport)
+    termrock::components::scrollable_panel::is_scrollable(content, viewport)
 }
 
 #[cfg(test)]

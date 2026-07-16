@@ -58,9 +58,9 @@ pub(crate) fn role_lines(
 ) -> Vec<Line<'static>> {
     let badge_text = if is_all { "  all  " } else { "  custom  " };
     let badge_bg = if is_all {
-        jackin_tui::theme::PHOSPHOR_GREEN
+        termrock::style::PHOSPHOR_GREEN
     } else {
-        jackin_tui::theme::WHITE
+        termrock::style::WHITE
     };
     let badge_style = Style::default()
         .bg(badge_bg)
@@ -71,7 +71,7 @@ pub(crate) fn role_lines(
         Span::styled(
             "  Allowed roles:  ",
             Style::default()
-                .fg(jackin_tui::theme::WHITE)
+                .fg(termrock::style::WHITE)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(badge_text, badge_style),
@@ -80,7 +80,7 @@ pub(crate) fn role_lines(
         status_spans.push(Span::styled(
             format!("   ({allowed_count} of {} allowed)", rows.len()),
             Style::default()
-                .fg(jackin_tui::theme::ACTION_ACCENT)
+                .fg(termrock::style::ACTION_ACCENT)
                 .add_modifier(Modifier::ITALIC),
         ));
     }
@@ -99,10 +99,10 @@ pub(crate) fn role_lines(
         let text = format!("{prefix}{check} {star} {}", row.name);
         let style = if selected {
             Style::default()
-                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .fg(termrock::style::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
         };
         lines.push(Line::from(Span::styled(text, style)));
     }

@@ -3,13 +3,17 @@
 //! **Architecture Invariant:** T3.
 //! Entry point: [`OpPickerPlan`] — pure picker planning result.
 
+mod adapters;
 pub mod input;
 pub mod load;
 pub mod state;
 
 use std::collections::HashSet;
 
-use jackin_tui::components::TextInputState;
+pub use adapters::{
+    BlockingSubscription, ModalOutcome, TextInputState, ready_blocking_subscription,
+    spawn_named_blocking_subscription,
+};
 
 pub use state::{LoadResult, OpPickerState};
 

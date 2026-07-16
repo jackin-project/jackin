@@ -17,9 +17,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use jackin_tui::components::{DialogBorder, render_dialog_shell};
-use jackin_tui::theme::PHOSPHOR_DIM;
-use jackin_tui::{ModalOutcome, shorten_home};
+use jackin_core::shorten_home;
+use termrock::ModalOutcome;
+use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::style::PHOSPHOR_DIM;
 
 /// Outcome of the mount-destination modal.
 ///
@@ -113,7 +114,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            jackin_tui::theme::BOLD_WHITE,
+            termrock::style::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
         chunks[1],
@@ -133,9 +134,9 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
     );
 
     let items = [
-        jackin_tui::components::ButtonStripItem::new("Mount at same path"),
-        jackin_tui::components::ButtonStripItem::new("Edit destination"),
-        jackin_tui::components::ButtonStripItem::new("Cancel"),
+        termrock::components::ButtonStripItem::new("Mount at same path"),
+        termrock::components::ButtonStripItem::new("Edit destination"),
+        termrock::components::ButtonStripItem::new("Cancel"),
     ];
     let focused = match state.focus {
         MountDstFocus::SamePath => 0,
@@ -143,7 +144,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         MountDstFocus::Cancel => 2,
     };
     frame.render_widget(
-        jackin_tui::components::ButtonStrip::new(&items).focused(focused),
+        termrock::components::ButtonStrip::new(&items).focused(focused),
         chunks[4],
     );
 }

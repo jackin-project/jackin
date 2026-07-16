@@ -3,20 +3,53 @@
 
 //! Launch prompt dialog rendering and geometry.
 
-use jackin_tui::HintSpan;
-use jackin_tui::components::ModalRectSpec;
-use jackin_tui::components::{
-    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_hint_spans,
-    confirm_required_height, confirm_width_pct, error_popup_hint_spans, modal_rect,
-    render_confirm_dialog, render_error_dialog_in, render_hint_bar, render_select_list,
-    render_text_input, required_height as error_dialog_required_height, select_list_hint_spans,
-    text_input_prompt_rect,
-};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
+use termrock::HintSpan;
+use termrock::components::{
+    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
+    confirm_width_pct, render_confirm_dialog, render_error_dialog_in, render_select_list,
+    render_text_input, required_height as error_dialog_required_height, text_input_prompt_rect,
+};
 
 use crate::tui::components::dialog::dialog_backdrop;
+use crate::tui::components::dialog::{exact_dialog_rect, percent_dialog_rect};
+
+fn select_list_hint_spans() -> Vec<HintSpan<'static>> {
+    vec![
+        HintSpan::Key("↑↓"),
+        HintSpan::Text("navigate"),
+        HintSpan::GroupSep,
+        HintSpan::Key("↵"),
+        HintSpan::Text("select"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text("cancel"),
+        HintSpan::GroupSep,
+        HintSpan::Text("type to filter"),
+    ]
+}
+
+pub(crate) fn confirm_hint_spans() -> Vec<HintSpan<'static>> {
+    vec![
+        HintSpan::Key("↵"),
+        HintSpan::Text("confirm"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Y"),
+        HintSpan::Text("yes"),
+        HintSpan::GroupSep,
+        HintSpan::Key("N/Esc"),
+        HintSpan::Text("no"),
+        HintSpan::GroupSep,
+        HintSpan::Key("⇥"),
+        HintSpan::Text("focus"),
+    ]
+}
+
+fn error_popup_hint_spans() -> Vec<HintSpan<'static>> {
+    vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")]
+}
 
 pub fn draw_select(
     frame: &mut Frame<'_>,
@@ -32,25 +65,25 @@ pub fn draw_select(
         title,
         context,
     );
-    render_hint_bar(frame, hint_area, &select_list_hint_spans());
+    termrock::widgets::render_hint_bar(frame, hint_area, &select_list_hint_spans());
 }
 
 pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skippable: bool) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     render_text_input(frame, text_input_prompt_rect(box_area), input);
-    render_hint_bar(frame, hint_area, text_prompt_hint(skippable));
+    termrock::widgets::render_hint_bar(frame, hint_area, text_prompt_hint(skippable));
 }
 
 pub fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     render_confirm_dialog(frame, confirm_rect(box_area, state), state);
-    render_hint_bar(frame, hint_area, &confirm_hint_spans());
+    termrock::widgets::render_hint_bar(frame, hint_area, &confirm_hint_spans());
 }
 
 pub fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     render_error_dialog_in(frame, error_popup_rect(box_area, state), state);
-    render_hint_bar(frame, hint_area, &error_popup_hint_spans());
+    termrock::widgets::render_hint_bar(frame, hint_area, &error_popup_hint_spans());
 }
 
 fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Rect {
@@ -80,26 +113,24 @@ fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Re
         .max(context_w)
         .saturating_add(6)
         .clamp(min_w, max_w);
-    modal_rect(area, ModalRectSpec::Exact { width, height })
+    exact_dialog_rect(area, width, height)
 }
 
 fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
-    modal_rect(
+    percent_dialog_rect(
         area,
-        ModalRectSpec::PercentClampWithMargin {
-            width_pct: confirm_width_pct(state),
-            min_width: 0,
-            width_margin: 2,
-            height_margin: 2,
-            height: confirm_required_height(state),
-        },
+        confirm_width_pct(state),
+        0,
+        2,
+        2,
+        confirm_required_height(state),
     )
 }
 
 fn error_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
     let width = (area.width.saturating_mul(3) / 4).clamp(40, area.width.max(40));
     let height = error_dialog_required_height(state, width.saturating_sub(2), area.height);
-    modal_rect(area, ModalRectSpec::Exact { width, height })
+    exact_dialog_rect(area, width, height)
 }
 
 /// Footer-hint keys for the launch text prompt. `skippable` adds the

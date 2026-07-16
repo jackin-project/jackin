@@ -39,17 +39,17 @@ pub use jackin_launch_tui::{
     active_stage_index, initial_view, update_launch_view, update_stage,
 };
 #[cfg(test)]
-use jackin_tui::components::ConfirmState;
-#[cfg(test)]
-use jackin_tui::components::{ErrorPopupState, TextInputState};
-#[cfg(test)]
-use jackin_tui::theme::DANGER_RED;
-#[cfg(test)]
 use ratatui::Frame;
 #[cfg(test)]
 use ratatui::layout::Rect;
 #[cfg(test)]
 use ratatui::style::Color;
+#[cfg(test)]
+use termrock::components::ConfirmState;
+#[cfg(test)]
+use termrock::components::{ErrorPopupState, TextInputState};
+#[cfg(test)]
+use termrock::style::DANGER_RED;
 
 struct HostTerminal;
 

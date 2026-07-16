@@ -24,6 +24,12 @@ use crate::protocol::attach::{
 use crate::socket::SOCKET_PATH;
 use crate::tui::terminal::{enter_attach_terminal, terminal_size};
 
+fn telemetry_context() -> Option<Box<jackin_protocol::TelemetryContext>> {
+    let mut context = jackin_protocol::TelemetryContext::v1();
+    jackin_telemetry::propagation::inject(&mut context);
+    Some(Box::new(context))
+}
+
 /// Connect to the running daemon and run the interactive attach client.
 ///
 /// `spawn_request` is set by `docker exec ... jackin-capsule new`;
@@ -57,8 +63,6 @@ pub async fn run_client(
         .await
         .context("cannot connect to jackin-capsule daemon — is it running?")?;
 
-    let mut context = jackin_protocol::TelemetryContext::v1();
-    jackin_telemetry::propagation::inject(&mut context);
     let hello = encode_client(ClientFrame::Hello {
         rows,
         cols,
@@ -66,7 +70,7 @@ pub async fn run_client(
         spawn: spawn_request,
         terminal,
         focus_session,
-        context: Some(Box::new(context)),
+        context: telemetry_context(),
     })
     .context("encoding attach Hello frame")?;
     stream
@@ -133,7 +137,7 @@ pub async fn run_client(
                         }
                     }
                     ServerFrame::HostOpenUrl(url) => {
-                        let redacted = jackin_tui::url_text::redact_url_for_log(&url);
+                        let redacted = crate::tui::url_text::redact_url_for_log(&url);
                         jackin_diagnostics::telemetry_debug!("capsule",
                             "attach-client: ignoring host-open-url frame in in-container client: {redacted:?}"
                         );
@@ -161,7 +165,7 @@ pub async fn run_client(
                     ServerFrame::FileExportStart(_)
                     | ServerFrame::FileExportChunk(_)
                     | ServerFrame::FileExportEnd(_) => {
-                        jackin_diagnostics::telemetry_debug!("capsule", "attach-client: ignoring host file-export frame");
+                        jackin_diagnostics::telemetry_debug!("capsule","attach-client: ignoring host file-export frame");
                     }
                     ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
                 }

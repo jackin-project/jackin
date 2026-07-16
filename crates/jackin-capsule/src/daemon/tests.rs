@@ -879,19 +879,19 @@ fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
     let rendered = String::from_utf8_lossy(frame);
     let thumb_fg = format!(
         "{}{}",
-        jackin_tui::ansi::RESET,
-        jackin_tui::ansi::rgb_fg(jackin_tui::DIALOG_SCROLL_THUMB)
+        crate::tui::ansi::RESET,
+        crate::tui::ansi::rgb_fg(termrock::DIALOG_SCROLL_THUMB)
     );
     assert!(
         rendered.contains(&thumb_fg),
         "focused {context} should use the shared scrollbar thumb color"
     );
     assert!(
-        rendered.contains(jackin_tui::components::ScrollbarStyle::Line.vertical_thumb()),
+        rendered.contains(termrock::components::ScrollbarStyle::Line.vertical_thumb()),
         "focused {context} should draw the shared scrollbar thumb"
     );
     assert!(
-        rendered.contains(jackin_tui::components::SCROLLBAR_TRACK),
+        rendered.contains(termrock::components::SCROLLBAR_TRACK),
         "focused {context} should draw the shared scrollbar track"
     );
 }
@@ -899,7 +899,7 @@ fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
 fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
     let rendered = String::from_utf8_lossy(frame);
     assert!(
-        !rendered.contains(jackin_tui::components::ScrollbarStyle::Line.vertical_thumb())
+        !rendered.contains(termrock::components::ScrollbarStyle::Line.vertical_thumb())
             && !rendered.contains('█'),
         "{context} should not draw fake scrollback chrome"
     );
@@ -1554,7 +1554,7 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
         assert!(
             !frame.contains(&format!(
                 "{}┌",
-                jackin_tui::ansi::rgb_fg(jackin_tui::BORDER_GRAY)
+                crate::tui::ansi::rgb_fg(termrock::BORDER_GRAY)
             )),
             "{context} should hide inactive pane borders behind the dialog: {frame:?}"
         );
@@ -3121,11 +3121,11 @@ fn pane_scrollbar_renders_shared_component_glyphs_only() {
     let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
     let rendered = String::from_utf8_lossy(&frame);
     assert!(
-        rendered.contains(jackin_tui::components::ScrollbarStyle::Line.vertical_thumb()),
+        rendered.contains(termrock::components::ScrollbarStyle::Line.vertical_thumb()),
         "pane scrollbar must use the shared Line thumb"
     );
     assert!(
-        rendered.contains(jackin_tui::components::SCROLLBAR_TRACK),
+        rendered.contains(termrock::components::SCROLLBAR_TRACK),
         "pane scrollbar must paint the shared track"
     );
     assert!(
@@ -4071,7 +4071,7 @@ fn container_info_copy_feedback_expires() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     });
     let now = Instant::now();
     mux.clipboard.dialog_copy_feedback_deadline = Some(now);
@@ -4098,7 +4098,7 @@ fn container_info_id_click_copies_and_renders_feedback() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
-        scroll: jackin_tui::components::DialogBodyScroll::new(),
+        scroll: termrock::components::DialogBodyScroll::new(),
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(tx);

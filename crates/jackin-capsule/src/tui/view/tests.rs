@@ -38,7 +38,7 @@ fn chrome_frame(
                     term_rows: 24,
                     panes: &[],
                     pane_titles: &[],
-                    focus_owner: jackin_tui::components::FocusOwner::Content(1),
+                    focus_owner: termrock::components::FocusOwner::Content(1),
                     zoomed: false,
                     dialog_open: false,
                     dialog_snapshot: None,
@@ -56,7 +56,7 @@ fn chrome_frame(
                     instance_id_label: "jk-test",
                     hover_target: hover,
                     scrollback_active: false,
-                    main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
+                    main_scroll_axes: termrock::components::ScrollAxes::default(),
                     debug_run_id,
                     dialog_hint_spans: None,
                     palette_key: 0x1C,
@@ -162,7 +162,7 @@ fn clipboard_image_notice_keeps_status_and_bottom_chrome_rows_free() {
 #[test]
 fn non_debug_dialog_hides_bottom_status_bar() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
-    let state = jackin_tui::components::DebugInfo {
+    let state = crate::tui::components::container_info_surface::DebugInfo {
         jackin_version: Some("0.6.0-dev".to_owned()),
         capsule_version: Some("0.6.0-dev".to_owned()),
         container_id: Some("jk-test-thearchitect".to_owned()),
@@ -174,8 +174,8 @@ fn non_debug_dialog_hides_bottom_status_bar() {
     .into_state();
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
     let hints = [
-        jackin_tui::HintSpan::Key("Esc"),
-        jackin_tui::HintSpan::Text("dismiss"),
+        termrock::HintSpan::Key("Esc"),
+        termrock::HintSpan::Text("dismiss"),
     ];
     let backend = TestBackend::new(120, 24);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -193,7 +193,7 @@ fn non_debug_dialog_hides_bottom_status_bar() {
                     term_rows: 24,
                     panes: &[],
                     pane_titles: &[],
-                    focus_owner: jackin_tui::components::FocusOwner::Content(1),
+                    focus_owner: termrock::components::FocusOwner::Content(1),
                     zoomed: false,
                     dialog_open: true,
                     dialog_snapshot: Some(&snapshot),
@@ -211,7 +211,7 @@ fn non_debug_dialog_hides_bottom_status_bar() {
                     instance_id_label: "jk-test",
                     hover_target: None,
                     scrollback_active: false,
-                    main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
+                    main_scroll_axes: termrock::components::ScrollAxes::default(),
                     debug_run_id: None,
                     dialog_hint_spans: Some(&hints),
                     palette_key: 0x1C,
@@ -317,7 +317,7 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
                     term_rows: 24,
                     panes: &[],
                     pane_titles: &[],
-                    focus_owner: jackin_tui::components::FocusOwner::Content(1),
+                    focus_owner: termrock::components::FocusOwner::Content(1),
                     zoomed: false,
                     dialog_open: false,
                     dialog_snapshot: None,
@@ -335,7 +335,7 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
                     instance_id_label: "jk-test",
                     hover_target: None,
                     scrollback_active: false,
-                    main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
+                    main_scroll_axes: termrock::components::ScrollAxes::default(),
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     palette_key: 0x1C,
@@ -363,7 +363,7 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
 #[test]
 fn debug_dialog_keeps_status_bar_visible() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
-    let state = jackin_tui::components::DebugInfo {
+    let state = crate::tui::components::container_info_surface::DebugInfo {
         jackin_version: Some("0.6.0-dev".to_owned()),
         capsule_version: Some("0.6.0-dev".to_owned()),
         container_id: Some("jk-test-thearchitect".to_owned()),
@@ -390,7 +390,7 @@ fn debug_dialog_keeps_status_bar_visible() {
                     term_rows: 24,
                     panes: &[],
                     pane_titles: &[],
-                    focus_owner: jackin_tui::components::FocusOwner::Content(1),
+                    focus_owner: termrock::components::FocusOwner::Content(1),
                     zoomed: false,
                     dialog_open: true,
                     dialog_snapshot: Some(&snapshot),
@@ -408,7 +408,7 @@ fn debug_dialog_keeps_status_bar_visible() {
                     instance_id_label: "jk-test",
                     hover_target: None,
                     scrollback_active: false,
-                    main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
+                    main_scroll_axes: termrock::components::ScrollAxes::default(),
                     debug_run_id: Some("jk-run-test"),
                     dialog_hint_spans: None,
                     palette_key: 0x1C,
@@ -468,7 +468,7 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
                     term_rows: 24,
                     panes: &[],
                     pane_titles: &[],
-                    focus_owner: jackin_tui::components::FocusOwner::Content(1),
+                    focus_owner: termrock::components::FocusOwner::Content(1),
                     zoomed: false,
                     dialog_open: false,
                     dialog_snapshot: None,
@@ -486,7 +486,7 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
                     instance_id_label: "jk-test",
                     hover_target: None,
                     scrollback_active: false,
-                    main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
+                    main_scroll_axes: termrock::components::ScrollAxes::default(),
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     palette_key: 0x1C,

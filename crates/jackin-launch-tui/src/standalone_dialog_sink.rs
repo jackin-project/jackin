@@ -53,21 +53,26 @@ impl LaunchHostTerminal for SinkHostTerminal {
     }
 
     fn set_pointer_shape(&self, pointer: bool) {
-        let seq = if pointer {
-            jackin_tui::ansi::POINTER_HAND
+        let seq = termrock::osc::encode_pointer(if pointer {
+            termrock::osc::PointerShape::Pointer
         } else {
-            jackin_tui::ansi::POINTER_DEFAULT
-        };
+            termrock::osc::PointerShape::Default
+        });
         let mut out = std::io::stdout();
-        drop(out.write_all(seq.as_bytes()));
+        drop(out.write_all(&seq));
         drop(out.flush());
     }
 
     fn copy_to_clipboard(&self, payload: &str) -> bool {
         let mut out = std::io::stdout();
-        out.write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(payload))
-            .and_then(|()| out.flush())
-            .is_ok()
+        out.write_all(&termrock::osc::encode_clipboard(
+            termrock::osc::ClipboardWrite {
+                selection: "c",
+                text: payload,
+            },
+        ))
+        .and_then(|()| out.flush())
+        .is_ok()
     }
 
     fn reveal_file(&self, _path: &std::path::Path) -> bool {

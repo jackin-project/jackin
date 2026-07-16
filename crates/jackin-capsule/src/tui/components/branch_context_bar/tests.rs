@@ -37,7 +37,7 @@ fn widget_bar(
         instance_id_label: container,
         hover_target: hover,
         scrollback_active: false,
-        scroll_axes: jackin_tui::scroll::ScrollAxes::none(),
+        scroll_axes: termrock::scroll::ScrollAxes::none(),
         debug_run_id: None,
         prefix_awaiting: false,
         palette_key: 0x1C,
@@ -318,7 +318,7 @@ fn hit_rejects_columns_outside_region() {
 #[test]
 fn hover_highlights_click_targets() {
     let pr = pull_request_fixture(434);
-    let hover_fg = jackin_tui::theme::DEBUG_AMBER;
+    let hover_fg = termrock::style::DEBUG_AMBER;
     let (_, ctx) = widget_bar(
         120,
         Some("asa/pr-context"),

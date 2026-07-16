@@ -365,7 +365,7 @@ impl InputParser {
                         // `JACKIN_PALETTE_KEY=none`.
                         flush(&mut data, &mut events);
                         events.push(InputEvent::OpenPalette);
-                    } else if let Some(chord) = jackin_tui::keymap::raw_bytes_to_chord(&[b])
+                    } else if let Some(chord) = crate::tui::keymap::raw_bytes_to_chord(&[b])
                         && let Some(action) =
                             crate::tui::keymap::CAPSULE_GLOBAL_KEYMAP.dispatch(chord)
                     {
@@ -590,7 +590,7 @@ pub fn parse_key_binding(s: &str) -> Option<u8> {
 }
 
 fn prefix_binding(b: u8) -> Option<PrefixCommand> {
-    use jackin_tui::keymap::raw_bytes_to_chord;
+    use crate::tui::keymap::raw_bytes_to_chord;
     let chord = raw_bytes_to_chord(&[b])?;
     crate::tui::keymap::PREFIX_COMMAND_KEYMAP.dispatch(chord)
 }
@@ -819,7 +819,7 @@ fn dispatch_control_byte(control: u8, palette_key: Option<u8>) -> Option<InputEv
     if Some(control) == palette_key {
         return Some(InputEvent::OpenPalette);
     }
-    if let Some(chord) = jackin_tui::keymap::raw_bytes_to_chord(&[control])
+    if let Some(chord) = crate::tui::keymap::raw_bytes_to_chord(&[control])
         && let Some(action) = crate::tui::keymap::CAPSULE_GLOBAL_KEYMAP.dispatch(chord)
     {
         return Some(action.to_input_event());

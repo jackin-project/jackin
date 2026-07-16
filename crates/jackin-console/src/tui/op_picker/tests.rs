@@ -9,11 +9,11 @@
 use super::*;
 use crate::tui::components::op_picker::{field_label_input_state, section_name_input_state};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use jackin_console_oppicker::ModalOutcome;
 use jackin_core::FieldTarget;
 use jackin_env::{
     OpAccount, OpCache, OpField, OpItem, OpStructRunner, OpVault, resolve_op_uri_to_ref,
 };
-use jackin_tui::ModalOutcome;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -547,7 +547,7 @@ fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
     s.fields.clear();
     s.field_refresh_in_place = true;
     // Publish the reloaded fields through the same arm the worker uses.
-    s.rx = Some(jackin_tui::runtime::ready_blocking_subscription(
+    s.rx = Some(jackin_console_oppicker::ready_blocking_subscription(
         LoadResult::Fields(Ok(vec![
             field_with_reference("user", "op://Personal/login/user"),
             field_with_reference("api", "op://Personal/login/auth/api"),

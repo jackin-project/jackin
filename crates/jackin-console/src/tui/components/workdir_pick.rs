@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
-use jackin_tui::{ModalOutcome, shorten_home};
+use jackin_core::shorten_home;
+use termrock::ModalOutcome;
 
 #[derive(Debug, Clone)]
 pub struct WorkdirChoice {
@@ -141,9 +142,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::components::render_picker_lines;
-use jackin_tui::components::{DialogBorder, render_dialog_shell};
-use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
+use termrock::components::render_picker_lines;
+use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::style::{PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
     let inner = render_dialog_shell(
@@ -165,7 +166,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no directories",
-                jackin_tui::theme::DIM,
+                termrock::style::DIM,
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],

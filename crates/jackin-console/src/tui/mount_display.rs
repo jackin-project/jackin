@@ -11,7 +11,7 @@
 
 use ratatui::text::{Line, Span};
 
-use jackin_tui::components::scrollable_panel::max_line_width;
+use termrock::components::scrollable_panel::max_line_width;
 
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::components::mount_rows::{
@@ -82,7 +82,7 @@ pub fn format_config_mount_rows_with_cache(
             isolation: m.isolation.as_str(),
             kind: cache.label(&m.src),
         }),
-        jackin_tui::shorten_home,
+        jackin_core::shorten_home,
     )
 }
 
@@ -155,7 +155,7 @@ pub fn settings_global_config_mounts_content_height(
 pub fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
     rows.iter()
         .flat_map(|row| std::iter::once(&row.destination).chain(row.host_source.as_ref()))
-        .map(|p| jackin_tui::display_cols(p))
+        .map(|p| termrock::display_cols(p))
         .max()
         .unwrap_or(0)
         .max(10)
@@ -166,7 +166,7 @@ pub fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
 fn none_placeholder_line() -> Line<'static> {
     Line::from(Span::styled(
         "  (none)",
-        ratatui::style::Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+        ratatui::style::Style::default().fg(termrock::style::PHOSPHOR_DIM),
     ))
 }
 

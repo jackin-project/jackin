@@ -8,10 +8,11 @@ Split out of the console so the picker's decision logic is unit-testable without
 
 - Picker state machine (`state`) and input handling (`input`).
 - Load/planning helpers (`load`) — what to fetch and how to present it, with no I/O.
+- Async receiver adapters (`adapters`) that connect product sources to TermRock's executor-neutral subscription contract.
 
 ## Architecture tier and allowed dependencies
 
-**Presentation-adjacent pure model.** Allowed workspace dependencies: `jackin-core`, `jackin-diagnostics`, `jackin-tui`. No `op`, no `tokio`, no filesystem — the `op` side-effects live in `jackin-env`.
+**Presentation-adjacent model.** Allowed workspace dependencies include `jackin-core`, `jackin-diagnostics`, Tokio's runtime/channel features, and TermRock. No `op` and no filesystem — the `op` side-effects live in `jackin-env`.
 
 ## Structure
 
@@ -21,6 +22,7 @@ Split out of the console so the picker's decision logic is unit-testable without
 | [`state.rs`](src/state.rs) | picker state machine | — |
 | [`input.rs`](src/input.rs) | input handling | — |
 | [`load.rs`](src/load.rs) | load/planning helpers | — |
+| [`adapters.rs`](src/adapters.rs) | receiver-to-subscription adapters | inline |
 
 ## Public API
 
@@ -32,4 +34,3 @@ Picker state + planning consumed by `jackin-console` (and the side-effect adapte
 cargo nextest run -p jackin-console-oppicker
 cargo clippy -p jackin-console-oppicker --all-targets -- -D warnings
 ```
-

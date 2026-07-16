@@ -83,7 +83,7 @@ fn full_screen_clear_resets_style_before_erasing() {
     let mut backend = SocketBackend::new(80, 24);
     backend.current_style = CellStyle {
         fg: Color::Black,
-        bg: jackin_tui::theme::PHOSPHOR_GREEN,
+        bg: termrock::style::PHOSPHOR_GREEN,
         modifiers: Modifier::BOLD,
     };
 

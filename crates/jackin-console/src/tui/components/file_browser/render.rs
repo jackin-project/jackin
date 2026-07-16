@@ -14,7 +14,7 @@ use ratatui::{
 use super::git_prompt::render_git_prompt;
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_GREEN, WHITE};
-use jackin_tui::components::{
+use termrock::components::{
     Panel, PanelFocus, ScrollableList, cursor_follow_offset, viewport_height,
 };
 
@@ -65,7 +65,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         frame.render_widget(
             Paragraph::new(Span::styled(
                 format!("\u{2717} {reason}"),
-                jackin_tui::theme::DANGER,
+                termrock::style::DANGER,
             ))
             .alignment(Alignment::Center),
             chunks[0],
@@ -87,15 +87,15 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
 fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     let title = format!(
         " {} ",
-        jackin_tui::shorten_home(&state.cwd.display().to_string())
+        jackin_core::shorten_home(&state.cwd.display().to_string())
     );
     // File browser is normally the active modal (PHOSPHOR_GREEN border). When a
     // child dialog (Git repo prompt) is stacked on top, the file browser becomes
     // a background modal and must use the inactive border so exactly one bright
     // border is visible (Defect 9 — one-bright-border rule).
     let block = if state.pending_git_prompt.is_some() {
-        jackin_tui::components::unfocused_block()
-            .title(Span::styled(title.clone(), jackin_tui::theme::BOLD_WHITE))
+        termrock::components::unfocused_block()
+            .title(Span::styled(title.clone(), termrock::style::BOLD_WHITE))
     } else {
         Panel::new()
             .title(title.as_str())

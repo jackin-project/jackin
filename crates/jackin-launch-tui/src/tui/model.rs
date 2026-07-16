@@ -3,7 +3,7 @@
 
 //! Launch cockpit model types shared with runtime orchestration.
 
-use jackin_tui::components::StatusFooterHover;
+use crate::tui::components::footer::StatusFooterHover;
 use ratatui::text::Line;
 
 pub use jackin_core::{
@@ -35,7 +35,7 @@ pub struct LaunchView {
     /// Operator opened the live docker-build log overlay.
     pub build_log_open: bool,
     /// Lines scrolled up from the tail of the build log (0 = follow newest).
-    pub build_log_scroll: jackin_tui::scroll::TailScroll,
+    pub build_log_scroll: termrock::scroll::TailScroll,
     /// Pointer drag is currently bound to the build-log scrollbar track.
     pub build_log_scroll_dragging: bool,
     /// Render-safe snapshot of retained docker-build output.
@@ -61,7 +61,7 @@ pub struct LaunchView {
     /// Scroll offsets for the failure popup body. Long diagnostics or next-step
     /// rows can exceed the viewport-safe popup height; the offset persists here
     /// so the body scrolls instead of silently clipping the overflow.
-    pub failure_scroll: jackin_tui::components::DialogBodyScroll,
+    pub failure_scroll: termrock::scroll::DialogScroll,
     /// Operator opened the shared container info dialog from the footer chip.
     pub container_info_open: bool,
     /// Last copied row in the container info dialog.
@@ -72,7 +72,7 @@ pub struct LaunchView {
     /// Scroll offsets for the container info dialog body. The state is rebuilt
     /// each frame, so the offset persists here and is threaded into the rebuilt
     /// `ContainerInfoState` — long paths scroll instead of clipping.
-    pub container_info_scroll: jackin_tui::components::DialogBodyScroll,
+    pub container_info_scroll: termrock::scroll::DialogScroll,
     /// Last dialog mouse cell logged for `Moved` debug telemetry. This keeps
     /// debug runs from recording repeated terminal mouse-move events that
     /// report the same cell while preserving click/drag/scroll evidence.
@@ -80,7 +80,7 @@ pub struct LaunchView {
     /// Operator pressed Ctrl+Q: the "Exit jackin❯?" confirmation overlays the
     /// cockpit and owns input until answered. `None` = not confirming. Ctrl+C
     /// bypasses this entirely (immediate hard cancel).
-    pub quit_confirm: Option<jackin_tui::components::ConfirmState>,
+    pub quit_confirm: Option<termrock::components::ConfirmState>,
 }
 
 // Re-exported from `jackin_core` (Workstream 1 — architecture/boundaries:
@@ -112,7 +112,7 @@ pub struct LaunchViewView<'a> {
     pub context: LaunchRenderContext<'a>,
 }
 
-impl jackin_tui::runtime::View<LaunchView> for LaunchViewView<'_> {
+impl termrock::runtime::View<LaunchView> for LaunchViewView<'_> {
     fn render(
         &self,
         model: &LaunchView,

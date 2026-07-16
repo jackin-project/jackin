@@ -5,7 +5,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use jackin_tui::ModalOutcome;
+use termrock::ModalOutcome;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceChoice {
@@ -78,8 +78,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use jackin_tui::components::{DialogBorder, render_dialog_shell};
-use jackin_tui::theme::PHOSPHOR_DARK;
+use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::style::PHOSPHOR_DARK;
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
     let title = format!("Source for {}", state.key);
@@ -95,11 +95,11 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
         .split(inner);
 
     let items = [
-        jackin_tui::components::ButtonStripItem::new("Plain text"),
+        termrock::components::ButtonStripItem::new("Plain text"),
         if state.op_available {
-            jackin_tui::components::ButtonStripItem::new("1Password")
+            termrock::components::ButtonStripItem::new("1Password")
         } else {
-            jackin_tui::components::ButtonStripItem::disabled("1Password")
+            termrock::components::ButtonStripItem::disabled("1Password")
         },
     ];
     let focused = match state.focused {
@@ -107,7 +107,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
         SourceChoice::Op => 1,
     };
     frame.render_widget(
-        jackin_tui::components::ButtonStrip::new(&items).focused(focused),
+        termrock::components::ButtonStrip::new(&items).focused(focused),
         chunks[1],
     );
 

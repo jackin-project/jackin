@@ -13,7 +13,7 @@ use super::{
 impl Multiplexer {
     pub(super) fn open_spawn_failure_dialog(&mut self, message: String) {
         self.dialog_push(Dialog::SpawnFailure(
-            jackin_tui::components::ErrorPopupState::new("Spawn failed", message),
+            termrock::components::ErrorPopupState::new("Spawn failed", message),
         ));
         self.invalidate(FullRedrawReason::DialogChange);
     }

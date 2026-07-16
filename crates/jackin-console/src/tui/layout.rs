@@ -115,7 +115,7 @@ pub fn scrollbar_drag_offset(
     pointer_col: u16,
     pointer_row: u16,
 ) -> Option<u16> {
-    use jackin_tui::components::scrollable_panel::{
+    use termrock::components::scrollable_panel::{
         horizontal_scrollbar_area, is_scrollable, scrollbar_offset_for_track_position,
         vertical_scrollbar_area, viewport_height, viewport_width,
     };
@@ -200,7 +200,7 @@ pub const fn tabbed_content_area(
 #[must_use]
 pub fn tab_cell_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize> {
     let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
-    jackin_tui::components::TabStrip::new(&cells).hit_index_at(
+    termrock::components::TabStrip::new(&cells).hit_index_at(
         ratatui::layout::Rect {
             x: 0,
             y: SCREEN_HEADER_HEIGHT,
@@ -215,8 +215,8 @@ pub fn tab_cell_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize
 #[must_use]
 pub fn tab_hover_index_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize> {
     let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
-    let mut tracker = jackin_tui::components::HoverTracker::new();
-    jackin_tui::components::TabStrip::new(&cells).register_hover_targets(
+    let mut tracker = termrock::components::HoverTracker::new();
+    termrock::components::TabStrip::new(&cells).register_hover_targets(
         &mut tracker,
         ratatui::layout::Rect {
             x: 0,
@@ -273,7 +273,7 @@ pub fn apply_horizontal_scroll(
     area: ratatui::layout::Rect,
     content_width: usize,
 ) -> bool {
-    use jackin_tui::components::scrollable_panel::apply_scroll_delta;
+    use termrock::components::scrollable_panel::apply_scroll_delta;
 
     let before = *value;
     apply_scroll_delta(value, delta, scroll_viewport_width(area), content_width);
@@ -287,7 +287,7 @@ pub fn apply_vertical_scroll(
     area: ratatui::layout::Rect,
     content_height: usize,
 ) -> bool {
-    use jackin_tui::components::scrollable_panel::apply_scroll_delta;
+    use termrock::components::scrollable_panel::apply_scroll_delta;
 
     let before = *value;
     apply_scroll_delta(value, delta, scroll_viewport_height(area), content_height);
@@ -296,17 +296,17 @@ pub fn apply_vertical_scroll(
 
 #[must_use]
 pub const fn scroll_viewport_width(area: ratatui::layout::Rect) -> usize {
-    jackin_tui::components::scrollable_panel::viewport_width(area)
+    termrock::components::scrollable_panel::viewport_width(area)
 }
 
 #[must_use]
 pub const fn scroll_viewport_height(area: ratatui::layout::Rect) -> usize {
-    jackin_tui::components::scrollable_panel::viewport_height(area)
+    termrock::components::scrollable_panel::viewport_height(area)
 }
 
 #[must_use]
 pub const fn is_horizontally_scrollable(area: ratatui::layout::Rect, content_width: usize) -> bool {
-    jackin_tui::components::scrollable_panel::is_scrollable(
+    termrock::components::scrollable_panel::is_scrollable(
         content_width,
         scroll_viewport_width(area),
     )

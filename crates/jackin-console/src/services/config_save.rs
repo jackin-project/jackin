@@ -14,8 +14,8 @@ use jackin_config::{
     AppConfig, AuthForwardMode, EnvScope, EnvValue, GithubAuthMode, MountConfig, Removal,
     WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride, plan_create, plan_edit,
 };
+use jackin_core::shorten_home;
 use jackin_core::{Agent, WorkspaceName, is_reserved};
-use jackin_tui::shorten_home;
 
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
 

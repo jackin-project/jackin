@@ -294,17 +294,17 @@ fn naming_stage_input_routes_by_naming_stage() {
 
     assert_eq!(
         naming_stage_input_for_stage(OpPickerStage::NewItemName, &item, &field, &section)
-            .map(|input| input.label.as_str()),
+            .map(TextInputState::label),
         Some("Item name")
     );
     assert_eq!(
         naming_stage_input_for_stage(OpPickerStage::FieldLabel, &item, &field, &section)
-            .map(|input| input.label.as_str()),
+            .map(TextInputState::label),
         Some("Field label")
     );
     assert_eq!(
         naming_stage_input_for_stage(OpPickerStage::NewSectionName, &item, &field, &section)
-            .map(|input| input.label.as_str()),
+            .map(TextInputState::label),
         Some("Section name")
     );
     assert!(naming_stage_input_for_stage(OpPickerStage::Field, &item, &field, &section).is_none());
@@ -983,13 +983,13 @@ fn account_stage_render_uses_shared_full_width_highlight() {
     for x in 1..75 {
         assert_eq!(
             buffer[(x, selected_y)].bg,
-            jackin_tui::theme::PHOSPHOR_GREEN,
+            termrock::style::PHOSPHOR_GREEN,
             "x={x}"
         );
     }
     assert_ne!(
         buffer[(75, selected_y)].bg,
-        jackin_tui::theme::PHOSPHOR_GREEN,
+        termrock::style::PHOSPHOR_GREEN,
         "selection must not paint the dialog border"
     );
 }
@@ -1005,13 +1005,13 @@ fn item_stage_render_uses_shared_full_width_highlight() {
     for x in 1..75 {
         assert_eq!(
             buffer[(x, selected_y)].bg,
-            jackin_tui::theme::PHOSPHOR_GREEN,
+            termrock::style::PHOSPHOR_GREEN,
             "x={x}"
         );
     }
     assert_ne!(
         buffer[(75, selected_y)].bg,
-        jackin_tui::theme::PHOSPHOR_GREEN,
+        termrock::style::PHOSPHOR_GREEN,
         "selection must not paint the dialog border"
     );
 }
@@ -1334,13 +1334,13 @@ fn recoverable_banner_preserves_selected_list_geometry() {
     for x in 1..59 {
         assert_eq!(
             buffer[(x, selected_y)].bg,
-            jackin_tui::theme::PHOSPHOR_GREEN,
+            termrock::style::PHOSPHOR_GREEN,
             "x={x}"
         );
     }
     assert_ne!(
         buffer[(59, selected_y)].bg,
-        jackin_tui::theme::PHOSPHOR_GREEN,
+        termrock::style::PHOSPHOR_GREEN,
         "selected row must not paint the dialog border"
     );
 }

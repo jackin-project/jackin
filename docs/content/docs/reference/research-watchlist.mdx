@@ -57,7 +57,7 @@ Use this page before implementation work that touches agent orchestration, runti
 
 | Reference | Watch for | Where it informs the program |
 |---|---|---|
-| <RepoFile path="crates/jackin-tui/Cargo.toml">`jackin-tui`</RepoFile> and <RepoFile path="crates/jackin-tui-lookbook/Cargo.toml">`jackin-tui-lookbook`</RepoFile> | Donor coupling, public API growth, product vocabulary, render fixtures, terminal lifecycle, dependencies, and history/attribution changes before extraction. | [Shared TUI extraction research](/reference/research/shared-tui-extraction/) and [roadmap](/roadmap/shared-tui-extraction/). |
+| ``jackin-tui`` and ``jackin-tui-lookbook`` | Donor coupling, public API growth, product vocabulary, render fixtures, terminal lifecycle, dependencies, and history/attribution changes before extraction. | [Shared TUI extraction research](/reference/research/shared-tui-extraction/). |
 | [Holla](https://github.com/tailrocks/holla), [Velnor](https://github.com/tailrocks/velnor), and [Parallax](https://github.com/tailrocks/parallax) | Ratatui/Crossterm versions, concrete terminal workflows, duplicated mechanics, product-boundary drift, and evidence for the two-consumer graduation rule. | [Tailrocks consumer map](/reference/research/shared-tui-extraction/01-tailrocks-consumers/). |
 | [Ratatui](https://github.com/ratatui/ratatui) and [Crossterm](https://github.com/crossterm-rs/crossterm) | Version compatibility, MSRV, terminal restoration, input/mouse behavior, Unicode width, API migrations, advisories, and license changes. | [Target repository](/reference/research/shared-tui-extraction/03-target-repository/) and preview release matrix. |
 

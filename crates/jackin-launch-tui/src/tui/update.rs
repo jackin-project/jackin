@@ -3,8 +3,8 @@
 
 //! Launch cockpit update helpers.
 
-use jackin_tui::components::StatusFooterHover;
-use jackin_tui::runtime::UpdateResult;
+use crate::tui::components::footer::StatusFooterHover;
+use termrock::runtime::UpdateResult;
 
 use crate::tui::components::build_log_dialog::refresh_build_log_layout;
 use crate::tui::effect::LaunchEffect;
@@ -30,7 +30,7 @@ pub fn initial_view() -> LaunchView {
         failure_ack: false,
         frame: 0,
         build_log_open: false,
-        build_log_scroll: jackin_tui::scroll::TailScroll::default(),
+        build_log_scroll: termrock::scroll::TailScroll::default(),
         build_log_scroll_dragging: false,
         build_log_lines: Vec::new(),
         build_log_wrapped_lines: Vec::new(),
@@ -44,11 +44,11 @@ pub fn initial_view() -> LaunchView {
         failure_copied: None,
         failure_revealed: None,
         failure_opened: None,
-        failure_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        failure_scroll: termrock::scroll::DialogScroll::new(),
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
-        container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        container_info_scroll: termrock::scroll::DialogScroll::new(),
         last_dialog_mouse_cell: None,
         quit_confirm: None,
     }
@@ -85,7 +85,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.failure_copied = None;
             view.failure_revealed = None;
             view.failure_opened = None;
-            view.failure_scroll = jackin_tui::components::DialogBodyScroll::new();
+            view.failure_scroll = termrock::scroll::DialogScroll::new();
             // The failure popup must own the screen. Close every lower-priority
             // overlay that could otherwise hide it or intercept its input — the
             // build-log overlay owns the whole frame behind an opaque backdrop,
@@ -126,7 +126,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         }
         LaunchMessage::BuildLogOpened => {
             view.build_log_open = true;
-            view.build_log_scroll = jackin_tui::scroll::TailScroll::default();
+            view.build_log_scroll = termrock::scroll::TailScroll::default();
             view.build_log_scroll_dragging = false;
             view.build_log_wrapped_lines.clear();
             view.build_log_wrapped_width = 0;
@@ -143,7 +143,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         }
         LaunchMessage::BuildLogScrollSetFromTop { filled, top_offset } => {
             view.build_log_scroll =
-                jackin_tui::scroll::TailScroll::new(filled.saturating_sub(top_offset.min(filled)));
+                termrock::scroll::TailScroll::new(filled.saturating_sub(top_offset.min(filled)));
         }
         LaunchMessage::BuildLogScrollDragChanged(dragging) => {
             view.build_log_scroll_dragging = dragging;
@@ -174,7 +174,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.container_info_open = true;
             view.container_info_copied = None;
             view.container_info_hover = None;
-            view.container_info_scroll = jackin_tui::components::DialogBodyScroll::new();
+            view.container_info_scroll = termrock::scroll::DialogScroll::new();
             view.footer_hover.right = false;
         }
         LaunchMessage::ContainerInfoClosed => {

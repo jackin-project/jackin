@@ -19,7 +19,6 @@ use super::model::SettingsTab;
 use super::model::SettingsTrustRow;
 use super::model::SettingsTrustState;
 use super::update::forbidden_settings_env_keys;
-use jackin_tui::HintSpan;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -27,6 +26,7 @@ use ratatui::{
     text::{Line, Span},
 };
 use std::collections::BTreeMap;
+use termrock::HintSpan;
 
 use crate::tui::components::editor_rows::{
     AuthLineRow, AuthSourceDisplay, AuthSourceValue, SecretEnvLineFrame, SecretLineRow,
@@ -215,7 +215,7 @@ pub fn render_general_tab<
 ) {
     let focused = !state.tab_bar_focused() && state.error_popup.is_none();
     let lines = general_state_lines(&state.general, focused);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame, area, lines, 0, 0, focused, None,
     );
 }
@@ -246,7 +246,7 @@ pub fn render_mounts_tab<
         None
     };
     let lines = global_mount_state_lines(&state.mounts, selected, true);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -278,7 +278,7 @@ pub fn render_env_tab<
 ) {
     let focused = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
     let lines = env_state_lines(&state.env, focused, area.width);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -314,7 +314,7 @@ pub fn render_auth_tab<
         .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
     let focused = state.content_focused(SettingsTab::Auth) && state.auth.modal.is_none();
     let lines = auth_state_lines(&state.auth, &state.env, focused);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -346,7 +346,7 @@ pub fn render_trust_tab<
 ) {
     let lines = settings_trust_lines_for_state(state);
     let focused = settings_trust_focused(state);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -476,7 +476,7 @@ fn trust_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingToken, 
         PendingOpCommit,
     >,
     body_area: Rect,
-) -> jackin_tui::components::ScrollAxes {
+) -> termrock::components::ScrollAxes {
     let content = crate::tui::screens::settings::update::trust_content_width(&state.trust);
     crate::tui::list_geometry::horizontal_scroll_axes(
         !state.trust.pending.is_empty(),
@@ -502,7 +502,7 @@ fn global_mount_scroll_axes<
         PendingOpCommit,
     >,
     body_area: Rect,
-) -> jackin_tui::components::ScrollAxes {
+) -> termrock::components::ScrollAxes {
     let content_width =
         crate::tui::mount_display::settings_global_config_mounts_content_width_with_cache(
             &state.mounts.pending,
@@ -545,7 +545,7 @@ pub fn render_global_mount_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_
         crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
         SettingsModal::MountText { state, .. } => {
-            jackin_tui::components::render_text_input(frame, area, state);
+            termrock::components::render_text_input(frame, area, state);
         }
         SettingsModal::MountFileBrowser { state } => {
             crate::tui::components::file_browser::render(frame, area, state);
@@ -560,7 +560,7 @@ pub fn render_global_mount_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_
             crate::tui::components::role_picker::render(frame, area, state);
         }
         SettingsModal::MountConfirm { state, .. } => {
-            jackin_tui::components::render_confirm_dialog(frame, area, state);
+            termrock::components::render_confirm_dialog(frame, area, state);
         }
         SettingsModal::MountPreviewSave { state } => {
             crate::tui::components::confirm_save::render(frame, area, state);
@@ -574,7 +574,7 @@ pub fn render_settings_env_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_
         crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
         SettingsModal::EnvText { state, .. } => {
-            jackin_tui::components::render_text_input(frame, area, state);
+            termrock::components::render_text_input(frame, area, state);
         }
         SettingsModal::EnvSourcePicker { state, .. } => {
             crate::tui::components::source_picker::render(frame, area, state);
@@ -589,7 +589,7 @@ pub fn render_settings_env_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_
             crate::tui::components::scope_picker::render(frame, area, state);
         }
         SettingsModal::EnvConfirm { state, .. } => {
-            jackin_tui::components::render_confirm_dialog(frame, area, state);
+            termrock::components::render_confirm_dialog(frame, area, state);
         }
         _ => unreachable!("env renderer received a non-env settings modal"),
     }
@@ -606,7 +606,7 @@ pub fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'
             crate::tui::components::source_picker::render(frame, area, state);
         }
         SettingsModal::AuthTextInput { state } => {
-            jackin_tui::components::render_text_input(frame, area, state);
+            termrock::components::render_text_input(frame, area, state);
         }
         SettingsModal::AuthSourceFolderPicker { state } => {
             crate::tui::components::file_browser::render(frame, area, state);
@@ -760,25 +760,25 @@ pub fn trust_lines(
 ) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
         "  Role                         Trust      Git",
-        Style::default().fg(jackin_tui::theme::WHITE),
+        Style::default().fg(termrock::style::WHITE),
     ))];
     if rows.is_empty() {
         lines.push(Line::from(Span::styled(
             "  (none)",
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            Style::default().fg(termrock::style::PHOSPHOR_DIM),
         )));
     }
     for (i, row) in rows.iter().enumerate() {
         let selected = show_cursor && (selected_row == i);
         let mut style = if selected {
             Style::default()
-                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .fg(termrock::style::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
         };
         if !selected && hovered_row == Some(i) {
-            style = style.bg(jackin_tui::theme::TAB_BG_INACTIVE_HOVER);
+            style = style.bg(termrock::style::TAB_BG_INACTIVE_HOVER);
         }
         let prefix = if selected { "\u{25b8} " } else { "  " };
         let trust = if row.trusted { "trusted" } else { "untrusted" };
@@ -960,13 +960,13 @@ pub fn global_mount_lines(
         let prefix = if is_selected { "\u{25b8} " } else { "  " };
         let base_style = if is_selected {
             Style::default()
-                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .fg(termrock::style::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
         };
         let dim_style = Style::default()
-            .fg(jackin_tui::theme::PHOSPHOR_DIM)
+            .fg(termrock::style::PHOSPHOR_DIM)
             .add_modifier(Modifier::ITALIC);
         lines.push(Line::from(vec![
             Span::styled(
@@ -975,7 +975,7 @@ pub fn global_mount_lines(
             ),
             Span::styled(
                 format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::style::PHOSPHOR_DIM),
             ),
             Span::raw("  "),
             Span::styled(row.kind.clone(), dim_style),
@@ -983,7 +983,7 @@ pub fn global_mount_lines(
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
                 format!("  {host_source:<path_w$}"),
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::style::PHOSPHOR_DIM),
             )));
         }
     }
@@ -1027,9 +1027,9 @@ fn truncate(value: &str, width: usize) -> String {
 
 pub fn clamp_mounts_scroll_x_for_frame(area: Rect, content_width: usize, scroll_x: &mut u16) {
     let areas = settings_frame_areas(area, 2);
-    jackin_tui::components::scrollable_panel::clamp_scroll_offset(
+    termrock::components::scrollable_panel::clamp_scroll_offset(
         content_width,
-        jackin_tui::components::scrollable_panel::viewport_width(areas.body),
+        termrock::components::scrollable_panel::viewport_width(areas.body),
         scroll_x,
     );
 }

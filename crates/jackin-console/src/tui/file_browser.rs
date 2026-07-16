@@ -352,7 +352,7 @@ pub fn start_file_browser_commit_validation(
         return false;
     };
     let worker_context = context.clone();
-    let rx = jackin_tui::runtime::spawn_named_blocking_subscription(
+    let rx = crate::tui::runtime::spawn_named_blocking_subscription(
         "jackin-file-browser-commit",
         move || {
             let path = match crate::services::file_browser::validate_commit(&root, &path) {

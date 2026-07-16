@@ -10,7 +10,7 @@ The jackin❯ CLI — the operator-facing binary that loads roles into isolated 
 
 ## Architecture tier and allowed dependencies
 
-**L4 entry/glue crate.** It depends on the whole stack — `jackin-config`, `jackin-core`, `jackin-docker`, `jackin-manifest`, `jackin-diagnostics`, `jackin-env`, `jackin-image`, `jackin-runtime`, `jackin-tui`, `jackin-launch-tui`, `jackin-console`, `jackin-protocol`, `jackin-build-meta`. Nothing depends on this crate; it is the top of the graph. Keep it thin — it assembles, it does not implement domain logic.
+**L4 entry/glue crate.** It depends on the whole stack, including TermRock-backed presentation crates. Nothing depends on this crate; it is the top of the graph. Keep it thin — it assembles, it does not implement domain logic. Product-owned terminal formatting and ownership policy now live with their CLI callers instead of the retired shared donor modules.
 
 ## Structure
 

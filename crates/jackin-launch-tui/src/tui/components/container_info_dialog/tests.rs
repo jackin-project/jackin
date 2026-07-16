@@ -40,7 +40,7 @@ fn launch_container_info_exposes_run_id_without_local_artifacts() {
     let rows = state.rows();
     assert_eq!(
         rows.first()
-            .map(jackin_tui::components::ContainerInfoRow::value),
+            .map(crate::tui::components::container_info::ContainerInfoRow::value),
         Some("jk-run-b93735"),
         "Invocation ID must stay the first Debug info row even when launch knows the container"
     );

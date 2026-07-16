@@ -8,8 +8,8 @@ use crate::tui::state::{
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsModal, SettingsState,
     SettingsTab,
 };
-use jackin_tui::components::{ErrorPopupState, FocusOwner};
 use ratatui::layout::Rect;
+use termrock::components::{ErrorPopupState, FocusOwner};
 
 fn state_with_saved_count(count: usize) -> ManagerState<'static> {
     let tmp = tempfile::tempdir().unwrap();
@@ -538,7 +538,7 @@ fn return_to_list_closes_confirm_stages() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::ConfirmDelete {
         name: "workspace".into(),
-        state: jackin_tui::components::ConfirmState::new("delete?"),
+        state: termrock::components::ConfirmState::new("delete?"),
     };
 
     assert!(update_manager(&mut state, ManagerMessage::ReturnToList).is_dirty());

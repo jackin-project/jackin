@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 use crate::tui::components::spinner::SPINNER_FRAMES;
-use jackin_tui::components::render_picker_lines;
+use termrock::components::render_picker_lines;
 
 use super::{
     OpLoadState, OpPickerError, OpPickerFatalState, OpPickerRenderState, OpPickerStage,
@@ -34,7 +34,8 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
     let multi_account = state.account_count() > 1;
 
     if let Some(input) = state.naming_stage_input() {
-        jackin_tui::components::text_input::render_text_input(frame, area, input);
+        let donor = termrock::components::TextInputState::new(input.label(), input.value());
+        termrock::components::text_input::render_text_input(frame, area, &donor);
         return;
     }
 
@@ -45,11 +46,11 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
         state.selected_vault_name(),
         state.selected_item_name(),
     );
-    let inner = jackin_tui::components::render_dialog_shell(
+    let inner = termrock::components::render_dialog_shell(
         frame,
         area,
         Some(&title),
-        jackin_tui::components::DialogBorder::Default,
+        termrock::components::DialogBorder::Default,
     );
 
     let banner_height: u16 = match state.load_state() {
@@ -72,13 +73,13 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
     {
         let truncated: String = message.chars().take(120).collect();
         let line = Line::from(vec![
-            Span::styled("Error: ", jackin_tui::theme::BOLD_WHITE),
-            Span::styled(truncated, jackin_tui::theme::DIM),
+            Span::styled("Error: ", termrock::style::BOLD_WHITE),
+            Span::styled(truncated, termrock::style::DIM),
         ]);
         frame.render_widget(Paragraph::new(line), rows[0]);
     }
 
-    jackin_tui::components::render_filter_input(frame, rows[1], state.filter_buffer());
+    termrock::components::render_filter_input(frame, rows[1], state.filter_buffer());
 
     let list_lines = match state.stage() {
         OpPickerStage::Account => state.account_lines(),
@@ -93,7 +94,7 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
     if list_lines.is_empty() {
         let para = Paragraph::new(Line::from(Span::styled(
             "(no matches)",
-            jackin_tui::theme::DIM,
+            termrock::style::DIM,
         )))
         .alignment(Alignment::Center);
         frame.render_widget(para, rows[3]);
@@ -116,11 +117,11 @@ fn render_loading(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRender
         state.selected_vault_name(),
         state.selected_item_name(),
     );
-    let inner = jackin_tui::components::render_dialog_shell(
+    let inner = termrock::components::render_dialog_shell(
         frame,
         area,
         Some(&title),
-        jackin_tui::components::DialogBorder::Default,
+        termrock::components::DialogBorder::Default,
     );
 
     let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
@@ -139,19 +140,19 @@ fn render_loading(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRender
         .split(inner);
 
     let body = Line::from(vec![
-        Span::styled(glyph.to_owned(), jackin_tui::theme::GREEN),
+        Span::styled(glyph.to_owned(), termrock::style::GREEN),
         Span::raw("  "),
-        Span::styled(descriptor, jackin_tui::theme::DIM),
+        Span::styled(descriptor, termrock::style::DIM),
     ]);
     frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
 }
 
 pub fn render_fatal(frame: &mut Frame<'_>, area: Rect, fatal: &OpPickerFatalState) {
-    let inner = jackin_tui::components::render_dialog_shell(
+    let inner = termrock::components::render_dialog_shell(
         frame,
         area,
         Some("1Password"),
-        jackin_tui::components::DialogBorder::Default,
+        termrock::components::DialogBorder::Default,
     );
 
     let rows = Layout::default()

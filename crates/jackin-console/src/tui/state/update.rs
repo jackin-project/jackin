@@ -67,7 +67,7 @@ pub type ManagerMessage = crate::tui::message::ConsoleManagerMessage<
     SecretsScopeTag,
     MountScrollFocus,
     super::DragState,
-    jackin_tui::components::ContainerInfoState,
+    crate::tui::components::container_info_surface::ContainerInfoState,
     crate::tui::components::github_picker::GithubPickerState,
 >;
 

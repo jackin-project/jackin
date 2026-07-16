@@ -10,6 +10,34 @@ use uuid::Uuid;
 
 use crate::{Attr, FieldSet, Rejection, Value, counter, emit_event, histogram, metric, schema};
 
+/// Record one bounded UI frame and emit a jank event above the 50 ms budget.
+pub fn record_render(screen: schema::enums::ScreenId, elapsed_seconds: f64) {
+    const JANK_THRESHOLD_SECONDS: f64 = 0.050;
+    let attrs = [Attr {
+        key: schema::attrs::std_attrs::APP_SCREEN_ID,
+        value: Value::Str(screen.as_str()),
+    }];
+    let _metric_result = histogram(&metric::UI_RENDER_DURATION).record(elapsed_seconds, &attrs);
+    if elapsed_seconds > JANK_THRESHOLD_SECONDS {
+        let jank_attrs = [
+            attrs[0],
+            Attr {
+                key: schema::attrs::APP_JANK_FRAME_COUNT,
+                value: Value::U64(1),
+            },
+            Attr {
+                key: schema::attrs::APP_JANK_PERIOD,
+                value: Value::Str("frame"),
+            },
+            Attr {
+                key: schema::attrs::APP_JANK_THRESHOLD,
+                value: Value::F64(JANK_THRESHOLD_SECONDS),
+            },
+        ];
+        let _event_result = emit_event(&crate::event::APP_JANK, FieldSet::new(&jank_attrs, None));
+    }
+}
+
 #[derive(Debug)]
 struct Visit {
     screen: schema::enums::ScreenId,
