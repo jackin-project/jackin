@@ -52,6 +52,10 @@ fn spawn_policy_covers_executor_forms_without_matching_processes() {
         "fn raw(arbitrary: tokio::runtime::Handle) { arbitrary.spawn(async {}); }",
         "fn raw(arbitrary: &mut tokio::task::JoinSet<()>) { arbitrary.spawn(async {}); }",
         "fn raw() { let arbitrary: tokio::runtime::Handle = make_handle(); arbitrary.spawn(async {}); }",
+        "struct Pool { executor: tokio::runtime::Handle } fn raw(pool: &Pool) { pool.executor.spawn(async {}); }",
+        "struct Pool { pending: tokio::task::JoinSet<()> } fn raw(pool: &mut Pool) { pool.pending.spawn(async {}); }",
+        "fn make_executor() -> tokio::runtime::Handle { todo!() } fn raw() { make_executor().spawn(async {}); }",
+        "struct Pool; impl Pool { fn pending(&self) -> tokio::task::JoinSet<()> { todo!() } fn raw(&self) { self.pending().spawn(async {}); } }",
     ] {
         assert_eq!(
             source_policy_violations(path, source),

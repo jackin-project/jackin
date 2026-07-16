@@ -375,9 +375,13 @@ async fn prewarm_job_exports_linked_roots_with_shared_job_id() {
         .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
     let default = tracing::subscriber::set_default(subscriber);
 
-    spawn_prewarm_job(crate::schema::enums::JobType::ImagePrewarm, async {})
-        .await
-        .unwrap();
+    spawn_prewarm_job(
+        crate::schema::enums::JobType::ImagePrewarm,
+        async {},
+        |()| DetachedCompletion::success(),
+    )
+    .await
+    .unwrap();
     drop(default);
     provider.force_flush().expect("flush prewarm spans");
 
@@ -416,4 +420,71 @@ async fn prewarm_job_exports_linked_roots_with_shared_job_id() {
         consumer.links[0].span_context.trace_id(),
         producer.span_context.trace_id()
     );
+    assert_eq!(
+        span_attr(consumer, crate::schema::attrs::OUTCOME).as_deref(),
+        Some("success")
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn prewarm_job_classifies_failure_error_timeout_panic_and_abort() {
+    let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+    let default = tracing::subscriber::set_default(subscriber);
+
+    for completion in [
+        DetachedCompletion::failure(crate::schema::enums::ErrorType::LaunchFailed),
+        DetachedCompletion::error(crate::schema::enums::ErrorType::RpcError),
+        DetachedCompletion::timeout(),
+    ] {
+        spawn_prewarm_job(
+            crate::schema::enums::JobType::ImagePrewarm,
+            async {},
+            move |()| completion,
+        )
+        .await
+        .unwrap();
+    }
+
+    let panic_task = spawn_prewarm_job(
+        crate::schema::enums::JobType::ImagePrewarm,
+        async { panic!("prewarm panic") },
+        |&()| DetachedCompletion::success(),
+    );
+    assert!(panic_task.await.unwrap_err().is_panic());
+
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let aborted = spawn_prewarm_job(
+        crate::schema::enums::JobType::SidecarPrewarm,
+        async move {
+            let _send_result = started_tx.send(());
+            std::future::pending::<()>().await;
+        },
+        |()| DetachedCompletion::success(),
+    );
+    started_rx.await.expect("prewarm task started");
+    aborted.abort();
+    assert!(aborted.await.unwrap_err().is_cancelled());
+
+    drop(default);
+    provider.force_flush().expect("flush prewarm outcomes");
+    let spans = exporter.get_finished_spans().expect("prewarm outcomes");
+    let attempts = spans
+        .iter()
+        .filter(|span| span.name == crate::schema::spans::PREWARM_ATTEMPT)
+        .collect::<Vec<_>>();
+    for outcome in ["failure", "error", "timeout", "cancellation"] {
+        assert!(attempts.iter().any(|span| {
+            span_attr(span, crate::schema::attrs::OUTCOME).as_deref() == Some(outcome)
+        }));
+    }
+    assert!(attempts.iter().any(|span| {
+        span_attr(span, crate::schema::attrs::OUTCOME).as_deref() == Some("error")
+            && span_attr(span, crate::schema::attrs::std_attrs::ERROR_TYPE).as_deref()
+                == Some("panic")
+    }));
 }

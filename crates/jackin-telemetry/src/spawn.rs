@@ -197,13 +197,15 @@ where
 
 /// Schedule detached prewarm work as a PRODUCER decision linked to one
 /// CONSUMER attempt with a shared durable job identity.
-pub fn spawn_prewarm_job<F>(
+pub fn spawn_prewarm_job<F, C>(
     job_type: crate::schema::enums::JobType,
     fut: F,
+    classify: C,
 ) -> JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
+    C: FnOnce(&F::Output) -> DetachedCompletion + Send + 'static,
 {
     let job_id = uuid::Uuid::new_v4().to_string();
     let attrs = [
@@ -245,8 +247,9 @@ where
             {
                 let _link_result = consumer.link(producer_context);
             }
-            let output = fut.instrument(consumer.span().clone()).await;
-            consumer.complete(crate::schema::enums::OutcomeValue::Success, None);
+            let guard = DetachedGuard(Some(consumer));
+            let output = fut.instrument(guard.span()).await;
+            guard.complete(classify(&output));
             output
         }
         .with_current_subscriber(),

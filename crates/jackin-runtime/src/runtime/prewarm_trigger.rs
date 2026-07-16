@@ -112,6 +112,7 @@ pub fn spawn_background_image_prewarm(
         jackin_telemetry::spawn::spawn_prewarm_job(
             jackin_telemetry::schema::enums::JobType::ImagePrewarm,
             async move {
+                let mut failed = false;
                 if let Some(run) = jackin_diagnostics::active_run() {
                     run.stage(
                         "background_image_prewarm_started",
@@ -130,6 +131,7 @@ pub fn spawn_background_image_prewarm(
                         debug,
                     )
                     .await;
+                    failed |= result.is_err();
                     if let Some(run) = jackin_diagnostics::active_run() {
                         match result {
                             #[expect(
@@ -166,6 +168,16 @@ pub fn spawn_background_image_prewarm(
                             ),
                         }
                     }
+                }
+                failed
+            },
+            |failed| {
+                if *failed {
+                    jackin_telemetry::spawn::DetachedCompletion::failure(
+                        jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                    )
+                } else {
+                    jackin_telemetry::spawn::DetachedCompletion::success()
                 }
             },
         );
@@ -205,6 +217,7 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
                     );
                 }
                 let result = background_sidecar_prewarm_once(&paths, debug).await;
+                let failed = result.is_err();
                 if let Some(run) = jackin_diagnostics::active_run() {
                     match result {
                         Ok(detail) => run.stage(
@@ -220,6 +233,16 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
                             Some(&format!("{error:#}")),
                         ),
                     }
+                }
+                failed
+            },
+            |failed| {
+                if *failed {
+                    jackin_telemetry::spawn::DetachedCompletion::failure(
+                        jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                    )
+                } else {
+                    jackin_telemetry::spawn::DetachedCompletion::success()
                 }
             },
         );

@@ -4,6 +4,51 @@
 use std::collections::BTreeSet;
 
 use syn::spanned::Spanned as _;
+use syn::visit::Visit as _;
+
+pub(super) fn spawn_receiver_type(ty: &syn::Type) -> bool {
+    match ty {
+        syn::Type::Path(path) => path.path.segments.last().is_some_and(|segment| {
+            matches!(segment.ident.to_string().as_str(), "Handle" | "JoinSet")
+        }),
+        syn::Type::Reference(reference) => spawn_receiver_type(&reference.elem),
+        syn::Type::Paren(paren) => spawn_receiver_type(&paren.elem),
+        syn::Type::Group(group) => spawn_receiver_type(&group.elem),
+        _ => false,
+    }
+}
+
+#[derive(Default)]
+pub(super) struct SpawnDeclarations {
+    pub(super) fields: BTreeSet<String>,
+    pub(super) factories: BTreeSet<String>,
+}
+
+impl SpawnDeclarations {
+    pub(super) fn collect(syntax: &syn::File) -> Self {
+        let mut declarations = Self::default();
+        declarations.visit_file(syntax);
+        declarations
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for SpawnDeclarations {
+    fn visit_field(&mut self, node: &'ast syn::Field) {
+        if spawn_receiver_type(&node.ty)
+            && let Some(name) = &node.ident
+        {
+            self.fields.insert(name.to_string());
+        }
+        syn::visit::visit_field(self, node);
+    }
+
+    fn visit_signature(&mut self, node: &'ast syn::Signature) {
+        if matches!(&node.output, syn::ReturnType::Type(_, ty) if spawn_receiver_type(ty)) {
+            self.factories.insert(node.ident.to_string());
+        }
+        syn::visit::visit_signature(self, node);
+    }
+}
 
 #[derive(Default)]
 pub(super) struct AsyncScopeGuardScanner {

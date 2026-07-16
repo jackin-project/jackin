@@ -19,7 +19,7 @@ use syn::visit::Visit as _;
 use crate::docs::repo_root;
 
 mod source_policy;
-use source_policy::AsyncScopeGuardScanner;
+use source_policy::{AsyncScopeGuardScanner, SpawnDeclarations, spawn_receiver_type};
 
 // Shrink-only migration inventories. A new file never joins these lists: it
 // must use the governed facade/spawn helpers from its first commit.
@@ -350,7 +350,7 @@ fn validate_source_policy(root: &Path) -> Result<()> {
         let path = relative.to_string_lossy();
         let syntax = syn::parse_file(&source)
             .with_context(|| format!("parsing {path} for telemetry source policy"))?;
-        let mut scanner = SourcePolicyScanner::new(&path);
+        let mut scanner = SourcePolicyScanner::new(&path, &syntax);
         scanner.visit_file(&syntax);
         violations.extend(
             scanner
@@ -375,16 +375,21 @@ struct SourcePolicyScanner<'a> {
     spawn_aliases: BTreeSet<String>,
     spawn_module_aliases: BTreeMap<String, String>,
     spawn_receivers: BTreeSet<String>,
+    spawn_fields: BTreeSet<String>,
+    spawn_factories: BTreeSet<String>,
 }
 
 impl<'a> SourcePolicyScanner<'a> {
-    fn new(path: &'a str) -> Self {
+    fn new(path: &'a str, syntax: &syn::File) -> Self {
+        let declarations = SpawnDeclarations::collect(syntax);
         Self {
             path,
             violations: BTreeSet::new(),
             spawn_aliases: BTreeSet::new(),
             spawn_module_aliases: BTreeMap::new(),
             spawn_receivers: BTreeSet::new(),
+            spawn_fields: declarations.fields,
+            spawn_factories: declarations.factories,
         }
     }
 
@@ -436,20 +441,8 @@ impl<'a> SourcePolicyScanner<'a> {
             .map_or_else(|| name.to_owned(), |module| format!("{module}::{tail}"))
     }
 
-    fn spawn_receiver_type(ty: &syn::Type) -> bool {
-        match ty {
-            syn::Type::Path(path) => path.path.segments.last().is_some_and(|segment| {
-                matches!(segment.ident.to_string().as_str(), "Handle" | "JoinSet")
-            }),
-            syn::Type::Reference(reference) => Self::spawn_receiver_type(&reference.elem),
-            syn::Type::Paren(paren) => Self::spawn_receiver_type(&paren.elem),
-            syn::Type::Group(group) => Self::spawn_receiver_type(&group.elem),
-            _ => false,
-        }
-    }
-
     fn typed_spawn_receiver(pat: &syn::Pat, ty: &syn::Type) -> Option<String> {
-        if !Self::spawn_receiver_type(ty) {
+        if !spawn_receiver_type(ty) {
             return None;
         }
         match pat {
@@ -513,10 +506,20 @@ impl<'a> SourcePolicyScanner<'a> {
                     name.ends_with("JoinSet::new")
                         || name.ends_with("Handle::current")
                         || name.ends_with("Builder::new")
+                        || path.path.segments.last().is_some_and(|segment| {
+                            self.spawn_factories.contains(&segment.ident.to_string())
+                        })
                 }
                 _ => false,
             },
-            syn::Expr::MethodCall(call) => self.spawn_method_receiver(&call.receiver),
+            syn::Expr::MethodCall(call) => {
+                self.spawn_factories.contains(&call.method.to_string())
+                    || self.spawn_method_receiver(&call.receiver)
+            }
+            syn::Expr::Field(field) => match &field.member {
+                syn::Member::Named(name) => self.spawn_fields.contains(&name.to_string()),
+                syn::Member::Unnamed(_) => false,
+            },
             syn::Expr::Paren(paren) => self.spawn_method_receiver(&paren.expr),
             syn::Expr::Reference(reference) => self.spawn_method_receiver(&reference.expr),
             _ => false,
@@ -728,7 +731,7 @@ impl<'ast> syn::visit::Visit<'ast> for ObservableCallbackScanner {
 #[cfg(test)]
 fn source_policy_violations(path: &str, source: &str) -> Vec<&'static str> {
     let syntax = syn::parse_file(source).expect("source-policy fixture must parse");
-    let mut scanner = SourcePolicyScanner::new(path);
+    let mut scanner = SourcePolicyScanner::new(path, &syntax);
     scanner.visit_file(&syntax);
     scanner
         .violations
