@@ -94,10 +94,7 @@ jobs:
         with:
           shared-key: ${{ inputs.cache-shared-key }}-package-${{ matrix.package }}
           cache-all-crates: "false"
-          # This job is the sole owner of this crate's test cache. Preserve its
-          # compiled workspace outputs so an input-identical run executes tests
-          # without rebuilding the crate or its workspace dependencies.
-          cache-workspace-crates: "true"
+          cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           save-if: >-
             ${{ github.ref == 'refs/heads/main' ||
@@ -106,10 +103,25 @@ jobs:
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
-          # Each crate owns one semantic cache, including its workspace outputs,
-          # so no other job races to save or evicts that crate's compiled state.
+          # Dependency outputs remain separate from the compact first-party
+          # cache below; copying the full target graph per crate exceeds cache
+          # quota and takes longer to transfer than compiling workspace code.
           # Both lanes use the same target-cache contract. Velnor's persistent
           # runner state remains a transparent accelerator beneath it.
+      - name: Cache compiled workspace crate outputs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/**/.fingerprint/jackin-*
+            target/**/build/jackin-*
+            target/**/deps/jackin*
+            target/**/deps/libjackin*
+            target/**/jackin
+            target/**/jackin-*
+            target/**/jackin_*
+          key: workspace-crate-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'crates/**/Cargo.toml', 'crates/**/src/**', 'crates/**/tests/**', 'crates/**/benches/**', 'crates/**/fuzz/**', 'docker/runtime/**') }}
+          restore-keys: |
+            workspace-crate-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
       - name: Run package tests
         shell: bash
         run: |

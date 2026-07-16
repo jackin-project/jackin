@@ -68,7 +68,13 @@ pub(crate) fn run(args: AffectedCratesArgs) -> Result<()> {
         graph.affected(&changed_paths(base, &args.head)?)
     };
 
-    println!("{}", serde_json::to_string(&selected)?);
+    #[expect(
+        clippy::print_stdout,
+        reason = "the command's stdout is its machine-readable CI output"
+    )]
+    {
+        println!("{}", serde_json::to_string(&selected)?);
+    }
     Ok(())
 }
 
@@ -172,7 +178,7 @@ impl WorkspaceGraph {
             selected.insert(id.clone());
         }
 
-        let mut queue = VecDeque::from_iter(selected.iter().cloned());
+        let mut queue = selected.iter().cloned().collect::<VecDeque<_>>();
         while let Some(package) = queue.pop_front() {
             for dependent in self.dependents.get(&package).into_iter().flatten() {
                 if selected.insert(dependent.clone()) {
