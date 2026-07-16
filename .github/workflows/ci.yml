@@ -1042,13 +1042,21 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: CI
+      - uses: ./.github/actions/download-ci-xtask
+        if: always()
+        with:
+          lane: GitHub
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "false"
       - name: Audit every CI job's performance
         if: always()
         env:
-          EXPECT_CLEAN: ${{ needs.changes.outputs.result-reuse == 'true' }}
           GH_TOKEN: ${{ github.token }}
-          WORKFLOW_LABEL: CI
-        run: scripts/ci/audit-workflow-performance.sh
+        run: >-
+          "$CI_XTASK" ci-audit
+          --expect-clean "${{ needs.changes.outputs.result-reuse == 'true' }}"
+          --workflow-label CI
       - name: Stage input-identical successful CI result
         if: >-
           needs.changes.outputs.result-reuse != 'true' &&

@@ -8,6 +8,7 @@ mod agent_files;
 mod agent_links;
 mod arch;
 mod ci;
+mod ci_audit;
 mod ci_target;
 mod cmd;
 mod construct;
@@ -53,6 +54,9 @@ enum Command {
     /// Use as `cargo xtask ci --fast` for the non-e2e gate, or add `--e2e`
     /// to include Docker-backed smoke tests.
     Ci(ci::CiArgs),
+    /// Audit every job and step in the current GitHub Actions run.
+    #[command(name = "ci-audit")]
+    CiAudit(ci_audit::CiAuditArgs),
     /// Manage the reusable per-crate Cargo target used by CI.
     #[command(name = "ci-target", subcommand)]
     CiTarget(ci_target::CiTargetCommand),
@@ -210,6 +214,7 @@ fn main() -> ExitCode {
         Command::AffectedCrates(args) => affected_crates::run(args),
         Command::Construct(cmd) => construct::run(cmd),
         Command::Ci(args) => ci::run(args),
+        Command::CiAudit(args) => ci_audit::run(args),
         Command::CiTarget(command) => ci_target::run(command),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),

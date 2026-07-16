@@ -762,13 +762,20 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: docs
+      - uses: ./.github/actions/download-ci-xtask
+        if: always()
+        with:
+          lane: GitHub
+          xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
+          include-tools: "false"
       - name: Audit every Docs job's performance
         if: always()
         env:
-          EXPECT_CLEAN: ${{ needs.changes.outputs.result-reuse == 'true' }}
           GH_TOKEN: ${{ github.token }}
-          WORKFLOW_LABEL: Docs
-        run: scripts/ci/audit-workflow-performance.sh
+        run: >-
+          "$CI_XTASK" ci-audit
+          --expect-clean "${{ needs.changes.outputs.result-reuse == 'true' }}"
+          --workflow-label Docs
       - name: Stage input-identical successful Docs result
         if: >-
           needs.changes.outputs.result-reuse != 'true' &&

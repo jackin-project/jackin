@@ -282,6 +282,25 @@ packing now live in the prepared `jackin-xtask` binary; the two Bash transport
 scripts are removed. A v7 producer is an intentional one-time profile migration,
 while later source changes reuse only profile-compatible dependency objects.
 
+The v7 producer in run `29539711361` validated the corrected shape. Warmup
+finished in 48 seconds and emitted a 41.3 MB build seed; the one complete
+`jackin-xtask` job finished in 49 seconds, then emitted a 61.3 MB canonical
+test/check/Clippy seed. Tests took 9 seconds, default-feature check 8 seconds,
+Clippy 3 seconds, packing 1 second, and publishing 2 seconds. The canonical
+archive is 58% smaller than the rejected 145 MB mixed-profile v6 artifact.
+
+Attempt 2 also proved that GitHub's rerun operation replaces artifacts owned by
+the original run: identical jobs waited 32--33 seconds for same-run xtask
+publication instead of consuming attempt 1. Treat a new workflow run, not a
+rerun attempt, as the sequential-cache proof. That attempt exposed a separate
+GitHub API failure in every workflow aggregator: the run-level jobs endpoint
+returned an HTML 503 body, which the Bash auditor passed directly to its JSON
+parser. Performance auditing now runs in `jackin-xtask`, queries the
+attempt-scoped jobs endpoint, retries and validates API responses, and fetches
+independent job logs concurrently. A local audit of all 13 CI jobs completed in
+4.5 seconds with zero dependency-download, third-party-build, source-tool, or
+cache-miss markers.
+
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses
 for all 26 crates. The crate-test contract now retains the last validated

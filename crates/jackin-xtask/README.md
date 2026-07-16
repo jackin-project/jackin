@@ -18,7 +18,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 |---|---|---|
 | [`main.rs`](src/main.rs) | `cargo xtask` dispatcher | — |
 | [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
-| [`ci_target.rs`](src/ci_target.rs) · [`ci_target/`](src/ci_target) | reusable CI target transport | [`tests.rs`](src/ci_target/tests.rs) |
+| [`ci_audit.rs`](src/ci_audit.rs) · [`ci_target.rs`](src/ci_target.rs) | workflow audit and target transport | sibling `tests.rs` files |
 | [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate (adapter; budgets also in `ratchet.toml`) | [`tests.rs`](src/lint/tests.rs) |
 | [`ratchet.rs`](src/ratchet.rs) · [`ratchet/`](src/ratchet) | unified shrink-only ratchet engine (`lint ratchet`) | [`tests.rs`](src/ratchet/tests.rs) |
 | [`test_layout.rs`](src/test_layout.rs) | test-layout presence family (adapter over ratchet semantics) | — |

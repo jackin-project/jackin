@@ -532,13 +532,20 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: construct
+      - uses: ./.github/actions/download-ci-xtask
+        if: always()
+        with:
+          lane: GitHub
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          include-tools: "false"
       - name: Audit every Construct job's performance
         if: always()
         env:
-          EXPECT_CLEAN: ${{ needs.changes.outputs.reuse == 'true' }}
           GH_TOKEN: ${{ github.token }}
-          WORKFLOW_LABEL: Construct
-        run: scripts/ci/audit-workflow-performance.sh
+        run: >-
+          "$CI_XTASK" ci-audit
+          --expect-clean "${{ needs.changes.outputs.reuse == 'true' }}"
+          --workflow-label Construct
       - name: Stage input-identical successful construct result
         if: >-
           needs.changes.outputs.exact-reuse != 'true' &&
