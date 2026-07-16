@@ -52,14 +52,10 @@ pub use registry::{
     AttrDef, AttrType, Cardinality, DiagnosticStage, EventDef, Outcome, Privacy, RegistryError,
     Severity, SinkSet, lookup as lookup_event, validate as validate_event,
 };
-pub use run::jsonl_adapter::{
-    CanonicalEvent, PROHIBITED_TOP_LEVEL_KEYS, SCHEMA_V2, canonicalize_line, canonicalize_value,
-    has_no_prohibited_keys,
-};
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
     active_subprocess_done, active_timing_done, active_timing_started, install_host_panic_hook,
-    mint_session_id, prune_all_runs, prune_old_runs,
+    mint_session_id,
 };
 pub use screen::current_screen_name;
 pub use secret_scrub::scrub_secrets;

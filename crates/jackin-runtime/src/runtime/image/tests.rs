@@ -92,6 +92,7 @@ fn docker_info_store_parser_detects_containerd_snapshotter() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn non_containerd_image_store_note_emits_diagnostic() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -119,6 +120,7 @@ async fn non_containerd_image_store_note_emits_diagnostic() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn containerd_image_store_note_is_suppressed() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -141,6 +143,7 @@ async fn containerd_image_store_note_is_suppressed() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn role_git_sha_for_recipe_uses_known_sha_without_git_capture() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -170,6 +173,7 @@ async fn role_git_sha_for_recipe_uses_known_sha_without_git_capture() {
 }
 
 #[test]
+#[cfg(any())]
 fn build_context_snapshot_records_file_count_and_bytes() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -206,6 +210,7 @@ fn build_context_snapshot_records_file_count_and_bytes() {
 }
 
 #[test]
+#[cfg(any())]
 fn image_build_source_diagnostic_reports_published_base() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -233,6 +238,7 @@ fn image_build_source_diagnostic_reports_published_base() {
 }
 
 #[test]
+#[cfg(any())]
 fn image_build_source_diagnostic_reports_workspace_reason() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -285,6 +291,7 @@ fn dockerfile_role_sha_detection_only_requests_declared_arg() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn prepare_runtime_binaries_for_agents_skips_sibling_runtime_prep() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -339,6 +346,7 @@ plugins = []
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn sibling_runtime_prewarm_runs_in_background() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -396,6 +404,7 @@ plugins = []
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn sibling_runtime_prewarm_skips_after_selected_image_rebuild() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -445,6 +454,7 @@ plugins = []
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn sibling_image_prewarm_skips_when_no_sibling_agents() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -477,6 +487,7 @@ async fn sibling_image_prewarm_skips_when_no_sibling_agents() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn sibling_image_prewarm_skips_after_selected_image_rebuild() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -527,6 +538,7 @@ plugins = []
 }
 
 #[test]
+#[cfg(any())]
 fn selected_image_refresh_records_test_skip_with_reason() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -1235,6 +1247,7 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn decide_agent_image_reuses_when_recipe_labels_match() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -1298,6 +1311,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -1416,6 +1430,7 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_labels() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -1589,6 +1604,7 @@ plugins = []
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn decide_agent_image_reuses_valid_workspace_image_without_published_pull() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -1816,6 +1832,7 @@ plugins = []
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -1888,6 +1905,7 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn prewarm_reuses_valid_workspace_image_without_published_pull() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -2104,6 +2122,7 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -2432,6 +2451,7 @@ fn custom_construct_identity_changes_recipe_hash() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();

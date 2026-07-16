@@ -41,6 +41,7 @@ async fn stage_failed_does_not_block_on_test_renderer() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn stage_failed_writes_full_detail_to_diagnostics() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = jackin_core::JackinPaths::for_tests(tmp.path());

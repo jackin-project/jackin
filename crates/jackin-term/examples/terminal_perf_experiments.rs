@@ -274,6 +274,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     run.emit_run_summary();
 
     println!("run_id={}", run.run_id());
-    println!("run_log={}", run.path().display());
+    println!("invocation_id={}", run.run_id());
     Ok(())
 }

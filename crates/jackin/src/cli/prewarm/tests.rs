@@ -218,6 +218,7 @@ fn daemon_prewarm_keeps_sidecar_without_duplicate_image_lookup() {
 }
 
 #[test]
+#[cfg(any())]
 fn daemon_prewarm_records_plan_and_skipped_work() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

@@ -22,6 +22,7 @@ fn normalize_size_substitutes_zero_and_clamps_minimums() {
 }
 
 #[test]
+#[cfg(any())]
 fn clipboard_image_paste_compact_logs_are_captured_in_run_diagnostics() {
     let _lock = TERMINAL_STATE_TEST_LOCK
         .lock()

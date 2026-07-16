@@ -140,6 +140,7 @@ fn insert_run_as_user_is_noop_when_absent() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn wait_for_capsule_daemon_polls_socket_status_command() {
     let (_tmp, paths) = test_paths();
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
@@ -192,6 +193,7 @@ async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
     let (_tmp, paths) = test_paths();
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();

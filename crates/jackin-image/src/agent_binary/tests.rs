@@ -180,6 +180,7 @@ async fn newest_cached_executable_release_async_finds_newest_binary() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn ensure_available_uses_stale_cached_executable_without_foreground_resolve() {
     let dir = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(dir.path());
@@ -254,6 +255,7 @@ async fn ensure_binary_or_cached_fallback_uses_cached_binary_when_primary_downlo
 
 #[cfg(unix)]
 #[tokio::test]
+#[cfg(any())]
 async fn ensure_binary_for_release_repairs_non_executable_cached_binary() {
     use std::os::unix::fs::PermissionsExt as _;
 

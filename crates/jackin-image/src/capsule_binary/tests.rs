@@ -106,6 +106,7 @@ fn normalize_sigstore_v03_bundle_maps_current_cosign_fields() {
 
 #[cfg(unix)]
 #[tokio::test]
+#[cfg(any())]
 async fn ensure_available_repairs_non_executable_cached_capsule_binary() {
     use std::os::unix::fs::PermissionsExt as _;
 

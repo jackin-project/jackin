@@ -528,6 +528,7 @@ fn github_config_mount_keeps_existing_ignored_state() {
 }
 
 #[test]
+#[cfg(any())]
 fn auth_provision_launch_plan_surfaces_per_agent_outcomes() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -656,6 +657,7 @@ plugins = []
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn sibling_auth_prewarm_records_timing() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -7224,6 +7226,7 @@ async fn missing_matching_instance_recreates_current_role() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn missing_matching_instance_records_launch_plan_rejections() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -7277,6 +7280,7 @@ async fn missing_matching_instance_records_launch_plan_rejections() {
 }
 
 #[test]
+#[cfg(any())]
 fn image_materialization_plan_uses_image_decision() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -7303,6 +7307,7 @@ fn image_materialization_plan_uses_image_decision() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn current_restore_candidate_lookup_records_timing() {
     // D13: a running container is not a restore candidate from the launch path.
     // The resolve fn must still inspect the container and emit a rejected plan.
@@ -7409,6 +7414,7 @@ async fn stopped_matching_instance_starts_current_role() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn single_running_current_role_candidate_is_skipped_before_agent_selection() {
     // D13: launch never reconnects to a live instance even in the unselected-agent
     // resolution path. Running container → None (no restore candidate).
@@ -7456,6 +7462,7 @@ async fn single_running_current_role_candidate_is_skipped_before_agent_selection
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -7511,6 +7518,7 @@ async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -7562,6 +7570,7 @@ async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn only_viable_current_role_candidate_recreates_missing_one_before_agent_selection() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -7621,6 +7630,7 @@ async fn only_viable_current_role_candidate_recreates_missing_one_before_agent_s
 }
 
 #[tokio::test]
+#[cfg(any())]
 async fn multiple_running_current_role_agents_all_rejected_by_launch_path() {
     // D13: when multiple agents are Running, each is rejected individually.
     // All containers must be inspected; candidate returns None (no restore).

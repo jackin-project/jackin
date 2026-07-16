@@ -1349,8 +1349,12 @@ mod otlp {
     fn export_filter_directive(level: &str) -> String {
         export_filter_directive_with_internal(
             level,
-            std::env::var("JACKIN_OTEL_INTERNAL")
-                .is_ok_and(|value| crate::run::flag_is_truthy(&value)),
+            std::env::var("JACKIN_OTEL_INTERNAL").is_ok_and(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            }),
         )
     }
 
@@ -1926,33 +1930,6 @@ fn outcome_from_def(
     } else {
         def.outcomes[0]
     }
-}
-
-/// Correlation ids for a JSONL record.
-///
-/// When the active tracing span has a valid `OTel` context (OTLP installed and a
-/// span entered), returns the real 32-hex trace id and 16-hex span id. Otherwise
-/// falls back to `run_id` as `trace_id` (schema stability for offline file-only
-/// mode and historical fixtures) and the optional tracing-registry span id.
-pub(crate) fn correlation_ids(
-    run_id: &str,
-    fallback_span_id: Option<&str>,
-) -> (String, Option<String>) {
-    {
-        use opentelemetry::trace::TraceContextExt as _;
-        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-
-        let ctx = tracing::Span::current().context();
-        let span = ctx.span();
-        let span_ctx = span.span_context();
-        if span_ctx.is_valid() {
-            return (
-                span_ctx.trace_id().to_string(),
-                Some(span_ctx.span_id().to_string()),
-            );
-        }
-    }
-    (run_id.to_owned(), fallback_span_id.map(str::to_owned))
 }
 
 fn emit_jsonl_event_with_level(

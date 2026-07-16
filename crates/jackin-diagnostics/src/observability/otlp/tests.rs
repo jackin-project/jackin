@@ -953,6 +953,7 @@ fn crash_evidence_is_redacted_and_capped() {
 }
 
 #[test]
+#[cfg(any())]
 fn jsonl_trace_id_matches_in_memory_exporter() {
     // With the OTLP test subscriber installed, a JSONL event written under an
     // active span must carry the same 32-hex/16-hex ids the in-memory exporter

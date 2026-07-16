@@ -103,7 +103,6 @@ pub(super) async fn run_host_attach_session(
         env: env_overrides.to_vec(),
         terminal: ClientTerminal::from_env(),
         export_subdir: sanitize_export_path_component(container_name, "instance"),
-        diagnostics_run_dir: paths.data_dir.join("diagnostics/runs"),
     };
 
     match select_host_attach_transport(paths, container_name) {
@@ -161,7 +160,6 @@ struct HostAttachRequest {
     env: Vec<(String, String)>,
     terminal: ClientTerminal,
     export_subdir: String,
-    diagnostics_run_dir: PathBuf,
 }
 
 async fn run_terminal_attach<R, W>(
@@ -318,22 +316,8 @@ where
                             );
                         }
                     }
-                    ServerFrame::HostRevealPath(path) => {
-                        let message = match reveal_allowed_host_path(
-                            Path::new(&path),
-                            &request.diagnostics_run_dir,
-                        ) {
-                            Ok(()) => "Revealing diagnostics file on host".to_owned(),
-                            Err(err) => {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host reveal path rejected for category={} basename={:?}: {err:#}",
-                                    host_reveal_path_category(Path::new(&path), &request.diagnostics_run_dir),
-                                    host_file_basename(Path::new(&path))
-                                );
-                                format!("Host reveal rejected: {err:#}")
-                            }
-                        };
+                    ServerFrame::HostRevealPath(_) => {
+                        let message = "Host diagnostics-file reveal is no longer supported";
                         if let Err(err) = send_host_notice(&mut server_writer, &message).await {
                             jackin_diagnostics::debug_log!(
                                 "attach",
@@ -1099,36 +1083,6 @@ fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
     export_action_notice(export, reveal_host_file, "revealed", "reveal")
 }
 
-fn validate_allowed_host_reveal_path(path: &Path, diagnostics_run_dir: &Path) -> Result<PathBuf> {
-    let target = fs::canonicalize(path).context("resolving host reveal path")?;
-    let diagnostics_run_dir =
-        fs::canonicalize(diagnostics_run_dir).context("resolving diagnostics run directory")?;
-    if !target.starts_with(&diagnostics_run_dir) {
-        bail!("path is outside jackin diagnostics run directory");
-    }
-    if target.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
-        bail!("path is not a diagnostics JSONL file");
-    }
-    Ok(target)
-}
-
-fn reveal_allowed_host_path(path: &Path, diagnostics_run_dir: &Path) -> Result<()> {
-    let target = validate_allowed_host_reveal_path(path, diagnostics_run_dir)?;
-    reveal_host_file(&target)
-}
-
-fn host_reveal_path_category(path: &Path, diagnostics_run_dir: &Path) -> &'static str {
-    if path.starts_with(diagnostics_run_dir) {
-        return "jackin-diagnostics";
-    }
-    if path.starts_with(std::env::temp_dir()) {
-        return "host-temp";
-    }
-    if path.is_absolute() {
-        return "host-absolute";
-    }
-    "host-relative"
-}
 
 fn outer_terminal_reset_sequence() -> Vec<u8> {
     let mut seq = OUTER_TERMINAL_RESET_BASE.to_vec();

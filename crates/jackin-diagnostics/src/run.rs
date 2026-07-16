@@ -1,50 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Run-level diagnostics: write structured JSONL events to `~/.jackin/data/diagnostics/runs/<id>.jsonl`.
-//!
-//! One `RunDiagnostics` per process, held in a `OnceLock`. Rotates stale run
-//! artifacts automatically on init. Not responsible for log formatting shown
-//! to the operator — that is `clog!`/`cdebug!`; this writes machine-readable
-//! JSONL for post-hoc triage.
-//!
-//! The on-disk JSONL file is the *fallback* sink, keyed on whether OTLP export
-//! is active — not on `--debug`:
-//!
-//! * OTLP export active (endpoint configured and the exporter installed) → no
-//!   file by default; the backend is the sink. Set `JACKIN_DIAGNOSTICS_FILE=1`
-//!   to additionally write the file and see telemetry on *both* sides.
-//! * OTLP export not active (no endpoint, an unsupported protocol, or a failed
-//!   exporter build) → the file is written: it is the only durable sink.
-//!
-//! `--debug` does not change file creation — it only widens the firehose written
-//! into whatever sink is active. Either way the `RunDiagnostics` exists (it
-//! carries the run id and powers OTLP export and `active_run`); when the file is
-//! off, `writer` is `None`. Failures stay visible regardless via the compact
-//! operator-notice channel (`emit_compact_line`), which never depends on the file.
+//! Bounded in-memory invocation progress and timing state.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt::Arguments;
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
-use anyhow::Context;
-use owo_colors::OwoColorize;
 use rand::RngExt as _;
-use serde::Serialize;
 
 use jackin_core::JackinPaths;
 
 #[cfg(test)]
 mod tests;
 
-const RUN_DIR: &str = "diagnostics/runs";
-pub(crate) const MAX_RUN_ARTIFACTS: usize = 200;
-pub(crate) const MAX_RUN_ARTIFACT_AGE: Duration = Duration::from_hours(720);
 const CRASH_EVIDENCE_EXPORT_CAP: usize = 4096;
 const MAX_HISTOGRAM_SAMPLES: usize = 1024;
 
@@ -71,19 +42,11 @@ fn locked<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn should_flush_immediately(kind: &str, level: &str) -> bool {
-    level.eq_ignore_ascii_case("ERROR") || kind.ends_with("_failed")
-}
-
 #[derive(Debug)]
 pub struct RunDiagnostics {
     run_id: String,
-    path: PathBuf,
+    scope: PathBuf,
     debug: bool,
-    /// `None` when the run file is gated off (OTLP export is the active sink and
-    /// `JACKIN_DIAGNOSTICS_FILE` is unset). Event recording still updates
-    /// `metrics`; only the JSONL write is skipped.
-    writer: Option<Mutex<BufWriter<File>>>,
     /// Per-stage start timestamps for wall-clock timing (Defect 47.5).
     stage_starts: Mutex<HashMap<String, Instant>>,
     /// Per-stage tracing spans so all progress events for a launch stage share
@@ -109,9 +72,6 @@ impl Drop for ActiveRunGuard {
         let mut guard = active_slot()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(run) = guard.as_ref() {
-            run.flush_writer();
-        }
         *guard = self.previous.take();
         drop(guard);
         #[cfg(test)]
@@ -125,43 +85,6 @@ impl Drop for ActiveRunGuard {
         crate::observability::shutdown_otlp();
     }
 }
-
-/// Schema version 2: canonical keys only (no `kind`/`stage`/`detail`/`run_id`/
-/// `error_type` top-level). Readers use [`jsonl_adapter`].
-#[derive(Debug, Serialize)]
-struct JsonEvent<'a> {
-    schema: u32,
-    ts_ms: u128,
-    #[serde(rename = "parallax.run.id")]
-    parallax_run_id: &'a str,
-    /// `OTel` 32-hex trace id when an OTLP span is active; otherwise the run id
-    /// (file-only / offline fallback so the field stays non-empty for schema
-    /// stability — not correlated to an OTLP backend in that mode).
-    trace_id: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    /// `OTel` 16-hex span id when an OTLP span is active; otherwise the
-    /// tracing-registry u64 string when a span is entered.
-    span_id: Option<&'a str>,
-    #[serde(rename = "event.name")]
-    event_name: &'a str,
-    #[serde(rename = "event.outcome")]
-    event_outcome: &'a str,
-    #[serde(rename = "jackin.component")]
-    jackin_component: &'a str,
-    #[serde(rename = "jackin.operation")]
-    jackin_operation: &'a str,
-    #[serde(rename = "jackin.category")]
-    jackin_category: &'a str,
-    message: &'a str,
-    #[serde(rename = "jackin.stage", skip_serializing_if = "Option::is_none")]
-    stage: Option<&'a str>,
-    #[serde(rename = "jackin.detail", skip_serializing_if = "Option::is_none")]
-    detail: Option<&'a str>,
-    #[serde(rename = "error.type", skip_serializing_if = "Option::is_none")]
-    error_type: Option<&'a str>,
-}
-
-pub mod jsonl_adapter;
 
 #[derive(Clone, Debug, Default)]
 struct DiagnosticsMetrics {
@@ -222,10 +145,11 @@ fn display_unclosed_key(key: &str) -> String {
 impl RunDiagnostics {
     pub fn start(paths: &JackinPaths, debug: bool, command: &str) -> anyhow::Result<Arc<Self>> {
         // Mint before subscriber init: the OTLP resource carries the run id.
-        let run_id = external_run_id_from_env().unwrap_or_else(mint_run_id);
-        // `init_tracing` returns whether OTLP export was actually installed. That
-        // drives the file gate: the file is the fallback sink, written whenever
-        // the backend is NOT receiving (or forced on with JACKIN_DIAGNOSTICS_FILE).
+        let run_id = jackin_telemetry::identity::current_invocation().map_or_else(
+            || jackin_telemetry::identity::InvocationId::mint().to_string(),
+            |id| id.to_string(),
+        );
+        // Install direct OTLP export when configured.
         let identity = match command {
             "console" => crate::observability::ServiceIdentity::HOST_INTERACTIVE,
             "daemon" => crate::observability::ServiceIdentity::DAEMON,
@@ -254,29 +178,10 @@ impl RunDiagnostics {
                     .to_owned()
             })
         });
-        let persist = !otlp_active || diagnostics_file_forced();
-        let dir = run_dir(paths);
-        let path = dir.join(format!("{run_id}.jsonl"));
-        let writer = if persist {
-            fs::create_dir_all(&dir)
-                .with_context(|| format!("creating diagnostics run dir {}", dir.display()))?;
-            prune_old_runs_in_dir(&dir, None);
-            #[expect(
-                clippy::disallowed_methods,
-                reason = "diagnostics artifact creation is not part of a render loop"
-            )]
-            let file = restrict_to_owner(OpenOptions::new().create_new(true).write(true))
-                .open(&path)
-                .with_context(|| format!("creating diagnostics run artifact {}", path.display()))?;
-            Some(Mutex::new(BufWriter::new(file)))
-        } else {
-            None
-        };
         let run = Arc::new(Self {
             run_id,
-            path,
+            scope: paths.data_dir.clone(),
             debug,
-            writer,
             stage_starts: Mutex::new(HashMap::new()),
             stage_spans: Mutex::new(HashMap::new()),
             timing_starts: Mutex::new(HashMap::new()),
@@ -308,7 +213,7 @@ impl RunDiagnostics {
 
     pub fn activate(self: &Arc<Self>) -> ActiveRunGuard {
         #[cfg(test)]
-        let active_dir = self.path.parent().map(Path::to_path_buf);
+        let active_dir = Some(self.scope.clone());
         #[cfg(test)]
         if let Some(dir) = &active_dir {
             locked(active_run_by_dir()).insert(dir.clone(), Arc::downgrade(self));
@@ -326,21 +231,6 @@ impl RunDiagnostics {
 
     pub fn run_id(&self) -> &str {
         &self.run_id
-    }
-
-    /// The run's JSONL path. NOTE: the file exists on disk only when
-    /// [`persists`](Self::persists) is true; when OTLP is the active sink and the
-    /// file gate is off, this is the path the file *would* have, never created.
-    /// Callers that read or display it must gate on `persists()` first.
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    /// Whether the run is persisting a JSONL file (and its sidecars). `false`
-    /// when OTLP export is the active sink and the file gate is off.
-    #[must_use]
-    pub fn persists(&self) -> bool {
-        self.writer.is_some()
     }
 
     pub fn compact(&self, kind: &str, message: &str) {
@@ -563,7 +453,6 @@ impl RunDiagnostics {
                 None,
             );
         }
-        self.flush_writer();
     }
 
     fn drain_unclosed_keys(&self) -> Vec<String> {
@@ -596,14 +485,6 @@ impl RunDiagnostics {
             starts.clear();
         }
         unclosed.into_iter().collect()
-    }
-
-    pub(crate) fn flush_writer(&self) {
-        let Some(writer) = &self.writer else {
-            return;
-        };
-        let mut guard = locked(writer);
-        drop(guard.flush());
     }
 
     pub fn debug(&self, category: &str, line: &str) -> bool {
@@ -749,7 +630,6 @@ impl RunDiagnostics {
         level: &str,
     ) {
         self.record_direct(kind, message, stage, detail, span_id, level);
-        self.flush_writer();
     }
 
     /// Record an OpenTelemetry-internal diagnostic (an export failure, dropped
@@ -789,49 +669,11 @@ impl RunDiagnostics {
         message: &str,
         stage: Option<&str>,
         detail: Option<&str>,
-        fallback_span_id: Option<&str>,
-        level: &str,
+        _fallback_span_id: Option<&str>,
+        _level: &str,
     ) {
         self.record_metrics(kind);
-        // Counts above always update (they feed the run summary, which OTLP also
-        // exports); the JSONL write only happens when the file sink is on.
-        let Some(writer) = &self.writer else {
-            return;
-        };
-        let taxonomy =
-            crate::observability::event_taxonomy(kind, message, stage, detail, None, level);
-        // Prefer live OTel hex ids; fall back to run_id + tracing-registry span.
-        let (owned_trace, owned_span) =
-            crate::observability::correlation_ids(&self.run_id, fallback_span_id);
-        let event = JsonEvent {
-            schema: jsonl_adapter::SCHEMA_V2,
-            ts_ms: now_ms(),
-            parallax_run_id: &self.run_id,
-            trace_id: owned_trace.as_str(),
-            span_id: owned_span.as_deref(),
-            event_name: &taxonomy.event_name,
-            event_outcome: taxonomy.outcome,
-            jackin_component: taxonomy.component,
-            jackin_operation: &taxonomy.operation,
-            jackin_category: &taxonomy.category,
-            message,
-            stage,
-            detail,
-            error_type: None,
-        };
-        let Ok(line) = serde_json::to_string(&event) else {
-            return;
-        };
-        let mut guard = writer
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        drop(writeln!(guard, "{line}"));
-        if should_flush_immediately(kind, level) {
-            // Routine records flush when the run guard drops or the summary is
-            // emitted. Error-tier records force a flush so a crash immediately
-            // after the error still leaves evidence in the local fallback file.
-            drop(guard.flush());
-        }
+        let _ = (message, stage, detail);
     }
 
     fn record_metrics(&self, kind: &str) {
@@ -888,14 +730,14 @@ pub fn active_run_for_paths(paths: &JackinPaths) -> Option<Arc<RunDiagnostics>> 
     #[cfg(test)]
     {
         return locked(active_run_by_dir())
-            .get(&run_dir(paths))
+            .get(&paths.data_dir)
             .and_then(Weak::upgrade);
     }
 
     #[cfg(not(test))]
     {
         let run = active_run()?;
-        run.path.starts_with(run_dir(paths)).then_some(run)
+        (run.scope == paths.data_dir).then_some(run)
     }
 }
 
@@ -920,181 +762,6 @@ pub(crate) fn run_by_id(run_id: &str) -> Option<Arc<RunDiagnostics>> {
         .and_then(Weak::upgrade)
 }
 
-pub fn prune_old_runs(paths: &JackinPaths) {
-    let active_run_id = active_run().map(|run| run.run_id().to_owned());
-    prune_old_runs_in_dir(&run_dir(paths), active_run_id.as_deref());
-}
-
-pub fn prune_all_runs(paths: &JackinPaths) -> anyhow::Result<()> {
-    let dir = run_dir(paths);
-    section("Diagnostics", "removing diagnostic runs");
-    let row = start("Deleting", "diagnostics");
-
-    let active_path = active_run().map(|run| run.path().to_path_buf());
-    let result = active_path
-        .as_deref()
-        .filter(|path| path.parent() == Some(dir.as_path()))
-        .map_or_else(
-            || prune_runs_all(&dir),
-            |active| prune_runs_preserving(&dir, active),
-        );
-
-    row.complete(result, |error| {
-        format!("could not remove diagnostics: {error}")
-    })
-}
-
-fn prune_runs_all(dir: &Path) -> anyhow::Result<()> {
-    match fs::remove_dir_all(dir) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(anyhow::Error::from(error).context(format!(
-            "failed to remove diagnostics runs at {}",
-            dir.display()
-        ))),
-    }
-}
-
-pub(crate) fn prune_runs_preserving(dir: &Path, preserved_path: &Path) -> anyhow::Result<()> {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(anyhow::Error::from(error).context(format!(
-                "failed to read diagnostics runs at {}",
-                dir.display()
-            )));
-        }
-    };
-
-    for entry in entries {
-        let entry =
-            entry.with_context(|| format!("reading diagnostics run in {}", dir.display()))?;
-        let path = entry.path();
-        if path == preserved_path {
-            continue;
-        }
-        remove_run_entry(&path)
-            .with_context(|| format!("removing diagnostics run {}", path.display()))?;
-    }
-    Ok(())
-}
-
-fn remove_run_entry(path: &Path) -> std::io::Result<()> {
-    let metadata = fs::symlink_metadata(path)?;
-    if metadata.file_type().is_dir() {
-        fs::remove_dir_all(path)
-    } else {
-        if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-            remove_run_sidecars(path);
-        }
-        fs::remove_file(path)
-    }
-}
-
-/// Remove a diagnostics run's `.jsonl` plus its `{stem}.*` sidecars. The caller
-/// has already established `path` is a run `.jsonl`, so unlike `remove_run_entry`
-/// this skips the dir/file stat.
-fn remove_jsonl_run(path: &Path) {
-    remove_run_sidecars(path);
-    drop(fs::remove_file(path));
-}
-
-fn remove_run_sidecars(run_path: &Path) {
-    let Some(dir) = run_path.parent() else {
-        return;
-    };
-    let Some(stem) = run_path.file_stem().and_then(|stem| stem.to_str()) else {
-        return;
-    };
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    let prefix = format!("{stem}.");
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if name.starts_with(&prefix) && path != run_path {
-            drop(fs::remove_file(path));
-        }
-    }
-}
-
-pub(crate) fn run_dir(paths: &JackinPaths) -> PathBuf {
-    paths.data_dir.join(RUN_DIR)
-}
-
-/// Characters allowed verbatim in a run id or run-artifact filename: ASCII
-/// alphanumerics plus `-`/`_`. Everything else is dropped or replaced,
-/// depending on the caller.
-fn is_run_id_char(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'
-}
-
-/// Whether an env-flag string is truthy: `1`/`true`/`yes`/`on`, case- and
-/// whitespace-insensitive. Pure so the vocabulary can be unit-tested without
-/// touching process env.
-pub(crate) fn flag_is_truthy(value: &str) -> bool {
-    matches!(
-        value.trim().to_ascii_lowercase().as_str(),
-        "1" | "true" | "yes" | "on"
-    )
-}
-
-/// Whether the operator forced the JSONL run file on via
-/// `JACKIN_DIAGNOSTICS_FILE`. Truthy values per [`flag_is_truthy`]. When OTLP
-/// export is inactive the file is written regardless (it is the only sink); this
-/// gate only matters when OTLP is active and the operator also wants the file.
-fn diagnostics_file_forced() -> bool {
-    std::env::var("JACKIN_DIAGNOSTICS_FILE").is_ok_and(|value| flag_is_truthy(&value))
-}
-
-pub(crate) fn mint_run_id() -> String {
-    let mut rng = rand::rng();
-    let n: u32 = rng.random();
-    // A bare unique value — no prefix; six lowercase hex digits.
-    format!("{:06x}", n & 0x00ff_ffff)
-}
-
-fn external_run_id_from_env() -> Option<String> {
-    std::env::var("OTEL_RESOURCE_ATTRIBUTES")
-        .ok()
-        .and_then(|attrs| external_run_id_from_resource_attributes(&attrs))
-        .or_else(|| {
-            std::env::var("PARALLAX_RUN_ID")
-                .ok()
-                .and_then(|id| normalize_external_run_id(&id))
-        })
-}
-
-pub(crate) fn external_run_id_from_resource_attributes(attrs: &str) -> Option<String> {
-    attrs
-        .split(',')
-        .filter_map(|pair| pair.split_once('='))
-        .find_map(|(key, value)| {
-            (key.trim() == "parallax.run.id")
-                .then(|| normalize_external_run_id(value))
-                .flatten()
-        })
-}
-
-/// Normalize an externally-supplied run id: trim, strip the `run_` prefix, keep
-/// only run-id chars, cap at 64. Returns `None` when nothing usable remains, so
-/// the empty-string invariant lives here rather than at each call site.
-fn normalize_external_run_id(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    let id: String = trimmed
-        .strip_prefix("run_")
-        .unwrap_or(trimmed)
-        .chars()
-        .filter(|&ch| is_run_id_char(ch))
-        .take(64)
-        .collect();
-    (!id.is_empty()).then_some(id)
-}
-
 /// A fresh session id for the capsule's `session.id`. One daemon run is one
 /// session; the id groups all of its OTLP telemetry into a single timeline.
 #[must_use]
@@ -1102,12 +769,6 @@ pub fn mint_session_id() -> String {
     let mut rng = rand::rng();
     let n: u32 = rng.random();
     format!("jk-session-{:06x}", n & 0x00ff_ffff)
-}
-
-fn now_ms() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis())
 }
 
 fn timing_key(stage: &str, name: &str) -> String {
@@ -1210,156 +871,6 @@ fn timing_detail(name: &str, duration_ms: Option<u64>, detail: Option<&str>) -> 
 
 fn cap_crash_evidence_for_export(evidence: &str) -> String {
     crate::redact::redact_and_cap(evidence, CRASH_EVIDENCE_EXPORT_CAP)
-}
-
-/// Owner-only mode for new diagnostics files. The JSONL firehose and the
-/// command-output sidecar can carry tokens or credentials captured from
-/// external-command stdout, so they must not be world-readable.
-#[cfg(unix)]
-fn restrict_to_owner(opts: &mut OpenOptions) -> &mut OpenOptions {
-    use std::os::unix::fs::OpenOptionsExt as _;
-    opts.mode(0o600)
-}
-
-#[cfg(not(unix))]
-fn restrict_to_owner(opts: &mut OpenOptions) -> &mut OpenOptions {
-    opts
-}
-
-pub(crate) fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
-    let Ok(read_dir) = fs::read_dir(dir) else {
-        return;
-    };
-    let now = SystemTime::now();
-    let mut entries: Vec<(PathBuf, SystemTime)> = read_dir
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
-                return None;
-            }
-            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            if active_run == Some(stem) {
-                return None;
-            }
-            let modified = entry.metadata().and_then(|m| m.modified()).ok()?;
-            Some((path, modified))
-        })
-        .collect();
-
-    for (path, modified) in &entries {
-        if now
-            .duration_since(*modified)
-            .is_ok_and(|age| age > MAX_RUN_ARTIFACT_AGE)
-        {
-            remove_jsonl_run(path);
-        }
-    }
-
-    entries.retain(|(path, _)| path.exists());
-    entries.sort_by_key(|(_, modified)| *modified);
-    let overflow = entries.len().saturating_sub(MAX_RUN_ARTIFACTS);
-    for (path, _) in entries.into_iter().take(overflow) {
-        remove_jsonl_run(&path);
-    }
-}
-
-// Local copies of the presentation helpers that were moved to `jackin-tui` in
-// A3. Inlined here so this crate (L1, depended on by 8 L0/L1/L2 crates) does
-// not need to pull `jackin-tui` (L3) for the two small helpers `prune_all_runs`
-// uses. The implementations are byte-identical to the originals in
-// `jackin_core::{ansi_text, prune_output}` before their A3 move.
-
-const STATUS_COLUMN: usize = 78;
-
-fn flush_stdout() {
-    drop(std::io::stdout().flush());
-}
-
-fn stdout_line(args: Arguments<'_>) {
-    let mut stdout = std::io::stdout().lock();
-    drop(writeln!(stdout, "{args}"));
-}
-
-fn stdout_fragment(args: Arguments<'_>) {
-    let mut stdout = std::io::stdout().lock();
-    drop(write!(stdout, "{args}"));
-}
-
-fn section(label: &str, detail: impl std::fmt::Display) {
-    stdout_line(format_args!(""));
-    stdout_line(format_args!("  {} {}", label.bold(), detail.dimmed()));
-    flush_stdout();
-}
-
-fn ok_label() {
-    stdout_line(format_args!(" {}", "OK".green().bold()));
-}
-
-fn failed_label(detail: impl std::fmt::Display) {
-    stdout_line(format_args!(" {}", "FAILED".red().bold()));
-    stdout_line(format_args!("      {detail}"));
-}
-
-fn start(action: &str, target: impl std::fmt::Display) -> PendingRow {
-    let (prefix, dots) = pending_parts(action, target);
-    stdout_fragment(format_args!("    {} {}", prefix.bold(), dots.dimmed()));
-    flush_stdout();
-    PendingRow { finalized: false }
-}
-
-fn pending_parts(action: &str, target: impl std::fmt::Display) -> (String, String) {
-    let (prefix, prefix_chars) = fit_prefix(format!("{action} {target}"));
-    let dots = ".".repeat(STATUS_COLUMN.saturating_sub(prefix_chars).max(3));
-    (prefix, dots)
-}
-
-fn fit_prefix(prefix: String) -> (String, usize) {
-    let max = STATUS_COLUMN.saturating_sub(4);
-    let keep = max.saturating_sub(3);
-    let mut total = 0usize;
-    let mut truncate_at: Option<usize> = None;
-    for (idx, _) in prefix.char_indices() {
-        if total == keep && truncate_at.is_none() {
-            truncate_at = Some(idx);
-        }
-        if total > max {
-            let cut = truncate_at.unwrap_or(idx);
-            let mut fitted = prefix[..cut].to_string();
-            fitted.push_str("...");
-            return (fitted, keep + 3);
-        }
-        total += 1;
-    }
-    (prefix, total)
-}
-
-#[derive(Debug)]
-pub struct PendingRow {
-    #[expect(
-        dead_code,
-        reason = "Drop guard: closed in Drop impl if caller forgets to finalize"
-    )]
-    finalized: bool,
-}
-
-impl PendingRow {
-    /// Finalize the row from a `Result`: print `OK` on success, `FAILED` on error.
-    pub fn complete<T, E, F>(self, result: Result<T, E>, message: F) -> Result<T, E>
-    where
-        F: FnOnce(&E) -> String,
-    {
-        match result {
-            Ok(value) => {
-                ok_label();
-                Ok(value)
-            }
-            Err(error) => {
-                failed_label(message(&error));
-                Err(error)
-            }
-        }
-    }
 }
 
 impl jackin_core::LaunchDiagnostics for RunDiagnostics {
