@@ -890,7 +890,7 @@ fn failure_popup_renders_copyable_rows_and_copied_badge() {
         "/jk/run/x.jsonl",
         "docker output",
         "/jk/run/x.docker-build.log",
-        "Copied!",    // badge next to the row whose target is `failure_copied`
+        "✓",          // canonical badge next to the row whose target is `failure_copied`
         "copy value", // footer hint
     ] {
         assert!(
