@@ -154,6 +154,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Restore input-identical built site
+        id: built-site
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: docs/.output/public
+          key: >-
+            docs-site-v1-${{ runner.os }}-${{
+              hashFiles(
+                '.github/workflows/docs.yml',
+                'Cargo.toml',
+                'crates/*/Cargo.toml',
+                'crates/*/README.md',
+                'docs/bun.lock',
+                'docs/package.json',
+                'docs/src/**',
+                'docs/content/**',
+                'docs/public/**',
+                'docs/scripts/**',
+                'docs/*.ts',
+                'docs/*.json',
+                'docs/*.toml'
+              )
+            }}
+
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
@@ -161,10 +185,11 @@ jobs:
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           working_directory: docs
-          install_args: "bun node lychee"
+          install_args: ${{ steps.built-site.outputs.cache-hit == 'true' && 'lychee' || 'bun node lychee' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Cache bun modules
+        if: steps.built-site.outputs.cache-hit != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.bun/install/cache
@@ -172,10 +197,12 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
 
       - name: Install dependencies
+        if: steps.built-site.outputs.cache-hit != 'true'
         working-directory: docs
         run: bun ci
 
       - name: Build site
+        if: steps.built-site.outputs.cache-hit != 'true'
         working-directory: docs
         run: bun run build
 

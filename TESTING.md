@@ -200,6 +200,11 @@ Docs prepares the pinned `codebook-lsp` binary once and publishes a seven-day
 platform/tool-contract artifact. The docs and source spell jobs download that
 same binary instead of each invoking Cargo through mise; only a genuinely new
 Codebook version or platform may take the source-build fallback.
+The built static site is cached by its workflow, docs sources, generated crate
+README inputs, dependency lock, and build configuration. An exact hit installs
+only lychee and skips Bun/Node setup, dependency installation, and site build;
+the miss path rebuilds and repopulates the same output for link checking and
+Pages upload.
 The repository-link job restores the same prepared `jackin-xtask` artifact as
 CI and installs only lychee, so it does not maintain a second Rust build/cache
 path for identical source inputs. Because Docs and CI are independent workflows

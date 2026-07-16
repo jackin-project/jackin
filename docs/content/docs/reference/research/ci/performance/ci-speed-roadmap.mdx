@@ -226,6 +226,11 @@ link scan itself needed only 4 seconds; nearly all remaining time was the docs
 site build. Site-build/result reuse is therefore the next Docs-specific
 sub-minute boundary rather than more link-check parallelism.
 
+The Docs link job now caches `docs/.output/public` by the complete site-build
+contract: workflow, docs sources/configuration, dependency lock, and generated
+crate README inputs. Exact hits install only lychee and proceed directly to the
+four-second link scan; misses retain the full build and repopulate the output.
+
 The first shared-xtask consumer run, `29505456750`, exposed an accidental
 compile path and was cancelled instead of waiting for it. The prepared tool set
 made `cargo-nextest` visible to `docs specs`; the command treated the ambient
