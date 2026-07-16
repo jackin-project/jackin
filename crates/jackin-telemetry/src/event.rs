@@ -214,10 +214,6 @@ macro_rules! emit_named {
     }};
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the closed EventName dispatch is intentionally exhaustive in one authority"
-)]
 pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Rejection> {
     let enabled = match def.severity {
         Severity::Trace => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::TRACE),
@@ -233,55 +229,122 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
         health::reject(reason);
         return Err(reason);
     }
-    match def.name {
-        schema::events::SESSION_START => emit_named!("session.start", def.severity, fields),
-        schema::events::SESSION_END => emit_named!("session.end", def.severity, fields),
-        schema::events::UI_SCREEN_ENTERED => emit_named!("ui.screen.entered", def.severity, fields),
-        schema::events::UI_SCREEN_EXITED => emit_named!("ui.screen.exited", def.severity, fields),
-        schema::events::UI_WIDGET_FOCUSED => emit_named!("ui.widget.focused", def.severity, fields),
-        schema::events::UI_WIDGET_UNFOCUSED => {
-            emit_named!("ui.widget.unfocused", def.severity, fields);
-        }
-        schema::events::APP_JANK => emit_named!("app.jank", def.severity, fields),
-        schema::events::APP_CRASH => emit_named!("app.crash", def.severity, fields),
-        schema::events::AGENT_STATE_CHANGED => {
-            emit_named!("agent.state.changed", def.severity, fields);
-        }
-        schema::events::PTY_SPAWN => emit_named!("pty.spawn", def.severity, fields),
-        schema::events::PTY_EXIT => emit_named!("pty.exit", def.severity, fields),
-        schema::events::TELEMETRY_VALIDATE => {
-            emit_named!("telemetry.validate", def.severity, fields);
-        }
-        schema::events::LAUNCH_STAGE_STARTED => {
-            emit_named!("launch.stage.started", def.severity, fields);
-        }
-        schema::events::LAUNCH_STAGE_DONE => emit_named!("launch.stage.done", def.severity, fields),
-        schema::events::LAUNCH_STAGE_FAILED => {
-            emit_named!("launch.stage.failed", def.severity, fields);
-        }
-        schema::events::LAUNCH_STAGE_SKIPPED => {
-            emit_named!("launch.stage.skipped", def.severity, fields);
-        }
-        schema::events::TIMING_STARTED => emit_named!("timing.started", def.severity, fields),
-        schema::events::TIMING_DONE => emit_named!("timing.done", def.severity, fields),
-        schema::events::DEBUG_LINE => emit_named!("debug.line", def.severity, fields),
-        schema::events::PROCESS_SUBPROCESS_DONE => {
-            emit_named!("process.subprocess.done", def.severity, fields);
-        }
-        schema::events::RUN_SUMMARY => emit_named!("run.summary", def.severity, fields),
-        schema::events::PERFORMANCE_SLOW_FOREGROUND_WAIT => {
-            emit_named!("performance.slow.foreground.wait", def.severity, fields);
-        }
-        schema::events::CAPSULE_SESSION_DETACH => {
-            emit_named!("capsule.session.detach", def.severity, fields);
-        }
-        schema::events::CAPSULE_SESSION_CLEAN_SHUTDOWN => {
-            emit_named!("capsule.session.clean.shutdown", def.severity, fields);
-        }
-        schema::events::ERROR_TYPED => emit_named!("error.typed", def.severity, fields),
-        schema::events::OPERATION_LOG => emit_named!("operation.log", def.severity, fields),
-        schema::events::OPERATION_WARN => emit_named!("operation.warn", def.severity, fields),
-        _ => unreachable!("validated closed event registry"),
+    if matches!(
+        def.name,
+        schema::events::SESSION_START
+            | schema::events::SESSION_END
+            | schema::events::UI_SCREEN_ENTERED
+            | schema::events::UI_SCREEN_EXITED
+            | schema::events::UI_WIDGET_FOCUSED
+            | schema::events::UI_WIDGET_UNFOCUSED
+            | schema::events::APP_JANK
+            | schema::events::APP_CRASH
+            | schema::events::AGENT_STATE_CHANGED
+            | schema::events::PTY_SPAWN
+    ) {
+        emit_lifecycle_event(def, fields);
+    } else if matches!(
+        def.name,
+        schema::events::PTY_EXIT
+            | schema::events::TELEMETRY_VALIDATE
+            | schema::events::LAUNCH_STAGE_STARTED
+            | schema::events::LAUNCH_STAGE_DONE
+            | schema::events::LAUNCH_STAGE_FAILED
+            | schema::events::LAUNCH_STAGE_SKIPPED
+            | schema::events::TIMING_STARTED
+            | schema::events::TIMING_DONE
+            | schema::events::DEBUG_LINE
+            | schema::events::PROCESS_SUBPROCESS_DONE
+    ) {
+        emit_progress_event(def, fields);
+    } else {
+        emit_outcome_event(def, fields);
     }
     Ok(())
 }
+
+fn emit_lifecycle_event(def: &EventDef, fields: FieldSet<'_>) {
+    match def.name {
+        schema::events::SESSION_START => emit_session_start(def.severity, fields),
+        schema::events::SESSION_END => emit_session_end(def.severity, fields),
+        schema::events::UI_SCREEN_ENTERED => emit_ui_screen_entered(def.severity, fields),
+        schema::events::UI_SCREEN_EXITED => emit_ui_screen_exited(def.severity, fields),
+        schema::events::UI_WIDGET_FOCUSED => emit_ui_widget_focused(def.severity, fields),
+        schema::events::UI_WIDGET_UNFOCUSED => emit_ui_widget_unfocused(def.severity, fields),
+        schema::events::APP_JANK => emit_app_jank(def.severity, fields),
+        schema::events::APP_CRASH => emit_app_crash(def.severity, fields),
+        schema::events::AGENT_STATE_CHANGED => emit_agent_state_changed(def.severity, fields),
+        schema::events::PTY_SPAWN => emit_pty_spawn(def.severity, fields),
+        _ => unreachable!("validated lifecycle event registry"),
+    }
+}
+
+fn emit_progress_event(def: &EventDef, fields: FieldSet<'_>) {
+    match def.name {
+        schema::events::PTY_EXIT => emit_pty_exit(def.severity, fields),
+        schema::events::TELEMETRY_VALIDATE => emit_telemetry_validate(def.severity, fields),
+        schema::events::LAUNCH_STAGE_STARTED => emit_launch_stage_started(def.severity, fields),
+        schema::events::LAUNCH_STAGE_DONE => emit_launch_stage_done(def.severity, fields),
+        schema::events::LAUNCH_STAGE_FAILED => emit_launch_stage_failed(def.severity, fields),
+        schema::events::LAUNCH_STAGE_SKIPPED => emit_launch_stage_skipped(def.severity, fields),
+        schema::events::TIMING_STARTED => emit_timing_started(def.severity, fields),
+        schema::events::TIMING_DONE => emit_timing_done(def.severity, fields),
+        schema::events::DEBUG_LINE => emit_debug_line(def.severity, fields),
+        schema::events::PROCESS_SUBPROCESS_DONE => emit_process_done(def.severity, fields),
+        _ => unreachable!("validated progress event registry"),
+    }
+}
+
+fn emit_outcome_event(def: &EventDef, fields: FieldSet<'_>) {
+    match def.name {
+        schema::events::RUN_SUMMARY => emit_run_summary(def.severity, fields),
+        schema::events::PERFORMANCE_SLOW_FOREGROUND_WAIT => emit_slow_wait(def.severity, fields),
+        schema::events::CAPSULE_SESSION_DETACH => emit_session_detach(def.severity, fields),
+        schema::events::CAPSULE_SESSION_CLEAN_SHUTDOWN => {
+            emit_session_clean_shutdown(def.severity, fields);
+        }
+        schema::events::ERROR_TYPED => emit_error_typed(def.severity, fields),
+        schema::events::OPERATION_LOG => emit_operation_log(def.severity, fields),
+        schema::events::OPERATION_WARN => emit_operation_warn(def.severity, fields),
+        _ => unreachable!("validated outcome event registry"),
+    }
+}
+
+macro_rules! define_event_emitter {
+    ($function:ident, $name:literal) => {
+        fn $function(severity: Severity, fields: FieldSet<'_>) {
+            emit_named!($name, severity, fields);
+        }
+    };
+}
+
+define_event_emitter!(emit_session_start, "session.start");
+define_event_emitter!(emit_session_end, "session.end");
+define_event_emitter!(emit_ui_screen_entered, "ui.screen.entered");
+define_event_emitter!(emit_ui_screen_exited, "ui.screen.exited");
+define_event_emitter!(emit_ui_widget_focused, "ui.widget.focused");
+define_event_emitter!(emit_ui_widget_unfocused, "ui.widget.unfocused");
+define_event_emitter!(emit_app_jank, "app.jank");
+define_event_emitter!(emit_app_crash, "app.crash");
+define_event_emitter!(emit_agent_state_changed, "agent.state.changed");
+define_event_emitter!(emit_pty_spawn, "pty.spawn");
+define_event_emitter!(emit_pty_exit, "pty.exit");
+define_event_emitter!(emit_telemetry_validate, "telemetry.validate");
+define_event_emitter!(emit_launch_stage_started, "launch.stage.started");
+define_event_emitter!(emit_launch_stage_done, "launch.stage.done");
+define_event_emitter!(emit_launch_stage_failed, "launch.stage.failed");
+define_event_emitter!(emit_launch_stage_skipped, "launch.stage.skipped");
+define_event_emitter!(emit_timing_started, "timing.started");
+define_event_emitter!(emit_timing_done, "timing.done");
+define_event_emitter!(emit_debug_line, "debug.line");
+define_event_emitter!(emit_process_done, "process.subprocess.done");
+define_event_emitter!(emit_run_summary, "run.summary");
+define_event_emitter!(emit_slow_wait, "performance.slow.foreground.wait");
+define_event_emitter!(emit_session_detach, "capsule.session.detach");
+define_event_emitter!(
+    emit_session_clean_shutdown,
+    "capsule.session.clean.shutdown"
+);
+define_event_emitter!(emit_error_typed, "error.typed");
+define_event_emitter!(emit_operation_log, "operation.log");
+define_event_emitter!(emit_operation_warn, "operation.warn");

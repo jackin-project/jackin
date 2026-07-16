@@ -149,58 +149,62 @@ impl Drop for OperationGuard {
     }
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the closed SpanName dispatch is intentionally exhaustive in one authority"
-)]
 fn make_span(name: &str, root: bool) -> Option<Span> {
     if root {
-        return Some(match name {
-            schema::spans::CLI_COMMAND => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "cli.command")
-            }
-            schema::spans::APP_STARTUP => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "app.startup")
-            }
-            schema::spans::APP_SHUTDOWN => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "app.shutdown")
-            }
-            schema::spans::UI_ACTION => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "ui.action")
-            }
-            schema::spans::UI_SCREEN_TRANSITION => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "ui.screen.transition")
-            }
-            schema::spans::UI_RENDER => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "ui.render")
-            }
-            schema::spans::BACKGROUND_CYCLE => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "background.cycle")
-            }
-            schema::spans::PREWARM_SCHEDULE => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "prewarm.schedule", otel.kind = "producer")
-            }
-            schema::spans::PREWARM_ATTEMPT => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "prewarm.attempt", otel.kind = "consumer")
-            }
-            schema::spans::CONNECTION_ATTEMPT => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "connection.attempt")
-            }
-            schema::spans::PROCESS_COMMAND => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "process.command", otel.kind = "client")
-            }
-            schema::spans::RPC_CLIENT => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "rpc.client", otel.kind = "client")
-            }
-            schema::spans::RPC_SERVER => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "rpc.server", otel.kind = "server")
-            }
-            schema::spans::TELEMETRY_VALIDATE => {
-                tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "telemetry.validate")
-            }
-            _ => return None,
-        });
+        return make_root_span(name);
     }
+    make_child_span(name)
+}
+
+fn make_root_span(name: &str) -> Option<Span> {
+    Some(match name {
+        schema::spans::CLI_COMMAND => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "cli.command")
+        }
+        schema::spans::APP_STARTUP => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "app.startup")
+        }
+        schema::spans::APP_SHUTDOWN => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "app.shutdown")
+        }
+        schema::spans::UI_ACTION => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "ui.action")
+        }
+        schema::spans::UI_SCREEN_TRANSITION => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "ui.screen.transition")
+        }
+        schema::spans::UI_RENDER => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "ui.render")
+        }
+        schema::spans::BACKGROUND_CYCLE => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "background.cycle")
+        }
+        schema::spans::PREWARM_SCHEDULE => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "prewarm.schedule", otel.kind = "producer")
+        }
+        schema::spans::PREWARM_ATTEMPT => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "prewarm.attempt", otel.kind = "consumer")
+        }
+        schema::spans::CONNECTION_ATTEMPT => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "connection.attempt")
+        }
+        schema::spans::PROCESS_COMMAND => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "process.command", otel.kind = "client")
+        }
+        schema::spans::RPC_CLIENT => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "rpc.client", otel.kind = "client")
+        }
+        schema::spans::RPC_SERVER => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "rpc.server", otel.kind = "server")
+        }
+        schema::spans::TELEMETRY_VALIDATE => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "telemetry.validate")
+        }
+        _ => return None,
+    })
+}
+
+fn make_child_span(name: &str) -> Option<Span> {
     Some(match name {
         schema::spans::CLI_COMMAND => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "cli.command")
