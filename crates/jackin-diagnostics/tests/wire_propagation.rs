@@ -32,7 +32,7 @@ fn conformance_wire_preserves_remote_parent_and_detached_link() -> anyhow::Resul
         },
         jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
-            value: jackin_telemetry::Value::Str("jackin.test.Service/Method"),
+            value: jackin_telemetry::Value::Str("jackin.host.Daemon/Status"),
         },
     ];
     jackin_telemetry::operation_with_remote_parent(

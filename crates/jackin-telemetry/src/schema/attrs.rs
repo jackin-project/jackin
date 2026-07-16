@@ -410,13 +410,40 @@ pub const OUTCOME_DEF: super::AttributeMetadata = super::AttributeMetadata {
         "cancellation",
     ],
 };
-// registry-type: string
+// registry-type: enum
 pub const PROCESS_EXECUTABLE_NAME: &str = "process.executable.name";
 pub const PROCESS_EXECUTABLE_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: PROCESS_EXECUTABLE_NAME,
-    description: "Process executable name without its path.",
+    description: "Bounded process executable classification without paths or arguments.",
     value_type: super::ValueType::String,
-    allowed_values: &[],
+    allowed_values: &[
+        "jackin",
+        "jackin-daemon",
+        "jackin-capsule",
+        "jackin-role",
+        "git",
+        "gh",
+        "op",
+        "docker",
+        "container",
+        "mise",
+        "ps",
+        "osascript",
+        "sh",
+        "caffeinate",
+        "kill",
+        "less",
+        "more",
+        "bat",
+        "claude",
+        "codex",
+        "amp",
+        "kimi",
+        "opencode",
+        "grok",
+        "configured_command",
+        "other",
+    ],
 };
 // registry-type: int
 pub const PROCESS_EXIT_CODE: &str = "process.exit.code";
@@ -440,21 +467,44 @@ pub const PTY_EXIT_REASON_DEF: super::AttributeMetadata = super::AttributeMetada
         "cancelled",
     ],
 };
-// registry-type: string
+// registry-type: enum
 pub const RPC_METHOD: &str = "rpc.method";
 pub const RPC_METHOD_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: RPC_METHOD,
     description: "Fully-qualified logical RPC method name.",
     value_type: super::ValueType::String,
-    allowed_values: &[],
+    allowed_values: &[
+        "jackin.capsule.Control/Status",
+        "jackin.capsule.Control/TelemetryHealth",
+        "jackin.capsule.Control/Snapshot",
+        "jackin.capsule.Control/Agents",
+        "jackin.capsule.Control/ReportRuntimeEvent",
+        "jackin.capsule.Control/StatusCapture",
+        "jackin.capsule.Control/UsageFocused",
+        "jackin.capsule.Control/UsageRefreshFocused",
+        "jackin.capsule.Control/UsageAccountList",
+        "jackin.capsule.Control/ExecCommand",
+        "jackin.capsule.Control/TokenUsage",
+        "jackin.capsule.Control/Unknown",
+        "jackin.capsule.Attach/Handshake",
+        "jackin.capsule.Attach/Detach",
+        "jackin.capsule.Attach/Focus",
+        "jackin.capsule.Attach/ClipboardImageTransfer",
+        "jackin.host.Credentials/Resolve",
+        "jackin.host.Daemon/Hello",
+        "jackin.host.Daemon/Status",
+        "jackin.host.Daemon/TelemetryHealth",
+        "jackin.host.Daemon/AttentionSnapshot",
+        "jackin.host.Daemon/Shutdown",
+    ],
 };
-// registry-type: string
+// registry-type: enum
 pub const RPC_SYSTEM_NAME: &str = "rpc.system.name";
 pub const RPC_SYSTEM_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: RPC_SYSTEM_NAME,
     description: "Identifies the remote system being called.",
     value_type: super::ValueType::String,
-    allowed_values: &[],
+    allowed_values: &["jackin"],
 };
 // registry-type: string
 pub const SESSION_PREVIOUS_ID: &str = "session.previous_id";

@@ -45,6 +45,27 @@ fn bounded_standard_values_drive_runtime_validation() {
             .collect::<Vec<_>>()
     );
     assert_eq!(
+        attrs::PROCESS_EXECUTABLE_NAME_DEF.allowed_values,
+        enums::ProcessExecutableName::ALL
+            .iter()
+            .map(|value| value.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        attrs::RPC_METHOD_DEF.allowed_values,
+        enums::RpcMethod::ALL
+            .iter()
+            .map(|value| value.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        attrs::RPC_SYSTEM_NAME_DEF.allowed_values,
+        enums::RpcSystemName::ALL
+            .iter()
+            .map(|value| value.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
         attrs::DB_OPERATION_NAME_DEF.allowed_values,
         enums::DbOperationName::ALL
             .iter()

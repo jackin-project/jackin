@@ -167,7 +167,7 @@ fn rpc_server_honors_remote_parent_and_kind() {
             },
             Attr {
                 key: schema::attrs::std_attrs::RPC_METHOD,
-                value: Value::Str("jackin.test.Service/Method"),
+                value: Value::Str("jackin.host.Daemon/Status"),
             },
         ];
         operation_with_remote_parent(&RPC_SERVER, &attrs, &parent)

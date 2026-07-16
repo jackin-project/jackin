@@ -447,6 +447,17 @@ fn process_execute_completion_classifies_success() {
 }
 
 #[test]
+fn executable_classification_is_bounded_and_private() {
+    use jackin_telemetry::schema::enums::ProcessExecutableName;
+
+    assert_eq!(classify_executable("git"), ProcessExecutableName::Git);
+    assert_eq!(
+        classify_executable("operator-private-tool"),
+        ProcessExecutableName::Other
+    );
+}
+
+#[test]
 fn process_execute_completion_classifies_timeout() {
     let result = Err::<(), _>(
         DockerError::CommandTimeout {
@@ -459,7 +470,7 @@ fn process_execute_completion_classifies_timeout() {
         process_execute_completion(&result),
         (
             jackin_telemetry::schema::enums::OutcomeValue::Timeout,
-            Some("timeout")
+            Some(jackin_telemetry::schema::enums::ErrorType::Timeout)
         )
     );
 }
@@ -477,7 +488,7 @@ fn process_execute_completion_classifies_nonzero_exit() {
         process_execute_completion(&result),
         (
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
-            Some("process_exit_nonzero")
+            Some(jackin_telemetry::schema::enums::ErrorType::ProcessExitNonzero)
         )
     );
 }
@@ -489,7 +500,7 @@ fn process_execute_completion_classifies_spawn_failure() {
         process_execute_completion(&result),
         (
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
-            Some("process_spawn_error")
+            Some(jackin_telemetry::schema::enums::ErrorType::ProcessSpawnError)
         )
     );
 }

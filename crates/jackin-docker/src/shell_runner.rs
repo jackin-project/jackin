@@ -276,6 +276,7 @@ fn enter_process_execute(program: &str) -> jackin_telemetry::OperationGuard {
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("unknown");
+    let executable = classify_executable(executable).as_str();
     jackin_telemetry::operation_or_disabled(
         &jackin_telemetry::operation::PROCESS_COMMAND,
         &[jackin_telemetry::Attr {
@@ -283,6 +284,38 @@ fn enter_process_execute(program: &str) -> jackin_telemetry::OperationGuard {
             value: jackin_telemetry::Value::Str(executable),
         }],
     )
+}
+
+fn classify_executable(executable: &str) -> jackin_telemetry::schema::enums::ProcessExecutableName {
+    use jackin_telemetry::schema::enums::ProcessExecutableName;
+
+    match executable {
+        "jackin" => ProcessExecutableName::Jackin,
+        "jackin-daemon" => ProcessExecutableName::JackinDaemon,
+        "jackin-capsule" => ProcessExecutableName::JackinCapsule,
+        "jackin-role" => ProcessExecutableName::JackinRole,
+        "git" => ProcessExecutableName::Git,
+        "gh" => ProcessExecutableName::Gh,
+        "op" => ProcessExecutableName::Op,
+        "docker" => ProcessExecutableName::Docker,
+        "container" => ProcessExecutableName::Container,
+        "mise" => ProcessExecutableName::Mise,
+        "ps" => ProcessExecutableName::Ps,
+        "osascript" => ProcessExecutableName::Osascript,
+        "sh" => ProcessExecutableName::Sh,
+        "caffeinate" => ProcessExecutableName::Caffeinate,
+        "kill" => ProcessExecutableName::Kill,
+        "less" => ProcessExecutableName::Less,
+        "more" => ProcessExecutableName::More,
+        "bat" => ProcessExecutableName::Bat,
+        "claude" => ProcessExecutableName::Claude,
+        "codex" => ProcessExecutableName::Codex,
+        "amp" => ProcessExecutableName::Amp,
+        "kimi" => ProcessExecutableName::Kimi,
+        "opencode" => ProcessExecutableName::Opencode,
+        "grok" => ProcessExecutableName::Grok,
+        _ => ProcessExecutableName::Other,
+    }
 }
 
 fn process_execute_completion<T>(
