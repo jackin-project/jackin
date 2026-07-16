@@ -445,14 +445,24 @@ impl UsageCache {
             // account-scoped so a different account's data on the same provider
             // surface is never read in (Class III-C). Keyed in memory by provider
             // (per-container), one account per agent.
-            if let std::collections::hash_map::Entry::Vacant(e) =
+            if let std::collections::hash_map::Entry::Vacant(entry) =
                 self.snapshots.entry(target.cache_key())
-                && let Some(view) =
-                    read_shared_usage_snapshot(&snapshots_dir, &target.shared_account_key())
             {
-                e.insert(CachedUsage {
-                    view: stale_shared_view(view, now_epoch()),
-                });
+                match read_shared_usage_snapshot(&snapshots_dir, &target.shared_account_key()) {
+                    Some(view) => {
+                        jackin_telemetry::cache::decision(
+                            jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
+                            jackin_telemetry::schema::enums::CacheResult::Stale,
+                        );
+                        entry.insert(CachedUsage {
+                            view: stale_shared_view(view, now_epoch()),
+                        });
+                    }
+                    None => jackin_telemetry::cache::decision(
+                        jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
+                        jackin_telemetry::schema::enums::CacheResult::Miss,
+                    ),
+                }
             }
             if self.refresh_schedule.should_refresh(&target, now) {
                 due_targets.push(target);

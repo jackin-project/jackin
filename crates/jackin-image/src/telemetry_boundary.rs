@@ -84,20 +84,5 @@ pub(crate) fn cache_decision(
     name: jackin_telemetry::schema::enums::CacheName,
     result: jackin_telemetry::schema::enums::CacheResult,
 ) {
-    let attrs = [
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::CACHE_NAME,
-            value: jackin_telemetry::Value::Str(name.as_str()),
-        },
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::CACHE_RESULT,
-            value: jackin_telemetry::Value::Str(result.as_str()),
-        },
-    ];
-    let _result = jackin_telemetry::emit_event(
-        &jackin_telemetry::event::CACHE_DECISION,
-        jackin_telemetry::FieldSet::new(&attrs, None),
-    );
-    let _count =
-        jackin_telemetry::counter(&jackin_telemetry::metric::CACHE_DECISIONS).add(1, &attrs);
+    jackin_telemetry::cache::decision(name, result);
 }

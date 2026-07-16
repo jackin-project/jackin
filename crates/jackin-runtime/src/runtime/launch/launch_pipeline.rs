@@ -339,14 +339,30 @@ pub async fn resolve_supported_agents_for_console(
     let cached = jackin_manifest::repo::CachedRepo::new(paths, selector);
     if cached.repo_dir.join(".git").is_dir() {
         match jackin_manifest::load_role_manifest(&cached.repo_dir) {
-            Ok(manifest) => return Ok(manifest.supported_agents()),
-            Err(error) => jackin_diagnostics::telemetry_debug!(
-                "console",
-                "cached manifest for {} present but failed to parse ({error:#}); refetching",
-                selector.key()
-            ),
+            Ok(manifest) => {
+                jackin_telemetry::cache::decision(
+                    jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                    jackin_telemetry::schema::enums::CacheResult::Hit,
+                );
+                return Ok(manifest.supported_agents());
+            }
+            Err(error) => {
+                jackin_telemetry::cache::decision(
+                    jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                    jackin_telemetry::schema::enums::CacheResult::Stale,
+                );
+                jackin_diagnostics::telemetry_debug!(
+                    "console",
+                    "cached manifest for {} present but failed to parse ({error:#}); refetching",
+                    selector.key()
+                );
+            }
         }
     } else {
+        jackin_telemetry::cache::decision(
+            jackin_telemetry::schema::enums::CacheName::RoleRepository,
+            jackin_telemetry::schema::enums::CacheResult::Miss,
+        );
         jackin_diagnostics::telemetry_debug!(
             "console",
             "no cached repo for {}; falling back to git fetch",
