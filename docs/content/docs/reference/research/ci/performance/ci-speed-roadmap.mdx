@@ -8,7 +8,9 @@ title: "CI/CD Speed Roadmap"
 pipeline, not minimum preview publication latency. Preview now triggers from the
 exact successful `CI` `workflow_run`, so six release builds cannot contend with
 the required main pipeline. GitHub and Velnor use the same local-cache wrapper
-configuration; Velnor is faster only when runner-local state persists. A shared
+configuration; Velnor is faster only when runner-local state persists. The CI
+warmup also prepares one lane-scoped xtask and pinned Cargo-tool bundle for
+fan-out, replacing per-job tool downloads. A shared
 remote compiler backend is explicitly deferred to the
 [Shared CI compiler cache](/roadmap/shared-ci-compiler-cache/) bake-off.
 
@@ -281,8 +283,9 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
    `CI` `workflow_run` on `main`, keyed by its exact source SHA.
 2. Done in this branch: preserve positive exact-SHA CI proof for rolling preview
    and Homebrew tap mutation without a polling loop.
-3. Done in this branch: run the Linux `jackin-role` validator through the same
-   GitHub/Velnor runner matrix when parity lanes are selected.
+3. Done in this branch: remove duplicate Linux `jackin-role` validator builds
+   from required CI; the post-admission preview workflow builds and packages the
+   same validator for every release target on the runner-lane matrix.
 4. Done in this branch: keep preview source-path filtering; docs-only pushes should not publish preview binaries.
 5. Done in this branch: add a final SHA ancestry check before publishing, as the preview workflow already does, so a stale or superseded build cannot update the rolling preview.
 6. Deferred: folding preview into the `CI` DAG would put release work back into

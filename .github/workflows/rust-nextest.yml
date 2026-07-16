@@ -44,10 +44,8 @@ jobs:
       matrix:
         config: ${{ fromJSON(inputs.runner-configs-json) }}
         shard:
-          - { name: jackin-1, group: jackin, partition: "hash:1/2" }
-          - { name: jackin-2, group: jackin, partition: "hash:2/2" }
-          - { name: jackin-capsule-1, group: jackin-capsule, partition: "hash:1/2" }
-          - { name: jackin-capsule-2, group: jackin-capsule, partition: "hash:2/2" }
+          - { name: jackin, group: jackin, partition: "" }
+          - { name: jackin-capsule, group: jackin-capsule, partition: "" }
           - { name: jackin-runtime-1, group: jackin-runtime, partition: "hash:1/5" }
           - { name: jackin-runtime-2, group: jackin-runtime, partition: "hash:2/5" }
           - { name: jackin-runtime-3, group: jackin-runtime, partition: "hash:3/5" }
@@ -89,7 +87,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cargo:cargo-nextest cargo:sccache"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -266,6 +264,9 @@ jobs:
       SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          lane: ${{ matrix.config.lane }}
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -284,7 +285,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cargo:cargo-nextest cargo:sccache"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
