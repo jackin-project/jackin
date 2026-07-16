@@ -3,8 +3,33 @@
 
 use super::{
     contains_legacy_telemetry_name, generate_rust_sources, repo_root, rust_pascal,
-    validate_registry_matches_rust,
+    source_policy_violations, validate_registry_matches_rust,
 };
+
+#[test]
+fn source_policy_is_syntax_aware_and_blocks_raw_meters() {
+    let path = "crates/example/src/lib.rs";
+    assert!(source_policy_violations(path, "// tokio::spawn(async {});").is_empty());
+    assert!(
+        source_policy_violations(path, "const TEXT: &str = \"provider.meter(\\\"x\\\")\";")
+            .is_empty()
+    );
+    assert_eq!(
+        source_policy_violations(
+            path,
+            "fn raw(provider: Provider) { let _ = provider.meter(\"x\"); }"
+        ),
+        ["raw OpenTelemetry meter construction"]
+    );
+    assert_eq!(
+        source_policy_violations(path, "fn raw() { tokio::spawn(async {}); }"),
+        ["unmanaged async/thread spawn"]
+    );
+    assert_eq!(
+        source_policy_violations(path, "fn raw() { tracing::info!(\"raw\"); }"),
+        ["raw tracing call outside governed facade"]
+    );
+}
 
 #[test]
 fn registry_generation_is_deterministic_and_covers_dotted_commands() {

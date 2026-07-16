@@ -510,7 +510,65 @@ fn registered_scalar_and_array_types_round_trip() {
 }
 
 #[test]
-fn active_run_compatibility_path_does_not_duplicate_operation_log() {
+fn every_registered_event_round_trips_once_with_canonical_severity() {
+    use jackin_telemetry::schema::{RequirementLevel, ValueType};
+    use opentelemetry::logs::Severity;
+
+    static ARRAY_VALUE: &[&str] = &["proof"];
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        for name in jackin_telemetry::schema::events::ALL {
+            let definition = jackin_telemetry::event::definition(name)
+                .expect("every generated event must have a facade definition");
+            let metadata = jackin_telemetry::schema::events::definition(name)
+                .expect("every generated event must have metadata");
+            let attrs = metadata
+                .attributes
+                .iter()
+                .filter(|attribute| attribute.requirement == RequirementLevel::Required)
+                .map(|attribute| jackin_telemetry::Attr {
+                    key: attribute.name,
+                    value: match attribute.value_type {
+                        ValueType::String => jackin_telemetry::Value::Str(
+                            attribute.allowed_values.first().copied().unwrap_or("proof"),
+                        ),
+                        ValueType::Boolean => jackin_telemetry::Value::Bool(true),
+                        ValueType::Integer => jackin_telemetry::Value::I64(1),
+                        ValueType::Double => jackin_telemetry::Value::F64(1.0),
+                        ValueType::StringArray => jackin_telemetry::Value::StrArray(ARRAY_VALUE),
+                    },
+                })
+                .collect::<Vec<_>>();
+            jackin_telemetry::emit_event(definition, jackin_telemetry::FieldSet::new(&attrs, None))
+                .unwrap_or_else(|reason| panic!("{name} fixture rejected: {reason:?}"));
+        }
+    });
+    export.logger_provider.force_flush().unwrap();
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), jackin_telemetry::schema::events::ALL.len());
+    for name in jackin_telemetry::schema::events::ALL {
+        let matching = logs
+            .iter()
+            .filter(|log| log.record.event_name() == Some(*name))
+            .collect::<Vec<_>>();
+        assert_eq!(matching.len(), 1, "{name} delivery count");
+        let expected = match jackin_telemetry::event::canonical_severity(name).unwrap() {
+            jackin_telemetry::event::Severity::Trace => Severity::Trace,
+            jackin_telemetry::event::Severity::Debug => Severity::Debug,
+            jackin_telemetry::event::Severity::Info => Severity::Info,
+            jackin_telemetry::event::Severity::Warn => Severity::Warn,
+            jackin_telemetry::event::Severity::Error => Severity::Error,
+        };
+        assert_eq!(
+            matching[0].record.severity_number(),
+            Some(expected),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn governed_operation_line_does_not_duplicate_active_run_log() {
     let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
@@ -519,13 +577,7 @@ fn active_run_compatibility_path_does_not_duplicate_operation_log() {
         let run = crate::RunDiagnostics::start(&paths, false, "status").expect("diagnostics run");
         let _active = run.activate();
         export.logs.reset();
-        crate::operation_log(
-            crate::OperationLevel::Info,
-            "ignored.compatibility.name",
-            "test",
-            "one delivery",
-            &[],
-        );
+        crate::operation::telemetry_line(crate::OperationLevel::Info, "test", "one delivery");
     });
     export.logger_provider.force_flush().unwrap();
     let logs = export.logs.get_emitted_logs().unwrap();
@@ -636,5 +688,59 @@ fn governed_unknown_attribute_is_dropped() {
     assert_eq!(
         jackin_telemetry::facade_health().unknown_attribute,
         before + 1
+    );
+}
+
+#[test]
+fn metric_export_contract_rejects_names_shapes_and_dimensions() {
+    use jackin_telemetry::Rejection;
+
+    assert_eq!(
+        super::metric_contract_fields("unknown.metric", "unknown", "1"),
+        Err(Rejection::UnknownName)
+    );
+    assert_eq!(
+        super::metric_contract_fields(
+            jackin_telemetry::schema::metrics::UI_JANK,
+            "forged description",
+            "{crossing}",
+        ),
+        Err(Rejection::InvalidValue)
+    );
+
+    let requirements = jackin_telemetry::schema::metrics::UI_JANK_DEF.attributes;
+    let valid = [opentelemetry::KeyValue::new(
+        "app.screen.id",
+        "workspace.list",
+    )];
+    assert_eq!(
+        super::validate_metric_attributes(requirements, valid.iter()),
+        Ok(())
+    );
+    let wrong_type = [opentelemetry::KeyValue::new("app.screen.id", true)];
+    assert_eq!(
+        super::validate_metric_attributes(requirements, wrong_type.iter()),
+        Err(Rejection::InvalidValue)
+    );
+    let unknown = [opentelemetry::KeyValue::new("bogus.secret", "secret")];
+    assert_eq!(
+        super::validate_metric_attributes(requirements, unknown.iter()),
+        Err(Rejection::UnknownAttribute)
+    );
+    let oversized = [opentelemetry::KeyValue::new(
+        "app.screen.id",
+        "x".repeat(jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES + 1),
+    )];
+    assert_eq!(
+        super::validate_metric_attributes(requirements, oversized.iter()),
+        Err(Rejection::SizeLimit)
+    );
+    assert_eq!(
+        super::validate_metric_points(
+            0..=jackin_telemetry::limits::MAX_CARDINALITY,
+            |_| Vec::new(),
+            &[],
+        ),
+        Err(Rejection::Cardinality)
     );
 }

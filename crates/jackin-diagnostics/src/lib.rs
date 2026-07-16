@@ -43,10 +43,7 @@ pub use observability::{
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub use observability_test_support::TestSpanSnapshot;
-pub use operation::{
-    OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,
-    operation_metric, operation_record_exit_code, operation_set_i64_attr, operation_span,
-};
+pub use operation::OperationLevel;
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
     active_subprocess_done, active_timing_done, active_timing_started, emit_panic_crash,

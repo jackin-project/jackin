@@ -485,7 +485,11 @@ fn scan_text(text: &str, prohibited: &[&str], violations: &mut Vec<String>) {
 }
 
 fn scan_name(name: &str, violations: &mut Vec<String>) {
-    if name.starts_with("jackin.") || name.starts_with("parallax.") {
+    let legacy_namespace = |prefix: &str| {
+        name.strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.starts_with('.'))
+    };
+    if legacy_namespace("jackin") || legacy_namespace("parallax") {
         violations.push(name.to_owned());
     }
 }

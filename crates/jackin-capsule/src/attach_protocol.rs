@@ -16,11 +16,11 @@ use crate::socket;
 
 const RPC_ERROR: &str = jackin_telemetry::schema::enums::ErrorType::RpcError.as_str();
 
-fn record_attach_failure(error_type: &'static str, body: &'static str) {
-    let span = jackin_diagnostics::operation_span("capsule.attach", &[]);
-    span.in_scope(|| {
-        jackin_diagnostics::operation_error("capsule.attach", error_type, body, &[]);
-    });
+fn record_attach_failure(body: &'static str) {
+    jackin_diagnostics::operation::telemetry_error_line(
+        jackin_telemetry::schema::enums::ErrorType::RpcError,
+        body,
+    );
 }
 
 /// A validated attach handshake produced by `perform_handshake`. The
@@ -476,11 +476,8 @@ pub(crate) async fn handle_attach_client_with_handshake(
                         jackin_diagnostics::telemetry_debug!("capsule", "attach client: socket closed (client detached)");
                     } else {
                         // Operator-visible breadcrumb + typed OTLP failure.
-                        jackin_diagnostics::telemetry_error!("capsule_error", "attach client: socket read failed: {e}");
-                        record_attach_failure(
-                            "attach_socket_read_failed",
-                            "attach socket read failed",
-                        );
+                        jackin_diagnostics::telemetry_error!(jackin_telemetry::schema::enums::ErrorType::RpcError, "attach client: socket read failed: {e}");
+                        record_attach_failure("attach socket read failed");
                     }
                     break;
                 }
@@ -488,21 +485,15 @@ pub(crate) async fn handle_attach_client_with_handshake(
                     Ok(Some(frame)) => frame,
                     Ok(None) => {
                         jackin_diagnostics::telemetry_warn!("capsule", "attach client: EOF mid-frame (tag={:#04x})", tag[0]);
-                        record_attach_failure(
-                            "attach_socket_eof",
-                            "attach socket closed mid-frame",
-                        );
+                        record_attach_failure("attach socket closed mid-frame");
                         break;
                     }
                     Err(e) => {
-                        jackin_diagnostics::telemetry_error!("capsule_error",
+                        jackin_diagnostics::telemetry_error!(jackin_telemetry::schema::enums::ErrorType::RpcError,
                             "attach client: frame decode failed (tag={:#04x}): {e}",
                             tag[0]
                         );
-                        record_attach_failure(
-                            "attach_frame_decode_failed",
-                            "attach frame decode failed",
-                        );
+                        record_attach_failure("attach frame decode failed");
                         break;
                     }
                 };
@@ -557,11 +548,8 @@ pub(crate) async fn handle_attach_client_with_handshake(
                     ) {
                         jackin_diagnostics::telemetry_warn!("capsule", "attach client: socket write failed: {e}");
                     } else {
-                        jackin_diagnostics::telemetry_error!("capsule_error", "attach client: socket write failed: {e}");
-                        record_attach_failure(
-                            "attach_socket_write_failed",
-                            "attach socket write failed",
-                        );
+                        jackin_diagnostics::telemetry_error!(jackin_telemetry::schema::enums::ErrorType::RpcError, "attach client: socket write failed: {e}");
+                        record_attach_failure("attach socket write failed");
                     }
                     break;
                 }

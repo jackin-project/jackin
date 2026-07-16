@@ -348,8 +348,14 @@ mod otlp {
         verified_container_id,
     };
     mod governance;
+    mod metric_governance;
     mod retry;
     use governance::{GovernedLogProcessor, GovernedSpanProcessor};
+    use metric_governance::validate_metric_export;
+    #[cfg(test)]
+    use metric_governance::{
+        metric_contract_fields, validate_metric_attributes, validate_metric_points,
+    };
 
     const EXPORT_ATTEMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
 
@@ -927,6 +933,10 @@ mod otlp {
             &self,
             metrics: &opentelemetry_sdk::metrics::data::ResourceMetrics,
         ) -> opentelemetry_sdk::error::OTelSdkResult {
+            if let Err(reason) = validate_metric_export(metrics) {
+                jackin_telemetry::record_export_rejection(jackin_telemetry::Signal::Metric, reason);
+                return Ok(());
+            }
             let result = self.0.export(metrics).await;
             health::record_signal_export(health::Signal::Metrics, result.is_ok());
             result
@@ -1421,42 +1431,47 @@ mod otlp {
         );
     }
 
-    /// Shared process sampler. Both the CPU and memory instruments read from
-    /// one instance, and `sample()` refreshes `sysinfo` at most once per
-    /// collect cycle. This is load-bearing for CPU correctness: `cpu_usage()`
-    /// is the delta since the previous refresh, so refreshing twice per cycle
-    /// (once per instrument) would measure CPU over the microseconds between
-    /// the two reads — a near-zero, callback-order-dependent value. The gate
-    /// (half the 5 s export interval) guarantees one refresh per cycle and a
-    /// stable ~5 s delta window regardless of instrument observation order.
-    struct ProcSampler {
-        system: sysinfo::System,
-        pid: sysinfo::Pid,
-        last_refresh: Option<std::time::Instant>,
-        cached: Option<(f32, u64)>,
+    #[derive(Debug, Default)]
+    struct ProcessSnapshot {
+        cpu_utilization_bits: std::sync::atomic::AtomicU64,
+        memory_bytes: std::sync::atomic::AtomicI64,
+        valid: std::sync::atomic::AtomicBool,
     }
 
-    impl ProcSampler {
-        fn sample(&mut self) -> Option<(f32, u64)> {
-            let stale = self
-                .last_refresh
-                .is_none_or(|t| t.elapsed() >= std::time::Duration::from_millis(2_500));
-            if stale {
-                self.system.refresh_processes_specifics(
-                    sysinfo::ProcessesToUpdate::Some(&[self.pid]),
-                    true,
-                    sysinfo::ProcessRefreshKind::nothing()
-                        .with_cpu()
-                        .with_memory(),
-                );
-                self.cached = self
-                    .system
-                    .process(self.pid)
-                    .map(|process| (process.cpu_usage(), process.memory()));
-                self.last_refresh = Some(std::time::Instant::now());
-            }
-            self.cached
-        }
+    fn start_process_sampler(pid: sysinfo::Pid, cpu_count: f64) -> std::sync::Arc<ProcessSnapshot> {
+        use std::sync::atomic::Ordering;
+
+        let snapshot = std::sync::Arc::new(ProcessSnapshot::default());
+        let weak = std::sync::Arc::downgrade(&snapshot);
+        drop(jackin_telemetry::spawn::thread_stream(
+            "telemetry.process_sampler",
+            move || {
+                let mut system = sysinfo::System::new();
+                while let Some(snapshot) = weak.upgrade() {
+                    system.refresh_processes_specifics(
+                        sysinfo::ProcessesToUpdate::Some(&[pid]),
+                        true,
+                        sysinfo::ProcessRefreshKind::nothing()
+                            .with_cpu()
+                            .with_memory(),
+                    );
+                    if let Some(process) = system.process(pid) {
+                        let utilization = f64::from(process.cpu_usage()) / 100.0 / cpu_count;
+                        snapshot
+                            .cpu_utilization_bits
+                            .store(utilization.to_bits(), Ordering::Relaxed);
+                        snapshot.memory_bytes.store(
+                            i64::try_from(process.memory()).unwrap_or(i64::MAX),
+                            Ordering::Relaxed,
+                        );
+                        snapshot.valid.store(true, Ordering::Release);
+                    }
+                    drop(snapshot);
+                    std::thread::park_timeout(std::time::Duration::from_millis(2_500));
+                }
+            },
+        ));
+        snapshot
     }
 
     /// Process and runtime metrics: CPU utilization and
@@ -1472,8 +1487,6 @@ mod otlp {
         app_handle: Option<tokio::runtime::Handle>,
     ) -> anyhow::Result<SdkMeterProvider> {
         use opentelemetry::metrics::MeterProvider as _;
-        use std::sync::Mutex;
-
         let runtime = otel_runtime()?;
         let runtime = runtime
             .as_ref()
@@ -1522,15 +1535,12 @@ mod otlp {
             .build();
         let meter = provider.meter("jackin");
         if let Ok(pid) = sysinfo::get_current_pid() {
+            use std::sync::atomic::Ordering;
+
             let cpu_count =
                 std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get) as f64;
-            let sampler = std::sync::Arc::new(Mutex::new(ProcSampler {
-                system: sysinfo::System::new(),
-                pid,
-                last_refresh: None,
-                cached: None,
-            }));
-            let cpu_sampler = std::sync::Arc::clone(&sampler);
+            let snapshot = start_process_sampler(pid, cpu_count);
+            let cpu_snapshot = std::sync::Arc::clone(&snapshot);
             let _cpu_gauge = meter
                 // semconv: process.cpu.utilization, unit "1", 0..1 fraction
                 // of the CPUs available to the process.
@@ -1540,12 +1550,13 @@ mod otlp {
                 .with_unit("1")
                 .with_description("Fraction of total host CPU used by the jackin process")
                 .with_callback(move |observer| {
-                    if let Some((cpu_percent, _)) =
-                        cpu_sampler.lock().ok().and_then(|mut s| s.sample())
-                    {
-                        // `sysinfo` reports percent of one core; semconv
-                        // utilization is a 0..1 fraction of all cores.
-                        observer.observe(f64::from(cpu_percent) / 100.0 / cpu_count, &[]);
+                    if cpu_snapshot.valid.load(Ordering::Acquire) {
+                        observer.observe(
+                            f64::from_bits(
+                                cpu_snapshot.cpu_utilization_bits.load(Ordering::Relaxed),
+                            ),
+                            &[],
+                        );
                     }
                 })
                 .build();
@@ -1558,10 +1569,8 @@ mod otlp {
                 .with_unit("By")
                 .with_description("Resident set size of the jackin process")
                 .with_callback(move |observer| {
-                    if let Some((_, memory_bytes)) =
-                        sampler.lock().ok().and_then(|mut s| s.sample())
-                    {
-                        observer.observe(i64::try_from(memory_bytes).unwrap_or(i64::MAX), &[]);
+                    if snapshot.valid.load(Ordering::Acquire) {
+                        observer.observe(snapshot.memory_bytes.load(Ordering::Relaxed), &[]);
                     }
                 })
                 .build();
@@ -1676,41 +1685,8 @@ mod otlp {
             .is_some()
     }
 
-    /// Thin counter recorder for the operation facade. Plan 042 replaces this.
-    pub(super) fn record_operation_metric(
-        name: &'static str,
-        value: u64,
-        attrs: &[(&'static str, String)],
-    ) {
-        use opentelemetry::KeyValue;
-        use opentelemetry::metrics::MeterProvider as _;
-
-        let Ok(providers) = PROVIDERS.lock() else {
-            return;
-        };
-        let Some(providers) = providers.as_ref() else {
-            return;
-        };
-        let meter = providers.meter.meter("jackin");
-        let counter = meter.u64_counter(name).build();
-        let kvs: Vec<KeyValue> = attrs
-            .iter()
-            .map(|(k, v)| KeyValue::new(*k, v.clone()))
-            .collect();
-        counter.add(value, &kvs);
-    }
-
     #[cfg(test)]
     mod tests;
-}
-
-/// Crate-visible wrapper for [`crate::operation_metric`].
-pub(crate) fn record_operation_metric(
-    name: &'static str,
-    value: u64,
-    attrs: &[(&'static str, String)],
-) {
-    otlp::record_operation_metric(name, value, attrs);
 }
 
 #[cfg(any(test, feature = "test-support"))]

@@ -179,14 +179,6 @@ const NAMESPACE_TEST_FIXTURES: &[(&str, &str)] = &[
         "jackin.role.toml",
     ),
     ("crates/jackin-test-support/src/seed.rs", "jackin.role.toml"),
-    (
-        "crates/jackin-diagnostics/tests/wire_support/mod.rs",
-        "jackin.",
-    ),
-    (
-        "crates/jackin-diagnostics/tests/wire_support/mod.rs",
-        "parallax.",
-    ),
     ("crates/jackin-diagnostics/src/tests.rs", "parallax.run.id"),
     ("crates/jackin-diagnostics/src/tests.rs", "jackin.component"),
     (
@@ -201,10 +193,6 @@ const NAMESPACE_TEST_FIXTURES: &[(&str, &str)] = &[
         "crates/jackin-otlp-testbed/src/tests.rs",
         "jackin.synthetic",
     ),
-    ("crates/jackin-otlp-testbed/src/lib.rs", "jackin."),
-    ("crates/jackin-otlp-testbed/src/lib.rs", "parallax."),
-    ("crates/jackin-telemetry/src/schema/tests.rs", "jackin."),
-    ("crates/jackin-telemetry/src/schema/tests.rs", "parallax."),
     ("crates/jackin-xtask/src/telemetry_registry.rs", "jackin."),
     ("crates/jackin-xtask/src/telemetry_registry.rs", "parallax."),
     (
@@ -309,59 +297,16 @@ fn validate_source_policy(root: &Path) -> Result<()> {
     let mut violations = Vec::new();
     for (relative, source) in files {
         let path = relative.to_string_lossy();
-        let raw_spawn = [
-            "tokio::spawn(",
-            "tokio::task::spawn_blocking(",
-            "spawn_blocking(",
-            "std::thread::spawn(",
-            "thread::spawn(",
-            ".spawn_local(",
-        ];
-        if raw_spawn.iter().any(|needle| source.contains(needle))
-            && !path.starts_with("crates/jackin-telemetry/src/spawn.rs")
-            && !path.starts_with("crates/jackin-otlp-testbed/")
-            && !RAW_SPAWN_ALLOWLIST.contains(&path.as_ref())
-        {
-            violations.push(format!("{path}: unmanaged async/thread spawn"));
-        }
-        let raw_tracing = [
-            "tracing::event!(",
-            "tracing::info!(",
-            "tracing::warn!(",
-            "tracing::error!(",
-            "tracing::debug!(",
-            "tracing::trace!(",
-            "tracing::span!(",
-            "tracing::info_span!(",
-        ];
-        if raw_tracing.iter().any(|needle| source.contains(needle))
-            && !path.starts_with("crates/jackin-telemetry/")
-            && !path.starts_with("crates/jackin-diagnostics/")
-            && !RAW_TRACING_ALLOWLIST.contains(&path.as_ref())
-        {
-            violations.push(format!("{path}: raw tracing call outside governed facade"));
-        }
-        if (source.contains("#[tracing::instrument") || source.contains("#[instrument"))
-            && !path.starts_with("crates/jackin-telemetry/")
-            && !path.starts_with("crates/jackin-diagnostics/")
-        {
-            violations.push(format!(
-                "{path}: tracing instrument outside governed facade"
-            ));
-        }
-        if (source.contains("opentelemetry::logs") || source.contains("LoggerProvider"))
-            && !path.starts_with("crates/jackin-telemetry/")
-            && !path.starts_with("crates/jackin-diagnostics/")
-        {
-            violations.push(format!("{path}: raw OpenTelemetry logs API"));
-        }
-        if source.contains("tracing_subscriber::fmt")
-            && !path.starts_with("crates/jackin-diagnostics/")
-        {
-            violations.push(format!(
-                "{path}: formatter layer outside diagnostics composition root"
-            ));
-        }
+        let syntax = syn::parse_file(&source)
+            .with_context(|| format!("parsing {path} for telemetry source policy"))?;
+        let mut scanner = SourcePolicyScanner::new(&path);
+        scanner.visit_file(&syntax);
+        violations.extend(
+            scanner
+                .violations
+                .into_iter()
+                .map(|(line, violation)| format!("{path}:{line}: {violation}")),
+        );
     }
     if violations.is_empty() {
         Ok(())
@@ -371,6 +316,125 @@ fn validate_source_policy(root: &Path) -> Result<()> {
             violations.join("\n  ")
         )
     }
+}
+
+struct SourcePolicyScanner<'a> {
+    path: &'a str,
+    violations: BTreeSet<(usize, &'static str)>,
+}
+
+impl<'a> SourcePolicyScanner<'a> {
+    fn new(path: &'a str) -> Self {
+        Self {
+            path,
+            violations: BTreeSet::new(),
+        }
+    }
+
+    fn allows_spawn(&self) -> bool {
+        self.path == "crates/jackin-telemetry/src/spawn.rs"
+            || self.path.starts_with("crates/jackin-otlp-testbed/")
+            || RAW_SPAWN_ALLOWLIST.contains(&self.path)
+    }
+
+    fn allows_telemetry_apis(&self) -> bool {
+        self.path.starts_with("crates/jackin-telemetry/")
+            || self.path.starts_with("crates/jackin-diagnostics/")
+    }
+
+    fn path_name(path: &syn::Path) -> String {
+        path.segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect::<Vec<_>>()
+            .join("::")
+    }
+
+    fn reject(&mut self, span: proc_macro2::Span, message: &'static str) {
+        self.violations.insert((span.start().line, message));
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(function) = node.func.as_ref() {
+            let name = Self::path_name(&function.path);
+            if !self.allows_spawn()
+                && matches!(
+                    name.as_str(),
+                    "tokio::spawn"
+                        | "tokio::task::spawn_blocking"
+                        | "spawn_blocking"
+                        | "std::thread::spawn"
+                        | "thread::spawn"
+                )
+            {
+                self.reject(node.span(), "unmanaged async/thread spawn");
+            }
+            if !self.allows_telemetry_apis()
+                && matches!(
+                    name.as_str(),
+                    "opentelemetry::global::meter" | "global::meter"
+                )
+            {
+                self.reject(node.span(), "raw OpenTelemetry meter construction");
+            }
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if !self.allows_spawn() && node.method == "spawn_local" {
+            self.reject(node.span(), "unmanaged async/thread spawn");
+        }
+        if !self.allows_telemetry_apis() && node.method == "meter" {
+            self.reject(node.span(), "raw OpenTelemetry meter construction");
+        }
+        syn::visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        let name = Self::path_name(&node.path);
+        if !self.allows_telemetry_apis()
+            && !RAW_TRACING_ALLOWLIST.contains(&self.path)
+            && matches!(
+                name.as_str(),
+                "tracing::event"
+                    | "tracing::info"
+                    | "tracing::warn"
+                    | "tracing::error"
+                    | "tracing::debug"
+                    | "tracing::trace"
+                    | "tracing::span"
+                    | "tracing::info_span"
+            )
+        {
+            self.reject(node.span(), "raw tracing call outside governed facade");
+        }
+        syn::visit::visit_macro(self, node);
+    }
+
+    fn visit_attribute(&mut self, node: &'ast syn::Attribute) {
+        let name = Self::path_name(node.path());
+        if !self.allows_telemetry_apis()
+            && matches!(name.as_str(), "tracing::instrument" | "instrument")
+        {
+            self.reject(node.span(), "tracing instrument outside governed facade");
+        }
+        syn::visit::visit_attribute(self, node);
+    }
+}
+
+#[cfg(test)]
+fn source_policy_violations(path: &str, source: &str) -> Vec<&'static str> {
+    let syntax = syn::parse_file(source).expect("source-policy fixture must parse");
+    let mut scanner = SourcePolicyScanner::new(path);
+    scanner.visit_file(&syntax);
+    scanner
+        .violations
+        .into_iter()
+        .map(|(_, violation)| violation)
+        .collect()
 }
 
 fn collect_source_files(

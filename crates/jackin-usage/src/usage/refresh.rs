@@ -15,13 +15,13 @@ use serde::Deserialize;
 
 pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-fn usage_refresh_error_type(error: &str) -> &'static str {
+fn usage_refresh_error_type(error: &str) -> jackin_telemetry::schema::enums::ErrorType {
     if usage_error_is_rate_limited(error) {
-        "usage_http_status"
+        jackin_telemetry::schema::enums::ErrorType::HttpError
     } else if error.to_ascii_lowercase().contains("http") {
-        "usage_http_request_failed"
+        jackin_telemetry::schema::enums::ErrorType::HttpError
     } else {
-        "usage_provider_failed"
+        jackin_telemetry::schema::enums::ErrorType::RpcError
     }
 }
 
@@ -90,15 +90,10 @@ where
                 "usage-refresh: provider probe timed out for {}",
                 target.cache_key()
             );
-            let span = jackin_diagnostics::operation_span("usage.refresh", &[]);
-            span.in_scope(|| {
-                jackin_diagnostics::operation_error(
-                    "usage.refresh",
-                    "usage_provider_timeout",
-                    "usage provider refresh timed out",
-                    &[],
-                );
-            });
+            jackin_diagnostics::operation::telemetry_error_line(
+                jackin_telemetry::schema::enums::ErrorType::Timeout,
+                "usage provider refresh timed out",
+            );
             let mut view = cached_unavailable_view(&target.agent, target.provider.as_deref(), now);
             view.last_error = Some("usage provider probe timed out".to_owned());
             results.push(UsageRefreshResult {
@@ -138,7 +133,10 @@ fn run_usage_probe<F>(
         if let Some(operation) = operation {
             operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Error, None);
         }
-        jackin_diagnostics::telemetry_error!("panic", "usage-refresh: provider probe panicked");
+        jackin_diagnostics::telemetry_error!(
+            jackin_telemetry::schema::enums::ErrorType::Panic,
+            "usage-refresh: provider probe panicked"
+        );
         return;
     };
     if let Some(operation) = operation {
@@ -150,11 +148,9 @@ fn run_usage_probe<F>(
         operation.complete(outcome, None);
     }
     if let Some(error) = result.view.last_error.as_deref() {
-        jackin_diagnostics::operation_error(
-            "usage.refresh",
+        jackin_diagnostics::operation::telemetry_error_line(
             usage_refresh_error_type(error),
             "usage provider refresh failed",
-            &[],
         );
     }
     drop(tx.send(result));

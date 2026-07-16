@@ -143,15 +143,10 @@ pub(super) async fn wait_for_capsule_daemon(
         },
     );
     if wait_result.is_err() {
-        let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
-        span.in_scope(|| {
-            jackin_diagnostics::operation_error(
-                "launch.prepare",
-                "docker_wait_failed",
-                "container readiness wait failed",
-                &[],
-            );
-        });
+        jackin_diagnostics::operation::telemetry_error_line(
+            jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+            "container readiness wait failed",
+        );
     }
     wait_result
 }

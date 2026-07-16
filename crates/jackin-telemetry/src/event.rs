@@ -370,20 +370,43 @@ fn validate_config_schema_versions(fields: &FieldSet<'_>) -> Result<(), Rejectio
     Ok(())
 }
 
+fn emit_at_severity(
+    severity: Severity,
+    trace: impl FnOnce(),
+    debug: impl FnOnce(),
+    info: impl FnOnce(),
+    warn: impl FnOnce(),
+    error: impl FnOnce(),
+) {
+    match severity {
+        Severity::Trace => trace(),
+        Severity::Debug => debug(),
+        Severity::Info => info(),
+        Severity::Warn => warn(),
+        Severity::Error => error(),
+    }
+}
+
 macro_rules! emit_schema_event {
     ($name:literal, $severity:expr, $fields:expr, [$(($key:literal, $field:ident, $kind:ident)),* $(,)?]) => {{
         $(let $field = event_field_value!($fields, $key, $kind);)*
-        match ($severity, $fields.body) {
-            (Severity::Trace, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, $($key = $field,)* message = body),
-            (Severity::Debug, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, $($key = $field,)* message = body),
-            (Severity::Info, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, $($key = $field,)* message = body),
-            (Severity::Warn, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, $($key = $field,)* message = body),
-            (Severity::Error, Some(body)) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, $($key = $field,)* message = body),
-            (Severity::Trace, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, { $($key = $field,)* }),
-            (Severity::Debug, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, { $($key = $field,)* }),
-            (Severity::Info, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, { $($key = $field,)* }),
-            (Severity::Warn, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, { $($key = $field,)* }),
-            (Severity::Error, None) => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, { $($key = $field,)* }),
+        match $fields.body {
+            Some(body) => emit_at_severity(
+                $severity,
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, $($key = $field,)* message = body),
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, $($key = $field,)* message = body),
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, $($key = $field,)* message = body),
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, $($key = $field,)* message = body),
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, $($key = $field,)* message = body),
+            ),
+            None => emit_at_severity(
+                $severity,
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, { $($key = $field,)* }),
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, { $($key = $field,)* }),
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, { $($key = $field,)* }),
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, { $($key = $field,)* }),
+                || tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, { $($key = $field,)* }),
+            ),
         }
     }};
 }

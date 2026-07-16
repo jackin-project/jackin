@@ -793,11 +793,9 @@ pub(crate) fn fetch_codex_rpc_usage(
                 "capsule",
                 "codex account/read RPC failed: {error}"
             );
-            jackin_diagnostics::operation_error(
-                "usage.refresh",
-                "usage_rpc_failed",
+            jackin_diagnostics::operation::telemetry_error_line(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
                 "codex account/read RPC failed",
-                &[],
             );
         })
         .ok();

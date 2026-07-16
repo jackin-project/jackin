@@ -981,15 +981,10 @@ pub(crate) async fn launch_role_runtime(
         },
     );
     if run_role_result.is_err() {
-        let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
-        span.in_scope(|| {
-            jackin_diagnostics::operation_error(
-                "launch.prepare",
-                "docker_run_failed",
-                "role container start failed",
-                &[],
-            );
-        });
+        jackin_diagnostics::operation::telemetry_error_line(
+            jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+            "role container start failed",
+        );
     }
     run_role_result?;
 

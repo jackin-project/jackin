@@ -116,7 +116,7 @@ fn telemetry_volume_artifact_path() -> std::path::PathBuf {
 /// driving production [`emit_session_start_for_test`] plus capsule-target
 /// breadcrumbs — not synthetic events on the host subscriber.
 fn drive_standard_conformance_scenario() -> ConformanceExport {
-    use crate::operation::{OperationLevel, operation_error, operation_log, operation_span};
+    use crate::operation::{OperationLevel, telemetry_error_line, telemetry_line};
 
     const RUN_ID: &str = "conformance-run";
     const SESSION_ID: &str = "conformance-session";
@@ -140,20 +140,8 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
         let run = RunDiagnostics::start(&paths, true, "conformance").expect("run start");
         let _guard = run.activate();
 
-        operation_log(
-            OperationLevel::Info,
-            "conformance.list",
-            "screen",
-            "list entered",
-            &[],
-        );
-        operation_log(
-            OperationLevel::Warn,
-            "conformance.op",
-            "docker",
-            "process retry exhausted",
-            &[],
-        );
+        telemetry_line(OperationLevel::Info, "screen", "list entered");
+        telemetry_line(OperationLevel::Warn, "docker", "process retry exhausted");
         run.stage(
             "stage_started",
             crate::DiagnosticStage::Prepare,
@@ -174,44 +162,34 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
             None,
         );
 
-        let span = operation_span(
-            jackin_telemetry::schema::spans::PROCESS_COMMAND,
-            &[(
-                jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
-                "true".into(),
-            )],
-        );
-        let guard = span.enter();
-        operation_log(
-            OperationLevel::Info,
-            "conformance.op",
-            "docker",
-            "process executed",
-            &[],
-        );
+        let operation =
+            jackin_telemetry::operation(&jackin_telemetry::operation::PROCESS_COMMAND, &[])
+                .expect("registered process operation");
+        let guard = operation.span().enter();
+        telemetry_line(OperationLevel::Info, "docker", "process executed");
         // Representative host failure; the actual attach failure seam is
         // asserted in jackin-capsule's conformance test.
-        operation_error(
-            "error.typed",
-            "conformance_error",
+        telemetry_error_line(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
             "forced attach failure for conformance",
-            &[],
         );
         drop(guard);
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::RpcError.as_str()),
+        );
 
         for _ in 0..100 {
             crate::metrics::record_frame(32, 1, 4);
             crate::metrics::record_render(50, 4);
         }
 
-        operation_log(
+        telemetry_line(
             OperationLevel::Info,
-            "conformance.secret",
             "security",
             &format!(
                 "argv={CONFORMANCE_ARGV_CANARY} url={CONFORMANCE_URL_CANARY} inspect={CONFORMANCE_INSPECT_CANARY}"
             ),
-            &[],
         );
     });
     drop(host.logger_provider.force_flush());
@@ -388,9 +366,8 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
         .collect();
     assert!(!errors.is_empty(), "expected an ERROR log");
     assert!(errors.iter().any(|log| {
-        conformance_log_attr(&log.record, "error_type").as_deref() == Some("conformance_error")
-            || conformance_log_attr(&log.record, "error.type").as_deref()
-                == Some("conformance_error")
+        conformance_log_attr(&log.record, "error_type").as_deref() == Some("rpc_error")
+            || conformance_log_attr(&log.record, "error.type").as_deref() == Some("rpc_error")
     }));
     // Detach is emitted on the capsule bootstrap, not the host facade.
     assert!(

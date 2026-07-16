@@ -57,15 +57,10 @@ pub(crate) async fn claim_container_name(
             | ContainerState::Dead => false,
             ContainerState::NotFound => true,
             ContainerState::InspectUnavailable(reason) => {
-                let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
-                span.in_scope(|| {
-                    jackin_diagnostics::operation_error(
-                        "launch.prepare",
-                        "docker_inspect_failed",
-                        "container name availability inspection failed",
-                        &[],
-                    );
-                });
+                jackin_diagnostics::operation::telemetry_error_line(
+                    jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                    "container name availability inspection failed",
+                );
                 anyhow::bail!(
                     "{}",
                     docker_unavailable_msg(&format!("claim container name `{name}`"), &reason,)

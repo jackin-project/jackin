@@ -29,11 +29,11 @@ const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-publ
 
 static GITHUB_AUTH_TOKEN: OnceCell<Option<String>> = OnceCell::const_new();
 
-fn record_agent_binary_failure(error_type: &'static str, body: &'static str) {
-    let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
-    span.in_scope(|| {
-        jackin_diagnostics::operation_error("launch.prepare", error_type, body, &[]);
-    });
+fn record_agent_binary_failure(body: &'static str) {
+    jackin_diagnostics::operation::telemetry_error_line(
+        jackin_telemetry::schema::enums::ErrorType::CapsuleDownloadFailed,
+        body,
+    );
 }
 
 #[derive(Debug, Clone)]
@@ -108,9 +108,9 @@ async fn ensure_available_impl(
         });
     }
 
-    // Metadata cache hit (TTL: 1hr): skip the network resolve. Absence of the
-    // preceding `agent_binary_resolve_started` record is what marks this path
-    // in the diagnostics run.
+    // Metadata cache hit (TTL: 1hr): skip the network resolve. The governed
+    // cache-decision event below records this path without exposing the cache
+    // location.
     if let Some(cached_release) = read_cached_release_async(paths, agent).await {
         crate::telemetry_boundary::cache_decision(
             jackin_telemetry::schema::enums::CacheName::AgentBinary,
@@ -160,10 +160,7 @@ async fn ensure_available_impl(
                 "agent_binary_failed",
                 &format!("{} resolve failed: {error:#}", agent.slug()),
             );
-            record_agent_binary_failure(
-                "agent_binary_resolve_failed",
-                "agent binary release resolution failed",
-            );
+            record_agent_binary_failure("agent binary release resolution failed");
             return Err(error).with_context(|| format!("resolving latest {} binary", agent.slug()));
         }
     };
@@ -343,15 +340,7 @@ async fn ensure_binary_for_release(
                 "agent_binary_failed",
                 &format!("{} download failed: {error:#}", agent.slug()),
             );
-            let error_type = if error
-                .chain()
-                .any(|cause| cause.to_string().contains("checksum mismatch"))
-            {
-                "agent_binary_checksum_mismatch"
-            } else {
-                "agent_binary_download_failed"
-            };
-            record_agent_binary_failure(error_type, "agent binary download failed");
+            record_agent_binary_failure("agent binary download failed");
         })?;
     record(
         "agent_binary_ready",
