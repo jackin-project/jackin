@@ -487,8 +487,7 @@ jobs:
       - name: Use the prepared current Rust toolchain
         run: |
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
-          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+          scripts/ci/activate-installed-rust-toolchain.sh "$version"
       - run: cargo fmt --check
 
   cargo-registry-warmup:
@@ -640,8 +639,7 @@ jobs:
         run: |
           set -euo pipefail
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          if toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version" 2>/dev/null); then
-            echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+          if scripts/ci/activate-installed-rust-toolchain.sh "$version" 2>/dev/null; then
             exit 0
           fi
 
@@ -650,13 +648,7 @@ jobs:
             rm -rf "$mise_install"
             mise install "rust@$version"
           fi
-          if [ -x "$mise_install/bin/rustc" ] && [ -x "$mise_install/bin/cargo" ]; then
-            echo "$mise_install/bin" >> "$GITHUB_PATH"
-            exit 0
-          fi
-
-          toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
-          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+          scripts/ci/activate-installed-rust-toolchain.sh "$version"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
@@ -902,8 +894,7 @@ jobs:
       - name: Use the prepared current Rust toolchain
         run: |
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
-          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+          scripts/ci/activate-installed-rust-toolchain.sh "$version"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
@@ -985,8 +976,7 @@ jobs:
       - name: Use the prepared current Rust toolchain
         run: |
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
-          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+          scripts/ci/activate-installed-rust-toolchain.sh "$version"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:

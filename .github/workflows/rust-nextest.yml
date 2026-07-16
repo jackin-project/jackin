@@ -157,8 +157,7 @@ jobs:
         if: steps.crate-result.outputs.hit != 'true'
         run: |
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
-          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+          scripts/ci/activate-installed-rust-toolchain.sh "$version"
       - id: cargo-registry-cache
         if: steps.crate-result.outputs.hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
