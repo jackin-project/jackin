@@ -201,7 +201,7 @@ pub(crate) fn start_git_context_watcher(
     };
     if let Err(err) =
         jackin_telemetry::spawn::thread_stream_named("git-context-watch".to_owned(), move || {
-            watch_git_head_changes(git_dir, event_tx)
+            watch_git_head_changes(git_dir, event_tx);
         })
     {
         jackin_diagnostics::telemetry_info!(

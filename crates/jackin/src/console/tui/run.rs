@@ -204,7 +204,7 @@ fn sync_active_screen(
 ) {
     let screen = screen_of(state);
     if tracker.current_screen() != Some(screen) {
-        let _ = tracker.enter(screen);
+        let _screen_result = tracker.enter(screen);
     }
 }
 
@@ -239,9 +239,9 @@ fn sync_widget_focus(state: &ConsoleState, tracker: &mut jackin_telemetry::ui::W
         return;
     }
     if let Some(widget) = next {
-        let _ = tracker.focus(widget);
+        let _focus_result = tracker.focus(widget);
     } else {
-        let _ = tracker.unfocus();
+        let _focus_result = tracker.unfocus();
     }
 }
 
@@ -822,6 +822,10 @@ fn handle_mouse_event<H, R>(
     Ok(ConsoleLoopFlow::Continue)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "console lifecycle teardown must remain visibly paired with setup"
+)]
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
     paths: &JackinPaths,
@@ -1017,8 +1021,9 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         }
     };
 
-    let _ = screen_tracker.exit(jackin_telemetry::schema::enums::TransitionReason::Shutdown);
-    let _ = widget_tracker.unfocus();
+    let _screen_result =
+        screen_tracker.exit(jackin_telemetry::schema::enums::TransitionReason::Shutdown);
+    let _focus_result = widget_tracker.unfocus();
     // Tears down only when the console owns the screen standalone. When the
     // launch flow owns it, this is `None` and teardown waits for that guard so
     // the console → loading transition stays on one alternate screen.

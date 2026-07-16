@@ -688,6 +688,10 @@ impl std::fmt::Display for ClipboardImageError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// `ClientFrame` protocol enum.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the attach hot path keeps decoded Hello ownership inline and allocation-free"
+)]
 pub enum ClientFrame {
     /// First frame from a newly-connected client. Plain attach sets
     /// `spawn` to None; `jackin-capsule new` uses `Shell` or

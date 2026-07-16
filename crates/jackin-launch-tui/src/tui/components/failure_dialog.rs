@@ -105,7 +105,7 @@ fn failure_error_state_with_feedback(
                     _ if copied == Some(target) => Some("Copied!"),
                     _ if revealed == Some(target) => Some("Revealed!"),
                     _ if opened == Some(target) => Some("Opened!"),
-                    _ => None,
+                    FailureCopyTarget::RunId => None,
                 };
                 if let Some(badge) = badge {
                     display = display.badge(badge);

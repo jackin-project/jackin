@@ -290,7 +290,7 @@ pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) {
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
-            jackin_diagnostics::telemetry_info!("capsule", "control reply write failed: {e}")
+            jackin_diagnostics::telemetry_info!("capsule", "control reply write failed: {e}");
         }
         Err(_) => jackin_diagnostics::telemetry_info!(
             "capsule",

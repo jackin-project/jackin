@@ -274,8 +274,9 @@ impl Multiplexer {
         };
         let delivered = session.send_input(&buf);
         if delivered {
-            let _ = jackin_telemetry::counter(&jackin_telemetry::metric::TERMINAL_INPUT_MOUSE)
-                .add(1, &[]);
+            let _counter_result =
+                jackin_telemetry::counter(&jackin_telemetry::metric::TERMINAL_INPUT_MOUSE)
+                    .add(1, &[]);
         }
         delivered
     }

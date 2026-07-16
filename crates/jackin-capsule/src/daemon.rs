@@ -881,14 +881,15 @@ fn emit_agent_state_change(
             value: Value::Str(agent),
         });
     }
-    let _ = jackin_telemetry::emit_event(
+    let _event_result = jackin_telemetry::emit_event(
         &jackin_telemetry::event::AGENT_STATE_CHANGED,
         FieldSet::new(&attrs, None),
     );
-    let _ = jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_TRANSITIONS)
-        .add(1, &attrs);
+    let _transition_result =
+        jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_TRANSITIONS)
+            .add(1, &attrs);
     if stuck {
-        let _ =
+        let _stuck_result =
             jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_STUCK).add(1, &attrs);
     }
 }
@@ -1033,6 +1034,10 @@ fn screen_detection_disabled_message(error: &anyhow::Error) -> String {
               its own focused init + handoff. Body extraction follows the same \
               deferred-parallel-pass plan as the launch fns — the inline shape \
               preserves captured-runtime state across stages."
+)]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "daemon startup keeps lifecycle and shutdown ownership in one entry point"
 )]
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
     crate::pid1::install_sigchld_reaper();

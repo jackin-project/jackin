@@ -316,7 +316,8 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
             value: jackin_telemetry::Value::Str(action.as_str()),
         }];
-        let _ = jackin_telemetry::counter(&jackin_telemetry::metric::UI_ACTIONS).add(1, &attrs);
+        let _counter_result =
+            jackin_telemetry::counter(&jackin_telemetry::metric::UI_ACTIONS).add(1, &attrs);
     }
     ManagerUpdate::redraw()
 }

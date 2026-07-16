@@ -19,10 +19,7 @@ fn soak_week_long_console_has_only_bounded_operations() {
             }],
         )
         .unwrap();
-        action.complete(
-            jackin_telemetry::schema::enums::OutcomeValue::Success,
-            None,
-        );
+        action.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
         screens
             .exit(jackin_telemetry::schema::enums::TransitionReason::Action)
             .unwrap();

@@ -451,6 +451,10 @@ impl RoleState {
                   role selectors, validated repo, agent list, env resolver, \
                   workspace. Bundling is a parallel-pass refactor."
     )]
+    #[expect(
+        clippy::excessive_nesting,
+        reason = "scoped credential workers keep borrowed provisioning context local"
+    )]
     pub fn prepare_for_agents(
         paths: &JackinPaths,
         container_name: &str,

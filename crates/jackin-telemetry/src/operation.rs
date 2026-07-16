@@ -68,6 +68,14 @@ pub struct OperationGuard {
 }
 
 impl OperationGuard {
+    fn disabled() -> Self {
+        Self {
+            span: Span::none(),
+            completed: AtomicBool::new(false),
+            links: AtomicUsize::new(0),
+        }
+    }
+
     #[must_use]
     pub fn span(&self) -> &Span {
         &self.span
@@ -141,6 +149,10 @@ impl Drop for OperationGuard {
     }
 }
 
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the closed SpanName dispatch is intentionally exhaustive in one authority"
+)]
 fn make_span(name: &str, root: bool) -> Option<Span> {
     if root {
         return Some(match name {
@@ -242,6 +254,15 @@ pub fn operation(def: &'static SpanDef, attrs: &[Attr<'_>]) -> Result<OperationG
         return Err(Rejection::SizeLimit);
     }
     operation_inner(def, attrs, false)
+}
+
+/// Start a governed operation, degrading to a disabled guard on rejection.
+///
+/// Product work must never fail because instrumentation was rejected. Tests
+/// and schema validation can use [`operation`] when they need the rejection.
+#[must_use]
+pub fn operation_or_disabled(def: &'static SpanDef, attrs: &[Attr<'_>]) -> OperationGuard {
+    operation(def, attrs).unwrap_or_else(|_| OperationGuard::disabled())
 }
 
 /// Start an operation parented by an extracted remote W3C span context.

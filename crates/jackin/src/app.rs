@@ -114,7 +114,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         None => Command::Console(cli.console_args),
     };
     let invocation_id = jackin_telemetry::identity::InvocationId::mint();
-    let _ = jackin_telemetry::identity::set_current_invocation(invocation_id);
+    let _invocation_result = jackin_telemetry::identity::set_current_invocation(invocation_id);
     if let Command::Role(command) = command {
         return crate::role_authoring::run(command);
     }
@@ -143,12 +143,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             value: jackin_telemetry::Value::Str(&invocation_id_value),
         },
     ];
-    if interactive {
-        if let Ok(startup) =
+    if interactive
+        && let Ok(startup) =
             jackin_telemetry::root_operation(&jackin_telemetry::operation::APP_STARTUP, &root_attrs)
-        {
-            startup.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
-        }
+    {
+        startup.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
     }
     let command_operation = (!interactive)
         .then(|| {
@@ -224,20 +223,20 @@ pub async fn run(cli: Cli) -> Result<()> {
             (!success).then_some("command_failed"),
         );
     }
-    if interactive {
-        if let Ok(shutdown) = jackin_telemetry::root_operation(
+    if interactive
+        && let Ok(shutdown) = jackin_telemetry::root_operation(
             &jackin_telemetry::operation::APP_SHUTDOWN,
             &root_attrs,
-        ) {
-            shutdown.complete(
-                if success {
-                    jackin_telemetry::schema::enums::OutcomeValue::Success
-                } else {
-                    jackin_telemetry::schema::enums::OutcomeValue::Failure
-                },
-                (!success).then_some("command_failed"),
-            );
-        }
+        )
+    {
+        shutdown.complete(
+            if success {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            (!success).then_some("command_failed"),
+        );
     }
     record_run_error(&result);
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).

@@ -317,8 +317,8 @@ where
                         }
                     }
                     ServerFrame::HostRevealPath(_) => {
-                        let message = "Host diagnostics-file reveal is no longer supported";
-                        if let Err(err) = send_host_notice(&mut server_writer, &message).await {
+                        let message = "Local telemetry files are not supported";
+                        if let Err(err) = send_host_notice(&mut server_writer, message).await {
                             jackin_diagnostics::telemetry_debug!(
                                 "attach",
                                 "host reveal path notice failed: {err:#}"

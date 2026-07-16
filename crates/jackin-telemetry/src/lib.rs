@@ -26,7 +26,8 @@ pub use metric::{
     up_down_counter,
 };
 pub use operation::{
-    OperationGuard, SpanDef, operation, operation_with_remote_parent, root_operation,
+    OperationGuard, SpanDef, operation, operation_or_disabled, operation_with_remote_parent,
+    root_operation,
 };
 
 /// The only tracing target accepted for governed product telemetry.

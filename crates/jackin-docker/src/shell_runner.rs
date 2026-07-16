@@ -101,7 +101,7 @@ fn record_subprocess_done(
     status: ExitStatus,
 ) {
     if let Some(code) = status.code() {
-        let _ = operation.set_attr(jackin_telemetry::Attr {
+        let _attribute_result = operation.set_attr(jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
             value: jackin_telemetry::Value::I64(i64::from(code)),
         });
@@ -269,14 +269,13 @@ fn enter_process_execute(program: &str) -> jackin_telemetry::OperationGuard {
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("unknown");
-    jackin_telemetry::operation(
+    jackin_telemetry::operation_or_disabled(
         &jackin_telemetry::operation::PROCESS_COMMAND,
         &[jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
             value: jackin_telemetry::Value::Str(executable),
         }],
     )
-    .expect("registered process command operation")
 }
 
 impl CommandRunner for ShellRunner {

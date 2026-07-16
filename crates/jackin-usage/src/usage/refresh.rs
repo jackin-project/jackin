@@ -35,6 +35,11 @@ where
     collect_usage_refresh_results_with_timeout(due_targets, probe, PROVIDER_PROBE_TIMEOUT)
 }
 
+#[expect(
+    clippy::excessive_nesting,
+    clippy::single_match_else,
+    reason = "the worker keeps panic, telemetry, and result ownership in one closure"
+)]
 pub(crate) fn collect_usage_refresh_results_with_timeout<F>(
     due_targets: Vec<UsageRefreshTarget>,
     probe: F,

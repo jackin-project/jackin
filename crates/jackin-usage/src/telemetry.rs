@@ -36,10 +36,10 @@ pub fn session_context() -> Option<(String, Option<String>)> {
 /// the returned guard for the daemon's lifetime so the session tail flushes on
 /// every graceful exit path.
 pub fn init() -> FlushGuard {
-    if let Ok(value) = std::env::var("JACKIN_INVOCATION_ID") {
-        if let Ok(id) = jackin_telemetry::identity::InvocationId::parse(&value) {
-            let _ = jackin_telemetry::identity::set_current_invocation(id);
-        }
+    if let Ok(value) = std::env::var("JACKIN_INVOCATION_ID")
+        && let Ok(id) = jackin_telemetry::identity::InvocationId::parse(&value)
+    {
+        let _invocation_result = jackin_telemetry::identity::set_current_invocation(id);
     }
     let session = jackin_telemetry::identity::begin_session();
     let session_id = session.current.to_string();
@@ -55,7 +55,7 @@ pub fn init() -> FlushGuard {
                 key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
                 value: jackin_telemetry::Value::Str(&session_id),
             }];
-            let _ = jackin_telemetry::emit_event(
+            let _event_result = jackin_telemetry::emit_event(
                 &jackin_telemetry::event::SESSION_START,
                 jackin_telemetry::FieldSet::new(&attrs, None),
             );
@@ -66,7 +66,7 @@ pub fn init() -> FlushGuard {
         }
         Ok(false) => {}
         Err(error) => {
-            jackin_diagnostics::telemetry_info!("capsule", "otlp export disabled: {error}")
+            jackin_diagnostics::telemetry_info!("capsule", "otlp export disabled: {error}");
         }
     }
     FlushGuard
@@ -101,7 +101,7 @@ pub fn shutdown() {
                 key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
                 value: jackin_telemetry::Value::Str(&session_id),
             }];
-            let _ = jackin_telemetry::emit_event(
+            let _event_result = jackin_telemetry::emit_event(
                 &jackin_telemetry::event::SESSION_END,
                 jackin_telemetry::FieldSet::new(&attrs, None),
             );

@@ -1521,6 +1521,10 @@ impl Session {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "explicit test-only fixture capture opens its dedicated output once"
+)]
 fn capture_pty_fixture_bytes(bytes: &[u8]) {
     use std::io::Write as _;
     use std::sync::OnceLock;
@@ -1553,7 +1557,7 @@ fn record_terminal_bytes(
         value: jackin_telemetry::Value::Str(direction.as_str()),
     }];
     let amount = u64::try_from(bytes).unwrap_or(u64::MAX);
-    let _ =
+    let _counter_result =
         jackin_telemetry::counter(&jackin_telemetry::metric::TERMINAL_BYTES).add(amount, &attrs);
 }
 
@@ -1572,7 +1576,7 @@ fn emit_pty_spawn(agent: Option<&str>, conversation_id: Option<&str>) {
             value: Value::Str(conversation_id),
         });
     }
-    let _ = jackin_telemetry::emit_event(
+    let _event_result = jackin_telemetry::emit_event(
         &jackin_telemetry::event::PTY_SPAWN,
         FieldSet::new(&attrs, None),
     );
@@ -1610,7 +1614,7 @@ fn emit_pty_exit(
             value: Value::Str(conversation_id),
         });
     }
-    let _ = jackin_telemetry::emit_event(
+    let _event_result = jackin_telemetry::emit_event(
         &jackin_telemetry::event::PTY_EXIT,
         FieldSet::new(&attrs, None),
     );

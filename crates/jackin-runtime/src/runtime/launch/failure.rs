@@ -54,7 +54,11 @@ pub(crate) fn launch_failure_cli_error(
         return anyhow::anyhow!("{error:#}");
     }
     let _ = run;
-    anyhow::anyhow!("Docker build command failed: {error:#}")
+    if error.to_string().contains("Docker build command failed") {
+        anyhow::anyhow!("Docker build command failed: {error:#}")
+    } else {
+        anyhow::anyhow!("{error:#}")
+    }
 }
 
 pub(crate) fn resolve_launch_role_source(

@@ -42,7 +42,7 @@ pub fn init() {
                     value: jackin_telemetry::Value::Str("panic"),
                 },
             ];
-            let _ = jackin_telemetry::emit_event(
+            let _event_result = jackin_telemetry::emit_event(
                 &jackin_telemetry::event::APP_CRASH,
                 jackin_telemetry::FieldSet::new(&attrs, Some(body.as_ref())),
             );

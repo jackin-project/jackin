@@ -146,7 +146,7 @@ pub(crate) fn gh_pull_request_info(
             jackin_diagnostics::telemetry_info!(
                 "capsule",
                 "pull-request-context: gh pr checks failed: {e}"
-            )
+            );
         })
         .ok()
         .flatten();

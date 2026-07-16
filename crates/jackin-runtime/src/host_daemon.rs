@@ -425,7 +425,7 @@ pub fn request(
     ];
     let operation =
         jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
-    let _entered = operation.as_ref().map(|guard| guard.span().enter());
+    let entered = operation.as_ref().map(|guard| guard.span().enter());
     let mut stream = UnixStream::connect(socket_path)
         .with_context(|| format!("connecting to daemon socket {}", socket_path.display()))?;
     let mut ctx = TelemetryContext::v1();
@@ -442,7 +442,7 @@ pub fn request(
         .write_all(b"\n")
         .context("terminating daemon request")?;
     let response = read_response(stream);
-    drop(_entered);
+    drop(entered);
     if let Some(operation) = operation {
         operation.complete(
             if response.is_ok() {
@@ -591,7 +591,7 @@ fn handle_request(
         _ => jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs),
     }
     .ok();
-    let _entered = operation.as_ref().map(|guard| guard.span().enter());
+    let entered = operation.as_ref().map(|guard| guard.span().enter());
     if request.protocol_version != DAEMON_PROTOCOL_VERSION {
         return error_response(
             request.id,
@@ -657,7 +657,7 @@ fn handle_request(
             kind: DaemonResponseKind::Shutdown { accepted: true },
         },
     };
-    drop(_entered);
+    drop(entered);
     if let Some(operation) = operation {
         operation.complete(
             if matches!(response.kind, DaemonResponseKind::Error { .. }) {
