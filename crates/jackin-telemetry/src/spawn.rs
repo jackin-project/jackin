@@ -51,6 +51,14 @@ impl DetachedCompletion {
             error_type: Some(crate::schema::enums::ErrorType::Timeout),
         }
     }
+
+    #[must_use]
+    pub const fn recovered_degradation() -> Self {
+        Self {
+            outcome: crate::schema::enums::OutcomeValue::Success,
+            error_type: Some(crate::schema::enums::ErrorType::RecoveredDegradation),
+        }
+    }
 }
 
 struct DetachedGuard(Option<crate::operation::OperationGuard>);
@@ -315,8 +323,23 @@ where
     C: FnOnce(&R) -> DetachedCompletion + Send + 'static,
     R: Send + 'static,
 {
+    detached_blocking_with_attrs(def, &[], work, classify)
+}
+
+/// Run detached blocking work with a bounded, registry-validated operation shape.
+pub fn detached_blocking_with_attrs<F, C, R>(
+    def: &'static SpanDef,
+    attrs: &[crate::Attr<'_>],
+    work: F,
+    classify: C,
+) -> JoinHandle<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    C: FnOnce(&R) -> DetachedCompletion + Send + 'static,
+    R: Send + 'static,
+{
     let parent = Span::current().context().span().span_context().clone();
-    let guard = DetachedGuard::new(def, &[], &parent);
+    let guard = DetachedGuard::new(def, attrs, &parent);
     tokio::task::spawn_blocking(move || {
         let result = in_span_scope(guard.span(), work);
         guard.complete(classify(&result));
@@ -437,13 +460,52 @@ where
     C: FnOnce(&R) -> DetachedCompletion + Send + 'static,
     R: Send + 'static,
 {
+    thread_detached_named_with_attrs(name, def, &[], work, classify)
+}
+
+/// Run a named detached thread with a bounded, registry-validated operation shape.
+pub fn thread_detached_named_with_attrs<F, C, R>(
+    name: String,
+    def: &'static SpanDef,
+    attrs: &[crate::Attr<'_>],
+    work: F,
+    classify: C,
+) -> std::io::Result<thread::JoinHandle<R>>
+where
+    F: FnOnce() -> R + Send + 'static,
+    C: FnOnce(&R) -> DetachedCompletion + Send + 'static,
+    R: Send + 'static,
+{
     let parent = Span::current().context().span().span_context().clone();
-    let guard = DetachedGuard::new(def, &[], &parent);
-    thread::Builder::new().name(name).spawn(move || {
+    let guard = std::sync::Arc::new(std::sync::Mutex::new(Some(DetachedGuard::new(
+        def, attrs, &parent,
+    ))));
+    let worker_guard = std::sync::Arc::clone(&guard);
+    let spawned = thread::Builder::new().name(name).spawn(move || {
+        let guard = worker_guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let Some(guard) = guard else {
+            let _error =
+                crate::record_error(crate::schema::enums::ErrorType::TelemetryInstrumentationFault);
+            return work();
+        };
         let result = in_span_scope(guard.span(), work);
         guard.complete(classify(&result));
         result
-    })
+    });
+    if spawned.is_err()
+        && let Some(guard) = guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    {
+        guard.complete(DetachedCompletion::error(
+            crate::schema::enums::ErrorType::ProcessSpawnError,
+        ));
+    }
+    spawned
 }
 
 pub trait JoinSetExt<T: Send + 'static> {

@@ -383,10 +383,16 @@ impl OperationGuard {
             background_cycle.finish(outcome, error_type);
         }
         if error_type == Some(schema::enums::ErrorType::RecoveredDegradation) {
-            let attrs = [Attr {
-                key: schema::attrs::OUTCOME,
-                value: Value::Str(outcome.as_str()),
-            }];
+            let attrs = [
+                Attr {
+                    key: schema::attrs::std_attrs::ERROR_TYPE,
+                    value: Value::Str(schema::enums::ErrorType::RecoveredDegradation.as_str()),
+                },
+                Attr {
+                    key: schema::attrs::OUTCOME,
+                    value: Value::Str(outcome.as_str()),
+                },
+            ];
             let _warning = crate::emit_event(
                 &crate::event::OPERATION_WARN,
                 crate::event::FieldSet::new(&attrs, None),

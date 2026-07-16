@@ -234,6 +234,21 @@ async fn detached_helpers_preserve_outputs_and_classify_outcomes() {
         .unwrap(),
         32
     );
+    let pr_cycle_attrs = [crate::Attr {
+        key: crate::schema::attrs::BACKGROUND_CYCLE_NAME,
+        value: crate::Value::Str(crate::schema::enums::BackgroundCycleName::PrContext.as_str()),
+    }];
+    assert_eq!(
+        detached_blocking_with_attrs(
+            &crate::operation::BACKGROUND_CYCLE,
+            &pr_cycle_attrs,
+            || 320,
+            |_| DetachedCompletion::recovered_degradation(),
+        )
+        .await
+        .unwrap(),
+        320
+    );
     assert_eq!(
         thread_detached(
             &crate::operation::PROCESS_COMMAND,
@@ -243,6 +258,23 @@ async fn detached_helpers_preserve_outputs_and_classify_outcomes() {
         .join()
         .unwrap(),
         33
+    );
+    let branch_cycle_attrs = [crate::Attr {
+        key: crate::schema::attrs::BACKGROUND_CYCLE_NAME,
+        value: crate::Value::Str(crate::schema::enums::BackgroundCycleName::BranchContext.as_str()),
+    }];
+    assert_eq!(
+        thread_detached_named_with_attrs(
+            "test-branch-context".to_owned(),
+            &crate::operation::BACKGROUND_CYCLE,
+            &branch_cycle_attrs,
+            || 330,
+            |_| DetachedCompletion::success(),
+        )
+        .unwrap()
+        .join()
+        .unwrap(),
+        330
     );
     spawn_detached_with_completion(&crate::operation::PROCESS_COMMAND, async {
         DetachedCompletion::timeout()
@@ -266,6 +298,29 @@ async fn detached_helpers_preserve_outputs_and_classify_outcomes() {
     assert!(outcomes.iter().any(|value| value == "failure"));
     assert!(outcomes.iter().any(|value| value == "error"));
     assert!(outcomes.iter().any(|value| value == "timeout"));
+    let cycle_names = spans
+        .iter()
+        .filter(|span| span.name == crate::schema::spans::BACKGROUND_CYCLE)
+        .filter_map(|span| span_attr(span, crate::schema::attrs::BACKGROUND_CYCLE_NAME))
+        .collect::<Vec<_>>();
+    assert!(cycle_names.iter().any(|value| value == "pr_context"));
+    assert!(cycle_names.iter().any(|value| value == "branch_context"));
+    let pr_cycle = spans
+        .iter()
+        .find(|span| {
+            span.name == crate::schema::spans::BACKGROUND_CYCLE
+                && span_attr(span, crate::schema::attrs::BACKGROUND_CYCLE_NAME).as_deref()
+                    == Some("pr_context")
+        })
+        .expect("PR background cycle");
+    assert_eq!(
+        span_attr(pr_cycle, crate::schema::attrs::OUTCOME).as_deref(),
+        Some("success")
+    );
+    assert_eq!(
+        span_attr(pr_cycle, crate::schema::attrs::std_attrs::ERROR_TYPE).as_deref(),
+        Some("recovered_degradation")
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
