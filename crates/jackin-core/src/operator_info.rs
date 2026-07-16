@@ -1,36 +1,25 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared read-only container/session information dialog.
+//! Product-owned jackin❯ operator-information vocabulary and `TermRock` projection.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::Rect,
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
+    buffer::Buffer,
+    layout::{Position, Rect},
+    style::{Color, Style},
+    widgets::StatefulWidget,
 };
 
-use termrock::ModalOutcome;
-use termrock::components::dialog_layout::{
-    DialogBodyScroll, DialogBorder, render_dialog_shell, render_scrollable_dialog_body,
+use crate::ModalOutcome;
+use termrock::layout::DialogBodyScroll;
+use termrock::style::Role;
+use termrock::text::display_cols;
+use termrock::widgets::{
+    DetailCapability, DetailRow, DetailTable, DetailTableOutcome, DetailTableState, HintSpan,
+    Panel, PanelEmphasis,
 };
-use termrock::components::panel::{Panel, PanelFocus};
-use termrock::components::scrollable_panel::effective_offset;
-use termrock::style::{LINK_FG, LINK_FG_HOVER, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
-
-pub use clamp_dialog_scroll as clamp_container_info_scroll;
-pub use copy_payload_at as container_info_copy_payload_at;
-pub use hyperlink_payload_at as container_info_hyperlink_payload_at;
-pub use hyperlink_regions as container_info_hyperlink_regions;
-pub use required_height as container_info_required_height;
-
-/// Body line indent (matches the canonical dialog content padding).
-const INDENT_COLS: usize = 2;
-/// Width of the `" : "` label/value separator.
-const SEP_COLS: usize = 3;
-/// Visible copy affordance appended to every copyable value.
-const COPY_AFFORDANCE: &str = "  ⧉";
 
 #[derive(Debug, Clone)]
 pub struct ContainerInfoRow {
@@ -226,11 +215,8 @@ impl ContainerInfoState {
         if let Some(dialog_rect) = self.viewport {
             let content_height = self.content_height();
             let content_width = self.content_width();
-            let axes = termrock::components::dialog_scroll_axes(
-                content_width,
-                content_height,
-                dialog_rect,
-            );
+            let axes =
+                termrock::layout::dialog_scroll_axes(content_width, content_height, dialog_rect);
             let viewport_width = usize::from(dialog_rect.width.saturating_sub(2));
             let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
             return self.handle_scroll_key(key, viewport_height, viewport_width, axes);
@@ -241,7 +227,7 @@ impl ContainerInfoState {
             key,
             0,
             0,
-            termrock::components::ScrollAxes {
+            termrock::layout::ScrollAxes {
                 vertical: true,
                 horizontal: true,
             },
@@ -262,7 +248,7 @@ impl ContainerInfoState {
         key: KeyEvent,
         viewport_height: usize,
         viewport_width: usize,
-        axes: termrock::components::ScrollAxes,
+        axes: termrock::layout::ScrollAxes,
     ) -> ModalOutcome<()> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
@@ -299,11 +285,15 @@ impl ContainerInfoState {
         self.rows
             .iter()
             .map(|row| {
-                INDENT_COLS
+                display_cols("▸ ")
                     + label_width
-                    + SEP_COLS
-                    + termrock::display_cols(&row.value)
-                    + copy_affordance_cols(row)
+                    + display_cols(" : ")
+                    + display_cols(&row.value)
+                    + if row.copyable {
+                        display_cols("  ⧉")
+                    } else {
+                        0
+                    }
             })
             .max()
             .unwrap_or(0)
@@ -330,7 +320,7 @@ impl ContainerInfoState {
     fn label_width(&self) -> usize {
         self.rows
             .iter()
-            .map(|row| termrock::display_cols(&row.label))
+            .map(|row| display_cols(&row.label))
             .max()
             .unwrap_or(0)
     }
@@ -381,7 +371,7 @@ pub fn clamp_dialog_scroll(
     content_height: usize,
     dialog_rect: Rect,
 ) {
-    use termrock::components::scrollable_panel::effective_offset;
+    use termrock::scroll::effective_offset;
     let vp_w = usize::from(dialog_rect.width.saturating_sub(2));
     let vp_h = usize::from(dialog_rect.height.saturating_sub(2));
     scroll.scroll_x = effective_offset(content_width, vp_w, scroll.scroll_x);
@@ -401,28 +391,26 @@ pub fn clamp_dialog_scroll(
 /// copies) with no backing `Keymap<A>`, so each span carries an
 /// `// UNREGISTERABLE` annotation per the keymap/hint-bar enforcement rule.
 #[must_use]
-pub fn debug_info_hint_spans(
-    axes: termrock::components::ScrollAxes,
-) -> Vec<termrock::HintSpan<'static>> {
-    let mut spans = termrock::components::scroll_hint_spans(axes);
+pub fn debug_info_hint_spans(axes: termrock::layout::ScrollAxes) -> Vec<HintSpan<'static>> {
+    let mut spans = termrock::layout::scroll_hint_spans(axes);
     if axes.any() {
-        spans.push(termrock::HintSpan::GroupSep);
+        spans.push(HintSpan::GroupSep);
     }
     // UNREGISTERABLE(container-info-copy): Enter copies the active row inline; no ContainerInfo keymap.
-    spans.push(termrock::HintSpan::Key("↵"));
-    spans.push(termrock::HintSpan::Text("copy value"));
-    spans.push(termrock::HintSpan::GroupSep);
+    spans.push(HintSpan::Key("↵"));
+    spans.push(HintSpan::Text("copy value"));
+    spans.push(HintSpan::GroupSep);
     // UNREGISTERABLE(container-info-reveal): R/O toggle reveals diagnostics inline; no ContainerInfo keymap.
-    spans.push(termrock::HintSpan::Key("R/O"));
-    spans.push(termrock::HintSpan::Text("reveal diagnostics"));
-    spans.push(termrock::HintSpan::GroupSep);
+    spans.push(HintSpan::Key("R/O"));
+    spans.push(HintSpan::Text("reveal diagnostics"));
+    spans.push(HintSpan::GroupSep);
     // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
-    spans.push(termrock::HintSpan::Key("Esc"));
-    spans.push(termrock::HintSpan::Text("dismiss"));
-    spans.push(termrock::HintSpan::GroupSep);
+    spans.push(HintSpan::Key("Esc"));
+    spans.push(HintSpan::Text("dismiss"));
+    spans.push(HintSpan::GroupSep);
     // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
-    spans.push(termrock::HintSpan::Key("click"));
-    spans.push(termrock::HintSpan::Text("copy value"));
+    spans.push(HintSpan::Key("click"));
+    spans.push(HintSpan::Text("copy value"));
     spans
 }
 
@@ -438,46 +426,88 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
     if area.width < 20 || area.height < 5 {
         return;
     }
-    let inner = render_dialog_shell(frame, area, Some(&state.title), DialogBorder::Default);
-    let label_width = state.label_width();
-    // The body is a single scrollable block: a leading spacer row then one
-    // line per fact. render_scrollable_dialog_body applies both-axis scroll and
-    // draws the scrollbars on the dialog border only when content overflows.
-    let mut lines = Vec::with_capacity(state.rows.len().saturating_add(1));
-    lines.push(Line::from(""));
-    for (idx, row) in state.rows.iter().enumerate() {
-        lines.push(container_info_line(
-            row,
-            label_width,
-            state.copied_row == Some(idx),
-            state.hovered_row == Some(idx),
-        ));
-    }
-    let mut scroll = state.scroll.clone();
-    render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+    let theme = termrock::Theme::default();
+    let panel = Panel::new(&theme)
+        .title(&state.title)
+        .emphasis(PanelEmphasis::Focused);
+    let table_area = detail_table_area(panel.inner(area));
+    frame.render_widget(&panel, area);
+
+    let rows = detail_rows(state);
+    let table = DetailTable::new(&rows, &theme);
+    let mut table_state = detail_state(state);
+    frame.render_stateful_widget(&table, table_area, &mut table_state);
+
+    let scroll = DialogBodyScroll {
+        scroll_x: table_state.scroll.scroll_x,
+        scroll_y: table_state.scroll.scroll_y,
+    };
+    scroll.render_scrollbars(
+        frame,
+        area,
+        table_state.content_height.saturating_add(1),
+        table_state.content_width,
+    );
 }
 
-/// Hit-test the value placements at `(col, row)`, returning the first row whose
-/// rendered value cell contains the cursor and satisfies `predicate`, mapped
-/// through `extractor`. Both `copy_payload_at` and `hyperlink_payload_at` share
-/// this geometry; they differ only in the row predicate and payload extractor.
-fn payload_at(
+fn detail_table_area(inner: Rect) -> Rect {
+    Rect::new(
+        inner.x,
+        inner.y.saturating_add(1),
+        inner.width,
+        inner.height.saturating_sub(1),
+    )
+}
+
+fn detail_rows(state: &ContainerInfoState) -> Vec<DetailRow<'_, usize>> {
+    state
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(id, row)| DetailRow {
+            id,
+            label: row.label(),
+            value: row.value(),
+            href: row.href(),
+            capability: match (row.copyable, row.href.is_some()) {
+                (true, true) => DetailCapability::CopyAndLink,
+                (true, false) => DetailCapability::Copy,
+                (false, true) => DetailCapability::Link,
+                (false, false) => DetailCapability::None,
+            },
+            emphasis: row.emphasised,
+            style: row.accent.map(|color| Style::default().fg(color)),
+        })
+        .collect()
+}
+
+fn detail_state(state: &ContainerInfoState) -> DetailTableState<usize> {
+    DetailTableState {
+        hovered: state.hovered_row,
+        copied: state.copied_row,
+        scroll: termrock::scroll::DialogScroll {
+            scroll_x: state.scroll.scroll_x,
+            scroll_y: state.scroll.scroll_y,
+        },
+        ..DetailTableState::default()
+    }
+}
+
+fn detail_layout(
     area: Rect,
     state: &ContainerInfoState,
-    col: u16,
-    row: u16,
-    predicate: impl Fn(&ContainerInfoRow) -> bool,
-    extractor: impl Fn(usize, &ContainerInfoRow) -> Option<(usize, String)>,
-) -> Option<(usize, String)> {
-    value_placements(area, state)
-        .into_iter()
-        .find(|p| {
-            predicate(&state.rows[p.idx])
-                && row == p.screen_y
-                && col >= p.screen_x
-                && col < p.screen_x.saturating_add(p.visible_target_cols)
-        })
-        .and_then(|p| extractor(p.idx, &state.rows[p.idx]))
+) -> (Vec<DetailRow<'_, usize>>, DetailTableState<usize>, Buffer) {
+    let rows = detail_rows(state);
+    let theme = termrock::Theme::default();
+    let panel = Panel::new(&theme)
+        .title(&state.title)
+        .emphasis(PanelEmphasis::Focused);
+    let table_area = detail_table_area(panel.inner(area));
+    let table = DetailTable::new(&rows, &theme);
+    let mut table_state = detail_state(state);
+    let mut buffer = Buffer::empty(area);
+    (&table).render(table_area, &mut buffer, &mut table_state);
+    (rows, table_state, buffer)
 }
 
 #[must_use]
@@ -487,14 +517,12 @@ pub fn copy_payload_at(
     col: u16,
     row: u16,
 ) -> Option<(usize, String)> {
-    payload_at(
-        area,
-        state,
-        col,
-        row,
-        |r| r.copyable,
-        |idx, r| Some((idx, r.value.clone())),
-    )
+    let (rows, mut table_state, _) = detail_layout(area, state);
+    let hit = table_state.click(Position::new(col, row));
+    let DetailTableOutcome::Copy(id) = hit else {
+        return None;
+    };
+    rows.get(id).map(|row| (id, row.value.to_owned()))
 }
 
 #[must_use]
@@ -504,14 +532,13 @@ pub fn hyperlink_payload_at(
     col: u16,
     row: u16,
 ) -> Option<(usize, String)> {
-    payload_at(
-        area,
-        state,
-        col,
-        row,
-        |r| r.href.is_some(),
-        |idx, r| r.href.clone().map(|href| (idx, href)),
-    )
+    let (rows, mut table_state, _) = detail_layout(area, state);
+    let hit = table_state.click_link(Position::new(col, row));
+    let DetailTableOutcome::ActivateLink(id) = hit else {
+        return None;
+    };
+    rows.get(id)
+        .and_then(|row| row.href.map(|href| (id, href.to_owned())))
 }
 
 /// Visible hyperlink cells for the encoder's frame-layer OSC 8 emission:
@@ -521,205 +548,51 @@ pub fn hyperlink_payload_at(
 /// [`hyperlink_overlay`]).
 #[must_use]
 pub fn hyperlink_regions(area: Rect, state: &ContainerInfoState) -> Vec<(Rect, String)> {
-    value_placements(area, state)
+    let (rows, table_state, _) = detail_layout(area, state);
+    let theme = termrock::Theme::default();
+    DetailTable::new(&rows, &theme)
+        .hyperlink_regions(&table_state)
         .into_iter()
-        .filter_map(|p| {
-            let row = &state.rows[p.idx];
-            let href = row.href()?;
-            let visible = termrock::display_cols_slice(
-                row.value(),
-                p.skip_cols,
-                usize::from(p.visible_value_cols),
-            );
-            if visible.is_empty() {
-                return None;
-            }
-            let width = termrock::display_cols(&visible) as u16;
-            Some((
-                Rect {
-                    x: p.screen_x.saturating_sub(1),
-                    y: p.screen_y.saturating_sub(1),
-                    width,
-                    height: 1,
-                },
-                href.to_owned(),
-            ))
-        })
+        .map(|region| (region.area, region.url.to_owned()))
         .collect()
 }
 
 #[must_use]
 pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
     let mut out = Vec::new();
-    for p in value_placements(area, state) {
-        let row = &state.rows[p.idx];
-        let Some(href) = row.href() else {
+    let (rows, table_state, buffer) = detail_layout(area, state);
+    let theme = termrock::Theme::default();
+    let table = DetailTable::new(&rows, &theme);
+    for region in table.hyperlink_regions(&table_state) {
+        let role = if state.hovered_row == Some(region.id) {
+            Role::LinkHover
+        } else {
+            Role::Link
+        };
+        let link = theme.style(role).fg.unwrap_or(Color::Reset);
+        let Color::Rgb(red, green, blue) = link else {
             continue;
         };
-        let link = if state.hovered_row == Some(p.idx) {
-            termrock::LINK_FG_HOVER
-        } else {
-            termrock::LINK_FG
-        };
-        // Render only the horizontally-visible slice of the value, matching what
-        // the scrolled Paragraph already painted, so the OSC 8 link lands on the
-        // exact visible cells.
-        let visible = termrock::display_cols_slice(
-            row.value(),
-            p.skip_cols,
-            usize::from(p.visible_value_cols),
-        );
+        let visible = (region.area.x..region.area.right())
+            .map(|x| buffer[(x, region.area.y)].symbol())
+            .collect::<String>();
         if visible.is_empty() {
             continue;
         }
         out.extend_from_slice(
             format!(
                 "\x1b[{};{}H",
-                p.screen_y.saturating_add(1),
-                p.screen_x.saturating_add(1)
+                region.area.y.saturating_add(1),
+                region.area.x.saturating_add(1)
             )
             .as_bytes(),
         );
-        out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, href));
-        out.extend_from_slice(format!("\x1b[38;2;{};{};{}m", link.r, link.g, link.b).as_bytes());
+        out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, region.url));
+        out.extend_from_slice(format!("\x1b[38;2;{red};{green};{blue}m").as_bytes());
         out.extend_from_slice(b"\x1b[1;4m");
         out.extend_from_slice(visible.as_bytes());
         out.extend_from_slice(&termrock::osc::encode_hyperlink_close());
         out.extend_from_slice(b"\x1b[0m");
     }
     out
-}
-
-/// On-screen placement of one row's value text under the current scroll.
-struct ValuePlacement {
-    idx: usize,
-    screen_x: u16,
-    screen_y: u16,
-    /// Leading value columns scrolled off the left edge.
-    skip_cols: usize,
-    /// Visible value columns remaining after the skip + right clip.
-    visible_value_cols: u16,
-    /// Visible clickable columns, including the copy affordance for copyable rows.
-    visible_target_cols: u16,
-}
-
-/// Visible value placements for every row, accounting for both scroll axes.
-/// Used by the copy hit-test and the OSC 8 hyperlink overlay so both follow the
-/// content as it scrolls. Rows fully scrolled out of view are omitted.
-fn value_placements(area: Rect, state: &ContainerInfoState) -> Vec<ValuePlacement> {
-    if area.width < 20 || area.height < 5 {
-        return Vec::new();
-    }
-    let inner = Panel::new().focus(PanelFocus::Focused).block().inner(area);
-    let label_width = state.label_width();
-    let value_col = INDENT_COLS + label_width + SEP_COLS;
-    let content_height = state.rows.len().saturating_add(1);
-    let content_width = state.content_width();
-    let eff_x = usize::from(effective_offset(
-        content_width,
-        usize::from(inner.width),
-        state.scroll.scroll_x,
-    ));
-    let eff_y = usize::from(effective_offset(
-        content_height,
-        usize::from(inner.height),
-        state.scroll.scroll_y,
-    ));
-    let vp_right = eff_x + usize::from(inner.width);
-    let vp_bottom = eff_y + usize::from(inner.height);
-    state
-        .rows
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, row)| {
-            let line_index = idx + 1; // line 0 is the leading spacer
-            if line_index < eff_y || line_index >= vp_bottom {
-                return None;
-            }
-            let value_cols = termrock::display_cols(row.value());
-            let target_cols = value_cols + copy_affordance_cols(row);
-            let target_start = value_col.max(eff_x);
-            let target_end = (value_col + target_cols).min(vp_right);
-            if target_start >= target_end {
-                return None;
-            }
-            let value_start = target_start.min(value_col + value_cols);
-            let value_end = target_end.min(value_col + value_cols);
-            Some(ValuePlacement {
-                idx,
-                screen_x: inner
-                    .x
-                    .saturating_add(u16::try_from(target_start - eff_x).ok()?),
-                screen_y: inner
-                    .y
-                    .saturating_add(u16::try_from(line_index - eff_y).ok()?),
-                skip_cols: value_start - value_col,
-                visible_value_cols: u16::try_from(value_end.saturating_sub(value_start))
-                    .unwrap_or(u16::MAX),
-                visible_target_cols: u16::try_from(target_end - target_start).unwrap_or(u16::MAX),
-            })
-        })
-        .collect()
-}
-
-fn copy_affordance_cols(row: &ContainerInfoRow) -> usize {
-    if row.copyable {
-        termrock::display_cols(COPY_AFFORDANCE)
-    } else {
-        0
-    }
-}
-
-fn container_info_line(
-    row: &ContainerInfoRow,
-    label_width: usize,
-    copied: bool,
-    hovered: bool,
-) -> Line<'static> {
-    let label_style = termrock::style::DIM;
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    // A copyable value (with or without an href) is a clickable link: it reads
-    // in LINK_FG cyan and underlined, brightening to LINK_FG_HOVER on hover.
-    // Non-copyable emphasised values stay brand-green; plain values stay white.
-    let clickable = row.copyable || row.href.is_some();
-    let mut value_style = Style::default().fg(if clickable {
-        if hovered { LINK_FG_HOVER } else { LINK_FG }
-    } else if row.emphasised {
-        PHOSPHOR_GREEN
-    } else {
-        WHITE
-    });
-    if row.emphasised || clickable {
-        value_style = value_style.add_modifier(Modifier::BOLD);
-    }
-    if clickable {
-        value_style = value_style.add_modifier(Modifier::UNDERLINED);
-    }
-    let copy_style = if hovered {
-        Style::default()
-            .fg(LINK_FG_HOVER)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(LINK_FG).add_modifier(Modifier::BOLD)
-    };
-    let mut spans = vec![
-        // 2-space indent (INDENT_COLS) baked in so the body renders flush in the
-        // dialog inner area and value_placements' column math stays in sync.
-        Span::raw("  "),
-        Span::styled(format!("{:<label_width$}", row.label), label_style),
-        Span::styled(" : ", sep_style),
-        Span::styled(row.value.clone(), value_style),
-    ];
-    if row.copyable {
-        spans.push(Span::styled(COPY_AFFORDANCE, copy_style));
-    }
-    if copied {
-        spans.push(Span::styled(
-            "  Copied!",
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
-    Line::from(spans)
 }

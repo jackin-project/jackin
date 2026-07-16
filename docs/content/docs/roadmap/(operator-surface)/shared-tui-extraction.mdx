@@ -1,0 +1,78 @@
+---
+title: "Shared TUI Extraction Follow-through"
+---
+
+# Shared TUI Extraction Follow-through
+
+**Status**: Partially implemented
+
+The canonical TermRock migration foundation has shipped: the donor-shaped API is retired, jackin❯ uses an immutable TermRock revision, shared container information and status surfaces use canonical components, and TermRock's public-component inventory drives its catalog coverage. The remaining work is to finish the ownership boundary: TermRock must provide the complete reusable visual language and interaction behavior through strong defaults and semantic APIs, while jackin❯ supplies only product facts, wording, effects, terminal ownership, security policy, and genuinely branded composition.
+
+The completed research dossier remains the design record at [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/).
+
+## Goal
+
+Make the latest TermRock `main` revision the single implementation and conformance owner for every product-neutral terminal component used by jackin❯. TermRock follows an open-component direction inspired by shadcn/ui: inspectable and composable primitives, an excellent default Tailrocks phosphor theme, escape hatches for intentional customization, sequential migration documentation, and catalog coverage for every public component. jackin❯ should assemble these components directly and should not recreate their palettes, geometry, focus behavior, scrolling, hit-testing, or rendering.
+
+## Remaining work
+
+### 1. Complete TermRock's default design system
+
+- Keep `Theme::default()` equal to the Tailrocks phosphor preset used across jackin❯ and other ecosystem products. The canonical default uses plain single-line panel and dialog borders, phosphor green for the one focused interaction owner, and gray for visible inactive containers.
+- Audit semantic text roles so consumers can request ordinary body text, strong or heading text, muted text, disabled text, accents, status tones, and other reusable meanings without importing raw RGB values. In particular, separate ordinary white text from bold white text instead of forcing consumers to duplicate `WHITE`.
+- Add reusable semantic roles only when the meaning applies beyond jackin❯. Keep the underlying palette private where semantic access is sufficient, and retain raw preset colors only as documented escape hatches when a color itself is the required public contract.
+- Extend widgets that currently force consumers to override a theme role to express state. Focus and emphasis must be first-class where required, including bordered scrollable viewports and any other shared container whose active border should use `Role::BorderFocused`.
+- Ensure the canonical Panel, Dialog, Viewport, Tabs, List, StatusBar, HintBar, input, link/copy, scrollbar, and related components consume semantic roles consistently and expose their complete layout, interaction-region, hover, focus, keyboard, mouse, Unicode, and narrow-terminal behavior.
+- Keep the default styling coherent as one system rather than exposing unrelated component-local defaults. A new product should be able to build a balanced TUI by using TermRock components with `Theme::default()` and no palette overrides.
+
+### 2. Adopt TermRock best practices throughout jackin❯
+
+- Update jackin❯ to the latest reviewed full TermRock revision after each required TermRock extension lands on TermRock `main`; update every workspace and fuzz lockfile together so no stale revision remains.
+- Replace generic `jackin_core::tui_theme` colors and styles with `Theme::default()` plus semantic `Role` access. Remove duplicated neutral tokens for ordinary, strong, muted, focused, border, tab, input, link, scroll, warning, danger, and other shared presentation.
+- Reduce the jackin❯ palette to genuinely product-owned tokens such as the literal brand block and domain-specific agent or workflow states. Rename or restructure the product palette if needed so it cannot be mistaken for a competing general-purpose theme.
+- Audit all three TUI surfaces for manual rendering that bypasses an available TermRock component. Prefer canonical Panel, Dialog, Viewport, Tabs, List, StatusBar, HintBar, input, scroll, interaction, layout, and text APIs with their default theme.
+- Where jackin❯ currently hand-paints a reusable pattern or customizes a theme role only because TermRock lacks an API, extend TermRock first on `main`, document the change, then migrate jackin❯ to the new capability. Do not preserve a product-local substitute for backward compatibility.
+- Keep the literal jackin❯ wordmark, product models, wording, effects, Tokio adapters, terminal ownership, security and URL policy, and domain-specific composition out of TermRock. Consolidate repeated branded composition in a product-owned home or document why variants differ.
+
+### 3. Put visual conformance tests at the owning layer
+
+- Make TermRock tests and catalog previews the authoritative coverage for exact component glyphs, colors, border weight, focused and inactive role mapping, spacing, and deterministic rendering.
+- Remove repeated jackin❯ tests that assert TermRock-owned implementation details such as exact Panel or Dialog border glyphs and raw RGB values.
+- Keep jackin❯ integration tests for product state projection: which component is focused, which emphasis is selected, what domain content is shown, how surfaces compose, and whether interaction regions match product actions.
+- Refactor tests that recover layout by searching rendered border glyphs to assert shared layout plans, component state, or typed hit regions instead. Retain only a small number of end-to-end render snapshots where they protect full-screen composition or detect accidental bypass of canonical components.
+- Ensure the TermRock catalog and API-derived coverage gate fail when any public visual component lacks documentation, a typed story, deterministic preview, or applicable keyboard, mouse, focus, non-color, Unicode, and narrow-terminal evidence.
+
+### 4. Document every forward-only TermRock API change
+
+- Keep TermRock development on `main`; do not create TermRock feature branches or pull requests.
+- Treat API quality as more important than backward compatibility. Remove weak or redundant APIs rather than shipping compatibility shims.
+- Add one sequential migration file for every incompatible conceptual change. Each migration explains the previous approach, the replacement, why the new design is preferred, and concrete consumer updates.
+- Keep the migration index ordered and linked to every migration file so agents updating dependent projects can identify all changes between two revisions.
+- Update TermRock contributor guidance, component documentation, examples, public API reports, and catalog evidence in the same change as the API.
+
+## Acceptance evidence
+
+- [ ] `Theme::default()` alone reproduces the canonical Tailrocks look and feel across every shared component, including single-line borders, green focused borders, and gray inactive borders.
+- [ ] TermRock semantic roles cover ordinary and strong text plus every reusable meaning currently served by duplicated jackin❯ theme constants.
+- [ ] Shared widgets expose the focus, emphasis, layout, scrolling, and interaction capabilities jackin❯ needs without consumer-side role substitution or copied rendering.
+- [ ] Generic jackin❯ rendering imports no raw shared palette constants from `jackin_core`; the remaining product palette contains only documented brand or domain semantics.
+- [ ] Console, launch, and Capsule use available TermRock components and best-practice APIs instead of manually painting equivalent neutral UI.
+- [ ] Exact component visual contracts are tested once in TermRock; jackin❯ tests concentrate on product state, composition, and outcomes rather than shared glyph or RGB implementation details.
+- [ ] Every breaking TermRock change has an indexed sequential migration file with before-and-after consumer guidance.
+- [ ] jackin❯ pins one exact latest reviewed TermRock revision everywhere, including every fuzz lockfile, and its complete Rust, docs, render, interaction, terminal-cleanup, and Docker E2E gates pass against that revision.
+- [ ] TermRock format, Clippy, feature-powerset, MSRV, API/semver, package, docs, catalog, PTY, and deterministic-render gates pass on the consumed revision.
+
+## Not part of this item
+
+- migrating or validating another Tailrocks product;
+- crates.io publication, Windows support, terminal degradation modes, or a shared testing crate;
+- moving the literal jackin❯ brand, product state, product wording, effects, Tokio runtime policy, secrets, host-open policy, or raw terminal ownership into TermRock;
+- preserving obsolete APIs or visual behavior solely for backward compatibility.
+
+## References
+
+- [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/)
+- [TUI Architecture](/reference/tui/architecture/)
+- [TUI Components](/reference/tui/components/)
+- [TUI Visual Design](/reference/tui/visual-design/)
+- [TermRock repository](https://github.com/tailrocks/termrock)

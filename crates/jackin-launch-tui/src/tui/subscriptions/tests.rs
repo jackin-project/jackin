@@ -328,7 +328,7 @@ fn container_info_click_copies_real_run_id_and_log_path() {
 fn quit_confirm_view() -> crate::LaunchView {
     let mut view = crate::initial_view();
     view.quit_confirm =
-        Some(termrock::components::ConfirmState::new("Exit jackin❯?").with_focus_yes());
+        Some(crate::tui::components::prompts::PromptConfirm::new("Exit jackin❯?").with_focus_yes());
     view
 }
 

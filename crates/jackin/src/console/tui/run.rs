@@ -182,8 +182,8 @@ struct ConsoleLoopInputs<'a, H, R> {
 
 struct ConsoleMouseState {
     last_event_at: Option<std::time::Instant>,
-    pointer_shape: termrock::PointerShape,
-    chrome_hover_tracker: termrock::components::HoverTracker<ConsoleChromeHover>,
+    pointer_shape: termrock::osc::PointerShape,
+    chrome_hover_tracker: termrock::interaction::HoverTracker<ConsoleChromeHover>,
     chrome_hover: Option<ConsoleChromeHover>,
 }
 
@@ -191,8 +191,8 @@ impl ConsoleMouseState {
     fn new() -> Self {
         Self {
             last_event_at: None,
-            pointer_shape: termrock::PointerShape::Default,
-            chrome_hover_tracker: termrock::components::HoverTracker::new(),
+            pointer_shape: termrock::osc::PointerShape::Default,
+            chrome_hover_tracker: termrock::interaction::HoverTracker::new(),
             chrome_hover: None,
         }
     }
@@ -283,11 +283,12 @@ where
             };
             jackin_console::tui::view::render_modal_backdrop(frame, body);
             let area = quit_confirm_area(body, confirm);
-            termrock::components::render_confirm_dialog(frame, area, confirm);
-            termrock::components::render_hint_bar(
+            jackin_console::tui::components::render_confirm_dialog(frame, area, confirm);
+            termrock::widgets::render_hint_bar(
                 frame,
                 hint_row,
-                &termrock::components::confirm_hint_spans(),
+                &jackin_console::tui::components::confirm_hint_spans(),
+                &termrock::Theme::default(),
             );
         }
         mouse_state.chrome_hover_tracker.clear();
@@ -299,32 +300,45 @@ where
                 env_run_id.as_deref(),
             );
             let chip_row = debug_chip_row(bar_area);
-            if let Some(chip) =
-                jackin_console::tui::components::status_footer::status_footer_debug_chip_rect(
-                    chip_row, &run_id,
-                )
-            {
+            let content = format!(" {run_id} ");
+            let slots = [termrock::widgets::StatusSlot {
+                id: ConsoleChromeHover::DebugChip,
+                content: &content,
+                priority: 1,
+                min_width: 0,
+                enabled: true,
+                style: ratatui::style::Style::default()
+                    .bg(jackin_core::tui_theme::DANGER_RED)
+                    .fg(jackin_core::tui_theme::WHITE)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+                hover_style: Some(
+                    ratatui::style::Style::default()
+                        .bg(jackin_core::tui_theme::WHITE)
+                        .fg(jackin_core::tui_theme::DANGER_RED)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
+            }];
+            let mut status_state = termrock::widgets::StatusBarState {
+                hovered: (mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip))
+                    .then_some(ConsoleChromeHover::DebugChip),
+                regions: Vec::new(),
+            };
+            let theme = termrock::Theme::default().with_role(
+                termrock::style::Role::StatusBar,
+                ratatui::style::Style::default()
+                    .bg(jackin_core::tui_theme::WHITE)
+                    .fg(jackin_core::tui_theme::INK),
+            );
+            frame.render_stateful_widget(
+                &termrock::widgets::StatusBar::new(&[], &slots, &theme),
+                chip_row,
+                &mut status_state,
+            );
+            for region in status_state.regions {
                 mouse_state
                     .chrome_hover_tracker
-                    .register(chip, ConsoleChromeHover::DebugChip);
+                    .register(region.area, region.id);
             }
-            jackin_console::tui::components::status_footer::render_status_footer_right_group(
-                frame,
-                chip_row,
-                "",
-                jackin_console::tui::components::status_footer::StatusRightGroup {
-                    usage: None,
-                    container: "",
-                    run_id: Some(&run_id),
-                },
-                1.0,
-                jackin_console::tui::components::status_footer::StatusFooterHover {
-                    left: false,
-                    usage: false,
-                    right: false,
-                    right_debug: mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip),
-                },
-            );
         }
     })?;
 
@@ -641,11 +655,11 @@ fn reset_modal_mouse_state(mouse_state: &mut ConsoleMouseState, needs_redraw: &m
         mouse_state.chrome_hover = None;
         *needs_redraw = true;
     }
-    if mouse_state.pointer_shape != termrock::PointerShape::Default {
-        mouse_state.pointer_shape = termrock::PointerShape::Default;
+    if mouse_state.pointer_shape != termrock::osc::PointerShape::Default {
+        mouse_state.pointer_shape = termrock::osc::PointerShape::Default;
         let mut out = std::io::stdout();
-        let seq = termrock::osc22_pointer_shape(mouse_state.pointer_shape);
-        let _unused = std::io::Write::write_all(&mut out, seq.as_bytes());
+        let seq = termrock::osc::encode_pointer(mouse_state.pointer_shape);
+        let _unused = std::io::Write::write_all(&mut out, &seq);
         drop(std::io::Write::flush(&mut out));
     }
 }
@@ -677,9 +691,9 @@ fn update_console_pointer_shape(
     );
     if next_pointer_shape != mouse_state.pointer_shape {
         mouse_state.pointer_shape = next_pointer_shape;
-        let seq = termrock::osc22_pointer_shape(mouse_state.pointer_shape);
+        let seq = termrock::osc::encode_pointer(mouse_state.pointer_shape);
         let mut out = std::io::stdout();
-        drop(std::io::Write::write_all(&mut out, seq.as_bytes()));
+        drop(std::io::Write::write_all(&mut out, &seq));
         drop(std::io::Write::flush(&mut out));
     }
 }

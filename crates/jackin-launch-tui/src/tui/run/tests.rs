@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn forced_select_message_commits_current_index() {
-    let mut picker = SelectListState::new(vec!["alpha".into(), "beta".into()]);
+    let mut picker = PromptPicker::new(vec!["alpha".into(), "beta".into()]);
     picker.select_index(1);
 
     let result = update_forced_select(
@@ -19,7 +19,7 @@ fn forced_select_message_commits_current_index() {
 
 #[test]
 fn forced_select_message_ignores_cancel() {
-    let mut picker = SelectListState::new(vec!["alpha".into(), "beta".into()]);
+    let mut picker = PromptPicker::new(vec!["alpha".into(), "beta".into()]);
 
     let result = update_forced_select(
         &mut picker,
@@ -32,7 +32,7 @@ fn forced_select_message_ignores_cancel() {
 #[test]
 fn select_prompt_message_commits_option_value() {
     let options = vec!["alpha".into(), "beta".into()];
-    let mut picker = SelectListState::new(options.clone());
+    let mut picker = PromptPicker::new(options.clone());
     picker.select_index(1);
 
     let result = update_select_prompt(
@@ -50,7 +50,7 @@ fn select_prompt_message_commits_option_value() {
 #[test]
 fn select_prompt_message_commits_skip_row_when_skippable() {
     let options = vec!["alpha".into(), "beta".into()];
-    let mut picker = SelectListState::new(vec!["alpha".into(), "beta".into(), "(skip)".into()]);
+    let mut picker = PromptPicker::new(vec!["alpha".into(), "beta".into(), "(skip)".into()]);
     picker.select_index(2);
 
     let result = update_select_prompt(
@@ -67,7 +67,7 @@ fn select_prompt_message_commits_skip_row_when_skippable() {
 
 #[test]
 fn text_prompt_message_commits_value() {
-    let mut input = TextInputState::new("name", "demo");
+    let mut input = PromptText::new("name", "demo");
 
     let result = update_text_prompt(
         &mut input,
@@ -82,7 +82,7 @@ fn text_prompt_message_commits_value() {
 
 #[test]
 fn text_prompt_message_commits_empty_as_skip_when_skippable() {
-    let mut input = TextInputState::new_allow_empty("name", "");
+    let mut input = PromptText::new_allow_empty("name", "");
 
     let result = update_text_prompt(
         &mut input,
@@ -97,7 +97,7 @@ fn text_prompt_message_commits_empty_as_skip_when_skippable() {
 
 #[test]
 fn confirm_prompt_message_commits_confirmation() {
-    let mut state = ConfirmState::new("continue?").with_focus_yes();
+    let mut state = PromptConfirm::new("continue?").with_focus_yes();
 
     let result = update_confirm_prompt(
         &mut state,
@@ -109,7 +109,7 @@ fn confirm_prompt_message_commits_confirmation() {
 
 #[test]
 fn confirm_prompt_message_cancel_returns_false() {
-    let mut state = ConfirmState::new("continue?");
+    let mut state = PromptConfirm::new("continue?");
 
     let result = update_confirm_prompt(
         &mut state,
@@ -138,7 +138,7 @@ fn prompt_context_lines_maps_semantic_styles() {
 
 #[test]
 fn error_prompt_message_acknowledges_enter() {
-    let mut state = ErrorPopupState::new("Failed", "nope");
+    let mut state = PromptError::new("Failed", "nope");
 
     let result = update_error_prompt(
         &mut state,
@@ -150,7 +150,7 @@ fn error_prompt_message_acknowledges_enter() {
 
 #[test]
 fn error_prompt_message_ignores_navigation() {
-    let mut state = ErrorPopupState::new("Failed", "nope");
+    let mut state = PromptError::new("Failed", "nope");
 
     let result = update_error_prompt(
         &mut state,

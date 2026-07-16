@@ -137,13 +137,13 @@ jobs:
           set -euo pipefail
           hit=false
           canonical_hit=false
+          latest_hit=false
           format=none
           download_prefix=
           legacy_name=
           run_id=$(
             gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_PREFIX}-ready&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
-              | head -n 1
+              --jq '[.artifacts[] | select(.expired == false) | .workflow_run.id][0] // empty'
           )
           if [ -n "$run_id" ]; then
             hit=true
@@ -153,8 +153,7 @@ jobs:
           else
             run_id=$(
               gh api "repos/${REPOSITORY}/actions/artifacts?name=${LEGACY_SPLIT_PREFIX}-ready&per_page=10" \
-                --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
-                | head -n 1
+                --jq '[.artifacts[] | select(.expired == false) | .workflow_run.id][0] // empty'
             )
             if [ -n "$run_id" ]; then
               hit=true
@@ -163,8 +162,7 @@ jobs:
             else
               run_id=$(
                 gh api "repos/${REPOSITORY}/actions/artifacts?name=${LEGACY_ARTIFACT_NAME}&per_page=10" \
-                  --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' \
-                  | head -n 1
+                  --jq '[.artifacts[] | select(.expired == false) | .workflow_run.id][0] // empty'
               )
               if [ -n "$run_id" ]; then
                 hit=true
@@ -176,8 +174,7 @@ jobs:
           if [ "$hit" != "true" ]; then
             latest_artifact=$(
               gh api "repos/${REPOSITORY}/actions/artifacts?name=${LATEST_MARKER_NAME}&per_page=10" \
-                --jq '.artifacts[] | select(.expired == false) | [.id, .workflow_run.id] | @tsv' \
-                | head -n 1
+                --jq '[.artifacts[] | select(.expired == false) | [.id, .workflow_run.id] | @tsv][0] // empty'
             )
             if [ -n "$latest_artifact" ]; then
               read -r latest_artifact_id run_id <<< "$latest_artifact"
@@ -193,6 +190,7 @@ jobs:
                 exit 1
               fi
               hit=true
+              latest_hit=true
               format=v4
               echo "::notice::seeding ${{ matrix.package }} from its latest successful target"
             fi
@@ -202,6 +200,7 @@ jobs:
             echo "prefix=$ARTIFACT_PREFIX"
             echo "hit=$hit"
             echo "canonical-hit=$canonical_hit"
+            echo "latest-hit=$latest_hit"
             echo "format=$format"
             echo "download-prefix=$download_prefix"
             echo "legacy-name=$legacy_name"
@@ -232,16 +231,26 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ steps.crate-target.outputs.format }}" = "v4" ]; then
-            pids=()
-            for archive in target/.ci-restore/target.part-*; do
-              tar --zstd -xf "$archive" &
-              pids+=("$!")
-            done
-            failed=0
-            for pid in "${pids[@]}"; do
-              wait "$pid" || failed=1
-            done
-            [ "$failed" -eq 0 ]
+            shopt -s nullglob
+            archives=(target/.ci-restore/target.part-*)
+            if [ "${#archives[@]}" -eq 0 ]; then
+              if [ "${{ steps.crate-target.outputs.canonical-hit }}" = "true" ]; then
+                echo "::error::canonical crate target has no partition artifacts"
+                exit 1
+              fi
+              echo "::notice::latest crate target partitions expired; continuing from a cold target"
+            else
+              pids=()
+              for archive in "${archives[@]}"; do
+                tar --zstd -xf "$archive" &
+                pids+=("$!")
+              done
+              failed=0
+              for pid in "${pids[@]}"; do
+                wait "$pid" || failed=1
+              done
+              [ "$failed" -eq 0 ]
+            fi
           elif [ "${{ steps.crate-target.outputs.format }}" = "v3" ]; then
             cat target/.ci-restore/target.part-* > target/.ci-restore/target.tar.zst
             tar --zstd -xf target/.ci-restore/target.tar.zst
@@ -249,7 +258,14 @@ jobs:
             tar --zstd -xf target/.ci-restore/target.tar.zst
           fi
           rm -rf target/.ci-restore
-          git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
+          if [ "${{ steps.crate-target.outputs.latest-hit }}" = "true" ]; then
+            # A latest-target seed may contain binaries compiled from different
+            # workspace inputs. Keep its dependencies, but force Cargo to
+            # reevaluate every tracked workspace source against the new tree.
+            git ls-files -z | xargs -0r touch --
+          else
+            git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
+          fi
       - name: Run package tests
         if: steps.crate-result.outputs.hit != 'true'
         shell: bash
@@ -451,7 +467,7 @@ jobs:
           if [ -n "${VELNOR_DOCKER_HOST_TEMP:-}" ]; then
             export TMPDIR="$VELNOR_DOCKER_HOST_TEMP"
           fi
-          cargo nextest run -p jackin --features e2e --profile docker-e2e \
+          cargo nextest run -p jackin --test dind_e2e --features e2e --profile docker-e2e \
             -E 'test(jackin_load_ctrl_q_yes_exits_cold_build_quickly)' \
             --no-tests=pass --color=always --locked --offline
       - name: Upload Docker E2E junit + timing

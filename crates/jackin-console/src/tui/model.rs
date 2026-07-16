@@ -35,7 +35,7 @@ pub struct ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache> {
     /// Probed once at startup; mid-session installs require restart.
     pub op_available: bool,
     /// Overlay above any sub-stage.
-    pub quit_confirm: Option<termrock::components::ConfirmState>,
+    pub quit_confirm: Option<crate::tui::components::ConfirmState>,
 }
 
 impl<Manager, LaunchInput, RoleSelector, OpCache>
@@ -53,7 +53,7 @@ impl<Manager, LaunchInput, RoleSelector, OpCache>
     }
 
     #[must_use]
-    pub fn quit_confirm_state(&self) -> Option<&termrock::components::ConfirmState> {
+    pub fn quit_confirm_state(&self) -> Option<&crate::tui::components::ConfirmState> {
         self.quit_confirm.as_ref()
     }
 

@@ -313,16 +313,16 @@ key = "clippy::struct_excessive_bools@jackin-agent-status"
 bound = 2
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-capsule"
-bound = 5
+bound = 4
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-console"
-bound = 15
+bound = 14
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-console-oppicker"
 bound = 3
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-core"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-launch-tui"
 bound = 2
@@ -486,6 +486,9 @@ bound = 1
 key = "missing_debug_implementations@jackin-test-support"
 bound = 1
 [[family.entry]]
+key = "missing_docs@jackin-core"
+bound = 1
+[[family.entry]]
 key = "private_bounds@jackin-core"
 bound = 1
 [[family.entry]]
@@ -539,7 +542,7 @@ key = "crates/jackin-build-meta/README.md"
 bound = 628
 [[family.entry]]
 key = "crates/jackin-capsule/README.md"
-bound = 6294
+bound = 6292
 [[family.entry]]
 key = "crates/jackin-config/README.md"
 bound = 2745
@@ -548,10 +551,10 @@ key = "crates/jackin-console-oppicker/README.md"
 bound = 1625
 [[family.entry]]
 key = "crates/jackin-console/README.md"
-bound = 2562
+bound = 2549
 [[family.entry]]
 key = "crates/jackin-core/README.md"
-bound = 5467
+bound = 5389
 [[family.entry]]
 key = "crates/jackin-dev/README.md"
 bound = 1199
@@ -629,7 +632,7 @@ key = "default_mode_logs"
 bound = 18
 [[family.entry]]
 key = "default_mode_metrics"
-bound = 5
+bound = 6
 [[family.entry]]
 key = "default_mode_spans"
 bound = 7
@@ -685,7 +688,7 @@ key = "jackin-console-oppicker"
 bound = 3
 [[family.entry]]
 key = "jackin-core"
-bound = 2
+bound = 4
 [[family.entry]]
 key = "jackin-diagnostics"
 bound = 13

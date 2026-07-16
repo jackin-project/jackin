@@ -6,13 +6,12 @@
 //! Arrow keys move focus, Enter commits, Esc cancels.
 
 use crossterm::event::{KeyCode, KeyEvent};
+use jackin_core::ModalOutcome;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use termrock::{ModalOutcome, components::render_picker_lines};
+use termrock::widgets::{List, ListRow, ListState, RowRole};
 
-use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::layout::{DialogBorder, render_dialog_shell};
 
 pub trait AgentChoice: Copy + Eq + 'static {
     const ALL: &'static [Self];
@@ -87,8 +86,6 @@ impl<A: AgentChoice> Default for AgentChoiceState<A> {
 }
 
 pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentChoiceState<A>) {
-    let bold = Style::default().add_modifier(Modifier::BOLD);
-
     let inner = render_dialog_shell(frame, area, Some("Pick Agent"), DialogBorder::Default);
 
     let rows = Layout::default()
@@ -99,16 +96,23 @@ pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentCh
         ])
         .split(inner);
 
-    let lines: Vec<Line<'_>> = state
+    let items: Vec<ListRow<'_, usize>> = state
         .choices
         .iter()
-        .map(|a| Line::from(Span::styled(agent_picker_label(*a).to_owned(), bold)))
+        .enumerate()
+        .map(|(id, agent)| ListRow {
+            id,
+            label: ratatui::text::Line::from(agent_picker_label(*agent)),
+            trailing: None,
+            role: RowRole::Item,
+            enabled: true,
+        })
         .collect();
-    render_picker_lines(
+    let theme = termrock::Theme::default();
+    frame.render_stateful_widget(
+        &List::new(&items, &theme),
         rows[0],
-        frame.buffer_mut(),
-        lines,
-        Some(focus_index_in(&state.choices, state.focused)),
+        &mut ListState::new(Some(focus_index_in(&state.choices, state.focused))),
     );
 }
 

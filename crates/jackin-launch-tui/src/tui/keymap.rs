@@ -7,8 +7,9 @@
 //! container info). The dispatch in `subscriptions.rs` uses these tables instead of
 //! ad-hoc `KeyCode` match arms so that handled keys and advertised keys are coupled.
 
-use termrock::HintSpan;
-use termrock::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility, glyph};
+use termrock::input::KeyCode;
+use termrock::keymap::{KeyBinding, KeyChord, Keymap, Visibility, glyph};
+use termrock::widgets::HintSpan;
 
 // ── Cockpit main ─────────────────────────────────────────────────────────────
 
@@ -27,14 +28,14 @@ pub enum CockpitAction {
 /// `Ctrl-C abort · Ctrl-Q quit` group every dialog appends.
 pub static COCKPIT_KEYMAP: Keymap<CockpitAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::ctrl(LogicalKey::Char('c'))],
+        chords: &[KeyChord::ctrl(KeyCode::Char('c'))],
         action: CockpitAction::HardExit,
         hint: Some("abort"),
         visibility: Visibility::Shown,
         glyph: Some("Ctrl-C"),
     },
     KeyBinding {
-        chords: &[KeyChord::ctrl(LogicalKey::Char('q'))],
+        chords: &[KeyChord::ctrl(KeyCode::Char('q'))],
         action: CockpitAction::OpenQuitConfirm,
         hint: Some("quit"),
         visibility: Visibility::Shown,
@@ -64,21 +65,21 @@ pub enum BuildLogAction {
 
 pub static BUILD_LOG_KEYMAP: Keymap<BuildLogAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Esc)],
+        chords: &[KeyChord::plain(KeyCode::Esc)],
         action: BuildLogAction::Close,
         hint: Some("close"),
         visibility: Visibility::Shown,
         glyph: Some("Esc"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Up)],
+        chords: &[KeyChord::plain(KeyCode::Up)],
         action: BuildLogAction::ScrollUp,
         hint: Some("scroll"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓/j/k"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Down)],
+        chords: &[KeyChord::plain(KeyCode::Down)],
         action: BuildLogAction::ScrollDown,
         hint: None,
         visibility: Visibility::HiddenAlias,
@@ -86,8 +87,8 @@ pub static BUILD_LOG_KEYMAP: Keymap<BuildLogAction> = Keymap::new(&[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: BuildLogAction::ScrollDown,
         hint: None,
@@ -96,8 +97,8 @@ pub static BUILD_LOG_KEYMAP: Keymap<BuildLogAction> = Keymap::new(&[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('k')),
-            KeyChord::plain(LogicalKey::Char('K')),
+            KeyChord::plain(KeyCode::Char('k')),
+            KeyChord::plain(KeyCode::Char('K')),
         ],
         action: BuildLogAction::ScrollUp,
         hint: None,
@@ -105,14 +106,14 @@ pub static BUILD_LOG_KEYMAP: Keymap<BuildLogAction> = Keymap::new(&[
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::PageUp)],
+        chords: &[KeyChord::plain(KeyCode::PageUp)],
         action: BuildLogAction::PageUp,
         hint: Some("page"),
         visibility: Visibility::Shown,
         glyph: Some(glyph::PGUP_PGDN),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::PageDown)],
+        chords: &[KeyChord::plain(KeyCode::PageDown)],
         action: BuildLogAction::PageDown,
         hint: None,
         visibility: Visibility::HiddenAlias,
@@ -150,8 +151,8 @@ pub enum FailureAction {
 
 pub static FAILURE_KEYMAP: Keymap<FailureAction> = Keymap::new(&[KeyBinding {
     chords: &[
-        KeyChord::plain(LogicalKey::Enter),
-        KeyChord::plain(LogicalKey::Esc),
+        KeyChord::plain(KeyCode::Enter),
+        KeyChord::plain(KeyCode::Esc),
     ],
     action: FailureAction::Dismiss,
     hint: Some("dismiss"),
@@ -174,14 +175,14 @@ mod tests;
 
 pub static CONTAINER_INFO_KEYMAP: Keymap<ContainerInfoAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        chords: &[KeyChord::plain(KeyCode::Enter)],
         action: ContainerInfoAction::CopyValue,
         hint: Some("copy value"),
         visibility: Visibility::Shown,
         glyph: Some("↵"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Esc)],
+        chords: &[KeyChord::plain(KeyCode::Esc)],
         action: ContainerInfoAction::Close,
         hint: Some("close"),
         visibility: Visibility::Shown,

@@ -179,7 +179,7 @@ pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<
         width: overlay.width.saturating_sub(2),
         height: overlay.height.saturating_sub(2),
     };
-    let chunks = termrock::components::dialog_inner_chunks(inner, Some(2));
+    let chunks = termrock::layout::dialog_inner_chunks(inner, Some(2));
     if chunks[1].height < 2 {
         return None;
     }
@@ -222,8 +222,8 @@ pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
 /// When `has_url` is false, the `· O open` segment is dropped so the
 /// hint doesn't advertise a disabled action:
 /// `M mount · P pick · C/Esc cancel`.
-pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<termrock::HintSpan<'static>> {
-    use termrock::HintSpan;
+pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<termrock::widgets::HintSpan<'static>> {
+    use termrock::widgets::HintSpan;
     let mut spans = vec![
         // UNREGISTERABLE(git-prompt-no-keymap): M handled inline; no GIT_PROMPT_KEYMAP registered.
         HintSpan::Key("M"),
@@ -268,15 +268,15 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
         return;
     };
 
-    let inner = termrock::components::render_dialog_shell(
+    let inner = termrock::layout::render_dialog_shell(
         frame,
         area,
         Some("Git repository detected"),
-        termrock::components::DialogBorder::Default,
+        termrock::layout::DialogBorder::Default,
     );
 
     let content_rows = if has_url { 2 } else { 1 };
-    let chunks = termrock::components::dialog_inner_chunks(inner, Some(content_rows));
+    let chunks = termrock::layout::dialog_inner_chunks(inner, Some(content_rows));
     let prompt_row = Rect {
         height: 1,
         ..chunks[1]
@@ -285,7 +285,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            termrock::style::BOLD_WHITE,
+            jackin_core::tui_theme::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
         prompt_row,

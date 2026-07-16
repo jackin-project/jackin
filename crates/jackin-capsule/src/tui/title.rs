@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use termrock::sanitize_terminal_title;
+use termrock::text::sanitize_terminal_title;
 
 use crate::pull_request::PullRequestInfo;
 

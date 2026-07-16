@@ -127,9 +127,9 @@ pub fn draw_scrollbar(
     // Active pane uses the brand phosphor-green; inactive panes a
     // neutral gray that matches their inactive border colour.
     let thumb_color = if focused {
-        termrock::PHOSPHOR_GREEN
+        jackin_core::PHOSPHOR_GREEN
     } else {
-        termrock::Rgb::new(160, 160, 160)
+        jackin_core::BORDER_GRAY_LIGHT
     };
 
     // Thumb rows are 0-based relative to the interior; skip the top

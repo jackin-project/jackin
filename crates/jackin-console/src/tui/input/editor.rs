@@ -61,7 +61,7 @@ use crate::tui::keymap::{
 fn dispatch_editor_top_level(key: KeyEvent, tab_bar_focused: bool) -> EditorTopLevelKeyPlan {
     use crossterm::event::KeyCode;
 
-    let chord = KeyChord::from(termrock::crossterm::key(key));
+    let chord = KeyChord::from(termrock::input::KeyEvent::from(key));
 
     if let Some(action) = EDITOR_GLOBAL_KEYMAP.dispatch(chord) {
         return match action {
@@ -1051,7 +1051,7 @@ fn dispatch_editor_mount_dst_choice(
     editor: &mut EditorState<'_>,
     target: FileBrowserTarget,
     src: &str,
-    outcome: &termrock::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
+    outcome: &jackin_core::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
 ) {
     match mount_dst_choice_plan(outcome.clone()) {
         MountDstChoicePlan::CommitSamePath => {

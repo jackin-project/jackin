@@ -3,6 +3,6 @@
 
 //! Console-local save/discard prompt state construction.
 
-pub fn editor_exit_save_discard_state() -> termrock::components::SaveDiscardState {
-    termrock::components::SaveDiscardState::new("Save changes before leaving?")
+pub fn editor_exit_save_discard_state() -> crate::tui::components::SaveDiscardState {
+    crate::tui::components::SaveDiscardState::new("Save changes before leaving?")
 }

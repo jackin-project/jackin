@@ -899,7 +899,8 @@ async fn role_input_resolves_then_persists_namespaced_role_after_trust() {
     match &editor.modal {
         Some(Modal::Confirm { target, state }) => {
             assert_eq!(state.title(), "Trust role source");
-            let termrock::components::ConfirmKind::Details { rows, notes, .. } = state.kind()
+            let jackin_console::tui::components::ConfirmKind::Details { rows, notes, .. } =
+                state.kind()
             else {
                 panic!("expected Details kind, got {:?}", state.kind());
             };

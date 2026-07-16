@@ -36,12 +36,13 @@ pub fn follow_cursor_y(
     viewport_h: usize,
     stored_scroll_y: u16,
 ) -> u16 {
-    termrock::components::scrollable_panel::cursor_follow_offset(
+    termrock::scroll::cursor_follow_offset(
         cursor,
         content_height,
         viewport_h,
-        stored_scroll_y,
+        usize::from(stored_scroll_y),
     )
+    .min(usize::from(u16::MAX)) as u16
 }
 
 #[must_use]

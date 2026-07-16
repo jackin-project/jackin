@@ -1648,7 +1648,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2688,7 +2688,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2894,7 +2894,6 @@ dependencies = [
  "termrock",
  "tokio",
  "toml",
- "tui-widget-list",
 ]
 
 [[package]]
@@ -2907,7 +2906,6 @@ dependencies = [
  "jackin-diagnostics",
  "termrock",
  "tokio",
- "tui-widget-list",
 ]
 
 [[package]]
@@ -2916,6 +2914,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "crossterm",
  "directories",
  "hex",
  "owo-colors 4.3.0",
@@ -2924,12 +2923,13 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "termrock",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "anyhow",
  "clap",
@@ -3813,7 +3813,7 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "chrono",
  "getrandom 0.2.17",
  "http",
@@ -4753,7 +4753,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "petgraph",
@@ -4772,7 +4772,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -4882,7 +4882,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5364,7 +5364,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5377,7 +5377,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5434,7 +5434,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6339,7 +6339,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6378,8 +6378,8 @@ dependencies = [
 
 [[package]]
 name = "termrock"
-version = "0.6.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=41482e9fe9b8254f82c7803692ef9dbd7d4cf87c#41482e9fe9b8254f82c7803692ef9dbd7d4cf87c"
+version = "0.10.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=5c4758b5167241ffef5f501f72bb76bc01e77aba#5c4758b5167241ffef5f501f72bb76bc01e77aba"
 dependencies = [
  "anstyle-parse 0.2.7",
  "base64 0.22.1",
@@ -6387,7 +6387,6 @@ dependencies = [
  "ratatui-core",
  "ratatui-crossterm",
  "ratatui-widgets",
- "similar",
  "tui-scrollbar",
  "unicode-segmentation",
  "unicode-width 0.2.2",
@@ -6909,16 +6908,6 @@ checksum = "a495ec7eb64f1505a94d56bbb337792b15448394879552b09be2a1460846d99b"
 dependencies = [
  "document-features",
  "ratatui-core",
-]
-
-[[package]]
-name = "tui-widget-list"
-version = "0.15.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fbf7f6c7d04beb3602630d83db44e81d7a1de1fea11ca3435d82e094c5c0192"
-dependencies = [
- "ratatui-core",
- "ratatui-widgets",
 ]
 
 [[package]]
@@ -7593,7 +7582,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7708,15 +7697,6 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets",
 ]

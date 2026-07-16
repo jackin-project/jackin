@@ -70,10 +70,7 @@ fn clamp_mounts_scroll_x_for_frame_uses_settings_body_area() {
     clamp_mounts_scroll_x_for_frame(area, 100, &mut scroll_x);
 
     let body = settings_frame_areas(area, 2).body;
-    let expected = termrock::components::scrollable_panel::max_offset(
-        100,
-        termrock::components::scrollable_panel::viewport_width(body),
-    );
+    let expected = termrock::scroll::max_offset_u16(100, termrock::scroll::viewport_width(body));
     assert_eq!(scroll_x, expected);
 }
 
@@ -103,7 +100,7 @@ fn global_mount_confirm_state_uses_settings_prompt() {
     let state = global_mount_confirm_state(GlobalMountConfirm::Discard);
 
     assert_eq!(state.title(), "Confirm");
-    let termrock::components::ConfirmKind::Default { prompt } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Default { prompt } = state.kind() else {
         panic!("expected default confirm state");
     };
     assert_eq!(prompt, "Discard unsaved global mount changes?");
@@ -204,7 +201,7 @@ fn settings_env_source_picker_state_names_key() {
 fn settings_env_delete_confirm_state_uses_key_prompt() {
     let state = settings_env_delete_confirm_state("TOKEN");
 
-    let termrock::components::ConfirmKind::Default { prompt } = state.kind() else {
+    let crate::tui::components::ConfirmKind::Default { prompt } = state.kind() else {
         panic!("expected default confirm state");
     };
     assert_eq!(prompt, "Delete environment variable TOKEN?");

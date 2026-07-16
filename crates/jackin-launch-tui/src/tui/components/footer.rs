@@ -6,9 +6,8 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::Block;
 use termrock::interaction::HitRegion;
-use termrock::widgets::{StatusBar, StatusSlot};
+use termrock::widgets::{StatusBar, StatusBarState, StatusSlot};
 
 use crate::LaunchView;
 use crate::tui::components::chrome::{BottomChromeAreas, bottom_chrome_areas};
@@ -48,6 +47,7 @@ pub fn footer_regions(
         min_width: 0,
         enabled: true,
         style: Style::default(),
+        hover_style: None,
     }];
     let right = [
         StatusSlot {
@@ -57,6 +57,7 @@ pub fn footer_regions(
             min_width: 0,
             enabled: !instance.is_empty(),
             style: Style::default(),
+            hover_style: None,
         },
         StatusSlot {
             id: FooterSlot::RunId,
@@ -65,13 +66,11 @@ pub fn footer_regions(
             min_width: 0,
             enabled: run_id.is_some_and(|value| !value.is_empty()),
             style: Style::default(),
+            hover_style: None,
         },
     ];
-    StatusBar {
-        left: &left,
-        right: &right,
-    }
-    .regions(area)
+    let theme = termrock::Theme::default();
+    StatusBar::new(&left, &right, &theme).regions(area)
 }
 
 /// The status-bar activity text: the current step with an upper-cased first
@@ -116,15 +115,6 @@ pub fn render_footer(
     let run = debug_chip
         .map(|value| format!(" {value} "))
         .unwrap_or_default();
-    let faded = termrock::style::faded;
-    frame.render_widget(
-        Block::default().style(
-            Style::default()
-                .bg(faded(termrock::style::WHITE, alpha))
-                .fg(termrock::style::INK),
-        ),
-        area,
-    );
     let left = [StatusSlot {
         id: FooterSlot::Activity,
         content: &activity,
@@ -132,16 +122,14 @@ pub fn render_footer(
         min_width: 0,
         enabled: true,
         style: Style::default()
-            .bg(faded(termrock::style::WHITE, alpha))
-            .fg(faded(
-                if view.footer_hover.left {
-                    termrock::style::LINK_BLUE
-                } else {
-                    termrock::style::INK
-                },
-                alpha,
-            ))
+            .bg(jackin_core::tui_theme::WHITE)
+            .fg(if view.footer_hover.left {
+                jackin_core::tui_theme::LINK_BLUE
+            } else {
+                jackin_core::tui_theme::INK
+            })
             .add_modifier(Modifier::BOLD),
+        hover_style: None,
     }];
     let right = [
         StatusSlot {
@@ -151,16 +139,14 @@ pub fn render_footer(
             min_width: 0,
             enabled: !instance.is_empty(),
             style: Style::default()
-                .bg(faded(termrock::style::WHITE, alpha))
-                .fg(faded(
-                    if view.footer_hover.right {
-                        termrock::style::DEBUG_AMBER
-                    } else {
-                        termrock::style::LINK_BLUE
-                    },
-                    alpha,
-                ))
+                .bg(jackin_core::tui_theme::WHITE)
+                .fg(if view.footer_hover.right {
+                    jackin_core::tui_theme::DEBUG_AMBER
+                } else {
+                    jackin_core::tui_theme::LINK_BLUE
+                })
                 .add_modifier(Modifier::BOLD),
+            hover_style: None,
         },
         StatusSlot {
             id: FooterSlot::RunId,
@@ -169,57 +155,46 @@ pub fn render_footer(
             min_width: 0,
             enabled: debug_chip.is_some_and(|value| !value.is_empty()),
             style: Style::default()
-                .bg(faded(
-                    if view.footer_hover.right_debug {
-                        termrock::style::WHITE
-                    } else {
-                        termrock::style::DANGER_RED
-                    },
-                    alpha,
-                ))
-                .fg(faded(
-                    if view.footer_hover.right_debug {
-                        termrock::style::DANGER_RED
-                    } else {
-                        termrock::style::WHITE
-                    },
-                    alpha,
-                ))
+                .bg(if view.footer_hover.right_debug {
+                    jackin_core::tui_theme::WHITE
+                } else {
+                    jackin_core::tui_theme::DANGER_RED
+                })
+                .fg(if view.footer_hover.right_debug {
+                    jackin_core::tui_theme::DANGER_RED
+                } else {
+                    jackin_core::tui_theme::WHITE
+                })
                 .add_modifier(Modifier::BOLD),
+            hover_style: None,
         },
     ];
-    frame.render_widget(
-        &StatusBar {
-            left: &left,
-            right: &right,
-        },
+    let theme = termrock::Theme::default().with_role(
+        termrock::style::Role::StatusBar,
+        Style::default()
+            .bg(jackin_core::tui_theme::WHITE)
+            .fg(jackin_core::tui_theme::INK),
+    );
+    frame.render_stateful_widget(
+        &StatusBar::new(&left, &right, &theme).alpha(alpha),
         area,
+        &mut StatusBarState {
+            hovered: None,
+            regions: Vec::new(),
+        },
     );
 }
 
 #[must_use]
-pub const fn launch_overlay_chrome_areas(area: Rect, debug_mode: bool) -> BottomChromeAreas {
+pub fn launch_overlay_chrome_areas(area: Rect, debug_mode: bool) -> BottomChromeAreas {
     if debug_mode {
         return bottom_chrome_areas(area);
     }
-    // spacer and footer collapse to a zero-height row past the bottom edge.
-    let collapsed = Rect {
-        x: area.x,
-        y: area.y + area.height,
-        width: area.width,
-        height: 0,
-    };
+    let (body, [hint]) = termrock::layout::bottom_rows(area, [1]);
+    let collapsed = Rect::new(area.x, area.bottom(), area.width, 0);
     BottomChromeAreas {
-        body: Rect {
-            height: area.height.saturating_sub(1),
-            ..area
-        },
-        hint: Rect {
-            x: area.x,
-            y: area.y + area.height.saturating_sub(1),
-            width: area.width,
-            height: if area.height >= 1 { 1 } else { 0 },
-        },
+        body,
+        hint,
         spacer: collapsed,
         footer: collapsed,
     }

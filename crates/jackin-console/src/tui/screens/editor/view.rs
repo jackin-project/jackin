@@ -140,8 +140,8 @@ pub(crate) use frame::{
 #[must_use]
 pub fn editor_name_input_state<'a>(
     current: impl Into<String>,
-) -> termrock::components::TextInputState<'a> {
-    termrock::components::TextInputState::new("Rename workspace", current)
+) -> crate::tui::components::TextInputState<'a> {
+    crate::tui::components::TextInputState::new("Rename workspace", current)
 }
 
 #[must_use]
@@ -154,9 +154,9 @@ pub fn editor_workdir_pick_state<M: crate::tui::components::workdir_pick::Workdi
 #[must_use]
 pub fn role_load_input_state<'a>(
     trusted_roles: Vec<String>,
-) -> termrock::components::TextInputState<'a> {
+) -> crate::tui::components::TextInputState<'a> {
     let mut state =
-        termrock::components::TextInputState::new_with_forbidden("Load role", "", trusted_roles);
+        crate::tui::components::TextInputState::new_with_forbidden("Load role", "", trusted_roles);
     state.forbidden_label = "trusted role registry".into();
     state
 }
@@ -164,8 +164,8 @@ pub fn role_load_input_state<'a>(
 #[must_use]
 pub fn mount_destination_input_state<'a>(
     current: impl Into<String>,
-) -> termrock::components::TextInputState<'a> {
-    termrock::components::TextInputState::new("Destination", current)
+) -> crate::tui::components::TextInputState<'a> {
+    crate::tui::components::TextInputState::new("Destination", current)
 }
 
 #[must_use]
@@ -215,7 +215,7 @@ pub fn padded_width_cols(width: usize, leading_spaces: usize) -> usize {
 }
 
 pub fn text_width(text: &str) -> usize {
-    termrock::display_cols(text)
+    termrock::text::display_cols(text)
 }
 
 #[must_use]

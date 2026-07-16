@@ -8,7 +8,8 @@
 //! its keymap here. `Keymap::dispatch(chord)` replaces plan-function calls in
 //! `input/*.rs`; `Keymap::hint_spans()` derives footer hints.
 
-use termrock::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
+use termrock::input::KeyCode;
+use termrock::keymap::{KeyBinding, KeyChord, Keymap, Visibility};
 
 // ── Editor global (fired in both tab-bar and content modes) ──────────────────
 
@@ -21,8 +22,8 @@ pub(crate) enum EditorGlobalAction {
 pub(crate) static EDITOR_GLOBAL_KEYMAP: Keymap<EditorGlobalAction> = Keymap::new(&[
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('s')),
-            KeyChord::plain(LogicalKey::Char('S')),
+            KeyChord::plain(KeyCode::Char('s')),
+            KeyChord::plain(KeyCode::Char('S')),
         ],
         action: EditorGlobalAction::Save,
         hint: Some("save"),
@@ -30,7 +31,7 @@ pub(crate) static EDITOR_GLOBAL_KEYMAP: Keymap<EditorGlobalAction> = Keymap::new
         glyph: Some("S"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Esc)],
+        chords: &[KeyChord::plain(KeyCode::Esc)],
         action: EditorGlobalAction::Escape,
         hint: Some("back / discard"),
         visibility: Visibility::Shown,
@@ -50,8 +51,8 @@ pub(crate) enum EditorTabBarAction {
 pub(crate) static EDITOR_TAB_BAR_KEYMAP: Keymap<EditorTabBarAction> = Keymap::new(&[
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Left),
-            KeyChord::plain(LogicalKey::BackTab),
+            KeyChord::plain(KeyCode::Left),
+            KeyChord::plain(KeyCode::BackTab),
         ],
         action: EditorTabBarAction::PrevTab,
         hint: Some("prev tab"),
@@ -59,7 +60,7 @@ pub(crate) static EDITOR_TAB_BAR_KEYMAP: Keymap<EditorTabBarAction> = Keymap::ne
         glyph: Some("←/⇤"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Right)],
+        chords: &[KeyChord::plain(KeyCode::Right)],
         action: EditorTabBarAction::NextTab,
         hint: Some("next tab"),
         visibility: Visibility::Shown,
@@ -67,8 +68,8 @@ pub(crate) static EDITOR_TAB_BAR_KEYMAP: Keymap<EditorTabBarAction> = Keymap::ne
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Tab),
-            KeyChord::plain(LogicalKey::Down),
+            KeyChord::plain(KeyCode::Tab),
+            KeyChord::plain(KeyCode::Down),
         ],
         action: EditorTabBarAction::FocusContent,
         hint: Some("focus content"),
@@ -77,8 +78,8 @@ pub(crate) static EDITOR_TAB_BAR_KEYMAP: Keymap<EditorTabBarAction> = Keymap::ne
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: EditorTabBarAction::FocusContent,
         hint: None,
@@ -109,14 +110,14 @@ pub(crate) enum EditorContentAction {
 
 pub(crate) static EDITOR_CONTENT_KEYMAP: Keymap<EditorContentAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Up)],
+        chords: &[KeyChord::plain(KeyCode::Up)],
         action: EditorContentAction::MoveUp,
         hint: Some("move field"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Down)],
+        chords: &[KeyChord::plain(KeyCode::Down)],
         action: EditorContentAction::MoveDown,
         hint: None,
         visibility: Visibility::Internal,
@@ -124,8 +125,8 @@ pub(crate) static EDITOR_CONTENT_KEYMAP: Keymap<EditorContentAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('k')),
-            KeyChord::plain(LogicalKey::Char('K')),
+            KeyChord::plain(KeyCode::Char('k')),
+            KeyChord::plain(KeyCode::Char('K')),
         ],
         action: EditorContentAction::MoveUp,
         hint: None,
@@ -134,8 +135,8 @@ pub(crate) static EDITOR_CONTENT_KEYMAP: Keymap<EditorContentAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: EditorContentAction::MoveDown,
         hint: None,
@@ -144,8 +145,8 @@ pub(crate) static EDITOR_CONTENT_KEYMAP: Keymap<EditorContentAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('h')),
-            KeyChord::plain(LogicalKey::Char('H')),
+            KeyChord::plain(KeyCode::Char('h')),
+            KeyChord::plain(KeyCode::Char('H')),
         ],
         action: EditorContentAction::ScrollLeft,
         hint: None,
@@ -154,8 +155,8 @@ pub(crate) static EDITOR_CONTENT_KEYMAP: Keymap<EditorContentAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('l')),
-            KeyChord::plain(LogicalKey::Char('L')),
+            KeyChord::plain(KeyCode::Char('l')),
+            KeyChord::plain(KeyCode::Char('L')),
         ],
         action: EditorContentAction::ScrollRight,
         hint: None,
@@ -163,35 +164,35 @@ pub(crate) static EDITOR_CONTENT_KEYMAP: Keymap<EditorContentAction> = Keymap::n
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Left)],
+        chords: &[KeyChord::plain(KeyCode::Left)],
         action: EditorContentAction::CollapseHeader,
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Right)],
+        chords: &[KeyChord::plain(KeyCode::Right)],
         action: EditorContentAction::ExpandHeader,
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Tab)],
+        chords: &[KeyChord::plain(KeyCode::Tab)],
         action: EditorContentAction::NextTab,
         hint: Some("next tab"),
         visibility: Visibility::Shown,
         glyph: Some("⇥"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::BackTab)],
+        chords: &[KeyChord::plain(KeyCode::BackTab)],
         action: EditorContentAction::FocusTabBar,
         hint: Some("tab bar"),
         visibility: Visibility::Shown,
         glyph: Some("⇤"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        chords: &[KeyChord::plain(KeyCode::Enter)],
         action: EditorContentAction::CheckImmediate,
         hint: None,
         visibility: Visibility::Internal,
@@ -211,8 +212,8 @@ pub(crate) enum SettingsTabBarAction {
 pub(crate) static SETTINGS_TAB_BAR_KEYMAP: Keymap<SettingsTabBarAction> = Keymap::new(&[
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Left),
-            KeyChord::plain(LogicalKey::BackTab),
+            KeyChord::plain(KeyCode::Left),
+            KeyChord::plain(KeyCode::BackTab),
         ],
         action: SettingsTabBarAction::PrevTab,
         hint: Some("prev tab"),
@@ -220,7 +221,7 @@ pub(crate) static SETTINGS_TAB_BAR_KEYMAP: Keymap<SettingsTabBarAction> = Keymap
         glyph: Some("←/⇤"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Right)],
+        chords: &[KeyChord::plain(KeyCode::Right)],
         action: SettingsTabBarAction::NextTab,
         hint: Some("next tab"),
         visibility: Visibility::Shown,
@@ -228,8 +229,8 @@ pub(crate) static SETTINGS_TAB_BAR_KEYMAP: Keymap<SettingsTabBarAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Tab),
-            KeyChord::plain(LogicalKey::Down),
+            KeyChord::plain(KeyCode::Tab),
+            KeyChord::plain(KeyCode::Down),
         ],
         action: SettingsTabBarAction::FocusContent,
         hint: Some("focus content"),
@@ -238,8 +239,8 @@ pub(crate) static SETTINGS_TAB_BAR_KEYMAP: Keymap<SettingsTabBarAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: SettingsTabBarAction::FocusContent,
         hint: None,
@@ -265,21 +266,21 @@ pub(crate) enum SettingsContentShellAction {
 pub(crate) static SETTINGS_CONTENT_SHELL_KEYMAP: Keymap<SettingsContentShellAction> =
     Keymap::new(&[
         KeyBinding {
-            chords: &[KeyChord::plain(LogicalKey::Tab)],
+            chords: &[KeyChord::plain(KeyCode::Tab)],
             action: SettingsContentShellAction::NextTab,
             hint: Some("next tab"),
             visibility: Visibility::Shown,
             glyph: Some("⇥"),
         },
         KeyBinding {
-            chords: &[KeyChord::plain(LogicalKey::BackTab)],
+            chords: &[KeyChord::plain(KeyCode::BackTab)],
             action: SettingsContentShellAction::FocusTabBar,
             hint: Some("tab bar"),
             visibility: Visibility::Shown,
             glyph: Some("⇤"),
         },
         KeyBinding {
-            chords: &[KeyChord::plain(LogicalKey::Esc)],
+            chords: &[KeyChord::plain(KeyCode::Esc)],
             action: SettingsContentShellAction::FocusTabBarOrClearAuth,
             hint: None,
             visibility: Visibility::Internal,
@@ -301,14 +302,14 @@ pub(crate) enum SettingsGeneralTabAction {
 
 pub(crate) static SETTINGS_GENERAL_TAB_KEYMAP: Keymap<SettingsGeneralTabAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Up)],
+        chords: &[KeyChord::plain(KeyCode::Up)],
         action: SettingsGeneralTabAction::MoveUp,
         hint: Some("navigate"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Down)],
+        chords: &[KeyChord::plain(KeyCode::Down)],
         action: SettingsGeneralTabAction::MoveDown,
         hint: None,
         visibility: Visibility::Internal,
@@ -316,8 +317,8 @@ pub(crate) static SETTINGS_GENERAL_TAB_KEYMAP: Keymap<SettingsGeneralTabAction> 
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('k')),
-            KeyChord::plain(LogicalKey::Char('K')),
+            KeyChord::plain(KeyCode::Char('k')),
+            KeyChord::plain(KeyCode::Char('K')),
         ],
         action: SettingsGeneralTabAction::MoveUp,
         hint: None,
@@ -326,8 +327,8 @@ pub(crate) static SETTINGS_GENERAL_TAB_KEYMAP: Keymap<SettingsGeneralTabAction> 
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: SettingsGeneralTabAction::MoveDown,
         hint: None,
@@ -335,7 +336,7 @@ pub(crate) static SETTINGS_GENERAL_TAB_KEYMAP: Keymap<SettingsGeneralTabAction> 
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char(' '))],
+        chords: &[KeyChord::plain(KeyCode::Char(' '))],
         action: SettingsGeneralTabAction::Toggle,
         hint: Some("toggle"),
         visibility: Visibility::Shown,
@@ -343,8 +344,8 @@ pub(crate) static SETTINGS_GENERAL_TAB_KEYMAP: Keymap<SettingsGeneralTabAction> 
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('s')),
-            KeyChord::plain(LogicalKey::Char('S')),
+            KeyChord::plain(KeyCode::Char('s')),
+            KeyChord::plain(KeyCode::Char('S')),
         ],
         action: SettingsGeneralTabAction::Save,
         hint: Some("save"),
@@ -353,9 +354,9 @@ pub(crate) static SETTINGS_GENERAL_TAB_KEYMAP: Keymap<SettingsGeneralTabAction> 
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Esc),
-            KeyChord::plain(LogicalKey::Char('q')),
-            KeyChord::plain(LogicalKey::Char('Q')),
+            KeyChord::plain(KeyCode::Esc),
+            KeyChord::plain(KeyCode::Char('q')),
+            KeyChord::plain(KeyCode::Char('Q')),
         ],
         action: SettingsGeneralTabAction::Back,
         hint: Some("back"),
@@ -386,14 +387,14 @@ pub(crate) enum SettingsEnvTabAction {
 
 pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Up)],
+        chords: &[KeyChord::plain(KeyCode::Up)],
         action: SettingsEnvTabAction::MoveUp,
         hint: Some("navigate"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Down)],
+        chords: &[KeyChord::plain(KeyCode::Down)],
         action: SettingsEnvTabAction::MoveDown,
         hint: None,
         visibility: Visibility::Internal,
@@ -401,8 +402,8 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('k')),
-            KeyChord::plain(LogicalKey::Char('K')),
+            KeyChord::plain(KeyCode::Char('k')),
+            KeyChord::plain(KeyCode::Char('K')),
         ],
         action: SettingsEnvTabAction::MoveUp,
         hint: None,
@@ -411,8 +412,8 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: SettingsEnvTabAction::MoveDown,
         hint: None,
@@ -421,8 +422,8 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('a')),
-            KeyChord::plain(LogicalKey::Char('A')),
+            KeyChord::plain(KeyCode::Char('a')),
+            KeyChord::plain(KeyCode::Char('A')),
         ],
         action: SettingsEnvTabAction::Add,
         hint: Some("add"),
@@ -431,8 +432,8 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('s')),
-            KeyChord::plain(LogicalKey::Char('S')),
+            KeyChord::plain(KeyCode::Char('s')),
+            KeyChord::plain(KeyCode::Char('S')),
         ],
         action: SettingsEnvTabAction::Save,
         hint: Some("save"),
@@ -441,8 +442,8 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('d')),
-            KeyChord::plain(LogicalKey::Char('D')),
+            KeyChord::plain(KeyCode::Char('d')),
+            KeyChord::plain(KeyCode::Char('D')),
         ],
         action: SettingsEnvTabAction::Delete,
         hint: Some("delete"),
@@ -451,8 +452,8 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('m')),
-            KeyChord::plain(LogicalKey::Char('M')),
+            KeyChord::plain(KeyCode::Char('m')),
+            KeyChord::plain(KeyCode::Char('M')),
         ],
         action: SettingsEnvTabAction::ToggleMask,
         hint: Some("mask"),
@@ -461,8 +462,8 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('p')),
-            KeyChord::plain(LogicalKey::Char('P')),
+            KeyChord::plain(KeyCode::Char('p')),
+            KeyChord::plain(KeyCode::Char('P')),
         ],
         action: SettingsEnvTabAction::OpenPicker,
         hint: Some("op picker"),
@@ -470,7 +471,7 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap
         glyph: Some("P"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        chords: &[KeyChord::plain(KeyCode::Enter)],
         action: SettingsEnvTabAction::Enter,
         hint: None,
         visibility: Visibility::Internal,
@@ -478,9 +479,9 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> = Keymap
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Esc),
-            KeyChord::plain(LogicalKey::Char('q')),
-            KeyChord::plain(LogicalKey::Char('Q')),
+            KeyChord::plain(KeyCode::Esc),
+            KeyChord::plain(KeyCode::Char('q')),
+            KeyChord::plain(KeyCode::Char('Q')),
         ],
         action: SettingsEnvTabAction::Back,
         hint: Some("back"),
@@ -505,14 +506,14 @@ pub(crate) enum SettingsTrustTabAction {
 
 pub(crate) static SETTINGS_TRUST_TAB_KEYMAP: Keymap<SettingsTrustTabAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Up)],
+        chords: &[KeyChord::plain(KeyCode::Up)],
         action: SettingsTrustTabAction::MoveUp,
         hint: Some("navigate"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Down)],
+        chords: &[KeyChord::plain(KeyCode::Down)],
         action: SettingsTrustTabAction::MoveDown,
         hint: None,
         visibility: Visibility::Internal,
@@ -520,8 +521,8 @@ pub(crate) static SETTINGS_TRUST_TAB_KEYMAP: Keymap<SettingsTrustTabAction> = Ke
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('k')),
-            KeyChord::plain(LogicalKey::Char('K')),
+            KeyChord::plain(KeyCode::Char('k')),
+            KeyChord::plain(KeyCode::Char('K')),
         ],
         action: SettingsTrustTabAction::MoveUp,
         hint: None,
@@ -530,8 +531,8 @@ pub(crate) static SETTINGS_TRUST_TAB_KEYMAP: Keymap<SettingsTrustTabAction> = Ke
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: SettingsTrustTabAction::MoveDown,
         hint: None,
@@ -540,8 +541,8 @@ pub(crate) static SETTINGS_TRUST_TAB_KEYMAP: Keymap<SettingsTrustTabAction> = Ke
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('h')),
-            KeyChord::plain(LogicalKey::Char('H')),
+            KeyChord::plain(KeyCode::Char('h')),
+            KeyChord::plain(KeyCode::Char('H')),
         ],
         action: SettingsTrustTabAction::ScrollLeft,
         hint: None,
@@ -550,8 +551,8 @@ pub(crate) static SETTINGS_TRUST_TAB_KEYMAP: Keymap<SettingsTrustTabAction> = Ke
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('l')),
-            KeyChord::plain(LogicalKey::Char('L')),
+            KeyChord::plain(KeyCode::Char('l')),
+            KeyChord::plain(KeyCode::Char('L')),
         ],
         action: SettingsTrustTabAction::ScrollRight,
         hint: None,
@@ -559,7 +560,7 @@ pub(crate) static SETTINGS_TRUST_TAB_KEYMAP: Keymap<SettingsTrustTabAction> = Ke
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char(' '))],
+        chords: &[KeyChord::plain(KeyCode::Char(' '))],
         action: SettingsTrustTabAction::Toggle,
         hint: Some("trust/untrust"),
         visibility: Visibility::Shown,
@@ -567,8 +568,8 @@ pub(crate) static SETTINGS_TRUST_TAB_KEYMAP: Keymap<SettingsTrustTabAction> = Ke
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('s')),
-            KeyChord::plain(LogicalKey::Char('S')),
+            KeyChord::plain(KeyCode::Char('s')),
+            KeyChord::plain(KeyCode::Char('S')),
         ],
         action: SettingsTrustTabAction::Save,
         hint: Some("save"),
@@ -577,9 +578,9 @@ pub(crate) static SETTINGS_TRUST_TAB_KEYMAP: Keymap<SettingsTrustTabAction> = Ke
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Esc),
-            KeyChord::plain(LogicalKey::Char('q')),
-            KeyChord::plain(LogicalKey::Char('Q')),
+            KeyChord::plain(KeyCode::Esc),
+            KeyChord::plain(KeyCode::Char('q')),
+            KeyChord::plain(KeyCode::Char('Q')),
         ],
         action: SettingsTrustTabAction::Back,
         hint: Some("back"),
@@ -617,14 +618,14 @@ pub(crate) enum SettingsGlobalMountsTabAction {
 pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMountsTabAction> =
     Keymap::new(&[
         KeyBinding {
-            chords: &[KeyChord::plain(LogicalKey::Up)],
+            chords: &[KeyChord::plain(KeyCode::Up)],
             action: SettingsGlobalMountsTabAction::MoveUp,
             hint: Some("navigate"),
             visibility: Visibility::Shown,
             glyph: Some("↑↓"),
         },
         KeyBinding {
-            chords: &[KeyChord::plain(LogicalKey::Down)],
+            chords: &[KeyChord::plain(KeyCode::Down)],
             action: SettingsGlobalMountsTabAction::MoveDown,
             hint: None,
             visibility: Visibility::Internal,
@@ -632,8 +633,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('k')),
-                KeyChord::plain(LogicalKey::Char('K')),
+                KeyChord::plain(KeyCode::Char('k')),
+                KeyChord::plain(KeyCode::Char('K')),
             ],
             action: SettingsGlobalMountsTabAction::MoveUp,
             hint: None,
@@ -642,8 +643,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('j')),
-                KeyChord::plain(LogicalKey::Char('J')),
+                KeyChord::plain(KeyCode::Char('j')),
+                KeyChord::plain(KeyCode::Char('J')),
             ],
             action: SettingsGlobalMountsTabAction::MoveDown,
             hint: None,
@@ -652,8 +653,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('h')),
-                KeyChord::plain(LogicalKey::Char('H')),
+                KeyChord::plain(KeyCode::Char('h')),
+                KeyChord::plain(KeyCode::Char('H')),
             ],
             action: SettingsGlobalMountsTabAction::ScrollLeft,
             hint: None,
@@ -662,8 +663,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('l')),
-                KeyChord::plain(LogicalKey::Char('L')),
+                KeyChord::plain(KeyCode::Char('l')),
+                KeyChord::plain(KeyCode::Char('L')),
             ],
             action: SettingsGlobalMountsTabAction::ScrollRight,
             hint: None,
@@ -672,8 +673,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('s')),
-                KeyChord::plain(LogicalKey::Char('S')),
+                KeyChord::plain(KeyCode::Char('s')),
+                KeyChord::plain(KeyCode::Char('S')),
             ],
             action: SettingsGlobalMountsTabAction::Save,
             hint: Some("save"),
@@ -682,8 +683,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('r')),
-                KeyChord::plain(LogicalKey::Char('R')),
+                KeyChord::plain(KeyCode::Char('r')),
+                KeyChord::plain(KeyCode::Char('R')),
             ],
             action: SettingsGlobalMountsTabAction::ToggleReadonly,
             hint: Some("readonly"),
@@ -692,8 +693,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('a')),
-                KeyChord::plain(LogicalKey::Char('A')),
+                KeyChord::plain(KeyCode::Char('a')),
+                KeyChord::plain(KeyCode::Char('A')),
             ],
             action: SettingsGlobalMountsTabAction::Add,
             hint: Some("add"),
@@ -702,8 +703,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('d')),
-                KeyChord::plain(LogicalKey::Char('D')),
+                KeyChord::plain(KeyCode::Char('d')),
+                KeyChord::plain(KeyCode::Char('D')),
             ],
             action: SettingsGlobalMountsTabAction::Delete,
             hint: Some("delete"),
@@ -712,8 +713,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('o')),
-                KeyChord::plain(LogicalKey::Char('O')),
+                KeyChord::plain(KeyCode::Char('o')),
+                KeyChord::plain(KeyCode::Char('O')),
             ],
             action: SettingsGlobalMountsTabAction::OpenGithub,
             hint: Some("GitHub"),
@@ -722,8 +723,8 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Char('n')),
-                KeyChord::plain(LogicalKey::Char('N')),
+                KeyChord::plain(KeyCode::Char('n')),
+                KeyChord::plain(KeyCode::Char('N')),
             ],
             action: SettingsGlobalMountsTabAction::EditRename,
             hint: Some("rename"),
@@ -731,28 +732,28 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
             glyph: Some("N"),
         },
         KeyBinding {
-            chords: &[KeyChord::plain(LogicalKey::Char('1'))],
+            chords: &[KeyChord::plain(KeyCode::Char('1'))],
             action: SettingsGlobalMountsTabAction::EditSource,
             hint: Some("edit src"),
             visibility: Visibility::Shown,
             glyph: Some("1"),
         },
         KeyBinding {
-            chords: &[KeyChord::plain(LogicalKey::Char('2'))],
+            chords: &[KeyChord::plain(KeyCode::Char('2'))],
             action: SettingsGlobalMountsTabAction::EditDest,
             hint: Some("edit dst"),
             visibility: Visibility::Shown,
             glyph: Some("2"),
         },
         KeyBinding {
-            chords: &[KeyChord::plain(LogicalKey::Char('3'))],
+            chords: &[KeyChord::plain(KeyCode::Char('3'))],
             action: SettingsGlobalMountsTabAction::EditScope,
             hint: Some("edit scope"),
             visibility: Visibility::Shown,
             glyph: Some("3"),
         },
         KeyBinding {
-            chords: &[KeyChord::plain(LogicalKey::Enter)],
+            chords: &[KeyChord::plain(KeyCode::Enter)],
             action: SettingsGlobalMountsTabAction::Enter,
             hint: None,
             visibility: Visibility::Internal,
@@ -760,9 +761,9 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMounts
         },
         KeyBinding {
             chords: &[
-                KeyChord::plain(LogicalKey::Esc),
-                KeyChord::plain(LogicalKey::Char('q')),
-                KeyChord::plain(LogicalKey::Char('Q')),
+                KeyChord::plain(KeyCode::Esc),
+                KeyChord::plain(KeyCode::Char('q')),
+                KeyChord::plain(KeyCode::Char('Q')),
             ],
             action: SettingsGlobalMountsTabAction::Back,
             hint: Some("back"),
@@ -785,14 +786,14 @@ pub(crate) enum InlinePickerShellAction {
 
 pub(crate) static INLINE_PICKER_SHELL_KEYMAP: Keymap<InlinePickerShellAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Left)],
+        chords: &[KeyChord::plain(KeyCode::Left)],
         action: InlinePickerShellAction::ScrollLeft,
         hint: Some("scroll"),
         visibility: Visibility::Shown,
         glyph: Some("←→"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Right)],
+        chords: &[KeyChord::plain(KeyCode::Right)],
         action: InlinePickerShellAction::ScrollRight,
         hint: None,
         visibility: Visibility::Internal,
@@ -800,8 +801,8 @@ pub(crate) static INLINE_PICKER_SHELL_KEYMAP: Keymap<InlinePickerShellAction> = 
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('h')),
-            KeyChord::plain(LogicalKey::Char('H')),
+            KeyChord::plain(KeyCode::Char('h')),
+            KeyChord::plain(KeyCode::Char('H')),
         ],
         action: InlinePickerShellAction::ScrollLeft,
         hint: None,
@@ -810,8 +811,8 @@ pub(crate) static INLINE_PICKER_SHELL_KEYMAP: Keymap<InlinePickerShellAction> = 
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('l')),
-            KeyChord::plain(LogicalKey::Char('L')),
+            KeyChord::plain(KeyCode::Char('l')),
+            KeyChord::plain(KeyCode::Char('L')),
         ],
         action: InlinePickerShellAction::ScrollRight,
         hint: None,
@@ -828,7 +829,7 @@ pub(crate) static INLINE_PICKER_SHELL_KEYMAP: Keymap<InlinePickerShellAction> = 
 // hard-coding span slices, keeping dispatch and display in sync.
 
 pub(crate) static EDITOR_GENERAL_RENAME_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::plain(LogicalKey::Enter)],
+    chords: &[KeyChord::plain(KeyCode::Enter)],
     action: (),
     hint: Some("rename"),
     visibility: Visibility::Shown,
@@ -836,7 +837,7 @@ pub(crate) static EDITOR_GENERAL_RENAME_KEYMAP: Keymap<()> = Keymap::new(&[KeyBi
 }]);
 
 pub(crate) static EDITOR_GENERAL_WORKDIR_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::plain(LogicalKey::Enter)],
+    chords: &[KeyChord::plain(KeyCode::Enter)],
     action: (),
     hint: Some("pick working directory"),
     visibility: Visibility::Shown,
@@ -844,7 +845,7 @@ pub(crate) static EDITOR_GENERAL_WORKDIR_KEYMAP: Keymap<()> = Keymap::new(&[KeyB
 }]);
 
 pub(crate) static EDITOR_GENERAL_TOGGLE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::plain(LogicalKey::Char(' '))],
+    chords: &[KeyChord::plain(KeyCode::Char(' '))],
     action: (),
     hint: Some("toggle"),
     visibility: Visibility::Shown,
@@ -853,9 +854,9 @@ pub(crate) static EDITOR_GENERAL_TOGGLE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBi
 
 pub(crate) static EDITOR_ROLE_NEW_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding {
     chords: &[
-        KeyChord::plain(LogicalKey::Enter),
-        KeyChord::plain(LogicalKey::Char('a')),
-        KeyChord::plain(LogicalKey::Char('A')),
+        KeyChord::plain(KeyCode::Enter),
+        KeyChord::plain(KeyCode::Char('a')),
+        KeyChord::plain(KeyCode::Char('A')),
     ],
     action: (),
     hint: Some("load role"),
@@ -864,7 +865,7 @@ pub(crate) static EDITOR_ROLE_NEW_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding 
 }]);
 
 pub(crate) static SETTINGS_GENERAL_TOGGLE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::plain(LogicalKey::Char(' '))],
+    chords: &[KeyChord::plain(KeyCode::Char(' '))],
     action: (),
     hint: Some("toggle"),
     visibility: Visibility::Shown,
@@ -872,7 +873,7 @@ pub(crate) static SETTINGS_GENERAL_TOGGLE_KEYMAP: Keymap<()> = Keymap::new(&[Key
 }]);
 
 pub(crate) static SETTINGS_TRUST_TOGGLE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::plain(LogicalKey::Char(' '))],
+    chords: &[KeyChord::plain(KeyCode::Char(' '))],
     action: (),
     hint: Some("trust/untrust"),
     visibility: Visibility::Shown,
@@ -880,7 +881,7 @@ pub(crate) static SETTINGS_TRUST_TOGGLE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBi
 }]);
 
 pub(crate) static AUTH_MANAGE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::plain(LogicalKey::Enter)],
+    chords: &[KeyChord::plain(KeyCode::Enter)],
     action: (),
     hint: Some("manage auth"),
     visibility: Visibility::Shown,
@@ -888,7 +889,7 @@ pub(crate) static AUTH_MANAGE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding {
 }]);
 
 pub(crate) static AUTH_EDIT_SOURCE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::plain(LogicalKey::Enter)],
+    chords: &[KeyChord::plain(KeyCode::Enter)],
     action: (),
     hint: Some("edit source"),
     visibility: Visibility::Shown,
@@ -903,7 +904,7 @@ pub(crate) static AUTH_EDIT_SOURCE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding
 /// folds in runtime context the table cannot carry (list-scroll focus, the
 /// selected row's type) to produce the final `WorkspaceListKeyPlan`. Footer
 /// builders pull each advertised key's glyph from this same table via
-/// [`termrock::components::Keymap::glyph_for`], so an advertised key cannot
+/// [`crate::tui::components::Keymap::glyph_for`], so an advertised key cannot
 /// drift from the dispatched key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkspaceListAction {
@@ -941,14 +942,14 @@ pub(crate) enum WorkspaceListAction {
 /// supply the contextual label and take only the glyph from this table.
 pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Up)],
+        chords: &[KeyChord::plain(KeyCode::Up)],
         action: WorkspaceListAction::NavigateUp,
         hint: None,
         visibility: Visibility::Shown,
         glyph: Some("↑↓"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Down)],
+        chords: &[KeyChord::plain(KeyCode::Down)],
         action: WorkspaceListAction::NavigateDown,
         hint: None,
         visibility: Visibility::Internal,
@@ -956,8 +957,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('k')),
-            KeyChord::plain(LogicalKey::Char('K')),
+            KeyChord::plain(KeyCode::Char('k')),
+            KeyChord::plain(KeyCode::Char('K')),
         ],
         action: WorkspaceListAction::NavigateUp,
         hint: None,
@@ -966,8 +967,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: WorkspaceListAction::NavigateDown,
         hint: None,
@@ -975,7 +976,7 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Left)],
+        chords: &[KeyChord::plain(KeyCode::Left)],
         action: WorkspaceListAction::TreeLeft,
         hint: None,
         visibility: Visibility::Shown,
@@ -983,8 +984,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('h')),
-            KeyChord::plain(LogicalKey::Char('H')),
+            KeyChord::plain(KeyCode::Char('h')),
+            KeyChord::plain(KeyCode::Char('H')),
         ],
         action: WorkspaceListAction::ScrollLeft,
         hint: None,
@@ -992,7 +993,7 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Right)],
+        chords: &[KeyChord::plain(KeyCode::Right)],
         action: WorkspaceListAction::TreeRight,
         hint: None,
         visibility: Visibility::Shown,
@@ -1000,8 +1001,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('l')),
-            KeyChord::plain(LogicalKey::Char('L')),
+            KeyChord::plain(KeyCode::Char('l')),
+            KeyChord::plain(KeyCode::Char('L')),
         ],
         action: WorkspaceListAction::ScrollRight,
         hint: None,
@@ -1009,7 +1010,7 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        chords: &[KeyChord::plain(KeyCode::Enter)],
         action: WorkspaceListAction::Enter,
         hint: None,
         visibility: Visibility::Shown,
@@ -1017,8 +1018,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('e')),
-            KeyChord::plain(LogicalKey::Char('E')),
+            KeyChord::plain(KeyCode::Char('e')),
+            KeyChord::plain(KeyCode::Char('E')),
         ],
         action: WorkspaceListAction::Edit,
         hint: Some("edit"),
@@ -1027,8 +1028,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('n')),
-            KeyChord::plain(LogicalKey::Char('N')),
+            KeyChord::plain(KeyCode::Char('n')),
+            KeyChord::plain(KeyCode::Char('N')),
         ],
         action: WorkspaceListAction::NewSession,
         hint: None,
@@ -1037,8 +1038,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('d')),
-            KeyChord::plain(LogicalKey::Char('D')),
+            KeyChord::plain(KeyCode::Char('d')),
+            KeyChord::plain(KeyCode::Char('D')),
         ],
         action: WorkspaceListAction::Delete,
         hint: Some("delete"),
@@ -1047,8 +1048,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('w')),
-            KeyChord::plain(LogicalKey::Char('W')),
+            KeyChord::plain(KeyCode::Char('w')),
+            KeyChord::plain(KeyCode::Char('W')),
         ],
         action: WorkspaceListAction::Prewarm,
         hint: None,
@@ -1057,8 +1058,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('o')),
-            KeyChord::plain(LogicalKey::Char('O')),
+            KeyChord::plain(KeyCode::Char('o')),
+            KeyChord::plain(KeyCode::Char('O')),
         ],
         action: WorkspaceListAction::OpenGithub,
         hint: Some("open in GitHub"),
@@ -1067,8 +1068,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('s')),
-            KeyChord::plain(LogicalKey::Char('S')),
+            KeyChord::plain(KeyCode::Char('s')),
+            KeyChord::plain(KeyCode::Char('S')),
         ],
         action: WorkspaceListAction::Settings,
         hint: Some("settings"),
@@ -1079,8 +1080,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     // so they carry no `hint` here and are HiddenAlias for the base hint bar.
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('r')),
-            KeyChord::plain(LogicalKey::Char('R')),
+            KeyChord::plain(KeyCode::Char('r')),
+            KeyChord::plain(KeyCode::Char('R')),
         ],
         action: WorkspaceListAction::InstanceReconnect,
         hint: None,
@@ -1089,8 +1090,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('a')),
-            KeyChord::plain(LogicalKey::Char('A')),
+            KeyChord::plain(KeyCode::Char('a')),
+            KeyChord::plain(KeyCode::Char('A')),
         ],
         action: WorkspaceListAction::InstanceNewSession,
         hint: None,
@@ -1099,8 +1100,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('x')),
-            KeyChord::plain(LogicalKey::Char('X')),
+            KeyChord::plain(KeyCode::Char('x')),
+            KeyChord::plain(KeyCode::Char('X')),
         ],
         action: WorkspaceListAction::InstanceShell,
         hint: None,
@@ -1109,8 +1110,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('i')),
-            KeyChord::plain(LogicalKey::Char('I')),
+            KeyChord::plain(KeyCode::Char('i')),
+            KeyChord::plain(KeyCode::Char('I')),
         ],
         action: WorkspaceListAction::InstanceInspect,
         hint: None,
@@ -1119,8 +1120,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('t')),
-            KeyChord::plain(LogicalKey::Char('T')),
+            KeyChord::plain(KeyCode::Char('t')),
+            KeyChord::plain(KeyCode::Char('T')),
         ],
         action: WorkspaceListAction::InstanceStop,
         hint: None,
@@ -1129,8 +1130,8 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('p')),
-            KeyChord::plain(LogicalKey::Char('P')),
+            KeyChord::plain(KeyCode::Char('p')),
+            KeyChord::plain(KeyCode::Char('P')),
         ],
         action: WorkspaceListAction::ConfirmPurge,
         hint: None,
@@ -1138,7 +1139,7 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
         glyph: Some("P"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Tab)],
+        chords: &[KeyChord::plain(KeyCode::Tab)],
         action: WorkspaceListAction::EnterPreview,
         hint: Some("into preview"),
         visibility: Visibility::Shown,
@@ -1146,9 +1147,9 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Esc),
-            KeyChord::plain(LogicalKey::Char('q')),
-            KeyChord::plain(LogicalKey::Char('Q')),
+            KeyChord::plain(KeyCode::Esc),
+            KeyChord::plain(KeyCode::Char('q')),
+            KeyChord::plain(KeyCode::Char('Q')),
         ],
         action: WorkspaceListAction::Exit,
         hint: None,
@@ -1159,7 +1160,7 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
     // reaches the list resolver (which dispatches modifier-free chords). The
     // binding exists only so the footer can derive the `Ctrl-Q` glyph.
     KeyBinding {
-        chords: &[KeyChord::ctrl(LogicalKey::Char('q'))],
+        chords: &[KeyChord::ctrl(KeyCode::Char('q'))],
         action: WorkspaceListAction::Quit,
         hint: Some("quit"),
         visibility: Visibility::Internal,
@@ -1183,14 +1184,14 @@ pub(crate) enum PreviewPaneAction {
 /// `PREVIEW_PANE_KEYMAP.hint_spans()` verbatim — no context branches).
 pub(crate) static PREVIEW_PANE_KEYMAP: Keymap<PreviewPaneAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Up)],
+        chords: &[KeyChord::plain(KeyCode::Up)],
         action: PreviewPaneAction::NavigateUp,
         hint: Some("navigate panes"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Down)],
+        chords: &[KeyChord::plain(KeyCode::Down)],
         action: PreviewPaneAction::NavigateDown,
         hint: None,
         visibility: Visibility::Internal,
@@ -1198,8 +1199,8 @@ pub(crate) static PREVIEW_PANE_KEYMAP: Keymap<PreviewPaneAction> = Keymap::new(&
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('k')),
-            KeyChord::plain(LogicalKey::Char('K')),
+            KeyChord::plain(KeyCode::Char('k')),
+            KeyChord::plain(KeyCode::Char('K')),
         ],
         action: PreviewPaneAction::NavigateUp,
         hint: None,
@@ -1208,8 +1209,8 @@ pub(crate) static PREVIEW_PANE_KEYMAP: Keymap<PreviewPaneAction> = Keymap::new(&
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: PreviewPaneAction::NavigateDown,
         hint: None,
@@ -1217,7 +1218,7 @@ pub(crate) static PREVIEW_PANE_KEYMAP: Keymap<PreviewPaneAction> = Keymap::new(&
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        chords: &[KeyChord::plain(KeyCode::Enter)],
         action: PreviewPaneAction::Attach,
         hint: Some("attach focused pane"),
         visibility: Visibility::Shown,
@@ -1225,8 +1226,8 @@ pub(crate) static PREVIEW_PANE_KEYMAP: Keymap<PreviewPaneAction> = Keymap::new(&
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Esc),
-            KeyChord::plain(LogicalKey::Left),
+            KeyChord::plain(KeyCode::Esc),
+            KeyChord::plain(KeyCode::Left),
         ],
         action: PreviewPaneAction::Back,
         hint: Some("back"),
@@ -1234,7 +1235,7 @@ pub(crate) static PREVIEW_PANE_KEYMAP: Keymap<PreviewPaneAction> = Keymap::new(&
         glyph: Some("Esc/←"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::BackTab)],
+        chords: &[KeyChord::plain(KeyCode::BackTab)],
         action: PreviewPaneAction::Back,
         hint: None,
         visibility: Visibility::HiddenAlias,

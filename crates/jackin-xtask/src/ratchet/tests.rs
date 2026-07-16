@@ -89,7 +89,7 @@ fn curated_pub_mods_rejects_extra_root_mod() {
         ("jackin-config", "mod private;\npub mod test_support;\n"),
         (
             "jackin-core",
-            "mod private;\npub mod container_paths;\npub mod debug_log;\n",
+            "mod private;\npub mod container_paths;\npub mod debug_log;\npub mod tui_theme;\n",
         ),
     ] {
         let lib = dir
