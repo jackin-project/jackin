@@ -12,7 +12,7 @@ configuration; Velnor is faster only when runner-local state persists. The CI
 warmup also prepares one lane-scoped xtask and pinned Cargo-tool bundle for
 fan-out, replacing per-job tool downloads. The resolved tool binaries have an
 explicit immutable cache keyed by the pinned mise configuration, and Rust
-target archives append the exact source revision to their semantic build-shape
+target archives append the exact source-content revision to their semantic build-shape
 key. That lets an equivalent rerun reuse compiled workspace artifacts instead
 of restoring a permanently stale first snapshot. Trusted manual runs may
 populate both caches so parity and warm-run measurements exercise the same
