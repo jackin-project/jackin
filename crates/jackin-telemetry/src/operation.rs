@@ -567,7 +567,7 @@ fn make_child_execution_span(name: &str) -> Option<Span> {
 }
 
 pub fn operation(def: &'static SpanDef, attrs: &[Attr<'_>]) -> Result<OperationGuard, Rejection> {
-    operation_inner(def, attrs, false)
+    operation_inner(def, attrs, false, true)
 }
 
 /// Start a governed operation, degrading to a disabled guard on rejection.
@@ -587,7 +587,7 @@ pub fn operation_with_remote_parent(
 ) -> Result<OperationGuard, Rejection> {
     use opentelemetry::trace::TraceContextExt as _;
 
-    let guard = operation_inner(def, attrs, true)?;
+    let guard = operation_inner(def, attrs, true, true)?;
     drop(
         guard
             .span
@@ -600,13 +600,23 @@ pub fn root_operation(
     def: &'static SpanDef,
     attrs: &[Attr<'_>],
 ) -> Result<OperationGuard, Rejection> {
-    operation_inner(def, attrs, true)
+    operation_inner(def, attrs, true, true)
+}
+
+/// Start an autonomous root that belongs to the process session but not to the
+/// launch invocation which happened to start the long-lived process.
+pub fn autonomous_root_operation(
+    def: &'static SpanDef,
+    attrs: &[Attr<'_>],
+) -> Result<OperationGuard, Rejection> {
+    operation_inner(def, attrs, true, false)
 }
 
 fn operation_inner(
     def: &'static SpanDef,
     attrs: &[Attr<'_>],
     root: bool,
+    include_invocation: bool,
 ) -> Result<OperationGuard, Rejection> {
     let canonical = schema::spans::definition(def.name)
         .filter(|metadata| {
@@ -622,10 +632,17 @@ fn operation_inner(
             return Err(reason);
         }
     };
-    let invocation = crate::identity::current_invocation().map(|id| id.to_string());
+    let invocation = include_invocation
+        .then(crate::identity::current_invocation)
+        .flatten()
+        .map(|id| id.to_string());
     let session = crate::identity::current_session().map(|value| value.current.to_string());
     let mut ambient_attrs = attrs.to_vec();
     let supplied = |key| attrs.iter().any(|attr| attr.key == key);
+    if !include_invocation && supplied(schema::attrs::CLI_INVOCATION_ID) {
+        health::reject(health::Signal::Trace, Rejection::InvalidValue);
+        return Err(Rejection::InvalidValue);
+    }
     if let Some(invocation) = invocation.as_deref()
         && metadata
             .attributes

@@ -32,8 +32,8 @@ pub use metric::{
     UpDownCounter, counter, gauge, histogram, install, reserve_meter, up_down_counter,
 };
 pub use operation::{
-    OperationGuard, SpanDef, operation, operation_or_disabled, operation_with_remote_parent,
-    root_operation,
+    OperationGuard, SpanDef, autonomous_root_operation, operation, operation_or_disabled,
+    operation_with_remote_parent, root_operation,
 };
 
 /// The only tracing target accepted for governed product telemetry.

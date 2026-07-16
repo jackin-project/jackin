@@ -63,6 +63,18 @@ fn outcome_status_mapping_is_explicit() {
 }
 
 #[test]
+fn autonomous_roots_reject_caller_supplied_invocation_identity() {
+    let attrs = [Attr {
+        key: schema::attrs::CLI_INVOCATION_ID,
+        value: Value::Str("00000000-0000-4000-8000-000000000001"),
+    }];
+    assert!(matches!(
+        autonomous_root_operation(&BACKGROUND_CYCLE, &attrs),
+        Err(Rejection::InvalidValue)
+    ));
+}
+
+#[test]
 fn completion_matrix_rejects_impossible_pairs() {
     use schema::enums::{ErrorType, OutcomeValue};
     assert!(valid_completion(OutcomeValue::Success, None));
