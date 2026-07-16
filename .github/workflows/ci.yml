@@ -586,7 +586,6 @@ jobs:
           fi
       - name: Restore prepared Rust toolchains
         id: toolchain-lookup
-        if: steps.prepared-inputs.outputs.ready != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -595,15 +594,12 @@ jobs:
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the minimal Rust CI profile
-        if: >-
-          steps.prepared-inputs.outputs.ready != 'true' &&
-          steps.toolchain-lookup.outputs.cache-hit != 'true'
+        if: steps.toolchain-lookup.outputs.cache-hit != 'true'
         run: rustup set profile minimal
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         if: >-
-          steps.prepared-inputs.outputs.ready != 'true' &&
-          (steps.toolchain-lookup.outputs.cache-hit != 'true' ||
-           steps.ci-tools-artifact.outputs.hit != 'true')
+          steps.toolchain-lookup.outputs.cache-hit != 'true' ||
+          steps.ci-tools-artifact.outputs.hit != 'true'
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
@@ -616,14 +612,6 @@ jobs:
             rust@${{ needs.changes.outputs.rust-version }}
             ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        if: steps.ci-xtask-artifact.outputs.hit == 'true'
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Validate the prepared current Rust toolchain
         if: steps.ci-xtask-artifact.outputs.hit == 'true'
