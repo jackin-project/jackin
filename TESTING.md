@@ -56,6 +56,22 @@ not run:
 cargo test --doc --workspace --locked
 ```
 
+## CI performance contract
+
+For a dependency graph that has completed before, every required CI job and the
+required pipeline target should finish within one minute. A warm job must not
+update the crates.io index, download an upstream crate, or compile an unchanged
+registry/git dependency. The lane-scoped registry warmup is the sole owner of a
+true cold fetch and builds `jackin-xtask` once for artifact reuse by downstream
+gates. GitHub and Velnor use the same workflow, commands, cache keys, and failure
+policy; Velnor may be faster only because its runner-local state persists.
+
+A cold bootstrap is recorded as a cache miss, not hidden by raising the target.
+Fan-out jobs stay offline and consume the warmup result. Cross-run compiler
+result sharing is deferred to the [Shared CI compiler cache](<docs/content/docs/roadmap/(infrastructure)/shared-ci-compiler-cache.mdx>)
+roadmap item; until that backend ships, logical sharding and bounded Cargo target
+caches keep sequential work and cache-quota churn out of the critical path.
+
 ## Verification matrix
 
 | Change surface | Command | When |
@@ -146,13 +162,13 @@ owning job instead of launching nested Cargo commands.
 
 | Target | Crate path | Smoke (PR / ci.yml) | Long (hygiene) |
 |---|---|---|---|
-| `damage_grid_process` | `crates/jackin-term/fuzz` | 60s `--sanitizer none` | 300s; ASan 300s |
-| `config_migrate` | `crates/jackin-config/fuzz` | 30s | 120s |
-| `workspace_migrate` | `crates/jackin-config/fuzz` | 30s | 120s |
-| `manifest_migrate` | `crates/jackin-manifest/fuzz` | 30s | 120s |
-| `manifest_validate` | `crates/jackin-manifest/fuzz` | 30s | 120s |
-| `env_resolve` | `crates/jackin-env/fuzz` | 30s | 120s |
-| `decode_frames` | `crates/jackin-protocol/fuzz` | 45s | 120s |
+| `damage_grid_process` | `crates/jackin-term/fuzz` | 20s `--sanitizer none` | 300s; ASan 300s |
+| `config_migrate` | `crates/jackin-config/fuzz` | 20s | 120s |
+| `workspace_migrate` | `crates/jackin-config/fuzz` | 20s | 120s |
+| `manifest_migrate` | `crates/jackin-manifest/fuzz` | 20s | 120s |
+| `manifest_validate` | `crates/jackin-manifest/fuzz` | 20s | 120s |
+| `env_resolve` | `crates/jackin-env/fuzz` | 20s | 120s |
+| `decode_frames` | `crates/jackin-protocol/fuzz` | 20s | 120s |
 
 Local smoke (nightly + cargo-fuzz via mise):
 

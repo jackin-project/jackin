@@ -573,71 +573,6 @@ jobs:
       - run: bash scripts/ci/check-agent-status-truthful.sh
       - run: cargo deny check licenses bans sources
 
-  # R9 (W4 optional): publish a cargo-depgraph layering visualization as
-  # an informational artifact per PR. Non-blocking — failures here must
-  # never fail the merge (continue-on-error below + intentionally not in
-  # the ci-required aggregator needs list). Restricted to GitHub lane so
-  # the artifact does not double; Velnor self-hosted runners stay focused
-  # on the gating CI lanes.
-  workspace-depgraph:
-    needs: [changes]
-    if: needs.changes.outputs.rust == 'true'
-    continue-on-error: true
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    name: workspace depgraph artifact
-    env:
-      CARGO_TERM_COLOR: always
-      CARGO_NET_OFFLINE: "true"
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
-      - name: Install cargo-depgraph (online; its sourcehut repo ships no
-          cargo-binstall manifest, so fetch the crates.io build directly. This
-          one step overrides the job's CARGO_NET_OFFLINE so the tool can be
-          fetched; the job stays non-blocking (continue-on-error) by design.)
-        env:
-          CARGO_NET_OFFLINE: "false"
-        run: cargo install cargo-depgraph --locked
-      - name: Install graphviz (DOT → SVG renderer)
-        run: sudo apt-get install -y --no-install-recommends graphviz
-      - name: Generate layered dependency graph
-        run: |
-          set -euo pipefail
-          cargo depgraph \
-            --workspace-only \
-            --all-features \
-            --dedup-transitive-deps \
-            --manifest-path Cargo.toml > workspace.dot
-          dot -Tsvg workspace.dot -o workspace.svg
-      - name: Upload depgraph artifacts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: workspace-depgraph
-          path: |
-            workspace.dot
-            workspace.svg
-          if-no-files-found: warn
-          retention-days: 14
-
   check-default:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
@@ -731,6 +666,9 @@ jobs:
       SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          lane: ${{ matrix.config.lane }}
       # When docker/construct/** changes, the published construct:trixie image
       # on Docker Hub is stale for the lifetime of the PR — it is only
       # republished after merge to main. Build the construct image in its own
@@ -790,7 +728,7 @@ jobs:
           CACHE_TO: type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
         run: |
           set -euo pipefail
-          cargo xtask construct build-platform amd64
+          "$CI_XTASK" construct build-platform amd64
           docker save --output construct-trixie.tar projectjackin/construct:trixie
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -813,9 +751,14 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        shard:
+          - { name: core, packages: "-p jackin -p jackin-core -p jackin-host -p jackin-instance -p jackin-isolation -p jackin-docker" }
+          - { name: capsule, packages: "-p jackin-capsule -p jackin-runtime -p jackin-protocol -p jackin-term -p jackin-agent-status" }
+          - { name: services, packages: "-p jackin-config -p jackin-diagnostics -p jackin-env -p jackin-image -p jackin-manifest -p jackin-usage" }
+          - { name: tools, packages: "-p jackin-console -p jackin-console-oppicker -p jackin-launch-tui -p jackin-process -p jackin-test-support -p jackin-build-meta -p jackin-dev -p jackin-xtask" }
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo test --doc (${{ matrix.config.lane }})
+    name: cargo test --doc ${{ matrix.shard.name }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_OFFLINE: "true"
@@ -847,7 +790,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-doctest-dev-workspace-v2
+          shared-key: ci-doctest-dev-${{ matrix.shard.name }}-v3
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
@@ -883,13 +826,13 @@ jobs:
           else
             echo "No changed .snap files vs origin/main."
           fi
-      - run: cargo test --doc --workspace --locked
+      - run: cargo test --doc ${{ matrix.shard.packages }} --locked
       - name: Capture sccache stats
         if: always()
         uses: ./.github/actions/sccache-stats
         with:
-          artifact-name: sccache-stats-ci-doctest-${{ matrix.config.lane }}
-          heading: sccache ci doctest (${{ matrix.config.lane }})
+          artifact-name: sccache-stats-ci-doctest-${{ matrix.shard.name }}-${{ matrix.config.lane }}
+          heading: sccache ci doctest ${{ matrix.shard.name }} (${{ matrix.config.lane }})
 
   test:
     needs: [changes, construct-e2e-image, matrix-setup, cargo-registry-warmup]
@@ -969,11 +912,20 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
+          - { name: damage-grid, dir: crates/jackin-term, fuzz: damage_grid_process }
+          - { name: config-migrate, dir: crates/jackin-config, fuzz: config_migrate }
+          - { name: workspace-migrate, dir: crates/jackin-config, fuzz: workspace_migrate }
+          - { name: manifest-migrate, dir: crates/jackin-manifest, fuzz: manifest_migrate }
+          - { name: manifest-validate, dir: crates/jackin-manifest, fuzz: manifest_validate }
+          - { name: env-resolve, dir: crates/jackin-env, fuzz: env_resolve }
+          - { name: protocol-frames, dir: crates/jackin-protocol, fuzz: decode_frames }
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo fuzz (${{ matrix.config.lane }})
+    name: cargo fuzz ${{ matrix.target.name }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
+      CARGO_NET_OFFLINE: "true"
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -1006,44 +958,35 @@ jobs:
             crates/jackin-term/fuzz -> target
             crates/jackin-config/fuzz -> target
             crates/jackin-manifest/fuzz -> target
+            crates/jackin-env/fuzz -> target
             crates/jackin-protocol/fuzz -> target
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - name: Fuzz jackin-term parser path
+      - name: Run bounded fuzz target
         run: |
-          cd crates/jackin-term
+          cd "${{ matrix.target.dir }}"
           cargo fetch --locked --offline
-          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=60
-      - name: Fuzz config migration paths
-        run: |
-          cd crates/jackin-config
-          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu config_migrate -- -max_total_time=30
-          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu workspace_migrate -- -max_total_time=30
-      - name: Fuzz manifest migration and validate
-        run: |
-          cd crates/jackin-manifest
-          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_migrate -- -max_total_time=30
-          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_validate -- -max_total_time=30
-      - name: Fuzz protocol decode_frames
-        run: |
-          cd crates/jackin-protocol
-          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu decode_frames -- -max_total_time=45
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu \
+            "${{ matrix.target.fuzz }}" -- -max_total_time=20
   bench-build:
-    # One job builds every workspace bench: the two matrix legs compiled the
-    # shared dependency graph twice with two separate target caches
-    # (cache-quota pressure -> eviction churn). bench-build validates
-    # independently from the clippy-owned all-features compile gate.
+    # Stable package shards keep release-profile linking below the job budget
+    # without duplicating crates that do not define benchmark targets.
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        shard:
+          - { name: host, packages: "-p jackin -p jackin-runtime" }
+          - { name: capsule, packages: "-p jackin-capsule -p jackin-term" }
+          - { name: data, packages: "-p jackin-config -p jackin-manifest -p jackin-usage" }
+          - { name: diagnostics, packages: "-p jackin-diagnostics" }
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo bench build (${{ matrix.config.lane }})
+    name: cargo bench build ${{ matrix.shard.name }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -1069,7 +1012,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-all-features-dev-workspace-v2
+          shared-key: ci-bench-${{ matrix.shard.name }}-workspace-v3
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
@@ -1077,7 +1020,7 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: cargo build --benches --workspace --locked
+      - run: cargo build --benches ${{ matrix.shard.packages }} --locked
 
   # Plan 022: scoped feature-powerset for crates with real optional behavior.
   # Full workspace powerset stays on the scheduled hygiene lane.
@@ -1088,9 +1031,16 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        package:
+          - jackin
+          - jackin-diagnostics
+          - jackin-capsule
+          - jackin-agent-status
+          - jackin-term
+          - jackin-runtime
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: feature powerset scoped (${{ matrix.config.lane }})
+    name: feature powerset ${{ matrix.package }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -1116,19 +1066,14 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-feature-powerset-scoped-workspace-v1
+          shared-key: ci-feature-powerset-${{ matrix.package }}-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       # Crates that actually expose optional behavior (not test-support-only).
       - run: >
           cargo hack check
-          -p jackin
-          -p jackin-diagnostics
-          -p jackin-capsule
-          -p jackin-agent-status
-          -p jackin-term
-          -p jackin-runtime
+          -p ${{ matrix.package }}
           --feature-powerset
           --all-targets
           --locked
@@ -1144,9 +1089,14 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        shard:
+          - { name: core, packages: "-p jackin -p jackin-core -p jackin-host -p jackin-instance -p jackin-isolation -p jackin-docker" }
+          - { name: capsule, packages: "-p jackin-capsule -p jackin-runtime -p jackin-protocol -p jackin-term -p jackin-agent-status" }
+          - { name: services, packages: "-p jackin-config -p jackin-diagnostics -p jackin-env -p jackin-image -p jackin-manifest -p jackin-usage" }
+          - { name: tools, packages: "-p jackin-console -p jackin-console-oppicker -p jackin-launch-tui -p jackin-process -p jackin-test-support -p jackin-build-meta -p jackin-dev -p jackin-xtask" }
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo msrv check (${{ matrix.config.lane }})
+    name: cargo msrv check ${{ matrix.shard.name }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -1175,7 +1125,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-msrv-default-dev-workspace-v2
+          shared-key: ci-msrv-${{ matrix.shard.name }}-dev-workspace-v3
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
@@ -1184,7 +1134,7 @@ jobs:
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - name: cargo check on MSRV
-        run: cargo check --workspace --all-targets --locked
+        run: cargo check ${{ matrix.shard.packages }} --all-targets --locked
         env:
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
   audit:
@@ -1242,7 +1192,7 @@ jobs:
           cargo audit "${args[@]}"
 
   build-validator:
-    needs: [changes, clippy]
+    needs: [changes, clippy, matrix-setup]
     # Run on push-to-main when Rust inputs change, and on any
     # workflow_dispatch so a maintainer can re-build the validator
     # artifacts on demand without waiting for a Rust-touching push.
@@ -1251,17 +1201,18 @@ jobs:
        github.ref == 'refs/heads/main' &&
        needs.changes.outputs.rust == 'true') ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo build validator (${{ matrix.target }})
+    name: cargo build validator (${{ matrix.config.lane }}, ${{ matrix.target }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     strategy:
       matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-          - target: aarch64-unknown-linux-gnu
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -1292,7 +1243,7 @@ jobs:
           sha256sum "$archive" > "$archive.sha256"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: jackin-role-${{ matrix.target }}
+          name: jackin-role-${{ matrix.config.lane }}-${{ matrix.target }}
           path: |
             jackin-role-${{ matrix.target }}.tar.gz
             jackin-role-${{ matrix.target }}.tar.gz.sha256

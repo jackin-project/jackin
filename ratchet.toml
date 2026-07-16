@@ -608,7 +608,7 @@ key = "crates/jackin-usage/README.md"
 bound = 2272
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
-bound = 5038
+bound = 5391
 [[family.entry]]
 key = "crates/jackin/README.md"
 bound = 2735

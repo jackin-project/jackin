@@ -121,7 +121,10 @@ jobs:
               - '.github/workflows/construct.yml'
               - 'docker-bake.hcl'
               - 'docker/construct/**'
-              - 'crates/jackin-xtask/**'
+              - 'crates/jackin-xtask/Cargo.toml'
+              - 'crates/jackin-xtask/src/main.rs'
+              - 'crates/jackin-xtask/src/construct.rs'
+              - 'crates/jackin-xtask/src/construct/**'
             # Require an unpublished docker/construct/VERSION only when inputs
             # baked into the construct image changed.
             construct_image:
