@@ -333,20 +333,11 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     }
 }
 
-fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
+fn handle_pending_clipboard_transfer(
+    mux: &mut Multiplexer,
+    request: &AttachControlRequest,
+) -> bool {
     let request_id = request.request_id;
-    if matches!(
-        jackin_telemetry::propagation::extract(&request.context),
-        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
-    ) {
-        send_attach_control_response(
-            mux,
-            request_id,
-            AttachControlResult::InvalidCorrelation,
-            None,
-        );
-        return;
-    }
     match &request.operation {
         AttachControlOperation::ClipboardImageChunk(chunk) => {
             let Some(pending) = mux
@@ -355,11 +346,11 @@ fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
                 .get(&chunk.transfer_id)
             else {
                 send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
-                return;
+                return true;
             };
             if pending.request_id != request_id || pending.context != request.context {
                 send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
-                return;
+                return true;
             }
             let result = mux.clipboard.clipboard_image_transfers.chunk(chunk.clone());
             if result.is_err()
@@ -375,7 +366,7 @@ fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
                     pending.operation,
                 );
             }
-            return;
+            true
         }
         AttachControlOperation::ClipboardImageEnd(end) => {
             let Some(pending) = mux
@@ -384,11 +375,11 @@ fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
                 .get(&end.transfer_id)
             else {
                 send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
-                return;
+                return true;
             };
             if pending.request_id != request_id || pending.context != request.context {
                 send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
-                return;
+                return true;
             }
             let Some(pending) = mux
                 .clipboard
@@ -396,7 +387,7 @@ fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
                 .remove(&end.transfer_id)
             else {
                 send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
-                return;
+                return true;
             };
             let succeeded = mux
                 .clipboard
@@ -413,9 +404,28 @@ fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
                 },
                 pending.operation,
             );
-            return;
+            true
         }
-        _ => {}
+        _ => false,
+    }
+}
+
+fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
+    let request_id = request.request_id;
+    if matches!(
+        jackin_telemetry::propagation::extract(&request.context),
+        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+    ) {
+        send_attach_control_response(
+            mux,
+            request_id,
+            AttachControlResult::InvalidCorrelation,
+            None,
+        );
+        return;
+    }
+    if handle_pending_clipboard_transfer(mux, &request) {
+        return;
     }
 
     let method = match request.operation {
