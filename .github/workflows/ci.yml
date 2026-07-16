@@ -484,9 +484,26 @@ jobs:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Use the prepared current Rust toolchain
+      - name: Prepare the exact current Rust toolchain
+        shell: bash
         run: |
+          set -euo pipefail
           version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          if toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version" 2>/dev/null); then
+            echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          mise_install=${MISE_DATA_DIR:?MISE_DATA_DIR must be set}/installs/rust/$version
+          if [ ! -x "$mise_install/bin/rustc" ]; then
+            rm -rf "$mise_install"
+            mise install "rust@$version"
+          fi
+          if [ -x "$mise_install/bin/rustc" ] && [ -x "$mise_install/bin/cargo" ]; then
+            echo "$mise_install/bin" >> "$GITHUB_PATH"
+            exit 0
+          fi
+
           toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "$version")
           echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
       - run: cargo fmt --check
