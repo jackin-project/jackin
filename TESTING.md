@@ -85,11 +85,11 @@ MSRV, applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
 Scheduling follows the reverse dependency closure; the compact compiled-output
 cache key follows the forward dependency closure. That cache stores only
 first-party fingerprints, libraries, binaries, build outputs, and test
-executables. Every crate job restores the same dependency-universe cache, while
-only the broad `jackin` crate job may publish it. This keeps one authoritative
-copy of unchanged third-party outputs instead of duplicating nearly the whole
-dependency graph into every crate archive and exhausting the repository cache
-quota.
+executables and third-party outputs are published together as a seven-day,
+input-identical crate target artifact. Artifacts keep the crate-specific Cargo
+feature and profile variants reusable without placing 26 mostly overlapping
+archives in GitHub's small repository cache quota. GitHub is the canonical
+artifact producer; both GitHub and Velnor restore the same output.
 
 ## Verification matrix
 

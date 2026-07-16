@@ -738,9 +738,6 @@ jobs:
       packages-json: ${{ needs.cargo-registry-warmup.outputs.affected-packages }}
       package-cache-keys-json: ${{ needs.cargo-registry-warmup.outputs.package-cache-keys }}
       all-features: true
-      # One dependency universe is restored by every crate job and populated by
-      # the broad jackin crate job. Crate-specific compiled outputs stay separate.
-      cache-shared-key: ci-dependency-universe-v1
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
     secrets: inherit

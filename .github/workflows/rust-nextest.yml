@@ -24,10 +24,6 @@ on:
         description: Run each package with all Cargo features enabled.
         required: true
         type: boolean
-      cache-shared-key:
-        description: Shared Rust cache namespace for this nextest lane.
-        required: true
-        type: string
       construct-image-changed:
         description: Download and load the PR-built construct image before Docker E2E.
         required: false
@@ -81,45 +77,31 @@ jobs:
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ${{ inputs.cache-shared-key }}
-          add-job-id-key: "false"
-          cache-all-crates: "false"
-          cache-workspace-crates: "false"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: >-
-            ${{ matrix.package == 'jackin' &&
-                (github.ref == 'refs/heads/main' ||
-                 github.event_name == 'workflow_dispatch' ||
-                 (github.event_name == 'pull_request' &&
-                  github.event.pull_request.head.repo.full_name == github.repository)) }}
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback.
-          # Every crate restores one dependency universe; only the broad jackin
-          # crate job may publish it. Per-crate dependency archives duplicate
-          # almost the entire graph and exceed the repository cache quota.
-          # First-party outputs remain in the compact crate cache below.
-          # Both lanes use the same target-cache contract. Velnor's persistent
-          # runner state remains a transparent accelerator beneath it.
-      - name: Cache compiled workspace crate outputs
-        id: workspace-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            target/**/.fingerprint/jackin-*
-            target/**/build/jackin-*
-            target/**/deps/jackin*
-            target/**/deps/libjackin*
-            target/**/jackin
-            target/**/jackin-*
-            target/**/jackin_*
-          key: workspace-crate-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] || github.sha }}
-          restore-keys: |
-            workspace-crate-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
-      - name: Refresh restored Cargo artifact mtimes
-        if: steps.workspace-cache.outputs.cache-hit == 'true'
-        run: find target -type f -exec touch {} +
+      - name: Restore input-identical crate target
+        id: crate-target
+        shell: bash
+        env:
+          ARTIFACT_NAME: ci-crate-target-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          artifact_id=$(
+            gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=10" \
+              --jq '.artifacts[] | select(.expired == false) | .id' \
+              | head -n 1
+          )
+          if [ -z "$artifact_id" ]; then
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p target/.ci-restore
+          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > target/.ci-restore/artifact.zip
+          python3 -m zipfile -e target/.ci-restore/artifact.zip target/.ci-restore
+          tar --zstd -xf target/.ci-restore/target.tar.zst
+          rm -rf target/.ci-restore
+          find target -type f -exec touch {} +
+          echo "hit=true" >> "$GITHUB_OUTPUT"
       - name: Run package tests
         shell: bash
         run: |
@@ -328,6 +310,37 @@ jobs:
             printf "%s\n" "${unquarantined[@]}"
             exit 1
           fi
+
+      - name: Pack input-identical crate target
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-target.outputs.hit != 'true' &&
+          matrix.config.lane == 'GitHub' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        run: >-
+          tar --zstd
+          --exclude='target/nextest'
+          --exclude='target/telemetry-*'
+          --exclude='target/.ci-restore'
+          -cf target.tar.zst target
+      - name: Publish input-identical crate target
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-target.outputs.hit != 'true' &&
+          matrix.config.lane == 'GitHub' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-crate-target-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] || github.sha }}
+          path: target.tar.zst
+          compression-level: 0
+          retention-days: 7
 
       - name: Capture sccache stats
         if: always()
