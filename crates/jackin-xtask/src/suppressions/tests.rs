@@ -91,25 +91,25 @@ fn fails_when_unbudgeted_bare_crate_appears() {
 
 #[test]
 fn fails_when_expect_grows() {
-    let budget = budget_from(&[], &[("clippy::panic", "jackin-tui", 1)]);
-    let measured = measured_full(&[], &[("clippy::panic", "jackin-tui", 2)]);
+    let budget = budget_from(&[], &[("clippy::panic", "example-crate", 1)]);
+    let measured = measured_full(&[], &[("clippy::panic", "example-crate", 2)]);
     let err = check(&budget, &measured).unwrap_err().to_string();
     assert!(err.contains("clippy::panic"), "{err}");
-    assert!(err.contains("jackin-tui"), "{err}");
+    assert!(err.contains("example-crate"), "{err}");
     assert!(err.contains("grew from 1 to 2"), "{err}");
 }
 
 #[test]
 fn fails_when_expect_shrinks_without_budget_update() {
-    let budget = budget_from(&[], &[("clippy::panic", "jackin-tui", 3)]);
-    let measured = measured_full(&[], &[("clippy::panic", "jackin-tui", 1)]);
+    let budget = budget_from(&[], &[("clippy::panic", "example-crate", 3)]);
+    let measured = measured_full(&[], &[("clippy::panic", "example-crate", 1)]);
     let err = check(&budget, &measured).unwrap_err().to_string();
     assert!(err.contains("shrunk from 3 to 1"), "{err}");
 }
 
 #[test]
 fn fails_when_expect_row_at_zero_still_listed() {
-    let budget = budget_from(&[], &[("clippy::panic", "jackin-tui", 1)]);
+    let budget = budget_from(&[], &[("clippy::panic", "example-crate", 1)]);
     let measured = Measured::default();
     let err = check(&budget, &measured).unwrap_err().to_string();
     assert!(err.contains("now 0"), "{err}");

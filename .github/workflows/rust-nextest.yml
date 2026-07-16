@@ -47,7 +47,6 @@ jobs:
           - jackin
           - jackin-capsule
           - jackin-runtime
-          - jackin-tui
           - small-crates
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
@@ -102,7 +101,7 @@ jobs:
           set -euo pipefail
 
           case "${{ matrix.group }}" in
-            jackin|jackin-capsule|jackin-runtime|jackin-tui)
+            jackin|jackin-capsule|jackin-runtime)
               args=(-p "${{ matrix.group }}")
               ;;
             small-crates)
@@ -111,7 +110,6 @@ jobs:
                 --exclude jackin
                 --exclude jackin-capsule
                 --exclude jackin-runtime
-                --exclude jackin-tui
               )
               ;;
             *)
