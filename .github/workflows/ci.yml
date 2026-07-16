@@ -339,6 +339,9 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Read MSRV
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
       - id: ci-xtask-artifact
         name: Restore input-identical CI xtask
         shell: bash
@@ -370,8 +373,19 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
+            rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache MSRV toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-msrv-ci-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.msrv.outputs.version }}
+          restore-keys: |
+            rustup-msrv-ci-v2-${{ runner.os }}-${{ runner.arch }}-
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - id: ci-tools-artifact
         name: Restore resolved CI tool binaries
@@ -409,9 +423,12 @@ jobs:
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           install_args: >-
             rust
+            rust@${{ steps.msrv.outputs.version }}
             ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Prepare clippy once for crate jobs
+        run: rustup component add clippy
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
