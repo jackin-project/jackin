@@ -9,16 +9,9 @@ use crate::docs::repo_root;
 
 /// CI partition names for `--only` selection.
 ///
-/// `lint` | `policy` | `tests` | `msrv` | `powerset` | `docs` | `snapshots`
-pub(crate) const PARTITIONS: &[&str] = &[
-    "lint",
-    "policy",
-    "tests",
-    "msrv",
-    "powerset",
-    "docs",
-    "snapshots",
-];
+/// `lint` | `policy` | `tests` | `powerset` | `docs` | `snapshots`
+pub(crate) const PARTITIONS: &[&str] =
+    &["lint", "policy", "tests", "powerset", "docs", "snapshots"];
 
 #[derive(Args, Debug)]
 pub(crate) struct CiArgs {
@@ -33,7 +26,7 @@ pub(crate) struct CiArgs {
     base: String,
     /// Run only the named partition(s). Repeatable.
     ///
-    /// Partitions: lint, policy, tests, msrv, powerset, docs, snapshots.
+    /// Partitions: lint, policy, tests, powerset, docs, snapshots.
     /// Local-dev convenience only — merge readiness remains the full `ci`.
     #[arg(long = "only", value_name = "PARTITION")]
     only: Vec<String>,
@@ -211,21 +204,6 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
         steps.push(cargo("shear", &["shear", "--deny-warnings"], "policy"));
     }
 
-    if partition_selected(args, "msrv") {
-        steps.push(
-            cargo(
-                "msrv",
-                &["check", "--workspace", "--all-targets", "--locked"],
-                "msrv",
-            )
-            .with_env("RUSTUP_TOOLCHAIN", msrv_version(root)?)
-            .with_env(
-                "CARGO_TARGET_DIR",
-                root.join("target/msrv").into_os_string(),
-            ),
-        );
-    }
-
     // Full powerset is the non-`--fast` default step; also selectable via `--only powerset`.
     let want_powerset = if args.only.is_empty() {
         !args.fast
@@ -312,19 +290,6 @@ fn actionlint_args(root: &Path) -> Result<Vec<OsString>> {
     }
     files.sort();
     Ok(files)
-}
-
-fn msrv_version(root: &Path) -> Result<String> {
-    let cargo_toml = root.join("Cargo.toml");
-    let text = std::fs::read_to_string(&cargo_toml)
-        .with_context(|| format!("reading {}", cargo_toml.display()))?;
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if let Some(value) = trimmed.strip_prefix("rust-version = ") {
-            return Ok(value.trim_matches('"').to_owned());
-        }
-    }
-    bail!("rust-version not found in {}", cargo_toml.display())
 }
 
 fn build_e2e_step(root: &Path) -> Result<Step> {

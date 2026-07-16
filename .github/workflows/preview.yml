@@ -139,14 +139,20 @@ jobs:
             echo "::warning::failed to fetch homebrew-tap formula: ${formula_err}; falling open"
           fi
 
+          # An input-identical source is already represented by the live
+          # release and formula, so do not rebuild its six signed archives.
+          if [ -n "$old_sha" ] && [ "$old_sha" = "$sha" ]; then
+            echo "source=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Fall open to source=true when curl failed, when there is no
-          # prior published SHA, when the head SHA is already published,
-          # or when the prior SHA is not reachable in the current
-          # checkout. The publish job's `git diff --cached --quiet`
+          # prior published SHA, or when the prior SHA is not reachable in
+          # the current checkout. The publish job's `git diff --cached --quiet`
           # guard catches a no-op formula rewrite, so a spurious "true"
           # at most costs a wasted run — never a silently-missed source
           # change.
-          if [ -n "$formula_err" ] || [ -z "$old_sha" ] || [ "$old_sha" = "$sha" ] \
+          if [ -n "$formula_err" ] || [ -z "$old_sha" ] \
              || ! git rev-parse --verify "${old_sha}^{commit}" >/dev/null 2>&1; then
             echo "source=true" >> "$GITHUB_OUTPUT"
             exit 0

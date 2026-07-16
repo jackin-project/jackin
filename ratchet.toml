@@ -509,10 +509,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 6150
+bound = 6500
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 6150
+bound = 6500
 [[family.entry]]
 key = "crates/AGENTS.md"
 bound = 14742

@@ -29,7 +29,7 @@ workspace paths, and branch cache scope. They are useful as a compatibility
 fallback, but restoring many multi-gigabyte archives consumes the repository's
 cache quota and causes eviction churn. A content-addressed compiler cache stores
 the output of an individual compiler invocation. That lets `check`, `clippy`,
-nextest, documentation tests, benchmark-build, MSRV, preview, and release jobs reuse matching
+nextest, documentation tests, benchmark-build, preview, and release jobs reuse matching
 work without transferring an entire `target/` tree.
 
 The service must preserve one pipeline definition for both runner lanes.
