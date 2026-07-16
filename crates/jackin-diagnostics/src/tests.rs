@@ -816,14 +816,14 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
     tracing::subscriber::with_default(host_sub, || {
         let tmp = tempfile::tempdir().expect("tempdir");
         let paths = JackinPaths::for_tests(tmp.path());
-        let run = RunDiagnostics::start(&paths, true, "conformance").expect("run start");
-        let _guard = run.activate();
         let invocation = tracing::info_span!(
             target: jackin_telemetry::TELEMETRY_TARGET,
             parent: None,
             "cli.command"
         );
         let _invocation_entered = invocation.enter();
+        let run = RunDiagnostics::start(&paths, true, "conformance").expect("run start");
+        let _guard = run.activate();
 
         operation_log(
             OperationLevel::Info,
@@ -860,8 +860,11 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
         );
 
         let span = operation_span(
-            crate::otel_events::PROCESS_EXECUTE,
-            &[(crate::otel_keys::PROCESS_COMMAND, "true".into())],
+            jackin_telemetry::schema::events::ERROR_TYPED,
+            &[(
+                jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+                "true".into(),
+            )],
         );
         let guard = span.enter();
         operation_log(
@@ -871,8 +874,6 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
             "process executed",
             &[],
         );
-        drop(guard);
-
         // Representative host failure; the actual attach failure seam is
         // asserted in jackin-capsule's conformance test.
         operation_error(
@@ -881,6 +882,7 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
             "forced attach failure for conformance",
             &[],
         );
+        drop(guard);
 
         for _ in 0..100 {
             crate::metrics::record_frame(32, 1, 4);
@@ -906,35 +908,35 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
         // Same code path as init_capsule → emit_session_start after attach.
         crate::observability::emit_session_start_for_test(SESSION_ID, Some(RUN_ID), None);
 
-        let attach = operation_span("capsule.attach", &[]);
+        let attach = tracing::info_span!(
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            "rpc.server"
+        );
         let _attach_guard = attach.enter();
 
-        // Capsule breadcrumb through the capsule target/bridge shape (plan 004).
-        // Emitted under the capsule subscriber, not the host facade.
-        tracing::event!(
-            target: "jackin_capsule",
-            tracing::Level::INFO,
-            "event.name" = "capsule.log",
-            "jackin.category" = "capsule",
-            "jackin.component" = "capsule",
-            "event.outcome" = "success",
-            "session.id" = SESSION_ID,
-            "parallax.run.id" = RUN_ID,
-            "capsule breadcrumb"
-        );
+        let session_attr = jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
+            value: jackin_telemetry::Value::Str(SESSION_ID),
+        };
+        let detach_attrs = [
+            session_attr,
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::OUTCOME,
+                value: jackin_telemetry::Value::Str("expected_close"),
+            },
+        ];
+        jackin_telemetry::emit_event(
+            &jackin_telemetry::event::OPERATION_LOG,
+            jackin_telemetry::FieldSet::new(&[session_attr], Some("capsule breadcrumb")),
+        )
+        .unwrap();
 
         // Expected detach (not a failure): registry-validated session.detach.
-        tracing::event!(
-            target: "jackin_capsule",
-            tracing::Level::INFO,
-            "event.name" = "capsule.session.detach",
-            "jackin.category" = "capsule",
-            "jackin.component" = "capsule",
-            "event.outcome" = "expected_close",
-            "session.id" = SESSION_ID,
-            "parallax.run.id" = RUN_ID,
-            "operator detached"
-        );
+        jackin_telemetry::emit_event(
+            &jackin_telemetry::event::CAPSULE_SESSION_DETACH,
+            jackin_telemetry::FieldSet::new(&detach_attrs, Some("operator detached")),
+        )
+        .unwrap();
     });
     drop(capsule.logger_provider.force_flush());
     drop(capsule.tracer_provider.force_flush());
@@ -994,15 +996,12 @@ fn conformance_records_have_complete_otlp_shape() {
     let mut observed = std::collections::BTreeSet::new();
     for log in logs.iter().filter(|log| {
         matches!(
-            conformance_log_attr(&log.record, "event.name").as_deref(),
-            Some("conformance.op" | "error.typed" | "capsule.session.detach")
+            log.record.event_name(),
+            Some("operation.log" | "operation.warn" | "error.typed" | "capsule.session.detach")
         )
     }) {
         let event_name = log.record.event_name().expect("top-level EventName");
-        assert_eq!(
-            conformance_log_attr(&log.record, "event.name").as_deref(),
-            Some(event_name)
-        );
+        assert_eq!(conformance_log_attr(&log.record, "event.name"), None);
         assert!(
             log.record.timestamp().is_some() || log.record.observed_timestamp().is_some(),
             "{event_name} must carry a timestamp"
@@ -1072,10 +1071,8 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
     // Detach is emitted on the capsule bootstrap, not the host facade.
     assert!(
         logs.iter().any(|log| {
-            conformance_log_attr(&log.record, "event.name").as_deref()
-                == Some("capsule.session.detach")
-                && conformance_log_attr(&log.record, "event.outcome").as_deref()
-                    == Some("expected_close")
+            log.record.event_name() == Some("capsule.session.detach")
+                && conformance_log_attr(&log.record, "outcome").as_deref() == Some("expected_close")
         }),
         "expected_close detach must come from capsule bootstrap"
     );
@@ -1086,10 +1083,8 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
             .get_emitted_logs()
             .unwrap()
             .iter()
-            .any(|log| {
-                conformance_log_attr(&log.record, "event.name").as_deref() == Some("capsule.log")
-            }),
-        "capsule bootstrap must export capsule.log breadcrumbs"
+            .any(|log| log.record.event_name() == Some("operation.log")),
+        "capsule bootstrap must export governed breadcrumbs"
     );
 }
 
@@ -1202,16 +1197,12 @@ fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
         // Resource excludes run/session/component (plan 002) on host and capsule.
         assert!(
             log.resource
-                .get(&opentelemetry::Key::from_static_str(
-                    crate::otel_keys::RUN_ID
-                ))
+                .get(&opentelemetry::Key::from_static_str("parallax.run.id"))
                 .is_none()
         );
         assert!(
             log.resource
-                .get(&opentelemetry::Key::from_static_str(
-                    crate::otel_keys::COMPONENT
-                ))
+                .get(&opentelemetry::Key::from_static_str("jackin.component"))
                 .is_none()
         );
     }
@@ -1227,7 +1218,7 @@ fn conformance_has_no_legacy_screen_span_attributes() {
     assert!(spans.iter().all(|span| {
         span.attributes
             .iter()
-            .all(|attribute| attribute.key.as_str() != crate::otel_keys::SCREEN_NAME)
+            .all(|attribute| attribute.key.as_str() != "jackin.screen.name")
     }));
 }
 

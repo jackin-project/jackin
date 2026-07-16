@@ -1154,7 +1154,7 @@ pub(crate) async fn launch_role_runtime(
         );
         if let Some(run) = jackin_diagnostics::active_run() {
             run.compact(
-                jackin_diagnostics::otel_events::CLEAN_SHUTDOWN,
+                jackin_telemetry::schema::events::CAPSULE_SESSION_CLEAN_SHUTDOWN,
                 &format!("container {container_name} exited cleanly after session"),
             );
         }

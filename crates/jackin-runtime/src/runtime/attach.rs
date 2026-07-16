@@ -430,7 +430,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         && let Some(run) = jackin_diagnostics::active_run()
     {
         run.compact(
-            jackin_diagnostics::otel_events::SESSION_DETACH,
+            jackin_telemetry::schema::events::CAPSULE_SESSION_DETACH,
             "operator detached from capsule session",
         );
     }
@@ -639,7 +639,7 @@ pub async fn spawn_shell_session(
         && let Some(run) = jackin_diagnostics::active_run()
     {
         run.compact(
-            jackin_diagnostics::otel_events::SESSION_DETACH,
+            jackin_telemetry::schema::events::CAPSULE_SESSION_DETACH,
             "operator detached from shell session",
         );
     }
@@ -770,7 +770,7 @@ pub async fn spawn_agent_session(
         && let Some(run) = jackin_diagnostics::active_run()
     {
         run.compact(
-            jackin_diagnostics::otel_events::SESSION_DETACH,
+            jackin_telemetry::schema::events::CAPSULE_SESSION_DETACH,
             "operator detached from agent session",
         );
     }

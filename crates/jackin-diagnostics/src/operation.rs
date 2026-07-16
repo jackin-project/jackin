@@ -236,6 +236,3 @@ pub fn operation_set_i64_attr(span: &Span, key: &'static str, value: i64) {
         span.set_attribute(key, value);
     }
 }
-
-#[cfg(test)]
-mod tests;

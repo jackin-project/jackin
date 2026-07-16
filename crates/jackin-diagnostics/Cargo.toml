@@ -41,6 +41,7 @@ owo-colors = { workspace = true, features = ["supports-colors"] }
 # OTLP/gRPC is a baseline runtime capability. Provider construction remains
 # runtime-gated by standard OTEL environment configuration.
 opentelemetry = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
 # gRPC/tonic is the ONLY transport. It is the reference backend's (Parallax)
 # default and what `parallax run` injects (`OTEL_EXPORTER_OTLP_ENDPOINT` ->
 # :4317, `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`). One transport keeps the export

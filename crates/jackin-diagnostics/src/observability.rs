@@ -75,108 +75,6 @@ pub fn validate_delivery() -> Result<ValidationReport, ValidationFailure> {
     })
 }
 
-/// OTLP/tracing attribute keys — the single source of truth for jackin❯'s
-/// telemetry tag taxonomy. Every key is dotted, never underscored: jackin❯'s own
-/// keys use the `jackin.*` namespace, the run id uses `parallax.*` (the
-/// reference backend), and `service.*`/`session.*` reuse the OpenTelemetry
-/// standard namespaces. Instrumentation sites across the host TUI, launch flow,
-/// and capsule reference these constants so a key is spelled exactly once.
-pub mod otel_keys {
-    // OTel standard namespaces (do not invent jackin equivalents).
-    pub const SERVICE_NAME: &str = "service.name";
-    pub const SERVICE_VERSION: &str = "service.version";
-    /// Standard OpenTelemetry session id — used to group all telemetry from one capsule
-    /// session into a single timeline (see the `session` semconv).
-    pub const SESSION_ID: &str = "session.id";
-
-    // jackin custom namespace (no OTel standard equivalent exists).
-    /// CLI-invocation id; correlates every trace/log/metric of one `jackin` run.
-    /// Uses the `parallax.*` namespace (Parallax is the reference backend) so a
-    /// single dotted key groups the run — there is no separate `jackin.run.id`.
-    pub const RUN_ID: &str = "parallax.run.id";
-    /// Process role within a run: `host` or `capsule`.
-    pub const COMPONENT: &str = "jackin.component";
-    /// TUI screen a span belongs to (`list`, `settings`, `editor`, `create`,
-    /// `launch`, `capsule`).
-    pub const SCREEN_NAME: &str = "jackin.screen.name";
-    /// Screen the operator navigated from (the linked predecessor).
-    pub const SCREEN_FROM: &str = "jackin.screen.from";
-    pub const WORKSPACE: &str = "jackin.workspace";
-    pub const WORKSPACE_KIND: &str = "jackin.workspace.kind";
-    pub const AGENT_SELECTED: &str = "jackin.agent.selected";
-    pub const AGENTS_ACTIVE: &str = "jackin.agents.active";
-    pub const ROLE: &str = "jackin.role";
-    pub const PROVIDER: &str = "jackin.provider";
-    pub const CONTAINER_ID: &str = "jackin.container.id";
-    pub const CONTAINER_NAME: &str = "jackin.container.name";
-    pub const LAUNCH_STAGE: &str = "jackin.launch.stage";
-    /// Stage dimension on log records (`jackin.stage`, never bare `stage`).
-    pub const STAGE: &str = "jackin.stage";
-    pub const ACTION: &str = "jackin.action";
-    /// Capsule tab/pane label.
-    pub const TAB_LABEL: &str = "jackin.tab.label";
-
-    // Operation facade attributes (plan 041). Low-cardinality only.
-    pub const PROCESS_COMMAND: &str = "process.command";
-    pub const PROCESS_ARGS_REDACTED: &str = "process.args_redacted";
-    pub const PROCESS_EXIT_CODE: &str = "process.exit_code";
-    pub const EVENT_NAME: &str = "event.name";
-    pub const CATEGORY: &str = "jackin.category";
-    pub const ERROR_TYPE: &str = "error.type";
-    pub const EVENT_OUTCOME: &str = "event.outcome";
-}
-
-/// OTLP metric instrument names — single source of truth for wire metric names.
-/// Do not rename values: backends store history keyed by these strings.
-pub mod otel_metrics {
-    pub const PROCESS_CPU_UTILIZATION: &str = "process.cpu.utilization";
-    pub const PROCESS_MEMORY_USAGE: &str = "process.memory.usage";
-    pub const TOKIO_RUNTIME_WORKERS: &str = "tokio.runtime.workers";
-    pub const TOKIO_RUNTIME_ALIVE_TASKS: &str = "tokio.runtime.alive.tasks";
-    pub const TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH: &str = "tokio.runtime.global.queue.depth";
-    pub const JACKIN_DIAGNOSTICS_EVENTS: &str = "jackin.diagnostics.events";
-    pub const JACKIN_CACHE_HITS: &str = "jackin.cache.hits";
-    pub const JACKIN_CACHE_MISSES: &str = "jackin.cache.misses";
-    // Hot-path instruments (plan 042).
-    pub const TERMINAL_BYTES_SENT: &str = "jackin.terminal.bytes_sent";
-    pub const TERMINAL_BYTES_RECEIVED: &str = "jackin.terminal.bytes_received";
-    pub const TERMINAL_CURSOR_MOVES: &str = "jackin.terminal.cursor_moves";
-    pub const RENDER_DURATION: &str = "jackin.render.duration";
-    pub const RENDER_PAINTED_CELLS: &str = "jackin.render.painted_cells";
-    pub const RENDER_FRAMES: &str = "jackin.render.frames";
-    pub const INPUT_MOUSE_EVENTS: &str = "jackin.input.mouse_events";
-    pub const USAGE_ACCOUNTS_REFRESHED: &str = "jackin.usage.accounts_refreshed";
-    pub const ERRORS_COUNT: &str = "jackin.errors.count";
-    /// Docker inspect calls (plan 007).
-    pub const DOCKER_INSPECT_COUNT: &str = "jackin.docker.inspect.count";
-    /// Turso statement executions (plan 007); dimension `statement.name` only.
-    pub const DB_STATEMENT_COUNT: &str = "jackin.db.statement.count";
-    pub const ALL: &[&str] = &[
-        PROCESS_CPU_UTILIZATION,
-        PROCESS_MEMORY_USAGE,
-        TOKIO_RUNTIME_WORKERS,
-        TOKIO_RUNTIME_ALIVE_TASKS,
-        TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH,
-        JACKIN_DIAGNOSTICS_EVENTS,
-        JACKIN_CACHE_HITS,
-        JACKIN_CACHE_MISSES,
-        TERMINAL_BYTES_SENT,
-        TERMINAL_BYTES_RECEIVED,
-        TERMINAL_CURSOR_MOVES,
-        RENDER_DURATION,
-        RENDER_PAINTED_CELLS,
-        RENDER_FRAMES,
-        INPUT_MOUSE_EVENTS,
-        USAGE_ACCOUNTS_REFRESHED,
-        ERRORS_COUNT,
-        DOCKER_INSPECT_COUNT,
-        DB_STATEMENT_COUNT,
-    ];
-}
-
-#[path = "observability_events.rs"]
-pub mod otel_events;
-
 /// Install the global `tracing` subscriber.
 ///
 /// Default build: installs the JSONL diagnostics layer and no terminal sink.
@@ -422,9 +320,6 @@ mod otlp {
 
     use super::ServiceIdentity;
     use super::health;
-    #[cfg(test)]
-    use super::otel_keys as keys;
-
     mod retry;
 
     /// The three SDK providers for one run, flushed together at shutdown.
@@ -773,11 +668,6 @@ mod otlp {
         build_resource_for(identity)
     }
 
-    #[cfg(test)]
-    fn build_resource() -> Resource {
-        build_resource_for(ServiceIdentity::HOST_ONE_SHOT)
-    }
-
     fn build_resource_for(identity: ServiceIdentity) -> Resource {
         use jackin_telemetry::schema::attrs::{self, std_attrs};
 
@@ -889,7 +779,6 @@ mod otlp {
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
-            .with_log_processor(PromoteEventNameProcessor)
             .with_log_processor(GovernedLogProcessor(
                 BatchLogProcessor::builder(log_exporter, Tokio)
                     .with_batch_config(log_batch)
@@ -899,13 +788,6 @@ mod otlp {
             .build();
         Ok((tracer_provider, logger_provider, app_handle))
     }
-
-    /// Promotes the `event.name` attribute to the top-level OTLP `EventName`
-    /// field. The tracing appender fills `EventName` from `metadata.name()`
-    /// (often `event path:line`); we overwrite it with the registry-validated
-    /// dotted name so backends can key on the standard field.
-    #[derive(Debug)]
-    struct PromoteEventNameProcessor;
 
     #[derive(Debug)]
     struct GovernedLogProcessor<P>(P);
@@ -992,49 +874,6 @@ mod otlp {
 
         fn set_resource(&mut self, resource: &Resource) {
             self.0.set_resource(resource);
-        }
-    }
-
-    impl opentelemetry_sdk::logs::LogProcessor for PromoteEventNameProcessor {
-        fn emit(
-            &self,
-            record: &mut opentelemetry_sdk::logs::SdkLogRecord,
-            _instrumentation: &opentelemetry::InstrumentationScope,
-        ) {
-            use opentelemetry::logs::{AnyValue, LogRecord as _};
-
-            let attr_name = record.attributes_iter().find_map(|(key, value)| {
-                if key.as_str() != "event.name" {
-                    return None;
-                }
-                match value {
-                    AnyValue::String(s) => Some(s.to_string()),
-                    other => Some(format!("{other:?}")),
-                }
-            });
-            let Some(attr_name) = attr_name else {
-                return;
-            };
-            // Prefer the registry's static name so set_event_name gets 'static.
-            if let Some(def) = crate::registry::lookup(&attr_name) {
-                record.set_event_name(def.name);
-                return;
-            }
-            // Free-form pre-migration kinds: intern so EventName still equals
-            // the attribute mirror for equality tests.
-            let leaked: &'static str = Box::leak(attr_name.into_boxed_str());
-            record.set_event_name(leaked);
-        }
-
-        fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
-            Ok(())
-        }
-
-        fn shutdown_with_timeout(
-            &self,
-            _timeout: std::time::Duration,
-        ) -> opentelemetry_sdk::error::OTelSdkResult {
-            Ok(())
         }
     }
 
@@ -1279,7 +1118,6 @@ mod otlp {
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
-            .with_log_processor(PromoteEventNameProcessor)
             .with_log_processor(GovernedLogProcessor(
                 opentelemetry_sdk::logs::SimpleLogProcessor::new(logs.clone()),
             ))
@@ -1333,7 +1171,6 @@ mod otlp {
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
-            .with_log_processor(PromoteEventNameProcessor)
             .with_log_processor(GovernedLogProcessor(
                 opentelemetry_sdk::logs::SimpleLogProcessor::new(logs.clone()),
             ))
@@ -1490,7 +1327,9 @@ mod otlp {
             let _ = meter
                 // semconv: process.cpu.utilization, unit "1", 0..1 fraction
                 // of the CPUs available to the process.
-                .f64_observable_gauge(super::otel_metrics::PROCESS_CPU_UTILIZATION)
+                .f64_observable_gauge(
+                    opentelemetry_semantic_conventions::metric::PROCESS_CPU_UTILIZATION,
+                )
                 .with_unit("1")
                 .with_description("Fraction of total host CPU used by the jackin process")
                 .with_callback(move |observer| {
@@ -1506,7 +1345,9 @@ mod otlp {
             let _ = meter
                 // semconv: process.memory.usage is an UpDownCounter (rises
                 // and falls), not a gauge.
-                .i64_observable_up_down_counter(super::otel_metrics::PROCESS_MEMORY_USAGE)
+                .i64_observable_up_down_counter(
+                    opentelemetry_semantic_conventions::metric::PROCESS_MEMORY_USAGE,
+                )
                 .with_unit("By")
                 .with_description("Resident set size of the jackin process")
                 .with_callback(move |observer| {
@@ -1522,7 +1363,7 @@ mod otlp {
         if let Some(handle) = app_handle {
             let workers = handle.clone();
             let _ = meter
-                .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_WORKERS)
+                .u64_observable_gauge("tokio.runtime.workers")
                 .with_description("Worker threads driving the tokio runtime")
                 .with_callback(move |observer| {
                     observer.observe(workers.metrics().num_workers() as u64, &[]);
@@ -1530,14 +1371,14 @@ mod otlp {
                 .build();
             let alive = handle.clone();
             let _ = meter
-                .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_ALIVE_TASKS)
+                .u64_observable_gauge("tokio.runtime.alive_tasks")
                 .with_description("Tasks currently alive in the tokio runtime")
                 .with_callback(move |observer| {
                     observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
                 })
                 .build();
             let _ = meter
-                .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH)
+                .u64_observable_gauge("tokio.runtime.global_queue.depth")
                 .with_description("Tasks waiting in the tokio runtime's global queue")
                 .with_callback(move |observer| {
                     observer.observe(handle.metrics().global_queue_depth() as u64, &[]);

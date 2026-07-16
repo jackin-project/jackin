@@ -40,8 +40,8 @@ pub use metrics::{
 pub use observability::{
     ContainerOtlp, ServiceIdentity, TelemetryHealth, TelemetrySignalHealth, ValidationFailure,
     ValidationReport, backend_query_hint, configured_endpoint, configured_endpoint_summary,
-    container_otlp, init_capsule_tracing, init_tracing, init_tracing_for, otel_events, otel_keys,
-    otel_metrics, record_telemetry_rejection, shutdown_capsule_tracing, telemetry_health_snapshot,
+    container_otlp, init_capsule_tracing, init_tracing, init_tracing_for,
+    record_telemetry_rejection, shutdown_capsule_tracing, telemetry_health_snapshot,
     unsupported_otlp_protocol, validate_delivery,
 };
 pub use operation::{
