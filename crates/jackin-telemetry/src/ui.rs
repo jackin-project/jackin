@@ -163,6 +163,11 @@ impl WidgetFocusTracker {
         )?;
         histogram(&metric::UI_FOCUS_DURATION).record(focus.focused.elapsed().as_secs_f64(), &attrs)
     }
+
+    #[must_use]
+    pub fn current_widget(&self) -> Option<&'static str> {
+        self.current.as_ref().map(|focus| focus.widget)
+    }
 }
 
 #[cfg(test)]

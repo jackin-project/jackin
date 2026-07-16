@@ -208,6 +208,43 @@ fn sync_active_screen(
     }
 }
 
+fn widget_of(state: &ConsoleState) -> Option<&'static str> {
+    use crate::console::tui::state::ManagerStage;
+    use jackin_console::tui::screens::editor::model::EditorTab;
+    use jackin_console::tui::screens::settings::model::SettingsTab;
+
+    let ConsoleStage::Manager(ms) = &state.stage;
+    match &ms.stage {
+        ManagerStage::Editor(editor) => Some(match editor.active_tab {
+            EditorTab::General => "general",
+            EditorTab::Mounts => "mounts",
+            EditorTab::Roles => "roles",
+            EditorTab::Secrets => "secrets_environments",
+            EditorTab::Auth => "auth",
+        }),
+        ManagerStage::Settings(settings) => Some(match settings.active_tab {
+            SettingsTab::General => "general",
+            SettingsTab::Mounts => "mounts",
+            SettingsTab::Environments => "environments",
+            SettingsTab::Auth => "auth",
+            SettingsTab::Trust => "trust",
+        }),
+        _ => None,
+    }
+}
+
+fn sync_widget_focus(state: &ConsoleState, tracker: &mut jackin_telemetry::ui::WidgetFocusTracker) {
+    let next = widget_of(state);
+    if tracker.current_widget() == next {
+        return;
+    }
+    if let Some(widget) = next {
+        let _ = tracker.focus(widget);
+    } else {
+        let _ = tracker.unfocus();
+    }
+}
+
 fn drain_background_messages(
     state: &mut ConsoleState,
     config: &mut AppConfig,
@@ -826,9 +863,11 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let mut container_info_overlay_active = false;
 
     let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
+    let mut widget_tracker = jackin_telemetry::ui::WidgetFocusTracker::default();
 
     let result: anyhow::Result<Option<ConsoleOutcome>> = 'main: loop {
         sync_active_screen(&state, &mut screen_tracker);
+        sync_widget_focus(&state, &mut widget_tracker);
 
         // Drain a pending token-generate request before render: suspend the
         // TUI, let the non-TUI effect executor run the interactive mint/write,
@@ -971,6 +1010,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     };
 
     let _ = screen_tracker.exit(jackin_telemetry::schema::enums::TransitionReason::Shutdown);
+    let _ = widget_tracker.unfocus();
     // Tears down only when the console owns the screen standalone. When the
     // launch flow owns it, this is `None` and teardown waits for that guard so
     // the console → loading transition stays on one alternate screen.
