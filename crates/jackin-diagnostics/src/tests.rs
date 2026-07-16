@@ -964,6 +964,9 @@ impl ConformanceExport {
 /// Workspace `target/telemetry-volume.json` (plan 009 measured export-volume).
 #[cfg(feature = "otlp")]
 fn telemetry_volume_artifact_path() -> std::path::PathBuf {
+    if let Some(path) = std::env::var_os("JACKIN_TELEMETRY_VOLUME_PATH") {
+        return path.into();
+    }
     // nextest CWD is the package dir; always write to the workspace target so
     // `cargo xtask lint ratchet` (repo root) consumes the same file.
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/telemetry-volume.json")
