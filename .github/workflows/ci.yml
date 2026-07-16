@@ -365,8 +365,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-xtask-dev-v1
-          key: ${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: ci-xtask-dev-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CARGO_TARGET_DIR RUSTFLAGS RUSTDOC RUSTUP"
@@ -530,8 +529,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-all-features-dev-workspace-v2
-          key: ${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: ci-all-features-dev-workspace-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
@@ -648,8 +646,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-default-dev-workspace-v2
-          key: ${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: ci-default-dev-workspace-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
@@ -732,8 +729,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: construct-e2e-image-${{ matrix.config.lane }}-workspace-v2
-          key: ${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: construct-e2e-image-${{ matrix.config.lane }}-workspace-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
@@ -828,8 +824,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-doctest-dev-${{ matrix.shard.name }}-v3
-          key: ${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: ci-doctest-dev-${{ matrix.shard.name }}-v3-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
@@ -931,8 +926,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-all-features-dev-workspace-v2-package-jackin-capsule
-          key: ${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: ci-all-features-dev-workspace-v2-package-jackin-capsule-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
@@ -993,8 +987,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-fuzz-workspace-v3
-          key: ${{ matrix.target.name }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: ci-fuzz-workspace-v3-${{ matrix.target.name }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
@@ -1057,8 +1050,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-bench-${{ matrix.shard.name }}-workspace-v3
-          key: ${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: ci-bench-${{ matrix.shard.name }}-workspace-v3-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
@@ -1115,8 +1107,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-feature-powerset-${{ matrix.package }}-workspace-v2
-          key: ${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: ci-feature-powerset-${{ matrix.package }}-workspace-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
@@ -1175,8 +1166,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-msrv-${{ matrix.shard.name }}-dev-workspace-v3
-          key: ${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
+          shared-key: ci-msrv-${{ matrix.shard.name }}-dev-workspace-v3-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'crates/**', 'tests/**', 'docker/runtime/**') }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
