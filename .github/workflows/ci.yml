@@ -999,6 +999,7 @@ jobs:
     needs: [changes, construct-e2e-image, matrix-setup, cargo-registry-warmup]
     if: >-
       always() && needs.changes.outputs.rust == 'true' &&
+      needs.changes.outputs.result-reuse != 'true' &&
       needs.cargo-registry-warmup.outputs.affected-packages != '[]' &&
       !failure() && !cancelled()
     uses: ./.github/workflows/rust-nextest.yml
