@@ -1025,9 +1025,7 @@ async fn finalize_reconnected_resources(
     } else {
         InstanceStatus::CleanExited
     };
-    if let Some(mut manifest) =
-        InstanceManifest::read_or_log(&state_dir, "finalize_reconnected_resources")
-    {
+    if let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) {
         super::launch::write_instance_status(paths, &state_dir, &mut manifest, status)?;
     }
     super::cleanup::eject_role(paths, container_name, docker).await

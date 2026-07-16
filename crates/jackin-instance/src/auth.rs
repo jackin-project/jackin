@@ -350,18 +350,9 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
                     }));
                 }
                 cli_failure = Some(HostMissingReason::GhCliEmpty);
-                jackin_diagnostics::telemetry_debug!(
-                    "github_auth",
-                    "gh auth token returned empty stdout; falling back to hosts.yml parse"
-                );
             }
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                jackin_diagnostics::telemetry_debug!(
-                    "github_auth",
-                    "gh auth token exited non-zero ({:?}); stderr={stderr}",
-                    output.code,
-                );
                 cli_failure = Some(HostMissingReason::GhCliFailed {
                     stderr: stderr.trim().to_owned(),
                 });
@@ -371,15 +362,8 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
                     cause
                         .downcast_ref::<std::io::Error>()
                         .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
-                }) =>
-            {
-                jackin_diagnostics::telemetry_debug!("github_auth", "gh not on PATH: {e}");
-            }
+                }) => {}
             Err(e) => {
-                jackin_diagnostics::telemetry_debug!(
-                    "github_auth",
-                    "gh auth token spawn failed: {e}"
-                );
                 // Treat any non-NotFound spawn error as a CLI failure
                 // signal too — the operator's gh is in a broken state
                 // and the launch notice should say so.
@@ -399,11 +383,6 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
         parsed.source = GithubTokenSource::HostsFile;
         return Ok(HostGhResolution::Resolved(parsed));
     }
-    jackin_diagnostics::telemetry_debug!(
-        "github_auth",
-        "hosts.yml at {} did not yield a github.com oauth_token",
-        hosts_path.display()
-    );
     // CLI failure (when known) is the more actionable signal than
     // "file malformed" — surface it instead.
     Ok(HostGhResolution::Missing(
@@ -439,13 +418,7 @@ fn parse_gh_hosts_yml(text: &str) -> Option<HostGhAuth> {
 
     let parsed: HostsFile = match serde_yaml_ng::from_str(text) {
         Ok(p) => p,
-        Err(e) => {
-            jackin_diagnostics::telemetry_debug!(
-                "github_auth",
-                "hosts.yml YAML parse failed: {e}; will fall through to HostsFileMalformed"
-            );
-            return None;
-        }
+        Err(_) => return None,
     };
     let entry = parsed.github_com?;
     let token = entry.oauth_token.filter(|s| !s.trim().is_empty())?;
@@ -1090,11 +1063,6 @@ fn copy_host_claude_json(host_path: &Path, dest_path: &Path) -> anyhow::Result<(
         Ok(content) => content,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => "{}".to_owned(),
         Err(e) => {
-            jackin_diagnostics::telemetry_debug!(
-                "auth",
-                "failed to read Claude account metadata at {} while forwarding credentials: {e}",
-                host_path.display()
-            );
             return Err(anyhow::Error::new(e).context(format!(
                 "reading Claude account metadata at {}",
                 host_path.display()

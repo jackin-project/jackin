@@ -318,24 +318,10 @@ impl InstanceManifest {
 
     /// Collapses [`Self::read_optional`]'s three outcomes into the two
     /// the discovery surfaces care about — `Some` (use the manifest)
-    /// vs `None` (skip the candidate). Logs parse/IO failures via
-    /// `telemetry_debug!` so unreadable manifests surface under `--debug`
-    /// without polluting normal output: callers run inside discovery
-    /// loops that iterate every entry in the instance index, so an
-    /// always-on warning would emit N lines per command for any
-    /// operator carrying a few stale state dirs.
-    pub fn read_or_log(state_dir: &Path, site: &str) -> Option<Self> {
-        match Self::read_optional(state_dir) {
-            Ok(value) => value,
-            Err(error) => {
-                jackin_diagnostics::telemetry_debug!(
-                    "instance",
-                    "{site}: skipping {} due to unreadable manifest: {error:#}",
-                    state_dir.display(),
-                );
-                None
-            }
-        }
+    /// vs `None` (skip the candidate). Callers run inside discovery loops, so
+    /// unreadable candidates are skipped without emitting user-derived paths.
+    pub fn read_optional_lossy(state_dir: &Path) -> Option<Self> {
+        Self::read_optional(state_dir).unwrap_or_default()
     }
 
     pub fn write(&self, state_dir: &Path) -> anyhow::Result<()> {
@@ -347,22 +333,13 @@ impl InstanceManifest {
 
 /// SHA-256 of the canonical host path.
 ///
-/// Falls back to the raw input when `canonicalize` fails (path does
-/// not exist yet, unreadable, symlink loop) and logs the underlying
-/// error via `telemetry_debug!` so an operator hitting a fingerprint
-/// mismatch can correlate it back to the canonicalize fault. A bare
-/// `canonicalize().ok()` would silently produce identical fingerprints
-/// across hosts with the same broken input.
+/// Falls back to the raw input when `canonicalize` fails (path does not exist
+/// yet, unreadable, symlink loop). A bare `canonicalize().ok()` would silently
+/// produce identical fingerprints across hosts with the same broken input.
 pub fn host_path_fingerprint(path: &str) -> String {
     let canonical = match std::fs::canonicalize(path) {
         Ok(c) => c.to_string_lossy().into_owned(),
-        Err(error) => {
-            jackin_diagnostics::telemetry_debug!(
-                "instance",
-                "host_path_fingerprint: canonicalize({path}) failed ({error}); falling back to raw input",
-            );
-            path.to_owned()
-        }
+        Err(_) => path.to_owned(),
     };
     let digest = Sha256::digest(canonical.as_bytes());
     format!("sha256:{}", hex::encode(digest))
@@ -521,15 +498,9 @@ impl InstanceIndex {
             // Manifest absent → state already torn down by
             // `purge_container_filesystem`; nothing to tombstone.
             Ok(None) => {}
-            Err(error) => {
+            Err(_) => {
                 // Corrupt manifest: synthesize a minimal tombstone so
-                // the operator still sees that this container was
-                // purged. Log the read error so `--debug` surfaces the
-                // underlying file fault for forensics.
-                jackin_diagnostics::telemetry_debug!(
-                    "instance",
-                    "mark_purged: manifest for `{container_base}` unreadable: {error}; synthesizing tombstone",
-                );
+                // the operator still sees that this container was purged.
                 index.instances.push(InstanceIndexEntry {
                     instance_id: container_base.to_owned(),
                     container_base: container_base.to_owned(),
@@ -557,8 +528,7 @@ impl InstanceIndex {
             .filter(|entry| entry.matches(query))
         {
             let state_dir = data_dir.join(&entry.container_base);
-            let Some(manifest) = InstanceManifest::read_or_log(&state_dir, "matching_manifests")
-            else {
+            let Some(manifest) = InstanceManifest::read_optional_lossy(&state_dir) else {
                 continue;
             };
             if manifest.to_index_entry().matches(query) {

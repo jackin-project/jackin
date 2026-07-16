@@ -513,10 +513,9 @@ pub(super) mod instances {
             }
 
             let state_dir = paths.data_dir.join(container);
-            let Some(manifest) = jackin_runtime::instance::InstanceManifest::read_or_log(
-                &state_dir,
-                "overlay_running_instances",
-            ) else {
+            let Some(manifest) =
+                jackin_runtime::instance::InstanceManifest::read_optional_lossy(&state_dir)
+            else {
                 continue;
             };
             if !known.insert(container.clone()) {

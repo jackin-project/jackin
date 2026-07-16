@@ -327,9 +327,7 @@ pub(in crate::runtime) fn record_instance_attach_outcome(
     let state_dir = paths.data_dir.join(container_name);
     // Missing manifest is a legitimate no-op; corrupt manifest is
     // logged so the attach-outcome record is not silently dropped.
-    let Some(mut manifest) =
-        InstanceManifest::read_or_log(&state_dir, "record_instance_attach_outcome")
-    else {
+    let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) else {
         return Ok(());
     };
     write_instance_attach_outcome(paths, &state_dir, &mut manifest, outcome)

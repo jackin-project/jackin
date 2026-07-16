@@ -57,8 +57,8 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-image/src/capsule_binary.rs` | 11 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-image/src/image_build.rs` | 2 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-image/src/image_decision.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-instance/src/auth.rs` | 7 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-instance/src/manifest.rs` | 5 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-instance/src/auth.rs` | 7 | 0 | 0 | 0 | 0 | 0 | DELETE — typed auth outcome owns semantics; credential paths, CLI stderr, and credential-file parse details prohibited |
+| `crates/jackin-instance/src/manifest.rs` | 5 | 0 | 0 | 0 | 0 | 0 | DELETE — typed persistence result owns semantics; state paths and container identifiers prohibited |
 | `crates/jackin-isolation/src/cleanup.rs` | 9 | 0 | 0 | 0 | 0 | 0 | DELETE — cleanup result and typed errors own semantics; paths, mount/container names, branches, and command material prohibited |
 | `crates/jackin-isolation/src/finalize.rs` | 6 | 0 | 0 | 0 | 0 | 0 | DELETE — finalizer decision owns semantics; container/mount names and shared diagnostic prose prohibited |
 | `crates/jackin-isolation/src/materialize.rs` | 27 | 0 | 0 | 0 | 0 | 0 | DELETE — incidental materialization chatter; launch/isolation boundary owns semantics; paths, workspace/container names, branches, commits, and URLs prohibited |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production census after the isolation-crate deletion pass: 158 `telemetry_info!`, 284 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 456 sites remain open.
+Current production census after the isolation and instance deletion passes: 158 `telemetry_info!`, 272 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 444 sites remain open.

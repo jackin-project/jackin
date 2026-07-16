@@ -528,9 +528,7 @@ fn apple_container_instance_names(paths: &JackinPaths) -> anyhow::Result<Vec<Str
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        let Some(manifest) =
-            InstanceManifest::read_or_log(&entry.path(), "apple_container_instance_names")
-        else {
+        let Some(manifest) = InstanceManifest::read_optional_lossy(&entry.path()) else {
             continue;
         };
         if matches!(
@@ -721,9 +719,7 @@ pub async fn prune_instances(
             ContainerState::NotFound
         ) {
             let state_dir = paths.data_dir.join(&container_base);
-            if let Some(mut manifest) =
-                InstanceManifest::read_or_log(&state_dir, "prune reconcile stale-active")
-            {
+            if let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) {
                 manifest.mark_status(InstanceStatus::Crashed);
                 if let Err(err) = manifest.write(&state_dir) {
                     eprintln!(
