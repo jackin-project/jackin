@@ -66,7 +66,7 @@ pub(super) fn assert_sentinel_build_output_routed_to_log(home: &Path, stdout: &s
             && stdout.contains("save"),
         "PTY transcript should prove the rich launch dialogs rendered\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
-    let artifact_dir = home.join(".jackin/data/diagnostics/runs");
+    let artifact_dir = home.join(".jackin/data").join("diagnostics").join("runs");
     assert!(
         !artifact_dir.exists(),
         "governed telemetry must not create local diagnostics artifacts at {}",

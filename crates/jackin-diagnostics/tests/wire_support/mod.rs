@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub(crate) fn assert_three_signal_delivery(identity: jackin_diagnostics::ServiceIdentity) {
+    let home = tempfile::tempdir().expect("isolated telemetry home");
+    let original_dir = std::env::current_dir().expect("current test directory");
+    std::env::set_current_dir(home.path()).expect("enter isolated telemetry directory");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -72,6 +75,14 @@ pub(crate) fn assert_three_signal_delivery(identity: jackin_diagnostics::Service
         assert_resource_contract(resource, identity.service_name);
     }
     jackin_diagnostics::shutdown_capsule_tracing();
+    std::env::set_current_dir(original_dir).expect("restore test directory");
+    assert!(
+        std::fs::read_dir(home.path())
+            .expect("read isolated telemetry home")
+            .next()
+            .is_none(),
+        "governed telemetry created a local artifact"
+    );
 }
 
 fn assert_resource_contract(

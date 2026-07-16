@@ -13,7 +13,7 @@ pub(super) fn e2e_failure_context(home: &Path, stdout: &str, stderr: &str) -> St
 }
 
 pub(super) fn diagnostics_snapshot(home: &Path) -> String {
-    let artifact_dir = home.join(".jackin/data/diagnostics/runs");
+    let artifact_dir = home.join(".jackin/data").join("diagnostics").join("runs");
     format!(
         "captured process output is the diagnostic source; legacy artifact directory exists={} ({})",
         artifact_dir.exists(),
