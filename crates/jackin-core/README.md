@@ -39,7 +39,6 @@ Because everything depends on `jackin-core`, it must stay dependency-free, side-
 | [`selector.rs`](src/selector.rs) | selector | — |
 | [`docker.rs`](src/docker.rs) | docker types | — |
 | [`docker_security.rs`](src/docker_security.rs) · [`docker_security/`](src/docker_security) | docker security | [`tests.rs`](src/docker_security/tests.rs) |
-| [`debug_log.rs`](src/debug_log.rs) | `debug_log` stub | — |
 | [`build_log_sink.rs`](src/build_log_sink.rs) | build-log sink stub | — |
 | [`host_colors.rs`](src/host_colors.rs) | host color tokens | — |
 | [`ansi_tokens.rs`](src/ansi_tokens.rs) | ansi tokens | — |
@@ -75,4 +74,3 @@ Typed construction/parse errors (thiserror): `ParseProfileError`, `ParseMountIso
 cargo nextest run -p jackin-core
 cargo clippy -p jackin-core --all-targets -- -D warnings
 ```
-
