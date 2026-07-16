@@ -58,6 +58,7 @@ dialoguer = { workspace = true }
 tabled = { workspace = true }
 clap_mangen = { workspace = true }
 tokio = { workspace = true, features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+tracing = { workspace = true }
 futures-util = { workspace = true }
 fs4 = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs"] }

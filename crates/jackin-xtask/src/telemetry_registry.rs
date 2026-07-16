@@ -22,6 +22,14 @@ use crate::docs::repo_root;
 // must use the governed facade/spawn helpers from its first commit.
 const RAW_SPAWN_ALLOWLIST: &[&str] = &[];
 
+const RAW_SCOPED_THREAD_ALLOWLIST: &[&str] = &[
+    "crates/jackin/src/console/services.rs",
+    "crates/jackin-env/src/resolve.rs",
+    "crates/jackin-instance/src/lib.rs",
+    "crates/jackin-process/src/lib.rs",
+    "crates/jackin-runtime/src/runtime/launch/launch_slot.rs",
+];
+
 const RAW_TRACING_ALLOWLIST: &[&str] = &[];
 
 const NON_TELEMETRY_EXEMPTIONS: &[(&str, &str, &str)] = &[
@@ -104,6 +112,34 @@ const NON_TELEMETRY_EXEMPTIONS: &[(&str, &str, &str)] = &[
         "crates/jackin-image/src/naming.rs",
         "const:LABEL_IMAGE_MANIFEST_VERSION",
         "jackin.manifest.version",
+    ),
+];
+
+const TELEMETRY_NEGATIVE_TEST_EXEMPTIONS: &[(&str, &str, &str)] = &[
+    (
+        "crates/jackin-diagnostics/src/tests.rs",
+        "fn:conformance_no_prohibited_keys_or_bracket_bodies_on_records",
+        "parallax.run.id",
+    ),
+    (
+        "crates/jackin-diagnostics/src/tests.rs",
+        "fn:conformance_no_prohibited_keys_or_bracket_bodies_on_records",
+        "jackin.component",
+    ),
+    (
+        "crates/jackin-diagnostics/src/tests.rs",
+        "fn:conformance_has_no_legacy_screen_span_attributes",
+        "jackin.screen.name",
+    ),
+    (
+        "crates/jackin-diagnostics/src/observability/otlp/tests.rs",
+        "fn:resource_matrix_has_exact_allowlist_and_ignores_secret_env_injection",
+        "parallax.run.id",
+    ),
+    (
+        "crates/jackin-otlp-testbed/src/tests.rs",
+        "fn:namespace_detector_rejects_synthetic_legacy_attribute",
+        "jackin.synthetic",
     ),
 ];
 
@@ -208,20 +244,6 @@ const NAMESPACE_TEST_FIXTURES: &[(&str, &str)] = &[
         "jackin.role.toml",
     ),
     ("crates/jackin-test-support/src/seed.rs", "jackin.role.toml"),
-    ("crates/jackin-diagnostics/src/tests.rs", "parallax.run.id"),
-    ("crates/jackin-diagnostics/src/tests.rs", "jackin.component"),
-    (
-        "crates/jackin-diagnostics/src/tests.rs",
-        "jackin.screen.name",
-    ),
-    (
-        "crates/jackin-diagnostics/src/observability/otlp/tests.rs",
-        "parallax.run.id",
-    ),
-    (
-        "crates/jackin-otlp-testbed/src/tests.rs",
-        "jackin.synthetic",
-    ),
     ("crates/jackin-xtask/src/telemetry_registry.rs", "jackin."),
     ("crates/jackin-xtask/src/telemetry_registry.rs", "parallax."),
     (
@@ -350,6 +372,8 @@ fn validate_source_policy(root: &Path) -> Result<()> {
 struct SourcePolicyScanner<'a> {
     path: &'a str,
     violations: BTreeSet<(usize, &'static str)>,
+    spawn_aliases: BTreeSet<String>,
+    spawn_receivers: BTreeSet<String>,
 }
 
 impl<'a> SourcePolicyScanner<'a> {
@@ -357,6 +381,8 @@ impl<'a> SourcePolicyScanner<'a> {
         Self {
             path,
             violations: BTreeSet::new(),
+            spawn_aliases: BTreeSet::new(),
+            spawn_receivers: BTreeSet::new(),
         }
     }
 
@@ -382,21 +408,91 @@ impl<'a> SourcePolicyScanner<'a> {
     fn reject(&mut self, span: proc_macro2::Span, message: &'static str) {
         self.violations.insert((span.start().line, message));
     }
+
+    fn raw_spawn_path(name: &str) -> bool {
+        matches!(
+            name,
+            "tokio::spawn"
+                | "tokio::task::spawn"
+                | "tokio::task::spawn_blocking"
+                | "tokio::task::spawn_local"
+                | "std::thread::spawn"
+                | "thread::spawn"
+        )
+    }
+
+    fn collect_spawn_imports(&mut self, tree: &syn::UseTree, prefix: &mut Vec<String>) {
+        match tree {
+            syn::UseTree::Path(path) => {
+                prefix.push(path.ident.to_string());
+                self.collect_spawn_imports(&path.tree, prefix);
+                prefix.pop();
+            }
+            syn::UseTree::Name(name) => {
+                prefix.push(name.ident.to_string());
+                let source = prefix.join("::");
+                if Self::raw_spawn_path(&source) {
+                    self.spawn_aliases.insert(name.ident.to_string());
+                }
+                prefix.pop();
+            }
+            syn::UseTree::Rename(rename) => {
+                prefix.push(rename.ident.to_string());
+                let source = prefix.join("::");
+                if Self::raw_spawn_path(&source) {
+                    self.spawn_aliases.insert(rename.rename.to_string());
+                }
+                prefix.pop();
+            }
+            syn::UseTree::Group(group) => {
+                for item in &group.items {
+                    self.collect_spawn_imports(item, prefix);
+                }
+            }
+            syn::UseTree::Glob(_) => {}
+        }
+    }
+
+    fn spawn_method_receiver(&self, receiver: &syn::Expr) -> bool {
+        match receiver {
+            syn::Expr::Path(path) => path.path.segments.last().is_some_and(|segment| {
+                let name = segment.ident.to_string();
+                self.spawn_receivers.contains(&name)
+                    || matches!(
+                        name.as_str(),
+                        "scope" | "s" | "tasks" | "join_set" | "handle" | "runtime"
+                    )
+            }),
+            syn::Expr::Call(call) => match call.func.as_ref() {
+                syn::Expr::Path(path) => {
+                    let name = Self::path_name(&path.path);
+                    name.ends_with("JoinSet::new")
+                        || name.ends_with("Handle::current")
+                        || name.ends_with("Builder::new")
+                }
+                _ => false,
+            },
+            syn::Expr::MethodCall(call) => self.spawn_method_receiver(&call.receiver),
+            syn::Expr::Paren(paren) => self.spawn_method_receiver(&paren.expr),
+            syn::Expr::Reference(reference) => self.spawn_method_receiver(&reference.expr),
+            _ => false,
+        }
+    }
 }
 
 impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        self.collect_spawn_imports(&node.tree, &mut Vec::new());
+        syn::visit::visit_item_use(self, node);
+    }
+
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
         if let syn::Expr::Path(function) = node.func.as_ref() {
             let name = Self::path_name(&function.path);
             if !self.allows_spawn()
-                && matches!(
-                    name.as_str(),
-                    "tokio::spawn"
-                        | "tokio::task::spawn_blocking"
-                        | "spawn_blocking"
-                        | "std::thread::spawn"
-                        | "thread::spawn"
-                )
+                && (Self::raw_spawn_path(&name)
+                    || self.spawn_aliases.contains(&name)
+                    || matches!(name.as_str(), "spawn_blocking" | "spawn_local"))
             {
                 self.reject(node.span(), "unmanaged async/thread spawn");
             }
@@ -422,13 +518,43 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
                 }
             }
         }
-        if !self.allows_spawn() && node.method == "spawn_local" {
-            self.reject(node.span(), "unmanaged async/thread spawn");
+        if !self.allows_spawn()
+            && (matches!(
+                node.method.to_string().as_str(),
+                "spawn_local" | "spawn_blocking"
+            ) || node.method == "spawn" && self.spawn_method_receiver(&node.receiver))
+        {
+            let scoped_allowlisted = node.method == "spawn"
+                && RAW_SCOPED_THREAD_ALLOWLIST.contains(&self.path)
+                && matches!(node.receiver.as_ref(), syn::Expr::Path(path) if path.path.segments.last().is_some_and(|segment| matches!(segment.ident.to_string().as_str(), "scope" | "s")));
+            if !scoped_allowlisted {
+                self.reject(node.span(), "unmanaged async/thread spawn");
+            }
         }
         if !self.allows_telemetry_apis() && node.method == "meter" {
             self.reject(node.span(), "raw OpenTelemetry meter construction");
         }
         syn::visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_local(&mut self, node: &'ast syn::Local) {
+        if let syn::Pat::Ident(binding) = &node.pat
+            && let Some(initializer) = &node.init
+        {
+            if let syn::Expr::Path(path) = initializer.expr.as_ref() {
+                let source = Self::path_name(&path.path);
+                if Self::raw_spawn_path(&source) {
+                    self.spawn_aliases.insert(binding.ident.to_string());
+                }
+            }
+            if matches!(initializer.expr.as_ref(), syn::Expr::Call(call) if matches!(call.func.as_ref(), syn::Expr::Path(path) if {
+                let source = Self::path_name(&path.path);
+                source.ends_with("JoinSet::new") || source.ends_with("Handle::current") || source.ends_with("LocalSet::new")
+            })) {
+                self.spawn_receivers.insert(binding.ident.to_string());
+            }
+        }
+        syn::visit::visit_local(self, node);
     }
 
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
@@ -461,6 +587,69 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
         }
         syn::visit::visit_attribute(self, node);
     }
+
+    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        if node.sig.asyncness.is_some() {
+            let mut scanner = AsyncScopeGuardScanner::default();
+            scanner.visit_block(&node.block);
+            for (span, violation) in scanner.violations {
+                self.reject(span, violation);
+            }
+        }
+        syn::visit::visit_item_fn(self, node);
+    }
+
+    fn visit_expr_async(&mut self, node: &'ast syn::ExprAsync) {
+        let mut scanner = AsyncScopeGuardScanner::default();
+        scanner.visit_block(&node.block);
+        for (span, violation) in scanner.violations {
+            self.reject(span, violation);
+        }
+        syn::visit::visit_expr_async(self, node);
+    }
+}
+
+#[derive(Default)]
+struct AsyncScopeGuardScanner {
+    violations: Vec<(proc_macro2::Span, &'static str)>,
+}
+
+impl AsyncScopeGuardScanner {
+    fn runtime_receiver(receiver: &syn::Expr) -> bool {
+        matches!(receiver, syn::Expr::Path(path) if path.path.segments.last().is_some_and(|segment| {
+            let name = segment.ident.to_string();
+            name.contains("runtime") || name == "handle"
+        }))
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for AsyncScopeGuardScanner {
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if matches!(node.method.to_string().as_str(), "enter" | "entered")
+            && !Self::runtime_receiver(&node.receiver)
+        {
+            self.violations
+                .push((node.span(), "span guard created inside async scope"));
+        }
+        if node.method == "attach" {
+            self.violations.push((
+                node.span(),
+                "OpenTelemetry context guard created inside async scope",
+            ));
+        }
+        syn::visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_local(&mut self, node: &'ast syn::Local) {
+        if matches!(&node.pat, syn::Pat::Type(typed) if matches!(typed.ty.as_ref(), syn::Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "ContextGuard")))
+        {
+            self.violations.push((
+                node.span(),
+                "OpenTelemetry context guard created inside async scope",
+            ));
+        }
+        syn::visit::visit_local(self, node);
+    }
 }
 
 #[derive(Default)]
@@ -479,13 +668,11 @@ impl<'ast> syn::visit::Visit<'ast> for ObservableCallbackScanner {
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
         if let syn::Expr::Path(function) = node.func.as_ref() {
             let name = SourcePolicyScanner::path_name(&function.path);
-            if name.starts_with("std::fs::")
+            let snapshot_call = matches!(name.as_str(), "f64::from_bits" | "health::count");
+            if !snapshot_call
+                || name.starts_with("std::fs::")
                 || name.starts_with("tokio::fs::")
                 || name.starts_with("fs::")
-                || matches!(
-                    name.as_str(),
-                    "std::thread::sleep" | "thread::sleep" | "tokio::runtime::Handle::current"
-                )
             {
                 self.reject(node.span());
             }
@@ -1497,10 +1684,26 @@ fn is_non_telemetry_name(path: &str, context: &str, literal: &str) -> bool {
         .any(|(exempt_path, exempt_context, exempt_literal)| {
             *exempt_path == path && *exempt_context == context && *exempt_literal == literal
         })
+        || TELEMETRY_NEGATIVE_TEST_EXEMPTIONS.iter().any(
+            |(exempt_path, exempt_context, exempt_literal)| {
+                *exempt_path == path && *exempt_context == context && *exempt_literal == literal
+            },
+        )
         || (path == "crates/jackin-xtask/src/telemetry_registry.rs"
+            && matches!(
+                context,
+                "const:NON_TELEMETRY_EXEMPTIONS"
+                    | "const:TELEMETRY_NEGATIVE_TEST_EXEMPTIONS"
+                    | "const:NAMESPACE_TEST_FIXTURES"
+            )
             && NON_TELEMETRY_EXEMPTIONS
                 .iter()
                 .map(|(_, _, fixture_name)| fixture_name)
+                .chain(
+                    TELEMETRY_NEGATIVE_TEST_EXEMPTIONS
+                        .iter()
+                        .map(|(_, _, fixture_name)| fixture_name),
+                )
                 .chain(
                     NAMESPACE_TEST_FIXTURES
                         .iter()
@@ -1537,6 +1740,12 @@ impl<'a> NamespaceScanner<'a> {
 }
 
 impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
+    fn visit_item_static(&mut self, item: &'ast syn::ItemStatic) {
+        let previous = std::mem::replace(&mut self.context, format!("static:{}", item.ident));
+        syn::visit::visit_item_static(self, item);
+        self.context = previous;
+    }
+
     fn visit_item_const(&mut self, item: &'ast syn::ItemConst) {
         let previous = std::mem::replace(&mut self.context, format!("const:{}", item.ident));
         syn::visit::visit_item_const(self, item);

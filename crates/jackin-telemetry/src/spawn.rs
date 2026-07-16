@@ -4,7 +4,10 @@
 use std::{future::Future, thread};
 
 use opentelemetry::trace::TraceContextExt as _;
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::{
+    runtime::Handle,
+    task::{JoinHandle, JoinSet, LocalSet},
+};
 use tracing::{Instrument as _, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
@@ -29,7 +32,7 @@ where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    spawn_joined(fut)
+    tokio::spawn(fut)
 }
 
 pub fn spawn_stream<F>(_name: &'static str, fut: F) -> JoinHandle<F::Output>
@@ -37,7 +40,31 @@ where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    spawn_joined(fut)
+    tokio::spawn(fut)
+}
+
+pub fn spawn_joined_on<F>(handle: &Handle, fut: F) -> JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    handle.spawn(fut.instrument(Span::current()))
+}
+
+pub fn spawn_local_joined<F>(fut: F) -> JoinHandle<F::Output>
+where
+    F: Future + 'static,
+    F::Output: 'static,
+{
+    tokio::task::spawn_local(fut.instrument(Span::current()))
+}
+
+pub fn spawn_local_joined_on<F>(local_set: &LocalSet, fut: F) -> JoinHandle<F::Output>
+where
+    F: Future + 'static,
+    F::Output: 'static,
+{
+    local_set.spawn_local(fut.instrument(Span::current()))
 }
 
 pub fn spawn_detached<F>(def: &'static SpanDef, fut: F) -> JoinHandle<F::Output>
@@ -141,6 +168,15 @@ where
     tokio::task::spawn_blocking(move || span.in_scope(work))
 }
 
+pub fn joined_blocking_on<F, R>(handle: &Handle, work: F) -> JoinHandle<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let span = Span::current();
+    handle.spawn_blocking(move || span.in_scope(work))
+}
+
 pub fn detached_blocking<F, R>(def: &'static SpanDef, work: F) -> JoinHandle<R>
 where
     F: FnOnce() -> R + Send + 'static,
@@ -165,7 +201,7 @@ where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
-    joined_blocking(work)
+    tokio::task::spawn_blocking(work)
 }
 
 pub fn thread_joined<F, R>(work: F) -> thread::JoinHandle<R>
@@ -182,10 +218,10 @@ where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
-    thread_joined(work)
+    thread::spawn(work)
 }
 
-pub fn thread_stream_named<F, R>(name: String, work: F) -> std::io::Result<thread::JoinHandle<R>>
+pub fn thread_joined_named<F, R>(name: String, work: F) -> std::io::Result<thread::JoinHandle<R>>
 where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
@@ -194,6 +230,53 @@ where
     thread::Builder::new()
         .name(name)
         .spawn(move || span.in_scope(work))
+}
+
+pub fn thread_stream_named<F, R>(name: String, work: F) -> std::io::Result<thread::JoinHandle<R>>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    thread::Builder::new().name(name).spawn(work)
+}
+
+pub fn thread_scoped_joined<'scope, F, R>(
+    scope: &'scope thread::Scope<'scope, '_>,
+    work: F,
+) -> thread::ScopedJoinHandle<'scope, R>
+where
+    F: FnOnce() -> R + Send + 'scope,
+    R: Send + 'scope,
+{
+    let span = Span::current();
+    scope.spawn(move || span.in_scope(work))
+}
+
+pub fn thread_scoped_joined_named<'scope, F, R>(
+    scope: &'scope thread::Scope<'scope, '_>,
+    name: String,
+    work: F,
+) -> std::io::Result<thread::ScopedJoinHandle<'scope, R>>
+where
+    F: FnOnce() -> R + Send + 'scope,
+    R: Send + 'scope,
+{
+    let span = Span::current();
+    thread::Builder::new()
+        .name(name)
+        .spawn_scoped(scope, move || span.in_scope(work))
+}
+
+pub fn thread_scoped_stream<'scope, F, R>(
+    scope: &'scope thread::Scope<'scope, '_>,
+    _name: &'static str,
+    work: F,
+) -> thread::ScopedJoinHandle<'scope, R>
+where
+    F: FnOnce() -> R + Send + 'scope,
+    R: Send + 'scope,
+{
+    scope.spawn(work)
 }
 
 pub fn thread_detached<F, R>(def: &'static SpanDef, work: F) -> thread::JoinHandle<R>
@@ -242,6 +325,26 @@ pub trait JoinSetExt<T: Send + 'static> {
     fn spawn_joined_on<F>(&mut self, fut: F) -> tokio::task::AbortHandle
     where
         F: Future<Output = T> + Send + 'static;
+
+    fn spawn_joined_on_handle<F>(&mut self, handle: &Handle, fut: F) -> tokio::task::AbortHandle
+    where
+        F: Future<Output = T> + Send + 'static;
+
+    fn spawn_local_joined_on<F>(&mut self, fut: F) -> tokio::task::AbortHandle
+    where
+        F: Future<Output = T> + 'static;
+
+    fn spawn_local_joined_on_set<F>(
+        &mut self,
+        local_set: &LocalSet,
+        fut: F,
+    ) -> tokio::task::AbortHandle
+    where
+        F: Future<Output = T> + 'static;
+
+    fn spawn_joined_blocking_on<F>(&mut self, work: F) -> tokio::task::AbortHandle
+    where
+        F: FnOnce() -> T + Send + 'static;
 }
 
 impl<T: Send + 'static> JoinSetExt<T> for JoinSet<T> {
@@ -250,6 +353,39 @@ impl<T: Send + 'static> JoinSetExt<T> for JoinSet<T> {
         F: Future<Output = T> + Send + 'static,
     {
         self.spawn(fut.instrument(Span::current()))
+    }
+
+    fn spawn_joined_on_handle<F>(&mut self, handle: &Handle, fut: F) -> tokio::task::AbortHandle
+    where
+        F: Future<Output = T> + Send + 'static,
+    {
+        self.spawn_on(fut.instrument(Span::current()), handle)
+    }
+
+    fn spawn_local_joined_on<F>(&mut self, fut: F) -> tokio::task::AbortHandle
+    where
+        F: Future<Output = T> + 'static,
+    {
+        self.spawn_local(fut.instrument(Span::current()))
+    }
+
+    fn spawn_local_joined_on_set<F>(
+        &mut self,
+        local_set: &LocalSet,
+        fut: F,
+    ) -> tokio::task::AbortHandle
+    where
+        F: Future<Output = T> + 'static,
+    {
+        self.spawn_local_on(fut.instrument(Span::current()), local_set)
+    }
+
+    fn spawn_joined_blocking_on<F>(&mut self, work: F) -> tokio::task::AbortHandle
+    where
+        F: FnOnce() -> T + Send + 'static,
+    {
+        let span = Span::current();
+        self.spawn_blocking(move || span.in_scope(work))
     }
 }
 

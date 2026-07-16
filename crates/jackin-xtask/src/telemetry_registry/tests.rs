@@ -32,6 +32,56 @@ fn source_policy_is_syntax_aware_and_blocks_raw_meters() {
 }
 
 #[test]
+fn spawn_policy_covers_executor_forms_without_matching_processes() {
+    let path = "crates/example/src/lib.rs";
+    for source in [
+        "fn raw() { tokio :: task :: spawn (async {}); }",
+        "fn raw() { tokio::task::spawn_local(async {}); }",
+        "fn raw(handle: Handle) { handle.spawn(async {}); }",
+        "fn raw(handle: Handle) { handle.spawn_blocking(|| {}); }",
+        "fn raw() { let mut arbitrary = JoinSet::new(); arbitrary.spawn(async {}); }",
+        "fn raw(local: LocalSet) { local.spawn_local(async {}); }",
+        "fn raw() { std::thread::Builder::new().name(\"worker\".into()).spawn(|| {}); }",
+        "fn raw() { std::thread::scope(|scope| { scope.spawn(|| {}); }); }",
+        "use tokio::spawn as launch; fn raw() { launch(async {}); }",
+        "fn raw() { let launch = tokio::spawn; launch(async {}); }",
+    ] {
+        assert_eq!(
+            source_policy_violations(path, source),
+            ["unmanaged async/thread spawn"],
+            "{source}"
+        );
+    }
+    assert!(
+        source_policy_violations(path, "fn child(mut command: Command) { command.spawn(); }")
+            .is_empty()
+    );
+}
+
+#[test]
+fn async_scope_policy_rejects_guards_and_allows_sync_scopes() {
+    let path = "crates/example/src/lib.rs";
+    for source in [
+        "async fn bad(span: Span) { let _guard = span.enter(); work().await; }",
+        "fn bad(span: Span) { async move { let _guard = span.entered(); work().await; }; }",
+        "async fn bad(context: Context) { let _guard = context.attach(); work().await; }",
+        "async fn bad(context: Context) { let _guard: ContextGuard = context.attach(); work().await; }",
+    ] {
+        assert!(
+            !source_policy_violations(path, source).is_empty(),
+            "{source}"
+        );
+    }
+    assert!(
+        source_policy_violations(
+            path,
+            "async fn safe(runtime: Runtime, span: Span) { let _runtime = runtime.enter(); span.in_scope(|| sync_work()); work().await; }"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
 fn observable_callbacks_are_snapshot_only() {
     let allowed = r"fn install(builder: Builder, value: AtomicU64) {
         builder.with_callback(move |observer| observer.observe(value.load(Ordering::Relaxed), &[]));
@@ -56,6 +106,30 @@ fn observable_callbacks_are_snapshot_only() {
             "{prohibited}"
         );
     }
+    let indirect = r#"
+        fn sample_filesystem() { let _ = std::fs::read_to_string("state"); }
+        fn install(builder: Builder) {
+            builder.with_callback(move |_observer| sample_filesystem());
+        }
+    "#;
+    assert_eq!(
+        source_policy_violations("crates/jackin-diagnostics/src/example.rs", indirect),
+        ["observable callback performs blocking/runtime work"]
+    );
+}
+
+#[test]
+fn snapshot_callback_completes_without_blocking() {
+    let value = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(42));
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let callback = || value.load(std::sync::atomic::Ordering::Relaxed);
+        sent.send(callback()).expect("callback result receiver");
+    });
+    assert_eq!(
+        received.recv_timeout(std::time::Duration::from_secs(1)),
+        Ok(42)
+    );
 }
 
 #[test]
@@ -148,6 +222,15 @@ fn namespace_scan_detects_telemetry_literals_without_flagging_identifiers() {
     assert!(contains_legacy_telemetry_name(
         path,
         "path.join(\"jackin.state\"); record(\"jackin.bad\")"
+    ));
+    let negative_fixture = "crates/jackin-otlp-testbed/src/tests.rs";
+    assert!(!contains_legacy_telemetry_name(
+        negative_fixture,
+        "fn namespace_detector_rejects_synthetic_legacy_attribute() { let _ = \"jackin.synthetic\"; }"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        negative_fixture,
+        "fn different_test() { let _ = \"jackin.synthetic\"; }"
     ));
 }
 

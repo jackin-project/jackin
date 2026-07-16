@@ -43,6 +43,7 @@ use helpers::{
 };
 
 use anyhow::Result;
+use tracing::Instrument as _;
 
 use crate::cli::role::ConsoleArgs;
 use crate::cli::{Cli, Command};
@@ -154,9 +155,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 .ok()
         })
         .flatten();
-    let command_entered = command_operation
+    let command_span = command_operation
         .as_ref()
-        .map(|operation| operation.span().enter());
+        .map_or_else(tracing::Span::none, |operation| operation.span().clone());
     // Wire compact operator output to the jackin-core port dispatcher so
     // domain crates can call `jackin_core::emit_compact_line` without
     // depending on the diagnostics implementation.
@@ -168,48 +169,59 @@ pub async fn run(cli: Cli) -> Result<()> {
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
 
-    let result = match command {
-        Command::Load(args) => {
-            load_cmd::handle_load(
-                args,
-                &mut config,
-                &paths,
-                debug,
-                &mut runner,
-                connect_docker,
-            )
-            .await
+    let result = async {
+        match command {
+            Command::Load(args) => {
+                load_cmd::handle_load(
+                    args,
+                    &mut config,
+                    &paths,
+                    debug,
+                    &mut runner,
+                    connect_docker,
+                )
+                .await
+            }
+            Command::Console(ConsoleArgs {}) => {
+                load_cmd::handle_console(config, paths, debug).await
+            }
+            Command::Hardline(args) => {
+                load_cmd::handle_hardline(args, config, paths, debug, connect_docker).await
+            }
+            Command::Eject(args) => {
+                load_cmd::handle_eject(args, &paths, debug, connect_docker).await
+            }
+            Command::Exile => load_cmd::handle_exile(&paths, debug, connect_docker).await,
+            Command::Config(config_cmd) => {
+                config_cmd::handle(config_cmd, &mut config, &paths, debug)
+            }
+            #[cfg(unix)]
+            Command::Daemon(command) => daemon_cmd::handle(command, &paths).await,
+            Command::Workspace(command) => {
+                workspace_cmd::handle(command, &mut config, &paths, debug).await
+            }
+            Command::Purge(args) => {
+                prune_cmd::handle_purge(args, &paths, &mut runner, connect_docker).await
+            }
+            Command::Prewarm(args) => crate::cli::prewarm::run(&args, &paths, &config, debug).await,
+            Command::Prune(cmd) => {
+                prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
+            }
+            Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
+            Command::Diagnostics(command) => crate::cli::diagnostics::run(&command),
+            Command::Status(args) => crate::cli::status::run(&args, &paths).await,
+            Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
+            Command::Help { .. } => {
+                // Handled upstream in dispatch before reaching this function.
+                unreachable!(
+                    "Command::Help is dispatched to Action::PrintHelp before run() is called"
+                )
+            }
+            Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
         }
-        Command::Console(ConsoleArgs {}) => load_cmd::handle_console(config, paths, debug).await,
-        Command::Hardline(args) => {
-            load_cmd::handle_hardline(args, config, paths, debug, connect_docker).await
-        }
-        Command::Eject(args) => load_cmd::handle_eject(args, &paths, debug, connect_docker).await,
-        Command::Exile => load_cmd::handle_exile(&paths, debug, connect_docker).await,
-        Command::Config(config_cmd) => config_cmd::handle(config_cmd, &mut config, &paths, debug),
-        #[cfg(unix)]
-        Command::Daemon(command) => daemon_cmd::handle(command, &paths).await,
-        Command::Workspace(command) => {
-            workspace_cmd::handle(command, &mut config, &paths, debug).await
-        }
-        Command::Purge(args) => {
-            prune_cmd::handle_purge(args, &paths, &mut runner, connect_docker).await
-        }
-        Command::Prewarm(args) => crate::cli::prewarm::run(&args, &paths, &config, debug).await,
-        Command::Prune(cmd) => {
-            prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
-        }
-        Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
-        Command::Diagnostics(command) => crate::cli::diagnostics::run(&command),
-        Command::Status(args) => crate::cli::status::run(&args, &paths).await,
-        Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
-        Command::Help { .. } => {
-            // Handled upstream in dispatch before reaching this function.
-            unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
-        }
-        Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
-    };
-    drop(command_entered);
+    }
+    .instrument(command_span)
+    .await;
     let success = result.is_ok();
     if let Some(operation) = command_operation {
         operation.complete(
