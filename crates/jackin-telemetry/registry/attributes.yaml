@@ -11,6 +11,9 @@ groups:
       - { id: ui.screen.visit.id, type: string, brief: Opaque screen visit identifier., stability: development }
       - { id: ui.navigation.sequence, type: int, brief: Monotonic navigation sequence., stability: development }
       - { id: ui.transition.reason, type: string, brief: Screen transition reason., stability: development }
+      - { id: app.jank.frame_count, type: int, brief: Frames in the jank observation period., stability: development }
+      - { id: app.jank.period, type: string, brief: Bounded jank observation period., stability: development }
+      - { id: app.jank.threshold, type: double, brief: Jank threshold in seconds., stability: development }
       - { id: job.id, type: string, brief: Opaque detached job identifier., stability: development }
       - { id: job.type, type: string, brief: Detached job class., stability: development }
       - { id: outcome, type: string, brief: Bounded operation outcome., stability: development }

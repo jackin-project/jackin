@@ -9,6 +9,9 @@ pub const UI_ACTION_NAME: &str = "ui.action.name";
 pub const UI_SCREEN_VISIT_ID: &str = "ui.screen.visit.id";
 pub const UI_NAVIGATION_SEQUENCE: &str = "ui.navigation.sequence";
 pub const UI_TRANSITION_REASON: &str = "ui.transition.reason";
+pub const APP_JANK_FRAME_COUNT: &str = "app.jank.frame_count";
+pub const APP_JANK_PERIOD: &str = "app.jank.period";
+pub const APP_JANK_THRESHOLD: &str = "app.jank.threshold";
 pub const JOB_ID: &str = "job.id";
 pub const JOB_TYPE: &str = "job.type";
 pub const OUTCOME: &str = "outcome";
@@ -47,6 +50,9 @@ pub const ALL_KEYS: &[&str] = &[
     UI_SCREEN_VISIT_ID,
     UI_NAVIGATION_SEQUENCE,
     UI_TRANSITION_REASON,
+    APP_JANK_FRAME_COUNT,
+    APP_JANK_PERIOD,
+    APP_JANK_THRESHOLD,
     JOB_ID,
     JOB_TYPE,
     OUTCOME,

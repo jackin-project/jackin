@@ -335,12 +335,35 @@ where
         overlay(frame);
     });
     if let Some(screen) = screen {
+        const JANK_THRESHOLD_SECONDS: f64 = 0.050;
+        let elapsed = started.elapsed().as_secs_f64();
         let attrs = [jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
             value: jackin_telemetry::Value::Str(screen.as_str()),
         }];
         let _ = jackin_telemetry::histogram(&jackin_telemetry::metric::UI_RENDER_DURATION)
-            .record(started.elapsed().as_secs_f64(), &attrs);
+            .record(elapsed, &attrs);
+        if elapsed > JANK_THRESHOLD_SECONDS {
+            let jank_attrs = [
+                attrs[0],
+                jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::APP_JANK_FRAME_COUNT,
+                    value: jackin_telemetry::Value::U64(1),
+                },
+                jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::APP_JANK_PERIOD,
+                    value: jackin_telemetry::Value::Str("frame"),
+                },
+                jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::APP_JANK_THRESHOLD,
+                    value: jackin_telemetry::Value::F64(JANK_THRESHOLD_SECONDS),
+                },
+            ];
+            let _ = jackin_telemetry::emit_event(
+                &jackin_telemetry::event::APP_JANK,
+                jackin_telemetry::FieldSet::new(&jank_attrs, None),
+            );
+        }
     }
     result
 }

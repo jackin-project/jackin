@@ -182,6 +182,15 @@ macro_rules! emit_named {
             Attr { key: schema::attrs::std_attrs::PROCESS_EXIT_CODE, value: Value::I64(value) } => Some(*value),
             _ => None,
         });
+        let jank_frame_count = $fields.attrs.iter().find_map(|attr| match attr {
+            Attr { key: schema::attrs::APP_JANK_FRAME_COUNT, value: Value::U64(value) } => Some(*value),
+            _ => None,
+        });
+        let jank_period = $fields.str(schema::attrs::APP_JANK_PERIOD);
+        let jank_threshold = $fields.attrs.iter().find_map(|attr| match attr {
+            Attr { key: schema::attrs::APP_JANK_THRESHOLD, value: Value::F64(value) } => Some(*value),
+            _ => None,
+        });
         let agent_state = $fields.str(schema::attrs::AGENT_STATE);
         let agent_status_source = $fields.str(schema::attrs::AGENT_STATUS_SOURCE);
         let agent_status_confidence = $fields.str(schema::attrs::AGENT_STATUS_CONFIDENCE);
@@ -199,7 +208,7 @@ macro_rules! emit_named {
             Severity::Trace => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::TRACE, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
             Severity::Debug => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::DEBUG, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "error.type" = error_type, message = body),
             Severity::Info => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::INFO, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "app.widget.id" = widget_id, "ui.action.name" = action_name, "ui.screen.visit.id" = visit_id, "ui.navigation.sequence" = navigation_sequence, "ui.transition.reason" = transition_reason, "gen_ai.agent.name" = agent_name, "gen_ai.conversation.id" = conversation_id, "agent.state" = agent_state, "agent.status.source" = agent_status_source, "agent.status.confidence" = agent_status_confidence, "agent.status.stuck" = agent_status_stuck, "pty.exit.reason" = pty_exit_reason, "process.exit.code" = process_exit_code, "error.type" = error_type, message = body),
-            Severity::Warn => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
+            Severity::Warn => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::WARN, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "app.jank.frame_count" = jank_frame_count, "app.jank.period" = jank_period, "app.jank.threshold" = jank_threshold, "error.type" = error_type, message = body),
             Severity::Error => tracing::event!(name: $name, target: TELEMETRY_TARGET, tracing::Level::ERROR, outcome, "session.id" = session_id, "app.screen.id" = screen_id, "app.screen.name" = screen_name, "ui.action.name" = action_name, "error.type" = error_type, message = body),
         }
     }};
