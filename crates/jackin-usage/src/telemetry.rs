@@ -6,6 +6,7 @@
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use jackin_telemetry::ResultTelemetryExt as _;
 use jackin_telemetry::propagation::{Carrier, ExtractOutcome};
 
 static OTLP_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -45,16 +46,15 @@ pub fn init() -> Result<FlushGuard, jackin_telemetry::identity::SessionOwnership
         traceparent: traceparent.clone(),
     }));
 
-    let active = match jackin_diagnostics::init_capsule_tracing(traceparent.as_deref()) {
+    let active = match jackin_diagnostics::init_capsule_tracing(traceparent.as_deref())
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)
+    {
         Ok(true) => {
             OTLP_ACTIVE.store(true, Ordering::Relaxed);
             true
         }
         Ok(false) => false,
-        Err(error) => {
-            jackin_diagnostics::telemetry_info!("capsule", "otlp export disabled: {error}");
-            false
-        }
+        Err(_) => false,
     };
     session.start();
     let startup =
@@ -68,12 +68,6 @@ pub fn init() -> Result<FlushGuard, jackin_telemetry::identity::SessionOwnership
         }),
     ) {
         let _link_result = startup.link(&parent);
-    }
-    if active {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "otlp export active: session_id={session_id}"
-        );
     }
     Ok(FlushGuard {
         session: Some(session),

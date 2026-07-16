@@ -87,7 +87,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-runtime/src/runtime/universe.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-term/src/grid/perform.rs` | 0 | 0 | 1 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-usage/src/logging.rs` | 0 | 0 | 1 | 1 | 0 | 0 | governed DEBUG detail; structural counts only; raw payload removed |
-| `crates/jackin-usage/src/telemetry.rs` | 0 | 3 | 1 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
+| `crates/jackin-usage/src/telemetry.rs` | 0 | 3 | 1 | 0 | 0 | 0 | REPLACE remaining init failure — typed health plus best-effort `config_error`; DELETE duplicate active lifecycle containing session identity |
 | `crates/jackin-usage/src/token_monitor.rs` | 0 | 0 | 1 | 0 | 0 | 0 | REPLACE — `ResultTelemetryExt` emits typed `io_error`; collector absence owns behavior; provider labels, host paths, and raw errors prohibited |
 | `crates/jackin-usage/src/token_monitor/opencode.rs` | 0 | 0 | 3 | 0 | 0 | 0 | REPLACE — `ResultTelemetryExt` emits typed `db_error`; collector false outcome owns behavior; database path and raw errors prohibited |
 | `crates/jackin-usage/src/usage.rs` | 0 | 4 | 1 | 0 | 0 | 0 | REPLACE remaining credential failures — typed `io_error`/`config_error`; expected absence stays silent; credential paths and raw errors prohibited |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production census after the isolation, instance, host, image-fallback, launch-TUI, and usage-collector migration passes: 147 `telemetry_info!`, 258 `telemetry_debug!`, 10 `telemetry_warn!`, and 3 `telemetry_error!` sites. The generic macro machinery and these 418 sites remain open.
+Current production census after the isolation, instance, host, image-fallback, launch-TUI, and usage-collector migration passes: 145 `telemetry_info!`, 258 `telemetry_debug!`, 10 `telemetry_warn!`, and 3 `telemetry_error!` sites. The generic macro machinery and these 416 sites remain open.
