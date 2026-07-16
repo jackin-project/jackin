@@ -32,8 +32,22 @@ gh_api_retry() {
   return 1
 }
 
-gh_api_retry "repos/${repo}/actions/runs/${run_id}/jobs?per_page=100" \
-  --paginate --jq '.jobs[] | @base64' > "$jobs_file"
+telemetry_unavailable() {
+  local request=$1
+  if [ "$expect_clean" = true ]; then
+    echo "workflow performance telemetry unavailable: ${request}" >&2
+    exit 1
+  fi
+  echo "::warning::workflow performance telemetry unavailable: ${request}"
+  printf '### %s performance audit\n\nTelemetry unavailable; audit skipped.\n' \
+    "$workflow_label" >> "$summary"
+  exit 0
+}
+
+if ! gh_api_retry "repos/${repo}/actions/runs/${run_id}/jobs?per_page=100" \
+  --paginate --jq '.jobs[] | @base64' > "$jobs_file"; then
+  telemetry_unavailable jobs
+fi
 
 epoch() {
   local timestamp=$1
@@ -54,7 +68,9 @@ third_party_pattern='^[[:space:]]*(Compiling|Checking|Building) [[:alnum:]_.+-]+
 source_tool_pattern='Installing [[:alnum:]_.+-]+ v[0-9].*from source'
 cache_miss_pattern='(^|##\[warning\])(Cache not found|No cache found|Rust cache miss)|not found for input keys:'
 
-run_created=$(gh_api_retry "repos/${repo}/actions/runs/${run_id}" --jq '.created_at')
+if ! run_created=$(gh_api_retry "repos/${repo}/actions/runs/${run_id}" --jq '.created_at'); then
+  telemetry_unavailable run
+fi
 run_created_s=$(epoch "$run_created")
 
 log_pids=()
