@@ -3,7 +3,7 @@
 
 use super::{
     contains_legacy_telemetry_name, generate_rust_sources, repo_root, rust_pascal,
-    source_policy_violations, validate_registry_matches_rust,
+    source_policy_violations, source_policy_violations_for_files, validate_registry_matches_rust,
 };
 
 #[test]
@@ -28,6 +28,36 @@ fn source_policy_is_syntax_aware_and_blocks_raw_meters() {
     assert_eq!(
         source_policy_violations(path, "fn raw() { tracing::info!(\"raw\"); }"),
         ["raw tracing call outside governed facade"]
+    );
+}
+
+#[test]
+fn spawn_policy_resolves_cross_module_executor_aliases() {
+    let files = [
+        (
+            "crates/example/src/executor.rs",
+            "pub type Base = tokio::runtime::Handle;
+             pub type Executor = Base;
+             pub type PendingBase = tokio::task::JoinSet<()>;
+             pub type Pending = PendingBase;",
+        ),
+        (
+            "crates/example/src/worker.rs",
+            "use crate::executor::{Executor as Runtime, Pending};
+             fn raw(handle: Runtime, tasks: &mut Pending, qualified: crate::executor::Executor) {
+                 handle.spawn(async {});
+                 tasks.spawn(async {});
+                 qualified.spawn(async {});
+             }",
+        ),
+    ];
+    assert_eq!(
+        source_policy_violations_for_files(&files),
+        [
+            "unmanaged async/thread spawn",
+            "unmanaged async/thread spawn",
+            "unmanaged async/thread spawn"
+        ]
     );
 }
 

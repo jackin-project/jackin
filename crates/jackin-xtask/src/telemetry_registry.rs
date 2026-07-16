@@ -19,7 +19,10 @@ use syn::visit::Visit as _;
 use crate::docs::repo_root;
 
 mod source_policy;
-use source_policy::{AsyncScopeGuardScanner, SpawnDeclarations, spawn_receiver_type};
+use source_policy::{
+    AsyncScopeGuardScanner, SpawnDeclarations, SpawnTypeResolver, WorkspaceSpawnTypes,
+    spawn_receiver_type,
+};
 
 // Shrink-only migration inventories. A new file never joins these lists: it
 // must use the governed facade/spawn helpers from its first commit.
@@ -345,12 +348,23 @@ pub(crate) fn run(args: TelemetryRegistryArgs) -> Result<()> {
 fn validate_source_policy(root: &Path) -> Result<()> {
     let mut files = Vec::new();
     collect_source_files(&root.join("crates"), root, &mut files)?;
+    let parsed = files
+        .into_iter()
+        .map(|(relative, source)| {
+            let path = relative.to_string_lossy().into_owned();
+            let syntax = syn::parse_file(&source)
+                .with_context(|| format!("parsing {path} for telemetry source policy"))?;
+            Ok((path, syntax))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let indexed = parsed
+        .iter()
+        .map(|(path, syntax)| (path.as_str(), syntax))
+        .collect::<Vec<_>>();
+    let workspace_spawn_types = WorkspaceSpawnTypes::collect(&indexed);
     let mut violations = Vec::new();
-    for (relative, source) in files {
-        let path = relative.to_string_lossy();
-        let syntax = syn::parse_file(&source)
-            .with_context(|| format!("parsing {path} for telemetry source policy"))?;
-        let mut scanner = SourcePolicyScanner::new(&path, &syntax);
+    for (path, syntax) in parsed {
+        let mut scanner = SourcePolicyScanner::new(&path, &syntax, &workspace_spawn_types);
         scanner.visit_file(&syntax);
         violations.extend(
             scanner
@@ -375,21 +389,21 @@ struct SourcePolicyScanner<'a> {
     spawn_aliases: BTreeSet<String>,
     spawn_module_aliases: BTreeMap<String, String>,
     spawn_receivers: BTreeSet<String>,
-    spawn_type_aliases: BTreeMap<String, String>,
+    spawn_type_resolver: SpawnTypeResolver,
     spawn_fields: BTreeSet<String>,
     spawn_factories: BTreeSet<String>,
 }
 
 impl<'a> SourcePolicyScanner<'a> {
-    fn new(path: &'a str, syntax: &syn::File) -> Self {
-        let declarations = SpawnDeclarations::collect(syntax);
+    fn new(path: &'a str, syntax: &syn::File, workspace: &WorkspaceSpawnTypes) -> Self {
+        let declarations = SpawnDeclarations::collect(path, syntax, workspace);
         Self {
             path,
             violations: BTreeSet::new(),
             spawn_aliases: BTreeSet::new(),
             spawn_module_aliases: BTreeMap::new(),
             spawn_receivers: BTreeSet::new(),
-            spawn_type_aliases: declarations.aliases,
+            spawn_type_resolver: declarations.resolver,
             spawn_fields: declarations.fields,
             spawn_factories: declarations.factories,
         }
@@ -444,7 +458,7 @@ impl<'a> SourcePolicyScanner<'a> {
     }
 
     fn typed_spawn_receiver(&self, pat: &syn::Pat, ty: &syn::Type) -> Option<String> {
-        if !spawn_receiver_type(ty, &self.spawn_type_aliases) {
+        if !spawn_receiver_type(ty, &self.spawn_type_resolver) {
             return None;
         }
         match pat {
@@ -732,14 +746,33 @@ impl<'ast> syn::visit::Visit<'ast> for ObservableCallbackScanner {
 
 #[cfg(test)]
 fn source_policy_violations(path: &str, source: &str) -> Vec<&'static str> {
-    let syntax = syn::parse_file(source).expect("source-policy fixture must parse");
-    let mut scanner = SourcePolicyScanner::new(path, &syntax);
-    scanner.visit_file(&syntax);
-    scanner
-        .violations
-        .into_iter()
-        .map(|(_, violation)| violation)
-        .collect()
+    source_policy_violations_for_files(&[(path, source)])
+}
+
+#[cfg(test)]
+fn source_policy_violations_for_files(files: &[(&str, &str)]) -> Vec<&'static str> {
+    let parsed = files
+        .iter()
+        .map(|(path, source)| {
+            (
+                (*path).to_owned(),
+                syn::parse_file(source).expect("source-policy fixture must parse"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let indexed = parsed
+        .iter()
+        .map(|(path, syntax)| (path.as_str(), syntax))
+        .collect::<Vec<_>>();
+    let workspace = WorkspaceSpawnTypes::collect(&indexed);
+    let mut violations = Vec::new();
+    for (path, syntax) in &parsed {
+        let mut scanner = SourcePolicyScanner::new(path, syntax, &workspace);
+        scanner.visit_file(syntax);
+        violations.extend(scanner.violations.iter().map(|(_, violation)| *violation));
+    }
+    violations.sort_unstable();
+    violations
 }
 
 fn collect_source_files(
