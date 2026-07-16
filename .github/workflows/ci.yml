@@ -40,12 +40,13 @@ jobs:
         env:
           LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
         run: |
-          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
-          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
+          github_writer='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","cache_writer":true}'
+          velnor_writer='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","cache_writer":true}'
+          velnor_reader='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","cache_writer":false}'
           case "$LANES" in
-            velnor) configs="[$velnor]" ;;
-            both)   configs="[$github,$velnor]" ;;
-            *)      configs="[$github]" ;;
+            velnor) configs="[$velnor_writer]" ;;
+            both)   configs="[$github_writer,$velnor_reader]" ;;
+            *)      configs="[$github_writer]" ;;
           esac
           echo "configs=$configs" >> "$GITHUB_OUTPUT"
 
@@ -335,6 +336,7 @@ jobs:
     outputs:
       affected-packages: ${{ steps.affected-crates.outputs.packages }}
       affected-cache-keys: ${{ steps.affected-crates.outputs.cache-keys }}
+      reused-packages: ${{ steps.affected-crates.outputs.reused-packages }}
     env:
       CARGO_TARGET_DIR: target/ci-xtask
       CARGO_TERM_COLOR: always
@@ -493,7 +495,14 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           BEFORE_SHA: ${{ github.event.before }}
+          COMMON_CONTRACT_KEY: ${{ hashFiles('.github/workflows/rust-nextest.yml', '.config/nextest.toml', 'clippy.toml', 'flaky-tests.toml', 'ratchet.toml', 'mise.toml', 'mise.lock', 'scripts/ci/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**') }}
+          CONSTRUCT_IMAGE_CHANGED: ${{ needs.changes.outputs.construct_image }}
+          DOCKER_CONTRACT_KEY: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
+          DOCKER_E2E: ${{ needs.changes.outputs.docker_e2e }}
           EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          RUNNER_ARCH: ${{ runner.arch }}
+          RUNNER_OS: ${{ runner.os }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -511,12 +520,43 @@ jobs:
             --metadata target/ci-tools/workspace-metadata.json "${selection[@]}")
           cache_keys=$(target/ci-tools/jackin-xtask affected-crates \
             --metadata target/ci-tools/workspace-metadata.json "${selection[@]}" --cache-keys)
-          echo "packages=$packages" >> "$GITHUB_OUTPUT"
-          echo "cache-keys=$cache_keys" >> "$GITHUB_OUTPUT"
+          misses=()
+          hits=()
+          while IFS= read -r package; do
+            cache_key=$(jq -er --arg package "$package" '.[$package]' <<< "$cache_keys")
+            result=$(scripts/ci/find-crate-result.sh \
+              "$package" "$cache_key" true \
+              "$DOCKER_E2E" "$CONSTRUCT_IMAGE_CHANGED" \
+              "$COMMON_CONTRACT_KEY" "$DOCKER_CONTRACT_KEY" \
+              "$RUNNER_OS" "$RUNNER_ARCH" "$GITHUB_SHA")
+            if [ "$(jq -r '.hit' <<< "$result")" = "true" ]; then
+              hits+=("$package")
+            else
+              misses+=("$package")
+            fi
+          done < <(jq -r '.[]' <<< "$packages")
+          packages=$(printf '%s\n' "${misses[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+          reused=$(printf '%s\n' "${hits[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+          {
+            echo "packages=$packages"
+            echo "cache-keys=$cache_keys"
+            echo "reused-packages=$reused"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Crate test routing"
+            echo
+            echo "Reused: ${#hits[@]}; scheduled: ${#misses[@]}."
+            if [ "${#hits[@]}" -gt 0 ]; then
+              printf -- "- reused \`%s\`\n" "${hits[@]}"
+            fi
+            if [ "${#misses[@]}" -gt 0 ]; then
+              printf -- "- scheduled \`%s\`\n" "${misses[@]}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Publish resolved CI tool binaries
         if: >-
           steps.ci-tools-artifact.outputs.hit != 'true' &&
-          matrix.config.lane == 'GitHub'
+          matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
@@ -525,7 +565,7 @@ jobs:
           retention-days: 7
           include-hidden-files: true
       - name: Publish input-identical CI xtask
-        if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.lane == 'GitHub'
+        if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
@@ -761,7 +801,10 @@ jobs:
 
   test:
     needs: [changes, construct-e2e-image, matrix-setup, cargo-registry-warmup]
-    if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
+    if: >-
+      always() && needs.changes.outputs.rust == 'true' &&
+      needs.cargo-registry-warmup.outputs.affected-packages != '[]' &&
+      !failure() && !cancelled()
     uses: ./.github/workflows/rust-nextest.yml
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}

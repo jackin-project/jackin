@@ -75,46 +75,15 @@ jobs:
           RUNNER_OS: ${{ runner.os }}
         run: |
           set -euo pipefail
-          contract_key=$COMMON_CONTRACT_KEY
-          docker_e2e=false
-          construct_image_changed=false
-          if [ "$PACKAGE" = "jackin" ]; then
-            contract_key=$(printf '%s' "${COMMON_CONTRACT_KEY}:${DOCKER_CONTRACT_KEY}" \
-              | sha256sum | cut -d ' ' -f 1)
-            docker_e2e=$DOCKER_E2E
-            construct_image_changed=$CONSTRUCT_IMAGE_CHANGED
-          fi
-          suffix="af${ALL_FEATURES}-e2e${docker_e2e}-construct${construct_image_changed}"
-          sha_name="ci-crate-result-sha-v1-${RUNNER_OS}-${RUNNER_ARCH}-${PACKAGE}-${GITHUB_SHA}-${contract_key}-${suffix}"
-          name=$sha_name
-          artifact_id=
-          lookup_artifact() {
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=$1&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | .id' \
-              | head -n 1
-          }
-          if [ -n "$CACHE_KEY" ]; then
-            name="ci-crate-result-v1-${RUNNER_OS}-${RUNNER_ARCH}-${PACKAGE}-${CACHE_KEY}-${contract_key}-${suffix}"
-            if ! artifact_id=$(lookup_artifact "$name"); then
-              echo "::warning::successful-result lookup failed; running ${PACKAGE} in full"
-              artifact_id=
-            fi
-          fi
-          if [ -z "$artifact_id" ]; then
-            if ! artifact_id=$(lookup_artifact "$sha_name"); then
-              echo "::warning::successful-result SHA lookup failed; running ${PACKAGE} in full"
-              artifact_id=
-            fi
-          fi
+          result=$(scripts/ci/find-crate-result.sh \
+            "$PACKAGE" "$CACHE_KEY" "$ALL_FEATURES" \
+            "$DOCKER_E2E" "$CONSTRUCT_IMAGE_CHANGED" \
+            "$COMMON_CONTRACT_KEY" "$DOCKER_CONTRACT_KEY" \
+            "$RUNNER_OS" "$RUNNER_ARCH" "$GITHUB_SHA")
           {
-            echo "name=$name"
-            echo "sha-name=$sha_name"
-            if [ -n "$artifact_id" ]; then
-              echo "hit=true"
-              echo "::notice::reusing input-identical successful result for ${PACKAGE}"
-            else
-              echo "hit=false"
-            fi
+            echo "name=$(jq -r '.name' <<< "$result")"
+            echo "sha-name=$(jq -r '.sha_name' <<< "$result")"
+            echo "hit=$(jq -r '.hit' <<< "$result")"
           } >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/download-ci-xtask
         if: steps.crate-result.outputs.hit != 'true'
@@ -498,7 +467,7 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -545,7 +514,7 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -561,7 +530,7 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           hashFiles('target.part-1') != '' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -578,7 +547,7 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           hashFiles('target.part-2') != '' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -595,7 +564,7 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           hashFiles('target.part-3') != '' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -612,7 +581,7 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           hashFiles('target.part-4') != '' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -629,7 +598,7 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -651,7 +620,7 @@ jobs:
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -666,7 +635,7 @@ jobs:
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -682,7 +651,7 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-result.outputs.name != steps.crate-result.outputs.sha-name &&
-          matrix.config.lane == 'GitHub' &&
+          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&

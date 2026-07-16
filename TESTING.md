@@ -70,8 +70,9 @@ failure policy; Velnor may be faster only because its runner-local state
 persists. The prepared xtask also has a seven-day artifact keyed by its actual
 transitive source inputs, Cargo graph/configuration, toolchain, operating
 system, and architecture. Unrelated workflow or docs edits therefore reuse the
-binary instead of compiling it again. GitHub is the canonical Linux binary
-producer; both lanes restore that same portable output.
+binary instead of compiling it again. Runner configuration selects one
+canonical cache writer: GitHub when it participates, or Velnor for a
+Velnor-only dispatch. Both lanes restore that same portable output.
 
 A cold bootstrap is recorded as a cache miss, not hidden by raising the target.
 Fan-out jobs stay offline and consume the warmup result. Cross-run compiler
@@ -79,8 +80,8 @@ result sharing is deferred to the [Shared CI compiler cache](<docs/content/docs/
 roadmap item. Until that backend ships, `jackin-xtask affected-crates` reads the
 Cargo metadata graph and maps a diff to changed crates plus their transitive
 reverse workspace dependents. Workspace-wide inputs and unrecognized Rust paths
-fail safe to every crate. Each selected crate owns one job and one target-cache
-namespace, including default/all-feature checks, clippy, nextest, doctests,
+fail safe to every crate. Each selected cache miss owns one job and one
+target-cache namespace, including default/all-feature checks, clippy, nextest, doctests,
 MSRV, applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
 Scheduling follows the reverse dependency closure; the input-identical target
 artifact key follows the forward dependency closure. Each seven-day artifact
@@ -89,8 +90,8 @@ binaries, build outputs, and test executables. MSRV outputs live under
 `target/msrv`, so the older compiler cannot overwrite current-toolchain
 artifacts immediately before packing. This preserves crate-specific Cargo
 feature, profile, and toolchain variants without placing 26 mostly overlapping
-archives in GitHub's small repository cache quota. GitHub is the canonical
-artifact producer; both GitHub and Velnor restore the same output.
+archives in GitHub's small repository cache quota. The configured canonical
+writer publishes one output for both GitHub and Velnor to restore.
 
 ## Verification matrix
 
@@ -168,15 +169,17 @@ Does not apply to:
 
 ### Flake policy
 
-CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate; it has no shards, multi-crate buckets, or second jobs for crate-specific MSRV, clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
+CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate that requires testing; an input-identical successful result is resolved before matrix expansion and does not consume a runner. It has no shards, multi-crate buckets, or second jobs for crate-specific MSRV, clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
 An input-identical successful crate result is reused for seven days before any
 toolchain, registry, or target restore. Its key includes the crate's forward
 workspace dependency closure, Cargo and toolchain inputs, runner platform,
-feature and Docker modes, and the test-workflow contract. A hit preserves the
-crate's single status job while skipping Cargo and test execution; any changed
-input runs the complete contract and publishes a replacement marker from the
-canonical GitHub lane for both GitHub and Velnor to consume. Docker inputs and
+feature and Docker modes, and the test-workflow contract. The selector removes
+a hit before matrix expansion, so queued runner capacity is reserved for real
+cache misses and the routing summary records every reuse. Any changed input
+runs the complete contract in one dedicated crate job and publishes a
+replacement marker from the configured canonical writer for both GitHub and
+Velnor to consume. Docker inputs and
 execution modes affect only the `jackin` result, because that crate owns the
 single conditional Docker E2E path.
 
