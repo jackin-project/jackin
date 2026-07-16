@@ -66,7 +66,7 @@ pub async fn run_client(
         spawn: spawn_request,
         terminal,
         focus_session,
-        context: Some(context),
+        context: Some(Box::new(context)),
     })
     .context("encoding attach Hello frame")?;
     stream

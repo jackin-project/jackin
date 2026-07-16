@@ -243,7 +243,7 @@ where
         spawn: request.spawn_request,
         terminal: request.terminal,
         focus_session: request.focus_session,
-        context: Some(context),
+        context: Some(Box::new(context)),
     })
     .context("encoding attach Hello frame")?;
     server_writer

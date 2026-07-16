@@ -688,10 +688,6 @@ impl std::fmt::Display for ClipboardImageError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// `ClientFrame` protocol enum.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "the attach hot path keeps decoded Hello ownership inline and allocation-free"
-)]
 pub enum ClientFrame {
     /// First frame from a newly-connected client. Plain attach sets
     /// `spawn` to None; `jackin-capsule new` uses `Shell` or
@@ -721,7 +717,7 @@ pub enum ClientFrame {
         /// `terminal` field.
         terminal: ClientTerminal,
         /// Optional cross-process trace and product correlation.
-        context: Option<TelemetryContext>,
+        context: Option<Box<TelemetryContext>>,
     },
     /// `Resize` variant.
     Resize {
@@ -1381,7 +1377,7 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 env,
                 focus_session,
                 terminal,
-                context,
+                context: context.map(Box::new),
             }
         }
         TAG_RESIZE => {

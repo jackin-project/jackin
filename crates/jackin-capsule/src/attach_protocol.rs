@@ -180,7 +180,7 @@ pub(crate) async fn perform_handshake(
     };
     if context.as_ref().is_some_and(|ctx| {
         matches!(
-            jackin_telemetry::propagation::extract(ctx),
+            jackin_telemetry::propagation::extract(ctx.as_ref()),
             jackin_telemetry::propagation::ExtractOutcome::RejectRequest
         )
     }) {
