@@ -18,12 +18,12 @@ Execute in the order below unless the dependency graph says otherwise. Each exec
 | [006](006-cross-process-propagation.md) | Versioned W3C envelopes on all protocols; CLIENT/SERVER RPC spans | P1 | L | 004, 005 | IN PROGRESS |
 | [007](007-identity-lifecycle-roots.md) | `cli.invocation.id`, `session.id`, command/startup/shutdown roots | P1 | L | 004, 006 | IN PROGRESS |
 | [008](008-execution-boundaries.md) | Launch, subprocess, Docker, provider HTTP, usage DB, connections | P1 | L | 004, 005, 007 | IN PROGRESS |
-| [009](009-tui-screens-actions.md) | Screen lifecycle events, `ui.action` roots, widget focus, render health | P1 | L | 004, 007 | TODO |
-| [010](010-capsule-cycles-agents-jobs.md) | Capsule cycles, agent state, PTY lifecycle, streams, prewarm jobs | P1 | L | 005, 006, 007, 009 | TODO |
-| [011](011-legacy-callsite-migration.md) | Classify + migrate every `debug_log!`/capsule-macro/diagnostic-print site | P1 | L | 004, 008, 009, 010 | TODO |
-| [012](012-diagnostics-validate-health.md) | `jackin diagnostics validate` + typed health over daemon protocols | P2 | M | 002, 004, 006, 007 | TODO |
-| [013](013-artifact-removal-cutover.md) | Cutover: remove all telemetry files, readers, log commands, legacy keys | P1 | L | 007, 011, 012 | TODO |
-| [014](014-verification-suite.md) | OTLP wire receiver, conformance matrix, soak, 5% perf gate | P1 | L | 002+ (harness), 013 (final acceptance) | TODO |
+| [009](009-tui-screens-actions.md) | Screen lifecycle events, `ui.action` roots, widget focus, render health | P1 | L | 004, 007 | IN PROGRESS |
+| [010](010-capsule-cycles-agents-jobs.md) | Capsule cycles, agent state, PTY lifecycle, streams, prewarm jobs | P1 | L | 005, 006, 007, 009 | IN PROGRESS |
+| [011](011-legacy-callsite-migration.md) | Classify + migrate every `debug_log!`/capsule-macro/diagnostic-print site | P1 | L | 004, 008, 009, 010 | IN PROGRESS |
+| [012](012-diagnostics-validate-health.md) | `jackin diagnostics validate` + typed health over daemon protocols | P2 | M | 002, 004, 006, 007 | IN PROGRESS |
+| [013](013-artifact-removal-cutover.md) | Cutover: remove all telemetry files, readers, log commands, legacy keys | P1 | L | 007, 011, 012 | IN PROGRESS |
+| [014](014-verification-suite.md) | OTLP wire receiver, conformance matrix, soak, 5% perf gate | P1 | L | 002+ (harness), 013 (final acceptance) | IN PROGRESS |
 | [015](015-docs-and-closure.md) | Docs cutover + roadmap status flip to Resolved | P1 | M | 012, 013, 014 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
