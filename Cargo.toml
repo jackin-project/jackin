@@ -32,6 +32,7 @@ members = [
     "crates/jackin-isolation",
     "crates/jackin-instance",
     "crates/jackin-test-support",
+    "crates/jackin-otlp-testbed",
 ]
 exclude = ["crates/jackin-lints"]
 resolver = "3"
@@ -93,6 +94,7 @@ opentelemetry-semantic-conventions = { version = "0.32", default-features = fals
 opentelemetry = "0.32"
 opentelemetry-appender-tracing = "0.32"
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "logs", "metrics", "grpc-tonic", "gzip-tonic", "tls-roots", "experimental-grpc-retry"] }
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic", "trace", "logs", "metrics"] }
 owo-colors = "4"
 portable-pty = "0.9"
 predicates = "=3.1.4"
@@ -132,6 +134,7 @@ toml_edit = "0.25"
 tracing = "0.1"
 tracing-opentelemetry = "0.33"
 tracing-subscriber = "0.3"
+tonic = { version = "0.14.1", default-features = false, features = ["transport", "router", "codegen"] }
 tui-scrollbar = "0.2.4"
 tui-widget-list = "0.15"
 # Pre-release API churn; revisit at first stable 0.7 (or next pre.N after

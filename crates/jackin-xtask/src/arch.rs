@@ -54,6 +54,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-env", 3),
     ("jackin-instance", 3),
     ("jackin-launch-tui", 3),
+    ("jackin-otlp-testbed", 3),
     ("jackin-test-support", 3),
     ("jackin-usage", 3),
     ("jackin-capsule", 4),

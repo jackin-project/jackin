@@ -152,6 +152,7 @@ fn real_tiers_table_covers_every_expected_member() {
         "jackin-isolation",
         "jackin-launch-tui",
         "jackin-manifest",
+        "jackin-otlp-testbed",
         "jackin-pr-trailers",
         "jackin-process",
         "jackin-protocol",
@@ -171,7 +172,7 @@ fn real_tiers_table_covers_every_expected_member() {
         declared, expected,
         "TIERS drifted from the pinned member set — update both if a crate was added/removed"
     );
-    assert_eq!(TIERS.len(), 29);
+    assert_eq!(TIERS.len(), 30);
 }
 
 #[test]
