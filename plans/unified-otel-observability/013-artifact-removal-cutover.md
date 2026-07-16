@@ -109,6 +109,15 @@ Delete `parallax.run.id`/`JACKIN_RUN_ID`/`PARALLAX_RUN_ID` adoption, `otel_keys`
 ### Step 8 (G): Test/gate reconciliation + full lanes
 Delete dead tests/benches/fixtures; regenerate export-volume ratchet; run `cargo xtask ci --fast`; if Docker available run `cargo xtask ci --e2e`. **Verify**: both exit 0.
 
+## Reopened audit additions (2026-07-16)
+
+- Remove dead `R/O reveal diagnostics` hints from all Capsule, console, and launch surfaces and regression-test the rendered hint text.
+- Rename `TELEMETRY_STORE`, `TELEMETRY_STORE_PATH`, and `/jackin/state/usage/telemetry.db` to usage-snapshot terminology/path everywhere, including tests, benches, README and research references; no compatibility shim is retained.
+- Add `conformance_no_local_artifacts`: isolated init→emit→shutdown walks the state tree and rejects telemetry/log artifacts while explicitly allowing retained usage state and test-only ratchet output.
+- Rewrite the PTY fixture README for the explicit capture-file flow and test the xtask parser; remove dead artifact-era `RunDiagnostics` capsule-log arguments/details/JSON allocations and correct JSONL/file-fallback comments.
+- Remove broad namespace-prefix test exemptions so wire/testbed sources cannot hide reintroduced `jackin.*`/`parallax.*` literals; retain only exact proven non-telemetry product-name exemptions.
+- Add negative help/parser assertions for `logs`, `daemon logs`, and removed diagnostics `summary`, `compare`, `follow`, `reveal`, and `bundle` surfaces.
+
 ## Test plan
 
 - The acceptance criteria greps ARE the primary structural tests (wired as done criteria).

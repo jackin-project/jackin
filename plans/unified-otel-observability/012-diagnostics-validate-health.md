@@ -111,6 +111,10 @@ Mirror on the control protocol: `ClientMsg::TelemetryHealth` → `ServerMsg::Tel
 ## Reopened audit additions (2026-07-16)
 
 - Capsule health distinguishes endpoint-safe and authentication-safe coverage. It reports host-only/unclassified authentication without exposing any endpoint credential, header, client-key path, or fingerprint input.
+- Validation success requires a per-signal exporter-success delta after the marked trace/log/metric, no new per-signal failure, and a successful flush; a flush return alone is insufficient. The shared deadline must bound hung exporters without blocking `join()` past five seconds.
+- Host and Capsule wire health preserve typed flush status and shutdown timeout, and effective fingerprints come from resolved per-signal configuration with canonical `jackin-daemon`/`jackin-capsule` identities and sanitized distinct authorities.
+- Preserve a sanitized typed initialization/config failure for validation instead of collapsing malformed sampler/header/TLS/config state into generic inactivity.
+- Add disabled/no-endpoint/malformed/rejection/per-signal-delta/timeout tests plus serialized host/Capsule health RPC privacy matrices, including authenticated, network-disabled, and unclassified Capsule coverage.
 
 ## Test plan
 
