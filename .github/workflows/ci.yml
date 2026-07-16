@@ -1116,6 +1116,7 @@ jobs:
       - name: Stage input-identical repository policy result
         if: >-
           needs.changes.outputs.rust == 'true' &&
+          needs.changes.outputs.result-reuse != 'true' &&
           needs.changes.outputs.policy-reuse != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -1126,6 +1127,7 @@ jobs:
       - name: Publish input-identical repository policy result
         if: >-
           needs.changes.outputs.rust == 'true' &&
+          needs.changes.outputs.result-reuse != 'true' &&
           needs.changes.outputs.policy-reuse != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
