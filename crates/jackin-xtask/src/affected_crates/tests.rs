@@ -26,6 +26,43 @@ fn graph() -> WorkspaceGraph {
 }
 
 #[test]
+fn metadata_snapshot_keeps_only_relocatable_crate_roots() {
+    let graph = WorkspaceGraph::from_metadata(Metadata {
+        packages: vec![
+            Package {
+                id: "core-id".into(),
+                name: "core".into(),
+                manifest_path: "/producer/repo/crates/core/Cargo.toml".into(),
+            },
+            Package {
+                id: "app-id".into(),
+                name: "jackin".into(),
+                manifest_path: "/producer/repo/crates/jackin/Cargo.toml".into(),
+            },
+        ],
+        workspace_members: BTreeSet::from(["core-id".into(), "app-id".into()]),
+        resolve: Some(Resolve {
+            nodes: vec![
+                Node {
+                    id: "core-id".into(),
+                    deps: vec![],
+                },
+                Node {
+                    id: "app-id".into(),
+                    deps: vec![Dependency {
+                        pkg: "core-id".into(),
+                    }],
+                },
+            ],
+        }),
+    })
+    .unwrap();
+
+    assert_eq!(graph.roots["core-id"], PathBuf::from("crates/core"));
+    assert_eq!(graph.roots["app-id"], PathBuf::from("crates/jackin"));
+}
+
+#[test]
 fn cache_closure_follows_workspace_dependencies() {
     assert_eq!(
         graph().forward_closure("app-id"),
