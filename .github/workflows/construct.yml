@@ -257,13 +257,13 @@ jobs:
       - name: Build ${{ matrix.config.platform }} without push (GitHub)
         if: matrix.config.lane == 'GitHub' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
         env:
-          # Registry buildcache (written by main) is the primary warm source — avoids a cold
-          # GHA start when the scope is empty or evicted. GHA scope is secondary,
-          # so PR refs retain only final layers while main owns the full cache.
+          # Registry buildcache (written by main) is the primary warm source. The
+          # shared GHA scope remains a read-only fallback for existing layers. PR
+          # verification must not export caches: a stalled GHA cache upload can
+          # otherwise turn a completed image build into a one-hour timeout.
           CACHE_FROM: |
             type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
             type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }}
-          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=min
         run: mise run construct-build-platform ${{ matrix.config.platform }}
 
       - name: Build ${{ matrix.config.platform }} without push (Velnor)
