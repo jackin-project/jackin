@@ -307,7 +307,7 @@ const fn command_name(command: &Command) -> &'static str {
 
 /// In `--debug`, surface the invocation id on the plain CLI before
 /// anything else runs — never through a rich TUI. This is identical for
-/// every command (CLI or TUI): print the run id the operator must keep to
+/// every command (CLI or TUI): print the invocation id the operator must keep to
 /// query the configured backend later, then, on an interactive
 /// terminal, gate on Enter so the id is read before the normal flow (rich
 /// or CLI, per terminal capability) takes over. Debug evidence itself is

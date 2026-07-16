@@ -40,7 +40,7 @@ pub fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailureP
             href: None,
         },
         FailurePopupRow {
-            label: "run id",
+            label: "invocation id",
             value: run_id.to_owned(),
             copy_target: Some(FailureCopyTarget::RunId),
             href: None,

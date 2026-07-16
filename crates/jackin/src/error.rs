@@ -246,7 +246,7 @@ impl JackinError {
             Self::DindHealthCheckFailed { .. } => UserMessage::new(
                 ErrorCode::E010,
                 "Docker-in-Docker sidecar failed its health check",
-                "Run with `--debug` and share the run id to diagnose. Try `jackin purge` to clean up and re-launch.",
+                "Run with `--debug` for additional operator output and share the invocation ID when OTLP export is configured. Try `jackin purge` to clean up and re-launch.",
             ),
 
             Self::DindPortConflict { port } => UserMessage::new(

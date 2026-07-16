@@ -33,7 +33,7 @@ impl Dialog {
     /// source of rows/order/labels/copy-affordances shared with the host
     /// console and launch cockpit. Returns `None` for other dialog variants.
     ///
-    /// Run id / diagnostics-log rows are included only under `--debug`, matching
+    /// The invocation-id row is included only under `--debug`, matching
     /// the host. Versions are the exact `jackin --version` / `jackin-capsule
     /// --version` strings.
     pub(crate) fn container_info_state(
