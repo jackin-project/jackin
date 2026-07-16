@@ -149,6 +149,10 @@ impl Drop for OperationGuard {
     }
 }
 
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the closed SpanName dispatch is intentionally exhaustive in one authority"
+)]
 fn make_span(name: &str, root: bool) -> Option<Span> {
     if root {
         return Some(match name {
