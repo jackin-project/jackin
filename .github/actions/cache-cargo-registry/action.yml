@@ -84,6 +84,7 @@ runs:
         steps.restore.outputs.cache-hit != 'true' &&
         steps.verify.outputs.ready != 'true' &&
         (github.ref == 'refs/heads/main' ||
+         github.event_name == 'workflow_dispatch' ||
          (github.event_name == 'pull_request' &&
           github.event.pull_request.head.repo.full_name == github.repository))
       continue-on-error: true
