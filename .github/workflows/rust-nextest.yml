@@ -56,6 +56,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_OFFLINE: "true"
       CARGO_TERM_COLOR: always
+      JACKIN_TELEMETRY_VOLUME_PATH: target/telemetry-volume-ratchet.json
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "off"
@@ -64,6 +65,9 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         with:
           lane: ${{ matrix.config.lane }}
+      - name: Read MSRV
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -71,6 +75,15 @@ jobs:
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache MSRV toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ steps.msrv.outputs.version }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
@@ -82,7 +95,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust"
+          install_args: "rust rust@${{ steps.msrv.outputs.version }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -119,6 +132,43 @@ jobs:
           cargo nextest run "${args[@]}"
       - name: Run crate doctests
         run: cargo test --doc -p "${{ matrix.package }}" --locked --offline
+      - name: Check crate default features
+        run: cargo check -p "${{ matrix.package }}" --all-targets --locked --offline
+      - name: Lint crate all features
+        run: cargo clippy -p "${{ matrix.package }}" --all-targets --all-features --locked --offline -- -D warnings
+      - name: Check crate feature powerset
+        if: contains(fromJSON('["jackin","jackin-agent-status","jackin-capsule","jackin-diagnostics","jackin-runtime","jackin-term"]'), matrix.package)
+        run: cargo hack check -p "${{ matrix.package }}" --feature-powerset --all-targets --locked
+      - name: Build crate benchmarks
+        if: contains(fromJSON('["jackin","jackin-capsule","jackin-config","jackin-diagnostics","jackin-manifest","jackin-runtime","jackin-term","jackin-usage"]'), matrix.package)
+        run: cargo build --benches -p "${{ matrix.package }}" --locked --offline
+      - name: Run bounded crate fuzz targets
+        if: contains(fromJSON('["jackin-config","jackin-env","jackin-manifest","jackin-protocol","jackin-term"]'), matrix.package)
+        shell: bash
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: |
+          case "${{ matrix.package }}" in
+            jackin-config) dir=crates/jackin-config; targets="config_migrate workspace_migrate" ;;
+            jackin-env) dir=crates/jackin-env; targets="env_resolve" ;;
+            jackin-manifest) dir=crates/jackin-manifest; targets="manifest_migrate manifest_validate" ;;
+            jackin-protocol) dir=crates/jackin-protocol; targets="decode_frames" ;;
+            jackin-term) dir=crates/jackin-term; targets="damage_grid_process" ;;
+          esac
+          cd "$dir"
+          cargo fetch --locked --offline
+          for fuzz_target in $targets; do
+            "$CI_CARGO_FUZZ" fuzz run --sanitizer none --target x86_64-unknown-linux-gnu \
+              "$fuzz_target" -- -max_total_time=20
+          done
+      - name: Enforce telemetry volume ratchet
+        if: matrix.package == 'jackin-diagnostics'
+        run: |
+          "$CI_XTASK" lint ratchet --only export-volume
+      - name: Check crate on MSRV
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+        run: cargo check -p "${{ matrix.package }}" --all-targets --locked --offline
       - name: Upload junit + timing
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
