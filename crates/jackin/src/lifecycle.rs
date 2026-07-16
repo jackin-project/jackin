@@ -158,7 +158,7 @@ pub struct InvocationTelemetry {
 
 #[derive(Debug)]
 enum InvocationRoots {
-    OneShot(Option<jackin_telemetry::operation::OperationGuard>),
+    OneShot(Box<Option<jackin_telemetry::operation::OperationGuard>>),
     Interactive(Box<InteractiveRoots>),
 }
 
@@ -208,13 +208,13 @@ impl InvocationTelemetry {
                 attrs,
             }))
         } else {
-            InvocationRoots::OneShot(
+            InvocationRoots::OneShot(Box::new(
                 jackin_telemetry::root_operation(
                     &jackin_telemetry::operation::CLI_COMMAND,
                     &attrs.values(),
                 )
                 .ok(),
-            )
+            ))
         };
         Self {
             command,
@@ -227,6 +227,7 @@ impl InvocationTelemetry {
     pub fn span(&self) -> tracing::Span {
         match &self.roots {
             InvocationRoots::OneShot(operation) => operation
+                .as_ref()
                 .as_ref()
                 .map_or_else(tracing::Span::none, |operation| operation.span().clone()),
             InvocationRoots::Interactive(_) => tracing::Span::none(),

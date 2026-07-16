@@ -20,6 +20,51 @@ use jackin_console::tui::components::error_popup;
 use jackin_console::tui::components::status_popup;
 use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 
+#[cfg(test)]
+mod tests;
+
+fn instance_refresh_attrs() -> [jackin_telemetry::Attr<'static>; 1] {
+    [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::BACKGROUND_CYCLE_NAME,
+        value: jackin_telemetry::Value::Str(
+            jackin_telemetry::schema::enums::BackgroundCycleName::InstanceRefresh.as_str(),
+        ),
+    }]
+}
+
+fn record_skipped_instance_refresh() {
+    let attrs = [
+        instance_refresh_attrs()[0],
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::OutcomeValue::Skip.as_str(),
+            ),
+        },
+    ];
+    let _metric =
+        jackin_telemetry::counter(&jackin_telemetry::metric::BACKGROUND_CYCLES).add(1, &attrs);
+}
+
+fn run_instance_refresh_cycle<T, E>(work: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+    let cycle = jackin_telemetry::autonomous_root_operation(
+        &jackin_telemetry::operation::BACKGROUND_CYCLE,
+        &instance_refresh_attrs(),
+    )
+    .ok();
+    let result = work();
+    if let Some(cycle) = cycle {
+        match &result {
+            Ok(_) => cycle.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None),
+            Err(_) => cycle.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(jackin_telemetry::schema::enums::ErrorType::IoError),
+            ),
+        }
+    }
+    result
+}
+
 pub(crate) fn op_cli_available() -> bool {
     jackin_console::tui::op_picker::cli_available()
 }
@@ -47,11 +92,12 @@ pub(crate) fn execute_manager_effect(
         }
         ManagerEffect::Console(ConsoleEffect::RequestInstanceRefresh) => {
             let Some(generation) = state.next_instance_refresh_generation_if_due() else {
+                record_skipped_instance_refresh();
                 return false;
             };
             let paths = paths.clone();
             let rx = spawn_blocking_subscription(move || {
-                let result = load_instance_refresh_snapshot(&paths);
+                let result = run_instance_refresh_cycle(|| load_instance_refresh_snapshot(&paths));
                 (generation, result)
             });
             state.begin_instance_refresh(rx);

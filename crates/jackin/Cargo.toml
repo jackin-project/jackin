@@ -72,6 +72,7 @@ jackin-build-meta = { workspace = true }
 [dev-dependencies]
 assert_cmd = { workspace = true }
 jackin-config = { workspace = true, features = ["test-support"] }
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-env = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
 jackin-otlp-testbed = { workspace = true }
