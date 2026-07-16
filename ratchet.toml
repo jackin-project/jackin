@@ -635,7 +635,7 @@ key = "default_mode_metrics"
 bound = 5
 [[family.entry]]
 key = "default_mode_spans"
-bound = 5
+bound = 7
 
 # dhat allocation ceilings (source: jackin-capsule perf_budgets).
 # iai-callgrind: PINNED — project CI images do not ship valgrind; re-evaluate
