@@ -5,7 +5,7 @@
 //! per-row contextual footer (general / mount / role / secret / auth).
 
 use ratatui::layout::Rect;
-use termrock::{HintSpan, keymap::glyph};
+use termrock::{keymap::glyph, widgets::HintSpan};
 
 use crate::tui::keymap::{
     AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_GENERAL_RENAME_KEYMAP,

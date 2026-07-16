@@ -181,7 +181,7 @@ pub fn workspace_list_names_viewport_width(term_size: Rect, list_split_pct: u16)
 
 #[must_use]
 pub fn workspace_row_width(name: &str, has_instances: bool, selected_with_cursor: bool) -> usize {
-    let width = 3 + termrock::display_cols(name);
+    let width = 3 + termrock::text::display_cols(name);
     let leading_padding = if selected_with_cursor {
         0
     } else if has_instances {
@@ -206,7 +206,7 @@ pub fn instance_row_width(
         role_key,
         status,
     );
-    let width = 5 + termrock::display_cols(&label);
+    let width = 5 + termrock::text::display_cols(&label);
     if selected_with_cursor {
         width
     } else {

@@ -12,9 +12,10 @@ use ratatui::{
     widgets::{Clear, StatefulWidget},
 };
 use termrock::{
-    HintSpan, Theme,
+    Theme,
     widgets::{
-        DetailCapability, DetailRow, DetailTableState, Dialog, MessageDialog, PanelEmphasis,
+        DetailCapability, DetailRow, DetailTableState, Dialog, HintSpan, MessageDialog,
+        PanelEmphasis,
     },
 };
 
@@ -124,12 +125,16 @@ fn popup_height(area: Rect, rows: &[FailurePopupRow]) -> u16 {
     let width = usize::from(area.width.saturating_sub(4)).max(1);
     let message_rows = message(rows)
         .lines()
-        .map(|line| termrock::display_cols(line).div_ceil(width).max(1))
+        .map(|line| termrock::text::display_cols(line).div_ceil(width).max(1))
         .sum::<usize>();
     let detail_rows = rows
         .iter()
         .filter(|row| row.label != "message")
-        .map(|row| termrock::display_cols(&row.value).div_ceil(width).max(1))
+        .map(|row| {
+            termrock::text::display_cols(&row.value)
+                .div_ceil(width)
+                .max(1)
+        })
         .sum::<usize>();
     u16::try_from(message_rows.saturating_add(detail_rows).saturating_add(3))
         .unwrap_or(u16::MAX)
@@ -164,20 +169,11 @@ fn layout_state(
         ..DetailTableState::default()
     };
     let mut buffer = Buffer::empty(rect);
+    let dialog = Dialog::new(title, Text::from(message(rows)), &theme)
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused);
     StatefulWidget::render(
-        &MessageDialog {
-            dialog: Dialog {
-                title,
-                body: Text::from(message(rows)),
-                style: Style::default(),
-                theme: &theme,
-                emphasis: PanelEmphasis::Focused,
-            },
-            details: &details,
-            label_width: 0,
-            wrap: true,
-            theme: &theme,
-        },
+        &MessageDialog::new(dialog, &details, &theme).wrap(true),
         rect,
         &mut buffer,
         &mut state,
@@ -331,27 +327,23 @@ pub fn render_failure_popup(
         scroll: view.failure_scroll.clone(),
         ..DetailTableState::default()
     };
+    let dialog = Dialog::new(&failure.title, Text::from(failure.summary.as_str()), &theme)
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused);
     frame.render_stateful_widget(
-        &MessageDialog {
-            dialog: Dialog {
-                title: &failure.title,
-                body: Text::from(failure.summary.as_str()),
-                style: Style::default(),
-                theme: &theme,
-                emphasis: PanelEmphasis::Focused,
-            },
-            details: &details,
-            label_width: 0,
-            wrap: true,
-            theme: &theme,
-        },
+        &MessageDialog::new(dialog, &details, &theme).wrap(true),
         rect,
         &mut state,
     );
     if !debug_mode {
         frame.render_widget(Clear, chrome.hint);
     }
-    termrock::widgets::render_hint_bar(frame, chrome.hint, &failure_hint_spans());
+    termrock::widgets::render_hint_bar(
+        frame,
+        chrome.hint,
+        &failure_hint_spans(),
+        &Theme::default(),
+    );
 }
 
 #[must_use]
@@ -383,7 +375,7 @@ pub fn failure_popup_hyperlink_overlay(
             continue;
         };
         let visible =
-            termrock::display_cols_slice(&row.value, 0, usize::from(region.value_area.width));
+            termrock::text::display_cols_slice(&row.value, 0, usize::from(region.value_area.width));
         if visible.is_empty() {
             continue;
         }
@@ -396,10 +388,10 @@ pub fn failure_popup_hyperlink_overlay(
             .as_bytes(),
         );
         out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, href));
-        let color = termrock::LINK_FG;
-        out.extend_from_slice(
-            format!("\x1b[38;2;{};{};{}m\x1b[1;4m", color.r, color.g, color.b).as_bytes(),
-        );
+        let ratatui::style::Color::Rgb(red, green, blue) = jackin_core::tui_theme::LINK_FG else {
+            continue;
+        };
+        out.extend_from_slice(format!("\x1b[38;2;{red};{green};{blue}m\x1b[1;4m").as_bytes());
         out.extend_from_slice(visible.as_bytes());
         out.extend_from_slice(&termrock::osc::encode_hyperlink_close());
         out.extend_from_slice(b"\x1b[0m");

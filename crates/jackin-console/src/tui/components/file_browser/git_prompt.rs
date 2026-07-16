@@ -222,8 +222,8 @@ pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
 /// When `has_url` is false, the `· O open` segment is dropped so the
 /// hint doesn't advertise a disabled action:
 /// `M mount · P pick · C/Esc cancel`.
-pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<termrock::HintSpan<'static>> {
-    use termrock::HintSpan;
+pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<termrock::widgets::HintSpan<'static>> {
+    use termrock::widgets::HintSpan;
     let mut spans = vec![
         // UNREGISTERABLE(git-prompt-no-keymap): M handled inline; no GIT_PROMPT_KEYMAP registered.
         HintSpan::Key("M"),
@@ -285,7 +285,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            termrock::style::BOLD_WHITE,
+            jackin_core::tui_theme::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
         prompt_row,

@@ -6,7 +6,7 @@
 
 use crate::tui::components::{error_popup_hint_spans, save_discard_hint_spans};
 use termrock::layout::ScrollAxes;
-use termrock::{HintSpan, keymap::glyph};
+use termrock::{keymap::glyph, widgets::HintSpan};
 
 use crate::tui::components::auth_panel;
 use crate::tui::components::confirm_save;

@@ -215,7 +215,7 @@ pub fn padded_width_cols(width: usize, leading_spaces: usize) -> usize {
 }
 
 pub fn text_width(text: &str) -> usize {
-    termrock::display_cols(text)
+    termrock::text::display_cols(text)
 }
 
 #[must_use]

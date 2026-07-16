@@ -10,8 +10,8 @@
 
 use crate::github_mounts::GithubChoice;
 use crossterm::event::{KeyCode, KeyEvent};
+use jackin_core::ModalOutcome;
 use jackin_core::shorten_home;
-use termrock::ModalOutcome;
 use termrock::widgets::ListState;
 
 #[derive(Debug)]
@@ -79,8 +79,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use jackin_core::tui_theme::{PHOSPHOR_DIM, WHITE};
 use termrock::layout::{DialogBorder, render_dialog_shell};
-use termrock::style::{PHOSPHOR_DIM, WHITE};
 use termrock::widgets::{List, ListRow, RowRole};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
@@ -98,7 +98,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no GitHub sources",
-                termrock::style::DIM,
+                jackin_core::tui_theme::DIM,
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],
@@ -134,6 +134,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
                             .add_modifier(Modifier::ITALIC),
                     ),
                 ]),
+                trailing: None,
                 role: RowRole::Item,
                 enabled: true,
             }
@@ -141,10 +142,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         .collect();
     let theme = termrock::Theme::default();
     frame.render_stateful_widget(
-        &List {
-            rows: &items,
-            theme: &theme,
-        },
+        &List::new(&items, &theme),
         rows[1],
         &mut ListState::new(state.list_state.selected),
     );

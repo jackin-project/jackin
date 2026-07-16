@@ -114,13 +114,13 @@ pub(crate) fn branch_context_bar_layout(
         ),
         status_slot(BranchBarSlot::RunId, &run_id, 4, !run_id.is_empty()),
     ];
-    let regions = StatusBar {
-        left: &left,
-        right: &right,
-        style: Style::default(),
-        alpha: 1.0,
-    }
-    .regions(Rect::new(0, term_rows.saturating_sub(1), term_cols, 1));
+    let theme = termrock::Theme::default();
+    let regions = StatusBar::new(&left, &right, &theme).regions(Rect::new(
+        0,
+        term_rows.saturating_sub(1),
+        term_cols,
+        1,
+    ));
     let region = |id| {
         regions
             .iter()
@@ -158,16 +158,16 @@ fn usage_content(width: u16, label: Option<&str>, container: &str, run_id: &str)
     let Some(label) = label.filter(|label| !label.is_empty()) else {
         return String::new();
     };
-    let reserved = termrock::display_cols(container)
-        .saturating_add(termrock::display_cols(run_id))
+    let reserved = termrock::text::display_cols(container)
+        .saturating_add(termrock::text::display_cols(run_id))
         .saturating_add(1);
     let available = usize::from(width).saturating_sub(reserved);
     let full = format!(" {label} ");
-    if termrock::display_cols(&full) <= available {
+    if termrock::text::display_cols(&full) <= available {
         return full;
     }
     let compact = format!(" {} ", compact_usage_status_label(label));
-    if termrock::display_cols(&compact) <= available {
+    if termrock::text::display_cols(&compact) <= available {
         compact
     } else {
         String::new()
@@ -246,18 +246,18 @@ pub(crate) fn render_branch_context_bar(
         .map(|value| format!(" {value} "))
         .unwrap_or_default();
     let usage = usage_content(area.width, usage_status_label, &container, &run);
-    let white_bg = Style::default().bg(termrock::style::WHITE);
+    let white_bg = Style::default().bg(jackin_core::tui_theme::WHITE);
     let left = [StatusSlot {
         style: white_bg
             .fg(if left_clickable {
-                termrock::style::LINK_BLUE
+                jackin_core::tui_theme::LINK_BLUE
             } else {
-                termrock::style::INK
+                jackin_core::tui_theme::INK
             })
             .add_modifier(Modifier::BOLD),
         hover_style: Some(
             white_bg
-                .fg(termrock::style::DEBUG_AMBER)
+                .fg(jackin_core::tui_theme::DEBUG_AMBER)
                 .add_modifier(Modifier::BOLD),
         ),
         ..status_slot(BranchBarSlot::Context, &left_text, 1, left_clickable)
@@ -265,22 +265,22 @@ pub(crate) fn render_branch_context_bar(
     let right = [
         StatusSlot {
             style: white_bg
-                .fg(termrock::style::INK)
+                .fg(jackin_core::tui_theme::INK)
                 .add_modifier(Modifier::BOLD),
             hover_style: Some(
                 white_bg
-                    .fg(termrock::style::DEBUG_AMBER)
+                    .fg(jackin_core::tui_theme::DEBUG_AMBER)
                     .add_modifier(Modifier::BOLD),
             ),
             ..status_slot(BranchBarSlot::Usage, &usage, 2, !usage.is_empty())
         },
         StatusSlot {
             style: white_bg
-                .fg(termrock::style::LINK_BLUE)
+                .fg(jackin_core::tui_theme::LINK_BLUE)
                 .add_modifier(Modifier::BOLD),
             hover_style: Some(
                 white_bg
-                    .fg(termrock::style::DEBUG_AMBER)
+                    .fg(jackin_core::tui_theme::DEBUG_AMBER)
                     .add_modifier(Modifier::BOLD),
             ),
             ..status_slot(
@@ -292,13 +292,13 @@ pub(crate) fn render_branch_context_bar(
         },
         StatusSlot {
             style: Style::default()
-                .bg(termrock::style::DANGER_RED)
-                .fg(termrock::style::WHITE)
+                .bg(jackin_core::tui_theme::DANGER_RED)
+                .fg(jackin_core::tui_theme::WHITE)
                 .add_modifier(Modifier::BOLD),
             hover_style: Some(
                 Style::default()
-                    .bg(termrock::style::WHITE)
-                    .fg(termrock::style::DANGER_RED)
+                    .bg(jackin_core::tui_theme::WHITE)
+                    .fg(jackin_core::tui_theme::DANGER_RED)
                     .add_modifier(Modifier::BOLD),
             ),
             ..status_slot(BranchBarSlot::RunId, &run, 4, !run.is_empty())
@@ -311,20 +311,18 @@ pub(crate) fn render_branch_context_bar(
         Some(HoverTarget::DebugChip) => Some(BranchBarSlot::RunId),
         _ => None,
     };
-    (&StatusBar {
-        left: &left,
-        right: &right,
-        style: white_bg.fg(termrock::style::INK),
-        alpha: 1.0,
-    })
-        .render(
-            area,
-            buffer,
-            &mut StatusBarState {
-                hovered,
-                regions: Vec::new(),
-            },
-        );
+    let theme = termrock::Theme::default().with_role(
+        termrock::style::Role::StatusBar,
+        white_bg.fg(jackin_core::tui_theme::INK),
+    );
+    (&StatusBar::new(&left, &right, &theme)).render(
+        area,
+        buffer,
+        &mut StatusBarState {
+            hovered,
+            regions: Vec::new(),
+        },
+    );
 }
 
 pub(crate) fn debug_run_id_label() -> Option<String> {

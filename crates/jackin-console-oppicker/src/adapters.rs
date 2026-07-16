@@ -39,6 +39,7 @@ impl<'a> TextInputState<'a> {
             TextInputOutcome::Submitted(_) => ModalOutcome::Commit(self.trimmed_value()),
             TextInputOutcome::Cancelled => ModalOutcome::Cancel,
             TextInputOutcome::Ignored | TextInputOutcome::Changed => ModalOutcome::Continue,
+            _ => ModalOutcome::Continue,
         }
     }
 }

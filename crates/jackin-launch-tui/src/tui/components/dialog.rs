@@ -10,13 +10,12 @@ use ratatui::style::{Color, Style};
 use crate::tui::components::chrome::bottom_chrome_areas;
 
 pub fn render_dialog_backdrop(frame: &mut Frame<'_>, area: Rect) {
-    let backdrop = termrock::widgets::Backdrop {
-        symbol: ' ',
-        style: Style::default()
+    let backdrop = termrock::widgets::Backdrop::new().style(
+        Style::default()
             .fg(Color::Reset)
-            .bg(termrock::style::DIALOG_BACKDROP),
-    };
-    frame.render_widget(&backdrop, area);
+            .bg(jackin_core::tui_theme::DIALOG_BACKDROP),
+    );
+    frame.render_widget(backdrop, area);
 }
 
 #[must_use]

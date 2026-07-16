@@ -73,7 +73,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) scrollback_active: bool,
     pub(crate) main_scroll_axes: termrock::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
-    pub(crate) dialog_hint_spans: Option<&'a [termrock::HintSpan<'a>]>,
+    pub(crate) dialog_hint_spans: Option<&'a [termrock::widgets::HintSpan<'a>]>,
     /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
     /// Forwarded to the hint builder so the palette-key glyph reflects the
     /// operator's `JACKIN_PALETTE_KEY` setting.
@@ -198,7 +198,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
                 .term_rows
                 .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS),
         };
-        frame.render_widget(&termrock::widgets::Backdrop::default(), backdrop_area);
+        frame.render_widget(termrock::widgets::Backdrop::default(), backdrop_area);
         if let Some((snapshot, rect)) = view.dialog_snapshot {
             render_dialog_ratatui(frame, *rect, snapshot);
         }
@@ -335,7 +335,7 @@ fn render_link_hover_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_
 fn render_notice_toast(frame: &mut Frame<'_>, area: RatatuiRect, message: &str) {
     let theme = termrock::Theme::default();
     frame.render_widget(
-        &termrock::widgets::Toast::new(&theme, message, termrock::widgets::Severity::Success),
+        termrock::widgets::Toast::new(&theme, message, termrock::widgets::Severity::Success),
         area,
     );
 }
@@ -363,7 +363,7 @@ fn apply_tab_codename_tooltip(
         tooltip_row,
         &pill,
         Style::default()
-            .bg(termrock::style::TAB_BG_INACTIVE)
+            .bg(jackin_core::tui_theme::TAB_BG_INACTIVE)
             .fg(termrock::style::PHOSPHOR_GREEN)
             .add_modifier(Modifier::BOLD),
     );
@@ -398,7 +398,7 @@ pub(crate) fn pane_limit_failure_message(max_sessions: usize) -> String {
 /// compatibility notes live with the canonical typed `TermRock` encoder.
 pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     termrock::osc::encode_clipboard(termrock::osc::ClipboardWrite {
-        selection: "c",
+        selection: termrock::osc::ClipboardSelection::Clipboard,
         text: payload,
     })
 }

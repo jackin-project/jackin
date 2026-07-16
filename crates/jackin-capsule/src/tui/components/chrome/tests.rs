@@ -57,10 +57,10 @@ fn status_bar_renders_shared_tab_underline() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    let tab_start = u16::try_from(termrock::display_cols(" jackin❯ ")).unwrap() + 1;
+    let tab_start = u16::try_from(termrock::text::display_cols(" jackin❯ ")).unwrap() + 1;
 
     assert_eq!(buf[(tab_start, 1)].symbol(), "━");
-    assert_eq!(buf[(tab_start, 1)].fg, termrock::style::WHITE);
+    assert_eq!(buf[(tab_start, 1)].fg, jackin_core::tui_theme::WHITE);
 }
 
 #[test]
@@ -135,14 +135,14 @@ fn status_bar_renders_working_idle_done_and_unknown_glyphs() {
     let glyph_cell = |cell: &StatusTabCell| {
         let x = cell
             .start_col0
-            .saturating_add(u16::try_from(termrock::display_cols(&cell.name)).unwrap())
+            .saturating_add(u16::try_from(termrock::text::display_cols(&cell.name)).unwrap())
             .saturating_add(2);
         (buf[(x, 0)].symbol().to_owned(), buf[(x, 0)].fg)
     };
 
     assert_eq!(
         glyph_cell(&plan.cells[0]),
-        ("▶".to_owned(), termrock::style::DEBUG_AMBER)
+        ("▶".to_owned(), jackin_core::tui_theme::DEBUG_AMBER)
     );
     assert_eq!(
         glyph_cell(&plan.cells[1]),
@@ -158,11 +158,11 @@ fn dialog_backdrop_fills_with_black() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(&termrock::widgets::Backdrop::default(), frame.area());
+            frame.render_widget(termrock::widgets::Backdrop::default(), frame.area());
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    let expected = termrock::style::DIALOG_BACKDROP;
+    let expected = jackin_core::tui_theme::DIALOG_BACKDROP;
     assert_eq!(buf[(0, 0)].bg, expected);
     assert_eq!(buf[(9, 4)].bg, expected);
 }
@@ -183,11 +183,12 @@ fn pane_border_renders_border() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    // Top-left corner should be a border character
-    let tl = buf[(0, 0)].symbol();
-    assert!(!tl.trim().is_empty(), "top-left border missing");
+    assert_eq!(buf[(0, 0)].symbol(), "┌");
+    assert_eq!(buf[(19, 0)].symbol(), "┐");
+    assert_eq!(buf[(0, 9)].symbol(), "└");
+    assert_eq!(buf[(19, 9)].symbol(), "┘");
     assert_eq!(buf[(0, 0)].fg, termrock::style::PHOSPHOR_GREEN);
-    assert_eq!(buf[(2, 0)].fg, termrock::style::WHITE);
+    assert_eq!(buf[(2, 0)].fg, jackin_core::tui_theme::WHITE);
 }
 
 #[test]
@@ -206,6 +207,10 @@ fn unfocused_pane_border_uses_shared_panel_palette() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
+    assert_eq!(buf[(0, 0)].symbol(), "┌");
+    assert_eq!(buf[(19, 0)].symbol(), "┐");
+    assert_eq!(buf[(0, 9)].symbol(), "└");
+    assert_eq!(buf[(19, 9)].symbol(), "┘");
     assert_eq!(
         buf[(0, 0)].fg,
         Theme::default()
@@ -235,14 +240,14 @@ fn hint_row_sits_between_one_blank_row_above_and_below() {
         &mut buf,
         area,
         &[
-            termrock::HintSpan::Key("A"),
-            termrock::HintSpan::Text("alpha"),
-            termrock::HintSpan::GroupSep,
-            termrock::HintSpan::Key("B"),
-            termrock::HintSpan::Text("bravo"),
-            termrock::HintSpan::GroupSep,
-            termrock::HintSpan::Key("C"),
-            termrock::HintSpan::Text("charlie"),
+            termrock::widgets::HintSpan::Key("A"),
+            termrock::widgets::HintSpan::Text("alpha"),
+            termrock::widgets::HintSpan::GroupSep,
+            termrock::widgets::HintSpan::Key("B"),
+            termrock::widgets::HintSpan::Text("bravo"),
+            termrock::widgets::HintSpan::GroupSep,
+            termrock::widgets::HintSpan::Key("C"),
+            termrock::widgets::HintSpan::Text("charlie"),
         ],
     );
 
@@ -271,8 +276,8 @@ fn dynamic_key_hint_uses_key_style() {
         &mut buf,
         area,
         &[
-            termrock::HintSpan::DynKey("Ctrl-\\".to_owned()),
-            termrock::HintSpan::Text("menu"),
+            termrock::widgets::HintSpan::DynKey("Ctrl-\\".to_owned()),
+            termrock::widgets::HintSpan::Text("menu"),
         ],
     );
 
@@ -280,7 +285,7 @@ fn dynamic_key_hint_uses_key_style() {
     let key_cell = (0..area.width)
         .find(|x| buf[(*x, y)].symbol() == "C")
         .expect("key rendered");
-    assert_eq!(buf[(key_cell, y)].fg, termrock::style::WHITE);
+    assert_eq!(buf[(key_cell, y)].fg, jackin_core::tui_theme::WHITE);
     assert!(
         buf[(key_cell, y)]
             .style()
@@ -297,11 +302,11 @@ fn separator_hint_uses_shared_border_gray() {
         &mut buf,
         area,
         &[
-            termrock::HintSpan::Key("A"),
-            termrock::HintSpan::Text("alpha"),
-            termrock::HintSpan::Sep,
-            termrock::HintSpan::Key("B"),
-            termrock::HintSpan::Text("bravo"),
+            termrock::widgets::HintSpan::Key("A"),
+            termrock::widgets::HintSpan::Text("alpha"),
+            termrock::widgets::HintSpan::Sep,
+            termrock::widgets::HintSpan::Key("B"),
+            termrock::widgets::HintSpan::Text("bravo"),
         ],
     );
 
@@ -309,5 +314,5 @@ fn separator_hint_uses_shared_border_gray() {
     let sep_cell = (0..area.width)
         .find(|x| buf[(*x, y)].symbol() == "·")
         .expect("separator rendered");
-    assert_eq!(buf[(sep_cell, y)].fg, termrock::style::BORDER_GRAY);
+    assert_eq!(buf[(sep_cell, y)].fg, jackin_core::tui_theme::BORDER_GRAY);
 }

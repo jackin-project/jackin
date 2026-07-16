@@ -5,15 +5,24 @@ description: "PHOSPHOR color palette, border color semantics, left sidebar conve
 
 ## PHOSPHOR Color Palette
 
-The canonical RGB values live in the TermRock crate palette ([TermRock source](https://github.com/tailrocks/termrock)) so the host TUI and the in-container multiplexer cannot drift; [TermRock source](https://github.com/tailrocks/termrock) adapts them into ratatui `Color` constants that the rest of the host TUI imports. Never define local color constants.
+Reusable component styling flows through TermRock's semantic `Theme` and `Role`
+API ([TermRock source](https://github.com/tailrocks/termrock)). jackin❯-specific
+brand, rain, debug, and status tokens live once in `jackin-core`'s
+`host_colors.rs`; its `tui_theme.rs` module adapts them to Ratatui colors for
+every jackin❯ surface. Never define a second surface-local palette.
 
-**All colors come from named theme tokens; no inline `Color::Rgb(...)` literals outside `theme.rs`.** Every new color must be added as a named constant in `lib.rs` and re-exported from `theme.rs` as a ratatui `Color`. Inline RGB literals are a design-decision violation.
+**All colors come from semantic TermRock roles or named jackin❯ tokens; no
+inline `Color::Rgb(...)` literals outside `tui_theme.rs`.** Reusable component
+semantics belong in TermRock. Product-specific colors belong in
+`jackin-core/src/host_colors.rs` and receive their Ratatui adapter in
+`jackin-core/src/tui_theme.rs`.
 
 | Constant | Value | Usage |
 |---|---|---|
 | `PHOSPHOR_GREEN` | `Rgb(0, 255, 65)` | Active/focused elements, selected text |
 | `PHOSPHOR_DIM` | `Rgb(0, 140, 30)` | Inactive text, scrollbar thumbs |
-| `PHOSPHOR_DARK` | `Rgb(0, 80, 18)` | Borders (unfocused), separators |
+| `PHOSPHOR_DARK` | `Rgb(0, 80, 18)` | Separators and dark phosphor details |
+| `BORDER_GRAY` | `Rgb(80, 80, 80)` | Inactive and background container borders |
 | `WHITE` | `Rgb(255, 255, 255)` | Labels, keys, headings |
 | `WARNING_YELLOW` | `Rgb(255, 216, 94)` | Warning notes in confirmation dialogs |
 | `PREVIEW_CARD` | `Rgb(28, 28, 28)` | Lookbook preview canvas background |
@@ -56,8 +65,15 @@ Every row that begins with `+` is an add/create action and must render through t
 
 - **Active interaction container**: `PHOSPHOR_GREEN` border — dialogs, pickers, forms, tab panels, and the currently active list/sidebar use the bright border whenever they own keyboard or scroll interaction.
 - **Passive scroll block, focused and scrollable**: `PHOSPHOR_GREEN` border — both `focused = true` and content overflows in at least one axis.
-- **Passive scroll block, focused but not scrollable**: `PHOSPHOR_DARK` border — `focused = true` is ignored when content fits; no false scroll affordance.
-- **Unfocused / background container**: `PHOSPHOR_DARK` border regardless of scrollability.
+- **Passive scroll block, focused but not scrollable**: `BORDER_GRAY` border — `focused = true` is ignored when content fits; no false scroll affordance.
+- **Unfocused / background container**: `BORDER_GRAY` border regardless of scrollability.
+
+Every container uses plain single-line glyphs (`┌─┐`, `│ │`, `└─┘`). Border
+weight never signals focus. The one interaction owner uses TermRock
+`Role::BorderFocused` (phosphor green in the default theme); all other visible
+containers use `Role::Border` (neutral gray). Double-line, heavy, or mixed
+panel borders are a design violation. Scrollbar thumbs may occupy edge cells
+without changing the surrounding panel's border contract.
 
 `render_scrollable_block` enforces the passive-scroll logic internally. Callers only supply `focused: bool` from state; the renderer decides whether to use green. Active interaction containers that are not passive scroll blocks must use the same token rule directly or through their shared component: bright border for the active container, dark border for inactive/background containers.
 

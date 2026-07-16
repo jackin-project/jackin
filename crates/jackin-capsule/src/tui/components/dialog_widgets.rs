@@ -478,20 +478,15 @@ pub(crate) fn render_dialog_ratatui(
         }
         DialogRatatuiSnapshot::ErrorPopup(state) => {
             let theme = Theme::default();
+            let dialog = MessageShell::new(
+                &state.title,
+                ratatui::text::Text::from(state.message.as_str()),
+                &theme,
+            )
+            .style(Style::default())
+            .emphasis(PanelEmphasis::Focused);
             frame.render_stateful_widget(
-                &MessageDialog {
-                    dialog: MessageShell {
-                        title: &state.title,
-                        body: ratatui::text::Text::from(state.message.as_str()),
-                        style: Style::default(),
-                        theme: &theme,
-                        emphasis: PanelEmphasis::Focused,
-                    },
-                    details: &[],
-                    label_width: 0,
-                    wrap: true,
-                    theme: &theme,
-                },
+                &MessageDialog::new(dialog, &[], &theme).wrap(true),
                 area,
                 &mut DetailTableState::<usize>::default(),
             );
@@ -546,18 +541,11 @@ fn render_confirm_action(
             style: None,
         },
     ];
+    let dialog = MessageShell::new("Confirm", ratatui::text::Text::from(body), &theme)
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused);
     frame.render_stateful_widget(
-        &ChoiceDialog {
-            dialog: MessageShell {
-                title: "Confirm",
-                body: ratatui::text::Text::from(body),
-                style: Style::default(),
-                theme: &theme,
-                emphasis: PanelEmphasis::Focused,
-            },
-            actions: &actions,
-            gap: " ",
-        },
+        &ChoiceDialog::new(dialog, &actions).gap(" "),
         area,
         &mut ChoiceDialogState::new(Some(selected_yes)),
     );
@@ -594,10 +582,7 @@ fn render_usage_info(
         })
         .collect::<Vec<_>>();
     frame.render_stateful_widget(
-        &Tabs {
-            tabs: &canonical_tabs,
-            gap: termrock::TAB_GAP,
-        },
+        &Tabs::new(&canonical_tabs, &Theme::default()).gap(termrock::widgets::TAB_GAP),
         tab_area,
         &mut TabsState {
             selected: canonical_tabs
@@ -651,12 +636,9 @@ fn render_filter_picker(
         let filter_area = Rect { height: 1, ..inner };
         let mut filter_state = TextInputState::new(filter).with_allow_empty(true);
         frame.render_stateful_widget(
-            &TextInput {
-                label: "Filter",
-                placeholder: "Filter",
-                validation: Validation::Valid,
-                theme: &theme,
-            },
+            &TextInput::new("Filter", &theme)
+                .placeholder("Filter")
+                .validation(Validation::Valid),
             filter_area,
             &mut filter_state,
         );
@@ -685,6 +667,7 @@ fn render_filter_picker(
             PickerItem::Section(label) => ListRow {
                 id,
                 label: Line::from(label.clone()),
+                trailing: None,
                 role: RowRole::Separator,
                 enabled: false,
             },
@@ -694,16 +677,14 @@ fn render_filter_picker(
                     label.clone(),
                     Style::default().fg(PHOSPHOR_GREEN),
                 )),
+                trailing: None,
                 role: RowRole::Item,
                 enabled: true,
             },
         })
         .collect::<Vec<_>>();
     frame.render_stateful_widget(
-        &List {
-            rows: &rows,
-            theme: &theme,
-        },
+        &List::new(&rows, &theme),
         list_area,
         &mut ListState::new(Some(selected)),
     );
@@ -733,12 +714,9 @@ fn render_text_input_dialog(
         "text-input snapshot cursor must remain on a grapheme boundary"
     );
     frame.render_stateful_widget(
-        &TextInput {
-            label,
-            placeholder: "",
-            validation: Validation::Valid,
-            theme: &theme,
-        },
+        &TextInput::new(label, &theme)
+            .placeholder("")
+            .validation(Validation::Valid),
         Rect {
             y: inner.y.saturating_add(1),
             height: 1,

@@ -172,42 +172,44 @@ pub enum CreatePreludeTextInputNamePlan<T> {
 
 #[must_use]
 pub fn create_prelude_text_input_dst_plan<T>(
-    outcome: termrock::ModalOutcome<T>,
+    outcome: jackin_core::ModalOutcome<T>,
 ) -> CreatePreludeTextInputDstPlan<T> {
     match outcome {
-        termrock::ModalOutcome::Commit(dst) => CreatePreludeTextInputDstPlan::Commit(dst),
-        termrock::ModalOutcome::Cancel => CreatePreludeTextInputDstPlan::ReopenMountDstChoice,
-        termrock::ModalOutcome::Continue => CreatePreludeTextInputDstPlan::Continue,
+        jackin_core::ModalOutcome::Commit(dst) => CreatePreludeTextInputDstPlan::Commit(dst),
+        jackin_core::ModalOutcome::Cancel => CreatePreludeTextInputDstPlan::ReopenMountDstChoice,
+        jackin_core::ModalOutcome::Continue => CreatePreludeTextInputDstPlan::Continue,
     }
 }
 
 #[must_use]
 pub fn create_prelude_text_input_name_plan<T>(
-    outcome: termrock::ModalOutcome<T>,
+    outcome: jackin_core::ModalOutcome<T>,
 ) -> CreatePreludeTextInputNamePlan<T> {
     match outcome {
-        termrock::ModalOutcome::Commit(name) => CreatePreludeTextInputNamePlan::Commit(name),
-        termrock::ModalOutcome::Cancel => CreatePreludeTextInputNamePlan::ReopenWorkdirPick,
-        termrock::ModalOutcome::Continue => CreatePreludeTextInputNamePlan::Continue,
+        jackin_core::ModalOutcome::Commit(name) => CreatePreludeTextInputNamePlan::Commit(name),
+        jackin_core::ModalOutcome::Cancel => CreatePreludeTextInputNamePlan::ReopenWorkdirPick,
+        jackin_core::ModalOutcome::Continue => CreatePreludeTextInputNamePlan::Continue,
     }
 }
 
 #[must_use]
 pub fn create_prelude_workdir_pick_plan<T>(
-    outcome: termrock::ModalOutcome<T>,
+    outcome: jackin_core::ModalOutcome<T>,
     used_edit_dst: bool,
 ) -> CreatePreludeWorkdirPickPlan<T> {
     match outcome {
-        termrock::ModalOutcome::Commit(workdir) => CreatePreludeWorkdirPickPlan::Commit(workdir),
-        termrock::ModalOutcome::Cancel => match create_prelude_workdir_cancel_plan(used_edit_dst) {
-            CreatePreludeWorkdirCancelPlan::ReopenTextInputDst => {
-                CreatePreludeWorkdirPickPlan::ReopenTextInputDst
+        jackin_core::ModalOutcome::Commit(workdir) => CreatePreludeWorkdirPickPlan::Commit(workdir),
+        jackin_core::ModalOutcome::Cancel => {
+            match create_prelude_workdir_cancel_plan(used_edit_dst) {
+                CreatePreludeWorkdirCancelPlan::ReopenTextInputDst => {
+                    CreatePreludeWorkdirPickPlan::ReopenTextInputDst
+                }
+                CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice => {
+                    CreatePreludeWorkdirPickPlan::ReopenMountDstChoice
+                }
             }
-            CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice => {
-                CreatePreludeWorkdirPickPlan::ReopenMountDstChoice
-            }
-        },
-        termrock::ModalOutcome::Continue => CreatePreludeWorkdirPickPlan::Continue,
+        }
+        jackin_core::ModalOutcome::Continue => CreatePreludeWorkdirPickPlan::Continue,
     }
 }
 
@@ -239,19 +241,19 @@ pub fn create_prelude_file_browser_plan<T>(
 
 #[must_use]
 pub const fn create_prelude_mount_dst_choice_plan(
-    outcome: termrock::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
+    outcome: jackin_core::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
 ) -> CreatePreludeMountDstChoicePlan {
     match outcome {
-        termrock::ModalOutcome::Commit(
+        jackin_core::ModalOutcome::Commit(
             crate::tui::components::mount_dst_choice::MountDstChoice::SamePath,
         ) => CreatePreludeMountDstChoicePlan::CommitSamePath,
-        termrock::ModalOutcome::Commit(
+        jackin_core::ModalOutcome::Commit(
             crate::tui::components::mount_dst_choice::MountDstChoice::Edit,
         ) => CreatePreludeMountDstChoicePlan::OpenEditInput,
-        termrock::ModalOutcome::Cancel => {
+        jackin_core::ModalOutcome::Cancel => {
             CreatePreludeMountDstChoicePlan::ReopenFileBrowserAtLastCwd
         }
-        termrock::ModalOutcome::Continue => CreatePreludeMountDstChoicePlan::Continue,
+        jackin_core::ModalOutcome::Continue => CreatePreludeMountDstChoicePlan::Continue,
     }
 }
 

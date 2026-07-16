@@ -12,11 +12,13 @@ use ratatui::{
     widgets::StatefulWidget,
 };
 
-use termrock::ModalOutcome;
+use crate::ModalOutcome;
 use termrock::layout::DialogBodyScroll;
+use termrock::style::Role;
+use termrock::text::display_cols;
 use termrock::widgets::{
-    DetailCapability, DetailRow, DetailTable, DetailTableOutcome, DetailTableState, Panel,
-    PanelEmphasis,
+    DetailCapability, DetailRow, DetailTable, DetailTableOutcome, DetailTableState, HintSpan,
+    Panel, PanelEmphasis,
 };
 
 #[derive(Debug, Clone)]
@@ -283,12 +285,12 @@ impl ContainerInfoState {
         self.rows
             .iter()
             .map(|row| {
-                termrock::display_cols("▸ ")
+                display_cols("▸ ")
                     + label_width
-                    + termrock::display_cols(" : ")
-                    + termrock::display_cols(&row.value)
+                    + display_cols(" : ")
+                    + display_cols(&row.value)
                     + if row.copyable {
-                        termrock::display_cols("  ⧉")
+                        display_cols("  ⧉")
                     } else {
                         0
                     }
@@ -318,7 +320,7 @@ impl ContainerInfoState {
     fn label_width(&self) -> usize {
         self.rows
             .iter()
-            .map(|row| termrock::display_cols(&row.label))
+            .map(|row| display_cols(&row.label))
             .max()
             .unwrap_or(0)
     }
@@ -389,28 +391,26 @@ pub fn clamp_dialog_scroll(
 /// copies) with no backing `Keymap<A>`, so each span carries an
 /// `// UNREGISTERABLE` annotation per the keymap/hint-bar enforcement rule.
 #[must_use]
-pub fn debug_info_hint_spans(
-    axes: termrock::layout::ScrollAxes,
-) -> Vec<termrock::HintSpan<'static>> {
+pub fn debug_info_hint_spans(axes: termrock::layout::ScrollAxes) -> Vec<HintSpan<'static>> {
     let mut spans = termrock::layout::scroll_hint_spans(axes);
     if axes.any() {
-        spans.push(termrock::HintSpan::GroupSep);
+        spans.push(HintSpan::GroupSep);
     }
     // UNREGISTERABLE(container-info-copy): Enter copies the active row inline; no ContainerInfo keymap.
-    spans.push(termrock::HintSpan::Key("↵"));
-    spans.push(termrock::HintSpan::Text("copy value"));
-    spans.push(termrock::HintSpan::GroupSep);
+    spans.push(HintSpan::Key("↵"));
+    spans.push(HintSpan::Text("copy value"));
+    spans.push(HintSpan::GroupSep);
     // UNREGISTERABLE(container-info-reveal): R/O toggle reveals diagnostics inline; no ContainerInfo keymap.
-    spans.push(termrock::HintSpan::Key("R/O"));
-    spans.push(termrock::HintSpan::Text("reveal diagnostics"));
-    spans.push(termrock::HintSpan::GroupSep);
+    spans.push(HintSpan::Key("R/O"));
+    spans.push(HintSpan::Text("reveal diagnostics"));
+    spans.push(HintSpan::GroupSep);
     // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
-    spans.push(termrock::HintSpan::Key("Esc"));
-    spans.push(termrock::HintSpan::Text("dismiss"));
-    spans.push(termrock::HintSpan::GroupSep);
+    spans.push(HintSpan::Key("Esc"));
+    spans.push(HintSpan::Text("dismiss"));
+    spans.push(HintSpan::GroupSep);
     // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
-    spans.push(termrock::HintSpan::Key("click"));
-    spans.push(termrock::HintSpan::Text("copy value"));
+    spans.push(HintSpan::Key("click"));
+    spans.push(HintSpan::Text("copy value"));
     spans
 }
 
@@ -434,12 +434,7 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
     frame.render_widget(&panel, area);
 
     let rows = detail_rows(state);
-    let table = DetailTable {
-        rows: &rows,
-        label_width: 0,
-        wrap: false,
-        theme: &theme,
-    };
+    let table = DetailTable::new(&rows, &theme);
     let mut table_state = detail_state(state);
     frame.render_stateful_widget(&table, table_area, &mut table_state);
 
@@ -508,12 +503,7 @@ fn detail_layout(
         .title(&state.title)
         .emphasis(PanelEmphasis::Focused);
     let table_area = detail_table_area(panel.inner(area));
-    let table = DetailTable {
-        rows: &rows,
-        label_width: 0,
-        wrap: false,
-        theme: &theme,
-    };
+    let table = DetailTable::new(&rows, &theme);
     let mut table_state = detail_state(state);
     let mut buffer = Buffer::empty(area);
     (&table).render(table_area, &mut buffer, &mut table_state);
@@ -528,7 +518,7 @@ pub fn copy_payload_at(
     row: u16,
 ) -> Option<(usize, String)> {
     let (rows, mut table_state, _) = detail_layout(area, state);
-    let hit = table_state.activate_at(Position::new(col, row));
+    let hit = table_state.click(Position::new(col, row));
     let DetailTableOutcome::Copy(id) = hit else {
         return None;
     };
@@ -543,7 +533,7 @@ pub fn hyperlink_payload_at(
     row: u16,
 ) -> Option<(usize, String)> {
     let (rows, mut table_state, _) = detail_layout(area, state);
-    let hit = table_state.activate_link_at(Position::new(col, row));
+    let hit = table_state.click_link(Position::new(col, row));
     let DetailTableOutcome::ActivateLink(id) = hit else {
         return None;
     };
@@ -560,16 +550,11 @@ pub fn hyperlink_payload_at(
 pub fn hyperlink_regions(area: Rect, state: &ContainerInfoState) -> Vec<(Rect, String)> {
     let (rows, table_state, _) = detail_layout(area, state);
     let theme = termrock::Theme::default();
-    DetailTable {
-        rows: &rows,
-        label_width: 0,
-        wrap: false,
-        theme: &theme,
-    }
-    .hyperlink_regions(&table_state)
-    .into_iter()
-    .map(|region| (region.area, region.url.to_owned()))
-    .collect()
+    DetailTable::new(&rows, &theme)
+        .hyperlink_regions(&table_state)
+        .into_iter()
+        .map(|region| (region.area, region.url.to_owned()))
+        .collect()
 }
 
 #[must_use]
@@ -577,17 +562,16 @@ pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
     let mut out = Vec::new();
     let (rows, table_state, buffer) = detail_layout(area, state);
     let theme = termrock::Theme::default();
-    let table = DetailTable {
-        rows: &rows,
-        label_width: 0,
-        wrap: false,
-        theme: &theme,
-    };
+    let table = DetailTable::new(&rows, &theme);
     for region in table.hyperlink_regions(&table_state) {
-        let link = if state.hovered_row == Some(region.id) {
-            termrock::LINK_FG_HOVER
+        let role = if state.hovered_row == Some(region.id) {
+            Role::LinkHover
         } else {
-            termrock::LINK_FG
+            Role::Link
+        };
+        let link = theme.style(role).fg.unwrap_or(Color::Reset);
+        let Color::Rgb(red, green, blue) = link else {
+            continue;
         };
         let visible = (region.area.x..region.area.right())
             .map(|x| buffer[(x, region.area.y)].symbol())
@@ -604,7 +588,7 @@ pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
             .as_bytes(),
         );
         out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, region.url));
-        out.extend_from_slice(format!("\x1b[38;2;{};{};{}m", link.r, link.g, link.b).as_bytes());
+        out.extend_from_slice(format!("\x1b[38;2;{red};{green};{blue}m").as_bytes());
         out.extend_from_slice(b"\x1b[1;4m");
         out.extend_from_slice(visible.as_bytes());
         out.extend_from_slice(&termrock::osc::encode_hyperlink_close());

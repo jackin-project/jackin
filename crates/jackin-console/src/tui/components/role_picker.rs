@@ -4,7 +4,7 @@
 //! Modal picker for role disambiguation.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use termrock::ModalOutcome;
+use jackin_core::ModalOutcome;
 use termrock::widgets::ListState;
 
 pub trait RoleChoice: Clone {
@@ -117,8 +117,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use jackin_core::tui_theme::WHITE;
 use termrock::layout::{DialogBorder, render_dialog_shell};
-use termrock::style::WHITE;
 use termrock::widgets::{List, ListRow, RowRole, TextInput, TextInputState, Validation};
 
 pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
@@ -144,12 +144,9 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         filter_columns[0],
     );
     frame.render_stateful_widget(
-        &TextInput {
-            label: "Filter",
-            placeholder: "░░░",
-            validation: Validation::Valid,
-            theme: &theme,
-        },
+        &TextInput::new("Filter", &theme)
+            .placeholder("░░░")
+            .validation(Validation::Valid),
         filter_columns[1],
         &mut filter,
     );
@@ -161,7 +158,7 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no matches",
-                termrock::style::DIM,
+                jackin_core::tui_theme::DIM,
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[2],
@@ -175,15 +172,13 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         .map(|(id, role)| ListRow {
             id,
             label: Line::from(vec![Span::styled(role.key(), Style::default().fg(WHITE))]),
+            trailing: None,
             role: RowRole::Item,
             enabled: true,
         })
         .collect();
     frame.render_stateful_widget(
-        &List {
-            rows: &items,
-            theme: &theme,
-        },
+        &List::new(&items, &theme),
         rows[2],
         &mut ListState::new(state.list_state.selected),
     );

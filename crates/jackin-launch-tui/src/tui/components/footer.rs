@@ -69,13 +69,8 @@ pub fn footer_regions(
             hover_style: None,
         },
     ];
-    StatusBar {
-        left: &left,
-        right: &right,
-        style: Style::default(),
-        alpha: 1.0,
-    }
-    .regions(area)
+    let theme = termrock::Theme::default();
+    StatusBar::new(&left, &right, &theme).regions(area)
 }
 
 /// The status-bar activity text: the current step with an upper-cased first
@@ -127,11 +122,11 @@ pub fn render_footer(
         min_width: 0,
         enabled: true,
         style: Style::default()
-            .bg(termrock::style::WHITE)
+            .bg(jackin_core::tui_theme::WHITE)
             .fg(if view.footer_hover.left {
-                termrock::style::LINK_BLUE
+                jackin_core::tui_theme::LINK_BLUE
             } else {
-                termrock::style::INK
+                jackin_core::tui_theme::INK
             })
             .add_modifier(Modifier::BOLD),
         hover_style: None,
@@ -144,11 +139,11 @@ pub fn render_footer(
             min_width: 0,
             enabled: !instance.is_empty(),
             style: Style::default()
-                .bg(termrock::style::WHITE)
+                .bg(jackin_core::tui_theme::WHITE)
                 .fg(if view.footer_hover.right {
-                    termrock::style::DEBUG_AMBER
+                    jackin_core::tui_theme::DEBUG_AMBER
                 } else {
-                    termrock::style::LINK_BLUE
+                    jackin_core::tui_theme::LINK_BLUE
                 })
                 .add_modifier(Modifier::BOLD),
             hover_style: None,
@@ -161,28 +156,27 @@ pub fn render_footer(
             enabled: debug_chip.is_some_and(|value| !value.is_empty()),
             style: Style::default()
                 .bg(if view.footer_hover.right_debug {
-                    termrock::style::WHITE
+                    jackin_core::tui_theme::WHITE
                 } else {
-                    termrock::style::DANGER_RED
+                    jackin_core::tui_theme::DANGER_RED
                 })
                 .fg(if view.footer_hover.right_debug {
-                    termrock::style::DANGER_RED
+                    jackin_core::tui_theme::DANGER_RED
                 } else {
-                    termrock::style::WHITE
+                    jackin_core::tui_theme::WHITE
                 })
                 .add_modifier(Modifier::BOLD),
             hover_style: None,
         },
     ];
+    let theme = termrock::Theme::default().with_role(
+        termrock::style::Role::StatusBar,
+        Style::default()
+            .bg(jackin_core::tui_theme::WHITE)
+            .fg(jackin_core::tui_theme::INK),
+    );
     frame.render_stateful_widget(
-        &StatusBar {
-            left: &left,
-            right: &right,
-            style: Style::default()
-                .bg(termrock::style::WHITE)
-                .fg(termrock::style::INK),
-            alpha,
-        },
+        &StatusBar::new(&left, &right, &theme).alpha(alpha),
         area,
         &mut StatusBarState {
             hovered: None,

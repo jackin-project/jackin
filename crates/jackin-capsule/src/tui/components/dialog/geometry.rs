@@ -9,7 +9,7 @@ use super::hint::{
     read_only_hint, rename_hint, usage_hint,
 };
 use super::{Dialog, GithubContextView};
-use termrock::HintSpan;
+use termrock::widgets::HintSpan;
 
 impl Dialog {
     /// Mutable body-scroll state for the read-only info dialogs whose content

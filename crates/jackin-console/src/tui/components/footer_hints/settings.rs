@@ -5,7 +5,7 @@
 //! settings screen's per-row contextual footer.
 
 use termrock::layout::ScrollAxes;
-use termrock::{HintSpan, keymap::glyph};
+use termrock::{keymap::glyph, widgets::HintSpan};
 
 use super::common::append_open_in_github;
 use crate::tui::keymap::{

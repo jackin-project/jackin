@@ -47,8 +47,8 @@ impl FileBrowserState {
     /// Footer-bar hints for the current state. The screen footer renders these
     /// (hints are footer-only — the browser draws no internal hint row); the
     /// git-repo confirm overlay swaps in its own confirm/cancel keys.
-    pub fn footer_items(&self) -> Vec<termrock::HintSpan<'static>> {
-        use termrock::HintSpan;
+    pub fn footer_items(&self) -> Vec<termrock::widgets::HintSpan<'static>> {
+        use termrock::widgets::HintSpan;
         if self.pending_git_prompt.is_some() {
             super::git_prompt::git_prompt_footer_items(self.pending_git_url.is_some())
         } else {

@@ -36,8 +36,8 @@ fn spawn_failure_popup_uses_error_popup_hints_and_dismiss_keys() {
     assert_eq!(
         dialog.footer_hint_spans(None, termrock::layout::ScrollAxes::none()),
         vec![
-            termrock::HintSpan::Key("↵/Esc"),
-            termrock::HintSpan::Text("dismiss"),
+            termrock::widgets::HintSpan::Key("↵/Esc"),
+            termrock::widgets::HintSpan::Text("dismiss"),
         ]
     );
     assert_eq!(dialog.handle_key(b"x", None), DialogAction::Redraw);

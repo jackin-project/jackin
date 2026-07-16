@@ -175,8 +175,8 @@ fn non_debug_dialog_hides_bottom_status_bar() {
     .into_state();
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
     let hints = [
-        termrock::HintSpan::Key("Esc"),
-        termrock::HintSpan::Text("dismiss"),
+        termrock::widgets::HintSpan::Key("Esc"),
+        termrock::widgets::HintSpan::Text("dismiss"),
     ];
     let backend = TestBackend::new(120, 24);
     let mut terminal = Terminal::new(backend).unwrap();

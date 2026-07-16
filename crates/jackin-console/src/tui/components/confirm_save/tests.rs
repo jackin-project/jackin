@@ -4,10 +4,7 @@
 //! Tests for `confirm_save`.
 use super::*;
 use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
-use termrock::{
-    HintSpan,
-    keymap::{KeyChord, LogicalKey},
-};
+use termrock::{keymap::KeyChord, widgets::HintSpan};
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
@@ -180,7 +177,7 @@ fn confirm_save_keymap_covers_each_action() {
 #[test]
 fn confirm_save_keymap_does_not_bind_unknown_keys() {
     assert_eq!(
-        CONFIRM_SAVE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('x'))),
+        CONFIRM_SAVE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('x').into())),
         None
     );
 }

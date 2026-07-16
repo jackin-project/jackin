@@ -3,7 +3,7 @@
 
 //! Footer hint rows for capsule dialogs.
 
-use termrock::{HintSpan, keymap::glyph};
+use termrock::{keymap::glyph, widgets::HintSpan};
 
 use crate::tui::keymap::{
     CAPSULE_GLOBAL_KEYMAP, FILTER_LIST_KEYMAP, FilterListAction, PREFIX_COMMAND_KEYMAP,

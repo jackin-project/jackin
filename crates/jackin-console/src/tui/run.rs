@@ -227,13 +227,13 @@ pub enum QuitConfirmPlan {
 }
 
 #[must_use]
-pub const fn quit_confirm_plan(outcome: termrock::ModalOutcome<bool>) -> QuitConfirmPlan {
+pub const fn quit_confirm_plan(outcome: jackin_core::ModalOutcome<bool>) -> QuitConfirmPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(true) => QuitConfirmPlan::Exit,
-        termrock::ModalOutcome::Commit(false) | termrock::ModalOutcome::Cancel => {
+        jackin_core::ModalOutcome::Commit(true) => QuitConfirmPlan::Exit,
+        jackin_core::ModalOutcome::Commit(false) | jackin_core::ModalOutcome::Cancel => {
             QuitConfirmPlan::Dismiss
         }
-        termrock::ModalOutcome::Continue => QuitConfirmPlan::Continue,
+        jackin_core::ModalOutcome::Continue => QuitConfirmPlan::Continue,
     }
 }
 
@@ -410,8 +410,12 @@ pub const fn debug_chip_activation_allowed(
 pub const fn console_pointer_shape(
     chrome_hovered: bool,
     base_clickable: bool,
-) -> termrock::PointerShape {
-    termrock::clickable_pointer_shape(chrome_hovered || base_clickable)
+) -> termrock::osc::PointerShape {
+    if chrome_hovered || base_clickable {
+        termrock::osc::PointerShape::Pointer
+    } else {
+        termrock::osc::PointerShape::Default
+    }
 }
 
 const fn mouse_is_wheel(mouse: crossterm::event::MouseEvent) -> bool {

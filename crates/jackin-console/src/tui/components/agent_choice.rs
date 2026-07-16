@@ -6,9 +6,9 @@
 //! Arrow keys move focus, Enter commits, Esc cancels.
 
 use crossterm::event::{KeyCode, KeyEvent};
+use jackin_core::ModalOutcome;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use termrock::ModalOutcome;
 use termrock::widgets::{List, ListRow, ListState, RowRole};
 
 use termrock::layout::{DialogBorder, render_dialog_shell};
@@ -103,16 +103,14 @@ pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentCh
         .map(|(id, agent)| ListRow {
             id,
             label: ratatui::text::Line::from(agent_picker_label(*agent)),
+            trailing: None,
             role: RowRole::Item,
             enabled: true,
         })
         .collect();
     let theme = termrock::Theme::default();
     frame.render_stateful_widget(
-        &List {
-            rows: &items,
-            theme: &theme,
-        },
+        &List::new(&items, &theme),
         rows[0],
         &mut ListState::new(Some(focus_index_in(&state.choices, state.focused))),
     );

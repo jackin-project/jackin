@@ -626,7 +626,7 @@ const CURATED_PUB_MODS: &[(&str, &[&str])] = &[
     // Plan 019: jackin-core — only justified namespace mods remain public.
     (
         "jackin-core",
-        &["container_paths", "debug_log", "operator_info"],
+        &["container_paths", "debug_log", "operator_info", "tui_theme"],
     ),
 ];
 

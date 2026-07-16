@@ -5,6 +5,7 @@
 
 use std::marker::PhantomData;
 
+use jackin_core::ModalOutcome;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -12,11 +13,10 @@ use ratatui::{
     text::{Line, Text},
 };
 use termrock::{
-    HintSpan, ModalOutcome,
     input::{KeyCode, KeyEvent},
     interaction::Outcome,
     widgets::{
-        Action, ChoiceDialog, ChoiceDialogState, Dialog, PanelEmphasis, TextInput,
+        Action, ChoiceDialog, ChoiceDialogState, Dialog, HintSpan, PanelEmphasis, TextInput,
         TextInputOutcome, TextInputState as CanonicalTextInputState, TextInputValidity, Validation,
     },
 };
@@ -139,6 +139,7 @@ impl TextInputState<'_> {
             TextInputOutcome::Submitted(value) => ModalOutcome::Commit(value),
             TextInputOutcome::Cancelled => ModalOutcome::Cancel,
             TextInputOutcome::Ignored | TextInputOutcome::Changed => ModalOutcome::Continue,
+            _ => ModalOutcome::Continue,
         }
     }
 }
@@ -164,16 +165,13 @@ pub fn render_text_input(frame: &mut Frame<'_>, area: Rect, state: &TextInputSta
     };
     let mut input = state.input.clone();
     frame.render_stateful_widget(
-        &TextInput {
-            label: &state.label,
-            placeholder: "",
-            validation: if duplicate {
+        &TextInput::new(&state.label, &theme)
+            .placeholder("")
+            .validation(if duplicate {
                 Validation::Invalid(&duplicate_message)
             } else {
                 Validation::Valid
-            },
-            theme: &theme,
-        },
+            }),
         input_area,
         &mut input,
     );
@@ -259,10 +257,11 @@ impl ConfirmState {
         if let Some(value) = direct {
             return ModalOutcome::Commit(value);
         }
-        match self.choice.handle_key(key, &confirm_actions()) {
+        match self.choice.handle_key(&confirm_actions(), key) {
             Outcome::Activated(value) => ModalOutcome::Commit(value),
             Outcome::Cancelled => ModalOutcome::Cancel,
             Outcome::Ignored | Outcome::Changed => ModalOutcome::Continue,
+            _ => ModalOutcome::Continue,
         }
     }
 
@@ -332,18 +331,11 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
     let actions = confirm_actions();
     let mut choice = state.choice.clone();
     let theme = termrock::Theme::default();
+    let dialog = Dialog::new(&state.title, confirm_text(state), &theme)
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused);
     frame.render_stateful_widget(
-        &ChoiceDialog {
-            dialog: Dialog {
-                title: &state.title,
-                body: confirm_text(state),
-                style: Style::default(),
-                theme: &theme,
-                emphasis: PanelEmphasis::Focused,
-            },
-            actions: &actions,
-            gap: " ",
-        },
+        &ChoiceDialog::new(dialog, &actions).gap(" "),
         area,
         &mut choice,
     );
@@ -441,18 +433,11 @@ pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &Sav
         SaveDiscardFocus::Cancel => Decision::Cancel,
     };
     let theme = termrock::Theme::default();
+    let dialog = Dialog::new("Unsaved changes", Text::from(state.prompt.clone()), &theme)
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused);
     frame.render_stateful_widget(
-        &ChoiceDialog {
-            dialog: Dialog {
-                title: "Unsaved changes",
-                body: Text::from(state.prompt.clone()),
-                style: Style::default(),
-                theme: &theme,
-                emphasis: PanelEmphasis::Focused,
-            },
-            actions: &actions,
-            gap: " ",
-        },
+        &ChoiceDialog::new(dialog, &actions).gap(" "),
         area,
         &mut ChoiceDialogState::new(Some(focused)),
     );
@@ -490,7 +475,7 @@ impl ErrorPopupState {
         let rows = self
             .message
             .lines()
-            .map(|line| termrock::display_cols(line).max(1).div_ceil(width))
+            .map(|line| termrock::text::display_cols(line).max(1).div_ceil(width))
             .sum::<usize>();
         u16::try_from(rows.saturating_add(4))
             .unwrap_or(u16::MAX)
@@ -501,13 +486,9 @@ impl ErrorPopupState {
 pub fn render_error_dialog(frame: &mut Frame<'_>, area: Rect, state: &ErrorPopupState) {
     let theme = termrock::Theme::default();
     frame.render_widget(
-        &Dialog {
-            title: &state.title,
-            body: Text::from(state.message.clone()),
-            style: Style::default().fg(termrock::style::DANGER_RED),
-            theme: &theme,
-            emphasis: PanelEmphasis::Focused,
-        },
+        Dialog::new(&state.title, Text::from(state.message.clone()), &theme)
+            .style(Style::default().fg(jackin_core::tui_theme::DANGER_RED))
+            .emphasis(PanelEmphasis::Focused),
         area,
     );
 }
@@ -531,17 +512,17 @@ impl StatusPopupState {
 pub fn render_status_popup(frame: &mut Frame<'_>, area: Rect, state: &StatusPopupState) {
     let theme = termrock::Theme::default();
     frame.render_widget(
-        &Dialog {
-            title: &state.title,
-            body: Text::from(vec![
+        Dialog::new(
+            &state.title,
+            Text::from(vec![
                 Line::from(state.message.clone()),
                 Line::default(),
                 Line::from("Please wait"),
             ]),
-            style: Style::default(),
-            theme: &theme,
-            emphasis: PanelEmphasis::Focused,
-        },
+            &theme,
+        )
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused),
         area,
     );
 }

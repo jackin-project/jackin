@@ -73,8 +73,8 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
     {
         let truncated: String = message.chars().take(120).collect();
         let line = Line::from(vec![
-            Span::styled("Error: ", termrock::style::BOLD_WHITE),
-            Span::styled(truncated, termrock::style::DIM),
+            Span::styled("Error: ", jackin_core::tui_theme::BOLD_WHITE),
+            Span::styled(truncated, jackin_core::tui_theme::DIM),
         ]);
         frame.render_widget(Paragraph::new(line), rows[0]);
     }
@@ -82,12 +82,9 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
     let theme = termrock::Theme::default();
     let mut filter = TextInputState::new(state.filter_buffer()).with_allow_empty(true);
     frame.render_stateful_widget(
-        &TextInput {
-            label: "Filter",
-            placeholder: "Filter",
-            validation: Validation::Valid,
-            theme: &theme,
-        },
+        &TextInput::new("Filter", &theme)
+            .placeholder("Filter")
+            .validation(Validation::Valid),
         rows[1],
         &mut filter,
     );
@@ -105,7 +102,7 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
     if list_lines.is_empty() {
         let para = Paragraph::new(Line::from(Span::styled(
             "(no matches)",
-            termrock::style::DIM,
+            jackin_core::tui_theme::DIM,
         )))
         .alignment(Alignment::Center);
         frame.render_widget(para, rows[3]);
@@ -116,15 +113,13 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
             .map(|(id, label)| ListRow {
                 id,
                 label,
+                trailing: None,
                 role: RowRole::Item,
                 enabled: true,
             })
             .collect::<Vec<_>>();
         frame.render_stateful_widget(
-            &List {
-                rows: &items,
-                theme: &theme,
-            },
+            &List::new(&items, &theme),
             rows[3],
             &mut ListState::new(state.selected_index()),
         );
@@ -163,9 +158,9 @@ fn render_loading(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRender
         .split(inner);
 
     let body = Line::from(vec![
-        Span::styled(glyph.to_owned(), termrock::style::GREEN),
+        Span::styled(glyph.to_owned(), jackin_core::tui_theme::GREEN),
         Span::raw("  "),
-        Span::styled(descriptor, termrock::style::DIM),
+        Span::styled(descriptor, jackin_core::tui_theme::DIM),
     ]);
     frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
 }

@@ -63,7 +63,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         frame.render_widget(
             Paragraph::new(Span::styled(
                 format!("\u{2717} {reason}"),
-                termrock::style::DANGER,
+                jackin_core::tui_theme::DANGER,
             ))
             .alignment(Alignment::Center),
             chunks[0],
@@ -133,6 +133,7 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
             ListRow {
                 id,
                 label: line,
+                trailing: None,
                 role: RowRole::Item,
                 enabled: true,
             }
@@ -147,14 +148,7 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
             .min(area.right().saturating_sub(inner.x)),
         ..inner
     };
-    frame.render_stateful_widget(
-        &List {
-            rows: &rows,
-            theme: &theme,
-        },
-        list_area,
-        &mut list_state,
-    );
+    frame.render_stateful_widget(&List::new(&rows, &theme), list_area, &mut list_state);
 }
 
 #[cfg(test)]

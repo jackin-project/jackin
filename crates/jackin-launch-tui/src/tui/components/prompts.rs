@@ -11,10 +11,10 @@ use ratatui::text::{Line, Text};
 use ratatui::widgets::Paragraph;
 use termrock::interaction::Outcome;
 use termrock::widgets::{
-    Action, ChoiceDialog, ChoiceDialogState, Dialog, List, ListOutcome, ListRow, ListState,
-    MessageDialog, PanelEmphasis, RowRole, TextInput, TextInputOutcome, TextInputState, Validation,
+    Action, ChoiceDialog, ChoiceDialogState, Dialog, List, ListRow, ListState, MessageDialog,
+    PanelEmphasis, RowRole, TextInput, TextInputOutcome, TextInputState, Validation,
 };
-use termrock::{HintSpan, Theme};
+use termrock::{Theme, widgets::HintSpan};
 
 use crate::tui::components::dialog::dialog_backdrop;
 use crate::tui::components::dialog::{exact_dialog_rect, percent_dialog_rect};
@@ -60,7 +60,7 @@ impl PromptPicker {
     pub fn max_label_width(&self) -> u16 {
         self.items
             .iter()
-            .map(|label| termrock::display_cols(label))
+            .map(|label| termrock::text::display_cols(label))
             .max()
             .unwrap_or(0)
             .try_into()
@@ -78,14 +78,14 @@ impl PromptPicker {
         }
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> ListOutcome<usize> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Outcome<usize> {
         match key.code {
             KeyCode::Backspace => {
                 if self.filter.pop().is_some() {
                     self.recompute();
-                    ListOutcome::Changed
+                    Outcome::Changed
                 } else {
-                    ListOutcome::Ignored
+                    Outcome::Ignored
                 }
             }
             KeyCode::Char(character)
@@ -94,7 +94,7 @@ impl PromptPicker {
             {
                 self.filter.push(character);
                 self.recompute();
-                ListOutcome::Changed
+                Outcome::Changed
             }
             _ => {
                 let rows = self.rows();
@@ -123,6 +123,7 @@ impl PromptPicker {
             .map(|index| ListRow {
                 id: *index,
                 label: Line::from(self.items[*index].clone()),
+                trailing: None,
                 role: RowRole::Item,
                 enabled: true,
             })
@@ -205,7 +206,7 @@ impl PromptConfirm {
         match key.code {
             KeyCode::Char('y' | 'Y') => Outcome::Activated(true),
             KeyCode::Char('n' | 'N') => Outcome::Activated(false),
-            _ => self.state.handle_key(key.into(), &confirm_actions()),
+            _ => self.state.handle_key(&confirm_actions(), key.into()),
         }
     }
 
@@ -256,7 +257,11 @@ impl PromptError {
         let rows = self
             .message
             .lines()
-            .map(|line| termrock::display_cols(line).div_ceil(content_width).max(1))
+            .map(|line| {
+                termrock::text::display_cols(line)
+                    .div_ceil(content_width)
+                    .max(1)
+            })
             .sum::<usize>();
         u16::try_from(rows.saturating_add(2))
             .unwrap_or(u16::MAX)
@@ -332,7 +337,12 @@ pub fn draw_select(
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     let area = picker_rect(box_area, picker, context);
     render_picker(frame, area, title, context, picker);
-    termrock::widgets::render_hint_bar(frame, hint_area, &select_list_hint_spans());
+    termrock::widgets::render_hint_bar(
+        frame,
+        hint_area,
+        &select_list_hint_spans(),
+        &Theme::default(),
+    );
 }
 
 pub(crate) fn render_picker(
@@ -365,14 +375,7 @@ pub(crate) fn render_picker(
         frame.render_widget(Paragraph::new(context.to_vec()), rows[1]);
     }
     let list_rows = picker.rows();
-    frame.render_stateful_widget(
-        &List {
-            rows: &list_rows,
-            theme: &theme,
-        },
-        rows[2],
-        &mut picker.state,
-    );
+    frame.render_stateful_widget(&List::new(&list_rows, &theme), rows[2], &mut picker.state);
 }
 
 pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &mut PromptText, skippable: bool) {
@@ -385,16 +388,18 @@ pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &mut PromptText, skippable
     let inner = panel.inner(area);
     frame.render_widget(&panel, area);
     frame.render_stateful_widget(
-        &TextInput {
-            label: &input.label,
-            placeholder: "",
-            validation: Validation::Valid,
-            theme: &theme,
-        },
+        &TextInput::new(&input.label, &theme)
+            .placeholder("")
+            .validation(Validation::Valid),
         inner.inner(ratatui::layout::Margin::new(1, 1)),
         &mut input.state,
     );
-    termrock::widgets::render_hint_bar(frame, hint_area, text_prompt_hint(skippable));
+    termrock::widgets::render_hint_bar(
+        frame,
+        hint_area,
+        text_prompt_hint(skippable),
+        &Theme::default(),
+    );
 }
 
 pub fn draw_confirm(frame: &mut Frame<'_>, state: &mut PromptConfirm) {
@@ -414,46 +419,36 @@ pub fn draw_confirm(frame: &mut Frame<'_>, state: &mut PromptConfirm) {
             .map(|note| Line::from(format!("! {note}"))),
     );
     let theme = Theme::default();
+    let actions = confirm_actions();
+    let dialog = Dialog::new(&state.title, Text::from(body), &theme)
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused);
     frame.render_stateful_widget(
-        &ChoiceDialog {
-            dialog: Dialog {
-                title: &state.title,
-                body: Text::from(body),
-                style: Style::default(),
-                theme: &theme,
-                emphasis: PanelEmphasis::Focused,
-            },
-            actions: &confirm_actions(),
-            gap: " ",
-        },
+        &ChoiceDialog::new(dialog, &actions).gap(" "),
         area,
         &mut state.state,
     );
-    termrock::widgets::render_hint_bar(frame, hint_area, &confirm_hint_spans());
+    termrock::widgets::render_hint_bar(frame, hint_area, &confirm_hint_spans(), &Theme::default());
 }
 
 pub fn draw_error_popup(frame: &mut Frame<'_>, state: &mut PromptError) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     let area = error_popup_rect(box_area, state);
     let theme = Theme::default();
+    let dialog = Dialog::new(&state.title, Text::from(state.message.as_str()), &theme)
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused);
     frame.render_stateful_widget(
-        &MessageDialog {
-            dialog: Dialog {
-                title: &state.title,
-                body: Text::from(state.message.as_str()),
-                style: Style::default(),
-                theme: &theme,
-                emphasis: PanelEmphasis::Focused,
-            },
-            details: &[],
-            label_width: 0,
-            wrap: true,
-            theme: &theme,
-        },
+        &MessageDialog::new(dialog, &[], &theme).wrap(true),
         area,
         &mut state.state,
     );
-    termrock::widgets::render_hint_bar(frame, hint_area, &error_popup_hint_spans());
+    termrock::widgets::render_hint_bar(
+        frame,
+        hint_area,
+        &error_popup_hint_spans(),
+        &Theme::default(),
+    );
 }
 
 fn picker_rect(area: Rect, picker: &PromptPicker, context: &[Line<'_>]) -> Rect {

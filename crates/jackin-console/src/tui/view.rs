@@ -338,11 +338,13 @@ pub const fn workspace_header_title() -> &'static str {
 /// How many rows the footer needs to display all `items` within `width`
 /// columns. Includes one leading blank spacer row above the hints.
 #[must_use]
-pub fn footer_height(items: &[termrock::HintSpan<'_>], width: u16) -> u16 {
+pub fn footer_height(items: &[termrock::widgets::HintSpan<'_>], width: u16) -> u16 {
     // +1 for the mandatory leading spacer row above the hints on every screen.
-    u16::try_from(termrock::widgets::wrapped_hint_lines(items, width).len())
-        .unwrap_or(u16::MAX)
-        .saturating_add(1)
+    u16::try_from(
+        termrock::widgets::wrapped_hint_lines(items, width, &termrock::Theme::default()).len(),
+    )
+    .unwrap_or(u16::MAX)
+    .saturating_add(1)
 }
 
 #[must_use]
@@ -351,11 +353,11 @@ pub const fn effective_footer_height(height: u16) -> u16 {
 }
 
 #[must_use]
-pub fn measured_footer_height(items: &[termrock::HintSpan<'_>], width: u16) -> u16 {
+pub fn measured_footer_height(items: &[termrock::widgets::HintSpan<'_>], width: u16) -> u16 {
     effective_footer_height(footer_height(items, width))
 }
 
-pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[termrock::HintSpan<'_>]) {
+pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[termrock::widgets::HintSpan<'_>]) {
     if area.height == 0 {
         return;
     }
@@ -371,6 +373,7 @@ pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[termrock::HintS
         ratatui::widgets::Paragraph::new(termrock::widgets::wrapped_hint_lines(
             items,
             hint_area.width,
+            &termrock::Theme::default(),
         ))
         .alignment(ratatui::layout::Alignment::Center),
         hint_area,
@@ -382,7 +385,7 @@ pub fn render_header(frame: &mut Frame<'_>, area: Rect, title: &str) {
 }
 
 pub fn render_modal_backdrop(frame: &mut Frame<'_>, area: Rect) {
-    frame.render_widget(&termrock::widgets::Backdrop::default(), area);
+    frame.render_widget(termrock::widgets::Backdrop::default(), area);
 }
 
 #[must_use]

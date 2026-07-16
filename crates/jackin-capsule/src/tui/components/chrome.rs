@@ -50,7 +50,8 @@ impl StatusBarWidget<'_> {
         let x = area.x.saturating_add(cell.start_col0);
         buf.set_string(x, area.y, &content, style);
         if let Some(glyph_style) = tab_glyph_style(cell.glyph, bg) {
-            let name_cols = u16::try_from(termrock::display_cols(&cell.name)).unwrap_or(u16::MAX);
+            let name_cols =
+                u16::try_from(termrock::text::display_cols(&cell.name)).unwrap_or(u16::MAX);
             let glyph_x = x.saturating_add(name_cols).saturating_add(2);
             buf.set_string(glyph_x, area.y, glyph_char.to_string(), glyph_style);
         }
@@ -59,12 +60,14 @@ impl StatusBarWidget<'_> {
 
 fn tab_cell_style(active: bool, hovered: bool) -> Style {
     let background = match (active, hovered) {
-        (true, true) => termrock::style::TAB_BG_ACTIVE_HOVER,
-        (true, false) => termrock::style::TAB_BG_ACTIVE,
-        (false, true) => termrock::style::TAB_BG_INACTIVE_HOVER,
-        (false, false) => termrock::style::TAB_BG_INACTIVE,
+        (true, true) => jackin_core::tui_theme::TAB_BG_ACTIVE_HOVER,
+        (true, false) => jackin_core::tui_theme::TAB_BG_ACTIVE,
+        (false, true) => jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER,
+        (false, false) => jackin_core::tui_theme::TAB_BG_INACTIVE,
     };
-    let style = Style::default().bg(background).fg(termrock::style::WHITE);
+    let style = Style::default()
+        .bg(background)
+        .fg(jackin_core::tui_theme::WHITE);
     if active {
         style.add_modifier(Modifier::BOLD)
     } else {
@@ -87,13 +90,13 @@ fn tab_glyph_style(glyph: TabGlyph, bg: Color) -> Option<Style> {
         TabGlyph::Blocked => Some(
             Style::default()
                 .bg(bg)
-                .fg(termrock::style::STATUS_BLOCKED_RED)
+                .fg(jackin_core::tui_theme::STATUS_BLOCKED_RED)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Working => Some(
             Style::default()
                 .bg(bg)
-                .fg(termrock::style::DEBUG_AMBER)
+                .fg(jackin_core::tui_theme::DEBUG_AMBER)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Idle => Some(
@@ -124,14 +127,14 @@ impl Widget for StatusBarWidget<'_> {
 
         // Row 0: brand pill — green block, black word, white chevron.
         let pill = Style::default()
-            .bg(termrock::style::BRAND_BLOCK)
+            .bg(jackin_core::tui_theme::BRAND_BLOCK)
             .add_modifier(Modifier::BOLD);
         buf.set_string(area.x, area.y, " jackin", pill.fg(Color::Black));
         buf.set_string(
             area.x.saturating_add(7),
             area.y,
             "❯",
-            pill.fg(termrock::style::WHITE),
+            pill.fg(jackin_core::tui_theme::WHITE),
         );
         buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
@@ -143,15 +146,19 @@ impl Widget for StatusBarWidget<'_> {
         // Row 0: right-side menu button.
         if let Some(start_1based) = plan.hint_start {
             let (bg, fg) = match (self.prefix_mode, self.menu_hovered) {
-                (PrefixMode::Idle, false) => {
-                    (termrock::style::MENU_IDLE_BG, termrock::style::WHITE)
+                (PrefixMode::Idle, false) => (
+                    jackin_core::tui_theme::MENU_IDLE_BG,
+                    jackin_core::tui_theme::WHITE,
+                ),
+                (PrefixMode::Idle, true) => (
+                    jackin_core::tui_theme::MENU_IDLE_HOVER_BG,
+                    jackin_core::tui_theme::WHITE,
+                ),
+                (PrefixMode::Awaiting, false) => {
+                    (jackin_core::tui_theme::MENU_AWAITING_BG, Color::Black)
                 }
-                (PrefixMode::Idle, true) => {
-                    (termrock::style::MENU_IDLE_HOVER_BG, termrock::style::WHITE)
-                }
-                (PrefixMode::Awaiting, false) => (termrock::style::MENU_AWAITING_BG, Color::Black),
                 (PrefixMode::Awaiting, true) => {
-                    (termrock::style::MENU_AWAITING_HOVER_BG, Color::Black)
+                    (jackin_core::tui_theme::MENU_AWAITING_HOVER_BG, Color::Black)
                 }
             };
             buf.set_string(
@@ -168,7 +175,7 @@ impl Widget for StatusBarWidget<'_> {
                 area.x.saturating_add(pos_1based.saturating_sub(1)),
                 area.y,
                 "›",
-                Style::default().fg(termrock::style::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
             );
         }
 
@@ -181,7 +188,7 @@ impl Widget for StatusBarWidget<'_> {
             let underline_fg = if self.focused {
                 termrock::style::PHOSPHOR_GREEN
             } else {
-                termrock::style::WHITE
+                jackin_core::tui_theme::WHITE
             };
             buf.set_string(
                 area.x.saturating_add(active.start_col0),
@@ -276,7 +283,7 @@ pub(crate) struct DialogBottomChromeWidget<'a> {
     pub(crate) pull_request_loading: bool,
     pub(crate) debug_run_id: Option<&'a str>,
     pub(crate) instance_id_label: &'a str,
-    pub(crate) hint_spans: Option<&'a [termrock::HintSpan<'a>]>,
+    pub(crate) hint_spans: Option<&'a [termrock::widgets::HintSpan<'a>]>,
 }
 
 impl Widget for DialogBottomChromeWidget<'_> {
@@ -341,7 +348,7 @@ fn render_branch_bar_row(
 
 /// The pane and footer chrome need one spacer each, so hints stay visually
 /// separate from both the agent border and the branch context bar.
-fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::HintSpan<'_>]) {
+fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::widgets::HintSpan<'_>]) {
     use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
     use crate::tui::layout::{
         CAPSULE_HINT_BAR_ROWS, CAPSULE_HINT_SEPARATOR_ROWS, CAPSULE_HINT_TOP_SEPARATOR_ROWS,
@@ -355,7 +362,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::HintSp
         return;
     }
     let available = area.width.saturating_sub(4); // 2 col padding each side
-    let lines = termrock::widgets::wrapped_hint_lines(spans, available);
+    let lines = termrock::widgets::wrapped_hint_lines(spans, available, &Theme::default());
     let hint_rows = usize::from(CAPSULE_HINT_BAR_ROWS);
     if lines.is_empty() {
         return;
@@ -373,7 +380,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::HintSp
         for span in &line.spans {
             let content = span.content.as_ref();
             buf.set_string(x, row_y, content, span.style);
-            x += termrock::display_cols(content) as u16;
+            x += termrock::text::display_cols(content) as u16;
         }
     }
 }
@@ -381,7 +388,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::HintSp
 fn line_display_cols(line: &ratatui::text::Line<'_>) -> usize {
     line.spans
         .iter()
-        .map(|span| termrock::display_cols(span.content.as_ref()))
+        .map(|span| termrock::text::display_cols(span.content.as_ref()))
         .sum()
 }
 

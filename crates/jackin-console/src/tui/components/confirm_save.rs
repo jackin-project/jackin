@@ -17,14 +17,15 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
+use jackin_core::ModalOutcome;
 use termrock::layout::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
 use termrock::scroll::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };
 use termrock::{
-    HintSpan, ModalOutcome,
-    keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, SCROLL_HINT_KEYMAP, Visibility},
-    widgets::{Action, ActionBar, ActionBarState},
+    input::KeyCode,
+    keymap::{KeyBinding, KeyChord, Keymap, SCROLL_HINT_KEYMAP, Visibility},
+    widgets::{Action, ActionBar, ActionBarState, HintSpan},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +46,7 @@ pub enum ConfirmSaveAction {
 
 const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        chords: &[KeyChord::plain(KeyCode::Enter)],
         action: ConfirmSaveAction::Activate,
         hint: Some("select"),
         visibility: Visibility::Shown,
@@ -53,8 +54,8 @@ const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('s')),
-            KeyChord::plain(LogicalKey::Char('S')),
+            KeyChord::plain(KeyCode::Char('s')),
+            KeyChord::plain(KeyCode::Char('S')),
         ],
         action: ConfirmSaveAction::Save,
         hint: Some("save"),
@@ -63,8 +64,8 @@ const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char('c')),
-            KeyChord::plain(LogicalKey::Char('C')),
+            KeyChord::plain(KeyCode::Char('c')),
+            KeyChord::plain(KeyCode::Char('C')),
         ],
         action: ConfirmSaveAction::Cancel,
         hint: Some("cancel"),
@@ -72,7 +73,7 @@ const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
         glyph: Some("C/Esc"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Esc)],
+        chords: &[KeyChord::plain(KeyCode::Esc)],
         action: ConfirmSaveAction::Cancel,
         hint: None,
         visibility: Visibility::HiddenAlias,
@@ -80,10 +81,10 @@ const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Tab),
-            KeyChord::plain(LogicalKey::Right),
-            KeyChord::plain(LogicalKey::Char('l')),
-            KeyChord::plain(LogicalKey::Char('L')),
+            KeyChord::plain(KeyCode::Tab),
+            KeyChord::plain(KeyCode::Right),
+            KeyChord::plain(KeyCode::Char('l')),
+            KeyChord::plain(KeyCode::Char('L')),
         ],
         action: ConfirmSaveAction::FocusNext,
         hint: Some("move"),
@@ -92,10 +93,10 @@ const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::BackTab),
-            KeyChord::plain(LogicalKey::Left),
-            KeyChord::plain(LogicalKey::Char('h')),
-            KeyChord::plain(LogicalKey::Char('H')),
+            KeyChord::plain(KeyCode::BackTab),
+            KeyChord::plain(KeyCode::Left),
+            KeyChord::plain(KeyCode::Char('h')),
+            KeyChord::plain(KeyCode::Char('H')),
         ],
         action: ConfirmSaveAction::FocusPrev,
         hint: None,
@@ -104,9 +105,9 @@ const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Up),
-            KeyChord::plain(LogicalKey::Char('k')),
-            KeyChord::plain(LogicalKey::Char('K')),
+            KeyChord::plain(KeyCode::Up),
+            KeyChord::plain(KeyCode::Char('k')),
+            KeyChord::plain(KeyCode::Char('K')),
         ],
         action: ConfirmSaveAction::ScrollUp,
         hint: None,
@@ -115,9 +116,9 @@ const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Down),
-            KeyChord::plain(LogicalKey::Char('j')),
-            KeyChord::plain(LogicalKey::Char('J')),
+            KeyChord::plain(KeyCode::Down),
+            KeyChord::plain(KeyCode::Char('j')),
+            KeyChord::plain(KeyCode::Char('J')),
         ],
         action: ConfirmSaveAction::ScrollDown,
         hint: None,
@@ -188,7 +189,7 @@ impl<M: Clone> ConfirmSaveState<M> {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<SaveChoice> {
-        match CONFIRM_SAVE_KEYMAP.dispatch(KeyChord::from(termrock::crossterm::key(key))) {
+        match CONFIRM_SAVE_KEYMAP.dispatch(KeyChord::from(termrock::input::KeyEvent::from(key))) {
             Some(ConfirmSaveAction::Save) => ModalOutcome::Commit(SaveChoice::Save),
             Some(ConfirmSaveAction::Cancel) => ModalOutcome::Cancel,
             Some(ConfirmSaveAction::ScrollUp) => {
@@ -305,11 +306,9 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
             style: None,
         },
     ];
+    let theme = termrock::Theme::default();
     frame.render_stateful_widget(
-        &ActionBar {
-            actions: &actions,
-            gap: " ",
-        },
+        &ActionBar::new(&actions, &theme).gap(" "),
         chunks[3],
         &mut ActionBarState {
             focused: Some(state.focus),

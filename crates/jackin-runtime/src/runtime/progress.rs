@@ -12,6 +12,8 @@ use std::io::Write;
 use std::time::Duration;
 
 pub use jackin_core::LaunchCancelled;
+#[cfg(test)]
+use jackin_core::tui_theme::DANGER_RED;
 use jackin_core::{LaunchHostTerminal, LaunchOutputSink};
 use jackin_launch_tui::LaunchTuiOutputSink;
 pub use jackin_launch_tui::progress::LaunchProgress;
@@ -54,8 +56,6 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 #[cfg(test)]
 use ratatui::style::Color;
-#[cfg(test)]
-use termrock::style::DANGER_RED;
 
 struct HostTerminal;
 

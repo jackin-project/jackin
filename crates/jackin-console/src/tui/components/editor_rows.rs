@@ -10,7 +10,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use termrock::style::{ACTION_ACCENT, DISCLOSURE_ACCENT, PHOSPHOR_GREEN, WHITE};
+use jackin_core::tui_theme::{ACTION_ACCENT, DISCLOSURE_ACCENT, PHOSPHOR_GREEN, WHITE};
 
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 
@@ -25,7 +25,7 @@ pub const fn cursor_gutter(selected: bool) -> &'static str {
 #[must_use]
 pub fn cursor_span(selected: bool) -> Span<'static> {
     if selected {
-        Span::styled(cursor_gutter(true), termrock::style::BOLD_WHITE)
+        Span::styled(cursor_gutter(true), jackin_core::tui_theme::BOLD_WHITE)
     } else {
         Span::raw(cursor_gutter(false))
     }
@@ -202,10 +202,8 @@ pub fn render_tab_strip(
         })
         .collect::<Vec<_>>();
     frame.render_stateful_widget(
-        &termrock::widgets::Tabs {
-            tabs: &tabs,
-            gap: termrock::TAB_GAP,
-        },
+        &termrock::widgets::Tabs::new(&tabs, &termrock::Theme::default())
+            .gap(termrock::widgets::TAB_GAP),
         area,
         &mut termrock::widgets::TabsState {
             selected: tabs.iter().find(|tab| tab.active).map(|tab| tab.id),
@@ -258,7 +256,7 @@ pub fn auth_line_width(row: &AuthLineRow) -> usize {
 
 fn render_auth_line(selected: bool, row: &AuthLineRow) -> Line<'static> {
     let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let dim_green = Style::default().fg(termrock::style::PHOSPHOR_DIM);
+    let dim_green = Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM);
     let phosphor = Style::default().fg(PHOSPHOR_GREEN);
 
     match row {
@@ -342,7 +340,10 @@ fn render_source_folder_line(
             format!("{label:<label_width$}"),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(value, Style::default().fg(termrock::style::PHOSPHOR_DIM)),
+        Span::styled(
+            value,
+            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+        ),
     ])
 }
 
@@ -402,20 +403,20 @@ fn render_auth_source_line(
         AuthSourceDisplay::NotRequired => {
             spans.push(Span::styled(
                 "not required",
-                Style::default().fg(termrock::style::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
             ));
         }
         AuthSourceDisplay::OpRefPath(path) => {
             spans.push(Span::styled(
                 "[op] ",
-                Style::default().fg(termrock::style::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
             ));
             push_op_breadcrumb_spans(&mut spans, path);
         }
         AuthSourceDisplay::MaskedPlain { chars } => {
             spans.push(Span::styled(
                 "\u{25cf}".repeat((*chars).clamp(1, 12)),
-                Style::default().fg(termrock::style::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
             ));
         }
         AuthSourceDisplay::Unset {
@@ -424,7 +425,7 @@ fn render_auth_source_line(
         } => {
             spans.push(Span::styled(
                 format!("unset  ({env_name} for {mode_label})"),
-                Style::default().fg(termrock::style::DANGER_RED),
+                Style::default().fg(jackin_core::tui_theme::DANGER_RED),
             ));
         }
     }
@@ -481,7 +482,7 @@ pub fn secret_env_lines<'a, S>(
                     spans.push(Span::styled(
                         "  (not in registry)",
                         Style::default()
-                            .fg(termrock::style::PHOSPHOR_DIM)
+                            .fg(jackin_core::tui_theme::PHOSPHOR_DIM)
                             .add_modifier(Modifier::ITALIC),
                     ));
                 }
@@ -519,11 +520,11 @@ pub fn render_secret_key_line(
     const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
 
     let label_style = if selected {
-        termrock::style::BOLD_WHITE
+        jackin_core::tui_theme::BOLD_WHITE
     } else {
         Style::default().fg(WHITE)
     };
-    let dim = termrock::style::DIM;
+    let dim = jackin_core::tui_theme::DIM;
     let op_breadcrumb = match value {
         SecretValueDisplay::OpRefPath(path) => {
             crate::tui::op_breadcrumb::parse_path_breadcrumb(path)
@@ -555,13 +556,13 @@ pub fn render_secret_key_line(
     };
 
     let value_style = if masked {
-        termrock::style::DIM
+        jackin_core::tui_theme::DIM
     } else if selected {
         Style::default()
             .fg(PHOSPHOR_GREEN)
             .add_modifier(Modifier::BOLD)
     } else {
-        termrock::style::GREEN
+        jackin_core::tui_theme::GREEN
     };
 
     let rendered_value: String = if masked {
@@ -595,7 +596,7 @@ const fn padded_width_cols(width: usize, leading_spaces: usize) -> usize {
 }
 
 fn text_width(text: &str) -> usize {
-    termrock::display_cols(text)
+    termrock::text::display_cols(text)
 }
 
 #[cfg(test)]

@@ -689,7 +689,7 @@ fn in_custom_mode_only_listed_agents_show_checked() {
 // Tests for `editor` contextual row items rendering.
 // Row-specific footer-hint composition for the editor tabs.
 use jackin_config::MountConfig;
-use termrock::HintSpan;
+use termrock::widgets::HintSpan;
 
 use crate::tui::screens::editor::view::editor_contextual_footer_items as contextual_row_items;
 

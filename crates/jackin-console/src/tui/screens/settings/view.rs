@@ -26,7 +26,7 @@ use ratatui::{
     text::{Line, Span},
 };
 use std::collections::BTreeMap;
-use termrock::HintSpan;
+use termrock::widgets::HintSpan;
 
 use crate::tui::components::editor_rows::{
     AuthLineRow, AuthSourceDisplay, AuthSourceValue, SecretEnvLineFrame, SecretLineRow,
@@ -758,12 +758,12 @@ pub fn trust_lines(
 ) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
         "  Role                         Trust      Git",
-        Style::default().fg(termrock::style::WHITE),
+        Style::default().fg(jackin_core::tui_theme::WHITE),
     ))];
     if rows.is_empty() {
         lines.push(Line::from(Span::styled(
             "  (none)",
-            Style::default().fg(termrock::style::PHOSPHOR_DIM),
+            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
         )));
     }
     for (i, row) in rows.iter().enumerate() {
@@ -776,7 +776,7 @@ pub fn trust_lines(
             Style::default().fg(termrock::style::PHOSPHOR_GREEN)
         };
         if !selected && hovered_row == Some(i) {
-            style = style.bg(termrock::style::TAB_BG_INACTIVE_HOVER);
+            style = style.bg(jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER);
         }
         let prefix = if selected { "\u{25b8} " } else { "  " };
         let trust = if row.trusted { "trusted" } else { "untrusted" };
@@ -964,7 +964,7 @@ pub fn global_mount_lines(
             Style::default().fg(termrock::style::PHOSPHOR_GREEN)
         };
         let dim_style = Style::default()
-            .fg(termrock::style::PHOSPHOR_DIM)
+            .fg(jackin_core::tui_theme::PHOSPHOR_DIM)
             .add_modifier(Modifier::ITALIC);
         lines.push(Line::from(vec![
             Span::styled(
@@ -973,7 +973,7 @@ pub fn global_mount_lines(
             ),
             Span::styled(
                 format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                Style::default().fg(termrock::style::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
             ),
             Span::raw("  "),
             Span::styled(row.kind.clone(), dim_style),
@@ -981,7 +981,7 @@ pub fn global_mount_lines(
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
                 format!("  {host_source:<path_w$}"),
-                Style::default().fg(termrock::style::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
             )));
         }
     }

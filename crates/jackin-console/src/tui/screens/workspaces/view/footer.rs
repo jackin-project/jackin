@@ -7,7 +7,7 @@
 //! `footer_hints` so callers do not have to build them by hand.
 use jackin_config::AppConfig;
 use ratatui::layout::Rect;
-use termrock::{HintSpan, layout::ScrollAxes};
+use termrock::{layout::ScrollAxes, widgets::HintSpan};
 
 use crate::tui::components::footer_hints::{
     WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterInputFacts,

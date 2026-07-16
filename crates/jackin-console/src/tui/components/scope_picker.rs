@@ -5,7 +5,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use termrock::ModalOutcome;
+use jackin_core::ModalOutcome;
 use termrock::widgets::{Action, ActionBar, ActionBarState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,11 +100,9 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
             style: None,
         },
     ];
+    let theme = termrock::Theme::default();
     frame.render_stateful_widget(
-        &ActionBar {
-            actions: &actions,
-            gap: " ",
-        },
+        &ActionBar::new(&actions, &theme).gap(" "),
         chunks[1],
         &mut ActionBarState {
             focused: Some(state.focused),

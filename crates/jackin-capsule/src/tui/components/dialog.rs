@@ -1062,23 +1062,17 @@ impl Dialog {
             let mut state = termrock::widgets::ChoiceDialogState::new(Some(*selected_yes));
             let theme = termrock::Theme::default();
             let mut buffer = ratatui::buffer::Buffer::empty(area);
+            let dialog =
+                termrock::widgets::Dialog::new("Confirm", ratatui::text::Text::from(body), &theme)
+                    .style(ratatui::style::Style::default())
+                    .emphasis(termrock::widgets::PanelEmphasis::Focused);
             ratatui::widgets::StatefulWidget::render(
-                &termrock::widgets::ChoiceDialog {
-                    dialog: termrock::widgets::Dialog {
-                        title: "Confirm",
-                        body: ratatui::text::Text::from(body),
-                        style: ratatui::style::Style::default(),
-                        theme: &theme,
-                        emphasis: termrock::widgets::PanelEmphasis::Focused,
-                    },
-                    actions: &actions,
-                    gap: " ",
-                },
+                &termrock::widgets::ChoiceDialog::new(dialog, &actions).gap(" "),
                 area,
                 &mut buffer,
                 &mut state,
             );
-            return match state.activate_at(ratatui::layout::Position::new(col, row)) {
+            return match state.click(ratatui::layout::Position::new(col, row)) {
                 termrock::interaction::Outcome::Activated(true) => {
                     DialogAction::ConfirmedAction(*kind)
                 }
@@ -1384,7 +1378,7 @@ impl Dialog {
                     .message
                     .lines()
                     .map(|line| {
-                        termrock::display_cols(line)
+                        termrock::text::display_cols(line)
                             .div_ceil(usize::from(inner_width).max(1))
                             .max(1)
                     })

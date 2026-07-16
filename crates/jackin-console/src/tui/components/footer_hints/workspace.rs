@@ -4,8 +4,8 @@
 //! Workspace-list footer facts, mode resolver, and the matching hint-span
 //! builders for the workspace-list screen.
 
-use termrock::HintSpan;
 use termrock::layout::ScrollAxes;
+use termrock::widgets::HintSpan;
 
 use crate::tui::keymap::{
     PREVIEW_PANE_KEYMAP, PreviewPaneAction, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,

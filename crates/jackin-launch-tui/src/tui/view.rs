@@ -84,6 +84,7 @@ pub fn render_launch_frame(
         frame,
         chrome.hint,
         &crate::tui::keymap::cockpit_global_hint_spans(),
+        &termrock::Theme::default(),
     );
     render_footer(frame, chrome.footer, view, run_id, debug_mode);
 

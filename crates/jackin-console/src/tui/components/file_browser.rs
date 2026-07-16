@@ -25,7 +25,7 @@
 //! round-tripping through the explorer's event handler).
 
 use crate::tui::components::modal_rects::{ModalRectMode, modal_rect_for_mode as rect_for_mode};
-pub(super) use termrock::style::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+pub(super) use jackin_core::tui_theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub(super) mod git_prompt;
 pub(super) mod input;

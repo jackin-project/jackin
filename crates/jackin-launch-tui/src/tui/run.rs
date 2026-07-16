@@ -15,7 +15,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use termrock::interaction::Outcome;
-use termrock::widgets::{ListOutcome, TextInputOutcome};
+use termrock::widgets::TextInputOutcome;
 use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::prompts::{
@@ -230,7 +230,7 @@ fn update_forced_select(picker: &mut PromptPicker, msg: SelectLoopMessage) -> Op
     match msg {
         SelectLoopMessage::Key(key) => {
             // Esc reports Cancel; ignored here so the choice is forced.
-            if let ListOutcome::Activated(index) = picker.handle_key(key) {
+            if let Outcome::Activated(index) = picker.handle_key(key) {
                 Some(index)
             } else {
                 None
@@ -244,6 +244,7 @@ fn update_error_prompt(state: &mut PromptError, msg: ErrorPromptMessage) -> Opti
         ErrorPromptMessage::Key(key) => match state.handle_key(key) {
             Outcome::Cancelled => Some(()),
             Outcome::Ignored | Outcome::Changed | Outcome::Activated(()) => None,
+            _ => None,
         },
     }
 }
@@ -254,6 +255,7 @@ fn update_confirm_prompt(state: &mut PromptConfirm, msg: ConfirmPromptMessage) -
             Outcome::Activated(confirmed) => Some(confirmed),
             Outcome::Cancelled => Some(false),
             Outcome::Ignored | Outcome::Changed => None,
+            _ => None,
         },
     }
 }
@@ -271,6 +273,7 @@ fn update_text_prompt(
             TextInputOutcome::Submitted(value) => Some(Ok(PromptResult::Value(value))),
             TextInputOutcome::Cancelled => Some(Err(crate::LaunchCancelled::err())),
             TextInputOutcome::Ignored | TextInputOutcome::Changed => None,
+            _ => None,
         },
     }
 }
@@ -283,12 +286,13 @@ fn update_select_prompt(
 ) -> Option<anyhow::Result<PromptResult>> {
     match msg {
         SelectPromptMessage::Key(key) => match picker.handle_key(key) {
-            ListOutcome::Activated(index) if skippable && index == options.len() => {
+            Outcome::Activated(index) if skippable && index == options.len() => {
                 Some(Ok(PromptResult::Skipped))
             }
-            ListOutcome::Activated(index) => Some(Ok(PromptResult::Value(options[index].clone()))),
-            ListOutcome::Cancelled => Some(Err(crate::LaunchCancelled::err())),
-            ListOutcome::Ignored | ListOutcome::Changed => None,
+            Outcome::Activated(index) => Some(Ok(PromptResult::Value(options[index].clone()))),
+            Outcome::Cancelled => Some(Err(crate::LaunchCancelled::err())),
+            Outcome::Ignored | Outcome::Changed => None,
+            _ => None,
         },
     }
 }
@@ -664,7 +668,7 @@ impl RichRenderer {
         candidates: &[crate::LaunchCandidate],
     ) -> anyhow::Result<crate::LaunchDialogResult> {
         use crate::tui::components::dialog::{dialog_backdrop, percent_dialog_rect};
-        use termrock::HintSpan;
+        use termrock::widgets::HintSpan;
 
         // Item 0 = "Start new session"; items 1..=N = candidates.
         let mut labels = vec!["Start new session".to_owned()];
@@ -712,7 +716,12 @@ impl RichRenderer {
                             &[],
                             &mut picker,
                         );
-                        termrock::widgets::render_hint_bar(frame, hint_area, hint_normal);
+                        termrock::widgets::render_hint_bar(
+                            frame,
+                            hint_area,
+                            hint_normal,
+                            &termrock::Theme::default(),
+                        );
                     })
                     .context("rendering launch dialog")?;
 
@@ -743,7 +752,7 @@ impl RichRenderer {
                         }
                         continue;
                     }
-                    if let ListOutcome::Activated(index) = picker.handle_key(key) {
+                    if let Outcome::Activated(index) = picker.handle_key(key) {
                         return Ok(if index == 0 {
                             crate::LaunchDialogResult::StartFresh
                         } else {
@@ -785,8 +794,8 @@ impl RichRenderer {
     fn inspect_surface_loop(&mut self, worktrees: &[crate::WorktreeInspect]) -> anyhow::Result<()> {
         use crate::tui::components::dialog::dialog_backdrop;
         use ratatui::layout::{Constraint, Direction, Layout};
-        use termrock::HintSpan;
         use termrock::keymap::glyph;
+        use termrock::widgets::HintSpan;
         use termrock::widgets::{DiffKind, DiffLine, DiffState, DiffView};
 
         if worktrees.is_empty() {
@@ -870,7 +879,12 @@ impl RichRenderer {
 
             termrock::runtime::drive_render(&mut self.terminal, |frame| {
                 let (body, hint_area) = dialog_backdrop(frame, frame.area());
-                termrock::widgets::render_hint_bar(frame, hint_area, hint);
+                termrock::widgets::render_hint_bar(
+                    frame,
+                    hint_area,
+                    hint,
+                    &termrock::Theme::default(),
+                );
 
                 // Split body: repos (if >1) | files | diff
                 let constraints = if has_repos {
@@ -934,12 +948,17 @@ impl RichRenderer {
                         .iter()
                         .map(|(text, kind)| DiffLine { text, kind: *kind })
                         .collect::<Vec<_>>();
+                    let diff_theme = termrock::Theme::default()
+                        .with_role(
+                            termrock::style::Role::DiffAdded,
+                            Style::default().fg(termrock::style::PHOSPHOR_GREEN),
+                        )
+                        .with_role(
+                            termrock::style::Role::DiffRemoved,
+                            Style::default().fg(jackin_core::tui_theme::DANGER_RED),
+                        );
                     frame.render_stateful_widget(
-                        &DiffView {
-                            lines: &lines,
-                            added_style: Style::default().fg(termrock::style::PHOSPHOR_GREEN),
-                            removed_style: Style::default().fg(termrock::style::DANGER_RED),
-                        },
+                        &DiffView::new(&lines, &diff_theme),
                         diff_area,
                         &mut diff.state,
                     );
@@ -1080,7 +1099,7 @@ impl RichRenderer {
                 continue;
             }
 
-            if let ListOutcome::Activated(index) = picker.handle_key(key) {
+            if let Outcome::Activated(index) = picker.handle_key(key) {
                 return Ok(index);
             }
         }
@@ -1106,16 +1125,16 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
             PromptContextLine::Emphasis(text) => Line::from(Span::styled(
                 text.clone(),
                 Style::default()
-                    .fg(termrock::style::WHITE)
+                    .fg(jackin_core::tui_theme::WHITE)
                     .add_modifier(Modifier::BOLD),
             )),
             PromptContextLine::Muted(text) => Line::from(Span::styled(
                 text.clone(),
-                Style::default().fg(termrock::style::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
             )),
             PromptContextLine::Path(text) => Line::from(Span::styled(
                 text.clone(),
-                Style::default().fg(termrock::style::LINK_BLUE),
+                Style::default().fg(jackin_core::tui_theme::LINK_BLUE),
             )),
             PromptContextLine::Plain(text) => Line::from(text.clone()),
             PromptContextLine::Blank => Line::from(String::new()),

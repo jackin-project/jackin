@@ -10,8 +10,8 @@
 use std::collections::BTreeSet;
 
 use crossterm::event::{KeyCode, MouseEvent};
+use jackin_core::ModalOutcome;
 use ratatui::layout::Rect;
-use termrock::ModalOutcome;
 
 use super::model::{ManagerHoverTarget, ManagerListRow};
 use crate::mount_info_cache::MountInfoCache;

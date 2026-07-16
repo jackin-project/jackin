@@ -203,7 +203,7 @@ pub fn tab_cell_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize
         return None;
     }
     let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
-    termrock::tab_at_column(&termrock::lay_out_tabs(&cells, 0), col)
+    termrock::widgets::tab_at_column(&termrock::widgets::lay_out_tabs(&cells, 0), col)
 }
 
 #[must_use]

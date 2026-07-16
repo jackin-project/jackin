@@ -454,7 +454,7 @@ fn tui_header_uses_canonical_brand_wordmark() {
 
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
-use termrock::style::{PHOSPHOR_GREEN, WHITE};
+use jackin_core::tui_theme::{PHOSPHOR_GREEN, WHITE};
 
 /// Render a closure into a fresh `TestBackend` and return the resulting
 /// buffer. Size is chosen to comfortably fit every modal under test.
@@ -474,7 +474,7 @@ fn top_border_title(buf: &Buffer) -> String {
     let mut in_title = false;
     for x in 0..buf.area.width {
         let sym = buf[(x, 0)].symbol();
-        let is_border = matches!(sym, "┌" | "┐" | "─" | "│" | "╔" | "╗" | "═" | "║");
+        let is_border = matches!(sym, "┌" | "┐" | "─" | "│");
         if is_border {
             if in_title {
                 break;
@@ -497,6 +497,37 @@ fn top_border_title(buf: &Buffer) -> String {
 /// they're WHITE+BOLD). Modals are always the active/focused container
 /// when visible, so they always use the active border colour.
 fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
+    assert_eq!(buf[(area.x, area.y)].symbol(), "┌", "{widget}: top-left");
+    assert_eq!(
+        buf[(area.right() - 1, area.y)].symbol(),
+        "┐",
+        "{widget}: top-right"
+    );
+    assert_eq!(
+        buf[(area.x, area.bottom() - 1)].symbol(),
+        "└",
+        "{widget}: bottom-left"
+    );
+    assert_eq!(
+        buf[(area.right() - 1, area.bottom() - 1)].symbol(),
+        "┘",
+        "{widget}: bottom-right"
+    );
+    for x in area.x + 1..area.right() - 1 {
+        assert_eq!(
+            buf[(x, area.bottom() - 1)].symbol(),
+            "─",
+            "{widget}: bottom border at x={x}"
+        );
+    }
+    for y in area.y + 1..area.bottom() - 1 {
+        assert_eq!(buf[(area.x, y)].symbol(), "│", "{widget}: left at y={y}");
+        assert_eq!(
+            buf[(area.right() - 1, y)].symbol(),
+            "│",
+            "{widget}: right at y={y}"
+        );
+    }
     // Top border, skipping the title span.
     for x in area.x..area.x + area.width {
         let cell = &buf[(x, area.y)];
@@ -731,7 +762,7 @@ fn dialog_button_rows_have_one_blank_row_above() {
             "{name} button row cannot be first row"
         );
         let before = row_text(&buf, button_y - 1);
-        let before_inner = before.trim_matches(['│', '║', ' ']);
+        let before_inner = before.trim_matches(['│', ' ']);
         assert!(
             before_inner.is_empty(),
             "{name} must have one blank row above buttons; got {before:?}",
@@ -847,11 +878,7 @@ fn neighbors(x: u16, y: u16, area: Rect) -> impl Iterator<Item = (u16, u16)> {
 
 fn is_green_border_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
     let cell = &buf[coord];
-    cell.fg == PHOSPHOR_GREEN
-        && matches!(
-            cell.symbol(),
-            "┌" | "┐" | "└" | "┘" | "─" | "│" | "╔" | "╗" | "╚" | "╝" | "═" | "║"
-        )
+    cell.fg == PHOSPHOR_GREEN && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
 }
 
 fn test_cwd() -> std::path::PathBuf {

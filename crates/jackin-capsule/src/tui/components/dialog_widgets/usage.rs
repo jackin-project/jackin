@@ -15,7 +15,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use termrock::style::{DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_core::tui_theme::{DIM, PHOSPHOR_GREEN, WHITE};
 
 pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
     Rect {
@@ -28,7 +28,7 @@ pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
 
 pub(crate) fn usage_tab_strip_area(inner: Rect, tabs: &[(String, bool)]) -> Rect {
     let strip_width = usage_tab_strip_width(tabs)
-        .saturating_sub(usize::from(termrock::TAB_GAP))
+        .saturating_sub(usize::from(termrock::widgets::TAB_GAP))
         .min(usize::from(inner.width));
     let strip_offset = usize::from(inner.width).saturating_sub(strip_width) / 2;
     Rect {
@@ -53,7 +53,7 @@ pub(crate) fn usage_tab_strip_index_at(
         .iter()
         .map(|(label, active)| (label.as_str(), *active))
         .collect::<Vec<_>>();
-    termrock::lay_out_tabs(&tab_refs, tab_area.x)
+    termrock::widgets::lay_out_tabs(&tab_refs, tab_area.x)
         .iter()
         .position(|cell| {
             col >= cell.start_col
@@ -88,9 +88,9 @@ pub(crate) fn usage_provider_display_label(label: &str) -> &str {
 }
 
 pub(crate) fn usage_tab_strip_width(tabs: &[(String, bool)]) -> usize {
-    let gap = usize::from(termrock::TAB_GAP);
+    let gap = usize::from(termrock::widgets::TAB_GAP);
     tabs.iter()
-        .map(|(label, _)| termrock::display_cols(label) + 2 + gap)
+        .map(|(label, _)| termrock::text::display_cols(label) + 2 + gap)
         .sum()
 }
 
@@ -269,7 +269,7 @@ pub(crate) fn usage_row_value<'a>(
 pub(crate) fn usage_line_width(line: &Line<'_>) -> usize {
     line.spans
         .iter()
-        .map(|span| termrock::display_cols(span.content.as_ref()))
+        .map(|span| termrock::text::display_cols(span.content.as_ref()))
         .sum()
 }
 
@@ -389,9 +389,9 @@ pub(crate) fn usage_overview_provider_lines(
         ));
         return;
     };
-    let left_cols = termrock::display_cols(&left);
-    let reset_cols = termrock::display_cols(reset);
-    let local_cols = termrock::display_cols(local_timestamp);
+    let left_cols = termrock::text::display_cols(&left);
+    let reset_cols = termrock::text::display_cols(reset);
+    let local_cols = termrock::text::display_cols(local_timestamp);
     let available = width.saturating_sub(USAGE_CONTENT_PAD_LEFT + USAGE_CONTENT_PAD_RIGHT);
     let left_gap = 3;
     let right_gap = available
@@ -481,8 +481,8 @@ pub(crate) fn usage_header_two_column(
     right_style: Style,
     width: usize,
 ) -> Line<'static> {
-    let left_cols = termrock::display_cols(left);
-    let right_cols = termrock::display_cols(right);
+    let left_cols = termrock::text::display_cols(left);
+    let right_cols = termrock::text::display_cols(right);
     let gap = width
         .checked_sub(USAGE_CONTENT_PAD_LEFT + USAGE_CONTENT_PAD_RIGHT + left_cols + right_cols)
         .filter(|gap| *gap >= 1)
@@ -759,7 +759,7 @@ pub(crate) fn compact_bucket_detail_for_width(label: &str, detail: &str, width: 
     if width == 0 {
         return detail.to_owned();
     }
-    let prefix_cols = 2 + termrock::display_cols(label) + 2;
+    let prefix_cols = 2 + termrock::text::display_cols(label) + 2;
     let Some(detail_cols) = width.checked_sub(prefix_cols) else {
         return String::new();
     };
@@ -767,7 +767,7 @@ pub(crate) fn compact_bucket_detail_for_width(label: &str, detail: &str, width: 
 }
 
 pub(crate) fn truncate_display_with_ellipsis(value: &str, width: usize) -> String {
-    if termrock::display_cols(value) <= width {
+    if termrock::text::display_cols(value) <= width {
         return value.to_owned();
     }
     if width == 0 {
@@ -776,7 +776,7 @@ pub(crate) fn truncate_display_with_ellipsis(value: &str, width: usize) -> Strin
     if width == 1 {
         return "…".to_owned();
     }
-    format!("{}…", termrock::take_display_cols(value, width - 1))
+    format!("{}…", termrock::text::take_display_cols(value, width - 1))
 }
 
 pub(crate) fn usage_quota_bucket_detail_parts(label: &str, value: &str) -> Vec<String> {

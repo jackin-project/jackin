@@ -17,10 +17,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use jackin_core::ModalOutcome;
 use jackin_core::shorten_home;
-use termrock::ModalOutcome;
+use jackin_core::tui_theme::PHOSPHOR_DIM;
 use termrock::layout::{DialogBorder, render_dialog_shell};
-use termrock::style::PHOSPHOR_DIM;
 use termrock::widgets::{Action, ActionBar, ActionBarState};
 
 /// Outcome of the mount-destination modal.
@@ -115,7 +115,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            termrock::style::BOLD_WHITE,
+            jackin_core::tui_theme::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
         chunks[1],
@@ -154,11 +154,9 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
             style: None,
         },
     ];
+    let theme = termrock::Theme::default();
     frame.render_stateful_widget(
-        &ActionBar {
-            actions: &actions,
-            gap: " ",
-        },
+        &ActionBar::new(&actions, &theme).gap(" "),
         chunks[4],
         &mut ActionBarState {
             focused: Some(state.focus),

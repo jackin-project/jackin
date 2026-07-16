@@ -13,7 +13,7 @@ use ratatui::{
     text::Line,
 };
 
-use termrock::HintSpan;
+use termrock::widgets::HintSpan;
 
 use crate::tui::components::editor_rows::render_tab_strip;
 use crate::tui::components::footer_hints::{
