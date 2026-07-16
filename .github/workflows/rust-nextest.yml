@@ -151,7 +151,7 @@ jobs:
       - name: Use the prepared current Rust toolchain
         if: steps.crate-result.outputs.hit != 'true'
         run: >-
-          "$CI_XTASK" ci-toolchain activate
+          "$CI_XTASK" ci-toolchain prepare
           --version "${{ inputs.rust-version }}"
       - id: cargo-registry-cache
         if: steps.crate-result.outputs.hit != 'true'

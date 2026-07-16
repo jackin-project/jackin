@@ -492,7 +492,7 @@ jobs:
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
         run: >-
-          "$CI_XTASK" ci-toolchain activate
+          "$CI_XTASK" ci-toolchain prepare
           --version "${{ needs.changes.outputs.rust-version }}"
       - run: cargo fmt --check
 
@@ -916,7 +916,7 @@ jobs:
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
         run: >-
-          "$CI_XTASK" ci-toolchain activate
+          "$CI_XTASK" ci-toolchain prepare
           --version "${{ needs.changes.outputs.rust-version }}"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -993,7 +993,7 @@ jobs:
             cargo-audit-${{ runner.os }}-
       - name: Use the prepared current Rust toolchain
         run: >-
-          "$CI_XTASK" ci-toolchain activate
+          "$CI_XTASK" ci-toolchain prepare
           --version "${{ needs.changes.outputs.rust-version }}"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
