@@ -19,3 +19,12 @@ The roadmap acceptance criteria are binding. This worksheet maps each criterion 
 | 13 | Propagation, sessions, daemon health, shutdown, privacy, cardinality, volume, soak | propagation tests; `conformance_interleaved_sessions_never_cross_contaminate_ids`; `telemetry_health_round_trip_is_typed_and_sanitized`; `conformance_shutdown_flushes_session_end_and_is_idempotent`; `conformance_export_invokes_sensitive_boundary_canary_gate`; `privacy_detector_rejects_nested_synthetic_value`; `cardinality_rejects_the_257th_set_without_eviction`; `conformance_export_volume_stays_within_budget`; `soak_week_long_console_has_only_bounded_operations` |
 | 14 | Zero-allocation disabled path and reviewed five-percent active-path gate | `disabled_alloc_facade_fast_paths_allocate_nothing`; `cargo xtask telemetry-bench --capture`; comparator doctored-baseline self-test |
 | 15 | Direct OTLP/backend history/in-memory state/no files documented | docs build/link/audit gates; `/guides/run-telemetry/`; `/reference/runtime/diagnostics/`; `ENGINEERING.md`; `TESTING.md` |
+
+## Verification record
+
+Verified locally on 2026-07-16 after the artifact-removal cutover:
+
+- 10 consecutive wire-conformance runs: 21/21 passed each run.
+- Full workspace: 5,499 passed, 3 opt-in tests skipped; the slow-export deadline and soak tests passed separately.
+- Registry, strict lint, clippy, formatting, feature powerset, allocation, volume, cardinality, privacy, propagation, lifecycle, benchmark comparison, docs tests, docs build, repository links, roadmap, and research gates passed.
+- CLI expected-absence checks passed; `diagnostics validate` produced the expected typed failures without an endpoint and with a non-gRPC protocol.
