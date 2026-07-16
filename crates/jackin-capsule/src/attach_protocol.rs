@@ -530,10 +530,7 @@ pub(crate) async fn handle_attach_client_with_handshake(
                         | ClientFrame::ClipboardImageEnd(_)
                         | ClientFrame::ClipboardImageError(_)
                 ) {
-                    jackin_diagnostics::telemetry_warn!(
-                        "capsule",
-                        "attach client: rejected uncontextual legacy control frame"
-                    );
+                    let _warning = jackin_telemetry::record_recovered_degradation();
                     continue;
                 }
                 if cmd_tx.send(frame).is_err() {

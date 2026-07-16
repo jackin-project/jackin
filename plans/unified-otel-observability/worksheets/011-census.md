@@ -5,7 +5,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | File | `debug_log` | info | debug | trace | warn | error | Landed classification |
 |---|---:|---:|---:|---:|---:|---:|---|
 | `crates/jackin-capsule/src/alloc_telemetry.rs` | 0 | 2 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
-| `crates/jackin-capsule/src/attach_protocol.rs` | 0 | 17 | 1 | 0 | 2 | 3 | REPLACE attach read/decode/write failures with one bodyless `rpc_error`; DELETE expected detach/channel-closure narration; remaining lifecycle and legacy-frame warning sites require classification |
+| `crates/jackin-capsule/src/attach_protocol.rs` | 0 | 17 | 1 | 0 | 2 | 3 | REPLACE attach read/decode/write failures with one bodyless `rpc_error` and rejected legacy frames with one recovered-degradation warning; DELETE expected detach/channel-closure narration; remaining INFO lifecycle sites require classification |
 | `crates/jackin-capsule/src/client.rs` | 0 | 1 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
 | `crates/jackin-capsule/src/client_writer.rs` | 0 | 1 | 0 | 2 | 0 | 0 | governed INFO lifecycle/state; structural counts only; raw payload removed |
 | `crates/jackin-capsule/src/clipboard.rs` | 0 | 2 | 1 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, attach-error, and recovered-degradation migration passes: 124 `telemetry_info!`, 243 `telemetry_debug!`, and 1 `telemetry_warn!` site. The generic macro machinery and these 368 sites remain open; `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.
+Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, attach-error, and recovered-degradation migration passes: 124 `telemetry_info!` and 243 `telemetry_debug!` sites. The generic macro machinery and these 367 sites remain open; `telemetry_warn!` and `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.
