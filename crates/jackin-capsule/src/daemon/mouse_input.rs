@@ -272,8 +272,12 @@ impl Multiplexer {
             drop_trace("encoding");
             return false;
         };
-        session.send_input(&buf);
-        true
+        let delivered = session.send_input(&buf);
+        if delivered {
+            let _ = jackin_telemetry::counter(&jackin_telemetry::metric::TERMINAL_INPUT_MOUSE)
+                .add(1, &[]);
+        }
+        delivered
     }
 
     /// Click-to-jump on the focused pane's scrollback scrollbar. Hits only

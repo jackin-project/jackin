@@ -523,6 +523,10 @@ impl Session {
                     }
                     return;
                 }
+                record_terminal_bytes(
+                    jackin_telemetry::schema::enums::StreamDirection::Input,
+                    data.len(),
+                );
             }
         });
 
@@ -581,6 +585,10 @@ impl Session {
                         break;
                     }
                     Ok(n) => {
+                        record_terminal_bytes(
+                            jackin_telemetry::schema::enums::StreamDirection::Output,
+                            n,
+                        );
                         capture_pty_fixture_bytes(&buf[..n]);
                         let data = buf[..n].to_vec();
                         if event_tx_output
@@ -1534,6 +1542,19 @@ fn capture_pty_fixture_bytes(bytes: &[u8]) {
         drop(file.write_all(bytes));
         drop(file.flush());
     }
+}
+
+fn record_terminal_bytes(
+    direction: jackin_telemetry::schema::enums::StreamDirection,
+    bytes: usize,
+) {
+    let attrs = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::STREAM_DIRECTION,
+        value: jackin_telemetry::Value::Str(direction.as_str()),
+    }];
+    let amount = u64::try_from(bytes).unwrap_or(u64::MAX);
+    let _ =
+        jackin_telemetry::counter(&jackin_telemetry::metric::TERMINAL_BYTES).add(amount, &attrs);
 }
 
 fn emit_pty_spawn(agent: Option<&str>, conversation_id: Option<&str>) {
