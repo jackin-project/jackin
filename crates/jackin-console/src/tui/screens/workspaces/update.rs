@@ -10,7 +10,7 @@
 use std::collections::BTreeSet;
 
 use crossterm::event::{KeyCode, MouseEvent};
-use jackin_core::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
 
 use super::model::{ManagerHoverTarget, ManagerListRow};
@@ -744,7 +744,7 @@ pub fn workspace_list_hover_row_at_position(
         return None;
     }
 
-    let mut tracker = termrock::interaction::HoverTracker::new();
+    let mut regions = Vec::new();
     for (visual_idx, row_value) in visual_rows.iter().enumerate() {
         let Some(row_value) = row_value else {
             continue;
@@ -759,17 +759,21 @@ pub fn workspace_list_hover_row_at_position(
         if y >= content_bottom {
             break;
         }
-        tracker.register(
-            Rect {
+        regions.push(termrock::interaction::HitRegion {
+            area: Rect {
                 x: 1,
                 y,
                 width: seam_x.saturating_sub(1),
                 height: 1,
             },
-            *row_value,
-        );
+            id: *row_value,
+        });
     }
-    tracker.hovered(col, row).copied()
+    let position = ratatui::layout::Position::new(col, row);
+    regions
+        .iter()
+        .find(|region| region.area.contains(position))
+        .map(|region| region.id)
 }
 
 #[must_use]

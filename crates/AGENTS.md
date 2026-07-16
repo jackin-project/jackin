@@ -50,7 +50,7 @@ Splitting tests into sub-modules adds navigation friction and breaks the "one fi
 
 ### Rationale
 
-Rust 2024 recommends self-named layout: `mod foo;` loads `foo.rs` or `foo/mod.rs`; Reference encourages `foo.rs` to dodge dozens of `mod.rs` files. `jackin-tui`, `jackin-console`, other crates already do this.
+Rust 2024 recommends self-named layout: `mod foo;` loads `foo.rs` or `foo/mod.rs`; Reference encourages `foo.rs` to dodge dozens of `mod.rs` files. Workspace crates already follow this layout.
 
 ## Naming
 
@@ -155,7 +155,7 @@ The per-crate `AGENTS.md` is the **smallest** file in the crate — a few rules,
 - **A footer linking to another `AGENTS.md`.** Forbidden (no-cross-links rule above).
 - **Prose architecture overviews with no actionable instruction.**
 
-**Do put in a per-crate `AGENTS.md`:** non-derivable rules only — conventions, invariants, and traps the compiler, lints, and arch gate do not enforce (e.g. "damage is recorded at mutation, never recomputed by re-read", "reach runtime through effects-as-data, not direct calls", "use only `jackin-tui` public API"). Add a `## Boundaries` section only for a non-obvious ownership split that is a decision, not a derivable dependency.
+**Do put in a per-crate `AGENTS.md`:** non-derivable rules only — conventions, invariants, and traps the compiler, lints, and arch gate do not enforce (e.g. "damage is recorded at mutation, never recomputed by re-read", "reach runtime through effects-as-data, not direct calls", "use TermRock for product-neutral TUI components"). Add a `## Boundaries` section only for a non-obvious ownership split that is a decision, not a derivable dependency.
 
 If a file grows past ~30 lines, most of it is probably derivable and belongs elsewhere.
 

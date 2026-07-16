@@ -2,7 +2,7 @@
 
 Host observability substrate: structured JSONL run diagnostics, the debug-mode flag, the `debug_log!` macro, redaction/secret-scrubbing, build-log capture, and the run/summary/screen/terminal reporting helpers. Its two tiers are `clog!` compact always-on and `cdebug!` firehose at telemetry debug.
 
-Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
+Terminal-ownership and title policy for rich surfaces live in this crate's `terminal` module (product-owned process globals; TermRock owns neutral session mechanics).
 
 ## What this crate owns
 
@@ -12,7 +12,7 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 
 ## Architecture tier and allowed dependencies
 
-**L2 infrastructure.** Allowed workspace dependencies: `jackin-core`, `jackin-tui` (terminal-ownership guard re-exports). Diagnostic code must not start calling presentation helpers beyond the guard re-exports.
+**L2 infrastructure.** Allowed workspace dependencies: `jackin-core`. Terminal ownership flags stay product-local here; neutral TUI presentation is TermRock and must not be pulled into diagnostics.
 
 ## Structure
 
@@ -39,7 +39,7 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 
 Typed operation facade: `operation_span` / `operation_log` / `operation_error` / `operation_metric` (and `enter_operation` RAII guard). Names from the semconv registry.
 
-`debug_log!`/`clog!`/`cdebug!`, the run-diagnostics writer, redaction helpers, and the debug-mode flag — consumed by nearly every crate. Two-tier telemetry contract is documented in `ENGINEERING.md`.
+`debug_log!`/`clog!`/`cdebug!`, the run-diagnostics writer, redaction helpers, and the debug-mode flag — consumed by nearly every crate. The two-tier telemetry contract is documented in [ENGINEERING.md](../../ENGINEERING.md).
 
 ## How to verify
 

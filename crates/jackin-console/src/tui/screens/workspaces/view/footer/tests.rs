@@ -119,9 +119,12 @@ fn settings_mounts_file_browser_hints_reach_footer() {
     let config = AppConfig::default();
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = SettingsTab::Mounts;
-    settings.mounts.modal = Some(SettingsModal::MountFileBrowser {
-        state: Box::new(file_browser_state()),
-    });
+    settings
+        .mounts
+        .modals
+        .open(SettingsModal::MountFileBrowser {
+            state: Box::new(file_browser_state()),
+        });
 
     assert_file_browser_hints(settings_screen_footer_for_state(
         &settings,
@@ -135,9 +138,12 @@ fn settings_auth_file_browser_hints_reach_footer() {
     let config = AppConfig::default();
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = SettingsTab::Auth;
-    settings.auth.modal = Some(SettingsModal::AuthSourceFolderPicker {
-        state: file_browser_state(),
-    });
+    settings
+        .auth
+        .modals
+        .open(SettingsModal::AuthSourceFolderPicker {
+            state: file_browser_state(),
+        });
 
     assert_file_browser_hints(settings_screen_footer_for_state(
         &settings,

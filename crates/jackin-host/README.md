@@ -10,7 +10,7 @@ Host OS integration for jackin❯: desktop notifications, clipboard, and caffein
 
 ## Architecture tier and allowed dependencies
 
-**L2 infrastructure.** Allowed workspace dependencies: the core ports/types, `jackin-diagnostics`, `jackin-docker`, `jackin-protocol`, `jackin-tui`. Lower domain crates (L0) must not depend on this; presentation crates (L3) reach host-clipboard/desktop through it.
+**L2 infrastructure.** Allowed workspace dependencies: the core ports/types, `jackin-diagnostics`, `jackin-docker`, `jackin-protocol`. Lower domain crates (L0) must not depend on this; presentation crates (L3) reach host-clipboard/desktop through it. Neutral TUI is TermRock, not a workspace `jackin-tui` crate.
 
 ## Structure
 

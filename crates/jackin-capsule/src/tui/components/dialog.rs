@@ -18,15 +18,15 @@
 /// `src/console/manager/render/list.rs`):
 ///
 /// - **Phosphor palette** — same RGB values as the console:
-///   `PHOSPHOR_GREEN` rgb(0,255,65) (list text + selection bg),
-///   `PHOSPHOR_DIM` rgb(0,140,30) (dim labels), `PHOSPHOR_DARK`
-///   rgb(0,80,18) (border + separator), `WHITE` rgb(255,255,255)
+///   `accent_fg()` rgb(0,255,65) (list text + selection bg),
+///   `muted_fg()` rgb(0,140,30) (dim labels), `scroll_track_fg()`
+///   rgb(0,80,18) (border + separator), `text_fg()` rgb(255,255,255)
 ///   (title + hotkey glyphs).
 /// - **Selection** uses a green highlight bar with black text and the
 ///   `▸ ` highlight symbol — identical to the role picker sidebar.
 /// - **Hint footer** follows the console TUI's structured format:
-///   `Key WHITE+BOLD`, label `PHOSPHOR_GREEN`, dot separator
-///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
+///   `Key text_fg()+BOLD`, label `accent_fg()`, dot separator
+///   `scroll_track_fg()`, three-space group gap between logical groups.
 use std::sync::Arc;
 
 #[cfg_attr(
@@ -202,7 +202,7 @@ pub enum Dialog {
         /// Persisted scroll offsets. The shared `ContainerInfoState` is rebuilt
         /// every frame, so the scroll must live here on the dialog enum to
         /// survive across redraws.
-        scroll: termrock::layout::DialogBodyScroll,
+        scroll: termrock::scroll::DialogScroll,
     },
     /// Read-only modal opened from the bottom branch/PR context.
     /// Branch / PR / loading state come from `GithubContextView` at
@@ -211,7 +211,7 @@ pub enum Dialog {
     GitHubContext {
         copied: bool,
         /// Persisted scroll offsets (rebuilt each frame like `ContainerInfo`).
-        scroll: termrock::layout::DialogBodyScroll,
+        scroll: termrock::scroll::DialogScroll,
     },
     /// Read-only usage/quota modal for the focused pane.
     Usage {
@@ -219,7 +219,7 @@ pub enum Dialog {
         selected: UsageDialogTab,
         tab_bar_focused: bool,
         hovered_tab: Option<usize>,
-        scroll: termrock::layout::DialogBodyScroll,
+        scroll: termrock::scroll::DialogScroll,
     },
     /// Operator-facing spawn failure surfaced through the shared error popup.
     /// This is intentionally modal: Enter / Esc / O dismiss, while unrelated
@@ -540,9 +540,10 @@ impl Dialog {
                 return DialogAction::Redraw;
             }
             if let Self::Usage { scroll, .. } = self
-                && scroll.handle_raw_key_for_axes(
+                && crate::tui::scroll_input::apply_raw_dialog_scroll_key(
+                    scroll,
                     key,
-                    termrock::layout::ScrollAxes {
+                    termrock::scroll::ScrollAxes {
                         vertical: true,
                         horizontal: true,
                     },
@@ -572,9 +573,10 @@ impl Dialog {
                 _ => None,
             };
             if let Some(scroll) = body_scroll
-                && scroll.handle_raw_key_for_axes(
+                && crate::tui::scroll_input::apply_raw_dialog_scroll_key(
+                    scroll,
                     key,
-                    termrock::layout::ScrollAxes {
+                    termrock::scroll::ScrollAxes {
                         vertical: true,
                         horizontal: true,
                     },

@@ -279,7 +279,7 @@ fn list_github_picker_wheel_scrolls_modal_selection() {
     let Some(Modal::GithubPicker { state: picker }) = &state.list_modal else {
         panic!("github picker modal expected");
     };
-    assert_eq!(picker.list_state.selected, Some(1));
+    assert_eq!(picker.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -312,7 +312,7 @@ fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
     let Some(Modal::WorkdirPick { state: picker }) = &editor.modal else {
         panic!("workdir picker modal expected");
     };
-    assert_eq!(picker.list_state.selected, Some(1));
+    assert_eq!(picker.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -320,7 +320,7 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
     let mut state = list_state();
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
-    settings.mounts.modal = Some(SettingsModal::MountRolePicker {
+    settings.mounts.modals.open(SettingsModal::MountRolePicker {
         state: crate::tui::state::RolePickerState::new(vec![
             jackin_core::RoleSelector::parse("chainargos/agent-brown").unwrap(),
             jackin_core::RoleSelector::parse("scentbird/agent-jones").unwrap(),
@@ -341,10 +341,11 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
         settings.mounts.scroll_y, 4,
         "background settings must not scroll"
     );
-    let Some(SettingsModal::MountRolePicker { state: picker }) = &settings.mounts.modal else {
+    let Some(SettingsModal::MountRolePicker { state: picker }) = settings.mounts.modals.current()
+    else {
         panic!("settings role picker modal expected");
     };
-    assert_eq!(picker.list_state.selected, Some(1));
+    assert_eq!(picker.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1484,7 +1485,7 @@ fn editor_file_browser_wheel_scrolls_modal_selection_not_background() {
     let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(1));
+    assert_eq!(fb.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1526,7 +1527,7 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
         panic!("file browser modal expected");
     };
     drop(fb.handle_key_with_page_rows(key(KeyCode::PageDown), Some(4)));
-    assert_eq!(fb.list_state.selected, Some(4));
+    assert_eq!(fb.list_state.selected().copied(), Some(4));
 
     handle_mouse_with_config(
         &mut state,
@@ -1542,7 +1543,7 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
     let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(5));
+    assert_eq!(fb.list_state.selected().copied(), Some(5));
 }
 
 #[test]
@@ -1573,7 +1574,7 @@ fn create_prelude_file_browser_wheel_scrolls_modal_selection() {
     let Some(Modal::FileBrowser { state: fb, .. }) = &prelude.modal else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(1));
+    assert_eq!(fb.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1583,9 +1584,12 @@ fn settings_mounts_file_browser_wheel_scrolls_modal_selection_not_background() {
     let fb = file_browser_with_dirs(tmp.path(), 8);
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
-    settings.mounts.modal = Some(SettingsModal::MountFileBrowser {
-        state: Box::new(fb),
-    });
+    settings
+        .mounts
+        .modals
+        .open(SettingsModal::MountFileBrowser {
+            state: Box::new(fb),
+        });
     state.stage = ManagerStage::Settings(settings);
 
     handle_mouse_with_config(
@@ -1602,10 +1606,11 @@ fn settings_mounts_file_browser_wheel_scrolls_modal_selection_not_background() {
         settings.mounts.scroll_y, 4,
         "background settings must not scroll"
     );
-    let Some(SettingsModal::MountFileBrowser { state: fb }) = &settings.mounts.modal else {
+    let Some(SettingsModal::MountFileBrowser { state: fb }) = settings.mounts.modals.current()
+    else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(1));
+    assert_eq!(fb.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1614,7 +1619,10 @@ fn settings_auth_source_folder_wheel_scrolls_modal_selection() {
     let tmp = tempfile::tempdir().unwrap();
     let fb = file_browser_with_dirs(tmp.path(), 8);
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
-    settings.auth.modal = Some(SettingsModal::AuthSourceFolderPicker { state: fb });
+    settings
+        .auth
+        .modals
+        .open(SettingsModal::AuthSourceFolderPicker { state: fb });
     state.stage = ManagerStage::Settings(settings);
 
     handle_mouse_with_config(
@@ -1627,10 +1635,11 @@ fn settings_auth_source_folder_wheel_scrolls_modal_selection() {
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("settings stage expected");
     };
-    let Some(SettingsModal::AuthSourceFolderPicker { state: fb }) = &settings.auth.modal else {
+    let Some(SettingsModal::AuthSourceFolderPicker { state: fb }) = settings.auth.modals.current()
+    else {
         panic!("source-folder file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(1));
+    assert_eq!(fb.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1664,7 +1673,7 @@ fn file_browser_wheel_at_edge_is_consumed_before_background_scroll() {
     let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(0));
+    assert_eq!(fb.list_state.selected().copied(), Some(0));
 }
 
 #[test]
@@ -1708,7 +1717,7 @@ fn settings_vertical_scrollbar_drag_ignores_background_when_modal_open() {
             },
         })
         .collect();
-    settings.mounts.modal = Some(SettingsModal::MountConfirm {
+    settings.mounts.modals.open(SettingsModal::MountConfirm {
         action: GlobalMountConfirm::Save,
         state: global_mount_confirm_state(GlobalMountConfirm::Save),
     });

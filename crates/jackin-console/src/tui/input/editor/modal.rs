@@ -112,7 +112,7 @@ pub fn open_create_op_picker_for_generate(
 pub fn handle_token_generate_pick(
     editor: &mut EditorState<'_>,
     target: crate::tui::state::AuthFormTarget,
-    outcome: jackin_console_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
+    outcome: jackin_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
 ) {
     use crate::tui::op_picker::OpPickerSelection;
     use jackin_env::{EditExistingTarget, TokenSetupArgs};

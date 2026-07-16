@@ -247,7 +247,8 @@ pub fn picker_role_from_state(state: &ManagerState<'_>) -> Option<jackin_core::R
         state.inline_role_picker.as_ref().and_then(|picker| {
             picker
                 .list_state
-                .selected
+                .selected()
+                .copied()
                 .and_then(|idx| picker.filtered.get(idx).cloned())
         }),
         state

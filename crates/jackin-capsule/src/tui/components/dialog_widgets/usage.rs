@@ -11,11 +11,9 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
 };
-
-use jackin_core::tui_theme::{DIM, PHOSPHOR_GREEN, WHITE};
 
 pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
     Rect {
@@ -298,7 +296,7 @@ pub(crate) fn usage_lines_for_row(
                 usage_content_indent(),
                 Span::styled(
                     value.to_owned(),
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                    termrock::Theme::default().style(termrock::style::Role::TextStrong),
                 ),
             ]));
         }
@@ -319,8 +317,17 @@ pub(crate) fn usage_lines_for_row(
         }
         _ => lines.push(Line::from(vec![
             Span::raw("  "),
-            Span::styled(format!("{label} "), DIM),
-            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+            Span::styled(
+                format!("{label} "),
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
+            ),
+            Span::styled(
+                value.to_owned(),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default()),
+            ),
         ])),
     }
 }
@@ -352,16 +359,28 @@ pub(crate) fn usage_legacy_overview_provider_lines(
         usage_content_indent(),
         Span::styled(
             label.to_owned(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ),
         Span::raw("  "),
-        Span::styled(account.to_owned(), Style::default().fg(WHITE)),
+        Span::styled(
+            account.to_owned(),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
+        ),
         Span::raw("  "),
-        Span::styled(plan.to_owned(), DIM),
+        Span::styled(
+            plan.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
     ]));
     lines.push(Line::from(vec![
         Span::raw(" ".repeat(USAGE_CONTENT_PAD_LEFT + 2)),
-        Span::styled(status.to_owned(), DIM),
+        Span::styled(
+            status.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
     ]));
 }
 
@@ -382,9 +401,12 @@ pub(crate) fn usage_overview_provider_lines(
     let Some(local_timestamp) = local_timestamp else {
         lines.push(usage_header_two_column(
             &left,
-            Style::default().fg(WHITE),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
             reset,
-            DIM,
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
         return;
@@ -400,11 +422,23 @@ pub(crate) fn usage_overview_provider_lines(
         .unwrap_or(3);
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(left, Style::default().fg(WHITE)),
+        Span::styled(
+            left,
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
+        ),
         Span::raw(" ".repeat(left_gap)),
-        Span::styled(reset.to_owned(), DIM),
+        Span::styled(
+            reset.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
         Span::raw(" ".repeat(right_gap)),
-        Span::styled(local_timestamp.to_owned(), DIM),
+        Span::styled(
+            local_timestamp.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
     ]));
 }
 
@@ -438,9 +472,9 @@ pub(crate) fn usage_header_lines(
     let account = account.map(str::trim).filter(|value| !value.is_empty());
     lines.push(usage_header_two_column(
         value,
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        termrock::Theme::default().style(termrock::style::Role::TextStrong),
         account.unwrap_or(""),
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        termrock::Theme::default().style(termrock::style::Role::TextStrong),
         width,
     ));
 
@@ -452,9 +486,9 @@ pub(crate) fn usage_header_lines(
     if updated.is_some() || right.is_some() {
         lines.push(usage_header_two_column(
             updated.unwrap_or(""),
-            DIM,
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             right.as_deref().unwrap_or(""),
-            DIM,
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
     }
@@ -463,8 +497,14 @@ pub(crate) fn usage_header_lines(
     if let Some(auth) = auth.map(str::trim).filter(|value| !value.is_empty()) {
         lines.push(Line::from(vec![
             usage_content_indent(),
-            Span::styled("Auth: ", DIM),
-            Span::styled(auth.to_owned(), DIM),
+            Span::styled(
+                "Auth: ",
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
+            ),
+            Span::styled(
+                auth.to_owned(),
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
+            ),
         ]));
     }
 
@@ -520,7 +560,7 @@ pub(crate) fn usage_quota_bucket_lines(
         usage_content_indent(),
         Span::styled(
             display_label,
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ),
     ]));
 
@@ -532,9 +572,12 @@ pub(crate) fn usage_quota_bucket_lines(
     if remaining_label.is_none() {
         lines.push(usage_header_two_column(
             first,
-            Style::default().fg(WHITE),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
             "",
-            DIM,
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
         return;
@@ -543,7 +586,15 @@ pub(crate) fn usage_quota_bucket_lines(
     let meter = usage_full_width_meter(meter, width);
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(meter, Style::default().fg(accent.unwrap_or(PHOSPHOR_GREEN))),
+        Span::styled(
+            meter,
+            Style::default().fg(accent.unwrap_or(
+                termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default(),
+            )),
+        ),
     ]));
 
     let details = usage_quota_bucket_detail_parts(label, value);
@@ -555,9 +606,12 @@ pub(crate) fn usage_quota_bucket_lines(
     for (left, right) in rows {
         lines.push(usage_header_two_column(
             &left,
-            Style::default().fg(WHITE),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
             &right,
-            DIM,
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
     }
@@ -592,17 +646,20 @@ pub(crate) fn usage_limit_reset_credit_lines(
     let right = parts.first().copied().unwrap_or_default();
     lines.push(usage_header_two_column(
         "Limit Reset Credits",
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        termrock::Theme::default().style(termrock::style::Role::TextStrong),
         right,
-        DIM,
+        termrock::Theme::default().style(termrock::style::Role::TextMuted),
         width,
     ));
     for detail in parts.iter().skip(1) {
         lines.push(usage_header_two_column(
             detail,
-            Style::default().fg(WHITE),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
             "",
-            DIM,
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
     }
@@ -640,7 +697,10 @@ pub(crate) fn push_usage_separator(lines: &mut Vec<Line<'static>>, width: usize)
 
 pub(crate) fn usage_separator_line(width: usize) -> Line<'static> {
     let target = width.max(1);
-    Line::from(vec![Span::styled("─".repeat(target), DIM)])
+    Line::from(vec![Span::styled(
+        "─".repeat(target),
+        termrock::Theme::default().style(termrock::style::Role::TextMuted),
+    )])
 }
 
 pub(crate) fn usage_line_is_blank(line: &Line<'_>) -> bool {
@@ -748,10 +808,19 @@ pub(crate) fn usage_quota_bucket_compact_lines(
         usage_content_indent(),
         Span::styled(
             label.to_owned(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ),
-        Span::styled("  ", DIM),
-        Span::styled(detail, Style::default().fg(WHITE)),
+        Span::styled(
+            "  ",
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
+        Span::styled(
+            detail,
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
+        ),
     ]));
 }
 

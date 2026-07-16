@@ -180,7 +180,7 @@ jobs:
               - 'crates/jackin-image/**'
               - 'crates/jackin-instance/**'
               - 'crates/jackin-isolation/**'
-              - 'crates/jackin-launch-tui/**'
+              - 'crates/jackin-launch/**'
               - 'crates/jackin-manifest/**'
               - 'crates/jackin-protocol/**'
               - 'crates/jackin-runtime/**'

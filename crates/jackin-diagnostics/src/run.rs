@@ -1330,11 +1330,8 @@ pub(crate) fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
     }
 }
 
-// Local copies of the presentation helpers that were moved to `jackin-tui` in
-// A3. Inlined here so this crate (L1, depended on by 8 L0/L1/L2 crates) does
-// not need to pull `jackin-tui` (L3) for the two small helpers `prune_all_runs`
-// uses. The implementations are byte-identical to the originals in
-// `jackin_core::{ansi_text, prune_output}` before their A3 move.
+// These policy-neutral parsing helpers stay local so diagnostics does not take
+// a presentation dependency merely to prune recorded output.
 
 #[must_use]
 fn strip_bytes(bytes: &[u8]) -> Vec<u8> {

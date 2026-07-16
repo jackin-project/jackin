@@ -34,7 +34,7 @@ The whole settings ↔ editor config surface, domain by domain:
 
 ## Full duplication map (as of the auth slice landing)
 
-Generic state structs live once in `jackin-console`; concrete instantiations live in the `jackin` app crate (<RepoFile path="crates/jackin/src/console/tui.rs" />). The structural asymmetry at the root: the editor uses **one** unified modal enum `ConsoleModal` (<RepoFile path="crates/jackin-console/src/tui/model/modal.rs" />); settings splits the same modal taxonomy across **three** enums (`GlobalMountModal`, `SettingsEnvModal`, `SettingsAuthModal`) plus a screen-level error-popup field (<RepoFile path="crates/jackin-console/src/tui/screens/settings/model.rs" />).
+Generic state structs live once in `jackin-console`; concrete instantiations live in the `jackin` app crate (<RepoFile path="crates/jackin/src/console/adapter.rs" />). The structural asymmetry at the root: the editor uses **one** unified modal enum `ConsoleModal` (<RepoFile path="crates/jackin-console/src/tui/model/modal.rs" />); settings splits the same modal taxonomy across **three** enums (`GlobalMountModal`, `SettingsEnvModal`, `SettingsAuthModal`) plus a screen-level error-popup field (<RepoFile path="crates/jackin-console/src/tui/screens/settings/model.rs" />).
 
 ### Modal taxonomy — same concepts, 1 enum vs 3
 

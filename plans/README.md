@@ -22,7 +22,7 @@ Individually verified codebase-health plans removed on 2026-07-15:
 - **014** — OSC 8 hyperlink identity repointing fix
 - **025** — deterministic-time seam and first boundary conversions
 
-Shared TUI extraction plans **001–009** were removed after the standalone TermRock repository, first release, immutable jackin❯ dependency, and donor retirement shipped. Unfinished canonical-API migration and neutral-duplication work is tracked in the Shared TUI Extraction Follow-through roadmap item.
+Shared TUI extraction plans **001–009** and their follow-through roadmap item were removed after the standalone TermRock repository, canonical-API migration, neutral-duplication cleanup, immutable latest-reviewed dependency, donor retirement, and ownership/test-boundary audit shipped. Durable boundaries live in the TUI reference documentation.
 
 Completed routine code-health implementation archive: [codebase-health](codebase-health/).
 

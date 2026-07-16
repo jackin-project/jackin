@@ -44,7 +44,7 @@ pub async fn run_client(
     // Query before connecting: once the Hello lands, every stdin byte
     // forwards to the daemon as pane input, so a reply arriving later would
     // land in the focused agent's PTY as keystrokes.
-    let host_colors = crate::tui::host_colors::query_host_terminal_colors(
+    let host_colors = jackin_protocol::host_terminal::query_host_terminal_colors(
         terminal.term.as_deref(),
         &mut tokio_stdin,
         &mut stdout,

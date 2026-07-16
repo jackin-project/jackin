@@ -105,13 +105,13 @@ fn wheel_selection_scroll_clamps_without_wrapping() {
     let mut state = make_state_at(tmp.path().to_path_buf());
 
     assert!(!state.scroll_selection(-1));
-    assert_eq!(state.list_state.selected, Some(0));
+    assert_eq!(state.list_state.selected().copied(), Some(0));
     assert!(state.scroll_selection(2));
-    assert_eq!(state.list_state.selected, Some(2));
+    assert_eq!(state.list_state.selected().copied(), Some(2));
     assert!(!state.scroll_selection(1));
-    assert_eq!(state.list_state.selected, Some(2));
+    assert_eq!(state.list_state.selected().copied(), Some(2));
     assert!(state.scroll_selection(-5));
-    assert_eq!(state.list_state.selected, Some(0));
+    assert_eq!(state.list_state.selected().copied(), Some(0));
 }
 
 #[test]
@@ -129,13 +129,13 @@ fn wheel_selection_scroll_at_area_ignores_prompt_and_outside_pointer() {
     let mut state = make_state_at(tmp.path().to_path_buf());
 
     assert!(!state.scroll_selection_at(area, 1, 3, 1));
-    assert_eq!(state.list_state.selected, Some(0));
+    assert_eq!(state.list_state.selected().copied(), Some(0));
     assert!(state.scroll_selection_at(area, 2, 3, 1));
-    assert_eq!(state.list_state.selected, Some(1));
+    assert_eq!(state.list_state.selected().copied(), Some(1));
 
     state.pending_git_prompt = Some(tmp.path().join("a"));
     assert!(!state.scroll_selection_at(area, 2, 3, 1));
-    assert_eq!(state.list_state.selected, Some(1));
+    assert_eq!(state.list_state.selected().copied(), Some(1));
 }
 
 // ── Git-repo detection ────────────────────────────────────────────

@@ -280,7 +280,7 @@ fn workspace_mount_scroll_axes<
         PendingOpCommit,
     >,
     body_area: Rect,
-) -> termrock::layout::ScrollAxes {
+) -> termrock::scroll::ScrollAxes {
     let content_width = crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
         &state.pending.mounts,
         &state.mount_info_cache,
@@ -319,7 +319,7 @@ pub(crate) fn render_general_tab<
 ) {
     let rows = editor_general_lines_for_state(state);
     let focused = editor_tab_content_focused(state);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         rows,
@@ -356,7 +356,7 @@ pub(crate) fn render_mounts_tab<
     >,
 ) {
     let lines = editor_mount_lines_for_state(state);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -395,7 +395,7 @@ pub(crate) fn render_roles_tab<
 ) {
     let lines = editor_role_lines_for_state(state, config);
     let focused = editor_tab_content_focused(state);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -434,7 +434,7 @@ pub(crate) fn render_secrets_tab<
 ) {
     let lines = editor_secret_lines_for_state(area, state, config);
     let focused = editor_tab_content_focused(state);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -476,7 +476,7 @@ pub(crate) fn render_auth_tab<
         .auth_selected_kind
         .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
     let focused = editor_tab_content_focused(state);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
