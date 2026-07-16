@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::{Attr, FieldSet, Rejection, Value, counter, emit_event, histogram, metric, schema};
 
-/// Record one bounded UI frame and emit a jank event above the 50 ms budget.
+/// Record one bounded UI frame and emit a slow-frame event above the 50 ms budget.
 pub fn record_render(screen: schema::enums::ScreenId, elapsed_seconds: f64) {
     const JANK_THRESHOLD_SECONDS: f64 = 0.050;
     let attrs = [Attr {

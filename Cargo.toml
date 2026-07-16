@@ -43,7 +43,6 @@ license = "Apache-2.0"
 repository = "https://github.com/jackin-project/jackin"
 
 [workspace.dependencies]
-anstyle-parse = "1.0"
 anyhow = "1.0"
 assert_cmd = "=2.2.2"
 base64 = "0.22"

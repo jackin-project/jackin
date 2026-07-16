@@ -2990,7 +2990,6 @@ dependencies = [
 name = "jackin-diagnostics"
 version = "0.6.0-dev"
 dependencies = [
- "anstyle-parse 1.0.0",
  "anyhow",
  "crossterm",
  "jackin-core",
@@ -3002,10 +3001,8 @@ dependencies = [
  "opentelemetry-proto",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
- "owo-colors 4.3.0",
  "rand 0.10.2",
  "regex",
- "serde",
  "serde_json",
  "sysinfo",
  "tempfile",

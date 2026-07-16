@@ -141,6 +141,7 @@ skip = [
     { crate = "inout@0.1.4", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "itertools@0.10.5", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "itertools@0.12.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "itertools@0.13.0", reason = "aws-lc-sys bindgen and Criterion remain on 0.13 while Prost and Ratatui use 0.14." },
     { crate = "linux-raw-sys@0.4.15", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "nix@0.28.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "owo-colors@3.5.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },

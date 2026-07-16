@@ -25,7 +25,6 @@ test-support = ["opentelemetry_sdk/testing"]
 crossterm = { workspace = true }
 jackin-core = { workspace = true }
 jackin-telemetry = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 rand = { workspace = true }
 anyhow = { workspace = true }
@@ -37,11 +36,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 # runtime-gated by standard OTEL environment configuration.
 opentelemetry = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true, features = ["semconv_experimental"] }
-# Inlined from `jackin_core::ansi_text` (A3) and `jackin_core::prune_output`
-# (A3) so this crate (L1, depended on by 8 L0/L1/L2 crates) does not need
-# keep diagnostics independent from the shared rendering layer.
-anstyle-parse = { workspace = true }
-owo-colors = { workspace = true, features = ["supports-colors"] }
 # gRPC/tonic is the ONLY transport. It is the reference backend's (Parallax)
 # default and what `parallax run` injects (`OTEL_EXPORTER_OTLP_ENDPOINT` ->
 # :4317, `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`). One transport keeps the export
