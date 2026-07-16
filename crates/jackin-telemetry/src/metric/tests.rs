@@ -24,6 +24,15 @@ fn cardinality_rejects_the_257th_set_without_eviction() {
             )
             .unwrap();
     }
+    histogram(&DB_CLIENT_OPERATION_DURATION)
+        .record(
+            2.0,
+            &[Attr {
+                key: attrs::std_attrs::DB_OPERATION_NAME,
+                value: Value::Str("0"),
+            }],
+        )
+        .expect("an existing exact series remains accepted at the cap");
     let overflow = "overflow";
     assert_eq!(
         histogram(&DB_CLIENT_OPERATION_DURATION).record(
@@ -55,7 +64,7 @@ fn cardinality_rejects_the_257th_set_without_eviction() {
 }
 
 #[test]
-fn fingerprint_is_order_independent_and_duplicates_reject() {
+fn series_identity_is_order_independent_and_duplicates_reject() {
     let first = [
         Attr {
             key: attrs::LAUNCH_STAGE_NAME,

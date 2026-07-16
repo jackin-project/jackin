@@ -239,6 +239,10 @@ impl OperationGuard {
     ) {
         if !valid_completion(outcome, error_type) {
             health::reject(health::Signal::Trace, Rejection::InvalidValue);
+            self.record_completion(
+                schema::enums::OutcomeValue::Error,
+                Some(schema::enums::ErrorType::TelemetryInstrumentationFault),
+            );
             self.completed.store(true, Ordering::Release);
             return;
         }

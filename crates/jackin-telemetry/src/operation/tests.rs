@@ -86,6 +86,22 @@ fn completion_matrix_rejects_impossible_pairs() {
 }
 
 #[test]
+fn invalid_completion_exports_as_instrumentation_fault() {
+    use schema::enums::{ErrorType, OutcomeValue};
+
+    let span = exported_span(Some(OutcomeValue::Success), Some(ErrorType::RpcError));
+    assert!(matches!(span.status, Status::Error { .. }));
+    assert!(span.attributes.iter().any(|attribute| {
+        attribute.key.as_str() == schema::attrs::OUTCOME
+            && attribute.value.as_str() == OutcomeValue::Error.as_str()
+    }));
+    assert!(span.attributes.iter().any(|attribute| {
+        attribute.key.as_str() == schema::attrs::std_attrs::ERROR_TYPE
+            && attribute.value.as_str() == ErrorType::TelemetryInstrumentationFault.as_str()
+    }));
+}
+
+#[test]
 fn abandoned_guard_records_instrumentation_fault() {
     let span = exported_span(None, None);
     assert!(matches!(span.status, Status::Error { .. }));

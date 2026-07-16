@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Mutex, OnceLock},
 };
 
@@ -145,7 +145,7 @@ enum DimensionValue {
 }
 
 type SeriesIdentity = Vec<(&'static str, DimensionValue)>;
-type SeriesByInstrument = HashMap<&'static str, HashSet<SeriesIdentity>>;
+type SeriesByInstrument = HashMap<&'static str, Vec<SeriesIdentity>>;
 static SERIES: OnceLock<Mutex<SeriesByInstrument>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -347,30 +347,66 @@ fn validate_attributes(def: &InstrumentDef, attrs: &[Attr<'_>]) -> Result<(), Re
 }
 
 fn accept_series(name: &'static str, attrs: &[Attr<'_>]) -> bool {
-    let identity = series_identity(attrs);
+    let order = series_order(attrs);
     let mut all = SERIES
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let stream = all.entry(name).or_default();
-    if stream.contains(&identity) {
+    if stream
+        .iter()
+        .any(|identity| series_matches(identity, attrs, &order[..attrs.len()]))
+    {
         return true;
     }
     if stream.len() >= limits::MAX_CARDINALITY {
         health::reject(health::Signal::Metric, Rejection::Cardinality);
         return false;
     }
-    stream.insert(identity);
+    stream.push(series_identity_with_order(attrs, &order[..attrs.len()]));
     true
 }
 
-fn series_identity(attrs: &[Attr<'_>]) -> SeriesIdentity {
+fn series_order(attrs: &[Attr<'_>]) -> [usize; limits::MAX_METRIC_ATTRIBUTES] {
     let mut order = [0usize; limits::MAX_METRIC_ATTRIBUTES];
     for (index, slot) in order[..attrs.len()].iter_mut().enumerate() {
         *slot = index;
     }
     order[..attrs.len()].sort_unstable_by_key(|index| attrs[*index].key);
-    order[..attrs.len()]
+    order
+}
+
+fn series_matches(identity: &SeriesIdentity, attrs: &[Attr<'_>], order: &[usize]) -> bool {
+    identity.len() == order.len()
+        && identity.iter().zip(order).all(|((key, stored), index)| {
+            let attr = attrs[*index];
+            *key == attr.key && dimension_matches(stored, attr.value)
+        })
+}
+
+fn dimension_matches(stored: &DimensionValue, value: Value<'_>) -> bool {
+    match (stored, value) {
+        (DimensionValue::Str(stored), Value::Str(value)) => stored == value,
+        (DimensionValue::Bool(stored), Value::Bool(value)) => *stored == value,
+        (DimensionValue::I64(stored), Value::I64(value)) => *stored == value,
+        (DimensionValue::U64(stored), Value::U64(value)) => *stored == value,
+        (DimensionValue::F64(stored), Value::F64(value)) => *stored == value.to_bits(),
+        (DimensionValue::StrArray(stored), Value::StrArray(values)) => {
+            stored.len() == values.len()
+                && stored.iter().zip(values).all(|(left, right)| left == right)
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+fn series_identity(attrs: &[Attr<'_>]) -> SeriesIdentity {
+    let order = series_order(attrs);
+    series_identity_with_order(attrs, &order[..attrs.len()])
+}
+
+fn series_identity_with_order(attrs: &[Attr<'_>], order: &[usize]) -> SeriesIdentity {
+    order
         .iter()
         .map(|index| {
             let attr = attrs[*index];
