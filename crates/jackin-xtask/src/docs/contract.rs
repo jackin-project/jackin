@@ -222,27 +222,90 @@ fn extract_link_surface(content: &str) -> Vec<u8> {
     let mut markdown_target = false;
     for line in content.lines() {
         let trimmed = line.trim_start();
-        let selected = markdown_target
-            || is_heading(trimmed)
-            || trimmed.starts_with("import ")
-            || trimmed.starts_with("export ")
-            || line.contains("](")
-            || is_reference_definition(trimmed)
-            || line.contains("http://")
-            || line.contains("https://")
-            || contains_link_component(line)
-            || contains_link_attribute(line);
-        if selected {
-            output.extend_from_slice(line.as_bytes());
+        if markdown_target {
+            output.extend_from_slice(trimmed.as_bytes());
+            output.push(b'\n');
+            markdown_target = !line.contains(')');
+            continue;
+        }
+        if is_heading(trimmed) || trimmed.starts_with("import ") || trimmed.starts_with("export ") {
+            output.extend_from_slice(trimmed.as_bytes());
             output.push(b'\n');
         }
-        if markdown_target {
-            markdown_target = !line.contains(')');
-        } else if line.trim_end().ends_with("](") {
+        for target in markdown_targets(line) {
+            output.extend_from_slice(b"md:");
+            output.extend_from_slice(target.as_bytes());
+            output.push(b'\n');
+        }
+        if let Some((_, target)) = trimmed.split_once("]:")
+            && is_reference_definition(trimmed)
+        {
+            output.extend_from_slice(b"ref:");
+            output.extend_from_slice(target.trim().as_bytes());
+            output.push(b'\n');
+        }
+        for url in line
+            .split_ascii_whitespace()
+            .filter(|token| token.contains("http://") || token.contains("https://"))
+        {
+            output.extend_from_slice(b"url:");
+            output.extend_from_slice(
+                url.trim_matches(|ch: char| "<>()[]{}\"'`,.;".contains(ch))
+                    .as_bytes(),
+            );
+            output.push(b'\n');
+        }
+        for attribute in link_attributes(line) {
+            output.extend_from_slice(b"attr:");
+            output.extend_from_slice(attribute.as_bytes());
+            output.push(b'\n');
+        }
+        if contains_link_component(line) {
+            output.extend_from_slice(b"link-component\n");
+        }
+        if line.trim_end().ends_with("](") {
             markdown_target = true;
         }
     }
     output
+}
+
+fn markdown_targets(line: &str) -> Vec<&str> {
+    let mut targets = Vec::new();
+    let mut remainder = line;
+    while let Some((_, after_open)) = remainder.split_once("](") {
+        let Some((target, after_close)) = after_open.split_once(')') else {
+            break;
+        };
+        targets.push(target.trim());
+        remainder = after_close;
+    }
+    targets
+}
+
+fn link_attributes(line: &str) -> Vec<String> {
+    let mut attributes = Vec::new();
+    for name in ["href", "src", "to", "url", "path", "id", "redirect"] {
+        let mut remainder = line;
+        while let Some(index) = remainder.find(name) {
+            remainder = &remainder[index + name.len()..];
+            let after_name = remainder.trim_start();
+            let Some(after_equals) = after_name.strip_prefix('=') else {
+                continue;
+            };
+            let value = after_equals.trim_start();
+            let end = match value.as_bytes().first() {
+                Some(b'\"') => value[1..].find('\"').map(|index| index + 2),
+                Some(b'\'') => value[1..].find('\'').map(|index| index + 2),
+                Some(b'{') => value.find('}').map(|index| index + 1),
+                _ => value.find(|ch: char| ch.is_ascii_whitespace() || ch == '>'),
+            }
+            .unwrap_or(value.len());
+            attributes.push(format!("{name}={}", &value[..end]));
+            remainder = &value[end..];
+        }
+    }
+    attributes
 }
 
 fn is_heading(line: &str) -> bool {
@@ -258,12 +321,6 @@ fn contains_link_component(line: &str) -> bool {
     ["a", "Link", "Image", "RepoFile", "Card", "Cards"]
         .iter()
         .any(|name| line.contains(&format!("<{name} ")) || line.contains(&format!("<{name}>")))
-}
-
-fn contains_link_attribute(line: &str) -> bool {
-    ["href", "src", "to", "url", "path", "id", "redirect"]
-        .iter()
-        .any(|name| line.contains(&format!("{name}=")) || line.contains(&format!("{name} =")))
 }
 
 fn is_site_input(path: &str) -> bool {
