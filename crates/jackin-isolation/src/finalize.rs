@@ -35,7 +35,6 @@ use jackin_core::JACKIN_STATUS_CMD;
 use jackin_core::PromptContextLine;
 use jackin_core::error_popup;
 use jackin_core::exit_dialog_with_inspect;
-use jackin_diagnostics::telemetry_debug;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,13 +271,6 @@ pub async fn finalize_foreground_session(
     docker: &impl jackin_docker::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
-    telemetry_debug!(
-        "isolation",
-        "finalize_foreground_session: container={c} outcome={o:?} interactive={i}",
-        c = container_name,
-        o = outcome,
-        i = is_interactive,
-    );
     if !matches!(outcome, AttachOutcome::Stopped(0)) {
         // Non-zero exit, OOM-kill, or still-running → preserve by default.
         // Exception: StillRunning with no active jackin sessions means the
@@ -288,12 +280,6 @@ pub async fn finalize_foreground_session(
         if matches!(outcome, AttachOutcome::StillRunning)
             && !has_jackin_sessions(docker, container_name).await
         {
-            telemetry_debug!(
-                "isolation",
-                "finalize: container={c} still running but no jackin sessions; \
-                 capsule still running after clean exit — proceeding to isolation cleanup",
-                c = container_name,
-            );
             return finalize_clean_exit(
                 container_name,
                 container_state_dir,
@@ -304,11 +290,6 @@ pub async fn finalize_foreground_session(
             )
             .await;
         }
-        telemetry_debug!(
-            "isolation",
-            "finalize: container={c} preserved (non-clean exit)",
-            c = container_name,
-        );
         return Ok(FinalizeDecision::Preserved);
     }
     finalize_clean_exit(
@@ -378,13 +359,6 @@ async fn finalize_clean_exit(
     // preserved record so the prompt loop below can address them all.
     for record in records {
         let assessment = assess_cleanup(&record, runner).await?;
-        telemetry_debug!(
-            "isolation",
-            "finalize assess: container={c} mount={d} → {a:?}",
-            c = record.container_name,
-            d = record.mount_dst,
-            a = assessment,
-        );
         match assessment {
             CleanupAssessment::SafeToDelete => {
                 force_cleanup_isolated(&record, container_state_dir, runner).await?;
@@ -547,22 +521,17 @@ enum CleanupAssessment {
 /// commits if an operator deletes a remote branch by accident.
 ///
 /// Each `runner.capture` failure is matched explicitly and routed to
-/// `PreservedUnpushed` (the "I don't know, keep it" outcome) with a
-/// `telemetry_debug!` of the underlying error so `--debug` shows what went
-/// wrong.
+/// `PreservedUnpushed` (the "I don't know, keep it" outcome).
 async fn assess_cleanup(
     record: &IsolationRecord,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<CleanupAssessment> {
     // Detection logic is shared with the in-container Capsule via
     // `jackin_core::worktree_dirty` so host cleanup and the capsule exit modal
-    // can never disagree on what "dirty" means. The closure routes the shared
-    // assessment's fail-closed diagnostics back into the host debug channel.
+    // can never disagree on what "dirty" means.
     let state =
-        jackin_core::assess_worktree(&record.worktree_path, &record.base_commit, runner, |msg| {
-            telemetry_debug!("isolation", "finalize {}", msg);
-        })
-        .await?;
+        jackin_core::assess_worktree(&record.worktree_path, &record.base_commit, runner, |_| {})
+            .await?;
     Ok(match state {
         jackin_core::WorktreeState::Clean => CleanupAssessment::SafeToDelete,
         jackin_core::WorktreeState::Dirty => CleanupAssessment::PreservedDirty,
