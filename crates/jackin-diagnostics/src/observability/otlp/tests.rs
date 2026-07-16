@@ -1037,7 +1037,13 @@ fn emit_severity_matrix() {
 fn governed_event_level_gates_are_exact_and_do_not_infer_span_state() {
     use opentelemetry::trace::Status;
 
-    for (level, expected) in [("info", 3usize), ("debug", 4usize), ("trace", 5usize)] {
+    for (level, expected_logs, expected_spans) in [
+        ("error", 1usize, 0usize),
+        ("warn", 2usize, 0usize),
+        ("info", 3usize, 1usize),
+        ("debug", 4usize, 1usize),
+        ("trace", 5usize, 1usize),
+    ] {
         let (export, subscriber) = super::test_layers_at(level, "unused");
         tracing::subscriber::with_default(subscriber, || {
             let operation = jackin_telemetry::operation(
@@ -1054,10 +1060,12 @@ fn governed_event_level_gates_are_exact_and_do_not_infer_span_state() {
         export.tracer_provider.force_flush().unwrap();
         let logs = export.logs.get_emitted_logs().unwrap();
         let spans = export.spans.get_finished_spans().unwrap();
-        assert_eq!(logs.len(), expected, "{level} log gate");
-        assert_eq!(spans.len(), 1, "{level} span gate");
-        assert!(spans[0].events.is_empty(), "{level} duplicate span events");
-        assert_eq!(spans[0].status, Status::Unset, "{level} inferred status");
+        assert_eq!(logs.len(), expected_logs, "{level} log gate");
+        assert_eq!(spans.len(), expected_spans, "{level} span gate");
+        for span in spans {
+            assert!(span.events.is_empty(), "{level} duplicate span events");
+            assert_eq!(span.status, Status::Unset, "{level} inferred status");
+        }
     }
 }
 
