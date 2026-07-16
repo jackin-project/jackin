@@ -45,6 +45,35 @@ fn expired_budget_skips_flush_work() {
 }
 
 #[test]
+fn flush_timeout_returns_without_joining_hung_worker() {
+    let started = std::time::Instant::now();
+    let task = super::FlushTask::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        Ok(())
+    });
+    let result = task.finish_before(started + std::time::Duration::from_millis(20));
+    assert_eq!(result, Err("telemetry flush budget exhausted".to_owned()));
+    assert!(started.elapsed() < std::time::Duration::from_millis(80));
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    super::reap_flush_workers();
+}
+
+#[test]
+fn validation_distinguishes_timeout_from_signal_failure() {
+    let success = Ok(());
+    let timeout = Err("telemetry flush budget exhausted".to_owned());
+    let failure = Err("telemetry flush failed".to_owned());
+    assert_eq!(
+        super::validate_flush_results(&timeout, &success, &success),
+        Err(super::super::ValidationFailure::Timeout)
+    );
+    assert_eq!(
+        super::validate_flush_results(&success, &failure, &success),
+        Err(super::super::ValidationFailure::Export("logs"))
+    );
+}
+
+#[test]
 fn provider_shutdown_order_is_tracer_logger_meter() {
     let _test_lock = super::super::health::TEST_STATE_LOCK
         .lock()

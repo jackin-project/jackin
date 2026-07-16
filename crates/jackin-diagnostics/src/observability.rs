@@ -74,6 +74,7 @@ pub enum ValidationFailure {
     Disabled,
     Config(TelemetryConfigFailure),
     Inactive,
+    Timeout,
     Export(&'static str),
     Rejected,
 }
@@ -87,6 +88,7 @@ impl std::fmt::Display for ValidationFailure {
                 write!(formatter, "invalid telemetry configuration: {failure}")
             }
             Self::Inactive => formatter.write_str("telemetry providers are not active"),
+            Self::Timeout => formatter.write_str("telemetry flush timed out"),
             Self::Export(signal) => write!(formatter, "telemetry export failed for {signal}"),
             Self::Rejected => {
                 formatter.write_str("telemetry marker was rejected by the governed facade")
@@ -682,6 +684,21 @@ mod otlp {
             providers.generation,
             trace.is_ok() && logs.is_ok() && metrics.is_ok(),
         );
+        validate_flush_results(&trace, &logs, &metrics)
+    }
+
+    fn validate_flush_results(
+        trace: &Result<(), String>,
+        logs: &Result<(), String>,
+        metrics: &Result<(), String>,
+    ) -> Result<(), super::ValidationFailure> {
+        if [trace, logs, metrics].into_iter().any(|result| {
+            result
+                .as_ref()
+                .is_err_and(|error| error.contains("budget exhausted"))
+        }) {
+            return Err(super::ValidationFailure::Timeout);
+        }
         if trace.is_err() {
             return Err(super::ValidationFailure::Export("traces"));
         }
