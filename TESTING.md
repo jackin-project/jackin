@@ -74,30 +74,63 @@ binary instead of compiling it again. Runner configuration selects one
 canonical cache writer: GitHub when it participates, or Velnor for a
 Velnor-only dispatch. Both lanes restore that same portable output.
 
+The required gate audits every completed job on every run. Its summary records
+admission delay, runtime, every individual step duration, cache misses,
+dependency/toolchain downloads, source-tool builds, and third-party
+compile/check/build markers per job. Exact warm runs fail if any forbidden
+download or build marker remains; producer runs retain the evidence for the
+next optimization decision rather than hiding it behind an overall green
+result.
+
 A cold bootstrap is recorded as a cache miss, not hidden by raising the target.
 Fan-out jobs stay offline and consume the warmup result. Cross-run compiler
 result sharing is deferred to the [Shared CI compiler cache](<docs/content/docs/roadmap/(infrastructure)/shared-ci-compiler-cache.mdx>)
 roadmap item. `jackin-xtask affected-crates` reads the
 Cargo metadata graph and maps a diff to changed crates plus their transitive
 reverse workspace dependents. Workspace-wide inputs and unrecognized Rust paths
-fail safe to every crate. Each selected cache miss owns one job and one
+fail safe to every crate. Workflow and composite-action plumbing is not a crate
+input and therefore creates no crate job by itself. The stable semantic
+identifier in [`scripts/ci/crate-test-contract.sh`](scripts/ci/crate-test-contract.sh)
+must be bumped whenever the
+per-crate commands or acceptance criteria change; cache transport, artifact
+lookup, and reporting changes keep the identifier and reuse prior proofs. Each
+selected cache miss owns one job and one
 target-cache namespace, including default/all-feature checks, clippy, nextest, doctests,
-MSRV, applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
+applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
+When changed construct inputs require a fresh image, the `jackin` crate job
+builds that image in its own Docker daemon before its E2E smoke test. There is
+no separate construct-image test job or large tar artifact handoff.
 Scheduling follows the reverse dependency closure; the input-identical target
 artifact key follows the forward dependency closure. Each seven-day artifact
 stores the crate's first-party and third-party fingerprints, libraries,
-binaries, build outputs, and test executables. MSRV outputs live under
-`target/msrv`, so the older compiler cannot overwrite current-toolchain
-artifacts immediately before packing. This preserves crate-specific Cargo
-feature, profile, and toolchain variants without placing 26 mostly overlapping
+binaries, build outputs, and test executables. CI uses only the newest pinned
+stable compiler, so no older-toolchain outputs or compatibility cache are
+created. This preserves crate-specific Cargo feature and profile variants without placing 26 mostly overlapping
 archives in GitHub's small repository cache quota. The configured canonical
 writer publishes one output for both GitHub and Velnor to restore.
+
+After both lane warmups complete, one GitHub-hosted control-plane job resolves
+the affected set and shared result markers. Selection is deliberately outside
+the runner matrix: matrix job outputs have one shared value, so whichever lane
+finishes last could otherwise replace the canonical package list. Both lanes
+still consume the same contracts and run the same per-crate workflow; the
+central selector only decides which independently attributable crate jobs
+exist. It also resolves target-artifact metadata once for every selected miss,
+so GitHub and Velnor do not repeat the same repository API search before
+restoring the identical target archive. Both lanes download that one archive
+through the same GitHub REST artifact path; target transport does not depend on a
+runner-specific Results Service action adapter. A runner with an existing current
+Cargo target uses that local state as the first seed and lets Cargo
+validate it; an incomplete or empty runner restores the portable artifact. This is one shared
+fallback order, not a lane-specific verification path.
 
 An exact target-key miss first restores that crate's latest successful target
 as a seed. Cargo still validates every fingerprint and rebuilds changed
 first-party outputs, but unchanged registry and git dependencies remain
 available instead of being recompiled solely because the crate source key
-changed. A successful miss publishes both the new exact target and a small
+changed. Only an exact source-closure hit backdates checkout mtimes; a latest
+seed preserves current source mtimes so Cargo cannot accept stale first-party
+objects. A successful miss publishes both the new exact target and a small
 latest-target pointer; it does not duplicate the target archive.
 
 ## Verification matrix
@@ -108,7 +141,7 @@ latest-target pointer; it does not duplicate the target archive.
 | One crate | `cargo nextest run -p <crate>` + `cargo clippy -p <crate> --all-targets -- -D warnings` | before commit |
 | Cross-crate Rust | `cargo xtask ci --fast` | before PR |
 | Full non-Docker gate | `cargo xtask ci` | merge readiness |
-| One CI partition | `cargo xtask ci --only <lint\|policy\|tests\|snapshots\|docs\|msrv\|powerset>` | inner loop mirroring a CI lane |
+| One CI partition | `cargo xtask ci --only <lint\|policy\|tests\|snapshots\|docs\|powerset>` | inner loop mirroring a CI lane |
 | Scoped feature powerset | `cargo hack check -p jackin -p jackin-diagnostics -p jackin-capsule -p jackin-agent-status -p jackin-term -p jackin-runtime --feature-powerset --all-targets --locked` | optional-feature crates (PR gate) |
 | Container/runtime behavior | `cargo xtask ci --e2e` (Docker running) | capsule/runtime PRs |
 | Docs/roadmap | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | any docs edit |
@@ -176,14 +209,15 @@ Does not apply to:
 
 ### Flake policy
 
-CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate that requires testing; an input-identical successful result is resolved before matrix expansion and does not consume a runner. It has no shards, multi-crate buckets, or second jobs for crate-specific MSRV, clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
+CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate that requires testing; an input-identical successful result is resolved before matrix expansion and does not consume a runner. It has no shards, multi-crate buckets, older-toolchain lanes, or second jobs for crate-specific clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
 An input-identical successful crate result is reused for seven days before any
 toolchain, registry, or target restore. Its key includes the crate's forward
 workspace dependency closure, Cargo and toolchain inputs, runner platform,
-feature and Docker modes, and the test-workflow contract. The selector removes
-a hit before matrix expansion, so queued runner capacity is reserved for real
-cache misses and the routing summary records every reuse. Any changed input
+feature and Docker modes, and the semantic crate-test contract. The selector
+removes a hit before matrix expansion. It runs once after both lane warmups, so
+queued runner capacity is reserved for real cache misses and the routing
+summary records every reuse. Any changed input
 runs the complete contract in one dedicated crate job and publishes a
 replacement marker from the configured canonical writer for both GitHub and
 Velnor to consume. Docker inputs and
@@ -196,8 +230,25 @@ publish-versus-rehearsal mode, and requested runner lanes. An unrelated commit
 therefore does not rebuild unchanged amd64/arm64 images, while any construct
 input or lane-mode change runs the complete platform matrix.
 
-The repository policy set has a one-day component marker keyed by the exact
-base revision, Rust/policy inputs, and requested lanes. A hit skips schema,
+CI also publishes a seven-day result for the complete verification contract,
+keyed by every Rust, workflow, tool, test, policy, and Docker input plus the
+requested runner lanes. The selector runs before matrix expansion. An exact hit
+allocates only the stable required-status gate; it does not repeat formatting,
+action linting, tool or registry preparation, policy checks, affected-crate
+selection, or crate jobs. A miss retains the component selectors below, so only
+affected crates and genuinely stale components allocate their dedicated jobs.
+Cache and artifact contracts used by runner-selectable jobs are resolved once
+by the GitHub-hosted metadata job and passed unchanged to both GitHub and
+Velnor. Runner-local expression support therefore cannot silently produce a
+different or empty key. A target is one archive published in one operation;
+numbered transport parts are forbidden. Latest-target pointers resolve the run
+that owns the referenced archive rather than assuming the pointer's run also
+owns it.
+
+The repository policy set has a one-day component marker keyed by the semantic
+base revision, Rust/policy inputs, and requested lanes. Pull requests use their
+base SHA and the matching post-merge `main` push uses its `before` SHA, so the
+same successful proof crosses the squash-merge boundary. A hit skips schema,
 ratchet, dependency-policy, README-freshness, and audit jobs while actionlint,
 formatting, tool warmup, affected-crate selection, and the required-status gate
 still execute. This is not a whole-pipeline result: crate/tool producers remain
@@ -211,14 +262,22 @@ Docs prepares the pinned `codebook-lsp` binary once and publishes a seven-day
 platform/tool-contract artifact. The docs and source spell jobs download that
 same binary instead of each invoking Cargo through mise; only a genuinely new
 Codebook version or platform may take the source-build fallback.
-The built static site is cached by its workflow, docs sources, generated crate
-README inputs, dependency lock, and build configuration. An exact hit installs
-only lychee and skips Bun/Node setup, dependency installation, and site build;
-the miss path rebuilds and repopulates the same output for link checking and
-Pages upload. GitHub scopes pull-request caches to the pull request's merge ref,
-so warm validation must use a later normal PR run; a branch
-`workflow_dispatch` has a different cache scope and is intentionally a cold
-comparison.
+The built static site is published as a seven-day repository artifact keyed by
+its workflow, docs sources, generated crate README inputs, dependency lock, and
+build configuration. Unlike a GitHub Actions cache, the artifact is not scoped
+to a pull-request merge ref, so the matching `main` push can reuse the PR build.
+An exact hit installs only lychee and skips Bun/Node setup, dependency
+installation, and site build; the miss path rebuilds and republishes the same
+output for link checking and Pages upload.
+Producer run `29508481632` published the corrected cross-ref site artifact. Warm
+proof must come from a later normal run whose site-contract inputs are
+unchanged, followed by the matching post-merge `main` run.
+Docs publishes a separate seven-day successful-result marker keyed by the full
+site, repository-link, generated-source, spelling, tool, and workflow contract.
+An exact pull-request hit allocates only `docs-required`. The matching `main`
+push additionally restores the built-site artifact and uploads it for Pages,
+but does not repeat repository-link or spelling jobs already proven by the pull
+request. Deployment and deployed-site verification remain `main` responsibilities.
 The repository-link job restores the same prepared `jackin-xtask` artifact as
 CI and installs only lychee, so it does not maintain a second Rust build/cache
 path for identical source inputs. Because Docs and CI are independent workflows

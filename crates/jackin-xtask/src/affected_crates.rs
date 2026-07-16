@@ -188,7 +188,7 @@ impl WorkspaceGraph {
     fn affected(&self, paths: &[PathBuf]) -> Vec<String> {
         let relevant = paths
             .iter()
-            .filter(|path| !is_documentation(path))
+            .filter(|path| !is_documentation(path) && !is_ci_orchestration(path))
             .collect::<Vec<_>>();
         if relevant.iter().any(|path| is_workspace_wide(path)) {
             return self.all_names();
@@ -314,8 +314,10 @@ fn is_workspace_wide(path: &Path) -> bool {
             | "mise.toml"
             | "mise.lock"
     ) || text.starts_with(".cargo/")
-        || text.starts_with(".github/workflows/")
-        || text.starts_with(".github/actions/")
+}
+
+fn is_ci_orchestration(path: &Path) -> bool {
+    path.starts_with(".github/workflows") || path.starts_with(".github/actions")
 }
 
 fn is_docker_test_input(path: &Path) -> bool {

@@ -104,6 +104,18 @@ fn ignores_documentation_alongside_changed_crates() {
 }
 
 #[test]
+fn ignores_ci_orchestration_for_crate_selection() {
+    assert!(
+        graph()
+            .affected(&[
+                PathBuf::from(".github/workflows/ci.yml"),
+                PathBuf::from(".github/actions/cache-cargo-registry/action.yml"),
+            ])
+            .is_empty()
+    );
+}
+
+#[test]
 fn selects_all_for_workspace_input_or_unknown_rust_path() {
     let expected = ["core", "jackin", "runtime", "tool"];
     assert_eq!(graph().affected(&[PathBuf::from("Cargo.lock")]), expected);

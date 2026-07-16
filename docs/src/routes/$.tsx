@@ -47,7 +47,7 @@ export const Route = createFileRoute('/$')({
 const serverLoader = createServerFn({
   method: 'GET',
 })
-  .inputValidator((slugs: string[]) => slugs)
+  .validator((slugs: string[]) => slugs)
   .middleware([staticFunctionMiddleware])
   .handler(async ({ data: slugs }) => {
     const { source } = await import('@/lib/source')
