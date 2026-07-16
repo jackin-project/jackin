@@ -25,14 +25,14 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, logging/usage re-exports | — |
 | [`main.rs`](src/main.rs) | binary entry (PID 1 / client / exec subcommands) | — |
-| [`daemon.rs`](src/daemon.rs) · [`daemon/`](src/daemon) | multiplexer shell, owned state subsystems, effectful ports | [`tests.rs`](src/daemon/tests.rs), [`subsystems`](src/daemon/subsystems/tests.rs), [`ports`](src/daemon/ports/tests.rs) |
+| [`daemon.rs`](src/daemon.rs) · [`daemon/`](src/daemon) | multiplexer shell, PTY/session authority, owned state subsystems, effectful ports | [`tests.rs`](src/daemon/tests.rs), [`subsystems`](src/daemon/subsystems/tests.rs), [`ports`](src/daemon/ports/tests.rs) |
 | [`session.rs`](src/session.rs) · [`session/`](src/session) | per-agent PTY sessions | [`tests.rs`](src/session/tests.rs) |
 | [`client.rs`](src/client.rs) · [`client/`](src/client) | host-side attach client | [`tests.rs`](src/client/tests.rs) |
 | [`client_writer.rs`](src/client_writer.rs) | sole attach-socket writer | — |
 | [`attach_context.rs`](src/attach_context.rs) | single host-connection state | — |
 | [`attach_protocol.rs`](src/attach_protocol.rs) | attach lifecycle helpers | — |
 | [`protocol.rs`](src/protocol.rs) · [`protocol/`](src/protocol) | capsule wire framing helpers | — |
-| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | composition, chrome/input, ANSI rules over TermRock and shared operator-info UI | nested |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | composition, chrome/input, ANSI rules, and daemon-facing compositor/input/layout adapters over TermRock and shared operator-info UI | nested, including [`daemon/compositor`](src/tui/daemon/compositor/tests.rs) |
 | [`clipboard.rs`](src/clipboard.rs) · [`clipboard/`](src/clipboard) | clipboard image staging + idle expiry | [`tests.rs`](src/clipboard/tests.rs) |
 | [`runtime_setup.rs`](src/runtime_setup.rs) · [`runtime_setup/`](src/runtime_setup) | in-container git/auth/MCP setup | [`tests.rs`](src/runtime_setup/tests.rs) |
 | [`config.rs`](src/config.rs) | `CapsuleConfig` load/validate | — |
