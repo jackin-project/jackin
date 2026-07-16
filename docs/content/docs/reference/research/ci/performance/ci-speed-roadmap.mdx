@@ -242,6 +242,17 @@ preparation is now unconditional in the single warmup owner, and crate jobs use
 restore-only toolchain access so they cannot download or spend 45 seconds
 saving the same 646 MB toolchain independently.
 
+The v6 transport removes the remaining pointer artifact. Each crate and
+feature mode now owns one stable reusable target-seed artifact containing one
+`target.tar.zst` archive with an embedded source-closure key. Discovery resolves
+that artifact directly with one API query, and download uses its artifact ID
+without scanning every artifact in the producing run. A matching embedded key
+permits the exact-source timestamp fast path; a different key preserves
+checkout timestamps so Cargo rebuilds changed first-party inputs while reusing
+compiled dependencies. Successful changed-source jobs replace the seed in one
+publish step. Semantic crate-result markers remain the higher-level path that
+skips an input-identical crate job entirely.
+
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses
 for all 26 crates. The crate-test contract now retains the last validated
@@ -744,7 +755,7 @@ Construct builds also hid their active work: the xtask subprocess helper capture
 
 ### Final warm proof after main synchronization
 
-The post-merge producer sequence established the current v5 crate targets without
+The post-merge producer sequence established the historical v5 crate targets without
 sharding or combining crates. Run `29524036639` reused the successful
 `jackin-runtime` and `jackin-capsule` results and scheduled only the still-missing
 `jackin` producer after its predecessor was cancelled; that one complete crate

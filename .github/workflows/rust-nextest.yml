@@ -178,7 +178,7 @@ jobs:
               | jq -er --arg package "$PACKAGE" '.[$package]')
           fi
           echo "key=$key" >> "$GITHUB_OUTPUT"
-      - name: Find input-identical crate target
+      - name: Find reusable crate target seed
         id: crate-target
         if: steps.crate-result.outputs.hit != 'true'
         shell: bash
@@ -201,11 +201,9 @@ jobs:
             result=$supplied_result
           fi
           {
-            echo "prefix=$(jq -r '.prefix' <<< "$result")"
+            echo "name=$(jq -r '.name' <<< "$result")"
             echo "hit=$(jq -r '.hit' <<< "$result")"
-            echo "canonical-hit=$(jq -r '.canonical_hit' <<< "$result")"
-            echo "download-prefix=$(jq -r '.download_prefix' <<< "$result")"
-            echo "run-id=$(jq -r '.run_id' <<< "$result")"
+            echo "artifact-id=$(jq -r '.artifact_id' <<< "$result")"
           } >> "$GITHUB_OUTPUT"
       - name: Use runner-local target seed
         id: local-target
@@ -222,7 +220,7 @@ jobs:
             echo "::notice::using runner-local current Cargo target as a validated seed"
           fi
           echo "hit=$hit" >> "$GITHUB_OUTPUT"
-      - name: Download input-identical crate target
+      - name: Download reusable crate target seed
         if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
         shell: bash
         env:
@@ -230,24 +228,32 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           scripts/ci/download-crate-target.sh \
-            "${{ steps.crate-target.outputs.run-id }}" \
-            "${{ steps.crate-target.outputs.download-prefix }}" \
+            "${{ steps.crate-target.outputs.artifact-id }}" \
             target/.ci-restore
-      - name: Restore input-identical crate target
+      - name: Restore reusable crate target seed
+        id: restored-target
         if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
         shell: bash
+        env:
+          CACHE_KEY: ${{ steps.crate-target-key.outputs.key }}
         run: |
           set -euo pipefail
           target_dir=${CARGO_TARGET_DIR:-target}
           mkdir -p "$target_dir"
           tar --zstd --strip-components=1 -C "$target_dir" \
             -xf target/.ci-restore/target.tar.zst
+          canonical_hit=false
+          if [ "$(cat "$target_dir/.ci-source-key" 2>/dev/null || true)" = "$CACHE_KEY" ]; then
+            canonical_hit=true
+          fi
+          rm -f "$target_dir/.ci-source-key"
           rm -rf target/.ci-restore
-          if [ "${{ steps.crate-target.outputs.canonical-hit }}" = "true" ]; then
+          if [ "$canonical_hit" = true ]; then
             git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
           else
-            echo "::notice::latest-target seed restored; preserving checkout mtimes so Cargo rebuilds changed first-party inputs"
+            echo "::notice::reusable target seed restored; preserving checkout mtimes so Cargo rebuilds changed first-party inputs"
           fi
+          echo "canonical-hit=$canonical_hit" >> "$GITHUB_OUTPUT"
       - name: Run package tests
         if: steps.crate-result.outputs.hit != 'true'
         shell: bash
@@ -493,11 +499,11 @@ jobs:
             exit 1
           fi
 
-      - name: Pack input-identical crate target
+      - name: Pack reusable crate target seed
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
-          steps.crate-target.outputs.canonical-hit != 'true' &&
+          steps.restored-target.outputs.canonical-hit != 'true' &&
           matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -506,6 +512,7 @@ jobs:
         run: |
           set -euo pipefail
           target_dir=${CARGO_TARGET_DIR:-target}
+          printf '%s\n' "${{ steps.crate-target-key.outputs.key }}" > "$target_dir/.ci-source-key"
           find "$target_dir" \
             \( -path "$target_dir/nextest" -o -path "$target_dir/nextest/*" \
                -o -path "$target_dir/telemetry-*" \
@@ -516,22 +523,12 @@ jobs:
             | tar --zstd --null --no-recursion \
                 --transform="s|^${target_dir#/}/|target/|" \
                 --files-from=- -cf target.tar.zst
-      - name: Stage latest successful crate target pointer
+          rm -f "$target_dir/.ci-source-key"
+      - name: Publish reusable crate target seed
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
-          steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.cache_writer &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        run: printf '%s\n' "${{ steps.crate-target.outputs.prefix }}" > target.latest
-      - name: Publish input-identical crate target
-        if: >-
-          always() && !cancelled() && !failure() &&
-          steps.crate-result.outputs.hit != 'true' &&
-          steps.crate-target.outputs.canonical-hit != 'true' &&
+          steps.restored-target.outputs.canonical-hit != 'true' &&
           matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -539,24 +536,8 @@ jobs:
             github.event.pull_request.head.repo.full_name == github.repository))
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ steps.crate-target.outputs.prefix }}
+          name: ${{ steps.crate-target.outputs.name }}
           path: target.tar.zst
-          compression-level: 0
-          retention-days: 7
-      - name: Publish latest successful crate target pointer
-        if: >-
-          always() && !cancelled() && !failure() &&
-          steps.crate-result.outputs.hit != 'true' &&
-          steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.cache_writer &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ci-crate-target-${{ inputs.all-features && 'latest-v5' || 'default-latest-v5' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}
-          path: target.latest
           compression-level: 0
           retention-days: 7
 

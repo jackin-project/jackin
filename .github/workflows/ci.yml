@@ -581,7 +581,7 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
       - id: xtask-target-seed
-        name: Find latest successful jackin-xtask target
+        name: Find reusable jackin-xtask target seed
         if: steps.ci-xtask-artifact.outputs.hit != 'true'
         shell: bash
         env:
@@ -594,10 +594,9 @@ jobs:
             "${{ runner.os }}" "${{ runner.arch }}")
           {
             echo "hit=$(jq -r '.hit' <<< "$result")"
-            echo "download-prefix=$(jq -r '.download_prefix' <<< "$result")"
-            echo "run-id=$(jq -r '.run_id' <<< "$result")"
+            echo "artifact-id=$(jq -r '.artifact_id' <<< "$result")"
           } >> "$GITHUB_OUTPUT"
-      - name: Download latest successful jackin-xtask target
+      - name: Download reusable jackin-xtask target seed
         if: >-
           steps.ci-xtask-artifact.outputs.hit != 'true' &&
           steps.xtask-target-seed.outputs.hit == 'true'
@@ -607,10 +606,9 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           scripts/ci/download-crate-target.sh \
-            "${{ steps.xtask-target-seed.outputs.run-id }}" \
-            "${{ steps.xtask-target-seed.outputs.download-prefix }}" \
+            "${{ steps.xtask-target-seed.outputs.artifact-id }}" \
             target/.ci-restore
-      - name: Restore latest successful jackin-xtask target
+      - name: Restore reusable jackin-xtask target seed
         if: >-
           steps.ci-xtask-artifact.outputs.hit != 'true' &&
           steps.xtask-target-seed.outputs.hit == 'true'
@@ -622,7 +620,6 @@ jobs:
           tar --zstd --strip-components=1 -C "$target_dir" \
             -xf target/.ci-restore/target.tar.zst
           rm -rf target/.ci-restore
-          git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
       - name: Restore prepared Rust toolchains
         id: toolchain-lookup
         if: steps.prepared-inputs.outputs.ready != 'true'
