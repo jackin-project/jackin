@@ -6,7 +6,7 @@
 pub mod build_log_dialog;
 pub(crate) mod cells;
 pub mod chrome;
-pub use jackin_ui::operator_info as container_info;
+pub use jackin_tui::operator_info as container_info;
 pub mod container_info_dialog;
 pub mod dialog;
 pub mod failure_dialog;

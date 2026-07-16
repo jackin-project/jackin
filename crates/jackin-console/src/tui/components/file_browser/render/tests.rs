@@ -67,9 +67,9 @@ fn git_entries_render_with_git_suffix() {
     assert!(dump.contains("plain/"));
 }
 
-// ── Entry name colour (text_fg()) ─────────────────────────────────────
+// ── Entry name colour (termrock::Theme::default().style(termrock::style::Role::Text).fg.unwrap_or_default()) ─────────────────────────────────────
 
-/// Plain (non-git) directory entries render their name in `text_fg()` so
+/// Plain (non-git) directory entries render their name in `termrock::Theme::default().style(termrock::style::Role::Text).fg.unwrap_or_default()` so
 /// the listing stays legible against phosphor-green accents.
 #[test]
 fn non_git_entry_renders_in_white() {
@@ -80,7 +80,7 @@ fn non_git_entry_renders_in_white() {
 
     let state = make_state_at(tmp.path().to_path_buf());
     // Make sure nothing is selected so the highlight style doesn't
-    // mask the base text_fg() colour we want to assert on.
+    // mask the base termrock::Theme::default().style(termrock::style::Role::Text).fg.unwrap_or_default() colour we want to assert on.
     let mut state = state;
     state.list_state.select(None);
 
@@ -105,8 +105,11 @@ fn non_git_entry_renders_in_white() {
     );
     assert_eq!(
         cell.fg,
-        text_fg(),
-        "non-git entry name should render in text_fg(), got {:?}",
+        termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default(),
+        "non-git entry name should render in termrock::Theme::default().style(termrock::style::Role::Text).fg.unwrap_or_default(), got {:?}",
         cell.fg
     );
 }
@@ -132,11 +135,21 @@ fn selected_entry_uses_cursor_and_full_content_width_highlight() {
     let buffer = terminal.backend().buffer();
     assert_eq!(buffer[(1, 1)].symbol(), "\u{25b8}");
     for x in 1..39 {
-        assert_eq!(buffer[(x, 1)].bg, accent_fg(), "x={x}");
+        assert_eq!(
+            buffer[(x, 1)].bg,
+            termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default(),
+            "x={x}"
+        );
     }
     assert_ne!(
         buffer[(39, 1)].bg,
-        accent_fg(),
+        termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default(),
         "file-browser selection highlight must stop before the border"
     );
 }
@@ -175,7 +188,14 @@ fn overflowing_listing_shows_border_scrollbar_and_preserves_selected_gutter() {
         .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
         .expect("selected row should be visible in the viewport");
     for x in 1..39 {
-        assert_eq!(buffer[(x, selected_y)].bg, accent_fg(), "x={x}");
+        assert_eq!(
+            buffer[(x, selected_y)].bg,
+            termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default(),
+            "x={x}"
+        );
     }
     assert!(
         (1..4).any(|y| ["\u{2503}", "\u{00b7}"].contains(&buffer[(39, y)].symbol())),
@@ -183,7 +203,10 @@ fn overflowing_listing_shows_border_scrollbar_and_preserves_selected_gutter() {
     );
     assert_ne!(
         buffer[(39, selected_y)].bg,
-        accent_fg(),
+        termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default(),
         "selected row must not paint behind the border scrollbar"
     );
 }
@@ -239,7 +262,10 @@ fn git_prompt_background_suppresses_browser_cursor_and_active_border() {
     );
     assert_ne!(
         buffer[(0, 0)].fg,
-        accent_fg(),
+        termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default(),
         "background file browser border should be inactive while git prompt owns focus"
     );
 }
@@ -291,8 +317,8 @@ fn git_prompt_uses_five_slot_dialog_padding() {
     );
 }
 
-/// Git-repo entries render the name in `text_fg()` and the ` (git)` suffix
-/// in `accent_fg()` so the marker pops against the otherwise-white row.
+/// Git-repo entries render the name in `termrock::Theme::default().style(termrock::style::Role::Text).fg.unwrap_or_default()` and the ` (git)` suffix
+/// in `termrock::Theme::default().style(termrock::style::Role::Accent).fg.unwrap_or_default()` so the marker pops against the otherwise-white row.
 #[test]
 fn git_entry_name_is_white_and_suffix_is_phosphor_green() {
     use ratatui::{Terminal, backend::TestBackend};
@@ -325,8 +351,11 @@ fn git_entry_name_is_white_and_suffix_is_phosphor_green() {
     );
     assert_eq!(
         name_cell.fg,
-        text_fg(),
-        "git entry name should render in text_fg(), got {:?}",
+        termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default(),
+        "git entry name should render in termrock::Theme::default().style(termrock::style::Role::Text).fg.unwrap_or_default(), got {:?}",
         name_cell.fg
     );
 
@@ -341,8 +370,11 @@ fn git_entry_name_is_white_and_suffix_is_phosphor_green() {
     );
     assert_eq!(
         paren_cell.fg,
-        accent_fg(),
-        "git suffix should render in accent_fg(), got {:?}",
+        termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default(),
+        "git suffix should render in termrock::Theme::default().style(termrock::style::Role::Accent).fg.unwrap_or_default(), got {:?}",
         paren_cell.fg
     );
 }

@@ -3,7 +3,6 @@
 
 //! Launch stage progress rail and label animation.
 
-use jackin_ui::theme::{accent_fg, danger_fg, scroll_track_fg, text_fg};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -112,11 +111,48 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
         // Thin horizontal segments (a slim progress bar), not tall full
         // blocks: heavy `━` for reached/active stages, light `─` for queued.
         let (glyph, color) = match status {
-            StageStatus::Done | StageStatus::Skipped => ('━', accent_fg()),
-            StageStatus::Running => ('━', if pulse { text_fg() } else { accent_fg() }),
-            StageStatus::Failed => ('━', danger_fg()),
-            StageStatus::Blocked => ('━', text_fg()),
-            StageStatus::Queued => ('─', scroll_track_fg()),
+            StageStatus::Done | StageStatus::Skipped => (
+                '━',
+                termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default(),
+            ),
+            StageStatus::Running => (
+                '━',
+                if pulse {
+                    termrock::Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default()
+                } else {
+                    termrock::Theme::default()
+                        .style(termrock::style::Role::Accent)
+                        .fg
+                        .unwrap_or_default()
+                },
+            ),
+            StageStatus::Failed => (
+                '━',
+                termrock::Theme::default()
+                    .style(termrock::style::Role::Danger)
+                    .fg
+                    .unwrap_or_default(),
+            ),
+            StageStatus::Blocked => (
+                '━',
+                termrock::Theme::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default(),
+            ),
+            StageStatus::Queued => (
+                '─',
+                termrock::Theme::default()
+                    .style(termrock::style::Role::ScrollTrack)
+                    .fg
+                    .unwrap_or_default(),
+            ),
         };
         spans.push(Span::styled(
             glyph.to_string().repeat(BLOCK_WIDTH),
@@ -195,19 +231,32 @@ pub fn label_strip(
 fn label_style_for_stage(status: StageStatus, active: bool, bright: bool) -> Style {
     if active {
         return match status {
-            StageStatus::Failed => jackin_ui::theme::danger(),
-            _ if bright => jackin_ui::theme::text_strong(),
+            StageStatus::Failed => termrock::Theme::default().style(termrock::style::Role::Danger),
+            _ if bright => termrock::Theme::default().style(termrock::style::Role::TextStrong),
             _ => Style::default()
-                .fg(accent_fg())
+                .fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::BOLD),
         };
     }
 
     match status {
-        StageStatus::Done | StageStatus::Skipped => jackin_ui::theme::text_muted(),
-        StageStatus::Failed => Style::default().fg(danger_fg()),
-        StageStatus::Running | StageStatus::Blocked => jackin_ui::theme::accent(),
-        StageStatus::Queued => Style::default().fg(scroll_track_fg()),
+        StageStatus::Done | StageStatus::Skipped => {
+            termrock::Theme::default().style(termrock::style::Role::TextMuted)
+        }
+        StageStatus::Failed => Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Danger)
+            .fg
+            .unwrap_or_default()),
+        StageStatus::Running | StageStatus::Blocked => {
+            termrock::Theme::default().style(termrock::style::Role::Accent)
+        }
+        StageStatus::Queued => Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::ScrollTrack)
+            .fg
+            .unwrap_or_default()),
     }
 }
 

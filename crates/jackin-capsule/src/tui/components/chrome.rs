@@ -60,14 +60,27 @@ impl StatusBarWidget<'_> {
 
 fn tab_cell_style(active: bool, hovered: bool) -> Style {
     let background = match (active, hovered) {
-        (true, true) => jackin_ui::theme::tab_active_hover_bg(),
-        (true, false) => jackin_ui::theme::tab_active_bg(),
-        (false, true) => jackin_ui::theme::tab_inactive_hover_bg(),
-        (false, false) => jackin_ui::theme::tab_inactive_bg(),
+        (true, true) => Theme::default()
+            .style(termrock::style::Role::TabActiveHovered)
+            .bg
+            .unwrap_or_default(),
+        (true, false) => Theme::default()
+            .style(termrock::style::Role::TabActive)
+            .bg
+            .unwrap_or_default(),
+        (false, true) => Theme::default()
+            .style(termrock::style::Role::TabInactiveHovered)
+            .bg
+            .unwrap_or_default(),
+        (false, false) => Theme::default()
+            .style(termrock::style::Role::TabInactive)
+            .bg
+            .unwrap_or_default(),
     };
-    let style = Style::default()
-        .bg(background)
-        .fg(jackin_ui::theme::text_fg());
+    let style = Style::default().bg(background).fg(Theme::default()
+        .style(termrock::style::Role::Text)
+        .fg
+        .unwrap_or_default());
     if active {
         style.add_modifier(Modifier::BOLD)
     } else {
@@ -90,19 +103,22 @@ fn tab_glyph_style(glyph: TabGlyph, bg: Color) -> Option<Style> {
         TabGlyph::Blocked => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_ui::theme::STATUS_BLOCKED_RED)
+                .fg(jackin_tui::tokens::STATUS_BLOCKED_RED)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Working => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_ui::theme::DEBUG_AMBER)
+                .fg(jackin_tui::tokens::DEBUG_AMBER)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Idle => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_ui::theme::accent_fg())
+                .fg(Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Done | TabGlyph::Unknown => None,
@@ -127,14 +143,17 @@ impl Widget for StatusBarWidget<'_> {
 
         // Row 0: brand pill — green block, black word, white chevron.
         let pill = Style::default()
-            .bg(jackin_ui::theme::BRAND_BLOCK)
+            .bg(jackin_tui::tokens::BRAND_BLOCK)
             .add_modifier(Modifier::BOLD);
         buf.set_string(area.x, area.y, " jackin", pill.fg(Color::Black));
         buf.set_string(
             area.x.saturating_add(7),
             area.y,
             "❯",
-            pill.fg(jackin_ui::theme::text_fg()),
+            pill.fg(Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
         );
         buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
@@ -146,16 +165,25 @@ impl Widget for StatusBarWidget<'_> {
         // Row 0: right-side menu button.
         if let Some(start_1based) = plan.hint_start {
             let (bg, fg) = match (self.prefix_mode, self.menu_hovered) {
-                (PrefixMode::Idle, false) => {
-                    (jackin_ui::theme::MENU_IDLE_BG, jackin_ui::theme::text_fg())
-                }
-                (PrefixMode::Idle, true) => (
-                    jackin_ui::theme::MENU_IDLE_HOVER_BG,
-                    jackin_ui::theme::text_fg(),
+                (PrefixMode::Idle, false) => (
+                    jackin_tui::tokens::MENU_IDLE_BG,
+                    Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default(),
                 ),
-                (PrefixMode::Awaiting, false) => (jackin_ui::theme::MENU_AWAITING_BG, Color::Black),
+                (PrefixMode::Idle, true) => (
+                    jackin_tui::tokens::MENU_IDLE_HOVER_BG,
+                    Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default(),
+                ),
+                (PrefixMode::Awaiting, false) => {
+                    (jackin_tui::tokens::MENU_AWAITING_BG, Color::Black)
+                }
                 (PrefixMode::Awaiting, true) => {
-                    (jackin_ui::theme::MENU_AWAITING_HOVER_BG, Color::Black)
+                    (jackin_tui::tokens::MENU_AWAITING_HOVER_BG, Color::Black)
                 }
             };
             buf.set_string(
@@ -172,7 +200,10 @@ impl Widget for StatusBarWidget<'_> {
                 area.x.saturating_add(pos_1based.saturating_sub(1)),
                 area.y,
                 "›",
-                Style::default().fg(jackin_ui::theme::muted_fg()),
+                Style::default().fg(Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             );
         }
 
@@ -183,9 +214,15 @@ impl Widget for StatusBarWidget<'_> {
         {
             let underline = "━".repeat(active.cell_cols as usize);
             let underline_fg = if self.focused {
-                jackin_ui::theme::accent_fg()
+                Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default()
             } else {
-                jackin_ui::theme::text_fg()
+                Theme::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default()
             };
             buf.set_string(
                 area.x.saturating_add(active.start_col0),

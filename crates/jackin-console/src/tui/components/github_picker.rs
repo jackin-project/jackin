@@ -79,7 +79,6 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_ui::theme::{muted_fg, text_fg};
 use termrock::layout::render_dialog_shell;
 use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{List, ListRow, RowRole};
@@ -105,7 +104,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no GitHub sources",
-                jackin_ui::theme::text_muted(),
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],
@@ -132,12 +131,21 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
             ListRow {
                 id: i,
                 label: Line::from(vec![
-                    Span::styled(display.to_owned(), Style::default().fg(text_fg())),
+                    Span::styled(
+                        display.to_owned(),
+                        Style::default().fg(termrock::Theme::default()
+                            .style(termrock::style::Role::Text)
+                            .fg
+                            .unwrap_or_default()),
+                    ),
                     Span::raw(format!("{}  ", " ".repeat(pad))),
                     Span::styled(
                         format!("github \u{b7} {}", c.branch),
                         Style::default()
-                            .fg(muted_fg())
+                            .fg(termrock::Theme::default()
+                                .style(termrock::style::Role::TextMuted)
+                                .fg
+                                .unwrap_or_default())
                             .add_modifier(Modifier::ITALIC),
                     ),
                 ]),

@@ -370,8 +370,14 @@ fn apply_tab_codename_tooltip(
         tooltip_row,
         &pill,
         Style::default()
-            .bg(jackin_ui::theme::tab_inactive_bg())
-            .fg(jackin_ui::theme::accent_fg())
+            .bg(termrock::Theme::default()
+                .style(termrock::style::Role::TabInactive)
+                .bg
+                .unwrap_or_default())
+            .fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
             .add_modifier(Modifier::BOLD),
     );
 }

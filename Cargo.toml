@@ -23,7 +23,7 @@ members = [
     "crates/jackin-launch",
     "crates/jackin-runtime",
     "crates/jackin-term",
-    "crates/jackin-ui",
+    "crates/jackin-tui",
     "crates/jackin-xtask",
     "crates/jackin-pr-trailers",
     "crates/jackin-usage",
@@ -82,7 +82,7 @@ jackin-process = { version = "0.6.0-dev", path = "crates/jackin-process" }
 jackin-protocol = { version = "0.6.0-dev", path = "crates/jackin-protocol" }
 jackin-runtime = { version = "0.6.0-dev", path = "crates/jackin-runtime" }
 jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
-jackin-ui = { version = "0.6.0-dev", path = "crates/jackin-ui" }
+jackin-tui = { version = "0.6.0-dev", path = "crates/jackin-tui" }
 jackin-test-support = { version = "0.6.0-dev", path = "crates/jackin-test-support" }
 jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
 nix = "0.31"

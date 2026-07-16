@@ -17,7 +17,7 @@ directories = { workspace = true }
 jackin-config = { workspace = true }
 jackin-oppicker = { workspace = true }
 jackin-core = { workspace = true }
-jackin-ui = { workspace = true }
+jackin-tui = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-env = { workspace = true }
 jackin-protocol = { workspace = true }

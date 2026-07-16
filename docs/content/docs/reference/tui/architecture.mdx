@@ -27,7 +27,7 @@ Each layer has a strict scope:
 
 **Async event loop.** Event loops should use async event streams and `tokio::select!` where the surface already runs inside Tokio, so background work can advance between terminal events. Animation ticks drive periodic redraws for spinners and animated components. Synchronous adapters are allowed only at the terminal/backend edge; they must still route state changes through messages.
 
-**Component ownership.** Product-neutral visual and interaction patterns live in [TermRock](https://github.com/tailrocks/termrock), including the first implementation of a pattern when it is reasonably reusable. Cross-surface jackin❯ compositions live in `jackin-ui` only when at least two product surfaces consume them. Surface-local composition lives under the owning crate's `src/tui/components/`. Neither jackin❯ layer copies neutral painting, geometry, focus, scroll, or hit-testing. TermRock owns its lookbook, generated SVG catalog, API/catalog drift checks, and exact primitive conformance tests; jackin❯ owns only product composition, state, adapter, and outcome tests.
+**Component ownership.** Product-neutral visual and interaction patterns live in [TermRock](https://github.com/tailrocks/termrock), including the first implementation of a pattern when it is reasonably reusable. Cross-surface jackin❯ compositions live in `jackin-tui` only when at least two product surfaces consume them. Surface-local composition lives under the owning crate's `src/tui/components/`. Neither jackin❯ layer copies neutral painting, geometry, focus, scroll, or hit-testing. TermRock owns its lookbook, generated SVG catalog, API/catalog drift checks, and exact primitive conformance tests; jackin❯ owns only product composition, state, adapter, and outcome tests.
 
 **Refactor safety.** Moving code into this structure is primarily a refactor. Existing workflows must keep the same command semantics, launch flow, capsule attach behavior, saved state, keyboard/mouse contracts, error handling, and visual affordances unless a PR explicitly calls out and justifies a behavior change. Capture or verify the current behavior before structural moves and rerun the relevant checks afterward.
 
@@ -50,7 +50,7 @@ crates/<surface-crate>/src/tui/
 
 1. **[TermRock](https://github.com/tailrocks/termrock)** — Exact-revision external library for neutral panels, lists, scroll, hints, dialogs, tabs, tokens, adapters, and geometry.
 
-2. **`crates/jackin-ui/`** — Product-specific compositions and Ratatui adapters shared by at least two jackin❯ surfaces. It may depend on TermRock and pure product vocabulary, but cannot own a generic theme facade, neutral widgets, terminal lifecycle, run loops, or external effects.
+2. **`crates/jackin-tui/`** — Product-specific compositions and Ratatui adapters shared by at least two jackin❯ surfaces. It may depend on TermRock and pure product vocabulary, but cannot own a generic theme facade, neutral widgets, terminal lifecycle, run loops, or external effects.
 
 3. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop wiring. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
 

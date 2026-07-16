@@ -157,7 +157,7 @@ fn real_tiers_table_covers_every_expected_member() {
         "jackin-protocol",
         "jackin-runtime",
         "jackin-term",
-        "jackin-ui",
+        "jackin-tui",
         "jackin-test-support",
         "jackin-usage",
         "jackin-xtask",

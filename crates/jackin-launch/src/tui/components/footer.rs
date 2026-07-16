@@ -122,11 +122,14 @@ pub fn render_footer(
         min_width: 0,
         enabled: true,
         style: Style::default()
-            .bg(jackin_ui::theme::text_fg())
+            .bg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default())
             .fg(if view.footer_hover.left {
-                jackin_ui::theme::LINK_BLUE
+                jackin_tui::tokens::LINK_BLUE
             } else {
-                jackin_ui::theme::INK
+                jackin_tui::tokens::INK
             })
             .add_modifier(Modifier::BOLD),
         hover_style: None,
@@ -139,11 +142,14 @@ pub fn render_footer(
             min_width: 0,
             enabled: !instance.is_empty(),
             style: Style::default()
-                .bg(jackin_ui::theme::text_fg())
+                .bg(termrock::Theme::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default())
                 .fg(if view.footer_hover.right {
-                    jackin_ui::theme::DEBUG_AMBER
+                    jackin_tui::tokens::DEBUG_AMBER
                 } else {
-                    jackin_ui::theme::LINK_BLUE
+                    jackin_tui::tokens::LINK_BLUE
                 })
                 .add_modifier(Modifier::BOLD),
             hover_style: None,
@@ -156,14 +162,26 @@ pub fn render_footer(
             enabled: debug_chip.is_some_and(|value| !value.is_empty()),
             style: Style::default()
                 .bg(if view.footer_hover.right_debug {
-                    jackin_ui::theme::text_fg()
+                    termrock::Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default()
                 } else {
-                    jackin_ui::theme::danger_fg()
+                    termrock::Theme::default()
+                        .style(termrock::style::Role::Danger)
+                        .fg
+                        .unwrap_or_default()
                 })
                 .fg(if view.footer_hover.right_debug {
-                    jackin_ui::theme::danger_fg()
+                    termrock::Theme::default()
+                        .style(termrock::style::Role::Danger)
+                        .fg
+                        .unwrap_or_default()
                 } else {
-                    jackin_ui::theme::text_fg()
+                    termrock::Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default()
                 })
                 .add_modifier(Modifier::BOLD),
             hover_style: None,
@@ -172,8 +190,11 @@ pub fn render_footer(
     let theme = termrock::Theme::default().with_role(
         termrock::style::Role::StatusBar,
         Style::default()
-            .bg(jackin_ui::theme::text_fg())
-            .fg(jackin_ui::theme::INK),
+            .bg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default())
+            .fg(jackin_tui::tokens::INK),
     );
     frame.render_stateful_widget(
         &StatusBar::new(&left, &right, &theme).alpha(alpha),

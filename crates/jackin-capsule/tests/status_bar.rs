@@ -61,10 +61,16 @@ fn active_tab_background_differs_from_brand_pill() {
     let tab = Tab::new_single("Codex", 7, "test");
     let (_, buf) = draw(80, &[tab], 0, &[], None, PrefixMode::Idle);
     let brand_cells = (0..80)
-        .filter(|x| buf[(*x, 0)].bg == jackin_ui::theme::BRAND_BLOCK)
+        .filter(|x| buf[(*x, 0)].bg == jackin_tui::tokens::BRAND_BLOCK)
         .count();
     let active_tab_cells = (0..80)
-        .filter(|x| buf[(*x, 0)].bg == jackin_ui::theme::tab_active_bg())
+        .filter(|x| {
+            buf[(*x, 0)].bg
+                == termrock::Theme::default()
+                    .style(termrock::style::Role::TabActive)
+                    .bg
+                    .unwrap_or_default()
+        })
         .count();
     assert_eq!(brand_cells, termrock::text::display_cols(" jackin❯ "));
     assert!(active_tab_cells > 0, "active tab should use graphite bg");
@@ -78,7 +84,11 @@ fn hovered_tab_uses_lifted_background() {
     ];
     let (_, buf) = draw(80, &tabs, 0, &[], Some(1), PrefixMode::Idle);
     assert!(
-        (0..80).any(|x| buf[(x, 0)].bg == jackin_ui::theme::tab_inactive_hover_bg()),
+        (0..80).any(|x| buf[(x, 0)].bg
+            == termrock::Theme::default()
+                .style(termrock::style::Role::TabInactiveHovered)
+                .bg
+                .unwrap_or_default()),
         "hovered inactive tab should use lifted bg"
     );
 }
@@ -91,7 +101,11 @@ fn active_tab_hover_uses_lifted_graphite_background() {
     ];
     let (_, buf) = draw(80, &tabs, 0, &[], Some(0), PrefixMode::Idle);
     assert!(
-        (0..80).any(|x| buf[(x, 0)].bg == jackin_ui::theme::tab_active_hover_bg()),
+        (0..80).any(|x| buf[(x, 0)].bg
+            == termrock::Theme::default()
+                .style(termrock::style::Role::TabActiveHovered)
+                .bg
+                .unwrap_or_default()),
         "hovered active tab should use lifted graphite bg"
     );
 }

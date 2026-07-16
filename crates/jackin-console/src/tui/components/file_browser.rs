@@ -25,7 +25,6 @@
 //! round-tripping through the explorer's event handler).
 
 use crate::tui::components::modal_rects::{ModalRectMode, modal_rect_for_mode as rect_for_mode};
-pub(super) use jackin_ui::theme::{accent_fg, muted_fg, text_fg};
 
 pub(super) mod git_prompt;
 pub(super) mod input;

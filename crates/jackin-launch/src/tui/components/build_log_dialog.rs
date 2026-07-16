@@ -3,7 +3,6 @@
 
 //! Launch docker-build log overlay helpers.
 
-use jackin_ui::theme::DIALOG_SURFACE;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
@@ -67,7 +66,7 @@ pub fn build_log_wrapped_lines(raw: &[String], width: usize) -> Vec<Line<'static
     if raw.is_empty() {
         vec![Line::from(Span::styled(
             "(waiting for docker build output…)",
-            jackin_ui::theme::text_muted(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
         ))]
     } else {
         wrap_build_log_lines(raw, width)
@@ -202,7 +201,7 @@ pub fn render_build_log_dialog(
     debug_mode: bool,
 ) {
     frame.render_widget(
-        Block::default().style(Style::default().bg(jackin_ui::theme::DIALOG_BACKDROP)),
+        Block::default().style(Style::default().bg(Color::Reset)),
         area,
     );
     let chrome = launch_overlay_chrome_areas(area, debug_mode);
@@ -262,7 +261,7 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
         return vec![Line::from(String::new())];
     }
 
-    let default_style = Style::default().fg(Color::Gray).bg(DIALOG_SURFACE);
+    let default_style = Style::default().fg(Color::Gray).bg(Color::Reset);
     // Migration 0019: parse ANSI once at ingestion into an owned line.
     let parsed = termrock::ansi_text::line_from_ansi(line.trim_end(), default_style);
     wrap_build_log_spans(parsed.spans, width)
@@ -329,7 +328,9 @@ fn push_wrapped_build_line(
             0,
             Span::styled(
                 BUILD_LOG_WRAP_PREFIX,
-                jackin_ui::theme::text_muted().bg(DIALOG_SURFACE),
+                termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .bg(Color::Reset),
             ),
         );
     }

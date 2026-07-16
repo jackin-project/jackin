@@ -8,11 +8,11 @@ Shared jackin❯ vocabulary and pure cross-surface projections. This L0 leaf has
 - Ports, constants, paths, and selector/URL/path helpers reused by higher crates.
 - Small self-contained ANSI and product brand/domain RGB tokens (`host_colors`) used by CLI/spinner and re-exported by presentation.
 
-Cross-surface **product presentation** (Debug-info paint, Theme/Role helpers, shared product chrome composition) lives in [`jackin-ui`](../jackin-ui/), not here.
+Cross-surface **product presentation** (Debug-info paint, product brand/domain Ratatui tokens, shared product chrome composition) lives in [`jackin-tui`](../jackin-tui/), not here.
 
 ## Architecture tier and allowed dependencies
 
-**L0 leaf/domain + pure projections.** No workspace dependencies or effects. No Ratatui frame paint, layout adapters, or widget bodies. Presentation layout, hover builders, terminal-protocol scroll decode, Debug-info rendering, and Theme/Role helpers live in `jackin-ui` and surface crates (`jackin-console` / `jackin-capsule` / `jackin-launch`) — not here.
+**L0 leaf/domain + pure projections.** No workspace dependencies or effects. No Ratatui frame paint, layout adapters, or widget bodies. Presentation layout, hover builders, terminal-protocol scroll decode, Debug-info rendering, and product tokens live in `jackin-tui` and surface crates (`jackin-console` / `jackin-capsule` / `jackin-launch`) — not here. Neutral TermRock Theme/Role resolution is done at the surface call site.
 
 ## Structure
 
@@ -64,7 +64,7 @@ Remaining root `pub mod`s (individually justified):
 | `container_paths` | Namespace for container-side `/jackin/` path constants (`use jackin_core::container_paths`) across runtime/capsule/usage |
 | `debug_log` | Hosts `debug_log!` macro + sink; `#[macro_export]` shares the `jackin_core::debug_log` path with the module name |
 
-Higher crates implement the port traits defined here (e.g. `CommandRunner`) and pass the domain types through. Debug-info product presentation is `jackin_ui::operator_info`.
+Higher crates implement the port traits defined here (e.g. `CommandRunner`) and pass the domain types through. Debug-info product presentation is `jackin_tui::operator_info`.
 
 Typed construction/parse errors (thiserror): `ParseProfileError`, `ParseMountIsolationError`, `ParseAgentError`, `SelectorError`, `EnvCycleError`, `PathsError`, `OpProbeError`.
 

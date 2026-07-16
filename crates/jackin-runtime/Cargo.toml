@@ -19,7 +19,7 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-core = { workspace = true }
-jackin-ui = { workspace = true }
+jackin-tui = { workspace = true }
 jackin-config = { workspace = true }
 jackin-env = { workspace = true }
 jackin-manifest = { workspace = true }

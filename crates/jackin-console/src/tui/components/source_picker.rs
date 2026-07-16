@@ -79,7 +79,6 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use jackin_ui::theme::scroll_track_fg;
 use termrock::layout::render_dialog_shell;
 use termrock::widgets::PanelEmphasis;
 
@@ -131,7 +130,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
             Paragraph::new(Span::styled(
                 "(install op CLI to enable)",
                 Style::default()
-                    .fg(scroll_track_fg())
+                    .fg(termrock::Theme::default()
+                        .style(termrock::style::Role::ScrollTrack)
+                        .fg
+                        .unwrap_or_default())
                     .add_modifier(Modifier::DIM),
             ))
             .alignment(Alignment::Center),

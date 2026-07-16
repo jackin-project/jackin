@@ -15,8 +15,6 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_ui::theme::{accent_fg, text_fg, text_muted};
-
 pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
     Rect {
         x: area.x.saturating_add(1),
@@ -296,7 +294,10 @@ pub(crate) fn usage_lines_for_row(
         "Focused agent" | "Focused account" => {
             lines.push(Line::from(vec![
                 usage_content_indent(),
-                Span::styled(value.to_owned(), jackin_ui::theme::text_strong()),
+                Span::styled(
+                    value.to_owned(),
+                    termrock::Theme::default().style(termrock::style::Role::TextStrong),
+                ),
             ]));
         }
         "Provider" | "Account" | "Username" | "Plan" | "Auth" | "Status" | "Updated"
@@ -316,8 +317,17 @@ pub(crate) fn usage_lines_for_row(
         }
         _ => lines.push(Line::from(vec![
             Span::raw("  "),
-            Span::styled(format!("{label} "), text_muted()),
-            Span::styled(value.to_owned(), Style::default().fg(text_fg())),
+            Span::styled(
+                format!("{label} "),
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
+            ),
+            Span::styled(
+                value.to_owned(),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default()),
+            ),
         ])),
     }
 }
@@ -347,15 +357,30 @@ pub(crate) fn usage_legacy_overview_provider_lines(
     let status = parts[2];
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(label.to_owned(), jackin_ui::theme::text_strong()),
+        Span::styled(
+            label.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
+        ),
         Span::raw("  "),
-        Span::styled(account.to_owned(), Style::default().fg(text_fg())),
+        Span::styled(
+            account.to_owned(),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
+        ),
         Span::raw("  "),
-        Span::styled(plan.to_owned(), text_muted()),
+        Span::styled(
+            plan.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
     ]));
     lines.push(Line::from(vec![
         Span::raw(" ".repeat(USAGE_CONTENT_PAD_LEFT + 2)),
-        Span::styled(status.to_owned(), text_muted()),
+        Span::styled(
+            status.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
     ]));
 }
 
@@ -376,9 +401,12 @@ pub(crate) fn usage_overview_provider_lines(
     let Some(local_timestamp) = local_timestamp else {
         lines.push(usage_header_two_column(
             &left,
-            Style::default().fg(text_fg()),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
             reset,
-            text_muted(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
         return;
@@ -394,11 +422,23 @@ pub(crate) fn usage_overview_provider_lines(
         .unwrap_or(3);
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(left, Style::default().fg(text_fg())),
+        Span::styled(
+            left,
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
+        ),
         Span::raw(" ".repeat(left_gap)),
-        Span::styled(reset.to_owned(), text_muted()),
+        Span::styled(
+            reset.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
         Span::raw(" ".repeat(right_gap)),
-        Span::styled(local_timestamp.to_owned(), text_muted()),
+        Span::styled(
+            local_timestamp.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
     ]));
 }
 
@@ -432,9 +472,9 @@ pub(crate) fn usage_header_lines(
     let account = account.map(str::trim).filter(|value| !value.is_empty());
     lines.push(usage_header_two_column(
         value,
-        jackin_ui::theme::text_strong(),
+        termrock::Theme::default().style(termrock::style::Role::TextStrong),
         account.unwrap_or(""),
-        jackin_ui::theme::text_strong(),
+        termrock::Theme::default().style(termrock::style::Role::TextStrong),
         width,
     ));
 
@@ -446,9 +486,9 @@ pub(crate) fn usage_header_lines(
     if updated.is_some() || right.is_some() {
         lines.push(usage_header_two_column(
             updated.unwrap_or(""),
-            text_muted(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             right.as_deref().unwrap_or(""),
-            text_muted(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
     }
@@ -457,8 +497,14 @@ pub(crate) fn usage_header_lines(
     if let Some(auth) = auth.map(str::trim).filter(|value| !value.is_empty()) {
         lines.push(Line::from(vec![
             usage_content_indent(),
-            Span::styled("Auth: ", text_muted()),
-            Span::styled(auth.to_owned(), text_muted()),
+            Span::styled(
+                "Auth: ",
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
+            ),
+            Span::styled(
+                auth.to_owned(),
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
+            ),
         ]));
     }
 
@@ -512,7 +558,10 @@ pub(crate) fn usage_quota_bucket_lines(
     }
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(display_label, jackin_ui::theme::text_strong()),
+        Span::styled(
+            display_label,
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
+        ),
     ]));
 
     let Some(first) = value.split(" · ").find(|part| !part.trim().is_empty()) else {
@@ -523,9 +572,12 @@ pub(crate) fn usage_quota_bucket_lines(
     if remaining_label.is_none() {
         lines.push(usage_header_two_column(
             first,
-            Style::default().fg(text_fg()),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
             "",
-            text_muted(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
         return;
@@ -534,7 +586,15 @@ pub(crate) fn usage_quota_bucket_lines(
     let meter = usage_full_width_meter(meter, width);
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(meter, Style::default().fg(accent.unwrap_or(accent_fg()))),
+        Span::styled(
+            meter,
+            Style::default().fg(accent.unwrap_or(
+                termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default(),
+            )),
+        ),
     ]));
 
     let details = usage_quota_bucket_detail_parts(label, value);
@@ -546,9 +606,12 @@ pub(crate) fn usage_quota_bucket_lines(
     for (left, right) in rows {
         lines.push(usage_header_two_column(
             &left,
-            Style::default().fg(text_fg()),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
             &right,
-            text_muted(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
     }
@@ -583,17 +646,20 @@ pub(crate) fn usage_limit_reset_credit_lines(
     let right = parts.first().copied().unwrap_or_default();
     lines.push(usage_header_two_column(
         "Limit Reset Credits",
-        jackin_ui::theme::text_strong(),
+        termrock::Theme::default().style(termrock::style::Role::TextStrong),
         right,
-        text_muted(),
+        termrock::Theme::default().style(termrock::style::Role::TextMuted),
         width,
     ));
     for detail in parts.iter().skip(1) {
         lines.push(usage_header_two_column(
             detail,
-            Style::default().fg(text_fg()),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
             "",
-            text_muted(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
             width,
         ));
     }
@@ -631,7 +697,10 @@ pub(crate) fn push_usage_separator(lines: &mut Vec<Line<'static>>, width: usize)
 
 pub(crate) fn usage_separator_line(width: usize) -> Line<'static> {
     let target = width.max(1);
-    Line::from(vec![Span::styled("─".repeat(target), text_muted())])
+    Line::from(vec![Span::styled(
+        "─".repeat(target),
+        termrock::Theme::default().style(termrock::style::Role::TextMuted),
+    )])
 }
 
 pub(crate) fn usage_line_is_blank(line: &Line<'_>) -> bool {
@@ -737,9 +806,21 @@ pub(crate) fn usage_quota_bucket_compact_lines(
     let detail = compact_bucket_detail_for_width(label, &detail, width);
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(label.to_owned(), jackin_ui::theme::text_strong()),
-        Span::styled("  ", text_muted()),
-        Span::styled(detail, Style::default().fg(text_fg())),
+        Span::styled(
+            label.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
+        ),
+        Span::styled(
+            "  ",
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
+        Span::styled(
+            detail,
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
+        ),
     ]));
 }
 

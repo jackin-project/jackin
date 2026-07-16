@@ -870,7 +870,9 @@ fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
     let thumb_fg = format!(
         "{}{}",
         crate::tui::ansi::RESET,
-        crate::tui::ansi::rgb_fg(jackin_ui::theme::scroll_thumb_rgb())
+        crate::tui::ansi::rgb_fg(crate::tui::ansi::role_rgb(
+            termrock::style::Role::ScrollThumb,
+        ))
     );
     assert!(
         rendered.contains(&thumb_fg),
@@ -1544,7 +1546,9 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
         assert!(
             !frame.contains(&format!(
                 "{}┌",
-                crate::tui::ansi::rgb_fg(jackin_ui::theme::border_rgb())
+                crate::tui::ansi::rgb_fg(
+                    crate::tui::ansi::role_rgb(termrock::style::Role::Border,)
+                )
             )),
             "{context} should hide inactive pane borders behind the dialog: {frame:?}"
         );

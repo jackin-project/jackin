@@ -7,10 +7,10 @@ description: "PHOSPHOR color palette, border color semantics, left sidebar conve
 
 Reusable component styling flows through TermRock's semantic `Theme` and `Role`
 API ([TermRock source](https://github.com/tailrocks/termrock)). jackin❯ surfaces
-call `Theme::default()` / `jackin_ui::theme` helpers such as `text_fg()`,
-`accent_fg()`, `border_fg()`, and `text_strong()` so ordinary, strong, muted,
-border, focus, danger, warning, tab, input, link, and scroll presentation stay
-on TermRock's default phosphor preset.
+resolve neutral presentation with `Theme::default().style(Role::…)` so ordinary,
+strong, muted, border, focus, danger, warning, tab, input, link, and scroll
+colors stay on TermRock's default phosphor preset. Product-owned brand/domain
+colors (brand pill, menu chips, status accents) live in `jackin_tui::tokens`.
 
 Product-owned tokens only — brand pill, launch rain, debug amber, blocked status,
 menu button states, action/disclosure accents, and light-bar `LINK_BLUE` — live

@@ -49,7 +49,6 @@ pub use jackin_launch::{
     active_stage_index, initial_view, update_launch_view, update_stage,
 };
 #[cfg(test)]
-use jackin_ui::theme::danger_fg;
 #[cfg(test)]
 use ratatui::Frame;
 #[cfg(test)]

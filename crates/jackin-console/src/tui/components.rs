@@ -8,7 +8,7 @@ pub mod auth_panel;
 pub mod brand_header;
 pub mod confirm_save;
 pub mod container_info;
-pub use jackin_ui::operator_info as container_info_surface;
+pub use jackin_tui::operator_info as container_info_surface;
 pub mod dialogs;
 pub mod editor_rows;
 pub mod env_value;

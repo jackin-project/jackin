@@ -17,7 +17,6 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
-use jackin_ui::theme::accent_fg;
 use termrock::Theme;
 use termrock::widgets::{
     Action, ChoiceDialog, ChoiceDialogState, DetailTableState, Dialog as MessageShell, List,
@@ -613,7 +612,7 @@ fn render_filter_picker(
     show_filter: bool,
 ) {
     // Reuse the shared modal panel so the menu/pickers match every other
-    // jackin❯ dialog: accent_fg() focused border + bold-white title.
+    // jackin❯ dialog: Theme::default().style(termrock::style::Role::Accent).fg.unwrap_or_default() focused border + bold-white title.
     let theme = Theme::default();
     let block = Panel::new(&theme)
         .title(title)
@@ -674,7 +673,10 @@ fn render_filter_picker(
                 id,
                 label: Line::from(Span::styled(
                     label.clone(),
-                    Style::default().fg(accent_fg()),
+                    Style::default().fg(Theme::default()
+                        .style(termrock::style::Role::Accent)
+                        .fg
+                        .unwrap_or_default()),
                 )),
                 trailing: None,
                 role: RowRole::Item,

@@ -291,7 +291,7 @@ Capsule always reserves the bottom terminal row for the white session context ba
 
 Most Capsule dialogs render through the same full-frame overlay path. That path paints an opaque solid-black backdrop over the content area and then draws the active dialog on top: pane bodies, pane borders, active-pane focus chrome, and scrollbars are hidden behind the fill, not dimmed. (Dimming the live content read as unstable, so the modal hides it outright.) The dialog footer hint renders above the bottom status row with one blank spacer row between them, so modal key hints stay in the bottom chrome area instead of inside or next to the dialog.
 
-Debug info is the status-preserving exception and follows the shared dialog contract in [Dialogs & Modals](/reference/tui/dialogs/#debug-info-dialog-contract): the top status/tab chrome and bottom context row remain visible, the dialog is centered in the content area between those reserved rows, and the copy/hover/scroll behavior comes from `jackin_ui::operator_info::ContainerInfoState` projected through TermRock `DetailTable` / scroll primitives.
+Debug info is the status-preserving exception and follows the shared dialog contract in [Dialogs & Modals](/reference/tui/dialogs/#debug-info-dialog-contract): the top status/tab chrome and bottom context row remain visible, the dialog is centered in the content area between those reserved rows, and the copy/hover/scroll behavior comes from `jackin_tui::operator_info::ContainerInfoState` projected through TermRock `DetailTable` / scroll primitives.
 
 The status bar is drawn after hiding the cursor, and the cursor is restored after the draw. It never causes the pane content to repaint unnecessarily.
 

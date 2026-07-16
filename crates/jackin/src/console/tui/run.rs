@@ -308,13 +308,25 @@ where
                 min_width: 0,
                 enabled: true,
                 style: ratatui::style::Style::default()
-                    .bg(jackin_ui::theme::danger_fg())
-                    .fg(jackin_ui::theme::text_fg())
+                    .bg(termrock::Theme::default()
+                        .style(termrock::style::Role::Danger)
+                        .fg
+                        .unwrap_or_default())
+                    .fg(termrock::Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default())
                     .add_modifier(ratatui::style::Modifier::BOLD),
                 hover_style: Some(
                     ratatui::style::Style::default()
-                        .bg(jackin_ui::theme::text_fg())
-                        .fg(jackin_ui::theme::danger_fg())
+                        .bg(termrock::Theme::default()
+                            .style(termrock::style::Role::Text)
+                            .fg
+                            .unwrap_or_default())
+                        .fg(termrock::Theme::default()
+                            .style(termrock::style::Role::Danger)
+                            .fg
+                            .unwrap_or_default())
                         .add_modifier(ratatui::style::Modifier::BOLD),
                 ),
             }];
@@ -326,8 +338,11 @@ where
             let theme = termrock::Theme::default().with_role(
                 termrock::style::Role::StatusBar,
                 ratatui::style::Style::default()
-                    .bg(jackin_ui::theme::text_fg())
-                    .fg(jackin_ui::theme::INK),
+                    .bg(termrock::Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default())
+                    .fg(jackin_tui::tokens::INK),
             );
             frame.render_stateful_widget(
                 &termrock::widgets::StatusBar::new(&[], &slots, &theme),

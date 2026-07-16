@@ -179,7 +179,10 @@ pub fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
 fn none_placeholder_line() -> Line<'static> {
     Line::from(Span::styled(
         "  (none)",
-        ratatui::style::Style::default().fg(jackin_ui::theme::muted_fg()),
+        ratatui::style::Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::TextMuted)
+            .fg
+            .unwrap_or_default()),
     ))
 }
 

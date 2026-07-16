@@ -384,7 +384,11 @@ pub fn failure_popup_hyperlink_overlay(
             .as_bytes(),
         );
         out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, href));
-        let ratatui::style::Color::Rgb(red, green, blue) = jackin_ui::theme::link_fg() else {
+        let ratatui::style::Color::Rgb(red, green, blue) = Theme::default()
+            .style(termrock::style::Role::Link)
+            .fg
+            .unwrap_or_default()
+        else {
             continue;
         };
         out.extend_from_slice(format!("\x1b[38;2;{red};{green};{blue}m\x1b[1;4m").as_bytes());

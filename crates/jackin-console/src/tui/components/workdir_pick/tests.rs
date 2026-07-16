@@ -167,13 +167,19 @@ fn selected_row_uses_shared_full_width_highlight() {
     for x in 1..59 {
         assert_eq!(
             buffer[(x, selected_y)].bg,
-            jackin_ui::theme::accent_fg(),
+            termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default(),
             "x={x}"
         );
     }
     assert_ne!(
         buffer[(59, selected_y)].bg,
-        jackin_ui::theme::accent_fg(),
+        termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default(),
         "selection must not paint the dialog border"
     );
 }

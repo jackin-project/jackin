@@ -19,7 +19,6 @@ use ratatui::{
 
 use jackin_core::ModalOutcome;
 use jackin_core::shorten_home;
-use jackin_ui::theme::muted_fg;
 use termrock::layout::render_dialog_shell;
 use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{Action, ActionBar, ActionBarState};
@@ -117,7 +116,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            jackin_ui::theme::text_strong(),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ))
         .alignment(Alignment::Center),
         chunks[1],
@@ -129,7 +128,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         Paragraph::new(Span::styled(
             shortened,
             Style::default()
-                .fg(muted_fg())
+                .fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::ITALIC),
         ))
         .alignment(Alignment::Center),

@@ -491,7 +491,10 @@ pub fn workspace_mount_preview_row(
 
 #[must_use]
 pub fn collapse_section_lines(collapses: &[(String, String)]) -> Vec<Line<'static>> {
-    let style = Style::default().fg(jackin_ui::theme::muted_fg());
+    let style = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::TextMuted)
+        .fg
+        .unwrap_or_default());
     collapses
         .iter()
         .map(|(child, parent)| {
@@ -735,9 +738,15 @@ pub struct TrustPreviewRow {
               per-section readability."
 )]
 pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>> {
-    let heading = jackin_ui::theme::text_strong();
-    let value = Style::default().fg(jackin_ui::theme::accent_fg());
-    let dim = Style::default().fg(jackin_ui::theme::muted_fg());
+    let heading = termrock::Theme::default().style(termrock::style::Role::TextStrong);
+    let value = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::Accent)
+        .fg
+        .unwrap_or_default());
+    let dim = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::TextMuted)
+        .fg
+        .unwrap_or_default());
 
     let mut out: Vec<Line<'static>> = Vec::new();
 
@@ -1004,10 +1013,19 @@ fn allowed_roles_summary(preview: &WorkspaceSavePreview) -> String {
 
 #[must_use]
 pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> {
-    let heading = jackin_ui::theme::text_strong();
-    let add_style = Style::default().fg(jackin_ui::theme::accent_fg());
-    let remove_style = Style::default().fg(jackin_ui::theme::muted_fg());
-    let sep_style = Style::default().fg(jackin_ui::theme::scroll_track_fg());
+    let heading = termrock::Theme::default().style(termrock::style::Role::TextStrong);
+    let add_style = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::Accent)
+        .fg
+        .unwrap_or_default());
+    let remove_style = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::TextMuted)
+        .fg
+        .unwrap_or_default());
+    let sep_style = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::ScrollTrack)
+        .fg
+        .unwrap_or_default());
 
     let mut out: Vec<Line<'static>> = Vec::new();
 

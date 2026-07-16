@@ -10,15 +10,19 @@ use ratatui::{
 
 use crate::tui::op_breadcrumb::parse_path_breadcrumb;
 
-use jackin_ui::theme::{accent_fg, text_fg};
-
 /// Render an `OpRef.path` as `vault / item [subtitle] / section -> field ?query`.
 pub fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
-    let dim = jackin_ui::theme::text_muted();
-    let white_style = Style::default().fg(text_fg());
-    let green = jackin_ui::theme::accent();
+    let dim = termrock::Theme::default().style(termrock::style::Role::TextMuted);
+    let white_style = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::Text)
+        .fg
+        .unwrap_or_default());
+    let green = termrock::Theme::default().style(termrock::style::Role::Accent);
     let green_bold = Style::default()
-        .fg(accent_fg())
+        .fg(termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default())
         .add_modifier(Modifier::BOLD);
     let Some(parts) = parse_path_breadcrumb(path) else {
         spans.push(Span::styled("<unparseable path - re-pick>", dim));

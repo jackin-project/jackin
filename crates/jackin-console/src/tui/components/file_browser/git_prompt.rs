@@ -25,7 +25,6 @@ use termrock::runtime::{Subscription, SubscriptionPoll};
 
 use super::input::FileBrowserOutcome;
 use super::state::FileBrowserState;
-use super::{accent_fg, muted_fg, text_fg};
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,11 +195,17 @@ pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<
 /// modal background so only the focused choice pops (canonical template).
 pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
     let focused = Style::default()
-        .bg(text_fg())
+        .bg(termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default())
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
     let unfocused = Style::default()
-        .fg(accent_fg())
+        .fg(termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default())
         .add_modifier(Modifier::BOLD);
     let btn = |target: GitPromptFocus, label: &'static str| -> Span<'static> {
         let style = if focus == target { focused } else { unfocused };
@@ -285,7 +290,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            jackin_ui::theme::text_strong(),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ))
         .alignment(Alignment::Center),
         prompt_row,
@@ -302,7 +307,10 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
             Paragraph::new(Span::styled(
                 url.to_owned(),
                 Style::default()
-                    .fg(muted_fg())
+                    .fg(termrock::Theme::default()
+                        .style(termrock::style::Role::TextMuted)
+                        .fg
+                        .unwrap_or_default())
                     .add_modifier(Modifier::ITALIC),
             ))
             .alignment(Alignment::Center),
