@@ -412,7 +412,7 @@ key = "clippy::wildcard_imports@jackin-term"
 bound = 2
 [[family.entry]]
 key = "clippy::wildcard_imports@jackin-usage"
-bound = 8
+bound = 7
 [[family.entry]]
 key = "dead_code@jackin"
 bound = 1

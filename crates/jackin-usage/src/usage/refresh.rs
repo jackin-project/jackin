@@ -6,10 +6,6 @@
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
-#[cfg_attr(
-    not(test),
-    expect(clippy::wildcard_imports, reason = "target-dependent")
-)]
 use super::*;
 use serde::Deserialize;
 
@@ -83,15 +79,8 @@ where
             let Some(target) = fallback_targets.get(&key).cloned() else {
                 continue;
             };
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "usage-refresh: provider probe timed out for {}",
-                target.cache_key()
-            );
-            jackin_diagnostics::operation::telemetry_error_line(
-                jackin_telemetry::schema::enums::ErrorType::Timeout,
-                "usage provider refresh timed out",
-            );
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::Timeout);
             let mut view = cached_unavailable_view(&target.agent, target.provider.as_deref(), now);
             view.last_error = Some("usage provider probe timed out".to_owned());
             results.push(UsageRefreshResult {
@@ -129,56 +118,54 @@ fn run_usage_probe<F>(
     }));
     let Ok(result) = result else {
         if let Some(operation) = operation {
-            operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Error, None);
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Error,
+                Some(jackin_telemetry::schema::enums::ErrorType::Panic),
+            );
         }
-        jackin_diagnostics::telemetry_error!(
-            jackin_telemetry::schema::enums::ErrorType::Panic,
-            "usage-refresh: provider probe panicked"
-        );
+        let _error =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::Panic);
         return;
     };
+    let error_type = result
+        .view
+        .last_error
+        .as_deref()
+        .map(usage_refresh_error_type);
     if let Some(operation) = operation {
-        let outcome = if result.view.last_error.is_some() {
+        let outcome = if error_type.is_some() {
             jackin_telemetry::schema::enums::OutcomeValue::Failure
         } else {
             jackin_telemetry::schema::enums::OutcomeValue::Success
         };
-        operation.complete(outcome, None);
+        operation.complete(outcome, error_type);
     }
-    if let Some(error) = result.view.last_error.as_deref() {
-        jackin_diagnostics::operation::telemetry_error_line(
-            usage_refresh_error_type(error),
-            "usage provider refresh failed",
-        );
+    if let Some(error_type) = error_type {
+        let _error = jackin_telemetry::record_error(error_type);
     }
-    drop(tx.send(result));
+    let _send = tx
+        .send(result)
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DependencyCancelled);
 }
 
-/// Log a persistence outcome at the right tier: always-on governed INFO event once when a
-/// fault starts and once when it clears, plus a per-cycle governed DEBUG events firehose
-/// line while it persists. Returns the new "failed" latch for the caller to store.
-pub(crate) fn log_persist_transition(
-    what: &str,
-    was_failed: bool,
-    result: Result<(), String>,
-) -> bool {
-    match result {
+pub(crate) fn record_persist_transition(was_failed: bool, result: Result<(), String>) -> bool {
+    match result.record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError) {
         Ok(()) => {
             if was_failed {
-                jackin_diagnostics::telemetry_info!("capsule", "{what} recovered");
+                let attrs = [jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::OUTCOME,
+                    value: jackin_telemetry::Value::Str(
+                        jackin_telemetry::schema::enums::OutcomeValue::Success.as_str(),
+                    ),
+                }];
+                let _recovery = jackin_telemetry::emit_event(
+                    &jackin_telemetry::event::OPERATION_WARN,
+                    jackin_telemetry::FieldSet::new(&attrs, None),
+                );
             }
             false
         }
-        Err(error) => {
-            if !was_failed {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "{what} failed (suppressing repeats until recovery): {error}"
-                );
-            }
-            jackin_diagnostics::telemetry_debug!("capsule", "{what} failed: {error}");
-            true
-        }
+        Err(_) => true,
     }
 }
 
@@ -291,22 +278,28 @@ pub(crate) fn write_shared_usage_snapshot(
     key: &str,
     view: &FocusedUsageView,
 ) {
-    let Ok(json) = serde_json::to_string(view) else {
+    let Ok(json) = serde_json::to_string(view)
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)
+    else {
         return;
     };
-    if let Err(error) = fs::create_dir_all(snapshots_dir) {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "usage snapshot dir create failed for {key}: {error}"
-        );
+    if fs::create_dir_all(snapshots_dir)
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+        .is_err()
+    {
         return;
     }
     let path = shared_usage_snapshot_path(snapshots_dir, key);
-    if let Err(error) = fs::write(path, json) {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "usage snapshot write failed for {key}: {error}"
-        );
+    let _write = fs::write(path, json)
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+}
+
+fn read_optional_usage_file(path: &Path) -> Option<String> {
+    match fs::read_to_string(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        result => result
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            .ok(),
     }
 }
 
@@ -315,8 +308,10 @@ pub(crate) fn read_shared_usage_snapshot(
     key: &str,
 ) -> Option<FocusedUsageView> {
     let path = shared_usage_snapshot_path(snapshots_dir, key);
-    let json = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&json).ok()
+    let json = read_optional_usage_file(&path)?;
+    serde_json::from_str(&json)
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)
+        .ok()
 }
 
 pub(crate) fn shared_usage_cooldown_marker_path(cooldown_dir: &Path, key: &str) -> PathBuf {
@@ -325,7 +320,7 @@ pub(crate) fn shared_usage_cooldown_marker_path(cooldown_dir: &Path, key: &str) 
 
 pub(crate) fn shared_usage_cooldown_active(cooldown_dir: &Path, key: &str, now_epoch: i64) -> bool {
     let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
-    let Ok(text) = fs::read_to_string(path) else {
+    let Some(text) = read_optional_usage_file(&path) else {
         return false;
     };
     let Some(first) = text.lines().next() else {
@@ -334,6 +329,7 @@ pub(crate) fn shared_usage_cooldown_active(cooldown_dir: &Path, key: &str, now_e
     first
         .trim()
         .parse::<i64>()
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)
         .is_ok_and(|until_epoch| until_epoch > now_epoch)
 }
 
@@ -348,13 +344,18 @@ pub(crate) fn shared_usage_rate_limit_cooldown_active(
     now_epoch: i64,
 ) -> bool {
     let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
-    let Ok(text) = fs::read_to_string(path) else {
+    let Some(text) = read_optional_usage_file(&path) else {
         return false;
     };
     let mut lines = text.lines();
     let until = lines
         .next()
-        .and_then(|s| s.trim().parse::<i64>().ok())
+        .and_then(|s| {
+            s.trim()
+                .parse::<i64>()
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)
+                .ok()
+        })
         .unwrap_or(0);
     if until <= now_epoch {
         return false;
@@ -368,24 +369,16 @@ pub(crate) fn write_shared_usage_cooldown_marker(
     until_epoch: i64,
     reason: &str,
 ) {
-    if let Err(error) = fs::create_dir_all(cooldown_dir) {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "usage cooldown marker dir create failed for {key}: {error}"
-        );
+    if fs::create_dir_all(cooldown_dir)
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+        .is_err()
+    {
         return;
     }
     let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
     let reason = reason.replace('\n', " ");
-    // A dropped marker means the provider gets re-probed inside its backoff
-    // window, so surface the failure rather than silently defeating the 429
-    // cooldown.
-    if let Err(error) = fs::write(path, format!("{until_epoch}\n{reason}\n")) {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "usage cooldown marker write failed for {key}: {error}"
-        );
-    }
+    let _write = fs::write(path, format!("{until_epoch}\n{reason}\n"))
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError);
 }
 
 pub(crate) fn usage_error_is_rate_limited(error: &str) -> bool {

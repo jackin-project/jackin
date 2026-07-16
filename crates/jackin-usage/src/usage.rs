@@ -121,8 +121,8 @@ pub(crate) use self::refresh::{
     MATERIALIZED_TMP_COUNTER, MaterializedUsageAccounts, RefreshLockOutcome,
     acquire_account_refresh_lock, acquire_account_refresh_lock_in, atomic_write_usage_json,
     collect_usage_refresh_results, collect_usage_refresh_results_with_timeout,
-    log_persist_transition, ordered_refresh_targets, parse_retry_after_seconds,
-    read_shared_usage_snapshot, refresh_interval_for_key, shared_usage_cooldown_active,
+    ordered_refresh_targets, parse_retry_after_seconds, read_shared_usage_snapshot,
+    record_persist_transition, refresh_interval_for_key, shared_usage_cooldown_active,
     shared_usage_cooldown_dir, shared_usage_cooldown_marker_path, shared_usage_file_path,
     shared_usage_lock_dir, shared_usage_rate_limit_cooldown_active, shared_usage_snapshot_path,
     shared_usage_snapshots_dir, usage_backoff_delay, usage_error_is_rate_limited,
@@ -192,10 +192,6 @@ pub struct UsageCache {
     /// [`MATERIALIZED_USAGE_ACCOUNTS_PATH`]; benches/tests inject a temp path
     /// via [`UsageCache::set_accounts_materialize_path`].
     accounts_materialize_path: PathBuf,
-    /// Latched on persistence failure so a persistent fault (e.g. read-only
-    /// `/jackin/state`, disk-full, DB corruption) logs once on transition via
-    /// always-on governed INFO event rather than every 5-minute refresh — and is never
-    /// invisible the way the firehose-only governed DEBUG events would be in production.
     telemetry_persist_failed: bool,
     accounts_materialize_failed: bool,
 }
@@ -550,18 +546,12 @@ impl UsageCache {
                 &self.usage_snapshot_store_path,
                 &stored_views,
             );
-            self.telemetry_persist_failed = log_persist_transition(
-                "usage usage snapshot store write",
-                self.telemetry_persist_failed,
-                result,
-            );
+            self.telemetry_persist_failed =
+                record_persist_transition(self.telemetry_persist_failed, result);
         }
         let materialize = self.materialize_accounts(now_epoch());
-        self.accounts_materialize_failed = log_persist_transition(
-            "usage accounts materialization",
-            self.accounts_materialize_failed,
-            materialize,
-        );
+        self.accounts_materialize_failed =
+            record_persist_transition(self.accounts_materialize_failed, materialize);
         // Release the per-account refresh locks only now — after the shared
         // snapshot has been written — so a waiting instance that next wins the
         // lock sees fresh shared data rather than re-fetching (Class III-D).

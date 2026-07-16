@@ -10,7 +10,7 @@ use crate::{Attr, FieldSet, Rejection, Value, emit_event, event, schema};
 /// The operation owner remains responsible for completing its span with the same
 /// error type. Keeping that responsibility explicit prevents an error handled by
 /// an inner scope from incorrectly poisoning a successful outer operation.
-fn record_error(error_type: schema::enums::ErrorType) -> Result<(), Rejection> {
+pub fn record_error(error_type: schema::enums::ErrorType) -> Result<(), Rejection> {
     let attrs = [
         Attr {
             key: schema::attrs::OUTCOME,
