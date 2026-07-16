@@ -38,7 +38,7 @@ jobs:
   validate-version-bump:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -56,6 +56,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: ./.github/actions/cache-cargo-registry
@@ -134,7 +135,7 @@ jobs:
   matrix-setup:
     name: Select runner lane
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     outputs:
       configs: ${{ steps.set.outputs.configs }}
       has_github: ${{ steps.set.outputs.has_github }}
@@ -166,7 +167,7 @@ jobs:
 
   version:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -246,6 +247,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache

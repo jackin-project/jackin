@@ -401,7 +401,7 @@ dependencies = [
  "bitflags 2.13.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2905,7 +2905,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.24"
+version = "0.1.27"
 dependencies = [
  "anyhow",
  "clap",
@@ -6346,7 +6346,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -6916,9 +6916,9 @@ dependencies = [
 
 [[package]]
 name = "turso"
-version = "0.7.0-pre.21"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55cff11cbafb5799d83138ed229dd1f32a651f049d43220fccc3a6b333c3ea6e"
+checksum = "cac8d131650c1bf6a2721202208b3dfba218be25c975f48bebda766173fbdc3b"
 dependencies = [
  "thiserror 2.0.18",
  "tracing",
