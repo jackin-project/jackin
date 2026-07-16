@@ -213,16 +213,8 @@ pub(crate) fn docker_resources_for_state(
     container_name: &str,
 ) -> DockerResources {
     let state_dir = paths.data_dir.join(container_name);
-    let manifest = InstanceManifest::read_optional(&state_dir).unwrap_or_else(|err| {
-        // A corrupt manifest falls back to name-derived resources, which can miss
-        // a renamed volume/network and silently leak it. Always-on (not the
-        // debug firehose) because the outcome is an operator-actionable resource
-        // leak, matching the degraded-path warns in runtime/image.rs.
-        jackin_diagnostics::telemetry_warn!(
-            "cleanup",
-            "reading manifest for {container_name} failed ({err}); deriving docker \
-             resources from the container name (a renamed volume/network may leak)"
-        );
+    let manifest = InstanceManifest::read_optional(&state_dir).unwrap_or_else(|_| {
+        let _warning = jackin_telemetry::record_recovered_degradation();
         None
     });
     manifest.map_or_else(

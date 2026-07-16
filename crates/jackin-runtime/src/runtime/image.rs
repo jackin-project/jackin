@@ -98,12 +98,6 @@ pub(super) fn local_image_buildx_args() -> Vec<&'static str> {
 }
 
 #[expect(
-    clippy::too_many_lines,
-    reason = "Decide-role-image: per-cache-state + per-invalidation-reason + \
-              per-build-strategy branches nested with telemetry. Inline shape \
-              preserves the per-decision-arm state machine."
-)]
-#[expect(
     clippy::too_many_arguments,
     reason = "Decide-role-image call site propagates paths, selector, cached + \
               validated repos, rebuild + branch override + pinned sha, docker, \
@@ -155,24 +149,14 @@ pub(super) async fn decide_role_image(
             Some("error")
         },
     );
-    let tags = match tag_result {
-        Ok(tags) => tags,
-        Err(error) => {
-            // Always-on, not just `telemetry_debug!`: a failing tag lookup forces a
-            // full rebuild, and a persistently degraded Docker daemon turns
-            // that into a silent rebuild storm whose only symptom is every
-            // launch being slow. Surface the cause at the always-on tier.
-            jackin_diagnostics::telemetry_warn!(
-                "image",
-                "could not list local image tags for {image}; rebuilding: {error:#}"
-            );
-            emit_image_decision(&image, ImageInvalidationReason::ImageListFailed);
-            return Ok(build_decision(
-                ImageInvalidationReason::ImageListFailed,
-                None,
-                base_image_override,
-            ));
-        }
+    let Ok(tags) = tag_result else {
+        let _warning = jackin_telemetry::record_recovered_degradation();
+        emit_image_decision(&image, ImageInvalidationReason::ImageListFailed);
+        return Ok(build_decision(
+            ImageInvalidationReason::ImageListFailed,
+            None,
+            base_image_override,
+        ));
     };
     if tags.is_empty() {
         let mut reason = ImageInvalidationReason::LocalImageMissing;
@@ -239,23 +223,14 @@ pub(super) async fn decide_role_image(
             Some("error")
         },
     );
-    let labels = match label_result {
-        Ok(labels) => labels,
-        Err(error) => {
-            // Always-on (see the tag-lookup fallback above): label inspection
-            // failing forces a rebuild despite the image existing, so a flaky
-            // daemon silently rebuilds on every launch. Make the cause visible.
-            jackin_diagnostics::telemetry_warn!(
-                "image",
-                "local image {image} exists but label inspection failed; rebuilding: {error:#}"
-            );
-            emit_image_decision(&image, ImageInvalidationReason::InspectFailed);
-            return Ok(build_decision(
-                ImageInvalidationReason::InspectFailed,
-                head_sha,
-                base_image_override,
-            ));
-        }
+    let Ok(labels) = label_result else {
+        let _warning = jackin_telemetry::record_recovered_degradation();
+        emit_image_decision(&image, ImageInvalidationReason::InspectFailed);
+        return Ok(build_decision(
+            ImageInvalidationReason::InspectFailed,
+            head_sha,
+            base_image_override,
+        ));
     };
 
     match classify_image_labels(&labels, &expected_recipes) {
@@ -1009,15 +984,11 @@ async fn reuse_staleness_reason(
         Some(timing_detail),
     );
 
-    for (agent, check) in &results {
-        if *check == version_check::AgentVersionCheck::Unknown {
-            jackin_diagnostics::telemetry_warn!(
-                "image",
-                "derived image {image}: could not verify {} version; \
-                 staleness undetermined (latest release unresolvable)",
-                agent.runtime().slug()
-            );
-        }
+    if results
+        .iter()
+        .any(|(_, check)| *check == version_check::AgentVersionCheck::Unknown)
+    {
+        let _warning = jackin_telemetry::record_recovered_degradation();
     }
     if let Some((agent, _)) = results
         .into_iter()

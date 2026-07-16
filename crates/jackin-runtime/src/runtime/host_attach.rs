@@ -1328,22 +1328,17 @@ struct RawModeGuard {
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
         let mut stdout = std::io::stdout().lock();
-        if let Err(err) = stdout
+        if stdout
             .write_all(&outer_terminal_reset_sequence())
             .and_then(|()| stdout.flush())
+            .is_err()
         {
-            jackin_diagnostics::telemetry_warn!(
-                "attach",
-                "failed to write terminal reset on detach: {err}"
-            );
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         }
-        if self.raw_mode
-            && let Err(err) = crossterm::terminal::disable_raw_mode()
-        {
-            jackin_diagnostics::telemetry_warn!(
-                "attach",
-                "failed to disable raw mode on detach: {err}"
-            );
+        if self.raw_mode && crossterm::terminal::disable_raw_mode().is_err() {
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         }
     }
 }

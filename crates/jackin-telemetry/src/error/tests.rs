@@ -15,6 +15,7 @@ fn result_extension_preserves_every_result_type() {
     let _error = error
         .record_telemetry_error(schema::enums::ErrorType::DbError)
         .unwrap_err();
+    record_recovered_degradation().expect("registered recovered warning");
 }
 
 struct WithoutFormatting;

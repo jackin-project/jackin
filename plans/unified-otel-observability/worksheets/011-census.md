@@ -69,11 +69,11 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-runtime/src/host_daemon.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/reactive_daemon.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/runtime/apple_container.rs` | 14 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-runtime/src/runtime/attach.rs` | 2 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-runtime/src/runtime/cleanup.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-runtime/src/runtime/attach.rs` | 2 | 0 | 0 | 0 | 0 | 0 | REPLACE deterministic socket-path fallback with one bodyless recovered-degradation warning; remaining DEBUG sites require classification |
+| `crates/jackin-runtime/src/runtime/cleanup.rs` | 1 | 0 | 0 | 0 | 0 | 0 | REPLACE corrupt-manifest fallback with one bodyless recovered-degradation warning; remaining DEBUG site requires classification |
 | `crates/jackin-runtime/src/runtime/docker_profile.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-runtime/src/runtime/host_attach.rs` | 24 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-runtime/src/runtime/image.rs` | 13 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-runtime/src/runtime/host_attach.rs` | 24 | 0 | 0 | 0 | 0 | 0 | REPLACE terminal-reset teardown failures with bodyless typed `io_error`; remaining DEBUG sites require classification |
+| `crates/jackin-runtime/src/runtime/image.rs` | 13 | 0 | 0 | 0 | 0 | 0 | REPLACE handled lookup/inspect/version failures with one bodyless recovered-degradation warning per decision; remaining DEBUG sites require classification |
 | `crates/jackin-runtime/src/runtime/image/build.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/runtime/image/version.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/runtime/launch/exit_diagnosis.rs` | 2 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, and attach-error migration passes: 124 `telemetry_info!`, 243 `telemetry_debug!`, and 8 `telemetry_warn!` sites. The generic macro machinery and these 375 sites remain open; `telemetry_error!` invocations are now zero, and macro names in definitions or documentation are excluded.
+Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, attach-error, and recovered-degradation migration passes: 124 `telemetry_info!`, 243 `telemetry_debug!`, and 1 `telemetry_warn!` site. The generic macro machinery and these 368 sites remain open; `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.

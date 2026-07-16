@@ -86,7 +86,7 @@ pub fn select_host_attach_transport(
             "socket path is {path_len} bytes, at/over the {MAX_UNIX_SOCKET_PATH_LEN}-byte \
              sun_path limit; using attach-proxy (shorten the jackin state dir)"
         );
-        jackin_diagnostics::telemetry_warn!("attach", "{reason}");
+        let _warning = jackin_telemetry::record_recovered_degradation();
         return HostAttachTransportPlan::AttachProxy {
             socket_path,
             direct_error: Some(reason),
