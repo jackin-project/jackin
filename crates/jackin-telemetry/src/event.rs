@@ -413,15 +413,31 @@ macro_rules! emit_schema_event {
 
 include!("event_emit.rs");
 
-pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Rejection> {
-    let enabled = match def.severity {
+fn event_enabled(def: &EventDef) -> bool {
+    match def.severity {
         Severity::Trace => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::TRACE),
         Severity::Debug => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::DEBUG),
         Severity::Info => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::INFO),
         Severity::Warn => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::WARN),
         Severity::Error => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::ERROR),
-    };
-    if !enabled {
+    }
+}
+
+/// Emit a governed event whose body is formatted only after its level is enabled.
+pub fn emit_event_display(
+    def: &'static EventDef,
+    attrs: &[Attr<'_>],
+    body: &impl std::fmt::Display,
+) -> Result<(), Rejection> {
+    if !event_enabled(def) {
+        return Ok(());
+    }
+    let body = body.to_string();
+    emit_event(def, FieldSet::new(attrs, Some(&body)))
+}
+
+pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Rejection> {
+    if !event_enabled(def) {
         return Ok(());
     }
     let invocation = crate::identity::current_invocation().map(|id| id.to_string());

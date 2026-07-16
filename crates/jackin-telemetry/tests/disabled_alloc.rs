@@ -4,6 +4,14 @@
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
+struct PanicDisplay;
+
+impl std::fmt::Display for PanicDisplay {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        panic!("disabled telemetry formatted its body")
+    }
+}
+
 #[test]
 fn disabled_alloc_facade_fast_paths_allocate_nothing() {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -41,6 +49,12 @@ fn disabled_alloc_facade_fast_paths_allocate_nothing() {
         jackin_telemetry::FieldSet::default(),
     )
     .expect("registered event");
+    jackin_telemetry::emit_event_display(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        &[],
+        &PanicDisplay,
+    )
+    .expect("disabled display event");
     let operation =
         jackin_telemetry::root_operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
             .expect("registered operation");
