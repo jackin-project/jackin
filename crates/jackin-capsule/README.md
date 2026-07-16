@@ -32,7 +32,7 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 | [`attach_context.rs`](src/attach_context.rs) | single host-connection state | — |
 | [`attach_protocol.rs`](src/attach_protocol.rs) | attach lifecycle helpers | — |
 | [`protocol.rs`](src/protocol.rs) · [`protocol/`](src/protocol) | capsule wire framing helpers | — |
-| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | composition, chrome/input, ANSI rules, and daemon-facing compositor/input/layout adapters over TermRock and shared operator-info UI | nested, including [`daemon/compositor`](src/tui/daemon/compositor/tests.rs) |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | composition, chrome/input, ANSI rules, and daemon-facing compositor/input/layout adapters over TermRock and shared operator-info UI | nested; daemon-adapter integration lives in [`daemon/tests.rs`](src/daemon/tests.rs) |
 | [`clipboard.rs`](src/clipboard.rs) · [`clipboard/`](src/clipboard) | clipboard image staging + idle expiry | [`tests.rs`](src/clipboard/tests.rs) |
 | [`runtime_setup.rs`](src/runtime_setup.rs) · [`runtime_setup/`](src/runtime_setup) | in-container git/auth/MCP setup | [`tests.rs`](src/runtime_setup/tests.rs) |
 | [`config.rs`](src/config.rs) | `CapsuleConfig` load/validate | — |

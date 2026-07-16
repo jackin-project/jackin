@@ -772,7 +772,7 @@ fn pane_hyperlink_regions(
     )
 }
 
-fn pane_sgr_regions(
+pub(super) fn pane_sgr_regions(
     panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
 ) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
@@ -798,7 +798,3 @@ fn cell_sgr_metadata(cell: &jackin_term::Cell) -> SgrMetadata {
         overline: cell.attrs.overline,
     }
 }
-
-#[cfg(test)]
-#[path = "compositor/tests.rs"]
-mod tests;

@@ -4,6 +4,8 @@
 //! Unit tests for `jackin-capsule` daemon: input dispatch, session management,
 //! tab lifecycle, git context, status-bar rendering, and PTY session behavior.
 use super::*;
+use crate::tui::socket_backend::SgrMetadata;
+use jackin_term::DamageGrid;
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -12,6 +14,65 @@ use crate::protocol::attach::read_server_frame;
 use crate::tui::components::dialog::PullRequestStatus;
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 use tokio::io::AsyncReadExt;
+
+fn sgr_regions_for_inner(bytes: &[u8], inner: Rect) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+    let mut grid = DamageGrid::new(2, 10, 100);
+    grid.process(bytes);
+    let view = grid.scrollback_view(0, 2);
+    let panes = vec![VisiblePane {
+        id: 1,
+        outer: inner,
+        inner,
+        focused: false,
+    }];
+    let pane_screens = vec![(1u64, crate::tui::view::PaneScreen::View(view))];
+    compositor::pane_sgr_regions(&panes, &pane_screens)
+}
+
+fn sgr_regions_for(bytes: &[u8]) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+    sgr_regions_for_inner(bytes, Rect::new(2, 3, 5, 10))
+}
+
+#[test]
+fn pane_sgr_regions_coalesces_one_styled_run_and_skips_default() {
+    let regions = sgr_regions_for(b"\x1b[4:3mab\x1b[24mcd");
+    assert_eq!(regions.len(), 1, "got {regions:?}");
+    let (rect, metadata) = regions[0];
+    assert_eq!((rect.x, rect.y, rect.width, rect.height), (3, 2, 2, 1));
+    assert_eq!(metadata.underline_style, jackin_term::UnderlineStyle::Curly);
+}
+
+#[test]
+fn pane_sgr_regions_splits_adjacent_differing_runs() {
+    let regions = sgr_regions_for(b"\x1b[4:3mab\x1b[4:2mcd");
+    assert_eq!(regions.len(), 2, "got {regions:?}");
+    assert_eq!((regions[0].0.x, regions[0].0.width), (3, 2));
+    assert_eq!(
+        regions[0].1.underline_style,
+        jackin_term::UnderlineStyle::Curly
+    );
+    assert_eq!((regions[1].0.x, regions[1].0.width), (5, 2));
+    assert_eq!(
+        regions[1].1.underline_style,
+        jackin_term::UnderlineStyle::Double
+    );
+}
+
+#[test]
+fn pane_sgr_regions_empty_when_nothing_styled() {
+    assert!(sgr_regions_for(b"plain text").is_empty());
+}
+
+#[test]
+fn pane_sgr_regions_clamps_run_to_inner_width() {
+    let regions = sgr_regions_for_inner(b"\x1b[4:3mabcdef", Rect::new(0, 0, 5, 4));
+    assert_eq!(regions.len(), 1, "got {regions:?}");
+    assert_eq!(regions[0].0.width, 4, "run must clamp to inner cols");
+    assert_eq!(
+        regions[0].1.underline_style,
+        jackin_term::UnderlineStyle::Curly
+    );
+}
 
 #[derive(Debug)]
 struct NullChildKiller;
@@ -6814,7 +6875,7 @@ fn reattach_updates_capabilities_without_resetting_model_palette() {
 // CLI/TUI output captured outside the unit test process.
 
 use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
-use jackin_term::{Cell, DamageGrid};
+use jackin_term::Cell;
 
 /// The outer terminal: a second `DamageGrid` sized to the attach client.
 /// `apply` is `process()`; the capsule's own `?2026` brackets and mode
