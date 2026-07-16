@@ -88,7 +88,6 @@ runs:
     - name: Save Cargo registry
       if: >-
         steps.restore.outputs.cache-hit != 'true' &&
-        steps.verify.outputs.ready != 'true' &&
         (github.ref == 'refs/heads/main' ||
          github.event_name == 'workflow_dispatch' ||
          (github.event_name == 'pull_request' &&
