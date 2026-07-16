@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // GENERATED from registry/ — do not hand-edit. Regenerate: cargo xtask telemetry-registry --generate.
 
-// registry: kind=internal; attributes=cli.command.name:recommended,cli.invocation.id:recommended,error.type:recommended,outcome:recommended,process.exit_code:recommended,session.id:recommended
+// registry: kind=internal; attributes=cli.command.name:recommended,cli.invocation.id:recommended,error.type:recommended,outcome:recommended,process.exit.code:recommended,session.id:recommended
 pub const APP_SHUTDOWN: &str = "app.shutdown";
 pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
     name: APP_SHUTDOWN,
@@ -118,7 +118,7 @@ pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
             ],
         },
         super::AttributeRequirement {
-            name: "process.exit_code",
+            name: "process.exit.code",
             value_type: super::ValueType::Integer,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
@@ -131,7 +131,7 @@ pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=internal; attributes=cli.command.name:recommended,cli.invocation.id:recommended,error.type:recommended,outcome:recommended,process.exit_code:recommended,session.id:recommended
+// registry: kind=internal; attributes=cli.command.name:recommended,cli.invocation.id:recommended,error.type:recommended,outcome:recommended,process.exit.code:recommended,session.id:recommended
 pub const APP_STARTUP: &str = "app.startup";
 pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
     name: APP_STARTUP,
@@ -247,7 +247,7 @@ pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
             ],
         },
         super::AttributeRequirement {
-            name: "process.exit_code",
+            name: "process.exit.code",
             value_type: super::ValueType::Integer,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
@@ -294,7 +294,7 @@ pub const BACKGROUND_CYCLE_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=internal; attributes=cli.command.name:required,cli.invocation.id:required,error.type:recommended,outcome:recommended,process.exit_code:recommended,session.id:recommended
+// registry: kind=internal; attributes=cli.command.name:required,cli.invocation.id:required,error.type:recommended,outcome:recommended,process.exit.code:recommended,session.id:recommended
 pub const CLI_COMMAND: &str = "cli.command";
 pub const CLI_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
     name: CLI_COMMAND,
@@ -410,7 +410,7 @@ pub const CLI_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
             ],
         },
         super::AttributeRequirement {
-            name: "process.exit_code",
+            name: "process.exit.code",
             value_type: super::ValueType::Integer,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
@@ -770,7 +770,7 @@ pub const PREWARM_SCHEDULE_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=client; attributes=cli.invocation.id:recommended,outcome:recommended,process.executable.name:recommended,process.exit_code:recommended,session.id:recommended
+// registry: kind=client; attributes=cli.invocation.id:recommended,outcome:recommended,process.executable.name:recommended,process.exit.code:recommended,session.id:recommended
 pub const PROCESS_COMMAND: &str = "process.command";
 pub const PROCESS_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
     name: PROCESS_COMMAND,
@@ -803,7 +803,7 @@ pub const PROCESS_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
             allowed_values: &[],
         },
         super::AttributeRequirement {
-            name: "process.exit_code",
+            name: "process.exit.code",
             value_type: super::ValueType::Integer,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],

@@ -445,7 +445,7 @@ fn emit_pty_exit(def: &'static EventDef, fields: FieldSet<'_>) {
                 field_gen_ai_conversation_id,
                 String
             ),
-            ("process.exit_code", field_process_exit_code, Integer),
+            ("process.exit.code", field_process_exit_code, Integer),
             ("pty.exit.reason", field_pty_exit_reason, String),
             ("session.id", field_session_id, String),
         ]

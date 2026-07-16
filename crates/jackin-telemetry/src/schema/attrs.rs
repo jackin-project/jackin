@@ -388,7 +388,7 @@ pub const PROCESS_EXECUTABLE_NAME_DEF: super::AttributeMetadata = super::Attribu
     allowed_values: &[],
 };
 // registry-type: int
-pub const PROCESS_EXIT_CODE: &str = "process.exit_code";
+pub const PROCESS_EXIT_CODE: &str = "process.exit.code";
 pub const PROCESS_EXIT_CODE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: PROCESS_EXIT_CODE,
     description: "Process exit code.",

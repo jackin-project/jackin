@@ -48,7 +48,7 @@ groups:
       - { id: app.widget.name, type: string, examples: [workspace.table], brief: Stable application widget name., stability: development }
       - { id: gen_ai.agent.name, type: string, examples: [codex], brief: Generative AI agent name., stability: development }
       - { id: gen_ai.conversation.id, type: string, examples: [conversation-1], brief: Generative AI conversation identifier., stability: development }
-      - { id: process.exit_code, type: int, brief: Process exit code., stability: stable }
+      - { id: process.exit.code, type: int, brief: Process exit code., stability: stable }
       - { id: process.executable.name, type: string, examples: [git], brief: Process executable name without its path., stability: stable }
       - { id: rpc.system.name, type: string, examples: [jackin], brief: Identifies the remote system being called., stability: stable }
       - { id: rpc.method, type: string, examples: [jackin.capsule.Control/Status], brief: Fully-qualified logical RPC method name., stability: stable }
