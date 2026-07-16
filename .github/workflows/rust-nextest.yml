@@ -28,11 +28,6 @@ on:
         description: Shared Rust cache namespace for this nextest lane.
         required: true
         type: string
-      save-target-cache:
-        description: Save the restored Rust target cache after package or Docker jobs finish.
-        required: false
-        default: true
-        type: boolean
       construct-image-changed:
         description: Download and load the PR-built construct image before Docker E2E.
         required: false
@@ -88,20 +83,23 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ inputs.cache-shared-key }}-package-${{ matrix.package }}
+          shared-key: ${{ inputs.cache-shared-key }}
+          add-job-id-key: "false"
           cache-all-crates: "false"
           cache-workspace-crates: "false"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           save-if: >-
-            ${{ github.ref == 'refs/heads/main' ||
-                github.event_name == 'workflow_dispatch' ||
-                (github.event_name == 'pull_request' &&
-                 github.event.pull_request.head.repo.full_name == github.repository) }}
+            ${{ matrix.package == 'jackin' &&
+                (github.ref == 'refs/heads/main' ||
+                 github.event_name == 'workflow_dispatch' ||
+                 (github.event_name == 'pull_request' &&
+                  github.event.pull_request.head.repo.full_name == github.repository)) }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
-          # Dependency outputs remain separate from the compact first-party
-          # cache below; copying the full target graph per crate exceeds cache
-          # quota and takes longer to transfer than compiling workspace code.
+          # Every crate restores one dependency universe; only the broad jackin
+          # crate job may publish it. Per-crate dependency archives duplicate
+          # almost the entire graph and exceed the repository cache quota.
+          # First-party outputs remain in the compact crate cache below.
           # Both lanes use the same target-cache contract. Velnor's persistent
           # runner state remains a transparent accelerator beneath it.
       - name: Cache compiled workspace crate outputs

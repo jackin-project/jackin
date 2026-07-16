@@ -85,8 +85,11 @@ MSRV, applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
 Scheduling follows the reverse dependency closure; the compact compiled-output
 cache key follows the forward dependency closure. That cache stores only
 first-party fingerprints, libraries, binaries, build outputs, and test
-executables. Third-party outputs stay in the dependency cache instead of being
-duplicated into every crate archive.
+executables. Every crate job restores the same dependency-universe cache, while
+only the broad `jackin` crate job may publish it. This keeps one authoritative
+copy of unchanged third-party outputs instead of duplicating nearly the whole
+dependency graph into every crate archive and exhausting the repository cache
+quota.
 
 ## Verification matrix
 
