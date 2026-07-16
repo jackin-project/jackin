@@ -21,6 +21,7 @@ use std::path::Path;
 use std::time::{Instant, SystemTime};
 
 use jackin_core::Agent;
+use jackin_telemetry::ResultTelemetryExt as _;
 
 use jackin_protocol::control::TokenUsageSummary;
 
@@ -235,27 +236,22 @@ pub fn read_file_text(path: &Path) -> std::io::Result<Option<String>> {
 /// adapter shares; only `fold` (the per-file parse) differs.
 ///
 /// Returns `None` — meaning "do not change the session totals" — in both the
-/// no-file-contributed case and on a real read failure (which is logged with
-/// `label` + path). Both collapse to the same caller action: keep the prior
-/// totals rather than SET a partial recompute that could regress a monotonic
-/// counter. `Some(acc)` is a complete pass the caller commits.
+/// no-file-contributed case and on a real read failure. Both collapse to the
+/// same caller action: keep the prior totals rather than SET a partial
+/// recompute that could regress a monotonic counter. `Some(acc)` is a complete
+/// pass the caller commits.
 pub fn recompute_spend(
     files: &[std::path::PathBuf],
-    label: &str,
     mut fold: impl FnMut(&str, &mut SpendAcc),
 ) -> Option<SpendAcc> {
     let mut acc = SpendAcc::default();
     for path in files {
-        match read_file_text(path) {
+        match read_file_text(path)
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+        {
             Ok(Some(text)) => fold(&text, &mut acc),
             Ok(None) => {}
-            Err(e) => {
-                jackin_diagnostics::telemetry_debug!(
-                    "capsule",
-                    "token monitor: {label} read {path:?} failed: {e}"
-                );
-                return None;
-            }
+            Err(_) => return None,
         }
     }
     acc.seen.then_some(acc)

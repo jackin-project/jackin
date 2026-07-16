@@ -62,7 +62,7 @@ fn find_jsonl_files() -> Vec<PathBuf> {
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     let files = find_jsonl_files();
-    let Some(acc) = super::recompute_spend(&files, "claude", |text, acc| {
+    let Some(acc) = super::recompute_spend(&files, |text, acc| {
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;

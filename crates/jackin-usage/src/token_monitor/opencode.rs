@@ -4,6 +4,7 @@
 
 use super::TokenSession;
 use crate::store_backend::{self, DbOperation, connect_local, params};
+use jackin_telemetry::ResultTelemetryExt as _;
 
 const DB_PATH: &str = "/home/agent/.local/share/opencode/opencode.db";
 
@@ -12,11 +13,10 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> bool {
         return false;
     }
 
-    let Ok(conn) = connect_local(DB_PATH).await else {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "token monitor: opencode db open failed: {DB_PATH:?}"
-        );
+    let Ok(conn) = connect_local(DB_PATH)
+        .await
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError)
+    else {
         return false;
     };
 
@@ -26,29 +26,23 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> bool {
         conn.query(query, params![session.last_rowid]),
     )
     .await
-    else {
+    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError) else {
         // Pre-v1.2 OpenCode stored messages as JSON files, not SQLite; a missing
         // `message` table lands here. Reading that legacy format is not yet
         // implemented — treat as "no new data".
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "token monitor: opencode db schema mismatch, query failed"
-        );
         return false;
     };
 
     let mut changed = false;
     loop {
-        let row = match rows.next().await {
+        let row = match rows
+            .next()
+            .await
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError)
+        {
             Ok(Some(row)) => row,
             Ok(None) => break,
-            Err(e) => {
-                jackin_diagnostics::telemetry_debug!(
-                    "capsule",
-                    "token monitor: opencode row read failed: {e}"
-                );
-                break;
-            }
+            Err(_) => break,
         };
         let (Ok(rowid), Ok(input), Ok(output)) =
             (row.get::<i64>(0), row.get::<i64>(1), row.get::<i64>(2))

@@ -43,12 +43,11 @@ fn bench_reread(c: &mut Criterion) {
         group.throughput(Throughput::Elements(elems));
         group.bench_function(format!("recompute_{files}x{lines}"), |b| {
             b.iter(|| {
-                let acc =
-                    recompute_spend(black_box(&paths), "bench", |text, acc: &mut SpendAcc| {
-                        // Cheap fold: count non-empty lines as activity units.
-                        acc.input += text.lines().filter(|l| !l.is_empty()).count() as u64;
-                        acc.seen = true;
-                    });
+                let acc = recompute_spend(black_box(&paths), |text, acc: &mut SpendAcc| {
+                    // Cheap fold: count non-empty lines as activity units.
+                    acc.input += text.lines().filter(|l| !l.is_empty()).count() as u64;
+                    acc.seen = true;
+                });
                 black_box(acc);
             });
         });

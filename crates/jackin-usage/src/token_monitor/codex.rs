@@ -99,7 +99,7 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     // to the running aggregate. A single `Acc` across all files would instead let
     // the last-walked file's cumulative overwrite the rest. Codex carries no
     // cache-write dimension, so `SpendAcc.cache_write` stays 0.
-    super::recompute_spend(&files, "codex", |text, total| {
+    super::recompute_spend(&files, |text, total| {
         let mut acc = Acc::default();
         for line in text.lines() {
             if !line.trim().is_empty() {

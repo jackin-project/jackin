@@ -36,7 +36,7 @@ fn find_wire_files() -> Vec<PathBuf> {
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     let files = find_wire_files();
-    super::recompute_spend(&files, "kimi", |text, acc| {
+    super::recompute_spend(&files, |text, acc| {
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;

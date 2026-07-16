@@ -11,7 +11,7 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     // Amp keeps thread files flat directly under `threads/` — top level only
     // (max_depth 0), so unrelated nested JSON never inflates the spend total.
     let files = super::find_provider_files(&["/home/agent/.local/share/amp/threads"], "json", 0);
-    super::recompute_spend(&files, "amp", |content, acc| {
+    super::recompute_spend(&files, |content, acc| {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(content) else {
             return;
         };
