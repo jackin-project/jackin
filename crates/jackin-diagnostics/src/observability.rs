@@ -346,10 +346,11 @@ mod otlp {
 
     impl OtlpProviders {
         fn shutdown_only(&self) {
-            drop(self.tracer.shutdown());
-            drop(self.logger.shutdown());
+            let timeout = std::time::Duration::from_secs(1);
+            drop(self.tracer.shutdown_with_timeout(timeout));
+            drop(self.logger.shutdown_with_timeout(timeout));
             if let Some(meter) = &self.meter {
-                drop(meter.shutdown());
+                drop(meter.shutdown_with_timeout(timeout));
             }
             health::record_shutdown(true);
         }
@@ -374,7 +375,10 @@ mod otlp {
                 .push("tracer");
             let trace_flush = self.tracer.force_flush();
             health::record_signal_export(health::Signal::Traces, trace_flush.is_ok());
-            drop(self.tracer.shutdown());
+            drop(
+                self.tracer
+                    .shutdown_with_timeout(std::time::Duration::from_secs(1)),
+            );
             #[cfg(test)]
             SHUTDOWN_ORDER
                 .lock()
@@ -382,7 +386,10 @@ mod otlp {
                 .push("logger");
             let log_flush = self.logger.force_flush();
             health::record_signal_export(health::Signal::Logs, log_flush.is_ok());
-            drop(self.logger.shutdown());
+            drop(
+                self.logger
+                    .shutdown_with_timeout(std::time::Duration::from_secs(1)),
+            );
             let metric_flush = self.meter.as_ref().map(|meter| {
                 #[cfg(test)]
                 SHUTDOWN_ORDER
@@ -391,7 +398,7 @@ mod otlp {
                     .push("meter");
                 let flushed = meter.force_flush();
                 health::record_signal_export(health::Signal::Metrics, flushed.is_ok());
-                drop(meter.shutdown());
+                drop(meter.shutdown_with_timeout(std::time::Duration::from_secs(1)));
                 flushed
             });
             let failed = trace_flush
@@ -1327,6 +1334,11 @@ mod otlp {
         use opentelemetry::metrics::MeterProvider as _;
         use std::sync::Mutex;
 
+        let runtime = otel_runtime()?;
+        let runtime = runtime
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
+        let _runtime_guard = runtime.enter();
         let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
             .with_tonic()
             .with_temporality(opentelemetry_sdk::metrics::Temporality::Cumulative)
@@ -1450,8 +1462,10 @@ mod otlp {
                 providers.flush_and_shutdown();
             }
         }
-        if let Ok(mut runtime) = OTEL_RUNTIME.lock() {
-            drop(runtime.take());
+        if let Ok(mut runtime) = OTEL_RUNTIME.lock()
+            && let Some(runtime) = runtime.take()
+        {
+            runtime.shutdown_background();
         }
     }
 

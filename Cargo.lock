@@ -2800,6 +2800,7 @@ dependencies = [
  "jackin-image",
  "jackin-launch-tui",
  "jackin-manifest",
+ "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime",

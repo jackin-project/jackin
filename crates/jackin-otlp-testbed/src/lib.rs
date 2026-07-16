@@ -343,15 +343,7 @@ impl Testbed {
                     &mut violations,
                 );
                 for span in resource.scope_spans.iter().flat_map(|scope| &scope.spans) {
-                    scan_text(&span.name, prohibited, &mut violations);
-                    scan_values(Some(&span.attributes), prohibited, &mut violations);
-                    for event in &span.events {
-                        scan_text(&event.name, prohibited, &mut violations);
-                        scan_values(Some(&event.attributes), prohibited, &mut violations);
-                    }
-                    if let Some(status) = &span.status {
-                        scan_text(&status.message, prohibited, &mut violations);
-                    }
+                    scan_span_values(span, prohibited, &mut violations);
                 }
             }
         }
@@ -413,6 +405,22 @@ impl Testbed {
         })
         .await
         .is_ok()
+    }
+}
+
+fn scan_span_values(
+    span: &opentelemetry_proto::tonic::trace::v1::Span,
+    prohibited: &[&str],
+    violations: &mut Vec<String>,
+) {
+    scan_text(&span.name, prohibited, violations);
+    scan_values(Some(&span.attributes), prohibited, violations);
+    for event in &span.events {
+        scan_text(&event.name, prohibited, violations);
+        scan_values(Some(&event.attributes), prohibited, violations);
+    }
+    if let Some(status) = &span.status {
+        scan_text(&status.message, prohibited, violations);
     }
 }
 
