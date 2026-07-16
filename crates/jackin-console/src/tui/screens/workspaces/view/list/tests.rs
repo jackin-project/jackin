@@ -423,7 +423,7 @@ fn panel_inner(area: Rect) -> Rect {
 }
 
 /// Scan the first content row inside a sub-panel for its first printable
-/// character. The content rectangle comes from the owning TermRock component,
+/// character. The content rectangle comes from the owning `TermRock` component,
 /// so this product test does not infer geometry from border glyphs.
 fn first_content_indent(terminal: &Terminal<TestBackend>) -> Option<usize> {
     let buf = terminal.backend().buffer();
