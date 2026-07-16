@@ -122,7 +122,7 @@ fn capsule_hot_paths_have_no_send_render_cdebug() {
     ));
     let compositor = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../jackin-capsule/src/daemon/compositor.rs"
+        "/../jackin-capsule/src/tui/daemon/compositor.rs"
     ));
 
     assert!(

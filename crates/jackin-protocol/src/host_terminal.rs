@@ -73,7 +73,10 @@ where
         match tokio::time::timeout(remaining, reader.read(&mut chunk)).await {
             Ok(Ok(0) | Err(_)) | Err(_) => break,
             Ok(Ok(n)) => {
-                buf.extend_from_slice(&chunk[..n]);
+                let Some(bytes) = chunk.get(..n) else {
+                    break;
+                };
+                buf.extend_from_slice(bytes);
                 let parsed = extract_color_replies(&buf);
                 if parsed.fg.is_some() && parsed.bg.is_some() {
                     break;
@@ -98,34 +101,59 @@ fn extract_color_replies(buf: &[u8]) -> HostColors {
             leftover.extend_from_slice(rest);
             break;
         };
-        let candidate = &rest[start..];
+        let Some(candidate) = rest.get(start..) else {
+            break;
+        };
         let code = match candidate.get(3) {
             Some(b'0') => 10u8,
             Some(b'1') => 11u8,
             _ => {
-                leftover.extend_from_slice(&rest[..=start]);
-                rest = &rest[start + 1..];
+                let Some(consumed) = rest.get(..=start) else {
+                    break;
+                };
+                leftover.extend_from_slice(consumed);
+                let Some(tail) = rest.get(start + 1..) else {
+                    break;
+                };
+                rest = tail;
                 continue;
             }
         };
         if candidate.get(4) != Some(&b';') {
-            leftover.extend_from_slice(&rest[..=start]);
-            rest = &rest[start + 1..];
+            let Some(consumed) = rest.get(..=start) else {
+                break;
+            };
+            leftover.extend_from_slice(consumed);
+            let Some(tail) = rest.get(start + 1..) else {
+                break;
+            };
+            rest = tail;
             continue;
         }
         let payload_start = 5;
-        let Some((payload_end, term_len)) = find_terminator(&candidate[payload_start..]) else {
-            leftover.extend_from_slice(&rest[..start]);
+        let Some(payload_and_terminator) = candidate.get(payload_start..) else {
             break;
         };
-        let payload = &candidate[payload_start..payload_start + payload_end];
+        let Some((payload_end, term_len)) = find_terminator(payload_and_terminator) else {
+            leftover.extend_from_slice(rest);
+            break;
+        };
+        let Some(payload) = candidate.get(payload_start..payload_start + payload_end) else {
+            break;
+        };
         let parsed = parse_color_payload(payload);
         match code {
             10 => fg = parsed.or(fg),
             _ => bg = parsed.or(bg),
         }
-        leftover.extend_from_slice(&rest[..start]);
-        rest = &candidate[payload_start + payload_end + term_len..];
+        let Some(prefix) = rest.get(..start) else {
+            break;
+        };
+        leftover.extend_from_slice(prefix);
+        let Some(tail) = candidate.get(payload_start + payload_end + term_len..) else {
+            break;
+        };
+        rest = tail;
     }
     HostColors {
         fg,
@@ -153,8 +181,8 @@ fn find_terminator(bytes: &[u8]) -> Option<(usize, usize)> {
 }
 
 fn parse_color_payload(payload: &[u8]) -> Option<(u8, u8, u8)> {
-    let payload = std::str::from_utf8(payload).ok()?;
-    if let Some(rgb) = payload.strip_prefix("rgb:") {
+    if let Some(rgb) = payload.strip_prefix(b"rgb:") {
+        let rgb = std::str::from_utf8(rgb).ok()?;
         let mut channels = rgb.split('/');
         let r = parse_channel(channels.next()?)?;
         let g = parse_channel(channels.next()?)?;
@@ -164,15 +192,19 @@ fn parse_color_payload(payload: &[u8]) -> Option<(u8, u8, u8)> {
         }
         return Some((r, g, b));
     }
-    if let Some(hex) = payload.strip_prefix('#')
+    if let Some(hex) = payload.strip_prefix(b"#")
         && hex.len() == 6
     {
-        let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-        let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-        let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+        let r = parse_hex_byte(hex.get(0..2)?)?;
+        let g = parse_hex_byte(hex.get(2..4)?)?;
+        let b = parse_hex_byte(hex.get(4..6)?)?;
         return Some((r, g, b));
     }
     None
+}
+
+fn parse_hex_byte(bytes: &[u8]) -> Option<u8> {
+    u8::from_str_radix(std::str::from_utf8(bytes).ok()?, 16).ok()
 }
 
 fn parse_channel(channel: &str) -> Option<u8> {
@@ -184,3 +216,6 @@ fn parse_channel(channel: &str) -> Option<u8> {
     let max = (1u32 << (4 * digits)) - 1;
     u8::try_from(value * 255 / max).ok()
 }
+
+#[cfg(test)]
+mod tests;
