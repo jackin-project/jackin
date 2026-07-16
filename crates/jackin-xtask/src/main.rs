@@ -25,6 +25,7 @@ mod release_verify;
 mod report;
 mod schema;
 mod suppressions;
+mod telemetry_bench;
 mod telemetry_registry;
 mod test_layout;
 
@@ -92,6 +93,9 @@ enum Command {
     /// Validate the closed OpenTelemetry semantic registry and generated Rust.
     #[command(name = "telemetry-registry")]
     TelemetryRegistry(telemetry_registry::TelemetryRegistryArgs),
+    /// Capture and enforce the reviewed 5% telemetry performance baseline.
+    #[command(name = "telemetry-bench")]
+    TelemetryBench(telemetry_bench::TelemetryBenchArgs),
     /// Workspace lint gates.
     ///
     /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
@@ -195,6 +199,7 @@ fn main() -> ExitCode {
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),
         Command::TelemetryRegistry(args) => telemetry_registry::run(args),
+        Command::TelemetryBench(args) => telemetry_bench::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::ReleaseVerify(args) => release_verify::run(args),
         Command::Health(args) => health::run(args),

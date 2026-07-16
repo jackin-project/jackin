@@ -197,12 +197,15 @@ jobs:
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: cargo bench --workspace --locked -- --quick 2>&1 | tee bench-output.txt
+      - name: Enforce telemetry performance baseline
+        run: cargo xtask telemetry-bench --capture
       - name: Upload bench results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: criterion-results-${{ github.run_id }}
           path: |
             bench-output.txt
+            target/telemetry-bench-current.json
             target/criterion/**/estimates.json
           if-no-files-found: warn
 

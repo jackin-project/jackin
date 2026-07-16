@@ -1,0 +1,11 @@
+{
+  "max_regression_percent": 5.0,
+  "unit": "ns",
+  "reference": "x86_64 Linux, rustc 1.97.0, Criterion quick medians, 2026-07-16",
+  "benchmarks": {
+    "console_frame": 162417.1416015625,
+    "launch_pipeline": 7466997.5595703125,
+    "pane_body": 155060.9833984375,
+    "pty_byte_pump": 443222.296875
+  }
+}
