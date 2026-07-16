@@ -21,7 +21,7 @@ One consistent status vocabulary across `jackin console`, `jackin hardline`, the
 | `done` | Returned to idle after work; the operator has not yet reviewed that pane. |
 | `idle` | Idle and already seen, or a shell pane with no active agent. |
 | `unknown` | No reliable evidence. Unknown is safer than pretending. |
-| `stuck` | Diagnostic overlay: progress was expected, no reliable transition arrived in time. Never replaces `blocked`. Shipped today only as daemon `clog!` telemetry (`status.stuck: …`); there is no wire-level `Stuck` state, console glyph, or rate-limited operator affordance yet — that surfacing work belongs to the cross-process event stream tracked by [jackin❯ Capsule](/roadmap/jackin-capsule/) and [Agent attention prompts](/roadmap/agent-attention-prompts/), not to this item. |
+| `stuck` | Diagnostic overlay: progress was expected, no reliable transition arrived in time. Never replaces `blocked`. Shipped today as the registered `agent.state.stuck` metric and `agent.status.stuck` field on the governed state-change event; there is no wire-level `Stuck` state, console glyph, or rate-limited operator affordance yet — that surfacing work belongs to the cross-process event stream tracked by [jackin❯ Capsule](/roadmap/jackin-capsule/) and [Agent attention prompts](/roadmap/agent-attention-prompts/), not to this item. |
 
 Raw detector states are `unknown | working | blocked | idle` plus per-pane `seen`; `done` is derived as raw `idle + !seen` and is never reported by any detector or reporter. The wire carries the public `AgentState` (including `Unknown`); the capsule derives `done` from `seen`. Roll-up is `blocked > done > working > idle > unknown`.
 

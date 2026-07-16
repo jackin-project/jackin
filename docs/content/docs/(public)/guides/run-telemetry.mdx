@@ -14,7 +14,7 @@ jackin diagnostics validate
 
 jackin❯ uses OTLP/gRPC. `OTEL_EXPORTER_OTLP_ENDPOINT` configures all three signals, while `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` can override individual destinations. Leave the protocol unset or set it to `grpc`; another protocol stops startup with [E016](/reference/errors/E016/).
 
-`jackin diagnostics validate` emits one governed marker for each signal and requests a force-flush. It reports a non-zero exit when delivery is disabled, unconfigured, inactive, or the flush fails. Positive per-signal backend acknowledgement is not implemented yet, so a successful run is an exporter configuration/flush check rather than proof that the backend accepted all three signals.
+`jackin diagnostics validate` emits one governed marker for each signal and requests a force-flush. It reports a non-zero exit when delivery is disabled, unconfigured, inactive, rejected, or the flush fails. Success requires a new exporter-success observation for traces, logs, and metrics, no new exporter failure or facade rejection, and a successful shared bounded flush. This confirms delivery to the configured OTLP endpoint, not downstream retention or indexing.
 
 Set `OTEL_SDK_DISABLED=true` to disable OpenTelemetry explicitly. With no endpoint, normal product work continues without export or local fallback files.
 
@@ -36,4 +36,4 @@ Telemetry attributes are allowlist-first and schema-validated. Paths, workspace 
 
 Export uses bounded queues and timeouts. An unavailable or slow endpoint can make telemetry incomplete, but it does not block product work or create a local fallback artifact. Point the exporter only at a backend you trust.
 
-For the schema, identity, propagation, and current delivery contract, see [Application observability](/reference/runtime/diagnostics/). Final typed daemon health remains pending.
+For the schema, identity, propagation, current delivery contract, and typed host and Capsule daemon health, see [Application observability](/reference/runtime/diagnostics/).

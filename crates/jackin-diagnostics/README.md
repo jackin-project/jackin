@@ -27,7 +27,7 @@ The closed schema and governed emission APIs live in `jackin-telemetry`; do not 
 
 ## Public API
 
-Consumers initialize telemetry, inspect provider state, request marker/flush checks, manage invocation progress, and route operator notices. Per-signal backend proof and final typed health remain pending. Instrumentation uses `jackin-telemetry`.
+Consumers initialize telemetry, inspect typed provider health, request marker/flush checks with per-signal exporter-success proof, manage invocation progress, and route operator notices. Instrumentation uses `jackin-telemetry`.
 
 ## How to verify
 

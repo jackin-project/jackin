@@ -21,7 +21,7 @@ Provider construction is best-effort and product work stays fail-open. Export us
 
 <RepoFile path="crates/jackin-telemetry/registry/manifest.yaml">`crates/jackin-telemetry/registry`</RepoFile> is the closed OpenTelemetry semantic-convention 1.43 extension registry and generates the current names and bounded enums. Complete offline-reproducible Weaver generation, bidirectional schema comparison, per-event required/allowed-field enforcement, and the remaining limit and second-line validation matrices are active roadmap work.
 
-New product instrumentation uses `jackin-telemetry` registered events, operation guards, metric handles, and ownership-aware spawn helpers. Architecture gates constrain direct OpenTelemetry SDK use and arbitrary telemetry targets, but legacy call-site migration and complete synthetic gate coverage are not finished. Operator-facing prose remains a separate output port.
+Product instrumentation uses `jackin-telemetry` registered events, operation guards, metric handles, and ownership-aware spawn helpers. The legacy `clog!` and `cdebug!` call sites have been removed; migration of the remaining generic telemetry macros and complete synthetic gate coverage remain active roadmap work. Architecture gates constrain direct OpenTelemetry SDK use and arbitrary telemetry targets. Operator-facing prose remains a separate output port.
 
 ## Identity and resources
 
