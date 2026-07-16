@@ -122,13 +122,18 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
         return result;
     }
 
-    let mut config = match AppConfig::load_or_init(&paths) {
-        Ok(config) => config,
-        Err(error) => {
-            let result: Result<()> = Err(error.into());
-            finish_invocation(&diagnostics, invocation, &result);
-            return result;
-        }
+    let mut config = match &command {
+        // Role authoring is repository-local and must not create or read the
+        // operator's product configuration as a side effect.
+        Command::Role(_) => AppConfig::default(),
+        _ => match AppConfig::load_or_init(&paths) {
+            Ok(config) => config,
+            Err(error) => {
+                let result: Result<()> = Err(error.into());
+                finish_invocation(&diagnostics, invocation, &result);
+                return result;
+            }
+        },
     };
     apply_telemetry_config(&config);
     let interactive = app_mode == jackin_telemetry::schema::enums::AppMode::Interactive;

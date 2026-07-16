@@ -1841,15 +1841,14 @@ mod otlp {
             return;
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        let mut succeeded = providers
+        let succeeded = providers
             .as_ref()
             .is_none_or(|providers| providers.flush_and_shutdown(deadline));
         if let Some(runtime) = runtime {
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            if remaining.is_zero() {
-                succeeded = false;
-            }
-            runtime.shutdown_timeout(remaining);
+            // Providers have already flushed and shut down under the deadline.
+            // Waiting for retired tonic driver tasks can deadlock process exit;
+            // the runtime owns no product work after provider shutdown.
+            runtime.shutdown_background();
         }
         let timed_out = std::time::Instant::now() >= deadline;
         if let Some(generation) = generation {
