@@ -470,7 +470,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                         "runtime_prewarm_done",
                         jackin_diagnostics::DiagnosticStage::AgentBinaries,
                         "prewarmed sibling runtime binaries",
-                        Some(&agent_binary_prepare_summary(&prepared)),
+                        Some(&agent_binary_prepare_summary(prepared)),
                     ),
                     Err(error) => run.stage(
                         "runtime_prewarm_failed",

@@ -200,16 +200,14 @@ fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
         .expect("close daemon client");
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let guard = tracing::subscriber::set_default(subscriber);
-    assert!(
-        handle_stream(
-            &mut server,
-            &layout,
-            "test-build",
-            &CoredumpPolicy::Disabled,
-            &mut attention,
-        )
-        .is_err()
-    );
+    handle_stream(
+        &mut server,
+        &layout,
+        "test-build",
+        &CoredumpPolicy::Disabled,
+        &mut attention,
+    )
+    .expect_err("closed client must fail the daemon response write");
     drop(guard);
     export.force_flush();
     assert_eq!(export.error_span_count(), 1);

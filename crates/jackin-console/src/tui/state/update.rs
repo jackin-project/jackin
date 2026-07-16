@@ -101,12 +101,12 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
             value: jackin_telemetry::Value::Str(telemetry_screen(state).as_str()),
         });
-        telemetry_widget(state).into_iter().for_each(|widget| {
+        if let Some(widget) = telemetry_widget(state) {
             attrs.push(jackin_telemetry::Attr {
                 key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_ID,
                 value: jackin_telemetry::Value::Str(widget),
             });
-        });
+        }
         jackin_telemetry::root_operation(&jackin_telemetry::operation::UI_ACTION, &attrs).ok()
     });
     let action_span = action_guard.as_ref().map(|guard| guard.span().enter());

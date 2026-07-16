@@ -16,9 +16,7 @@ use serde::Deserialize;
 pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn usage_refresh_error_type(error: &str) -> jackin_telemetry::schema::enums::ErrorType {
-    if usage_error_is_rate_limited(error) {
-        jackin_telemetry::schema::enums::ErrorType::HttpError
-    } else if error.to_ascii_lowercase().contains("http") {
+    if usage_error_is_rate_limited(error) || error.to_ascii_lowercase().contains("http") {
         jackin_telemetry::schema::enums::ErrorType::HttpError
     } else {
         jackin_telemetry::schema::enums::ErrorType::RpcError
