@@ -284,8 +284,10 @@ jobs:
           "$DOCS_XTASK" research check
 
   docs-link-check:
-    needs: changes
+    needs: [changes, deployment-state]
     if: >-
+      always() &&
+      needs.changes.result == 'success' &&
       needs.changes.outputs.docs == 'true' &&
       (needs.changes.outputs.result-reuse != 'true' ||
        github.ref == 'refs/heads/main')
@@ -491,7 +493,10 @@ jobs:
           retention-days: 7
 
       - name: Upload artifact
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        if: >-
+          needs.deployment-state.outputs.reuse != 'true' &&
+          (github.event_name == 'push' ||
+           (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: docs/.output/public
