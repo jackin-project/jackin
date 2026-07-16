@@ -376,7 +376,7 @@ jobs:
           mkdir -p target/ci-tools
           cp target/ci-xtask/debug/jackin-xtask target/ci-tools/jackin-xtask
           for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack; do
-            cp "$(command -v "$tool")" "target/ci-tools/$tool"
+            cp "$(mise which "$tool")" "target/ci-tools/$tool"
           done
           strip target/ci-tools/*
       - name: Upload shared CI xtask

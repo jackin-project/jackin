@@ -45,6 +45,6 @@ runs:
         CI_TOOLS_PATH: ${{ github.workspace }}/target/ci-tools/${{ inputs.lane }}
       run: |
         set -euo pipefail
-        chmod +x "$CI_XTASK_PATH"
+        chmod +x "$CI_TOOLS_PATH"/*
         echo "CI_XTASK=$CI_XTASK_PATH" >> "$GITHUB_ENV"
         echo "$CI_TOOLS_PATH" >> "$GITHUB_PATH"
