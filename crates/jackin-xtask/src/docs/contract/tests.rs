@@ -8,6 +8,13 @@ fn prose_does_not_change_link_surface() {
 }
 
 #[test]
+fn component_copy_does_not_change_link_attributes() {
+    let first = "Read <Link href=\"/guide\">the guide</Link>.\n";
+    let second = "Open <Link href=\"/guide\">documentation</Link> now.\n";
+    assert_eq!(extract_link_surface(first), extract_link_surface(second));
+}
+
+#[test]
 fn multiline_link_targets_are_part_of_surface() {
     let surface = String::from_utf8(extract_link_surface("[docs](\n/guide\n)\nother\n")).unwrap();
     assert!(surface.contains("/guide"));
