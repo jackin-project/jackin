@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Product-owned console dialog state composed from canonical TermRock widgets.
+//! Product-owned console dialog state composed from canonical `TermRock` widgets.
 
 use std::marker::PhantomData;
 

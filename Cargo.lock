@@ -2894,7 +2894,6 @@ dependencies = [
  "termrock",
  "tokio",
  "toml",
- "tui-widget-list",
 ]
 
 [[package]]
@@ -2907,7 +2906,6 @@ dependencies = [
  "jackin-diagnostics",
  "termrock",
  "tokio",
- "tui-widget-list",
 ]
 
 [[package]]
@@ -6910,16 +6908,6 @@ checksum = "a495ec7eb64f1505a94d56bbb337792b15448394879552b09be2a1460846d99b"
 dependencies = [
  "document-features",
  "ratatui-core",
-]
-
-[[package]]
-name = "tui-widget-list"
-version = "0.15.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fbf7f6c7d04beb3602630d83db44e81d7a1de1fea11ca3435d82e094c5c0192"
-dependencies = [
- "ratatui-core",
- "ratatui-widgets",
 ]
 
 [[package]]

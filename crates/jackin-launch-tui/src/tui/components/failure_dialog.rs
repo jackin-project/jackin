@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch failure composition over TermRock's canonical message/detail widgets.
+//! Launch failure composition over `TermRock`'s canonical message/detail widgets.
 
 use ratatui::{
     Frame,

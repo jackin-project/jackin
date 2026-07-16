@@ -5,7 +5,7 @@
 //! GitHub-hosted mounts.
 //!
 //! Mirrors `WorkdirPickState`'s shape — one `Vec`-driven list +
-//! `tui_widget_list::ListState` — so the rest of the launch TUI can
+//! `termrock::widgets::ListState` — so the rest of the launch TUI can
 //! dispatch it with the same Up/Down/Enter pattern.
 
 use crate::github_mounts::GithubChoice;

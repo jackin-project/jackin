@@ -21,7 +21,7 @@ pub struct FileBrowserState {
     pub cwd: PathBuf,
     /// Entries loaded from `cwd`, after filtering + sorting.
     pub entries: Vec<FolderEntry>,
-    /// Canonical TermRock selection state. Drives which row is highlighted.
+    /// Canonical `TermRock` selection state. Drives which row is highlighted.
     pub list_state: ListState<usize>,
     /// Set when the operator presses `s` but the selection is rejected
     /// (e.g. `$HOME` itself, `~/.jackin/...`). Cleared on the next key.
