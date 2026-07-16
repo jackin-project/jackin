@@ -875,6 +875,45 @@ fn governed_operation_line_does_not_duplicate_active_run_log() {
     assert_eq!(logs[0].record.event_name(), Some("operation.log"));
 }
 
+#[test]
+fn result_error_helper_exports_one_typed_error_without_raw_value() {
+    use jackin_telemetry::ResultTelemetryExt as _;
+    use opentelemetry::logs::{AnyValue, Severity};
+
+    struct PrivateError;
+
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
+    let (export, subscriber) = super::test_layers(false, "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        let ok: Result<(), PrivateError> = Ok(());
+        assert!(matches!(
+            ok.record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError),
+            Ok(())
+        ));
+
+        let error: Result<(), PrivateError> = Err(PrivateError);
+        assert!(matches!(
+            error.record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError),
+            Err(PrivateError)
+        ));
+    });
+    export.logger_provider.force_flush().unwrap();
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].record.event_name(), Some("error.typed"));
+    assert_eq!(logs[0].record.severity_number(), Some(Severity::Error));
+    assert_eq!(logs[0].record.body(), None);
+    assert_eq!(
+        log_attribute(&logs[0].record, "error.type"),
+        Some(&AnyValue::String("db_error".into()))
+    );
+    assert_eq!(
+        log_attribute(&logs[0].record, "outcome"),
+        Some(&AnyValue::String("error".into()))
+    );
+}
+
 fn emit_severity_matrix() {
     let outcome = [jackin_telemetry::Attr {
         key: jackin_telemetry::schema::attrs::OUTCOME,

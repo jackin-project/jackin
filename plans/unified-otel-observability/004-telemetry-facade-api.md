@@ -142,6 +142,7 @@ Extend `cargo xtask telemetry-registry` with source-scan checks over production 
 - Construct registered metric handles once during installation. Canonicalize dimension sets by schema identity without formatting/allocation, reject duplicate keys, and prove order-independent cardinality plus exact 256-series export behavior.
 - Observable callback enforcement must structurally and dynamically reject I/O, async locks, filesystem scans, and runtime entry; callbacks may read only atomics or cheap synchronous snapshots.
 - Delete or govern every public string-name span/metric API in diagnostics, and make the source-policy lint syntax-aware with permanent allowed/prohibited fixtures.
+- Provide one generic `ResultTelemetryExt` ownership-boundary helper that records any `Err` as the registered `error.typed` event without formatting the error value. Automatic `tracing-opentelemetry` inference remains disabled: the semantic operation owner explicitly completes span status, preventing handled inner errors from poisoning successful outer operations or exporting raw error text.
 
 ## Test plan
 

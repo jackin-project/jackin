@@ -584,7 +584,7 @@ key = "crates/jackin-runtime/README.md"
 bound = 3571
 [[family.entry]]
 key = "crates/jackin-telemetry/README.md"
-bound = 1963
+bound = 1940
 [[family.entry]]
 key = "crates/jackin-term/README.md"
 bound = 2915

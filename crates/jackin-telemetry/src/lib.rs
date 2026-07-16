@@ -7,6 +7,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod cache;
+mod error;
 pub mod event;
 pub mod health;
 pub mod identity;
@@ -21,6 +22,7 @@ pub mod spawn;
 pub mod ui;
 mod validation;
 
+pub use error::ResultTelemetryExt;
 pub use event::{
     Attr, EventDef, FieldSet, Rejection, Severity, Value, emit_event, emit_event_display,
 };

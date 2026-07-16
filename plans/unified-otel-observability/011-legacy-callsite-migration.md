@@ -116,6 +116,7 @@ The firehose must stay gated: run the volume check (export-volume conformance) a
 - Remove duplicate attach ERROR emission and correct mechanically wrong severity/outcome mappings (WARN is not cancellation; INFO is not success for failures; recovered persistence/fallback is one WARN).
 - Narrow raw-tracing exemptions to exact composition-root constructs, cover all span macro/alias forms, and add a syntax-aware permanent ban for every legacy/generic macro token.
 - Replace synthetic volume evidence with representative production/hot-loop flows, per-severity counts, and explicit default DEBUG/TRACE absence.
+- Every migrated error site records its `Err` exactly once at the semantic owner through `ResultTelemetryExt` or a more specific registered boundary; no raw error value is formatted into telemetry. Propagated operation failures also complete the owning span with the same bounded `error.type`.
 
 ## Test plan
 
