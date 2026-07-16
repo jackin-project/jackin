@@ -310,8 +310,6 @@ fn process_execute_completion<T>(
                 Some(
                     DockerError::CommandFailed { .. }
                         | DockerError::CommandFailedWithStderr { .. }
-                        | DockerError::CommandFailedDebugRun { .. }
-                        | DockerError::CommandFailedSuppressed { .. }
                         | DockerError::CommandFailedStderrSummary { .. }
                         | DockerError::CommandFailedCapturedSuppressed { .. }
                         | DockerError::CommandFailedSeeStderr { .. }
@@ -530,22 +528,6 @@ impl ShellRunner {
                 return Err(cmd_failed(program, args).into());
             }
             if !stream {
-                if let Some(run) = jackin_diagnostics::active_run().filter(|_| self.debug) {
-                    return Err(DockerError::CommandFailedDebugRun {
-                        program: program.to_owned(),
-                        args: args.join(" "),
-                        run_id: run.run_id().to_owned(),
-                    }
-                    .into());
-                }
-                if let Some(run) = jackin_diagnostics::active_run() {
-                    return Err(DockerError::CommandFailedSuppressed {
-                        program: program.to_owned(),
-                        args: args.join(" "),
-                        run_id: run.run_id().to_owned(),
-                    }
-                    .into());
-                }
                 if let Some(stderr) = summarize_stderr(&stderr_buf) {
                     return Err(DockerError::CommandFailedStderrSummary {
                         program: program.to_owned(),

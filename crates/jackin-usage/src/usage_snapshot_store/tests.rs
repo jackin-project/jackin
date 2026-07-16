@@ -109,7 +109,7 @@ fn provider_usage_view(
 #[test]
 fn account_snapshot_rows_are_persisted_and_upserted() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
 
     store_usage_snapshot(&db, &usage_view()).expect("store first snapshot");
     let mut changed = usage_view();
@@ -141,7 +141,7 @@ fn account_snapshot_rows_are_persisted_and_upserted() {
 #[test]
 fn repeated_writes_reuse_cached_connection() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
 
     store_usage_snapshot(&db, &usage_view()).expect("store first snapshot");
     assert_eq!(
@@ -173,11 +173,11 @@ fn repeated_writes_reuse_cached_connection() {
 /// existing rows with the declared defaults. Every other test starts from a
 /// fresh DB where the `CREATE TABLE` already has all columns, so the ALTER loop
 /// is otherwise never exercised — yet an operator upgrading capsule over an
-/// existing `/jackin/state` usage.db is exactly the caller who hits it.
+/// existing `/jackin/state/usage/snapshots.db` is exactly the caller who hits it.
 #[test]
 fn schema_migration_adds_columns_to_pre_v4_table() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
     let path = db.to_str().expect("utf8 path").to_owned();
 
     // Seed a legacy table: the original 16 columns only, plus one row.
@@ -243,7 +243,7 @@ fn schema_migration_adds_columns_to_pre_v4_table() {
 #[test]
 fn focused_usage_view_rebuilds_snapshot_from_account_rows() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
     store_usage_snapshot(&db, &usage_view()).expect("store snapshot");
 
     let view = focused_usage_view(&db, Some("codex"), Some("Codex"), 1_781_185_590)
@@ -276,7 +276,7 @@ fn focused_usage_view_rebuilds_snapshot_from_account_rows() {
 #[test]
 fn focused_usage_view_ticks_relative_updated_label_from_fetch_time() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
     store_usage_snapshot(&db, &usage_view()).expect("store snapshot");
 
     let view = focused_usage_view(&db, Some("codex"), Some("Codex"), 1_781_185_680)
@@ -289,7 +289,7 @@ fn focused_usage_view_ticks_relative_updated_label_from_fetch_time() {
 #[test]
 fn focused_usage_view_resolves_provider_from_agent_when_missing() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
     let now = 1_781_185_680;
     store_usage_snapshot(
         &db,
@@ -331,7 +331,7 @@ fn focused_usage_view_resolves_provider_from_agent_when_missing() {
 #[test]
 fn focused_usage_view_without_resolved_provider_does_not_match_all() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
     store_usage_snapshot(&db, &usage_view()).expect("store snapshot");
 
     let view = focused_usage_view(&db, Some("unknown-agent"), None, 1_781_185_680)
@@ -343,7 +343,7 @@ fn focused_usage_view_without_resolved_provider_does_not_match_all() {
 #[test]
 fn focused_usage_view_sorts_provider_buckets_canonically() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
     let now = 1_781_185_680;
     let mut view = provider_usage_view(
         "GLM / Z.AI",
@@ -391,7 +391,7 @@ fn focused_usage_view_sorts_provider_buckets_canonically() {
 #[test]
 fn all_provider_snapshots_round_trip_from_turso_to_usage_overlay_rows() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
     let now = 1_781_185_680;
     let providers = [
         (
@@ -478,7 +478,7 @@ fn all_provider_snapshots_round_trip_from_turso_to_usage_overlay_rows() {
 #[test]
 fn usage_snapshot_store_records_schema_version() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
+    let db = dir.path().join("snapshots.db");
 
     store_usage_snapshot(&db, &usage_view()).expect("store snapshot");
 

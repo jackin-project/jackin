@@ -1133,8 +1133,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // endpoint. Installs the tracing subscriber the governed INFO event/governed DEBUG events bridge and
     // the session-anchor span feed into; the guard flushes on daemon exit.
     let _otlp_flush = crate::telemetry::init();
-    // Initialise the capsule log after OTLP so the logger can use a single
-    // durable sink: OTLP when active.
+    // Resolve Capsule telemetry detail and install panic handling after OTLP so
+    // crash events use the active governed exporter.
     crate::logging::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();

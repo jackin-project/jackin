@@ -818,9 +818,9 @@ fn copy_kimi_credentials_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
         if ft.is_symlink() {
             // Route via the TUI-safe channel: the rich loading cockpit owns
             // the terminal while this runs (credentials stage). A bare
-            // `eprintln!` would corrupt the cockpit. `emit_compact_line`
-            // lands in the diagnostics run jsonl and only prints to stderr
-            // when no rich surface is active.
+            // `eprintln!` would corrupt the cockpit. `emit_compact_line` emits
+            // governed telemetry when an invocation is active and defers the
+            // operator notice until the rich surface tears down.
             jackin_diagnostics::emit_compact_line(
                 "kimi-auth",
                 &format!(

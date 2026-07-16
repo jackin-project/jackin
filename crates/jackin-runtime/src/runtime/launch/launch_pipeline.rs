@@ -353,8 +353,8 @@ pub async fn resolve_supported_agents_for_console(
     Ok(validated_repo.manifest.supported_agents())
 }
 
-/// Instrument the full launch pipeline so every stage appears as a
-/// child span in the diagnostics run log so stage events carry real `span_id` correlation.
+/// Instrument the full launch pipeline so every stage appears as a child span
+/// in the governed trace and its events carry real `span_id` correlation.
 /// Prefix each validation error with its source tag (`config`/`workspace`/
 /// `role`/`merged`) for the operator-facing message.
 pub(super) fn tag_errors<E: std::fmt::Display>(tag: &str, errors: Vec<E>) -> Vec<String> {

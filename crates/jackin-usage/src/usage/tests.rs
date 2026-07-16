@@ -232,7 +232,7 @@ fn codex_rpc_maps_spark_windows_and_reset_credits() {
 fn usage_status_label_prefers_in_memory_cache_before_store() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut cache = UsageCache::default();
-    cache.set_usage_snapshot_store_path(dir.path().join("missing").join("usage.sqlite3"));
+    cache.set_usage_snapshot_store_path(dir.path().join("missing").join("snapshots.db"));
     let view = codex_cached_usage_view();
     let expected = view.status_bar_label.clone();
     cache.snapshots.insert(
@@ -250,7 +250,7 @@ fn usage_status_label_prefers_in_memory_cache_before_store() {
 fn usage_snapshot_prefers_in_memory_cache_before_store() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut cache = UsageCache::default();
-    cache.set_usage_snapshot_store_path(dir.path().join("missing").join("usage.sqlite3"));
+    cache.set_usage_snapshot_store_path(dir.path().join("missing").join("snapshots.db"));
     let view = codex_cached_usage_view();
     let expected_label = view.status_bar_label.clone();
     cache.snapshots.insert(
@@ -273,7 +273,7 @@ fn usage_snapshot_prefers_in_memory_cache_before_store() {
 #[test]
 fn usage_status_label_does_not_read_store_on_cache_miss() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.sqlite3");
+    let db = dir.path().join("snapshots.db");
     crate::usage_snapshot_store::store_usage_snapshot(&db, &codex_cached_usage_view())
         .expect("store usage snapshot");
     let mut cache = UsageCache::default();
@@ -290,7 +290,7 @@ fn usage_status_label_does_not_read_store_on_cache_miss() {
 #[test]
 fn usage_snapshot_does_not_read_store_on_cache_miss() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.sqlite3");
+    let db = dir.path().join("snapshots.db");
     crate::usage_snapshot_store::store_usage_snapshot(&db, &codex_cached_usage_view())
         .expect("store usage snapshot");
     let mut cache = UsageCache::default();

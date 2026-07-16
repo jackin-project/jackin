@@ -126,7 +126,7 @@ pub struct StatusTick {
 
 #[expect(
     missing_debug_implementations,
-    reason = "Session owns PTY and child-killer trait objects; capsule logs expose session identity and state."
+    reason = "Session owns PTY and child-killer trait objects; debug formatting would expose session identity and state."
 )]
 pub struct Session {
     pub label: String,

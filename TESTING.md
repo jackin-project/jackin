@@ -89,9 +89,10 @@ Every crate is verified by `cargo nextest run -p <crate>`. Exceptions worth nami
 
 Capsule echo-back harness ([crates/jackin-capsule/src/daemon/tests.rs](crates/jackin-capsule/src/daemon/tests.rs)) replays reviewed PTY byte streams through the multiplexer and asserts that emitted frames reproduce the pane model on a virtual client terminal. Synthetic streams live in the harness. Real-agent fixture capture is an explicit test workflow, never a telemetry side effect:
 
-1. Set `JACKIN_PTY_FIXTURE_CAPTURE` to the operator-selected destination under `crates/jackin-capsule/tests/fixtures/pty/` and run the specific capture scenario.
-2. Review the captured bytes for secrets and unstable content before committing them.
-3. Reference the fixture with `include_bytes!` and add the scenario to the fixture README.
+1. Set `JACKIN_PTY_FIXTURE_CAPTURE` to an operator-selected temporary capture path and run the specific capture scenario.
+2. Review the temporary capture for secrets and unstable content.
+3. Copy the reviewed bytes into the fixture tree with `cargo xtask pty-fixture <capture.bin> crates/jackin-capsule/tests/fixtures/pty/<fixture.bin>`.
+4. Reference the fixture with `include_bytes!` and add the scenario to the fixture README.
 
 Without the capture variable, production and test sessions do not write PTY streams. OTLP telemetry never contains PTY bytes.
 

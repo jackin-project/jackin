@@ -60,6 +60,36 @@ async fn run_capture_reports_stderr_when_streaming_is_suppressed() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn debug_run_reports_suppressed_stderr_without_artifact_hint() {
+    let mut runner = ShellRunner { debug: true };
+    let opts = RunOptions {
+        capture_stderr: true,
+        ..RunOptions::default()
+    };
+
+    let error = runner
+        .run(
+            "sh",
+            &["-c", "printf 'debug failure detail\\n' >&2; exit 2"],
+            None,
+            &opts,
+        )
+        .await
+        .unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("debug failure detail"),
+        "captured stderr must remain operator-visible: {message}"
+    );
+    assert!(
+        !message.contains("diagnostics run"),
+        "removed local artifacts must not be offered: {message}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn capture_handles_large_stdout() {
     let mut runner = ShellRunner::default();
 
