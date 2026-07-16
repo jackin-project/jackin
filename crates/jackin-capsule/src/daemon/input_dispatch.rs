@@ -184,7 +184,8 @@ impl Multiplexer {
                 let env_overrides =
                     jackin_protocol::Provider::from_label(&provider_label).map_or_else(
                         || {
-                            jackin_diagnostics::telemetry_info!("capsule", 
+                            jackin_diagnostics::telemetry_info!(
+                                "capsule",
                                 "spawn: unknown provider label {provider_label:?}; no env redirect applied"
                             );
                             Vec::new()
