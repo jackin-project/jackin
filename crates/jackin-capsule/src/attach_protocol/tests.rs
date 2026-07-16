@@ -197,10 +197,17 @@ async fn conformance_attach_protocol_failure_and_expected_detach() {
     drop(guard);
     export.force_flush();
     assert_eq!(
-        export.typed_error_count("error.typed", "attach_socket_eof"),
+        export.typed_error_count(
+            "error.typed",
+            jackin_telemetry::schema::enums::ErrorType::RpcError.as_str(),
+        ),
         1
     );
-    assert_eq!(export.error_span_count(), 1);
+    assert_eq!(
+        export.error_span_count(),
+        0,
+        "attach failure is a typed event, not a session-lifetime span"
+    );
 
     let (clean_export, clean_subscriber) =
         jackin_diagnostics::observability::test_capsule_layers(false);
@@ -216,7 +223,10 @@ async fn conformance_attach_protocol_failure_and_expected_detach() {
     clean_export.force_flush();
     assert_eq!(clean_export.error_span_count(), 0);
     assert_eq!(
-        clean_export.typed_error_count("error.typed", "attach_socket_eof"),
+        clean_export.typed_error_count(
+            "error.typed",
+            jackin_telemetry::schema::enums::ErrorType::RpcError.as_str(),
+        ),
         0
     );
 }
