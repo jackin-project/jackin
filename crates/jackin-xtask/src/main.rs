@@ -165,13 +165,12 @@ enum LintCommand {
 /// the P2 inversions are still being cleaned up).
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     fs_util::enforce_sorted_iteration(&docs::repo_root()?)?;
-    lint::enforce()?;
-    test_layout::enforce()?;
     agent_files::enforce()?;
     agent_links::enforce()?;
     container_paths_gate::enforce()?;
     headers::enforce()?;
-    suppressions::enforce()?;
+    // The unified ratchet owns file-size, test-layout, and suppression
+    // families. Running their legacy shims here measured the same tree twice.
     ratchet::enforce()?;
     arch::check(strict)
 }

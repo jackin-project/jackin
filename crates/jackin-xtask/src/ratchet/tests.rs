@@ -2,7 +2,7 @@
 
 use super::{
     Config, Entry, Family, NumericVerdict, PresenceVerdict, check_curated_pub_mods, check_families,
-    check_numeric_entry, check_numeric_unlisted, check_presence,
+    check_numeric_entry, check_numeric_unlisted, check_presence, measure_export_volume_measured,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -238,6 +238,44 @@ fn build_time_family_skips_without_scheduled_artifact() {
             .iter()
             .any(|line| line.contains("skipped"))
     );
+}
+
+#[test]
+fn export_volume_does_not_spawn_work_when_artifact_is_absent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let measured = measure_export_volume_measured(dir.path()).expect("measure");
+    assert!(measured.is_empty());
+}
+
+#[test]
+fn only_checks_selected_ratchet_family() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = Config {
+        family: vec![
+            Family {
+                id: "suite-time".into(),
+                kind: "numeric".into(),
+                provider: "suite_time".into(),
+                cap: None,
+                mode: "enforce".into(),
+                entry: vec![Entry {
+                    key: "junit_total_ms".into(),
+                    bound: Some(3_600_000),
+                }],
+            },
+            Family {
+                id: "unknown-provider-family".into(),
+                kind: "numeric".into(),
+                provider: "must-not-run".into(),
+                cap: Some(0),
+                mode: "enforce".into(),
+                entry: Vec::new(),
+            },
+        ],
+    };
+    let outcome =
+        check_families(dir.path(), &config, Some(&["suite-time"])).expect("selected family only");
+    assert!(outcome.problems.is_empty());
 }
 
 #[test]

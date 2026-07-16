@@ -617,7 +617,7 @@ bound = 2735
 id = "export-volume"
 kind = "numeric"
 provider = "export_volume_measured"
-mode = "enforce"
+mode = "artifact-ceiling"
 # Cap 0 → every measured key > 0 must be listed (no unlisted firehose).
 # Bounds are measured default-mode counts from target/telemetry-volume.json
 # (written by conformance_export_volume); regenerate after intentional growth:

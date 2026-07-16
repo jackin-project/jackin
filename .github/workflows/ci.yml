@@ -958,6 +958,7 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
+      JACKIN_TELEMETRY_VOLUME_PATH: target/telemetry-volume-ratchet.json
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
@@ -966,6 +967,8 @@ jobs:
           install_args: "rust cargo:cargo-nextest"
       - name: Run telemetry conformance filter
         run: cargo nextest run -p jackin-diagnostics -p jackin-capsule --all-features --locked -E 'test(/conformance/)'
+      - name: Enforce telemetry volume ratchet
+        run: cargo run -p jackin-xtask --locked -- lint ratchet --only export-volume
   fuzz:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'

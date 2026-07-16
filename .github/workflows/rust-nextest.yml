@@ -133,7 +133,7 @@ jobs:
       # Plan 027: suite-time family enforces when junit exists (skipped locally).
       - name: Suite-time ratchet (scheduled enforce)
         if: always() && hashFiles('target/nextest/ci/junit.xml') != ''
-        run: cargo run -p jackin-xtask --locked -- lint ratchet
+        run: cargo run -p jackin-xtask --locked -- lint ratchet --only suite-time
       - name: Slowest tests summary
         if: always()
         shell: bash
