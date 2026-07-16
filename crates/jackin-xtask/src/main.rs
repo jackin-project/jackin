@@ -28,7 +28,7 @@ mod schema;
 mod suppressions;
 mod test_layout;
 
-use std::process::ExitCode;
+use std::{process::ExitCode, thread};
 
 use clap::{Parser, Subcommand};
 
@@ -161,21 +161,43 @@ enum LintCommand {
     Ratchet(ratchet::LintRatchetArgs),
 }
 
-/// Run every codebase-health lint gate in sequence — the `cargo xtask lint`
-/// (no subcommand) entry point used by CI. The file-size ratchet and the
-/// test-file-layout rule always hard-fail on violations; the dependency-
-/// direction gate fails only in `strict` mode (informational otherwise, while
-/// the P2 inversions are still being cleaned up).
+/// Run every codebase-health lint gate — the `cargo xtask lint` (no subcommand)
+/// entry point used by CI. Independent repository scans share one process and
+/// run concurrently; every failure is collected before the command exits. The
+/// dependency-direction gate fails only in `strict` mode.
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     fs_util::enforce_sorted_iteration(&docs::repo_root()?)?;
-    agent_files::enforce()?;
-    agent_links::enforce()?;
-    container_paths_gate::enforce()?;
-    headers::enforce()?;
-    // The unified ratchet owns file-size, test-layout, and suppression
-    // families. Running their legacy shims here measured the same tree twice.
-    ratchet::enforce()?;
-    arch::check(strict)
+
+    let failures = thread::scope(|scope| {
+        let gates = [
+            ("agents", scope.spawn(agent_files::enforce)),
+            ("agent-links", scope.spawn(agent_links::enforce)),
+            (
+                "container-paths",
+                scope.spawn(container_paths_gate::enforce),
+            ),
+            ("headers", scope.spawn(headers::enforce)),
+            // The unified ratchet owns file-size, test-layout, and suppression
+            // families. Running their legacy shims would measure the tree twice.
+            ("ratchet", scope.spawn(ratchet::enforce)),
+            ("arch", scope.spawn(move || arch::check(strict))),
+        ];
+
+        gates
+            .into_iter()
+            .filter_map(|(name, gate)| match gate.join() {
+                Ok(Ok(())) => None,
+                Ok(Err(error)) => Some(format!("{name}: {error:#}")),
+                Err(_) => Some(format!("{name}: gate panicked")),
+            })
+            .collect::<Vec<_>>()
+    });
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!("lint gates failed:\n  {}", failures.join("\n  "))
+    }
 }
 
 fn main() -> ExitCode {
