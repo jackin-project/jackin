@@ -1188,18 +1188,15 @@ mod otlp {
         }
         let mut tls = ClientTlsConfig::new().with_enabled_roots().timeout(timeout);
         if let Some(path) = &config.certificate {
-            let pem = std::fs::read(path).map_err(|error| {
-                anyhow::anyhow!("failed to read OTLP {signal} CA certificate: {error}")
-            })?;
+            let pem = std::fs::read(path)
+                .map_err(|_| anyhow::anyhow!("OTLP {signal} CA certificate is unavailable"))?;
             tls = tls.ca_certificate(Certificate::from_pem(pem));
         }
         if let (Some(certificate), Some(key)) = (&config.client_certificate, &config.client_key) {
-            let certificate = std::fs::read(certificate).map_err(|error| {
-                anyhow::anyhow!("failed to read OTLP {signal} client certificate: {error}")
-            })?;
-            let key = std::fs::read(key).map_err(|error| {
-                anyhow::anyhow!("failed to read OTLP {signal} client key: {error}")
-            })?;
+            let certificate = std::fs::read(certificate)
+                .map_err(|_| anyhow::anyhow!("OTLP {signal} client certificate is unavailable"))?;
+            let key = std::fs::read(key)
+                .map_err(|_| anyhow::anyhow!("OTLP {signal} client key is unavailable"))?;
             tls = tls.identity(Identity::from_pem(certificate, key));
         }
         Ok(Some(tls))

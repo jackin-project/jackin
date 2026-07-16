@@ -328,8 +328,31 @@ fn tls_file_errors_do_not_expose_configured_paths() {
         std::time::Duration::from_secs(1),
     )
     .expect_err("missing certificate must fail");
-    assert!(error.to_string().contains("OTLP traces CA certificate"));
-    assert!(!error.to_string().contains("/secret/tenant-ca.pem"));
+    let error = error.to_string();
+    assert_eq!(error, "OTLP traces CA certificate is unavailable");
+    assert!(!error.contains("/secret/tenant-ca.pem"));
+    assert!(!error.contains("No such file"));
+}
+
+#[test]
+fn tls_client_key_errors_expose_only_the_bounded_signal_and_asset() {
+    let certificate = tempfile::NamedTempFile::new().expect("temporary certificate");
+    let config = super::super::config::TlsConfig {
+        certificate: None,
+        client_key: Some("/secret/tenant-client.key".to_owned()),
+        client_certificate: Some(certificate.path().to_string_lossy().into_owned()),
+    };
+    let error = exporter_tls(
+        &config,
+        "logs",
+        "https://collector:4317",
+        std::time::Duration::from_secs(1),
+    )
+    .expect_err("missing client key must fail")
+    .to_string();
+    assert_eq!(error, "OTLP logs client key is unavailable");
+    assert!(!error.contains("/secret/tenant-client.key"));
+    assert!(!error.contains("No such file"));
 }
 
 #[test]
