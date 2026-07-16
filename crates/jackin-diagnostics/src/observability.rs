@@ -345,6 +345,15 @@ mod otlp {
     }
 
     impl OtlpProviders {
+        fn shutdown_only(&self) {
+            drop(self.tracer.shutdown());
+            drop(self.logger.shutdown());
+            if let Some(meter) = &self.meter {
+                drop(meter.shutdown());
+            }
+            health::record_shutdown(true);
+        }
+
         /// Flush buffered telemetry, then shut the exporters down. Called once,
         /// from `ActiveRunGuard::drop`, on every run exit path.
         ///
@@ -421,6 +430,7 @@ mod otlp {
             .as_ref()
             .ok_or(super::ValidationFailure::Inactive)?
             .force_flush();
+        VALIDATION_FLUSHED.store(true, std::sync::atomic::Ordering::Release);
         health::record_signal_export(health::Signal::Metrics, metrics.is_ok());
         if trace.is_err() {
             return Err(super::ValidationFailure::Export("traces"));
@@ -435,6 +445,8 @@ mod otlp {
     }
 
     static PROVIDERS: std::sync::Mutex<Option<OtlpProviders>> = std::sync::Mutex::new(None);
+    static VALIDATION_FLUSHED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
     #[cfg(test)]
     static SHUTDOWN_ORDER: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
 
@@ -952,6 +964,7 @@ mod otlp {
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
+            VALIDATION_FLUSHED.store(false, std::sync::atomic::Ordering::Release);
             let metrics_active = meter_provider.is_some();
             *PROVIDERS
                 .lock()
@@ -1037,6 +1050,7 @@ mod otlp {
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
+            VALIDATION_FLUSHED.store(false, std::sync::atomic::Ordering::Release);
             *PROVIDERS
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(OtlpProviders {
@@ -1430,7 +1444,11 @@ mod otlp {
     pub(super) fn shutdown() {
         let providers = PROVIDERS.lock().ok().and_then(|mut slot| slot.take());
         if let Some(providers) = providers {
-            providers.flush_and_shutdown();
+            if VALIDATION_FLUSHED.swap(false, std::sync::atomic::Ordering::AcqRel) {
+                providers.shutdown_only();
+            } else {
+                providers.flush_and_shutdown();
+            }
         }
         if let Ok(mut runtime) = OTEL_RUNTIME.lock() {
             drop(runtime.take());
