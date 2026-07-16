@@ -152,7 +152,11 @@ jobs:
           key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rustup-ci-contract || hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
           restore-keys: |
             rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
-          fail-on-cache-miss: true
+      - name: Use the prepared current Rust toolchain
+        if: steps.crate-result.outputs.hit != 'true'
+        run: |
+          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "RUSTUP_TOOLCHAIN=$(scripts/ci/find-installed-rust-toolchain.sh "$version")" >> "$GITHUB_ENV"
       - id: cargo-registry-cache
         if: steps.crate-result.outputs.hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
@@ -325,7 +329,11 @@ jobs:
         if: steps.crate-result.outputs.hit != 'true'
         env:
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
-        run: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/msrv" cargo check -p "${{ matrix.package }}" --all-targets --locked --offline
+        run: |
+          msrv_toolchain=$(scripts/ci/find-installed-rust-toolchain.sh "${{ steps.msrv.outputs.version }}")
+          CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/msrv" \
+            RUSTUP_TOOLCHAIN="$msrv_toolchain" \
+            cargo check -p "${{ matrix.package }}" --all-targets --locked --offline
       - name: Upload junit + timing
         if: always() && steps.crate-result.outputs.hit != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -530,6 +538,8 @@ jobs:
           find "$target_dir" \
             \( -path "$target_dir/nextest" -o -path "$target_dir/nextest/*" \
                -o -path "$target_dir/telemetry-*" \
+               -o -path "$target_dir/debug/incremental" -o -path "$target_dir/debug/incremental/*" \
+               -o -path "$target_dir/msrv/debug/incremental" -o -path "$target_dir/msrv/debug/incremental/*" \
                -o -path "$target_dir/.ci-restore" -o -path "$target_dir/.ci-restore/*" \) \
             -prune -o \( -type f -o -type l \) -print0 \
             | sort -z \

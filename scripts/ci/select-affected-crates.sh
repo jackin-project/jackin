@@ -4,7 +4,10 @@
 
 set -euo pipefail
 
-if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+force_package=${FORCE_PACKAGE:-}
+if [ -n "$force_package" ]; then
+  selection=(--all)
+elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
   selection=(--all)
 elif [ -n "$BASE_REF" ]; then
   git fetch --no-tags --depth=1 origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
@@ -19,6 +22,11 @@ fi
 selected=$("$CI_XTASK" affected-crates --metadata "$CI_METADATA" "${selection[@]}")
 cache_keys=$("$CI_XTASK" affected-crates \
   --metadata "$CI_METADATA" "${selection[@]}" --cache-keys)
+if [ -n "$force_package" ]; then
+  jq -e --arg package "$force_package" 'has($package)' <<< "$cache_keys" >/dev/null \
+    || { echo "unknown workspace crate: $force_package" >&2; exit 1; }
+  selected=$(jq -cn --arg package "$force_package" '[$package]')
+fi
 misses=()
 hits=()
 target_results='{}'
@@ -29,7 +37,7 @@ while IFS= read -r package; do
     "$DOCKER_E2E" "$CONSTRUCT_IMAGE_CHANGED" \
     "$COMMON_CONTRACT_KEY" "$DOCKER_CONTRACT_KEY" \
     Linux X64 "$SOURCE_SHA")
-  if [ "$(jq -r '.hit' <<< "$result")" = "true" ]; then
+  if [ "$package" != "$force_package" ] && [ "$(jq -r '.hit' <<< "$result")" = "true" ]; then
     hits+=("$package")
   else
     misses+=("$package")

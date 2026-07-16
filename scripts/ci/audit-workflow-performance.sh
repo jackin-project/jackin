@@ -41,7 +41,7 @@ duration() {
 download_pattern='Updating.*crates\.io index|Downloading crates|Downloaded.*[[:alnum:]_.+-]+ v[0-9]|info: downloading [0-9]+ components'
 third_party_pattern='^[[:space:]]*(Compiling|Checking|Building) [[:alnum:]_.+-]+ v[0-9][^(/]*$'
 source_tool_pattern='Installing [[:alnum:]_.+-]+ v[0-9].*from source'
-cache_miss_pattern='Cache not found|No cache found|not found for input keys|cache miss'
+cache_miss_pattern='(^|##\[warning\])(Cache not found|No cache found|Rust cache miss)|not found for input keys:'
 
 run_created=$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.created_at')
 run_created_s=$(epoch "$run_created")
@@ -112,7 +112,7 @@ while IFS= read -r encoded; do
       builds=$(grep -Eci "$third_party_pattern" "$normalized_file" || true)
       source_tools=$(grep -Eci "$source_tool_pattern" "$normalized_file" || true)
       cache_misses=$(grep -Eci "$cache_miss_pattern" "$normalized_file" || true)
-      grep -Ein "$download_pattern|$third_party_pattern|$source_tool_pattern" "$normalized_file" \
+      grep -Ein "$download_pattern|$third_party_pattern|$source_tool_pattern|$cache_miss_pattern" "$normalized_file" \
         | head -n 10 \
         | while IFS= read -r line; do
             printf '%s\t%s\n' "$name" "$line" >> "$markers_file"
@@ -148,7 +148,7 @@ total_cache_misses=$(awk -F '\t' '{sum += $10} END {print sum + 0}' "$rows_file"
       "$source_tools" "$cache_misses"
   done < "$rows_file"
   echo
-  echo '<details><summary>Every CI step duration</summary>'
+  printf '<details><summary>Every %s step duration</summary>\n' "$workflow_label"
   echo
   echo '| Job | Step | Result | Duration |'
   echo '| --- | --- | --- | ---: |'
@@ -160,7 +160,7 @@ total_cache_misses=$(awk -F '\t' '{sum += $10} END {print sum + 0}' "$rows_file"
   echo '</details>'
   if [ -s "$markers_file" ]; then
     echo
-    echo '<details><summary>First forbidden download/build markers</summary>'
+    echo '<details><summary>First cache/download/build markers</summary>'
     echo
     echo '```text'
     head -n 30 "$markers_file"
