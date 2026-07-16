@@ -14,7 +14,6 @@ repository.workspace = true
 [dependencies]
 crossterm = { workspace = true }
 jackin-brand = { workspace = true }
-jackin-core = { workspace = true }
 ratatui = { workspace = true }
 termrock = { workspace = true }
 

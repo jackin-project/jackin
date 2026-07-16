@@ -3,7 +3,7 @@
 
 //! Ratatui adapters for jackin❯-owned brand and domain color tokens.
 //!
-//! Neutral presentation is resolved directly through TermRock semantic roles
+//! Neutral presentation is resolved directly through `TermRock` semantic roles
 //! by each consumer. This module deliberately contains no theme facade.
 
 use jackin_brand::{

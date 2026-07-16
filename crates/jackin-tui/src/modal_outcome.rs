@@ -3,7 +3,7 @@
 
 /// Lifecycle result shared by jackin❯ modal workflows.
 ///
-/// TermRock owns reusable widget interaction outcomes. This type represents
+/// `TermRock` owns reusable widget interaction outcomes. This type represents
 /// product workflow policy shared across jackin❯ surfaces.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModalOutcome<T> {

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capsule terminal-protocol adapters into TermRock neutral scroll handlers.
+//! Capsule terminal-protocol adapters into `TermRock` neutral scroll handlers.
 //!
 //! Lives on the capsule presentation surface (not jackin-core): decode raw
 //! ANSI/SGR once, then call [`DialogScroll::handle_key_for_axes`] /

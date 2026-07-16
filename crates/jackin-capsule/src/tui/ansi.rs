@@ -11,7 +11,7 @@ pub fn rgb_fg(rgb: Rgb) -> String {
     format!("\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b)
 }
 
-/// Resolve a semantic TermRock foreground for capsule-only raw ANSI output.
+/// Resolve a semantic `TermRock` foreground for capsule-only raw ANSI output.
 #[must_use]
 pub fn role_rgb(role: Role) -> Rgb {
     match Theme::default().style(role).fg.unwrap_or_default() {

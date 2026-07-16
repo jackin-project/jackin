@@ -26,7 +26,7 @@ fn render_container_info_paints_product_title_and_row_labels() {
         .buffer()
         .content()
         .iter()
-        .map(|c| c.symbol())
+        .map(ratatui::buffer::Cell::symbol)
         .collect();
     assert!(
         text.contains("Debug info"),

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console adapter around TermRock [`Viewport`] for bordered scrollable panels.
+//! Console adapter around `TermRock` [`Viewport`] for bordered scrollable panels.
 //!
 //! Migration 0018 removed free-function `render_scrollable_block*` helpers in
 //! favor of the canonical stateful widget. This thin adapter preserves the
@@ -12,9 +12,9 @@
 //! focusability rule must clear their focus state when content fits, before
 //! calling this helper.
 //!
-//! Visual contracts for [`Viewport`] itself are owned by TermRock tests; jackin❯
+//! Visual contracts for [`Viewport`] itself are owned by `TermRock` tests; jackin❯
 //! product tests assert screen-level composition (one focus owner, product
-//! wording) rather than TermRock role RGB mapping.
+//! wording) rather than `TermRock` role RGB mapping.
 
 use ratatui::{Frame, layout::Rect, text::Line};
 use termrock::{
@@ -23,7 +23,7 @@ use termrock::{
     widgets::{PanelEmphasis, Viewport},
 };
 
-/// Render a bordered scrollable block using TermRock `Viewport`.
+/// Render a bordered scrollable block using `TermRock` `Viewport`.
 pub fn render_scrollable_block_at(
     frame: &mut Frame<'_>,
     area: Rect,
