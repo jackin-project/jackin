@@ -45,6 +45,9 @@ ignore_patterns = [
 ]
 
 words = [
+  "jank",
+  "parentbased",
+  "updowncounter",
   "andrewpatterson",
   "watchlists",
   "bigmodel",
