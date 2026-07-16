@@ -737,7 +737,9 @@ jobs:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       packages-json: ${{ needs.cargo-registry-warmup.outputs.affected-packages }}
       all-features: true
-      cache-shared-key: ci-all-features-dev-workspace-v2
+      # v3 is the first crate-owned cache family that preserves workspace,
+      # current-toolchain, and MSRV outputs in the same immutable entry.
+      cache-shared-key: ci-all-features-dev-workspace-v3
       save-target-cache: false
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
