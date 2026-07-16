@@ -378,11 +378,12 @@ jobs:
           for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack; do
             cp "$(command -v "$tool")" "target/ci-tools/$tool"
           done
+          strip target/ci-tools/*
       - name: Upload shared CI xtask
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-xtask-${{ matrix.config.lane }}
-          path: target/ci-tools
+          path: target/ci-tools/*
           compression-level: 0
           retention-days: 1
 
