@@ -424,6 +424,35 @@ pub fn emit_event(def: &'static EventDef, fields: FieldSet<'_>) -> Result<(), Re
     if !enabled {
         return Ok(());
     }
+    let invocation = crate::identity::current_invocation().map(|id| id.to_string());
+    let session = crate::identity::current_session().map(|value| value.current.to_string());
+    let mut ambient_fields = fields.attrs.to_vec();
+    let accepts = |key| {
+        def.metadata
+            .attributes
+            .iter()
+            .any(|requirement| requirement.name == key)
+    };
+    let supplied = |key| fields.attrs.iter().any(|attr| attr.key == key);
+    if let Some(invocation) = invocation.as_deref()
+        && accepts(schema::attrs::CLI_INVOCATION_ID)
+        && !supplied(schema::attrs::CLI_INVOCATION_ID)
+    {
+        ambient_fields.push(Attr {
+            key: schema::attrs::CLI_INVOCATION_ID,
+            value: Value::Str(invocation),
+        });
+    }
+    if let Some(session) = session.as_deref()
+        && accepts(schema::attrs::std_attrs::SESSION_ID)
+        && !supplied(schema::attrs::std_attrs::SESSION_ID)
+    {
+        ambient_fields.push(Attr {
+            key: schema::attrs::std_attrs::SESSION_ID,
+            value: Value::Str(session),
+        });
+    }
+    let fields = FieldSet::new(&ambient_fields, fields.body);
     if let Err(reason) = validate(def, &fields) {
         health::reject(health::Signal::Log, reason);
         return Err(reason);

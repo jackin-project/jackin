@@ -25,7 +25,10 @@ fn soak_week_long_console_has_only_bounded_operations() {
             .unwrap();
 
         if index % 100 == 0 {
-            let session = jackin_telemetry::identity::SessionGuard::begin();
+            let session = jackin_telemetry::identity::SessionGuard::begin(
+                jackin_telemetry::identity::SessionKind::Console,
+            )
+            .unwrap();
             sessions.insert(session.context().current.to_string());
             drop(session);
         }

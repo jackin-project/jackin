@@ -3,7 +3,7 @@
 
 use std::{
     fmt,
-    sync::{OnceLock, RwLock},
+    sync::{Mutex, OnceLock},
 };
 
 use uuid::Uuid;
@@ -38,78 +38,134 @@ uuid_id!(SessionId);
 uuid_id!(JobId);
 
 static INVOCATION: OnceLock<InvocationId> = OnceLock::new();
-static SESSION: OnceLock<RwLock<Option<SessionContext>>> = OnceLock::new();
+static SESSIONS: Mutex<SessionRegistry> = Mutex::new(SessionRegistry {
+    active: None,
+    last_ended: None,
+});
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionKind {
+    Console,
+    Attachment,
+    Capsule,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionContext {
     pub current: SessionId,
     pub previous: Option<SessionId>,
+    pub kind: SessionKind,
 }
 
-pub fn set_current_invocation(id: InvocationId) -> Result<(), InvocationId> {
-    INVOCATION.set(id)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionOwnershipError {
+    pub active: SessionContext,
+    pub requested: SessionKind,
 }
+
+impl fmt::Display for SessionOwnershipError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "a {:?} telemetry session already owns session {}",
+            self.active.kind, self.active.current
+        )
+    }
+}
+
+impl std::error::Error for SessionOwnershipError {}
+
+#[derive(Clone, Copy, Debug)]
+struct SessionRegistry {
+    active: Option<SessionContext>,
+    last_ended: Option<SessionId>,
+}
+
+/// Install the process invocation once.
+///
+/// Repeating the same identity is idempotent. A conflicting reinitialization
+/// returns the identity that already owns the process, so callers can adopt it
+/// deterministically rather than silently replacing correlation.
+pub fn set_current_invocation(id: InvocationId) -> Result<(), InvocationId> {
+    if let Some(current) = INVOCATION.get().copied() {
+        return if current == id { Ok(()) } else { Err(current) };
+    }
+    INVOCATION
+        .set(id)
+        .map_err(|attempted| INVOCATION.get().copied().unwrap_or(attempted))
+}
+
 #[must_use]
 pub fn current_invocation() -> Option<InvocationId> {
     INVOCATION.get().copied()
 }
 
-pub fn begin_session() -> SessionContext {
-    let slot = SESSION.get_or_init(|| RwLock::new(None));
-    let mut active = slot
-        .write()
+fn claim_session(kind: SessionKind) -> Result<SessionContext, SessionOwnershipError> {
+    let mut sessions = SESSIONS
+        .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(active) = sessions.active {
+        return Err(SessionOwnershipError {
+            active,
+            requested: kind,
+        });
+    }
     let context = SessionContext {
         current: SessionId::mint(),
-        previous: active.map(|value| value.current),
+        previous: sessions.last_ended,
+        kind,
     };
-    *active = Some(context);
-    context
+    sessions.active = Some(context);
+    Ok(context)
 }
 
 #[must_use]
 pub fn current_session() -> Option<SessionContext> {
-    *SESSION
-        .get_or_init(|| RwLock::new(None))
-        .read()
+    SESSIONS
+        .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .active
 }
 
-pub fn end_session(id: SessionId) {
-    let mut active = SESSION
-        .get_or_init(|| RwLock::new(None))
-        .write()
+fn end_session(id: SessionId) {
+    let mut sessions = SESSIONS
+        .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if active.is_some_and(|value| value.current == id) {
-        *active = None;
+    if sessions.active.is_some_and(|value| value.current == id) {
+        sessions.active = None;
+        sessions.last_ended = Some(id);
     }
 }
 
-/// Emits paired lifecycle events and clears ambient session correlation on drop.
+/// Exclusive interactive-session ownership with paired lifecycle events.
 #[derive(Debug)]
 pub struct SessionGuard {
     context: SessionContext,
-    owns: bool,
+    started: bool,
 }
 
 impl SessionGuard {
-    #[must_use]
-    pub fn begin() -> Self {
-        let context = begin_session();
-        emit_session_event(&crate::event::SESSION_START, context);
-        Self {
-            context,
-            owns: true,
-        }
+    /// Claim ownership without emitting the start event. Capsule startup uses
+    /// this before fallible subscriber installation, then calls [`Self::start`].
+    pub fn claim(kind: SessionKind) -> Result<Self, SessionOwnershipError> {
+        Ok(Self {
+            context: claim_session(kind)?,
+            started: false,
+        })
     }
 
-    /// Reuse an enclosing interactive session, or mint one when none exists.
-    #[must_use]
-    pub fn begin_or_reuse() -> Self {
-        current_session().map_or_else(Self::begin, |context| Self {
-            context,
-            owns: false,
-        })
+    /// Claim ownership and emit the paired start event immediately.
+    pub fn begin(kind: SessionKind) -> Result<Self, SessionOwnershipError> {
+        let mut guard = Self::claim(kind)?;
+        guard.start();
+        Ok(guard)
+    }
+
+    pub fn start(&mut self) {
+        if !self.started {
+            emit_session_event(&crate::event::SESSION_START, self.context);
+            self.started = true;
+        }
     }
 
     #[must_use]
@@ -120,10 +176,10 @@ impl SessionGuard {
 
 impl Drop for SessionGuard {
     fn drop(&mut self) {
-        if self.owns {
+        if self.started {
             emit_session_event(&crate::event::SESSION_END, self.context);
-            end_session(self.context.current);
         }
+        end_session(self.context.current);
     }
 }
 

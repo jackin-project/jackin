@@ -152,6 +152,8 @@ fn emit_agent_state_changed(def: &'static EventDef, fields: FieldSet<'_>) {
             ),
             ("agent.status.source", field_agent_status_source, String),
             ("agent.status.stuck", field_agent_status_stuck, Boolean),
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -164,6 +166,7 @@ fn emit_app_crash(def: &'static EventDef, fields: FieldSet<'_>) {
         [
             ("app.build_id", field_app_build_id, String),
             ("app.crash.id", field_app_crash_id, String),
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("exception.message", field_exception_message, String),
             ("exception.stacktrace", field_exception_stacktrace, String),
             ("exception.type", field_exception_type, String),
@@ -184,6 +187,8 @@ fn emit_app_jank(def: &'static EventDef, fields: FieldSet<'_>) {
             ("app.jank.frame_count", field_app_jank_frame_count, Integer),
             ("app.jank.period", field_app_jank_period, Double),
             ("app.jank.threshold", field_app_jank_threshold, Double),
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -196,6 +201,8 @@ fn emit_cache_decision(def: &'static EventDef, fields: FieldSet<'_>) {
         [
             ("cache.name", field_cache_name, String),
             ("cache.result", field_cache_result, String),
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -206,6 +213,7 @@ fn emit_capsule_session_clean_shutdown(def: &'static EventDef, fields: FieldSet<
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]
@@ -218,6 +226,7 @@ fn emit_capsule_session_detach(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]
@@ -230,6 +239,7 @@ fn emit_config_operation(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             (
                 "config.migration.step_count",
                 field_config_migration_step_count,
@@ -249,6 +259,7 @@ fn emit_config_operation(def: &'static EventDef, fields: FieldSet<'_>) {
             ("config.scope", field_config_scope, String),
             ("error.type", field_error_type, String),
             ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -258,7 +269,11 @@ fn emit_debug_line(def: &'static EventDef, fields: FieldSet<'_>) {
         "debug.line",
         def.severity,
         fields,
-        [("outcome", field_outcome, String),]
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }
 
@@ -268,8 +283,10 @@ fn emit_error_typed(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("error.type", field_error_type, String),
             ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -280,9 +297,11 @@ fn emit_isolation_decision(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("dind.mode", field_dind_mode, String),
             ("network.mode", field_network_mode, String),
             ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
             (
                 "workspace.isolation.mode",
                 field_workspace_isolation_mode,
@@ -298,9 +317,11 @@ fn emit_isolation_firewall_failed(def: &'static EventDef, fields: FieldSet<'_>) 
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("error.type", field_error_type, String),
             ("network.mode", field_network_mode, String),
             ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -310,7 +331,11 @@ fn emit_launch_stage_done(def: &'static EventDef, fields: FieldSet<'_>) {
         "launch.stage.done",
         def.severity,
         fields,
-        [("outcome", field_outcome, String),]
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }
 
@@ -320,8 +345,10 @@ fn emit_launch_stage_failed(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("error.type", field_error_type, String),
             ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -331,7 +358,11 @@ fn emit_launch_stage_skipped(def: &'static EventDef, fields: FieldSet<'_>) {
         "launch.stage.skipped",
         def.severity,
         fields,
-        [("outcome", field_outcome, String),]
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }
 
@@ -340,7 +371,11 @@ fn emit_launch_stage_started(def: &'static EventDef, fields: FieldSet<'_>) {
         "launch.stage.started",
         def.severity,
         fields,
-        [("outcome", field_outcome, String),]
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }
 
@@ -350,6 +385,7 @@ fn emit_operation_log(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]
@@ -362,6 +398,7 @@ fn emit_operation_warn(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]
@@ -373,7 +410,11 @@ fn emit_performance_slow_foreground_wait(def: &'static EventDef, fields: FieldSe
         "performance.slow.foreground.wait",
         def.severity,
         fields,
-        [("outcome", field_outcome, String),]
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }
 
@@ -383,8 +424,10 @@ fn emit_process_subprocess_done(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("error.type", field_error_type, String),
             ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -395,6 +438,7 @@ fn emit_pty_exit(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("gen_ai.agent.name", field_gen_ai_agent_name, String),
             (
                 "gen_ai.conversation.id",
@@ -403,6 +447,7 @@ fn emit_pty_exit(def: &'static EventDef, fields: FieldSet<'_>) {
             ),
             ("process.exit_code", field_process_exit_code, Integer),
             ("pty.exit.reason", field_pty_exit_reason, String),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -413,12 +458,14 @@ fn emit_pty_spawn(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("gen_ai.agent.name", field_gen_ai_agent_name, String),
             (
                 "gen_ai.conversation.id",
                 field_gen_ai_conversation_id,
                 String
             ),
+            ("session.id", field_session_id, String),
         ]
     );
 }
@@ -428,7 +475,11 @@ fn emit_run_summary(def: &'static EventDef, fields: FieldSet<'_>) {
         "run.summary",
         def.severity,
         fields,
-        [("outcome", field_outcome, String),]
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }
 
@@ -438,6 +489,7 @@ fn emit_session_end(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("session.id", field_session_id, String),
             ("session.previous_id", field_session_previous_id, String),
         ]
@@ -450,6 +502,7 @@ fn emit_session_start(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("session.id", field_session_id, String),
             ("session.previous_id", field_session_previous_id, String),
         ]
@@ -461,11 +514,15 @@ fn emit_telemetry_validate(def: &'static EventDef, fields: FieldSet<'_>) {
         "telemetry.validate",
         def.severity,
         fields,
-        [(
-            "telemetry.validation.values",
-            field_telemetry_validation_values,
-            StringArray
-        ),]
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("session.id", field_session_id, String),
+            (
+                "telemetry.validation.values",
+                field_telemetry_validation_values,
+                StringArray
+            ),
+        ]
     );
 }
 
@@ -474,7 +531,11 @@ fn emit_timing_done(def: &'static EventDef, fields: FieldSet<'_>) {
         "timing.done",
         def.severity,
         fields,
-        [("outcome", field_outcome, String),]
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }
 
@@ -483,7 +544,11 @@ fn emit_timing_started(def: &'static EventDef, fields: FieldSet<'_>) {
         "timing.started",
         def.severity,
         fields,
-        [("outcome", field_outcome, String),]
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }
 
@@ -493,8 +558,10 @@ fn emit_trust_decision(def: &'static EventDef, fields: FieldSet<'_>) {
         def.severity,
         fields,
         [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("error.type", field_error_type, String),
             ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
             ("trust.decision", field_trust_decision, String),
             ("trust.source.type", field_trust_source_type, String),
         ]
@@ -508,6 +575,8 @@ fn emit_ui_screen_entered(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("app.screen.id", field_app_screen_id, String),
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("session.id", field_session_id, String),
             (
                 "ui.navigation.sequence",
                 field_ui_navigation_sequence,
@@ -525,6 +594,8 @@ fn emit_ui_screen_exited(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("app.screen.id", field_app_screen_id, String),
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("session.id", field_session_id, String),
             (
                 "ui.navigation.sequence",
                 field_ui_navigation_sequence,
@@ -541,7 +612,11 @@ fn emit_ui_widget_focused(def: &'static EventDef, fields: FieldSet<'_>) {
         "ui.widget.focused",
         def.severity,
         fields,
-        [("app.widget.id", field_app_widget_id, String),]
+        [
+            ("app.widget.id", field_app_widget_id, String),
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }
 
@@ -550,6 +625,10 @@ fn emit_ui_widget_unfocused(def: &'static EventDef, fields: FieldSet<'_>) {
         "ui.widget.unfocused",
         def.severity,
         fields,
-        [("app.widget.id", field_app_widget_id, String),]
+        [
+            ("app.widget.id", field_app_widget_id, String),
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("session.id", field_session_id, String),
+        ]
     );
 }

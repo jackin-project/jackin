@@ -51,10 +51,11 @@ async fn main() -> Result<()> {
     let is_pid1 = std::process::id() == 1 || forced_daemon_mode(&args);
 
     if is_pid1 {
+        let mut telemetry = jackin_capsule::telemetry::init()?;
         let launch_config = config::load()?;
         let supported_agents = launch_config.supported_agents();
         let agent = resolve_initial_agent(&args, &supported_agents)?;
-        daemon::run_daemon(agent, launch_config).await
+        daemon::run_daemon(agent, launch_config, &mut telemetry).await
     } else {
         let subcommand = args.get(1).map(String::as_str);
         let focus_session = parse_focus_flag(&args);

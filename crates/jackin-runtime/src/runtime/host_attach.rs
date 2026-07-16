@@ -99,7 +99,6 @@ pub(super) async fn run_host_attach_session(
     focus_session: Option<u64>,
     env_overrides: &[(String, String)],
 ) -> Result<()> {
-    let _session = jackin_telemetry::identity::SessionGuard::begin_or_reuse();
     let request = HostAttachRequest {
         spawn_request,
         focus_session,
@@ -177,6 +176,9 @@ where
     let (rows, cols) = terminal_size();
     let mut stdout = std::io::stdout();
     let _cleanup = enter_host_attach_terminal(&mut stdout)?;
+    let _session = jackin_telemetry::identity::SessionGuard::begin(
+        jackin_telemetry::identity::SessionKind::Attachment,
+    )?;
     let mut stdin = tokio::io::stdin();
     let host_colors =
         query_host_terminal_colors(request.terminal.term.as_deref(), &mut stdin, &mut stdout).await;

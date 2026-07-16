@@ -17,7 +17,10 @@ fn conformance_shutdown_flushes_session_end_and_is_idempotent() -> anyhow::Resul
 
     // Telemetry emitted after an explicit validation flush still belongs to
     // the final process flush immediately before provider shutdown.
-    let session = jackin_telemetry::identity::SessionGuard::begin();
+    let session = jackin_telemetry::identity::SessionGuard::begin(
+        jackin_telemetry::identity::SessionKind::Capsule,
+    )
+    .unwrap();
     let session_id = session.context().current.to_string();
     drop(session);
     jackin_diagnostics::shutdown_capsule_tracing();

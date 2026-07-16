@@ -82,3 +82,26 @@ fn series_identity_is_order_independent_and_duplicates_reject() {
         Err(Rejection::InvalidValue)
     );
 }
+
+#[test]
+fn correlation_identities_are_never_metric_dimensions() {
+    for key in [
+        attrs::CLI_INVOCATION_ID,
+        attrs::std_attrs::SESSION_ID,
+        attrs::JOB_ID,
+        attrs::UI_SCREEN_VISIT_ID,
+        attrs::std_attrs::GEN_AI_CONVERSATION_ID,
+    ] {
+        assert_eq!(
+            counter(&TELEMETRY_VALIDATE).add(
+                1,
+                &[Attr {
+                    key,
+                    value: Value::Str("opaque-correlation"),
+                }],
+            ),
+            Err(Rejection::Cardinality),
+            "identity key {key} must fail before disabled-meter short circuit"
+        );
+    }
+}

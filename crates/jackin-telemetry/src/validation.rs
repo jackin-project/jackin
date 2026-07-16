@@ -37,7 +37,15 @@ pub(crate) fn attribute(
     privacy::validate_key(attr.key)?;
     let exception = matches!(attr.key, "exception.message" | "exception.stacktrace");
     if !exception {
-        privacy::validate_value(&attr.value)?;
+        match attr.value {
+            Value::Str(value) => privacy::validate_attribute_string(attr.key, value)?,
+            Value::StrArray(values) => {
+                for value in values {
+                    privacy::validate_attribute_string(attr.key, value)?;
+                }
+            }
+            _ => {}
+        }
     }
     limits::validate_attribute_value(attr.key, &attr.value)?;
     let Some(requirement) = requirements

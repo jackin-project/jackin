@@ -1118,7 +1118,11 @@ fn configured_escape_time() -> Duration {
               deferred-parallel-pass plan as the launch fns — the inline shape \
               preserves captured-runtime state across stages."
 )]
-pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
+pub async fn run_daemon(
+    initial_agent: String,
+    launch_config: CapsuleConfig,
+    telemetry: &mut crate::telemetry::FlushGuard,
+) -> Result<()> {
     crate::pid1::install_sigchld_reaper();
 
     let rows = std::env::var("JACKIN_ROWS")
@@ -1131,10 +1135,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         .unwrap_or(DEFAULT_COLS);
     let (rows, cols) = normalize_size(rows, cols);
 
-    // OTLP export for this session — no-op unless the host injected an
-    // endpoint. Installs the tracing subscriber the governed INFO event/governed DEBUG events bridge and
-    // the session-anchor span feed into; the guard flushes on daemon exit.
-    let _otlp_flush = crate::telemetry::init();
     // Resolve Capsule telemetry detail and install panic handling after OTLP so
     // crash events use the active governed exporter.
     crate::logging::init();
@@ -1157,6 +1157,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut pending_initial_spawn = Some(initial_spawn);
 
     let mut new_clients = socket::start_listener()?;
+    telemetry.listener_ready();
     // Screen rule packs: the universal detector. Loaded once; the embedded
     // packs are validated, so a load failure means a broken build — log and
     // run without screen evidence rather than killing the daemon.

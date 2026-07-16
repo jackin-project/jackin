@@ -48,5 +48,21 @@ pub fn validate_string(value: &str) -> Result<(), Rejection> {
     }
 }
 
+/// Validate a string attribute with the narrow syntax exceptions defined by
+/// its semantic key. URL templates may be absolute-path templates, but never
+/// concrete URLs, queries, fragments, or multiline values.
+pub fn validate_attribute_string(key: &str, value: &str) -> Result<(), Rejection> {
+    if key == schema::attrs::std_attrs::URL_TEMPLATE
+        && value.starts_with('/')
+        && !value.contains('?')
+        && !value.contains('#')
+        && !value.contains("://")
+        && !value.contains(['\n', '\r'])
+    {
+        return Ok(());
+    }
+    validate_string(value)
+}
+
 #[cfg(test)]
 mod tests;

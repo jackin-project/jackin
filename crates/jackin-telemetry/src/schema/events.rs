@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // GENERATED from registry/ — do not hand-edit. Regenerate: cargo xtask telemetry-registry --generate.
 
-// registry: attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,agent.status.stuck:required
+// registry: attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,agent.status.stuck:required,cli.invocation.id:recommended,session.id:recommended
 pub const AGENT_STATE_CHANGED: &str = "agent.state.changed";
 pub const AGENT_STATE_CHANGED_DEF: super::EventMetadata = super::EventMetadata {
     name: AGENT_STATE_CHANGED,
@@ -38,9 +38,21 @@ pub const AGENT_STATE_CHANGED_DEF: super::EventMetadata = super::EventMetadata {
             requirement: super::RequirementLevel::Required,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=cache.name:required,cache.result:required
+// registry: attributes=cache.name:required,cache.result:required,cli.invocation.id:recommended,session.id:recommended
 pub const CACHE_DECISION: &str = "cache.decision";
 pub const CACHE_DECISION_DEF: super::EventMetadata = super::EventMetadata {
     name: CACHE_DECISION,
@@ -64,15 +76,33 @@ pub const CACHE_DECISION_DEF: super::EventMetadata = super::EventMetadata {
             requirement: super::RequirementLevel::Required,
             allowed_values: &["hit", "miss", "stale", "reuse", "bypass"],
         },
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=outcome:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const CAPSULE_SESSION_CLEAN_SHUTDOWN: &str = "capsule.session.clean.shutdown";
 pub const CAPSULE_SESSION_CLEAN_SHUTDOWN_DEF: super::EventMetadata = super::EventMetadata {
     name: CAPSULE_SESSION_CLEAN_SHUTDOWN,
     description: "Capsule session shut down cleanly.",
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -93,13 +123,19 @@ pub const CAPSULE_SESSION_CLEAN_SHUTDOWN_DEF: super::EventMetadata = super::Even
         },
     ],
 };
-// registry: attributes=outcome:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const CAPSULE_SESSION_DETACH: &str = "capsule.session.detach";
 pub const CAPSULE_SESSION_DETACH_DEF: super::EventMetadata = super::EventMetadata {
     name: CAPSULE_SESSION_DETACH,
     description: "Operator detached from a capsule session.",
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -120,12 +156,18 @@ pub const CAPSULE_SESSION_DETACH_DEF: super::EventMetadata = super::EventMetadat
         },
     ],
 };
-// registry: attributes=config.migration.step_count:recommended,config.operation:required,config.schema.version.from:recommended,config.schema.version.to:recommended,config.scope:required,error.type:recommended,outcome:required
+// registry: attributes=cli.invocation.id:recommended,config.migration.step_count:recommended,config.operation:required,config.schema.version.from:recommended,config.schema.version.to:recommended,config.scope:required,error.type:recommended,outcome:required,session.id:recommended
 pub const CONFIG_OPERATION: &str = "config.operation";
 pub const CONFIG_OPERATION_DEF: super::EventMetadata = super::EventMetadata {
     name: CONFIG_OPERATION,
     description: "Configuration operation completed.",
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "config.migration.step_count",
             value_type: super::ValueType::Integer,
@@ -175,33 +217,59 @@ pub const CONFIG_OPERATION_DEF: super::EventMetadata = super::EventMetadata {
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=outcome:required
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const DEBUG_LINE: &str = "debug.line";
 pub const DEBUG_LINE_DEF: super::EventMetadata = super::EventMetadata {
     name: DEBUG_LINE,
     description: "Governed debug breadcrumb.",
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=error.type:required,outcome:required
+// registry: attributes=cli.invocation.id:recommended,error.type:required,outcome:required,session.id:recommended
 pub const ERROR_TYPED: &str = "error.typed";
 pub const ERROR_TYPED_DEF: super::EventMetadata = super::EventMetadata {
     name: ERROR_TYPED,
     description: "Typed product error occurred.",
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "error.type",
             value_type: super::ValueType::String,
@@ -221,14 +289,26 @@ pub const ERROR_TYPED_DEF: super::EventMetadata = super::EventMetadata {
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=dind.mode:required,network.mode:required,outcome:required,workspace.isolation.mode:required
+// registry: attributes=cli.invocation.id:recommended,dind.mode:required,network.mode:required,outcome:required,session.id:recommended,workspace.isolation.mode:required
 pub const ISOLATION_DECISION: &str = "isolation.decision";
 pub const ISOLATION_DECISION_DEF: super::EventMetadata = super::EventMetadata {
     name: ISOLATION_DECISION,
     description: "Workspace isolation and network policy selected.",
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "dind.mode",
             value_type: super::ValueType::String,
@@ -255,6 +335,12 @@ pub const ISOLATION_DECISION_DEF: super::EventMetadata = super::EventMetadata {
             ],
         },
         super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "workspace.isolation.mode",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -262,12 +348,18 @@ pub const ISOLATION_DECISION_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=error.type:required,network.mode:required,outcome:required
+// registry: attributes=cli.invocation.id:recommended,error.type:required,network.mode:required,outcome:required,session.id:recommended
 pub const ISOLATION_FIREWALL_FAILED: &str = "isolation.firewall.failed";
 pub const ISOLATION_FIREWALL_FAILED_DEF: super::EventMetadata = super::EventMetadata {
     name: ISOLATION_FIREWALL_FAILED,
     description: "Fail-closed firewall application failed.",
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "error.type",
             value_type: super::ValueType::String,
@@ -293,9 +385,15 @@ pub const ISOLATION_FIREWALL_FAILED_DEF: super::EventMetadata = super::EventMeta
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=app.build_id:conditionally_required,app.crash.id:recommended,exception.message:recommended,exception.stacktrace:recommended,exception.type:recommended,os.name:conditionally_required,os.version:conditionally_required,service.version:conditionally_required,session.id:recommended
+// registry: attributes=app.build_id:conditionally_required,app.crash.id:recommended,cli.invocation.id:recommended,exception.message:recommended,exception.stacktrace:recommended,exception.type:recommended,os.name:conditionally_required,os.version:conditionally_required,service.version:conditionally_required,session.id:recommended
 pub const APP_CRASH: &str = "app.crash";
 pub const APP_CRASH_DEF: super::EventMetadata = super::EventMetadata {
     name: APP_CRASH,
@@ -309,6 +407,12 @@ pub const APP_CRASH_DEF: super::EventMetadata = super::EventMetadata {
         },
         super::AttributeRequirement {
             name: "app.crash.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
@@ -357,7 +461,7 @@ pub const APP_CRASH_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.jank.frame_count:recommended,app.jank.period:recommended,app.jank.threshold:recommended
+// registry: attributes=app.jank.frame_count:recommended,app.jank.period:recommended,app.jank.threshold:recommended,cli.invocation.id:recommended,session.id:recommended
 pub const APP_JANK: &str = "app.jank";
 pub const APP_JANK_DEF: super::EventMetadata = super::EventMetadata {
     name: APP_JANK,
@@ -381,34 +485,66 @@ pub const APP_JANK_DEF: super::EventMetadata = super::EventMetadata {
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=outcome:required
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_DONE: &str = "launch.stage.done";
 pub const LAUNCH_STAGE_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_DONE,
     description: "Launch stage completed.",
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=error.type:recommended,outcome:required
+// registry: attributes=cli.invocation.id:recommended,error.type:recommended,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_FAILED: &str = "launch.stage.failed";
 pub const LAUNCH_STAGE_FAILED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_FAILED,
     description: "Launch stage failed.",
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "error.type",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
@@ -427,53 +563,93 @@ pub const LAUNCH_STAGE_FAILED_DEF: super::EventMetadata = super::EventMetadata {
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=outcome:required
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_SKIPPED: &str = "launch.stage.skipped";
 pub const LAUNCH_STAGE_SKIPPED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_SKIPPED,
     description: "Launch stage skipped.",
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=outcome:required
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_STARTED: &str = "launch.stage.started";
 pub const LAUNCH_STAGE_STARTED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_STARTED,
     description: "Launch stage started.",
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=outcome:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const OPERATION_LOG: &str = "operation.log";
 pub const OPERATION_LOG_DEF: super::EventMetadata = super::EventMetadata {
     name: OPERATION_LOG,
     description: "Bounded operation breadcrumb.",
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -494,13 +670,19 @@ pub const OPERATION_LOG_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=outcome:required,session.id:recommended
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const OPERATION_WARN: &str = "operation.warn";
 pub const OPERATION_WARN_DEF: super::EventMetadata = super::EventMetadata {
     name: OPERATION_WARN,
     description: "Bounded operation warning.",
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -521,31 +703,51 @@ pub const OPERATION_WARN_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=outcome:required
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const PERFORMANCE_SLOW_FOREGROUND_WAIT: &str = "performance.slow.foreground.wait";
 pub const PERFORMANCE_SLOW_FOREGROUND_WAIT_DEF: super::EventMetadata = super::EventMetadata {
     name: PERFORMANCE_SLOW_FOREGROUND_WAIT,
     description: "Foreground wait exceeded its threshold.",
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=error.type:recommended,outcome:required
+// registry: attributes=cli.invocation.id:recommended,error.type:recommended,outcome:required,session.id:recommended
 pub const PROCESS_SUBPROCESS_DONE: &str = "process.subprocess.done";
 pub const PROCESS_SUBPROCESS_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: PROCESS_SUBPROCESS_DONE,
     description: "Subprocess completed.",
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "error.type",
             value_type: super::ValueType::String,
@@ -565,14 +767,26 @@ pub const PROCESS_SUBPROCESS_DONE_DEF: super::EventMetadata = super::EventMetada
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended,process.exit_code:recommended,pty.exit.reason:required
+// registry: attributes=cli.invocation.id:recommended,gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended,process.exit_code:recommended,pty.exit.reason:required,session.id:recommended
 pub const PTY_EXIT: &str = "pty.exit";
 pub const PTY_EXIT_DEF: super::EventMetadata = super::EventMetadata {
     name: PTY_EXIT,
     description: "PTY child process exited.",
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "gen_ai.agent.name",
             value_type: super::ValueType::String,
@@ -603,14 +817,26 @@ pub const PTY_EXIT_DEF: super::EventMetadata = super::EventMetadata {
                 "cancelled",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended
+// registry: attributes=cli.invocation.id:recommended,gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended,session.id:recommended
 pub const PTY_SPAWN: &str = "pty.spawn";
 pub const PTY_SPAWN_DEF: super::EventMetadata = super::EventMetadata {
     name: PTY_SPAWN,
     description: "PTY child process spawned.",
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "gen_ai.agent.name",
             value_type: super::ValueType::String,
@@ -623,34 +849,60 @@ pub const PTY_SPAWN_DEF: super::EventMetadata = super::EventMetadata {
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: attributes=outcome:required
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const RUN_SUMMARY: &str = "run.summary";
 pub const RUN_SUMMARY_DEF: super::EventMetadata = super::EventMetadata {
     name: RUN_SUMMARY,
     description: "Invocation summary produced.",
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=session.id:required,session.previous_id:recommended
+// registry: attributes=cli.invocation.id:recommended,session.id:required,session.previous_id:recommended
 pub const SESSION_END: &str = "session.end";
 pub const SESSION_END_DEF: super::EventMetadata = super::EventMetadata {
     name: SESSION_END,
     description: "Interactive session ended.",
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "session.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -664,13 +916,19 @@ pub const SESSION_END_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=session.id:required,session.previous_id:recommended
+// registry: attributes=cli.invocation.id:recommended,session.id:required,session.previous_id:recommended
 pub const SESSION_START: &str = "session.start";
 pub const SESSION_START_DEF: super::EventMetadata = super::EventMetadata {
     name: SESSION_START,
     description: "Interactive session started.",
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "session.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -684,62 +942,110 @@ pub const SESSION_START_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=telemetry.validation.values:recommended
+// registry: attributes=cli.invocation.id:recommended,session.id:recommended,telemetry.validation.values:recommended
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 pub const TELEMETRY_VALIDATE_DEF: super::EventMetadata = super::EventMetadata {
     name: TELEMETRY_VALIDATE,
     description: "Telemetry delivery validation marker.",
-    attributes: &[super::AttributeRequirement {
-        name: "telemetry.validation.values",
-        value_type: super::ValueType::StringArray,
-        requirement: super::RequirementLevel::Recommended,
-        allowed_values: &[],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "telemetry.validation.values",
+            value_type: super::ValueType::StringArray,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=outcome:required
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const TIMING_DONE: &str = "timing.done";
 pub const TIMING_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: TIMING_DONE,
     description: "Timing interval completed.",
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=outcome:required
+// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const TIMING_STARTED: &str = "timing.started";
 pub const TIMING_STARTED_DEF: super::EventMetadata = super::EventMetadata {
     name: TIMING_STARTED,
     description: "Timing interval started.",
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=error.type:recommended,outcome:required,trust.decision:required,trust.source.type:required
+// registry: attributes=cli.invocation.id:recommended,error.type:recommended,outcome:required,session.id:recommended,trust.decision:required,trust.source.type:required
 pub const TRUST_DECISION: &str = "trust.decision";
 pub const TRUST_DECISION_DEF: super::EventMetadata = super::EventMetadata {
     name: TRUST_DECISION,
     description: "Role-source trust decision applied.",
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "error.type",
             value_type: super::ValueType::String,
@@ -760,6 +1066,12 @@ pub const TRUST_DECISION_DEF: super::EventMetadata = super::EventMetadata {
             ],
         },
         super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "trust.decision",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -773,7 +1085,7 @@ pub const TRUST_DECISION_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.screen.id:required,ui.navigation.sequence:required,ui.screen.visit.id:required
+// registry: attributes=app.screen.id:required,cli.invocation.id:recommended,session.id:recommended,ui.navigation.sequence:required,ui.screen.visit.id:required
 pub const UI_SCREEN_ENTERED: &str = "ui.screen.entered";
 pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_ENTERED,
@@ -783,6 +1095,18 @@ pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
             name: "app.screen.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
         super::AttributeRequirement {
@@ -799,7 +1123,7 @@ pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.screen.id:required,ui.navigation.sequence:required,ui.screen.visit.id:required,ui.transition.reason:required
+// registry: attributes=app.screen.id:required,cli.invocation.id:recommended,session.id:recommended,ui.navigation.sequence:required,ui.screen.visit.id:required,ui.transition.reason:required
 pub const UI_SCREEN_EXITED: &str = "ui.screen.exited";
 pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_EXITED,
@@ -809,6 +1133,18 @@ pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
             name: "app.screen.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
         super::AttributeRequirement {
@@ -841,29 +1177,57 @@ pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.widget.id:required
+// registry: attributes=app.widget.id:required,cli.invocation.id:recommended,session.id:recommended
 pub const UI_WIDGET_FOCUSED: &str = "ui.widget.focused";
 pub const UI_WIDGET_FOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_FOCUSED,
     description: "Widget gained focus.",
-    attributes: &[super::AttributeRequirement {
-        name: "app.widget.id",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "app.widget.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: attributes=app.widget.id:required
+// registry: attributes=app.widget.id:required,cli.invocation.id:recommended,session.id:recommended
 pub const UI_WIDGET_UNFOCUSED: &str = "ui.widget.unfocused";
 pub const UI_WIDGET_UNFOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_UNFOCUSED,
     description: "Widget lost focus.",
-    attributes: &[super::AttributeRequirement {
-        name: "app.widget.id",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Required,
-        allowed_values: &[],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "app.widget.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
 
 pub const ALL: &[&str] = &[

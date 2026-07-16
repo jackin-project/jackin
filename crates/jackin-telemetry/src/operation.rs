@@ -511,6 +511,35 @@ fn operation_inner(
             return Err(reason);
         }
     };
+    let invocation = crate::identity::current_invocation().map(|id| id.to_string());
+    let session = crate::identity::current_session().map(|value| value.current.to_string());
+    let mut ambient_attrs = attrs.to_vec();
+    let supplied = |key| attrs.iter().any(|attr| attr.key == key);
+    if let Some(invocation) = invocation.as_deref()
+        && metadata
+            .attributes
+            .iter()
+            .any(|requirement| requirement.name == schema::attrs::CLI_INVOCATION_ID)
+        && !supplied(schema::attrs::CLI_INVOCATION_ID)
+    {
+        ambient_attrs.push(Attr {
+            key: schema::attrs::CLI_INVOCATION_ID,
+            value: Value::Str(invocation),
+        });
+    }
+    if let Some(session) = session.as_deref()
+        && metadata
+            .attributes
+            .iter()
+            .any(|requirement| requirement.name == schema::attrs::std_attrs::SESSION_ID)
+        && !supplied(schema::attrs::std_attrs::SESSION_ID)
+    {
+        ambient_attrs.push(Attr {
+            key: schema::attrs::std_attrs::SESSION_ID,
+            value: Value::Str(session),
+        });
+    }
+    let attrs = ambient_attrs.as_slice();
     if attrs.iter().any(|attr| attr.key == schema::attrs::OUTCOME) {
         health::reject(health::Signal::Trace, Rejection::InvalidValue);
         return Err(Rejection::InvalidValue);

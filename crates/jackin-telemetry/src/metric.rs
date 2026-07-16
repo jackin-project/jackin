@@ -342,6 +342,19 @@ fn validate_instrument(
 }
 
 fn validate_attributes(def: &InstrumentDef, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+    if attrs.iter().any(|attr| {
+        matches!(
+            attr.key,
+            schema::attrs::CLI_INVOCATION_ID
+                | schema::attrs::std_attrs::SESSION_ID
+                | schema::attrs::JOB_ID
+                | schema::attrs::UI_SCREEN_VISIT_ID
+                | schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID
+        )
+    }) {
+        health::reject(health::Signal::Metric, Rejection::Cardinality);
+        return Err(Rejection::Cardinality);
+    }
     validation::attributes(def.attributes, attrs, limits::MAX_METRIC_ATTRIBUTES)
         .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))
 }
@@ -447,6 +460,7 @@ pub const fn up_down_counter(def: &'static InstrumentDef) -> UpDownCounter {
 
 impl Counter {
     pub fn add(self, value: u64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        reject_identity_dimensions(attrs)?;
         let Some(instruments) = INSTRUMENTS.get() else {
             return Ok(());
         };
@@ -464,6 +478,7 @@ impl Counter {
 }
 impl Histogram {
     pub fn record(self, value: f64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        reject_identity_dimensions(attrs)?;
         let Some(instruments) = INSTRUMENTS.get() else {
             return Ok(());
         };
@@ -482,6 +497,7 @@ impl Histogram {
 
 impl UpDownCounter {
     pub fn add(self, value: i64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        reject_identity_dimensions(attrs)?;
         let Some(instruments) = INSTRUMENTS.get() else {
             return Ok(());
         };
@@ -494,6 +510,24 @@ impl UpDownCounter {
         let kv = key_values(attrs)
             .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
         instruments.up_down_counters[&self.0.name].add(value, &kv);
+        Ok(())
+    }
+}
+
+fn reject_identity_dimensions(attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+    if attrs.iter().any(|attr| {
+        matches!(
+            attr.key,
+            schema::attrs::CLI_INVOCATION_ID
+                | schema::attrs::std_attrs::SESSION_ID
+                | schema::attrs::JOB_ID
+                | schema::attrs::UI_SCREEN_VISIT_ID
+                | schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID
+        )
+    }) {
+        health::reject(health::Signal::Metric, Rejection::Cardinality);
+        Err(Rejection::Cardinality)
+    } else {
         Ok(())
     }
 }

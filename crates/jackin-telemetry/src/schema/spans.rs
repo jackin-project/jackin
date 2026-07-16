@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // GENERATED from registry/ — do not hand-edit. Regenerate: cargo xtask telemetry-registry --generate.
 
-// registry: kind=internal; attributes=cli.command.name:required,cli.invocation.id:required,error.type:recommended,outcome:recommended,process.exit_code:recommended
+// registry: kind=internal; attributes=cli.command.name:recommended,cli.invocation.id:recommended,error.type:recommended,outcome:recommended,process.exit_code:recommended,session.id:recommended
 pub const APP_SHUTDOWN: &str = "app.shutdown";
 pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
     name: APP_SHUTDOWN,
@@ -12,7 +12,7 @@ pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
         super::AttributeRequirement {
             name: "cli.command.name",
             value_type: super::ValueType::String,
-            requirement: super::RequirementLevel::Required,
+            requirement: super::RequirementLevel::Recommended,
             allowed_values: &[
                 "load",
                 "hardline",
@@ -95,7 +95,7 @@ pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
         super::AttributeRequirement {
             name: "cli.invocation.id",
             value_type: super::ValueType::String,
-            requirement: super::RequirementLevel::Required,
+            requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
         super::AttributeRequirement {
@@ -123,9 +123,15 @@ pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=internal; attributes=cli.command.name:required,cli.invocation.id:required,error.type:recommended,outcome:recommended,process.exit_code:recommended
+// registry: kind=internal; attributes=cli.command.name:recommended,cli.invocation.id:recommended,error.type:recommended,outcome:recommended,process.exit_code:recommended,session.id:recommended
 pub const APP_STARTUP: &str = "app.startup";
 pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
     name: APP_STARTUP,
@@ -135,7 +141,7 @@ pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
         super::AttributeRequirement {
             name: "cli.command.name",
             value_type: super::ValueType::String,
-            requirement: super::RequirementLevel::Required,
+            requirement: super::RequirementLevel::Recommended,
             allowed_values: &[
                 "load",
                 "hardline",
@@ -218,7 +224,7 @@ pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
         super::AttributeRequirement {
             name: "cli.invocation.id",
             value_type: super::ValueType::String,
-            requirement: super::RequirementLevel::Required,
+            requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
         super::AttributeRequirement {
@@ -246,29 +252,49 @@ pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=internal; attributes=outcome:recommended
+// registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
 pub const BACKGROUND_CYCLE: &str = "background.cycle";
 pub const BACKGROUND_CYCLE_DEF: super::SpanMetadata = super::SpanMetadata {
     name: BACKGROUND_CYCLE,
     description: "One periodic cycle.",
     kind: super::SpanKind::Internal,
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Recommended,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: kind=internal; attributes=cli.command.name:required,cli.invocation.id:required,error.type:recommended,outcome:recommended,process.exit_code:recommended
+// registry: kind=internal; attributes=cli.command.name:required,cli.invocation.id:required,error.type:recommended,outcome:recommended,process.exit_code:recommended,session.id:recommended
 pub const CLI_COMMAND: &str = "cli.command";
 pub const CLI_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
     name: CLI_COMMAND,
@@ -389,35 +415,61 @@ pub const CLI_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=client; attributes=outcome:recommended
+// registry: kind=client; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
 pub const CONNECTION_ATTEMPT: &str = "connection.attempt";
 pub const CONNECTION_ATTEMPT_DEF: super::SpanMetadata = super::SpanMetadata {
     name: CONNECTION_ATTEMPT,
     description: "One connection attempt.",
     kind: super::SpanKind::Client,
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Recommended,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: kind=client; attributes=db.operation.name:required,db.system.name:required,outcome:recommended
+// registry: kind=client; attributes=cli.invocation.id:recommended,db.operation.name:required,db.system.name:required,outcome:recommended,session.id:recommended
 pub const DB_CLIENT: &str = "db.client";
 pub const DB_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
     name: DB_CLIENT,
     description: "One bounded database client operation.",
     kind: super::SpanKind::Client,
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "db.operation.name",
             value_type: super::ValueType::String,
@@ -443,15 +495,27 @@ pub const DB_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=client; attributes=container.id:recommended,gen_ai.provider.name:recommended,http.request.method:required,outcome:recommended,server.address:recommended,url.template:required
+// registry: kind=client; attributes=cli.invocation.id:recommended,container.id:recommended,gen_ai.provider.name:recommended,http.request.method:required,outcome:recommended,server.address:recommended,session.id:recommended,url.template:required
 pub const HTTP_CLIENT: &str = "http.client";
 pub const HTTP_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
     name: HTTP_CLIENT,
     description: "One bounded HTTP client request.",
     kind: super::SpanKind::Client,
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "container.id",
             value_type: super::ValueType::String,
@@ -490,6 +554,12 @@ pub const HTTP_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
             allowed_values: &[],
         },
         super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "url.template",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
@@ -497,13 +567,19 @@ pub const HTTP_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=internal; attributes=launch.target.kind:required,outcome:recommended
+// registry: kind=internal; attributes=cli.invocation.id:recommended,launch.target.kind:required,outcome:recommended,session.id:recommended
 pub const LAUNCH: &str = "launch";
 pub const LAUNCH_DEF: super::SpanMetadata = super::SpanMetadata {
     name: LAUNCH,
     description: "One bounded launch pipeline.",
     kind: super::SpanKind::Internal,
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "launch.target.kind",
             value_type: super::ValueType::String,
@@ -523,15 +599,27 @@ pub const LAUNCH_DEF: super::SpanMetadata = super::SpanMetadata {
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=internal; attributes=launch.stage.name:required,outcome:recommended
+// registry: kind=internal; attributes=cli.invocation.id:recommended,launch.stage.name:required,outcome:recommended,session.id:recommended
 pub const LAUNCH_STAGE: &str = "launch.stage";
 pub const LAUNCH_STAGE_DEF: super::SpanMetadata = super::SpanMetadata {
     name: LAUNCH_STAGE,
     description: "One bounded launch pipeline stage.",
     kind: super::SpanKind::Internal,
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "launch.stage.name",
             value_type: super::ValueType::String,
@@ -563,9 +651,15 @@ pub const LAUNCH_STAGE_DEF: super::SpanMetadata = super::SpanMetadata {
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=consumer; attributes=job.id:recommended,job.type:recommended,outcome:recommended
+// registry: kind=consumer; attributes=cli.invocation.id:recommended,job.id:recommended,job.type:recommended,outcome:recommended,session.id:recommended
 pub const PREWARM_ATTEMPT: &str = "prewarm.attempt";
 pub const PREWARM_ATTEMPT_DEF: super::SpanMetadata = super::SpanMetadata {
     name: PREWARM_ATTEMPT,
@@ -573,6 +667,12 @@ pub const PREWARM_ATTEMPT_DEF: super::SpanMetadata = super::SpanMetadata {
     kind: super::SpanKind::Consumer,
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "job.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
@@ -597,9 +697,15 @@ pub const PREWARM_ATTEMPT_DEF: super::SpanMetadata = super::SpanMetadata {
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=producer; attributes=job.id:recommended,job.type:recommended,outcome:recommended
+// registry: kind=producer; attributes=cli.invocation.id:recommended,job.id:recommended,job.type:recommended,outcome:recommended,session.id:recommended
 pub const PREWARM_SCHEDULE: &str = "prewarm.schedule";
 pub const PREWARM_SCHEDULE_DEF: super::SpanMetadata = super::SpanMetadata {
     name: PREWARM_SCHEDULE,
@@ -607,6 +713,12 @@ pub const PREWARM_SCHEDULE_DEF: super::SpanMetadata = super::SpanMetadata {
     kind: super::SpanKind::Producer,
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "job.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
@@ -631,15 +743,27 @@ pub const PREWARM_SCHEDULE_DEF: super::SpanMetadata = super::SpanMetadata {
                 "cancellation",
             ],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=client; attributes=outcome:recommended,process.executable.name:recommended,process.exit_code:recommended
+// registry: kind=client; attributes=cli.invocation.id:recommended,outcome:recommended,process.executable.name:recommended,process.exit_code:recommended,session.id:recommended
 pub const PROCESS_COMMAND: &str = "process.command";
 pub const PROCESS_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
     name: PROCESS_COMMAND,
     description: "One subprocess command.",
     kind: super::SpanKind::Client,
     attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
@@ -665,9 +789,15 @@ pub const PROCESS_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=client; attributes=outcome:recommended,rpc.method:required,rpc.system.name:required
+// registry: kind=client; attributes=cli.invocation.id:recommended,outcome:recommended,rpc.method:required,rpc.system.name:required,session.id:recommended
 pub const RPC_CLIENT: &str = "rpc.client";
 pub const RPC_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
     name: RPC_CLIENT,
@@ -675,6 +805,12 @@ pub const RPC_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
     kind: super::SpanKind::Client,
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
@@ -699,9 +835,15 @@ pub const RPC_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
             requirement: super::RequirementLevel::Required,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=server; attributes=outcome:recommended,rpc.method:required,rpc.system.name:required
+// registry: kind=server; attributes=cli.invocation.id:recommended,outcome:recommended,rpc.method:required,rpc.system.name:required,session.id:recommended
 pub const RPC_SERVER: &str = "rpc.server";
 pub const RPC_SERVER_DEF: super::SpanMetadata = super::SpanMetadata {
     name: RPC_SERVER,
@@ -709,6 +851,12 @@ pub const RPC_SERVER_DEF: super::SpanMetadata = super::SpanMetadata {
     kind: super::SpanKind::Server,
     attributes: &[
         super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "outcome",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
@@ -733,87 +881,149 @@ pub const RPC_SERVER_DEF: super::SpanMetadata = super::SpanMetadata {
             requirement: super::RequirementLevel::Required,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
     ],
 };
-// registry: kind=internal; attributes=outcome:recommended
+// registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 pub const TELEMETRY_VALIDATE_DEF: super::SpanMetadata = super::SpanMetadata {
     name: TELEMETRY_VALIDATE,
     description: "Telemetry delivery validation.",
     kind: super::SpanKind::Internal,
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Recommended,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: kind=internal; attributes=outcome:recommended
+// registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
 pub const UI_ACTION: &str = "ui.action";
 pub const UI_ACTION_DEF: super::SpanMetadata = super::SpanMetadata {
     name: UI_ACTION,
     description: "Bounded semantic UI action.",
     kind: super::SpanKind::Internal,
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Recommended,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: kind=internal; attributes=outcome:recommended
+// registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
 pub const UI_RENDER: &str = "ui.render";
 pub const UI_RENDER_DEF: super::SpanMetadata = super::SpanMetadata {
     name: UI_RENDER,
     description: "Bounded action-triggered render.",
     kind: super::SpanKind::Internal,
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Recommended,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
-// registry: kind=internal; attributes=outcome:recommended
+// registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
 pub const UI_SCREEN_TRANSITION: &str = "ui.screen.transition";
 pub const UI_SCREEN_TRANSITION_DEF: super::SpanMetadata = super::SpanMetadata {
     name: UI_SCREEN_TRANSITION,
     description: "Bounded screen transition.",
     kind: super::SpanKind::Internal,
-    attributes: &[super::AttributeRequirement {
-        name: "outcome",
-        value_type: super::ValueType::String,
-        requirement: super::RequirementLevel::Recommended,
-        allowed_values: &[
-            "success",
-            "failure",
-            "error",
-            "timeout",
-            "skip",
-            "cancellation",
-        ],
-    }],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
 };
 
 pub const ALL: &[&str] = &[

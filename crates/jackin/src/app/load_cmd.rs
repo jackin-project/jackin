@@ -159,7 +159,6 @@ pub(super) async fn handle_console(
     debug: bool,
     lifecycle: &mut crate::lifecycle::InvocationTelemetry,
 ) -> Result<()> {
-    let _session = jackin_telemetry::identity::SessionGuard::begin();
     let cwd = std::env::current_dir()?;
     let mut runner = ShellRunner { debug };
     let mut in_place = ConsoleInPlaceHandler {
@@ -172,6 +171,9 @@ pub(super) async fn handle_console(
     // terminal. Sub-surfaces detect this and skip their own
     // enter/leave; the guard tears the terminal down once, on drop.
     let screen = console::TerminalSession::enter(console::terminal::host_console_terminal())?;
+    let _session = jackin_telemetry::identity::SessionGuard::begin(
+        jackin_telemetry::identity::SessionKind::Console,
+    )?;
     lifecycle.ready();
 
     let connect_docker = || BollardDockerClient::connect();

@@ -130,11 +130,8 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             result,
             is_settings,
         } => apply_op_commit_result(state, op_ref, result, is_settings),
-        ManagerMessage::PollPickerLoads => {
-            state.request_effect(ManagerEffect::PollPickerLoads);
-        }
-        ManagerMessage::PollFileBrowserGitUrls => {
-            state.request_effect(ManagerEffect::PollFileBrowserGitUrls);
+        poll @ (ManagerMessage::PollPickerLoads | ManagerMessage::PollFileBrowserGitUrls) => {
+            request_poll_effect(state, poll);
         }
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
@@ -315,6 +312,15 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             jackin_telemetry::counter(&jackin_telemetry::metric::UI_ACTIONS).add(1, &attrs);
     }
     ManagerUpdate::redraw()
+}
+
+fn request_poll_effect(state: &mut ManagerState<'_>, message: ManagerMessage) {
+    let effect = match message {
+        ManagerMessage::PollPickerLoads => ManagerEffect::PollPickerLoads,
+        ManagerMessage::PollFileBrowserGitUrls => ManagerEffect::PollFileBrowserGitUrls,
+        _ => return,
+    };
+    state.request_effect(effect);
 }
 
 fn start_manager_action(

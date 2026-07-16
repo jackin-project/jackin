@@ -794,7 +794,7 @@ key = "jackin-config"
 bound = 22
 [[family.entry]]
 key = "jackin-console"
-bound = 74
+bound = 73
 [[family.entry]]
 key = "jackin-diagnostics"
 bound = 24

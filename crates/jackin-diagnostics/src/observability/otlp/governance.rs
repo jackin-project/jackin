@@ -199,7 +199,7 @@ fn validate_log_value(
     };
     match value {
         AnyValue::String(value) => {
-            jackin_telemetry::privacy::validate_string(value.as_str())?;
+            jackin_telemetry::privacy::validate_attribute_string(key, value.as_str())?;
             if !requirement.allowed_values.is_empty()
                 && !requirement.allowed_values.contains(&value.as_str())
             {
@@ -221,7 +221,7 @@ fn validate_log_value(
                 if item.as_str().len() > maximum {
                     return Err(jackin_telemetry::Rejection::SizeLimit);
                 }
-                jackin_telemetry::privacy::validate_string(item.as_str())?;
+                jackin_telemetry::privacy::validate_attribute_string(key, item.as_str())?;
             }
             Ok(())
         }
@@ -286,7 +286,7 @@ fn validate_span(
         else {
             return Err(jackin_telemetry::Rejection::UnknownAttribute);
         };
-        validate_span_value(&attribute.value, requirement)?;
+        validate_span_value(attribute.key.as_str(), &attribute.value, requirement)?;
     }
     validate_required(definition.attributes, |required| {
         span.attributes
@@ -297,6 +297,7 @@ fn validate_span(
 }
 
 fn validate_span_value(
+    key: &str,
     value: &opentelemetry::Value,
     requirement: &jackin_telemetry::schema::AttributeRequirement,
 ) -> Result<(), jackin_telemetry::Rejection> {
@@ -313,12 +314,41 @@ fn validate_span_value(
     if !valid {
         return Err(jackin_telemetry::Rejection::InvalidValue);
     }
-    validate_untyped_span_value(value)?;
+    validate_span_attribute_value(key, value)?;
     if matches!(value, Value::String(value) if !requirement.allowed_values.is_empty() && !requirement.allowed_values.contains(&value.as_str()))
     {
         return Err(jackin_telemetry::Rejection::InvalidValue);
     }
     Ok(())
+}
+
+fn validate_span_attribute_value(
+    key: &str,
+    value: &opentelemetry::Value,
+) -> Result<(), jackin_telemetry::Rejection> {
+    use opentelemetry::{Array, Value};
+    match value {
+        Value::String(value) => {
+            if value.as_str().len() > jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES {
+                return Err(jackin_telemetry::Rejection::SizeLimit);
+            }
+            jackin_telemetry::privacy::validate_attribute_string(key, value.as_str())
+        }
+        Value::Array(Array::String(values)) => {
+            if values.len() > jackin_telemetry::limits::MAX_ARRAY_ELEMENTS {
+                return Err(jackin_telemetry::Rejection::SizeLimit);
+            }
+            for value in values {
+                if value.as_str().len() > jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES {
+                    return Err(jackin_telemetry::Rejection::SizeLimit);
+                }
+                jackin_telemetry::privacy::validate_attribute_string(key, value.as_str())?;
+            }
+            Ok(())
+        }
+        Value::Array(_) => Err(jackin_telemetry::Rejection::InvalidValue),
+        _ => Ok(()),
+    }
 }
 
 fn validate_untyped_span_value(
