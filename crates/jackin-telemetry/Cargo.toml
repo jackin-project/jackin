@@ -19,12 +19,16 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 criterion.workspace = true
+dhat.workspace = true
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace"] }
 tracing-subscriber.workspace = true
 
 [[bench]]
 name = "disabled_fast_path"
 harness = false
+
+[[test]]
+name = "disabled_alloc"
 
 [lints]
 workspace = true
