@@ -78,6 +78,8 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DOCS_XTASK: ${{ github.workspace }}/.ci-tools/GitHub/jackin-xtask
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -89,8 +91,12 @@ jobs:
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           working_directory: docs
-          install_args: "rust lychee"
+          install_args: "lychee"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          lane: GitHub
 
       # Plan 049 residual: generate crate README → Fumadocs pages so repo-link
       # checks see the same generated MDX the docs build ships (gitignored).
@@ -108,7 +114,8 @@ jobs:
       - name: Register xtask problem matcher
         run: echo "::add-matcher::.github/problem-matchers/xtask.json"
       - name: Check source repository links
-        run: cargo xtask docs repo-links
+        run: |
+          "$DOCS_XTASK" docs repo-links
 
       # README links are not part of the generated docs site. Check them live
       # without cache so a malformed or removed destination fails this PR.
@@ -123,16 +130,20 @@ jobs:
             README.md
 
       - name: Check brand prose
-        run: cargo xtask docs brand
+        run: |
+          "$DOCS_XTASK" docs brand
 
       - name: Check behavioral-spec test citations
-        run: cargo xtask docs specs
+        run: |
+          env -u CI "$DOCS_XTASK" docs specs
 
       - name: Check roadmap sidebar completeness
-        run: cargo xtask roadmap audit
+        run: |
+          "$DOCS_XTASK" roadmap audit
 
       - name: Check research sidebar completeness
-        run: cargo xtask research check
+        run: |
+          "$DOCS_XTASK" research check
 
   docs-link-check:
     needs: changes
@@ -143,6 +154,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Restore input-identical built site
+        id: built-site
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: docs/.output/public
+          key: >-
+            docs-site-v1-${{ runner.os }}-${{
+              hashFiles(
+                '.github/workflows/docs.yml',
+                'Cargo.toml',
+                'crates/*/Cargo.toml',
+                'crates/*/README.md',
+                'docs/bun.lock',
+                'docs/package.json',
+                'docs/src/**',
+                'docs/content/**',
+                'docs/public/**',
+                'docs/scripts/**',
+                'docs/*.ts',
+                'docs/*.json',
+                'docs/*.toml'
+              )
+            }}
+
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
@@ -150,10 +185,11 @@ jobs:
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           working_directory: docs
-          install_args: "bun node lychee"
+          install_args: ${{ steps.built-site.outputs.cache-hit == 'true' && 'lychee' || 'bun node lychee' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Cache bun modules
+        if: steps.built-site.outputs.cache-hit != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.bun/install/cache
@@ -161,10 +197,12 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
 
       - name: Install dependencies
+        if: steps.built-site.outputs.cache-hit != 'true'
         working-directory: docs
         run: bun ci
 
       - name: Build site
+        if: steps.built-site.outputs.cache-hit != 'true'
         working-directory: docs
         run: bun run build
 
@@ -200,16 +238,56 @@ jobs:
         with:
           path: docs/.output/public
 
-  spell-check-docs:
+  prepare-codebook:
     needs: changes
-    if: github.event_name != 'schedule' && needs.changes.outputs.docs == 'true'
+    if: >-
+      github.event_name != 'schedule' &&
+      (needs.changes.outputs.docs == 'true' || needs.changes.outputs.source == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Setup mise
+      - name: Restore resolved Codebook binary
+        id: codebook-artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          contract=$(
+            { grep -F '"cargo:codebook-lsp"' mise.toml; sed -n '/\[\[tools\."cargo:codebook-lsp"\]\]/,/^$/p' mise.lock; } \
+              | sha256sum | cut -d ' ' -f 1
+          )
+          name="codebook-lsp-v1-${RUNNER_OS}-${RUNNER_ARCH}-${contract}"
+          mkdir -p .ci-codebook
+          artifact_id=
+          if ! artifact_id=$(
+            gh api "repos/${REPOSITORY}/actions/artifacts?name=${name}&per_page=10" \
+              --jq '.artifacts[] | select(.expired == false) | .id' \
+              | head -n 1
+          ); then
+            echo "::warning::Codebook artifact lookup failed; preparing the binary"
+            artifact_id=
+          fi
+          if [ -n "$artifact_id" ]; then
+            gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              > .ci-codebook/.artifact.zip
+            python3 -m zipfile -e .ci-codebook/.artifact.zip .ci-codebook
+            rm .ci-codebook/.artifact.zip
+            hit=true
+          else
+            hit=false
+          fi
+          {
+            echo "hit=$hit"
+            echo "name=$name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build missing Codebook binary once
+        if: steps.codebook-artifact.outputs.hit != 'true'
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           version: "2026.6.11"
@@ -217,6 +295,52 @@ jobs:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - name: Stage Codebook binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.codebook-artifact.outputs.hit }}" != "true" ]; then
+            cp "$(mise which codebook-lsp)" .ci-codebook/codebook-lsp
+            strip .ci-codebook/codebook-lsp
+          fi
+          chmod +x .ci-codebook/codebook-lsp
+
+      - name: Publish resolved Codebook binary
+        if: >-
+          steps.codebook-artifact.outputs.hit != 'true' &&
+          (github.ref == 'refs/heads/main' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.codebook-artifact.outputs.name }}
+          path: .ci-codebook/codebook-lsp
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload Codebook binary for spell checks
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: codebook-lsp
+          path: .ci-codebook/codebook-lsp
+          compression-level: 0
+          retention-days: 1
+
+  spell-check-docs:
+    needs: [changes, prepare-codebook]
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Download prepared Codebook binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: codebook-lsp
+          path: .ci-codebook
 
       - name: Run Codebook docs spell check
         shell: bash
@@ -245,10 +369,11 @@ jobs:
 
           printf 'Spell checking %s docs/prose file(s):\n' "${#spell_files[@]}"
           printf '  %s\n' "${spell_files[@]}"
-          codebook-lsp --root . lint --unique "${spell_files[@]}"
+          chmod +x .ci-codebook/codebook-lsp
+          .ci-codebook/codebook-lsp --root . lint --unique "${spell_files[@]}"
 
   spell-check-source:
-    needs: changes
+    needs: [changes, prepare-codebook]
     if: github.event_name != 'schedule' && needs.changes.outputs.source == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -256,14 +381,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Setup mise
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
+      - name: Download prepared Codebook binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall cargo:codebook-lsp"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          name: codebook-lsp
+          path: .ci-codebook
 
       - name: Run Codebook source spell check
         shell: bash
@@ -285,7 +407,8 @@ jobs:
 
           printf 'Spell checking %s source file(s):\n' "${#spell_files[@]}"
           printf '  %s\n' "${spell_files[@]}"
-          codebook-lsp --root . lint --unique "${spell_files[@]}"
+          chmod +x .ci-codebook/codebook-lsp
+          .ci-codebook/codebook-lsp --root . lint --unique "${spell_files[@]}"
 
   deploy:
     # docs-link-check covers full-site lychee + docs build; repo-link-check
@@ -410,7 +533,7 @@ jobs:
   # one-job aggregator on schedule has no value.
   docs-required:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, repo-link-check, docs-link-check, spell-check-docs, spell-check-source, deploy, verify-deployed, check-deployed]
+    needs: [changes, repo-link-check, docs-link-check, prepare-codebook, spell-check-docs, spell-check-source, deploy, verify-deployed, check-deployed]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

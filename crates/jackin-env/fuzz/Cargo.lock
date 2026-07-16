@@ -815,6 +815,7 @@ dependencies = [
 name = "jackin-env-fuzz"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "jackin-config",
  "jackin-core",
  "jackin-env",

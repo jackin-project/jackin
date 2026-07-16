@@ -45,6 +45,12 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 
 The `cargo xtask <lane>` CLI. Merge-readiness is `cargo xtask ci` (or `--fast` / `--e2e`). New checks are added as lanes here so they are discoverable from one command.
 
+`cargo xtask lint ratchet` checks every configured family. CI jobs that own one
+artifact use repeatable `--only <family>` arguments so they do not measure
+unrelated families or launch nested build work. Artifact-backed families skip
+when their artifact is absent; the job that produces an artifact must run the
+matching scoped ratchet after generation.
+
 ## How to verify
 
 ```sh
@@ -57,4 +63,3 @@ cargo xtask lint agents --format json
 cargo xtask lint files --format json
 cargo xtask ci --fast
 ```
-

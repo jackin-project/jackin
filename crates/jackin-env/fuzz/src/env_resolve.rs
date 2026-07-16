@@ -54,7 +54,11 @@ fuzz_target!(|data: &[u8]| {
             k.clone(),
             EnvVarDecl {
                 default_value: Some(val),
-                ..Default::default()
+                interactive: false,
+                skippable: false,
+                prompt: None,
+                options: vec![],
+                depends_on: vec![],
             },
         );
     }
