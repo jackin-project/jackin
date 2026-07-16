@@ -55,48 +55,146 @@ fn collect_files(root: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
 }
 
 #[test]
-fn conformance_no_local_artifacts() {
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+fn conformance_no_local_artifacts() -> anyhow::Result<()> {
     let temp = tempfile::tempdir().expect("tempdir");
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().expect("test path layout");
+    let home = temp.path().join("home");
+    let data = temp.path().join("data");
+    let config = temp.path().join("config");
+    let xdg_data = temp.path().join("xdg-data");
+    let xdg_config = temp.path().join("xdg-config");
+    let work = temp.path().join("work");
+    for directory in [&home, &data, &config, &xdg_data, &xdg_config, &work] {
+        fs::create_dir_all(directory)?;
+    }
 
-    let retained_usage = paths.jackin_home.join("state/usage/snapshots.db");
+    let retained_usage = data.join("state/usage/snapshots.db");
     fs::create_dir_all(retained_usage.parent().expect("usage store parent"))
         .expect("usage store directory");
     fs::write(&retained_usage, b"retained application state").expect("usage state fixture");
     let ratchet = temp.path().join("target/telemetry-volume.json");
     fs::create_dir_all(ratchet.parent().expect("ratchet parent")).expect("ratchet directory");
     fs::write(&ratchet, b"{}").expect("ratchet fixture");
+    let fixture_capture = temp.path().join("fixtures/pty-capture.bin");
+    fs::create_dir_all(fixture_capture.parent().expect("capture parent"))?;
+    fs::write(&fixture_capture, b"explicit test fixture capture")?;
 
-    let (_export, subscriber) = crate::observability::test_layers(false, "artifact-check");
-    tracing::subscriber::with_default(subscriber, || {
-        let run = RunDiagnostics::start(&paths, true, "diagnostics").expect("run start");
-        let guard = run.activate();
-        run.compact("artifact_check", "bounded in-memory event");
-        run.stage(
-            "stage_started",
-            crate::DiagnosticStage::Prepare,
-            "preparing",
-            None,
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    for identity in ["host", "daemon", "capsule"] {
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args(["--exact", "tests::artifact_lifecycle_child", "--nocapture"])
+            .env_clear()
+            .env("HOME", &home)
+            .env("JACKIN_HOME_DIR", &data)
+            .env("JACKIN_CONFIG_DIR", &config)
+            .env("XDG_DATA_HOME", &xdg_data)
+            .env("XDG_CONFIG_HOME", &xdg_config)
+            .env("JACKIN_PTY_FIXTURE_CAPTURE", &fixture_capture)
+            .env("OTEL_EXPORTER_OTLP_ENDPOINT", testbed.endpoint())
+            .env("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+            .env("JACKIN_ARTIFACT_LIFECYCLE", identity)
+            .current_dir(&work)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?
+            .wait_with_output()?;
+        assert!(
+            output.status.success(),
+            "{identity} lifecycle failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         );
-        run.stage("stage_done", crate::DiagnosticStage::Prepare, "ready", None);
-        run.emit_run_summary();
-        drop(guard);
-    });
+    }
+
+    assert!(
+        runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))),
+        "production lifecycles did not export all signals"
+    );
+    let traces = testbed.traces();
+    let service_names = traces
+        .iter()
+        .flat_map(|request| &request.resource_spans)
+        .filter_map(|batch| batch.resource.as_ref())
+        .flat_map(|resource| &resource.attributes)
+        .filter(|attribute| attribute.key == "service.name")
+        .filter_map(|attribute| attribute.value.as_ref())
+        .filter_map(|value| value.value.as_ref())
+        .filter_map(|value| match value {
+            opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(name) => {
+                Some(name.as_str())
+            }
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        service_names,
+        std::collections::BTreeSet::from(["jackin", "jackin-capsule", "jackin-daemon"]),
+        "artifact test did not exercise every production identity"
+    );
 
     let mut files = Vec::new();
     collect_files(temp.path(), &mut files);
     let unexpected = files
         .into_iter()
-        .filter(|path| path != &retained_usage && path != &ratchet)
+        .filter(|path| path != &retained_usage && path != &ratchet && path != &fixture_capture)
         .collect::<Vec<_>>();
     assert!(
         unexpected.is_empty(),
         "telemetry lifecycle created local artifacts: {unexpected:?}"
     );
+    Ok(())
+}
+
+#[test]
+fn artifact_lifecycle_child() -> anyhow::Result<()> {
+    let Ok(identity) = std::env::var("JACKIN_ARTIFACT_LIFECYCLE") else {
+        return Ok(());
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let runtime_guard = runtime.enter();
+    let paths = JackinPaths::detect()?;
+    paths.ensure_base_dirs()?;
+
+    let active_run = match identity.as_str() {
+        "host" => Some(RunDiagnostics::start(&paths, false, "diagnostics")?),
+        "daemon" => Some(RunDiagnostics::start(&paths, false, "daemon")?),
+        "capsule" => {
+            assert!(crate::init_capsule_tracing(None)?);
+            None
+        }
+        other => anyhow::bail!("unknown artifact lifecycle identity {other}"),
+    };
+    assert_eq!(crate::telemetry_health_snapshot().active_signals, 3);
+    let active_guard = active_run.as_ref().map(RunDiagnostics::activate);
+
+    let operation =
+        jackin_telemetry::root_operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
+            .map_err(|error| anyhow::anyhow!("artifact operation rejected: {error:?}"))?;
+    let span_guard = operation.span().enter();
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .map_err(|error| anyhow::anyhow!("artifact event rejected: {error:?}"))?;
+    jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
+        .add(1, &[])
+        .map_err(|error| anyhow::anyhow!("artifact metric rejected: {error:?}"))?;
+    drop(span_guard);
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+
+    drop(active_guard);
+    if identity == "capsule" {
+        crate::shutdown_capsule_tracing();
+    }
+    assert_eq!(crate::telemetry_health_snapshot().active_signals, 0);
+    drop(runtime_guard);
+    Ok(())
 }
 
 /// Workspace `target/telemetry-volume.json` (plan 009 measured export-volume).
@@ -112,7 +210,7 @@ fn telemetry_volume_artifact_path() -> std::path::PathBuf {
 /// Dual-bootstrap host→capsule conformance scenario (plan 009).
 ///
 /// Host phase: host `test_layers` + run/stage/process facades.
-/// Capsule phase: separate `test_capsule_layers` bootstrap (no host JSONL layer)
+/// Capsule phase: separate `test_capsule_layers` bootstrap (no host-only layers)
 /// driving production [`emit_session_start_for_test`] plus capsule-target
 /// breadcrumbs — not synthetic events on the host subscriber.
 fn drive_standard_conformance_scenario() -> ConformanceExport {
