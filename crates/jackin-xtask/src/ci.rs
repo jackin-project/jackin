@@ -218,7 +218,11 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
                 &["check", "--workspace", "--all-targets", "--locked"],
                 "msrv",
             )
-            .with_env("RUSTUP_TOOLCHAIN", msrv_version(root)?),
+            .with_env("RUSTUP_TOOLCHAIN", msrv_version(root)?)
+            .with_env(
+                "CARGO_TARGET_DIR",
+                root.join("target/msrv").into_os_string(),
+            ),
         );
     }
 

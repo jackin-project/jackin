@@ -82,7 +82,7 @@ pub(super) fn metric_contract_fields(
 
 pub(super) fn validate_metric_attributes<'a>(
     requirements: &[jackin_telemetry::schema::AttributeRequirement],
-    attributes: impl Iterator<Item = &'a opentelemetry::KeyValue>,
+    attributes: impl Iterator<Item = &'a opentelemetry::KeyValue> + 'a,
 ) -> Result<(), jackin_telemetry::Rejection> {
     use jackin_telemetry::schema::{RequirementLevel, ValueType};
     let attributes = attributes.collect::<Vec<_>>();
