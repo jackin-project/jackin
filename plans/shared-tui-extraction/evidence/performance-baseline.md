@@ -40,3 +40,21 @@ window (total wall time 0.517 s). The forced-timeout transcript did not contain
 alternate-screen, cursor, or mouse restoration sequences; this is a baseline
 failure-path observation for the Stage 3 PTY restoration tests, not an accepted
 restoration guarantee.
+
+## Stage 5 tag-candidate budget
+
+Recorded against TermRock implementation revision
+`41db0be7a6b166200b4b3661b5594a49700b5570` (the code revision consumed by
+jackin❯) and release metadata revision
+`941a487c537cbd435371c64679beccdbbc3f77ad` on Linux aarch64.
+
+| Measurement | Stage 0 donor | Stage 5 TermRock | Verdict |
+|---|---:|---:|---|
+| all-feature library + lookbook build after package clean | 2.311 s | 1.899 s | PASS; 17.8% faster, with parity and quality fixtures green |
+| deterministic catalog render | 0.266 s | 0.099 s | PASS; 62.8% faster, with byte-current preview check |
+| generated catalog payload | 485,885 bytes / 29 donor stories | 105,736 bytes / 12 neutral stories plus manifest | PASS; product stories intentionally remain in jackin❯ |
+
+The visible-window implementation retains stable-ID selection and clipping
+tests at large collection sizes; no speed gain changed focus, key routing,
+selection, or clipping semantics. Corrected Unicode widths and double focused
+panel borders are the only accepted post-parity visual differences.
