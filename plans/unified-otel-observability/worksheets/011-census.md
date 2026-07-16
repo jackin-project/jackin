@@ -6,10 +6,10 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 |---|---:|---:|---:|---:|---:|---:|---|
 | `crates/jackin-capsule/src/alloc_telemetry.rs` | 0 | 2 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
 | `crates/jackin-capsule/src/attach_protocol.rs` | 0 | 17 | 1 | 0 | 2 | 3 | COMPLETE — detached handshake/control failures automatically emit one bodyless typed error from `DetachedCompletion`; persistent attach failures retain one owning `rpc_error`; expected shutdown/channel closure is silent; timeout and join failures use bounded types |
-| `crates/jackin-capsule/src/client.rs` | 0 | 1 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
-| `crates/jackin-capsule/src/client_writer.rs` | 0 | 1 | 0 | 2 | 0 | 0 | governed INFO lifecycle/state; structural counts only; raw payload removed |
-| `crates/jackin-capsule/src/clipboard.rs` | 0 | 2 | 1 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
-| `crates/jackin-capsule/src/container_context.rs` | 0 | 3 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
+| `crates/jackin-capsule/src/client.rs` | 0 | 1 | 0 | 0 | 0 | 0 | COMPLETE — swallowed hook-report failures emit one bodyless `rpc_error` through `ResultTelemetryExt` |
+| `crates/jackin-capsule/src/client_writer.rs` | 0 | 1 | 0 | 2 | 0 | 0 | PARTIAL — expected receiver closure is silent; structural DEBUG firehose still requires classification |
+| `crates/jackin-capsule/src/clipboard.rs` | 0 | 2 | 1 | 0 | 0 | 0 | PARTIAL — cleanup failures emit bodyless `io_error`, non-file recovery emits one governed warning, and path narration is removed; stale-transfer DEBUG still requires classification |
+| `crates/jackin-capsule/src/container_context.rs` | 0 | 3 | 0 | 0 | 0 | 0 | COMPLETE — identity-source and expected-absence fallback narration deleted; container identity is prohibited telemetry data |
 | `crates/jackin-capsule/src/daemon.rs` | 0 | 21 | 4 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/daemon/compositor.rs` | 0 | 2 | 5 | 2 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail; structural counts only; raw payload removed |
 | `crates/jackin-capsule/src/daemon/context_mgmt.rs` | 0 | 6 | 8 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, attach-protocol, and recovered-degradation migration passes: 108 `telemetry_info!` and 243 `telemetry_debug!` sites. The generic macro machinery and these 351 sites remain open; `telemetry_warn!` and `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.
+Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, attach/client/clipboard/context, and recovered-degradation migration passes: 100 `telemetry_info!` and 243 `telemetry_debug!` sites. The generic macro machinery and these 343 sites remain open; `telemetry_warn!` and `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.

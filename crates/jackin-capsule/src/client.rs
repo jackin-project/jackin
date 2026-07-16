@@ -8,6 +8,7 @@
 //! in-container rendering.
 
 use anyhow::{Context, Result};
+use jackin_telemetry::ResultTelemetryExt as _;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
 
@@ -38,9 +39,11 @@ pub async fn run_client(
 /// exits 0 — a reporter must never break the agent's hook — so all failures are
 /// logged and swallowed.
 pub async fn run_report_event(args: &[String]) -> Result<()> {
-    if let Err(e) = try_report_event(args).await {
-        jackin_diagnostics::telemetry_info!("capsule", "report-event: {e:#}");
-    }
+    drop(
+        try_report_event(args)
+            .await
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::RpcError),
+    );
     Ok(())
 }
 

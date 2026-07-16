@@ -63,10 +63,6 @@ fn resolve_container_name() -> String {
         .ok()
         .filter(|value| !value.trim().is_empty())
     {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "statusbar: container name resolved from HOSTNAME"
-        );
         return value;
     }
     const ETC_HOSTNAME_MAX_BYTES: u64 = 256;
@@ -78,16 +74,8 @@ fn resolve_container_name() -> String {
     .map(|value| value.trim().to_owned())
     .filter(|value| !value.is_empty())
     {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "statusbar: container name resolved from /etc/hostname"
-        );
         return value;
     }
-    jackin_diagnostics::telemetry_info!(
-        "capsule",
-        "statusbar: container name unresolved - {JACKIN_CONTAINER_NAME_ENV}, HOSTNAME, and /etc/hostname all empty or unreadable; chrome chip will be blank"
-    );
     String::new()
 }
 

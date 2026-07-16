@@ -24,6 +24,7 @@ use jackin_protocol::attach::{
     ClipboardImageStart, FILE_EXPORT_DIGEST_BYTES, MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES,
     MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64,
 };
+use jackin_telemetry::ResultTelemetryExt as _;
 use sha2::{Digest, Sha256};
 
 pub(crate) const CLIPBOARD_RUN_DIR: &str = container_paths::CLIPBOARD_DIR;
@@ -34,9 +35,10 @@ pub(crate) fn stage_clipboard_image(image: &ClipboardImage) -> Result<PathBuf> {
 }
 
 pub(crate) fn cleanup_clipboard_run_dir() {
-    if let Err(err) = cleanup_clipboard_run_dir_at(Path::new(CLIPBOARD_RUN_DIR)) {
-        jackin_diagnostics::telemetry_info!("capsule", "clipboard-image: cleanup failed: {err:#}");
-    }
+    drop(
+        cleanup_clipboard_run_dir_at(Path::new(CLIPBOARD_RUN_DIR))
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError),
+    );
 }
 
 #[derive(Debug)]
@@ -271,11 +273,7 @@ fn cleanup_clipboard_run_dir_at(root: &Path) -> Result<usize> {
             remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
             removed += 1;
         } else {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "clipboard-image: leaving non-file staged entry during cleanup: {}",
-                path.display()
-            );
+            let _warning = jackin_telemetry::record_recovered_degradation();
         }
     }
     Ok(removed)

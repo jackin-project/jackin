@@ -28,10 +28,6 @@ const SYNC_END: &[u8] = b"\x1b[?2026l";
 pub(crate) struct ClientWriter {
     tx: Option<mpsc::UnboundedSender<Vec<u8>>>,
     completion_tx: Option<mpsc::UnboundedSender<crate::attach_protocol::AttachResponseCompletion>>,
-    /// Latched true on the first failed send after `attach`: once the
-    /// receiver drops mid-attach every subsequent send fails too, and one
-    /// log line beats one per frame.
-    dead_logged: bool,
     /// Sequences waiting for the next frame boundary.
     out_of_band: Vec<Vec<u8>>,
 }
@@ -43,7 +39,6 @@ impl ClientWriter {
     pub(crate) fn attach(&mut self, tx: mpsc::UnboundedSender<Vec<u8>>) {
         self.tx = Some(tx);
         self.completion_tx = None;
-        self.dead_logged = false;
         self.out_of_band.clear();
     }
 
@@ -66,10 +61,6 @@ impl ClientWriter {
 
     pub(crate) fn is_attached(&self) -> bool {
         self.tx.is_some()
-    }
-
-    pub(crate) fn mark_dead_logged(&mut self) {
-        self.dead_logged = true;
     }
 
     pub(crate) fn has_out_of_band(&self) -> bool {
@@ -146,15 +137,8 @@ impl ClientWriter {
     }
 
     fn send_encoded(&mut self, bytes: Vec<u8>) {
-        if let Some(tx) = &self.tx
-            && tx.send(bytes).is_err()
-            && !self.dead_logged
-        {
-            self.dead_logged = true;
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "client write: receiver dropped; output discarded (this attach is dead)"
-            );
+        if let Some(tx) = &self.tx {
+            drop(tx.send(bytes));
         }
     }
 

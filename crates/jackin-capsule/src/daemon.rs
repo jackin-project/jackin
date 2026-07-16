@@ -87,7 +87,6 @@ use crate::tui::components::dialog::{
 };
 use crate::tui::components::status_bar::prefix_mode_for_mux_mode;
 use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
-use crate::tui::effect::InitialFrameKind;
 #[cfg(test)]
 use crate::tui::input::mouse_event_allowed_for_mode;
 use crate::tui::input::{
@@ -1438,31 +1437,20 @@ pub async fn run_daemon(
                 mux.client_registry
                     .client
                     .attach_with_completions(new_out_tx.clone(), completion_tx);
-                // Build the initial-attach burst as a typed list so a
-                // typo at one call site cannot disagree with the clog
-                // label. A send failure here means the receiver was
-                // closed by a takeover/cancellation race in the same
-                // tick; log the first failure so a wedged first-frame
-                // queue is observable through governed telemetry instead
-                // of silently leaving the operator's terminal blank.
-                let mut initial_frames: Vec<(InitialFrameKind, Vec<u8>)> = Vec::with_capacity(5);
-                initial_frames.push((
-                    InitialFrameKind::Welcome,
-                    encode_server(ServerFrame::Welcome {
-                        session_count: mux.session_supervisor.sessions.len() as u32,
-                    }),
-                ));
+                // A send failure here means the receiver closed in a takeover
+                // race during this tick; the attach boundary owns one error.
+                let mut initial_frames = Vec::with_capacity(5);
+                initial_frames.push(encode_server(ServerFrame::Welcome {
+                    session_count: mux.session_supervisor.sessions.len() as u32,
+                }));
                 // Re-assert the attach-client-owned mouse/focus modes,
                 // then restore the focused session's modes (bracketed
                 // paste, etc.). Without this, a re-attach loses
                 // bracketed-paste and the operator's clipboard arrives
                 // unwrapped.
-                initial_frames.push((
-                    InitialFrameKind::ClientOwnedModes,
-                    encode_server(ServerFrame::Output(
-                        crate::tui::terminal::client_owned_mode_state().to_vec(),
-                    )),
-                ));
+                initial_frames.push(encode_server(ServerFrame::Output(
+                    crate::tui::terminal::client_owned_mode_state().to_vec(),
+                )));
                 // A fresh client has no asserted cursor/mode state; the
                 // first frame's reconciliation asserts everything explicitly.
                 mux.render.last_asserted_client_state = None;
@@ -1472,19 +1460,14 @@ pub async fn run_daemon(
                 mux.invalidate(first_attach_redraw_reason());
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
                 initial.extend(mux.compose_pending_frame());
-                initial_frames.push((
-                    InitialFrameKind::FirstAttach,
-                    encode_server(ServerFrame::Output(initial)),
-                ));
-                let first_failure = initial_frames
+                initial_frames.push(encode_server(ServerFrame::Output(initial)));
+                if initial_frames
                     .into_iter()
-                    .find_map(|(kind, bytes)| new_out_tx.send(bytes).err().map(|_| kind));
-                if let Some(kind) = first_failure {
-                    jackin_diagnostics::telemetry_info!("capsule",
-                        "attach: receiver closed before initial frame ({}); operator's terminal will not paint",
-                        kind.label()
+                    .any(|bytes| new_out_tx.send(bytes).is_err())
+                {
+                    let _error = jackin_telemetry::record_error(
+                        jackin_telemetry::schema::enums::ErrorType::RpcError,
                     );
-                    mux.client_registry.client.mark_dead_logged();
                 }
                 let cmd_tx_for_task = cmd_tx.clone();
                 mux.client_registry.attached_task = Some(jackin_telemetry::spawn::spawn_stream("capsule.attach", async move {
