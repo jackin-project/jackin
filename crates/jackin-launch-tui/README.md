@@ -9,7 +9,7 @@ Launch cockpit TUI — the presentation surface for `jackin load`. Renders build
 
 ## Architecture tier and allowed dependencies
 
-**Presentation crate.** Allowed workspace dependencies: `jackin-core`, `jackin-diagnostics`, `jackin-tui`, `jackin-build-meta`. No runtime or infrastructure dependencies — it renders progress events emitted by `jackin-runtime`; it does not orchestrate.
+**Presentation crate.** Allowed workspace dependencies include `jackin-core`, `jackin-diagnostics`, TermRock, and `jackin-build-meta`. No runtime or infrastructure dependencies — it renders progress events emitted by `jackin-runtime`; it does not orchestrate.
 
 ## Structure
 
@@ -20,11 +20,11 @@ Launch cockpit TUI — the presentation surface for `jackin load`. Renders build
 | [`launch_output.rs`](src/launch_output.rs) | launch output streaming | — |
 | [`build_log.rs`](src/build_log.rs) | build-log streaming | — |
 | [`standalone_dialog_sink.rs`](src/standalone_dialog_sink.rs) · [`standalone_dialog_sink/`](src/standalone_dialog_sink) | standalone dialog sink | [`tests.rs`](src/standalone_dialog_sink/tests.rs) |
-| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | launch TUI shell | — |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | launch TUI shell plus product-owned output, animation, and chrome policy | — |
 
 ## Public API
 
-The launch-cockpit entry point consumed by `jackin-runtime`'s launch flow. Renders progress through `jackin-tui`'s design-system components, not bespoke widgets.
+The launch-cockpit entry point consumed by `jackin-runtime`'s launch flow. It composes TermRock primitives with launch-specific wording, animation, and output policy.
 
 ## How to verify
 
@@ -32,4 +32,3 @@ The launch-cockpit entry point consumed by `jackin-runtime`'s launch flow. Rende
 cargo nextest run -p jackin-launch-tui
 cargo clippy -p jackin-launch-tui --all-targets -- -D warnings
 ```
-
