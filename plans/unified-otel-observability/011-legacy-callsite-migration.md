@@ -110,6 +110,12 @@ The firehose must stay gated: run the volume check (export-volume conformance) a
 ## Reopened audit additions (2026-07-16)
 
 - For every migrated failure site, prove the operation owner is the only ERROR emitter. Deadline/dependency cancellation is an error, expected operator cancellation is not, guard abandonment is an instrumentation fault, and recovered degradation emits one governed WARN.
+- Replace all 501 remaining generic `telemetry_debug!`/`telemetry_info!`/`telemetry_warn!`/`telemetry_error!` prose sites across 83 production files with an individual DELETE, registered typed signal, or typed operator-output decision; then delete the generic macros. Classify the 25 scoped diagnostic `eprintln!` calls the same way.
+- The census is per-site `path:line → decision → owning boundary/signal/operator port`, reconciles its exact counts, and records eprintln/raw-tracing sites; aggregate file labels are not evidence.
+- Add row-complete privacy negatives for paths, workspace/container/image identities, URLs, branches, terminal bytes/coordinates/session IDs, stderr/raw errors and other user data currently embedded in bodies. Restore operator-visible output explicitly where generic telemetry-only replacements lost it.
+- Remove duplicate attach ERROR emission and correct mechanically wrong severity/outcome mappings (WARN is not cancellation; INFO is not success for failures; recovered persistence/fallback is one WARN).
+- Narrow raw-tracing exemptions to exact composition-root constructs, cover all span macro/alias forms, and add a syntax-aware permanent ban for every legacy/generic macro token.
+- Replace synthetic volume evidence with representative production/hot-loop flows, per-severity counts, and explicit default DEBUG/TRACE absence.
 
 ## Test plan
 
