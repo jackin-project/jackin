@@ -8,6 +8,14 @@ inputs:
   lane:
     description: Runner lane that produced the binary.
     required: true
+  tools-contract:
+    description: Runner-independent tools artifact contract computed by the metadata job.
+    required: false
+    default: ""
+  xtask-contract:
+    description: Runner-independent xtask artifact contract computed by the metadata job.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -20,8 +28,8 @@ runs:
         GH_TOKEN: ${{ github.token }}
         REPOSITORY: ${{ github.repository }}
         RUN_ID: ${{ github.run_id }}
-        TOOLS_ARTIFACT_NAME: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
-        XTASK_ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+        TOOLS_ARTIFACT_NAME: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tools-contract || hashFiles('mise.toml', 'mise.lock') }}
+        XTASK_ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ inputs.xtask-contract || hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
       run: |
         set -euo pipefail
         mkdir -p "$ARTIFACT_PATH"

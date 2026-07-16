@@ -34,6 +34,36 @@ on:
         required: false
         default: false
         type: boolean
+      ci-tools-contract:
+        description: Runner-independent CI tools artifact contract.
+        required: false
+        default: ""
+        type: string
+      ci-xtask-contract:
+        description: Runner-independent xtask artifact contract.
+        required: false
+        default: ""
+        type: string
+      docker-contract:
+        description: Runner-independent Docker result contract.
+        required: false
+        default: ""
+        type: string
+      nextest-contract:
+        description: Runner-independent nextest result contract.
+        required: false
+        default: ""
+        type: string
+      registry-contract:
+        description: Runner-independent Cargo registry cache contract.
+        required: false
+        default: ""
+        type: string
+      rustup-ci-contract:
+        description: Runner-independent Rust toolchain cache contract.
+        required: false
+        default: ""
+        type: string
 permissions:
   actions: read
   contents: read
@@ -64,9 +94,9 @@ jobs:
         env:
           ALL_FEATURES: ${{ inputs.all-features }}
           CACHE_KEY: ${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}
-          COMMON_CONTRACT_KEY: ${{ hashFiles('.github/workflows/rust-nextest.yml', '.config/nextest.toml', 'clippy.toml', 'flaky-tests.toml', 'ratchet.toml', 'mise.toml', 'mise.lock', 'scripts/ci/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**') }}
+          COMMON_CONTRACT_KEY: ${{ inputs.nextest-contract || hashFiles('.github/workflows/rust-nextest.yml', '.config/nextest.toml', 'clippy.toml', 'flaky-tests.toml', 'ratchet.toml', 'mise.toml', 'mise.lock', 'scripts/ci/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**') }}
           CONSTRUCT_IMAGE_CHANGED: ${{ inputs.construct-image-changed }}
-          DOCKER_CONTRACT_KEY: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
+          DOCKER_CONTRACT_KEY: ${{ inputs.docker-contract || hashFiles('docker/**', 'docker-bake.hcl') }}
           DOCKER_E2E: ${{ inputs.docker-e2e }}
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ matrix.package }}
@@ -89,6 +119,8 @@ jobs:
         if: steps.crate-result.outputs.hit != 'true'
         with:
           lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ inputs.ci-tools-contract }}
+          xtask-contract: ${{ inputs.ci-xtask-contract }}
       - name: Read MSRV
         id: msrv
         if: steps.crate-result.outputs.hit != 'true'
@@ -100,12 +132,14 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rustup-ci-contract || hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
           restore-keys: |
             rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
       - id: cargo-registry-cache
         if: steps.crate-result.outputs.hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ inputs.registry-contract }}
       - name: Resolve exact crate target key
         id: crate-target-key
         if: steps.crate-result.outputs.hit != 'true'
@@ -192,9 +226,17 @@ jobs:
                 echo "::error::invalid latest-target prefix for ${{ matrix.package }}"
                 exit 1
               fi
-              hit=true
-              format=v4
-              echo "::notice::seeding ${{ matrix.package }} from its latest successful target"
+              run_id=$(
+                gh api "repos/${REPOSITORY}/actions/artifacts?name=${download_prefix}-ready&per_page=10" \
+                  --jq '.artifacts | map(select(.expired == false)) | first | .workflow_run.id // empty'
+              )
+              if [ -n "$run_id" ]; then
+                hit=true
+                format=v4
+                echo "::notice::seeding ${{ matrix.package }} from its latest successful target"
+              else
+                echo "::warning::latest ${{ matrix.package }} target parts are unavailable; rebuilding"
+              fi
             fi
           fi
 
@@ -320,11 +362,21 @@ jobs:
           name: nextest-junit-${{ matrix.package }}-${{ matrix.config.lane }}
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
+      - name: Detect junit timing report
+        id: junit
+        if: always() && steps.crate-result.outputs.hit != 'true'
+        shell: bash
+        run: |
+          if [ -f target/nextest/ci/junit.xml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       # Plan 027: suite-time family enforces when junit exists (skipped locally).
       - name: Suite-time ratchet (scheduled enforce)
         if: >-
           always() && steps.crate-result.outputs.hit != 'true' &&
-          hashFiles('target/nextest/ci/junit.xml') != ''
+          steps.junit.outputs.exists == 'true'
         run: |
           "$CI_XTASK" lint ratchet --only suite-time
       - name: Slowest tests summary
@@ -539,6 +591,7 @@ jobs:
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
+          steps.crate-target.outputs.canonical-hit != 'true' &&
           matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -567,7 +620,6 @@ jobs:
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
           matrix.config.cache_writer &&
-          hashFiles('target.part-1') != '' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -584,7 +636,6 @@ jobs:
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
           matrix.config.cache_writer &&
-          hashFiles('target.part-2') != '' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -601,7 +652,6 @@ jobs:
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
           matrix.config.cache_writer &&
-          hashFiles('target.part-3') != '' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -618,7 +668,6 @@ jobs:
           steps.crate-result.outputs.hit != 'true' &&
           steps.crate-target.outputs.canonical-hit != 'true' &&
           matrix.config.cache_writer &&
-          hashFiles('target.part-4') != '' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -649,6 +698,7 @@ jobs:
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
+          steps.crate-target.outputs.canonical-hit != 'true' &&
           matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||

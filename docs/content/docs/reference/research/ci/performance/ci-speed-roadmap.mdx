@@ -207,6 +207,16 @@ and runner-lane contract. A hit allocates only `ci-required`; a miss falls
 through to the affected-crate and component selectors, preserving one complete
 job per affected crate and normal artifact repopulation.
 
+The first post-result `lanes=both` dispatch, CI run `29510145650`, exposed a
+runner-expression parity bug before any test fan-out: Velnor received an empty
+`hashFiles` value for the prepared xtask name, then followed a republished
+latest pointer whose run did not own the referenced target parts. Cache and
+artifact contracts are now resolved once by the GitHub-hosted metadata job and
+passed unchanged into both lane matrices and the reusable nextest workflow.
+Latest pointers independently resolve the run owning the matching ready marker,
+and are republished only alongside newly uploaded target parts. The same
+runner-independent Rust and registry contracts feed Construct jobs.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the

@@ -85,6 +85,8 @@ jobs:
       result-name: ${{ steps.construct-result.outputs.name }}
       construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
       construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
+      registry-contract: ${{ steps.construct-result.outputs.registry-contract }}
+      rustup-contract: ${{ steps.construct-result.outputs.rustup-contract }}
       # Single source of truth for "should this run produce / publish
       # registry artifacts" — true on push-to-main and on
       # workflow_dispatch from main, false everywhere else (PRs,
@@ -105,7 +107,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           INPUT_KEY: ${{ hashFiles('.github/workflows/construct.yml', 'docker-bake.hcl', 'docker/construct/**', 'Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**', 'mise.toml', 'mise.lock', '.github/actions/cache-cargo-registry/**') }}
           LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          REGISTRY_CONTRACT: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
           REPOSITORY: ${{ github.repository }}
+          RUSTUP_CONTRACT: ${{ hashFiles('rust-toolchain.toml') }}
         run: |
           set -euo pipefail
           mode=rehearsal
@@ -127,6 +131,8 @@ jobs:
           fi
           {
             echo "name=$name"
+            echo "registry-contract=$REGISTRY_CONTRACT"
+            echo "rustup-contract=$RUSTUP_CONTRACT"
             if [ -n "$artifact_id" ]; then
               echo "hit=true"
             else
@@ -228,7 +234,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
 
@@ -242,6 +248,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -270,7 +278,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: docker/construct/prebuilt
-          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ needs.changes.outputs.rustup-contract }}
       - name: Log in to Docker Hub
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
@@ -343,7 +351,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
 
@@ -357,6 +365,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -427,7 +437,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
 
@@ -441,6 +451,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:

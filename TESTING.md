@@ -203,6 +203,12 @@ allocates only the stable required-status gate; it does not repeat formatting,
 action linting, tool or registry preparation, policy checks, affected-crate
 selection, or crate jobs. A miss retains the component selectors below, so only
 affected crates and genuinely stale components allocate their dedicated jobs.
+Cache and artifact contracts used by runner-selectable jobs are resolved once
+by the GitHub-hosted metadata job and passed unchanged to both GitHub and
+Velnor. Runner-local expression support therefore cannot silently produce a
+different or empty key. Latest-target pointers resolve the run that owns the
+matching ready marker, rather than assuming the pointer artifact's run also
+owns the target parts.
 
 The repository policy set has a one-day component marker keyed by the semantic
 base revision, Rust/policy inputs, and requested lanes. Pull requests use their

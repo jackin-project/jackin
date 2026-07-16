@@ -59,6 +59,14 @@ jobs:
       construct_image: ${{ steps.route.outputs.construct_image }}
       docker_e2e: ${{ steps.route.outputs.docker_e2e }}
       workflows: ${{ steps.route.outputs.workflows }}
+      audit-contract: ${{ steps.contracts.outputs.audit }}
+      ci-xtask-contract: ${{ steps.contracts.outputs.ci-xtask }}
+      ci-tools-contract: ${{ steps.contracts.outputs.ci-tools }}
+      docker-contract: ${{ steps.contracts.outputs.docker }}
+      nextest-contract: ${{ steps.contracts.outputs.nextest }}
+      registry-contract: ${{ steps.contracts.outputs.registry }}
+      rustup-contract: ${{ steps.contracts.outputs.rustup }}
+      rustup-ci-contract: ${{ steps.contracts.outputs.rustup-ci }}
       result-reuse: ${{ steps.ci-result.outputs.hit }}
       result-name: ${{ steps.ci-result.outputs.name }}
       policy-reuse: ${{ steps.policy-result.outputs.hit }}
@@ -67,6 +75,30 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+
+      - name: Resolve runner-independent cache contracts
+        id: contracts
+        shell: bash
+        env:
+          AUDIT: ${{ hashFiles('Cargo.lock', '.cargo/audit.toml') }}
+          CI_TOOLS: ${{ hashFiles('mise.toml', 'mise.lock') }}
+          CI_XTASK: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          DOCKER: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
+          NEXTEST: ${{ hashFiles('.github/workflows/rust-nextest.yml', '.config/nextest.toml', 'clippy.toml', 'flaky-tests.toml', 'ratchet.toml', 'mise.toml', 'mise.lock', 'scripts/ci/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**') }}
+          REGISTRY: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          RUSTUP: ${{ hashFiles('rust-toolchain.toml') }}
+          RUSTUP_CI: ${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+        run: |
+          {
+            echo "audit=$AUDIT"
+            echo "ci-tools=$CI_TOOLS"
+            echo "ci-xtask=$CI_XTASK"
+            echo "docker=$DOCKER"
+            echo "nextest=$NEXTEST"
+            echo "registry=$REGISTRY"
+            echo "rustup=$RUSTUP"
+            echo "rustup-ci=$RUSTUP_CI"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Reject pending insta snapshots
         run: |
@@ -434,7 +466,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
@@ -473,7 +505,7 @@ jobs:
         name: Restore input-identical CI xtask
         shell: bash
         env:
-          ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-xtask-contract }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -498,7 +530,7 @@ jobs:
         name: Restore resolved CI tool binaries
         shell: bash
         env:
-          ARTIFACT_NAME: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          ARTIFACT_NAME: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-tools-contract }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -551,6 +583,15 @@ jobs:
             echo "::error::invalid latest-target prefix for jackin-xtask"
             exit 1
           fi
+          run_id=$(
+            gh api "repos/${REPOSITORY}/actions/artifacts?name=${prefix}-ready&per_page=10" \
+              --jq '.artifacts | map(select(.expired == false)) | first | .workflow_run.id // empty'
+          )
+          if [ -z "$run_id" ]; then
+            echo "::warning::latest jackin-xtask target parts are unavailable; rebuilding"
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           {
             echo "hit=true"
             echo "prefix=$prefix"
@@ -597,7 +638,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
           lookup-only: true
       - name: Use the minimal Rust CI profile
         if: >-
@@ -615,7 +656,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
           restore-keys: |
             rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
       - id: cargo-registry-cache
@@ -623,6 +664,8 @@ jobs:
           steps.ci-xtask-artifact.outputs.hit != 'true' ||
           steps.ci-tools-artifact.outputs.hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         if: >-
           steps.ci-xtask-artifact.outputs.hit != 'true' ||
@@ -687,9 +730,9 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           BEFORE_SHA: ${{ github.event.before }}
-          COMMON_CONTRACT_KEY: ${{ hashFiles('.github/workflows/rust-nextest.yml', '.config/nextest.toml', 'clippy.toml', 'flaky-tests.toml', 'ratchet.toml', 'mise.toml', 'mise.lock', 'scripts/ci/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**') }}
+          COMMON_CONTRACT_KEY: ${{ needs.changes.outputs.nextest-contract }}
           CONSTRUCT_IMAGE_CHANGED: ${{ needs.changes.outputs.construct_image }}
-          DOCKER_CONTRACT_KEY: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
+          DOCKER_CONTRACT_KEY: ${{ needs.changes.outputs.docker-contract }}
           DOCKER_E2E: ${{ needs.changes.outputs.docker_e2e }}
           EVENT_NAME: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
@@ -751,7 +794,7 @@ jobs:
           matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          name: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-tools-contract }}
           path: .ci-prebuilt-tools/*
           compression-level: 0
           retention-days: 7
@@ -760,7 +803,7 @@ jobs:
         if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          name: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-xtask-contract }}
           path: .ci-prebuilt-xtask/*
           compression-level: 0
           retention-days: 7
@@ -788,6 +831,8 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         with:
           lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
       - name: Fetch base branch
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - run: |
@@ -808,6 +853,8 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         with:
           lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
       # Gate: codebase-health lint checks via the umbrella `lint --strict`
       # command. The file-size ratchet (file-size-budget.toml: production
       # ≤1850L production / ≤10000L tests via ratchet.toml + file-size-budget.toml) and the test-file-layout ratchet
@@ -843,6 +890,8 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         with:
           lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
       - name: Fetch base branch
         run: git fetch --no-tags origin "${{ github.base_ref }}"
       - name: README freshness gate
@@ -877,13 +926,15 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         with:
           lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
@@ -895,6 +946,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
       - run: cargo shear --deny-warnings
       - run: bash scripts/ci/check-agent-status-truthful.sh
       - run: cargo deny check licenses bans sources
@@ -922,6 +975,8 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         with:
           lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
       # When docker/construct/** changes, the published construct:trixie image
       # on Docker Hub is stale for the lifetime of the PR — it is only
       # republished after merge to main. Build the construct image in its own
@@ -933,7 +988,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
@@ -949,6 +1004,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: construct-e2e-image-workspace-v2
@@ -972,7 +1029,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: docker/construct/prebuilt
-          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ needs.changes.outputs.rustup-contract }}
       - name: Build construct image for E2E
         env:
           CACHE_FROM: |
@@ -1008,8 +1065,14 @@ jobs:
       packages-json: ${{ needs.cargo-registry-warmup.outputs.affected-packages }}
       package-cache-keys-json: ${{ needs.cargo-registry-warmup.outputs.affected-cache-keys }}
       all-features: true
+      ci-tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+      ci-xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
+      docker-contract: ${{ needs.changes.outputs.docker-contract }}
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
+      nextest-contract: ${{ needs.changes.outputs.nextest-contract }}
+      registry-contract: ${{ needs.changes.outputs.registry-contract }}
+      rustup-ci-contract: ${{ needs.changes.outputs.rustup-ci-contract }}
     secrets: inherit
   audit:
     # Advisories are also covered daily by hygiene.yml (cargo deny check
@@ -1031,13 +1094,15 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         with:
           lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - name: Cache audit indexes
@@ -1045,7 +1110,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/advisory-db
-          key: cargo-audit-${{ runner.os }}-${{ hashFiles('Cargo.lock', '.cargo/audit.toml') }}
+          key: cargo-audit-${{ runner.os }}-${{ needs.changes.outputs.audit-contract }}
           restore-keys: |
             cargo-audit-${{ runner.os }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
@@ -1057,6 +1122,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
       - name: Run cargo audit
         shell: bash
         run: |
