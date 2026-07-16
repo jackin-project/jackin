@@ -16,7 +16,7 @@ runs:
       shell: bash
       env:
         ARTIFACT_NAME: ci-xtask-${{ inputs.lane }}
-        ARTIFACT_PATH: target/ci-tools/${{ inputs.lane }}
+        ARTIFACT_PATH: ${{ github.workspace }}/.ci-tools/${{ inputs.lane }}
         GH_TOKEN: ${{ github.token }}
         REPOSITORY: ${{ github.repository }}
         RUN_ID: ${{ github.run_id }}
@@ -41,8 +41,8 @@ runs:
     - name: Export prepared xtask path
       shell: bash
       env:
-        CI_XTASK_PATH: ${{ github.workspace }}/target/ci-tools/${{ inputs.lane }}/jackin-xtask
-        CI_TOOLS_PATH: ${{ github.workspace }}/target/ci-tools/${{ inputs.lane }}
+        CI_XTASK_PATH: ${{ github.workspace }}/.ci-tools/${{ inputs.lane }}/jackin-xtask
+        CI_TOOLS_PATH: ${{ github.workspace }}/.ci-tools/${{ inputs.lane }}
       run: |
         set -euo pipefail
         chmod +x "$CI_TOOLS_PATH"/*
