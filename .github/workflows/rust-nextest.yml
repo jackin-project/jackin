@@ -73,25 +73,16 @@ jobs:
       - name: Read MSRV
         id: msrv
         run: echo "version=$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
-      - name: Cache Rust toolchain
+      - name: Cache prepared Rust toolchains
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
           restore-keys: |
+            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
             rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache MSRV toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-msrv-ci-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.msrv.outputs.version }}
-          restore-keys: |
-            rustup-msrv-ci-v2-${{ runner.os }}-${{ runner.arch }}-
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -114,6 +105,7 @@ jobs:
           # Both lanes use the same target-cache contract. Velnor's persistent
           # runner state remains a transparent accelerator beneath it.
       - name: Cache compiled workspace crate outputs
+        id: workspace-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -127,6 +119,9 @@ jobs:
           key: workspace-crate-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] || github.sha }}
           restore-keys: |
             workspace-crate-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
+      - name: Refresh restored Cargo artifact mtimes
+        if: steps.workspace-cache.outputs.cache-hit == 'true'
+        run: find target -type f -exec touch {} +
       - name: Run package tests
         shell: bash
         run: |

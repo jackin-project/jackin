@@ -82,6 +82,11 @@ reverse workspace dependents. Workspace-wide inputs and unrecognized Rust paths
 fail safe to every crate. Each selected crate owns one job and one target-cache
 namespace, including default/all-feature checks, clippy, nextest, doctests,
 MSRV, applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
+Scheduling follows the reverse dependency closure; the compact compiled-output
+cache key follows the forward dependency closure. That cache stores only
+first-party fingerprints, libraries, binaries, build outputs, and test
+executables. Third-party outputs stay in the dependency cache instead of being
+duplicated into every crate archive.
 
 ## Verification matrix
 

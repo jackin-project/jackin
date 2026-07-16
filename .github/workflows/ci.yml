@@ -368,25 +368,17 @@ jobs:
           rm "$archive"
           chmod +x .ci-prebuilt-xtask/jackin-xtask
           echo "hit=true" >> "$GITHUB_OUTPUT"
-      - name: Cache Rust toolchain
+      - name: Cache prepared Rust toolchains
+        id: toolchain-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
           restore-keys: |
+            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
             rustup-ci-v2-${{ runner.os }}-${{ runner.arch }}-
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache MSRV toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-msrv-ci-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.msrv.outputs.version }}
-          restore-keys: |
-            rustup-msrv-ci-v2-${{ runner.os }}-${{ runner.arch }}-
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - id: ci-tools-artifact
         name: Restore resolved CI tool binaries
@@ -414,6 +406,7 @@ jobs:
           chmod +x .ci-prebuilt-tools/*
           echo "hit=true" >> "$GITHUB_OUTPUT"
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        if: steps.toolchain-cache.outputs.cache-hit != 'true' || steps.ci-tools-artifact.outputs.hit != 'true'
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
@@ -429,6 +422,7 @@ jobs:
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Prepare clippy once for crate jobs
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: rustup component add clippy
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
