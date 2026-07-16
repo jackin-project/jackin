@@ -25,6 +25,7 @@
     "jackin-protocol",
     "jackin-runtime",
     "jackin-term",
+    "jackin-ui",
     "jackin-test-support",
     "jackin-usage",
     "jackin-xtask"
