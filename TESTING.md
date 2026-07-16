@@ -204,7 +204,10 @@ The built static site is cached by its workflow, docs sources, generated crate
 README inputs, dependency lock, and build configuration. An exact hit installs
 only lychee and skips Bun/Node setup, dependency installation, and site build;
 the miss path rebuilds and repopulates the same output for link checking and
-Pages upload.
+Pages upload. GitHub scopes pull-request caches to the pull request's merge ref,
+so warm validation must use a later normal PR run; a branch
+`workflow_dispatch` has a different cache scope and is intentionally a cold
+comparison.
 The repository-link job restores the same prepared `jackin-xtask` artifact as
 CI and installs only lychee, so it does not maintain a second Rust build/cache
 path for identical source inputs. Because Docs and CI are independent workflows
