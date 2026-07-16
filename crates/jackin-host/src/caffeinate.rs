@@ -400,12 +400,8 @@ async fn spawn_caffeinate(runner: &mut impl CommandRunner) -> anyhow::Result<u32
 /// TOCTOU the comm check exists to prevent) both surface here so the
 /// operator sees a breadcrumb when the rare race fires.
 async fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::Result<()> {
-    // Routed through `CommandRunner` for the same reason as the spawn:
-    // `--debug` must show the kill so operators can correlate the
-    // teardown with the role exit. `capture` (vs `run`) folds the
-    // kill's stderr into the error message — preserving the prior
-    // behaviour where `ESRCH`/`EPERM` text reached the breadcrumb.
-    jackin_diagnostics::telemetry_debug!("keep_awake", "stopping caffeinate (PID {pid})");
+    // `capture` folds the kill's stderr into the returned error so the caller owns
+    // the rare ESRCH/EPERM diagnostic without exporting the process identifier.
     runner
         .capture("kill", &[&pid.to_string()], None)
         .await

@@ -180,13 +180,6 @@ pub async fn read_image_from_pasted_path(
         return Ok(None);
     }
     let text = text.trim();
-    // A candidate image-path paste was recognized; record it (path only, no
-    // bytes) so a `--debug` run shows whether the host file resolved.
-    jackin_diagnostics::telemetry_debug!(
-        "clipboard-image",
-        "pasted-path candidate: {}",
-        text.escape_default()
-    );
     let owned = text.to_owned();
     let resolved =
         jackin_telemetry::spawn::joined_blocking(move || -> Result<Option<ClipboardImage>> {
@@ -203,15 +196,8 @@ pub async fn read_image_from_pasted_path(
         .await
         .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))??;
     let Some(image) = resolved else {
-        // A recognized candidate that did not resolve (missing file, unreadable,
-        // not an image) is rare, so logging it is not firehose. It still forwards
-        // as ordinary text rather than nagging — the implicit paste did not ask to
-        // stage — but a `--debug` run can now see that a recognized candidate
-        // failed (the path was logged above).
-        jackin_diagnostics::telemetry_debug!(
-            "clipboard-image",
-            "pasted-path candidate did not resolve to a readable image"
-        );
+        // An implicit path-like paste that does not resolve remains ordinary text;
+        // it did not explicitly ask to stage an image or expose its host path.
         return Ok(None);
     };
     Ok(Some((image, prefix, suffix)))
