@@ -65,7 +65,7 @@ runs:
           names+=("$XTASK_EXACT_ARTIFACT_NAME")
         fi
 
-        deadline=$((SECONDS + 40))
+        deadline=$((SECONDS + 55))
         xtask_found=false
         for name in "${names[@]}"; do
           artifact_id=
@@ -87,7 +87,7 @@ runs:
               break
             fi
             if [ "$announced" = false ]; then
-              echo "::notice::waiting up to 40 seconds for concurrent CI artifact: ${name}"
+              echo "::notice::waiting up to 55 seconds for concurrent CI artifact: ${name}"
               announced=true
             fi
             sleep 2
