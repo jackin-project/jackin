@@ -1,6 +1,6 @@
 # Plan 011 call-site census and classification
 
-Baseline reconstructed from the last commits before each atomic cutover. Counts exclude tests and xtask fixture tooling. Every listed site was reviewed under the Plan 011 rulebook; the structural absence gate now prevents the legacy names from returning.
+Baseline reconstructed from the last commits before each atomic cutover. Counts exclude tests and xtask fixture tooling. Classifications are updated as each file is migrated under the Plan 011 rulebook; rows that still say `governed` remain open until their generic call sites are removed.
 
 | File | `debug_log` | info | debug | trace | warn | error | Landed classification |
 |---|---:|---:|---:|---:|---:|---:|---|
@@ -61,7 +61,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-instance/src/manifest.rs` | 5 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-isolation/src/cleanup.rs` | 9 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-isolation/src/finalize.rs` | 6 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-isolation/src/materialize.rs` | 27 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-isolation/src/materialize.rs` | 27 | 0 | 0 | 0 | 0 | 0 | DELETE — incidental materialization chatter; launch/isolation boundary owns semantics; paths, workspace/container names, branches, commits, and URLs prohibited |
 | `crates/jackin-isolation/src/state.rs` | 4 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-launch-tui/src/progress.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/apple_container_client.rs` | 7 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
@@ -98,5 +98,6 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin/src/console/services.rs` | 2 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin/src/console/tui/run.rs` | 2 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 
-Totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites. Current production census for every legacy token is zero.
+Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
+Current production census after the `materialize.rs` deletion pass: 158 `telemetry_info!`, 303 `telemetry_debug!`, 10 `telemetry_warn!`, and 4 `telemetry_error!` sites. The generic macro machinery and these 475 sites remain open.

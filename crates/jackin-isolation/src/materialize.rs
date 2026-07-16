@@ -22,7 +22,6 @@ use jackin_config::ResolvedWorkspace;
 use jackin_core::CommandRunner;
 use jackin_core::WorkspaceLabel;
 use jackin_core::container_paths;
-use jackin_diagnostics::telemetry_debug;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -308,11 +307,6 @@ pub async fn ensure_worktree_config_enabled(
         .await
         .unwrap_or_default();
     if current.trim() == "true" {
-        telemetry_debug!(
-            "isolation",
-            "extensions.worktreeConfig already enabled at {}",
-            repo.display()
-        );
         return Ok(false);
     }
     let format_version = runner
@@ -330,11 +324,6 @@ pub async fn ensure_worktree_config_enabled(
         .await
         .unwrap_or_default();
     if format_version.trim() == "0" || format_version.trim().is_empty() {
-        telemetry_debug!(
-            "isolation",
-            "bumping core.repositoryformatversion 0 -> 1 at {} (required for extensions.worktreeConfig)",
-            repo.display()
-        );
         runner
             .run(
                 "git",
@@ -350,11 +339,6 @@ pub async fn ensure_worktree_config_enabled(
             )
             .await?;
     }
-    telemetry_debug!(
-        "isolation",
-        "enabling extensions.worktreeConfig at {} (per-worktree config from now on)",
-        repo.display()
-    );
     runner
         .run(
             "git",
@@ -391,45 +375,18 @@ fn find_local_branch_tip(repo: &str, branch: &str) -> Option<String> {
             // takes the fresh `-b` path; git will surface its own
             // error if the branch genuinely does exist somewhere
             // unreadable.
-            if sha.is_empty() {
-                telemetry_debug!(
-                    "isolation",
-                    "find_local_branch_tip: loose ref {loose} present but empty — treating as missing",
-                    loose = loose.display(),
-                );
-            } else if sha.starts_with("ref:") {
-                telemetry_debug!(
-                    "isolation",
-                    "find_local_branch_tip: loose ref {loose} is a symref ({sha}) — treating as missing",
-                    loose = loose.display(),
-                );
-            } else {
+            if !sha.is_empty() && !sha.starts_with("ref:") {
                 return Some(sha.to_owned());
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => {
-            // Permission / EIO / non-UTF-8: surface so --debug
-            // correlates with the later worktree-add failure.
-            telemetry_debug!(
-                "isolation",
-                "find_local_branch_tip: read {loose} failed: {e}",
-                loose = loose.display(),
-            );
-        }
+        Err(_) => {}
     }
     let packed = git_dir.join("packed-refs");
     let contents = match std::fs::read_to_string(&packed) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(e) => {
-            telemetry_debug!(
-                "isolation",
-                "find_local_branch_tip: read {packed} failed: {e}",
-                packed = packed.display(),
-            );
-            return None;
-        }
+        Err(_) => return None,
     };
     let want = format!("refs/heads/{branch}");
     for line in contents.lines() {
@@ -596,20 +553,6 @@ pub async fn materialize_workspace(
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedWorkspace> {
-    let isolated_count = resolved
-        .mounts
-        .iter()
-        .filter(|m| !m.isolation.is_shared())
-        .count();
-    telemetry_debug!(
-        "isolation",
-        "materialize_workspace: workspace={workspace_label} container={container_name} selector={selector_key} mounts={total} isolated={isolated_count} state_dir={state_dir} force={force} interactive={interactive}",
-        total = resolved.mounts.len(),
-        state_dir = container_state_dir.display(),
-        force = ctx.force,
-        interactive = ctx.interactive,
-    );
-
     // Sort by dst length ascending so parents materialize before children
     // (depth ordering for the bind-mount stack).
     let mut indexed: Vec<(usize, &MountConfig)> = resolved.mounts.iter().enumerate().collect();
@@ -620,21 +563,13 @@ pub async fn materialize_workspace(
 
     for (idx, mount) in indexed {
         let m = match mount.isolation {
-            MountIsolation::Shared => {
-                telemetry_debug!(
-                    "isolation",
-                    "mount {dst}: shared (passthrough bind from {src})",
-                    dst = mount.dst,
-                    src = mount.src,
-                );
-                MaterializedMount {
-                    bind_src: mount.src.clone(),
-                    dst: mount.dst.clone(),
-                    readonly: mount.readonly,
-                    isolation: MountIsolation::Shared,
-                    worktree_aux: None,
-                }
-            }
+            MountIsolation::Shared => MaterializedMount {
+                bind_src: mount.src.clone(),
+                dst: mount.dst.clone(),
+                readonly: mount.readonly,
+                isolation: MountIsolation::Shared,
+                worktree_aux: None,
+            },
             MountIsolation::Worktree => {
                 materialize_one(
                     mount,
@@ -675,10 +610,6 @@ pub async fn materialize_workspace(
     })
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 async fn materialize_one(
     mount: &MountConfig,
     container_state_dir: &Path,
@@ -689,24 +620,9 @@ async fn materialize_one(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedMount> {
     let worktree_path = worktree_path_for(container_state_dir, &mount.dst, container_name);
-    telemetry_debug!(
-        "isolation",
-        "mount {dst}: worktree (src={src} → worktree_path={wt})",
-        dst = mount.dst,
-        src = mount.src,
-        wt = worktree_path.display(),
-    );
-
     // Drift guard: if a record exists, src must match.
     if let Some(record) = read_record(container_state_dir, &mount.dst)? {
         if record.original_src != mount.src {
-            telemetry_debug!(
-                "isolation",
-                "mount {dst}: source drift detected (recorded={recorded} configured={configured})",
-                dst = mount.dst,
-                recorded = record.original_src,
-                configured = mount.src,
-            );
             return Err(IsolationError::SourceDrift {
                 container: container_name.into(),
                 mount: mount.dst.clone(),
@@ -729,22 +645,11 @@ async fn materialize_one(
         }
         // Reuse if worktree path looks alive (.git file or dir under it).
         if worktree_path.join(".git").exists() {
-            telemetry_debug!(
-                "isolation",
-                "mount {dst}: reusing existing worktree (record matches and .git present)",
-                dst = mount.dst,
-            );
             // Re-write override files on every load — idempotent and
             // cheap, ensures any topology refresh (e.g., container
             // rename hypothetically) lands without manual cleanup.
             let aux =
                 write_git_overrides(container_state_dir, &mount.dst, container_name, &mount.src)?;
-            telemetry_debug!(
-                "isolation",
-                "mount {dst}: refreshed git overrides (host_git_target={target})",
-                dst = mount.dst,
-                target = aux.host_git_target,
-            );
             return Ok(MaterializedMount {
                 bind_src: worktree_path.to_string_lossy().into(),
                 dst: mount.dst.clone(),
@@ -753,20 +658,9 @@ async fn materialize_one(
                 worktree_aux: Some(aux),
             });
         }
-        telemetry_debug!(
-            "isolation",
-            "mount {dst}: record present but worktree directory missing — recreating",
-            dst = mount.dst,
-        );
     }
 
     // Pre-flight, then enable worktree-config, then create the worktree.
-    telemetry_debug!(
-        "isolation",
-        "mount {dst}: running preflight checks on host repo {src}",
-        dst = mount.dst,
-        src = mount.src,
-    );
     preflight_worktree(mount, ctx, runner).await?;
 
     let _ = ensure_worktree_config_enabled(Path::new(&mount.src), runner).await?;
@@ -776,13 +670,6 @@ async fn materialize_one(
         .await?
         .trim()
         .to_owned();
-    telemetry_debug!(
-        "isolation",
-        "mount {dst}: host HEAD {commit}",
-        dst = mount.dst,
-        commit = host_head,
-    );
-
     // No per-mount branch suffix in V1: workspace validation rejects
     // two isolated mounts on the same host repo (see
     // `validate_isolation_layout`), so each container has at most one
@@ -794,14 +681,6 @@ async fn materialize_one(
     // containers of the same role class (which would collide on the
     // shared host repo's `<host>/.git/refs/heads/` namespace).
     let scratch_branch = branch_name(container_name, None);
-    telemetry_debug!(
-        "isolation",
-        "mount {dst}: scratch branch {branch} (selector={selector})",
-        dst = mount.dst,
-        branch = scratch_branch,
-        selector = selector_key,
-    );
-
     if let Some(parent) = worktree_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create parent dir for worktree at {}", parent.display()))?;
@@ -814,15 +693,7 @@ async fn materialize_one(
     // through the upstream/[gone]/detached arms (fail-safe to
     // PreservedUnpushed) instead of the `tip == base_commit ⇒ Safe`
     // arm that would silently delete the work.
-    let base_commit = if let Some(branch_tip) = find_local_branch_tip(&mount.src, &scratch_branch) {
-        telemetry_debug!(
-            "isolation",
-            "mount {dst}: adopting existing scratch branch {branch} at tip {tip} (host HEAD {host}); pruning orphan admin entries first",
-            dst = mount.dst,
-            branch = scratch_branch,
-            tip = branch_tip,
-            host = host_head,
-        );
+    let base_commit = if find_local_branch_tip(&mount.src, &scratch_branch).is_some() {
         runner
             .run(
                 "git",
@@ -831,14 +702,6 @@ async fn materialize_one(
                 &jackin_core::RunOptions::default(),
             )
             .await?;
-        telemetry_debug!(
-            "isolation",
-            "mount {dst}: git -C {src} worktree add {wt} {branch}",
-            dst = mount.dst,
-            src = mount.src,
-            branch = scratch_branch,
-            wt = worktree_path.display(),
-        );
         runner
             .run(
                 "git",
@@ -864,15 +727,6 @@ async fn materialize_one(
             })?;
         host_head.clone()
     } else {
-        telemetry_debug!(
-            "isolation",
-            "mount {dst}: git -C {src} worktree add -b {branch} {wt} {base}",
-            dst = mount.dst,
-            src = mount.src,
-            branch = scratch_branch,
-            wt = worktree_path.display(),
-            base = host_head,
-        );
         runner
             .run(
                 "git",
@@ -910,15 +764,6 @@ async fn materialize_one(
     )?;
 
     let aux = write_git_overrides(container_state_dir, &mount.dst, container_name, &mount.src)?;
-    telemetry_debug!(
-        "isolation",
-        "mount {dst}: wrote git overrides (host_git_target={t}, git_file_target={gft}, gitdir_back_target={gbt})",
-        dst = mount.dst,
-        t = aux.host_git_target,
-        gft = aux.git_file_target,
-        gbt = aux.gitdir_back_target,
-    );
-
     Ok(MaterializedMount {
         bind_src: worktree_path.to_string_lossy().into(),
         dst: mount.dst.clone(),
@@ -928,10 +773,6 @@ async fn materialize_one(
     })
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 async fn materialize_clone(
     mount: &MountConfig,
     container_state_dir: &Path,
@@ -942,14 +783,6 @@ async fn materialize_clone(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedMount> {
     let clone_path = clone_path_for(container_state_dir, &mount.dst, container_name);
-    telemetry_debug!(
-        "isolation",
-        "mount {dst}: clone (src={src} → clone_path={cp})",
-        dst = mount.dst,
-        src = mount.src,
-        cp = clone_path.display(),
-    );
-
     if let Some(record) = read_record(container_state_dir, &mount.dst)? {
         if record.original_src != mount.src {
             return Err(IsolationError::SourceDrift {
@@ -973,11 +806,6 @@ async fn materialize_clone(
             .into());
         }
         if clone_path.join(".git").exists() {
-            telemetry_debug!(
-                "isolation",
-                "mount {dst}: reusing existing clone (record matches and .git present)",
-                dst = mount.dst,
-            );
             return Ok(MaterializedMount {
                 bind_src: clone_path.to_string_lossy().into(),
                 dst: mount.dst.clone(),
@@ -986,11 +814,6 @@ async fn materialize_clone(
                 worktree_aux: None,
             });
         }
-        telemetry_debug!(
-            "isolation",
-            "mount {dst}: record present but clone directory missing — recreating",
-            dst = mount.dst,
-        );
     }
 
     preflight_isolated(mount, ctx, runner).await?;
@@ -1055,11 +878,6 @@ async fn materialize_clone(
             // a loopback origin would misroute the operator's pushes.
             let chain = format!("{err:#}");
             if chain.contains("No such remote") || chain.contains("no such remote") {
-                telemetry_debug!(
-                    "isolation",
-                    "mount {dst}: host repo has no `origin` remote; leaving clone origin at bind-mount path",
-                    dst = mount.dst,
-                );
                 None
             } else {
                 return Err(err).with_context(|| {
@@ -1077,13 +895,6 @@ async fn materialize_clone(
     };
 
     if let Some(url) = host_origin {
-        telemetry_debug!(
-            "isolation",
-            "mount {dst}: rewriting clone origin from {src} to {url}",
-            dst = mount.dst,
-            src = mount.src,
-            url = url,
-        );
         runner
             .run(
                 "git",
@@ -1099,12 +910,6 @@ async fn materialize_clone(
                 &jackin_core::RunOptions::default(),
             )
             .await?;
-    } else {
-        telemetry_debug!(
-            "isolation",
-            "mount {dst}: host repo has no origin remote — leaving clone origin at bind-mount path",
-            dst = mount.dst,
-        );
     }
 
     upsert_record(

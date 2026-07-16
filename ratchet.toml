@@ -366,9 +366,6 @@ bound = 7
 key = "clippy::too_many_lines@jackin-env"
 bound = 1
 [[family.entry]]
-key = "clippy::too_many_lines@jackin-isolation"
-bound = 2
-[[family.entry]]
 key = "clippy::too_many_lines@jackin-launch-tui"
 bound = 2
 [[family.entry]]
@@ -509,10 +506,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 6500
+bound = 6499
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 6500
+bound = 6499
 [[family.entry]]
 key = "crates/AGENTS.md"
 bound = 14742
