@@ -30,7 +30,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-capsule/src/pr_context.rs` | 0 | 1 | 3 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/runtime_setup.rs` | 0 | 7 | 3 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/services/input_bindings.rs` | 0 | 2 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
-| `crates/jackin-capsule/src/session.rs` | 0 | 20 | 6 | 2 | 0 | 0 | REPLACE PTY/lock/resize failures with bounded `ResultTelemetryExt`; DELETE expected EOF/channel closure and child-status narration; remaining DEBUG/product-state sites require classification |
+| `crates/jackin-capsule/src/session.rs` | 0 | 20 | 6 | 2 | 0 | 0 | COMPLETE — PTY/lock/resize failures use bounded `ResultTelemetryExt`; PTY exit owns wait classification; expected closure/EOF and raw byte/identity/detail chatter deleted |
 | `crates/jackin-capsule/src/socket.rs` | 0 | 7 | 2 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/tui/run.rs` | 0 | 0 | 6 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-capsule/src/util.rs` | 0 | 5 | 5 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, and PTY-session migration passes: 128 `telemetry_info!`, 252 `telemetry_debug!`, 10 `telemetry_warn!`, and 3 `telemetry_error!` sites. The generic macro machinery and these 393 sites remain open; macro names in definitions or documentation are excluded.
+Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, and PTY-session migration passes: 126 `telemetry_info!`, 244 `telemetry_debug!`, 10 `telemetry_warn!`, and 3 `telemetry_error!` sites. The generic macro machinery and these 383 sites remain open; macro names in definitions or documentation are excluded.

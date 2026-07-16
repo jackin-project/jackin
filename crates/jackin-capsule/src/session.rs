@@ -752,28 +752,11 @@ impl Session {
     }
 
     pub fn send_input(&self, data: &[u8]) -> bool {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "session input forwarded: bytes={}",
-            data.len()
-        );
         // SendError fires when the writer task has exited (it owns the
         // receiver). The writer task emits SessionEvent::Exited before
         // dropping, so the daemon will reap this Session on the next
-        // event tick — keystrokes accepted between writer death and
-        // reap are lost, but observability remains: clog records both
-        // halves of the failure chain.
-        match self.input_tx.send(data.to_vec()) {
-            Ok(()) => true,
-            Err(e) => {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "session send_input: writer task gone ({} bytes dropped): {e}",
-                    data.len()
-                );
-                false
-            }
-        }
+        // event tick. The writer boundary owns the originating failure.
+        self.input_tx.send(data.to_vec()).is_ok()
     }
 
     /// Mark that the operator sent an explicit keyboard payload to this pane.
@@ -852,16 +835,7 @@ impl Session {
                     self.subagents_active = 0;
                 }
             }
-            GateEffect::Ignore => {
-                // An event this build does not map (runtime/version skew renamed
-                // it). The reporter's authority silently goes dark; leave a
-                // Firehose breadcrumb so debug telemetry surfaces the drift.
-                jackin_diagnostics::telemetry_debug!(
-                    "capsule",
-                    "agent-status: unmapped runtime event runtime={runtime} event={event} \
-                     source={source_id}"
-                );
-            }
+            GateEffect::Ignore => {}
         }
     }
 
@@ -1100,21 +1074,13 @@ impl Session {
             self.received_output = true;
         }
         jackin_diagnostics::incr_terminal_bytes_received(bytes.len() as u64);
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "session output received: bytes={}",
-            bytes.len()
-        );
 
         // Single batch feed — the grid's persistent vte parser handles
         // sequences split across PTY read boundaries internally.
         let was_alternate = self.shadow_grid.alternate_screen();
         let was_scrolled = self.scrollback_offset() != 0;
         let scrollback_before = self.shadow_grid.scrollback_len();
-        let debug_enabled = crate::logging::debug_enabled();
-        let parse_started = debug_enabled.then(std::time::Instant::now);
         self.shadow_grid.process(bytes);
-        let parse_duration_us = parse_started.map(|started| started.elapsed().as_micros());
         let is_alternate = self.shadow_grid.alternate_screen();
         if was_alternate && !is_alternate {
             self.clear_transient_keyboard_modes();
@@ -1149,27 +1115,6 @@ impl Session {
             }
         } else {
             self.scroll_to_live();
-        }
-
-        if debug_enabled {
-            let (grid_rows, grid_cols) = self.shadow_grid.size();
-            let (cursor_row, cursor_col) = self.shadow_grid.cursor_position();
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "session feed_pty: agent={:?} label={} bytes={} t_parse_us={} alt_screen={} mouse_enabled={} screen={}x{} cursor={}x{} scrollback={} scrollback_offset={}",
-                self.agent,
-                self.label,
-                bytes.len(),
-                parse_duration_us.unwrap_or_default(),
-                is_alternate,
-                self.mouse_enabled(),
-                grid_rows,
-                grid_cols,
-                cursor_row,
-                cursor_col,
-                self.shadow_grid.scrollback_len(),
-                self.scrollback_offset(),
-            );
         }
 
         // PTY output updates recency evidence only. It never authors state
@@ -1285,38 +1230,14 @@ impl Session {
                 PassthroughEvent::UnhandledCsi(ref raw) => {
                     self.handle_unhandled_csi(raw);
                 }
-                // Default-denied CSI (§3.6): never forwarded. Logged so a
-                // `--debug` run shows the exact dropped bytes — the triage
-                // trail for "agent feature X stopped working" and the input
-                // for allowlist additions.
-                PassthroughEvent::DroppedCsi(ref raw) => {
-                    jackin_diagnostics::telemetry_debug!(
-                        "capsule",
-                        "dropped unhandled CSI (agent={:?}): {}",
-                        self.agent.as_deref(),
-                        raw.escape_ascii(),
-                    );
-                }
+                PassthroughEvent::DroppedCsi(_) => {}
                 // Device/mode query the emulator answered itself. The reply
                 // goes back to the agent's own PTY stdin — never the outer
                 // terminal — so the agent's capability detection reflects the
                 // grid, not the host. (Root fix for the alt-screen corruption:
                 // the host was answering DA/DSR/DECRQM with its own caps.)
                 PassthroughEvent::Reply(bytes) => {
-                    jackin_diagnostics::telemetry_debug!(
-                        "capsule",
-                        "query reply to agent={:?}: {}",
-                        self.agent.as_deref(),
-                        bytes.escape_ascii(),
-                    );
-                    if let Err(e) = self.input_tx.send(bytes) {
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "session query reply (agent={:?} label={}): writer task gone: {e}",
-                            self.agent,
-                            self.label,
-                        );
-                    }
+                    drop(self.input_tx.send(bytes));
                 }
                 // ScrollbackClear is a grid-internal instruction with no
                 // outer-terminal byte form; the grid already cleared its
@@ -1349,12 +1270,6 @@ impl Session {
         if let Some(level) = parse_modify_other_keys(raw) {
             self.modify_other_keys = (level != 0).then_some(level);
         }
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "forwarding allowlisted CSI to client (agent={:?}): {}",
-            self.agent.as_deref(),
-            raw.escape_ascii(),
-        );
         self.pending_passthrough.push(raw.to_vec());
     }
 
@@ -1410,18 +1325,6 @@ impl Session {
         // Never hand the agent PTY a 0×0 window size (programs expect ≥1) nor the
         // shadow grid a degenerate geometry. `DamageGrid::set_size` clamps too;
         // this keeps TIOCSWINSZ and the model in agreement on the floor.
-        if rows == 0 || cols == 0 {
-            // A clamp here means a layout bug upstream collapsed a pane; log it
-            // so a soak run can pin the offending frame rather than silently
-            // running the agent with a collapsed dimension. Each axis is floored
-            // independently, so `0x80` becomes `1x80`, not `1x1`.
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "resize-clamp: degenerate geometry {rows}x{cols} floored to {}x{}",
-                rows.max(1),
-                cols.max(1),
-            );
-        }
         let rows = rows.max(1);
         let cols = cols.max(1);
         if let Ok(master) = self
