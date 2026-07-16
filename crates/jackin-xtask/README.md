@@ -18,15 +18,15 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 |---|---|---|
 | [`main.rs`](src/main.rs) | `cargo xtask` dispatcher | — |
 | [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
+| [`ci_target.rs`](src/ci_target.rs) · [`ci_target/`](src/ci_target) | reusable CI target transport | [`tests.rs`](src/ci_target/tests.rs) |
 | [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate (adapter; budgets also in `ratchet.toml`) | [`tests.rs`](src/lint/tests.rs) |
 | [`ratchet.rs`](src/ratchet.rs) · [`ratchet/`](src/ratchet) | unified shrink-only ratchet engine (`lint ratchet`) | [`tests.rs`](src/ratchet/tests.rs) |
 | [`test_layout.rs`](src/test_layout.rs) | test-layout presence family (adapter over ratchet semantics) | — |
-| [`suppressions.rs`](src/suppressions.rs) | bare-allow/expect reason-gate (adapter) | — |
 | [`agent_files.rs`](src/agent_files.rs) · [`agent_files/`](src/agent_files) | agent-file symlink gate (`--format human\|json\|github`) | [`tests.rs`](src/agent_files/tests.rs) |
 | [`report.rs`](src/report.rs) · [`report/`](src/report) | shared gate reporter (human/json/github) | [`tests.rs`](src/report/tests.rs) |
 | [`agent_links.rs`](src/agent_links.rs) · [`agent_links/`](src/agent_links) | no-cross-ref gate (README/AGENTS) | [`tests.rs`](src/agent_links/tests.rs) |
-| [`container_paths_gate.rs`](src/container_paths_gate.rs) · [`container_paths_gate/`](src/container_paths_gate) | residual `/jackin` literal shrink-only gate | [`tests.rs`](src/container_paths_gate/tests.rs) |
-| [`suppressions.rs`](src/suppressions.rs) · [`suppressions/`](src/suppressions) | bare-allow / per-lint expect shrink-only reason-gate | [`tests.rs`](src/suppressions/tests.rs) |
+| [`container_paths_gate.rs`](src/container_paths_gate.rs) · [`container_paths_gate/`](src/container_paths_gate) | container-path gate | [`tests.rs`](src/container_paths_gate/tests.rs) |
+| [`suppressions.rs`](src/suppressions.rs) · [`suppressions/`](src/suppressions) | lint-suppression gate | [`tests.rs`](src/suppressions/tests.rs) |
 | [`headers.rs`](src/headers.rs) · [`headers/`](src/headers) | ownership-header contract gate | [`tests.rs`](src/headers/tests.rs) |
 | [`arch.rs`](src/arch.rs) · [`arch/`](src/arch) | tier-graph dependency-direction gate (`TIERS` table; prod edges must descend; dev-cycle allowlist) | [`tests.rs`](src/arch/tests.rs) |
 | [`readme_freshness.rs`](src/readme_freshness.rs) · [`readme_freshness/`](src/readme_freshness) | structural src change ⇒ README same-PR gate | [`tests.rs`](src/readme_freshness/tests.rs) |

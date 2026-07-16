@@ -1,0 +1,357 @@
+use std::env;
+use std::fs::{self, File};
+use std::io::Write;
+use std::os::unix::ffi::OsStringExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use anyhow::{Context, Result};
+use clap::{Args, Subcommand};
+use serde::Deserialize;
+use serde_json::Value as JsonValue;
+
+use crate::cmd;
+
+#[cfg(test)]
+mod tests;
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum CiTargetCommand {
+    /// Find the newest compatible target artifact and emit step outputs.
+    Find(FindArgs),
+    /// Download and extract one GitHub Actions artifact.
+    Download(DownloadArgs),
+    /// Restore a target archive and emit whether it exactly matches the source.
+    Restore(RestoreArgs),
+    /// Pack the reusable portion of a Cargo target into one archive.
+    Pack(PackArgs),
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct FindArgs {
+    #[arg(long)]
+    package: String,
+    #[arg(long)]
+    cache_key: String,
+    #[arg(long, action = clap::ArgAction::Set)]
+    all_features: bool,
+    #[arg(long)]
+    runner_os: String,
+    #[arg(long)]
+    runner_arch: String,
+    #[arg(long)]
+    repository: String,
+    /// Pre-resolved per-package target map from the affected-crates job.
+    #[arg(long, default_value = "")]
+    supplied_results: String,
+    /// Append fields to `GITHUB_OUTPUT` instead of printing one JSON object.
+    #[arg(long)]
+    github_output: bool,
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct DownloadArgs {
+    #[arg(long)]
+    artifact_id: u64,
+    #[arg(long)]
+    destination: PathBuf,
+    #[arg(long)]
+    repository: String,
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct RestoreArgs {
+    #[arg(long)]
+    archive: PathBuf,
+    #[arg(long, default_value = "target")]
+    target: PathBuf,
+    #[arg(long)]
+    cache_key: String,
+    #[arg(long, action = clap::ArgAction::Set)]
+    known_exact: bool,
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct PackArgs {
+    #[arg(long, default_value = "target")]
+    target: PathBuf,
+    #[arg(long)]
+    source_key: String,
+    #[arg(long, default_value = "target.tar.zst")]
+    output: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct ArtifactsResponse {
+    artifacts: Vec<Artifact>,
+}
+
+#[derive(Deserialize)]
+struct Artifact {
+    id: u64,
+    expired: bool,
+    created_at: String,
+}
+
+pub(crate) fn run(command: CiTargetCommand) -> Result<()> {
+    match command {
+        CiTargetCommand::Find(args) => find(args),
+        CiTargetCommand::Download(args) => download(args),
+        CiTargetCommand::Restore(args) => restore(args),
+        CiTargetCommand::Pack(args) => pack(args),
+    }
+}
+
+fn find(args: FindArgs) -> Result<()> {
+    if !args.supplied_results.is_empty() {
+        let supplied: JsonValue = serde_json::from_str(&args.supplied_results)
+            .context("parsing supplied per-package target results")?;
+        if let Some(result) = supplied.get(&args.package) {
+            return emit_find_result(
+                &args,
+                result["name"]
+                    .as_str()
+                    .context("supplied target result is missing name")?,
+                result["hit"].as_bool().unwrap_or(false),
+                result["known_exact"].as_bool().unwrap_or(false),
+                result["artifact_id"].as_u64(),
+            );
+        }
+    }
+    let version = if args.all_features {
+        "v7"
+    } else {
+        "default-v7"
+    };
+    let name = format!(
+        "ci-crate-target-{version}-{}-{}-{}",
+        args.runner_os, args.runner_arch, args.package
+    );
+    let current = newest_artifact(&args.repository, &name)?;
+    let warmup = if current.is_none() {
+        newest_artifact(&args.repository, &format!("{name}-warmup"))?
+    } else {
+        None
+    };
+    let artifact = current.as_ref().or(warmup.as_ref());
+    emit_find_result(
+        &args,
+        &name,
+        artifact.is_some(),
+        false,
+        artifact.map(|artifact| artifact.id),
+    )
+}
+
+fn emit_find_result(
+    args: &FindArgs,
+    name: &str,
+    hit: bool,
+    known_exact: bool,
+    artifact_id: Option<u64>,
+) -> Result<()> {
+    if args.github_output {
+        write_output("name", name)?;
+        write_output("hit", if hit { "true" } else { "false" })?;
+        write_output("known-exact", if known_exact { "true" } else { "false" })?;
+        return write_output(
+            "artifact-id",
+            &artifact_id.map_or_else(String::new, |id| id.to_string()),
+        );
+    }
+    let result = serde_json::json!({
+        "name": name,
+        "source_key": args.cache_key,
+        "hit": hit,
+        "known_exact": known_exact,
+        "artifact_id": artifact_id,
+    });
+    writeln!(std::io::stdout().lock(), "{result}").context("writing target result JSON")
+}
+
+fn newest_artifact(repository: &str, name: &str) -> Result<Option<Artifact>> {
+    let endpoint = format!("repos/{repository}/actions/artifacts?name={name}&per_page=10");
+    let output = cmd::output(Command::new("gh").args(["api", &endpoint]))
+        .with_context(|| format!("querying GitHub Actions artifact `{name}`"))?;
+    let mut response: ArtifactsResponse =
+        serde_json::from_slice(&output).context("parsing GitHub artifact response")?;
+    response.artifacts.retain(|artifact| !artifact.expired);
+    response
+        .artifacts
+        .sort_unstable_by(|left, right| right.created_at.cmp(&left.created_at));
+    Ok(response.artifacts.into_iter().next())
+}
+
+fn download(args: DownloadArgs) -> Result<()> {
+    if args.destination.exists() {
+        fs::remove_dir_all(&args.destination).with_context(|| {
+            format!("removing stale destination {}", args.destination.display())
+        })?;
+    }
+    fs::create_dir_all(&args.destination)
+        .with_context(|| format!("creating {}", args.destination.display()))?;
+    let archive = args.destination.join("artifact.zip");
+    let endpoint = format!(
+        "repos/{}/actions/artifacts/{}/zip",
+        args.repository, args.artifact_id
+    );
+    cmd::run_stdout_file(Command::new("gh").args(["api", &endpoint]), &archive)
+        .context("downloading GitHub Actions artifact")?;
+    checked(
+        Command::new("unzip")
+            .arg("-q")
+            .arg(&archive)
+            .arg("-d")
+            .arg(&args.destination),
+        "extracting GitHub Actions artifact",
+    )?;
+    fs::remove_file(&archive).with_context(|| format!("removing {}", archive.display()))
+}
+
+fn restore(args: RestoreArgs) -> Result<()> {
+    fs::create_dir_all(&args.target)
+        .with_context(|| format!("creating {}", args.target.display()))?;
+    checked(
+        Command::new("tar")
+            .args(["--zstd", "--strip-components=1", "-C"])
+            .arg(&args.target)
+            .arg("-xf")
+            .arg(&args.archive),
+        "restoring reusable Cargo target",
+    )?;
+    let source_key_path = args.target.join(".ci-source-key");
+    let source_key = fs::read_to_string(&source_key_path).unwrap_or_default();
+    let canonical_hit = args.known_exact || source_key.trim() == args.cache_key;
+    if source_key_path.exists() {
+        fs::remove_file(&source_key_path)
+            .with_context(|| format!("removing {}", source_key_path.display()))?;
+    }
+    if let Some(restore_dir) = args.archive.parent()
+        && restore_dir
+            .file_name()
+            .is_some_and(|name| name == ".ci-restore")
+    {
+        fs::remove_dir_all(restore_dir)
+            .with_context(|| format!("removing {}", restore_dir.display()))?;
+    }
+    if canonical_hit {
+        normalize_checkout_timestamps()?;
+    }
+    write_output(
+        "canonical-hit",
+        if canonical_hit { "true" } else { "false" },
+    )
+}
+
+fn normalize_checkout_timestamps() -> Result<()> {
+    let output = cmd::output(Command::new("git").args(["ls-files", "-z"]))
+        .context("listing tracked files for canonical target restore")?;
+    let paths = output
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .collect::<Vec<_>>();
+    for chunk in paths.chunks(100) {
+        let mut command = Command::new("touch");
+        command.args(["--date=2000-01-01T00:00:00Z", "--"]);
+        for path in chunk {
+            command.arg(std::ffi::OsString::from_vec(path.to_vec()));
+        }
+        checked(&mut command, "normalizing checkout timestamps")?;
+    }
+    Ok(())
+}
+
+fn pack(args: PackArgs) -> Result<()> {
+    let current_dir = env::current_dir().context("resolving current directory")?;
+    let target_parent = args
+        .target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let source_key_path = args.target.join(".ci-source-key");
+    fs::write(&source_key_path, format!("{}\n", args.source_key))
+        .with_context(|| format!("writing {}", source_key_path.display()))?;
+    let list_path = args.target.join(".ci-pack-files");
+    let mut paths = reusable_paths(&args.target)?;
+    paths.sort_unstable();
+    let mut list =
+        File::create(&list_path).with_context(|| format!("creating {}", list_path.display()))?;
+    for path in paths {
+        let archive_path = path.strip_prefix(target_parent).unwrap_or(&path);
+        list.write_all(archive_path.as_os_str().as_encoded_bytes())?;
+        list.write_all(&[0])?;
+    }
+    drop(list);
+    let list_path = fs::canonicalize(&list_path)
+        .with_context(|| format!("canonicalizing {}", list_path.display()))?;
+    let output = if args.output.is_absolute() {
+        args.output.clone()
+    } else {
+        current_dir.join(&args.output)
+    };
+    let target_name = args
+        .target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("Cargo target path must have a UTF-8 final component")?;
+    checked(
+        Command::new("tar")
+            .current_dir(target_parent)
+            .args(["--zstd", "--null", "--no-recursion"])
+            .arg(format!("--transform=s|^{target_name}/|target/|"))
+            .arg("--files-from")
+            .arg(&list_path)
+            .arg("-cf")
+            .arg(&output),
+        "packing reusable Cargo target",
+    )?;
+    fs::remove_file(&list_path).with_context(|| format!("removing {}", list_path.display()))?;
+    fs::remove_file(&source_key_path)
+        .with_context(|| format!("removing {}", source_key_path.display()))?;
+    Ok(())
+}
+
+fn reusable_paths(target: &Path) -> Result<Vec<PathBuf>> {
+    let mut pending = vec![target.to_path_buf()];
+    let mut files = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in crate::fs_util::read_dir_sorted(&directory)? {
+            let path = entry.path();
+            let relative = path.strip_prefix(target).unwrap_or(&path);
+            if excluded(relative) {
+                continue;
+            }
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                pending.push(path);
+            } else if file_type.is_file() || file_type.is_symlink() {
+                files.push(path);
+            }
+        }
+    }
+    Ok(files)
+}
+
+fn excluded(path: &Path) -> bool {
+    let text = path.to_string_lossy();
+    text == "nextest"
+        || text.starts_with("nextest/")
+        || text.starts_with("telemetry-")
+        || text == "debug/incremental"
+        || text.starts_with("debug/incremental/")
+        || text == ".ci-restore"
+        || text.starts_with(".ci-restore/")
+        || text == ".ci-pack-files"
+}
+
+fn write_output(name: &str, value: &str) -> Result<()> {
+    let output = env::var_os("GITHUB_OUTPUT").context("GITHUB_OUTPUT must be set")?;
+    let path = Path::new(&output);
+    let mut contents = fs::read(path).unwrap_or_default();
+    writeln!(contents, "{name}={value}").context("formatting GitHub Actions output")?;
+    fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
+}
+
+fn checked(command: &mut Command, context: &str) -> Result<()> {
+    cmd::run(command).with_context(|| context.to_owned())
+}

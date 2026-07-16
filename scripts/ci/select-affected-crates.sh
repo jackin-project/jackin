@@ -41,8 +41,13 @@ while IFS= read -r package; do
     hits+=("$package")
   else
     misses+=("$package")
-    target_result=$(scripts/ci/find-crate-target.sh \
-      "$package" "$cache_key" true Linux X64)
+    target_result=$("$CI_XTASK" ci-target find \
+      --package "$package" \
+      --cache-key "$cache_key" \
+      --all-features true \
+      --runner-os Linux \
+      --runner-arch X64 \
+      --repository "$GITHUB_REPOSITORY")
     target_results=$(jq -cn \
       --argjson current "$target_results" \
       --arg package "$package" \

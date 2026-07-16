@@ -8,6 +8,7 @@ mod agent_files;
 mod agent_links;
 mod arch;
 mod ci;
+mod ci_target;
 mod cmd;
 mod construct;
 mod container_paths_gate;
@@ -52,6 +53,9 @@ enum Command {
     /// Use as `cargo xtask ci --fast` for the non-e2e gate, or add `--e2e`
     /// to include Docker-backed smoke tests.
     Ci(ci::CiArgs),
+    /// Manage the reusable per-crate Cargo target used by CI.
+    #[command(name = "ci-target", subcommand)]
+    CiTarget(ci_target::CiTargetCommand),
     /// Construct base-image build and publish tasks.
     ///
     /// Use as `cargo xtask construct <subcommand>`.
@@ -206,6 +210,7 @@ fn main() -> ExitCode {
         Command::AffectedCrates(args) => affected_crates::run(args),
         Command::Construct(cmd) => construct::run(cmd),
         Command::Ci(args) => ci::run(args),
+        Command::CiTarget(command) => ci_target::run(command),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
         Command::FrameTiming(args) => frame_timing::run(args),

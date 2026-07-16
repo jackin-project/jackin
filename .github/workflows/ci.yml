@@ -508,7 +508,10 @@ jobs:
     timeout-minutes: 60
     name: cargo registry warmup (${{ matrix.config.lane }})
     env:
+      CARGO_INCREMENTAL: "0"
       CARGO_TARGET_DIR: target
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -581,46 +584,6 @@ jobs:
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
-      - id: xtask-target-seed
-        name: Find reusable jackin-xtask target seed
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          result=$(scripts/ci/find-crate-target.sh \
-            jackin-xtask "$(printf '0%.0s' {1..64})" true \
-            "${{ runner.os }}" "${{ runner.arch }}")
-          {
-            echo "hit=$(jq -r '.hit' <<< "$result")"
-            echo "artifact-id=$(jq -r '.artifact_id' <<< "$result")"
-          } >> "$GITHUB_OUTPUT"
-      - name: Download reusable jackin-xtask target seed
-        if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' &&
-          steps.xtask-target-seed.outputs.hit == 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          scripts/ci/download-crate-target.sh \
-            "${{ steps.xtask-target-seed.outputs.artifact-id }}" \
-            target/.ci-restore
-      - name: Restore reusable jackin-xtask target seed
-        if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' &&
-          steps.xtask-target-seed.outputs.hit == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          target_dir=${CARGO_TARGET_DIR:-target}
-          mkdir -p "$target_dir"
-          tar --zstd --strip-components=1 -C "$target_dir" \
-            -xf target/.ci-restore/target.tar.zst
-          rm -rf target/.ci-restore
       - name: Restore prepared Rust toolchains
         id: toolchain-lookup
         if: steps.prepared-inputs.outputs.ready != 'true'
@@ -691,7 +654,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         if: steps.ci-xtask-artifact.outputs.hit != 'true'
         with:
-          shared-key: ci-xtask-dev-v1
+          shared-key: ci-xtask-dev-v2-debugless
           cache-all-crates: "false"
           cache-workspace-crates: "false"
           env-vars: "CARGO CARGO_TARGET_DIR RUSTFLAGS RUSTDOC RUSTUP"
@@ -705,6 +668,21 @@ jobs:
         env:
           CARGO_NET_OFFLINE: "true"
         run: cargo build -p jackin-xtask --locked
+      - name: Pack shared CI xtask target seed
+        if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.cache_writer
+        run: >-
+          target/debug/jackin-xtask ci-target pack
+          --target target
+          --source-key warmup
+          --output target.tar.zst
+      - name: Publish shared CI xtask target seed
+        if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.cache_writer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-crate-target-v7-${{ runner.os }}-${{ runner.arch }}-jackin-xtask-warmup
+          path: target.tar.zst
+          compression-level: 0
+          retention-days: 1
       - name: Stage shared CI xtask
         run: |
           mkdir -p .ci-prebuilt-tools .ci-prebuilt-xtask target/ci-tools

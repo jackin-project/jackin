@@ -5,7 +5,9 @@
 //! share one shape.
 
 use std::ffi::OsStr;
-use std::process::Command;
+use std::fs::File;
+use std::path::Path;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -38,6 +40,22 @@ pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
         Ok(())
     } else {
         Err(anyhow!("{display} failed with code {:?}", result.code))
+    }
+}
+
+/// Stream stdout into a file while inheriting stderr.
+pub(crate) fn run_stdout_file(cmd: &mut Command, path: &Path) -> Result<()> {
+    let display = display_command(cmd);
+    let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    let status = cmd
+        .stdout(Stdio::from(file))
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("running {display}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!("{display} failed with {status}"))
     }
 }
 

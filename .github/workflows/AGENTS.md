@@ -33,6 +33,7 @@ Apply these rules to every workflow under this directory. They define the reposi
 - Never split one crate's tests, one artifact's bytes, or one conceptual command into numbered shards, batches, jobs, steps, or parts. One affected crate owns one complete test job; one cache artifact is one archive with one publish and one restore operation.
 - Split jobs and steps only when they have distinct meaning, ownership, or failure diagnosis. Transport mechanics are not semantic boundaries.
 - Improve runtime through result reuse, local or remote caches, prebuilt artifacts, and faster transport. Do not trade readability or independently attributable results for parallel fragments of the same work.
+- Put CI decisions, parsing, cache contracts, and artifact transport in `jackin-xtask` or `jackin-dev`, with unit tests. Workflow `run` blocks may invoke a prepared Rust binary or a tool directly, but must not grow Bash programs or add new `scripts/ci/*.sh` implementations. Keep the unavoidable prebuilt-binary bootstrap declarative and minimal.
 
 ## Publishing and Parity
 

@@ -194,20 +194,15 @@ jobs:
           RUNNER_OS: ${{ runner.os }}
           TARGET_RESULTS: ${{ inputs.package-target-results-json }}
         run: |
-          set -euo pipefail
-          supplied_result=$(jq -c --arg package "$PACKAGE" '.[$package] // null' <<< "$TARGET_RESULTS")
-          if [ "$supplied_result" = "null" ]; then
-            result=$(scripts/ci/find-crate-target.sh \
-              "$PACKAGE" "$CACHE_KEY" "$ALL_FEATURES" "$RUNNER_OS" "$RUNNER_ARCH")
-          else
-            result=$supplied_result
-          fi
-          {
-            echo "name=$(jq -r '.name' <<< "$result")"
-            echo "hit=$(jq -r '.hit' <<< "$result")"
-            echo "known-exact=$(jq -r '.known_exact' <<< "$result")"
-            echo "artifact-id=$(jq -r '.artifact_id' <<< "$result")"
-          } >> "$GITHUB_OUTPUT"
+          "$CI_XTASK" ci-target find \
+            --package "$PACKAGE" \
+            --cache-key "$CACHE_KEY" \
+            --all-features "$ALL_FEATURES" \
+            --runner-os "$RUNNER_OS" \
+            --runner-arch "$RUNNER_ARCH" \
+            --repository "$REPOSITORY" \
+            --supplied-results "$TARGET_RESULTS" \
+            --github-output
       - name: Use runner-local target seed
         id: local-target
         if: steps.crate-target.outputs.hit == 'true'
@@ -230,9 +225,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          scripts/ci/download-crate-target.sh \
-            "${{ steps.crate-target.outputs.artifact-id }}" \
-            target/.ci-restore
+          "$CI_XTASK" ci-target download \
+            --artifact-id "${{ steps.crate-target.outputs.artifact-id }}" \
+            --destination target/.ci-restore \
+            --repository "$REPOSITORY"
       - name: Restore reusable crate target seed
         id: restored-target
         if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
@@ -241,24 +237,11 @@ jobs:
           CACHE_KEY: ${{ steps.crate-target-key.outputs.key }}
           KNOWN_EXACT: ${{ steps.crate-target.outputs.known-exact }}
         run: |
-          set -euo pipefail
-          target_dir=${CARGO_TARGET_DIR:-target}
-          mkdir -p "$target_dir"
-          tar --zstd --strip-components=1 -C "$target_dir" \
-            -xf target/.ci-restore/target.tar.zst
-          canonical_hit=false
-          if [ "$KNOWN_EXACT" = true ] ||
-             [ "$(cat "$target_dir/.ci-source-key" 2>/dev/null || true)" = "$CACHE_KEY" ]; then
-            canonical_hit=true
-          fi
-          rm -f "$target_dir/.ci-source-key"
-          rm -rf target/.ci-restore
-          if [ "$canonical_hit" = true ]; then
-            git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
-          else
-            echo "::notice::reusable target seed restored; preserving checkout mtimes so Cargo rebuilds changed first-party inputs"
-          fi
-          echo "canonical-hit=$canonical_hit" >> "$GITHUB_OUTPUT"
+          "$CI_XTASK" ci-target restore \
+            --archive target/.ci-restore/target.tar.zst \
+            --target target \
+            --cache-key "$CACHE_KEY" \
+            --known-exact "$KNOWN_EXACT"
       - name: Run package tests
         if: steps.crate-result.outputs.hit != 'true'
         shell: bash
@@ -515,20 +498,10 @@ jobs:
            (github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository))
         run: |
-          set -euo pipefail
-          target_dir=${CARGO_TARGET_DIR:-target}
-          printf '%s\n' "${{ steps.crate-target-key.outputs.key }}" > "$target_dir/.ci-source-key"
-          find "$target_dir" \
-            \( -path "$target_dir/nextest" -o -path "$target_dir/nextest/*" \
-               -o -path "$target_dir/telemetry-*" \
-               -o -path "$target_dir/debug/incremental" -o -path "$target_dir/debug/incremental/*" \
-               -o -path "$target_dir/.ci-restore" -o -path "$target_dir/.ci-restore/*" \) \
-            -prune -o \( -type f -o -type l \) -print0 \
-            | sort -z \
-            | tar --zstd --null --no-recursion \
-                --transform="s|^${target_dir#/}/|target/|" \
-                --files-from=- -cf target.tar.zst
-          rm -f "$target_dir/.ci-source-key"
+          "$CI_XTASK" ci-target pack \
+            --target target \
+            --source-key "${{ steps.crate-target-key.outputs.key }}" \
+            --output target.tar.zst
       - name: Publish reusable crate target seed
         if: >-
           always() && !cancelled() && !failure() &&

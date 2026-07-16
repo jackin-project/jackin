@@ -270,6 +270,18 @@ feature powersets, and benchmarks remain complete inside the crate's one job;
 the archive no longer spends network and extraction time carrying symbols that
 no later CI consumer reads.
 
+Run `29538653820` exposed why Cargo profile settings are cache semantics, not
+workflow plumbing. The first debugless producer restored the debug-bearing v6
+seed, then Cargo rejected those objects and compiled every third-party
+dependency under the new profile. The job took 63 seconds and the published
+archive grew from 95 MB to 145 MB because both generations remained in the
+same target tree. The v7 target contract starts a clean cache generation for
+the debugless profiles instead of appending incompatible outputs. Target
+lookup, REST download, restore validation, timestamp normalization, and archive
+packing now live in the prepared `jackin-xtask` binary; the two Bash transport
+scripts are removed. A v7 producer is an intentional one-time profile migration,
+while later source changes reuse only profile-compatible dependency objects.
+
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses
 for all 26 crates. The crate-test contract now retains the last validated
