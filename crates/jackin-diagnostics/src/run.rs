@@ -79,19 +79,18 @@ fn display_unclosed_key(key: &str) -> String {
 }
 
 impl RunDiagnostics {
-    pub fn start(paths: &JackinPaths, debug: bool, command: &str) -> anyhow::Result<Arc<Self>> {
+    pub fn start(
+        paths: &JackinPaths,
+        debug: bool,
+        command: &str,
+        identity: crate::observability::ServiceIdentity,
+    ) -> anyhow::Result<Arc<Self>> {
         // Mint before subscriber init: the OTLP resource carries the run id.
         let run_id = jackin_telemetry::identity::current_invocation().map_or_else(
             || jackin_telemetry::identity::InvocationId::mint().to_string(),
             |id| id.to_string(),
         );
         // Install direct OTLP export when configured.
-        let identity = match command {
-            "console" => crate::observability::ServiceIdentity::HOST_INTERACTIVE,
-            "daemon" => crate::observability::ServiceIdentity::DAEMON,
-            "role" => crate::observability::ServiceIdentity::ROLE,
-            _ => crate::observability::ServiceIdentity::HOST_ONE_SHOT,
-        };
         let (otlp_active, otlp_error) =
             match crate::observability::init_tracing_for(debug, &run_id, identity) {
                 Ok(active) => (active, None),

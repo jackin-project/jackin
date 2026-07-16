@@ -157,6 +157,7 @@ pub(super) async fn handle_console(
     config: AppConfig,
     paths: JackinPaths,
     debug: bool,
+    lifecycle: &mut crate::lifecycle::InvocationTelemetry,
 ) -> Result<()> {
     let _session = jackin_telemetry::identity::SessionGuard::begin();
     let cwd = std::env::current_dir()?;
@@ -171,6 +172,7 @@ pub(super) async fn handle_console(
     // terminal. Sub-surfaces detect this and skip their own
     // enter/leave; the guard tears the terminal down once, on drop.
     let screen = console::TerminalSession::enter(console::terminal::host_console_terminal())?;
+    lifecycle.ready();
 
     let connect_docker = || BollardDockerClient::connect();
 
@@ -209,6 +211,7 @@ pub(super) async fn handle_console(
         &mut runner,
     )
     .await?;
+    lifecycle.exit_requested();
     // Prefer the in-memory config the console returned (updated on successful
     // saves). Do not re-read disk — that is the launch-speed 008g win.
     let mut config = take_post_console_config(console_config);

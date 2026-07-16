@@ -75,7 +75,9 @@ fn disabled_alloc_facade_fast_paths_allocate_nothing() {
         dhat::assert_eq!(governed, direct);
 
         let before = dhat::HeapStats::get();
-        tokio::spawn(async {}).await.expect("direct stream baseline");
+        tokio::spawn(async {})
+            .await
+            .expect("direct stream baseline");
         let direct = dhat::HeapStats::get().total_blocks - before.total_blocks;
         let before = dhat::HeapStats::get();
         jackin_telemetry::spawn::spawn_stream("disabled.stream", async {})
@@ -97,7 +99,9 @@ fn disabled_alloc_facade_fast_paths_allocate_nothing() {
         dhat::assert_eq!(governed, direct);
 
         let before = dhat::HeapStats::get();
-        tokio::spawn(async {}).await.expect("direct detached baseline");
+        tokio::spawn(async {})
+            .await
+            .expect("direct detached baseline");
         let direct = dhat::HeapStats::get().total_blocks - before.total_blocks;
         let before = dhat::HeapStats::get();
         jackin_telemetry::spawn::spawn_detached(

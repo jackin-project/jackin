@@ -12,7 +12,13 @@ use ratatui::backend::TestBackend;
 fn test_diagnostics() -> Arc<RunDiagnostics> {
     let tmp = tempfile::tempdir().unwrap();
     let paths = jackin_core::JackinPaths::for_tests(tmp.path());
-    RunDiagnostics::start(&paths, false, "load").unwrap()
+    RunDiagnostics::start(
+        &paths,
+        false,
+        "load",
+        jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+    )
+    .unwrap()
 }
 
 fn dummy_failure() -> LaunchFailure {

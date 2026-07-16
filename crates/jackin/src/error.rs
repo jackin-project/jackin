@@ -55,26 +55,30 @@ impl ErrorCode {
     }
 
     /// Stable semantic-convention `error.type` for this operator error.
-    pub const fn telemetry_error_type(self) -> &'static str {
+    pub const fn telemetry_error(self) -> jackin_telemetry::schema::enums::ErrorType {
         use jackin_telemetry::schema::enums::ErrorType;
         match self {
-            Self::E001 => ErrorType::DockerDaemonUnreachable.as_str(),
-            Self::E002 => ErrorType::DockerVersionTooOld.as_str(),
-            Self::E003 => ErrorType::OutOfDiskSpace.as_str(),
-            Self::E004 => ErrorType::RoleManifestInvalid.as_str(),
-            Self::E005 => ErrorType::RoleManifestVersionUnsupported.as_str(),
-            Self::E006 => ErrorType::RoleSourceNotTrusted.as_str(),
-            Self::E007 => ErrorType::WorkspaceNotFound.as_str(),
-            Self::E008 => ErrorType::WorkspaceConfigVersionUnsupported.as_str(),
-            Self::E009 => ErrorType::ContainerNameConflict.as_str(),
-            Self::E010 => ErrorType::DindHealthCheckFailed.as_str(),
-            Self::E011 => ErrorType::DindPortConflict.as_str(),
-            Self::E012 => ErrorType::GhAuthFailed.as_str(),
-            Self::E013 => ErrorType::OpNotSignedIn.as_str(),
-            Self::E014 => ErrorType::CapsuleDownloadFailed.as_str(),
-            Self::E015 => ErrorType::WorktreeConflict.as_str(),
-            Self::E016 => ErrorType::UnsupportedOtlpProtocol.as_str(),
+            Self::E001 => ErrorType::DockerDaemonUnreachable,
+            Self::E002 => ErrorType::DockerVersionTooOld,
+            Self::E003 => ErrorType::OutOfDiskSpace,
+            Self::E004 => ErrorType::RoleManifestInvalid,
+            Self::E005 => ErrorType::RoleManifestVersionUnsupported,
+            Self::E006 => ErrorType::RoleSourceNotTrusted,
+            Self::E007 => ErrorType::WorkspaceNotFound,
+            Self::E008 => ErrorType::WorkspaceConfigVersionUnsupported,
+            Self::E009 => ErrorType::ContainerNameConflict,
+            Self::E010 => ErrorType::DindHealthCheckFailed,
+            Self::E011 => ErrorType::DindPortConflict,
+            Self::E012 => ErrorType::GhAuthFailed,
+            Self::E013 => ErrorType::OpNotSignedIn,
+            Self::E014 => ErrorType::CapsuleDownloadFailed,
+            Self::E015 => ErrorType::WorktreeConflict,
+            Self::E016 => ErrorType::UnsupportedOtlpProtocol,
         }
+    }
+
+    pub const fn telemetry_error_type(self) -> &'static str {
+        self.telemetry_error().as_str()
     }
 }
 

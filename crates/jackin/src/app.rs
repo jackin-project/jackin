@@ -92,19 +92,9 @@ async fn play_construct_intro_if_needed(
     claim
 }
 
-pub async fn run(cli: Cli) -> Result<()> {
+pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Result<()> {
     let debug = cli.debug;
     jackin_diagnostics::set_debug_mode(debug);
-    jackin_diagnostics::install_host_panic_hook();
-
-    // Fail fast and loud on an unsupported OTLP protocol: jackin exports over
-    // gRPC only. An OTLP endpoint configured with a non-grpc protocol would
-    // otherwise build an exporter that silently never delivers — surface it as a
-    // structured fatal error at startup rather than running with broken
-    // telemetry the operator believes is working.
-    if let Some(requested) = jackin_diagnostics::unsupported_otlp_protocol() {
-        return Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
-    }
 
     // Resolve the subcommand. Bare `jackin` is classified in `cli/dispatch.rs`
     // (TTY-capable → console; otherwise silent help). When `run` is invoked
@@ -114,50 +104,35 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
     };
-    let invocation_id = jackin_telemetry::identity::InvocationId::mint();
-    let _invocation_result = jackin_telemetry::identity::set_current_invocation(invocation_id);
-    if let Command::Role(command) = command {
-        return crate::role_authoring::run(command);
+    let command_name = crate::cli::command_name(&command);
+    let app_mode = command_app_mode(&command);
+    let paths = JackinPaths::detect()?;
+    let identity = service_identity(app_mode);
+    let diagnostics =
+        jackin_diagnostics::RunDiagnostics::start(&paths, debug, command_name.as_str(), identity)?;
+    let _diagnostics_guard = diagnostics.activate();
+    let mut invocation =
+        crate::lifecycle::InvocationTelemetry::start(lifecycle, command_name, app_mode);
+
+    // Fail fast and loud on an unsupported OTLP protocol after the lifecycle
+    // subscriber exists, so configuration failures share the one-shot harness.
+    if let Some(requested) = jackin_diagnostics::unsupported_otlp_protocol() {
+        let result = Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
+        finish_invocation(&diagnostics, invocation, &result);
+        return result;
     }
 
-    let paths = JackinPaths::detect()?;
-    let mut config = AppConfig::load_or_init(&paths)?;
+    let mut config = match AppConfig::load_or_init(&paths) {
+        Ok(config) => config,
+        Err(error) => {
+            let result: Result<()> = Err(error.into());
+            finish_invocation(&diagnostics, invocation, &result);
+            return result;
+        }
+    };
     apply_telemetry_config(&config);
-    let command_name = command_name(&command);
-    // Install the global tracing subscriber after minting the invocation
-    // identity so governed OTLP signals carry `cli.invocation.id`.
-    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
-    let _diagnostics_guard = diagnostics.activate();
-    let interactive = matches!(
-        command,
-        Command::Console(_) | Command::Load(_) | Command::Hardline(_)
-    );
-    let invocation_id_value = invocation_id.to_string();
-    let root_attrs = [
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::CLI_COMMAND_NAME,
-            value: jackin_telemetry::Value::Str(command_name),
-        },
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::CLI_INVOCATION_ID,
-            value: jackin_telemetry::Value::Str(&invocation_id_value),
-        },
-    ];
-    if interactive
-        && let Ok(startup) =
-            jackin_telemetry::root_operation(&jackin_telemetry::operation::APP_STARTUP, &root_attrs)
-    {
-        startup.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
-    }
-    let command_operation = (!interactive)
-        .then(|| {
-            jackin_telemetry::root_operation(&jackin_telemetry::operation::CLI_COMMAND, &root_attrs)
-                .ok()
-        })
-        .flatten();
-    let command_span = command_operation
-        .as_ref()
-        .map_or_else(tracing::Span::none, |operation| operation.span().clone());
+    let interactive = app_mode == jackin_telemetry::schema::enums::AppMode::Interactive;
+    let command_span = invocation.span();
     // Wire compact operator output to the jackin-core port dispatcher so
     // domain crates can call `jackin_core::emit_compact_line` without
     // depending on the diagnostics implementation.
@@ -172,6 +147,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     let result = async {
         match command {
             Command::Load(args) => {
+                invocation.ready();
                 load_cmd::handle_load(
                     args,
                     &mut config,
@@ -183,9 +159,10 @@ pub async fn run(cli: Cli) -> Result<()> {
                 .await
             }
             Command::Console(ConsoleArgs {}) => {
-                load_cmd::handle_console(config, paths, debug).await
+                load_cmd::handle_console(config, paths, debug, &mut invocation).await
             }
             Command::Hardline(args) => {
+                invocation.ready();
                 load_cmd::handle_hardline(args, config, paths, debug, connect_docker).await
             }
             Command::Eject(args) => {
@@ -211,49 +188,35 @@ pub async fn run(cli: Cli) -> Result<()> {
             Command::Diagnostics(command) => crate::cli::diagnostics::run(&command),
             Command::Status(args) => crate::cli::status::run(&args, &paths).await,
             Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
+            Command::Role(command) => crate::role_authoring::run(command),
             Command::Help { .. } => {
                 // Handled upstream in dispatch before reaching this function.
                 unreachable!(
                     "Command::Help is dispatched to Action::PrintHelp before run() is called"
                 )
             }
-            Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
         }
     }
     .instrument(command_span)
     .await;
-    let success = result.is_ok();
-    if let Some(operation) = command_operation {
-        operation.complete(
-            if success {
-                jackin_telemetry::schema::enums::OutcomeValue::Success
-            } else {
-                jackin_telemetry::schema::enums::OutcomeValue::Failure
-            },
-            (!success).then_some(jackin_telemetry::schema::enums::ErrorType::ProcessExitNonzero),
-        );
+    if interactive {
+        invocation.exit_requested();
     }
-    if interactive
-        && let Ok(shutdown) = jackin_telemetry::root_operation(
-            &jackin_telemetry::operation::APP_SHUTDOWN,
-            &root_attrs,
-        )
-    {
-        shutdown.complete(
-            if success {
-                jackin_telemetry::schema::enums::OutcomeValue::Success
-            } else {
-                jackin_telemetry::schema::enums::OutcomeValue::Failure
-            },
-            (!success).then_some(jackin_telemetry::schema::enums::ErrorType::ProcessExitNonzero),
-        );
-    }
-    record_run_error(&result);
+    finish_invocation(&diagnostics, invocation, &result);
+    result
+}
+
+fn finish_invocation(
+    diagnostics: &jackin_diagnostics::RunDiagnostics,
+    invocation: crate::lifecycle::InvocationTelemetry,
+    result: &Result<()>,
+) {
+    record_run_error(result);
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
     // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
-    announce_run_teardown(&diagnostics);
-    result
+    announce_run_teardown(diagnostics);
+    let _classification = invocation.finish(result);
 }
 
 fn apply_telemetry_config(config: &AppConfig) {
@@ -292,26 +255,29 @@ fn announce_run_teardown(diagnostics: &jackin_diagnostics::RunDiagnostics) {
     jackin_diagnostics::emit_operator_notice(&line);
 }
 
-const fn command_name(command: &Command) -> &'static str {
+const fn command_app_mode(command: &Command) -> jackin_telemetry::schema::enums::AppMode {
+    use jackin_telemetry::schema::enums::AppMode;
     match command {
-        Command::Load(_) => "load",
-        Command::Hardline(_) => "hardline",
-        Command::Eject(_) => "eject",
-        Command::Exile => "exile",
-        Command::Purge(_) => "purge",
-        Command::Prewarm(_) => "prewarm",
-        Command::Prune(_) => "prune",
-        Command::Console(_) => "console",
-        Command::Role(_) => "role",
-        Command::Workspace(_) => "workspace",
-        Command::Config(_) => "config",
+        Command::Console(_) => AppMode::Interactive,
+        Command::Load(args) if !args.dry_run => AppMode::Interactive,
+        Command::Hardline(args) if !args.inspect && !args.new && !args.shell => {
+            AppMode::Interactive
+        }
         #[cfg(unix)]
-        Command::Daemon(_) => "daemon",
-        Command::Doctor(_) => "doctor",
-        Command::Diagnostics(crate::cli::DiagnosticsCommand::Validate) => "diagnostics.validate",
-        Command::Status(_) => "status",
-        Command::Usage(_) => "usage",
-        Command::Help { .. } => "help",
+        Command::Daemon(crate::cli::DaemonCommand::Serve) => AppMode::Daemon,
+        _ => AppMode::OneShot,
+    }
+}
+
+const fn service_identity(
+    app_mode: jackin_telemetry::schema::enums::AppMode,
+) -> jackin_diagnostics::ServiceIdentity {
+    use jackin_telemetry::schema::enums::AppMode;
+    match app_mode {
+        AppMode::Interactive => jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+        AppMode::Daemon => jackin_diagnostics::ServiceIdentity::DAEMON,
+        AppMode::OneShot => jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
+        AppMode::Capsule => jackin_diagnostics::ServiceIdentity::CAPSULE,
     }
 }
 

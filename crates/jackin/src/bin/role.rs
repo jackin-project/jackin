@@ -11,7 +11,6 @@ use clap::Parser;
 use std::process::ExitCode;
 
 use jackin::cli::role::RoleCommand;
-use jackin::role_authoring;
 
 /// Validate, migrate, and inspect jackin role repositories.
 ///
@@ -25,8 +24,15 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let result = role_authoring::run(cli.command);
+    let lifecycle = jackin::ProductLifecycle::begin(jackin::BinaryKind::Role);
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            let _classification = jackin::classify_parse_error(&error);
+            error.exit();
+        }
+    };
+    let result = run(lifecycle, cli.command);
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -34,4 +40,27 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn run(lifecycle: jackin::ProductLifecycle, command: RoleCommand) -> anyhow::Result<()> {
+    jackin_diagnostics::set_debug_mode(false);
+    let paths = jackin_core::JackinPaths::detect()?;
+    let command_name = jackin::cli::telemetry::role_command_name(&command);
+    let diagnostics = jackin_diagnostics::RunDiagnostics::start(
+        &paths,
+        false,
+        command_name.as_str(),
+        jackin_diagnostics::ServiceIdentity::ROLE,
+    )?;
+    let _diagnostics_guard = diagnostics.activate();
+    let invocation = jackin::InvocationTelemetry::start(
+        lifecycle,
+        command_name,
+        jackin_telemetry::schema::enums::AppMode::OneShot,
+    );
+    let span = invocation.span();
+    let result = span.in_scope(|| jackin::role_authoring::run(command));
+    diagnostics.emit_run_summary();
+    let _classification = invocation.finish(&result);
+    result
 }

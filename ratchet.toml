@@ -782,7 +782,7 @@ mode = "enforce"
 cap = 20
 [[family.entry]]
 key = "jackin"
-bound = 30
+bound = 27
 [[family.entry]]
 key = "jackin-agent-status"
 bound = 26

@@ -22,6 +22,7 @@ use jackin::cli::role::ConsoleArgs;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    let lifecycle = jackin::ProductLifecycle::begin(jackin::BinaryKind::Host);
     jackin::install_default_tls_provider();
 
     // `try_parse` instead of `parse` so we can render the frozen-rain banner
@@ -29,7 +30,7 @@ async fn main() {
     // body — clap reflows multi-line ANSI art passed through `before_help`.
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
-        Err(err) => handle_parse_error(err),
+        Err(err) => handle_parse_error(err, lifecycle),
     };
     let debug = cli.debug;
 
@@ -40,7 +41,7 @@ async fn main() {
                 console_args: ConsoleArgs::default(),
                 debug,
             };
-            if let Err(error) = Box::pin(jackin::run(cli)).await {
+            if let Err(error) = Box::pin(jackin::run(cli, lifecycle)).await {
                 exit_for_run_error(&error, debug);
             }
         }
@@ -50,7 +51,7 @@ async fn main() {
                 console_args: ConsoleArgs::default(),
                 debug,
             };
-            if let Err(error) = Box::pin(jackin::run(cli)).await {
+            if let Err(error) = Box::pin(jackin::run(cli, lifecycle)).await {
                 exit_for_run_error(&error, debug);
             }
         }
@@ -87,8 +88,10 @@ async fn main() {
     clippy::exit,
     reason = "binary entrypoint — exit after rendering the version splash"
 )]
-fn handle_parse_error(err: clap::Error) -> ! {
+fn handle_parse_error(err: clap::Error, _lifecycle: jackin::ProductLifecycle) -> ! {
     use clap::error::ErrorKind;
+    let classification = jackin::classify_parse_error(&err);
+    debug_assert_eq!(classification.exit_code, i64::from(err.exit_code()));
     match err.kind() {
         ErrorKind::DisplayHelp | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
             print_root_help_banner();
@@ -148,11 +151,11 @@ fn print_root_help_banner() {
     reason = "binary entrypoint — exit is the correct mechanism"
 )]
 fn exit_for_run_error(error: &anyhow::Error, debug: bool) -> ! {
-    if jackin_runtime::runtime::progress::LaunchCancelled::is_cancel(error) {
-        std::process::exit(0);
+    let classification = jackin::classify_error(error);
+    if classification.failed() {
+        render_error(error, debug);
     }
-    render_error(error, debug);
-    std::process::exit(1);
+    std::process::exit(i32::try_from(classification.exit_code).unwrap_or(1));
 }
 
 /// Render an error at the binary entry point.

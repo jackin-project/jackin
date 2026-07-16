@@ -574,7 +574,13 @@ fn governed_operation_line_does_not_duplicate_active_run_log() {
     tracing::subscriber::with_default(subscriber, || {
         let directory = tempfile::tempdir().expect("temporary diagnostics directory");
         let paths = jackin_core::JackinPaths::for_tests(directory.path());
-        let run = crate::RunDiagnostics::start(&paths, false, "status").expect("diagnostics run");
+        let run = crate::RunDiagnostics::start(
+            &paths,
+            false,
+            "status",
+            crate::ServiceIdentity::HOST_ONE_SHOT,
+        )
+        .expect("diagnostics run");
         let _active = run.activate();
         export.logs.reset();
         crate::operation::telemetry_line(crate::OperationLevel::Info, "test", "one delivery");

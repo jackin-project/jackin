@@ -162,8 +162,18 @@ fn artifact_lifecycle_child() -> anyhow::Result<()> {
     paths.ensure_base_dirs()?;
 
     let active_run = match identity.as_str() {
-        "host" => Some(RunDiagnostics::start(&paths, false, "diagnostics")?),
-        "daemon" => Some(RunDiagnostics::start(&paths, false, "daemon")?),
+        "host" => Some(RunDiagnostics::start(
+            &paths,
+            false,
+            "diagnostics",
+            crate::ServiceIdentity::HOST_ONE_SHOT,
+        )?),
+        "daemon" => Some(RunDiagnostics::start(
+            &paths,
+            false,
+            "daemon",
+            crate::ServiceIdentity::DAEMON,
+        )?),
         "capsule" => {
             assert!(crate::init_capsule_tracing(None)?);
             None
@@ -235,7 +245,13 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
             "cli.command"
         );
         let _invocation_entered = invocation.enter();
-        let run = RunDiagnostics::start(&paths, true, "conformance").expect("run start");
+        let run = RunDiagnostics::start(
+            &paths,
+            true,
+            "conformance",
+            crate::ServiceIdentity::HOST_ONE_SHOT,
+        )
+        .expect("run start");
         let _guard = run.activate();
 
         telemetry_line(OperationLevel::Info, "screen", "list entered");

@@ -98,7 +98,13 @@ fn docker_build_failure_cli_error_contains_no_local_artifact_paths() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let run = jackin_diagnostics::RunDiagnostics::start(
+        &paths,
+        false,
+        "load",
+        jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+    )
+    .unwrap();
     let error = anyhow::anyhow!("Docker build command failed");
     let rendered = launch_failure_cli_error(
         crate::runtime::progress::LaunchStage::DerivedImage,
@@ -118,7 +124,13 @@ fn derived_image_cli_error_preserves_original_without_docker_output() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let run = jackin_diagnostics::RunDiagnostics::start(
+        &paths,
+        false,
+        "load",
+        jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+    )
+    .unwrap();
 
     let error = anyhow::anyhow!("preparing capsule binary failed");
     let rendered = launch_failure_cli_error(

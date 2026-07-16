@@ -29,6 +29,145 @@ fn telemetry_command_vocabulary_exactly_matches_live_cli_tree() {
     assert_eq!(governed, live);
 }
 
+#[test]
+fn telemetry_command_mapper_covers_every_nested_leaf() {
+    use jackin_telemetry::schema::enums::CliCommandName as Name;
+
+    let cases: &[(&[&str], Name)] = &[
+        (&["prune", "roles"], Name::PruneRoles),
+        (&["prune", "cache"], Name::PruneCache),
+        (&["prune", "images"], Name::PruneImages),
+        (&["prune", "instances"], Name::PruneInstances),
+        (&["prune", "system"], Name::PruneSystem),
+        (&["role", "validate"], Name::RoleValidate),
+        (&["role", "migrate"], Name::RoleMigrate),
+        (&["role", "create", "sample"], Name::RoleCreate),
+        (&["role", "construct-version"], Name::RoleConstructVersion),
+        (&["role", "published-image"], Name::RolePublishedImage),
+        (
+            &["role", "published-image-repository"],
+            Name::RolePublishedImageRepository,
+        ),
+        (
+            &["role", "publish-labels", "--role-git-sha", "abc"],
+            Name::RolePublishLabels,
+        ),
+        (
+            &[
+                "workspace",
+                "create",
+                "sample",
+                "--workdir",
+                "/w",
+                "--mount",
+                "/w",
+            ],
+            Name::WorkspaceCreate,
+        ),
+        (&["workspace", "list"], Name::WorkspaceList),
+        (&["workspace", "show", "sample"], Name::WorkspaceShow),
+        (&["workspace", "edit", "sample"], Name::WorkspaceEdit),
+        (&["workspace", "prune", "sample"], Name::WorkspacePrune),
+        (&["workspace", "remove", "sample"], Name::WorkspaceRemove),
+        (
+            &["workspace", "env", "set", "sample", "KEY", "value"],
+            Name::WorkspaceEnvSet,
+        ),
+        (
+            &["workspace", "env", "unset", "sample", "KEY"],
+            Name::WorkspaceEnvUnset,
+        ),
+        (
+            &["workspace", "env", "list", "sample"],
+            Name::WorkspaceEnvList,
+        ),
+        (
+            &["workspace", "claude-token", "setup", "sample", "--plain"],
+            Name::WorkspaceClaudeTokenSetup,
+        ),
+        (
+            &["workspace", "claude-token", "rotate", "sample"],
+            Name::WorkspaceClaudeTokenRotate,
+        ),
+        (
+            &["workspace", "claude-token", "revoke", "sample"],
+            Name::WorkspaceClaudeTokenRevoke,
+        ),
+        (
+            &["workspace", "claude-token", "doctor", "sample"],
+            Name::WorkspaceClaudeTokenDoctor,
+        ),
+        (
+            &[
+                "config", "mount", "add", "cache", "--src", "/a", "--dst", "/b",
+            ],
+            Name::ConfigMountAdd,
+        ),
+        (
+            &["config", "mount", "remove", "cache"],
+            Name::ConfigMountRemove,
+        ),
+        (&["config", "mount", "list"], Name::ConfigMountList),
+        (
+            &["config", "trust", "grant", "sample"],
+            Name::ConfigTrustGrant,
+        ),
+        (
+            &["config", "trust", "revoke", "sample"],
+            Name::ConfigTrustRevoke,
+        ),
+        (&["config", "trust", "list"], Name::ConfigTrustList),
+        (&["config", "auth", "set", "sync"], Name::ConfigAuthSet),
+        (&["config", "auth", "show"], Name::ConfigAuthShow),
+        (
+            &["config", "env", "set", "KEY", "value"],
+            Name::ConfigEnvSet,
+        ),
+        (&["config", "env", "unset", "KEY"], Name::ConfigEnvUnset),
+        (&["config", "env", "list"], Name::ConfigEnvList),
+        (
+            &["config", "git", "coauthor-trailer", "enable"],
+            Name::ConfigGitCoauthorTrailerEnable,
+        ),
+        (
+            &["config", "git", "coauthor-trailer", "disable"],
+            Name::ConfigGitCoauthorTrailerDisable,
+        ),
+        (
+            &["config", "git", "dco", "enable"],
+            Name::ConfigGitDcoEnable,
+        ),
+        (
+            &["config", "git", "dco", "disable"],
+            Name::ConfigGitDcoDisable,
+        ),
+        #[cfg(unix)]
+        (&["daemon", "serve"], Name::DaemonServe),
+        #[cfg(unix)]
+        (&["daemon", "install"], Name::DaemonInstall),
+        #[cfg(unix)]
+        (&["daemon", "uninstall"], Name::DaemonUninstall),
+        #[cfg(unix)]
+        (&["daemon", "start"], Name::DaemonStart),
+        #[cfg(unix)]
+        (&["daemon", "stop"], Name::DaemonStop),
+        #[cfg(unix)]
+        (&["daemon", "restart"], Name::DaemonRestart),
+        #[cfg(unix)]
+        (&["daemon", "status"], Name::DaemonStatus),
+        (&["diagnostics", "validate"], Name::DiagnosticsValidate),
+        (&["usage", "target", "accounts"], Name::UsageAccounts),
+        (&["usage", "target", "verify"], Name::UsageVerify),
+    ];
+
+    for (args, expected) in cases {
+        let parsed = Cli::try_parse_from(std::iter::once("jackin").chain(args.iter().copied()))
+            .unwrap_or_else(|error| panic!("failed to parse {args:?}: {error}"));
+        let command = parsed.command.as_ref().expect("nested command");
+        assert_eq!(command_name(command), *expected, "{args:?}");
+    }
+}
+
 /// Strip ANSI escape sequences for clean test assertions.
 fn strip_ansi(s: &str) -> String {
     let mut result = String::with_capacity(s.len());

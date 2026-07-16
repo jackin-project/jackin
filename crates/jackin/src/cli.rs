@@ -38,6 +38,7 @@ pub mod prewarm;
 pub mod prune;
 pub mod role;
 pub mod status;
+pub mod telemetry;
 pub mod usage;
 pub mod workspace;
 
@@ -50,6 +51,7 @@ pub use daemon::DaemonCommand;
 pub use diagnostics::DiagnosticsCommand;
 pub use prewarm::PrewarmArgs;
 pub use prune::PruneCommand;
+pub use telemetry::command_name;
 pub use workspace::{
     WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand, WorkspaceFormatArgs,
     WorkspaceShowArgs,
