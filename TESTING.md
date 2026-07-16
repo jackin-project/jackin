@@ -67,7 +67,10 @@ gates. The same artifact carries the pinned Cargo CI tools so fan-out jobs do
 not independently install `nextest`, `deny`, `shear`, `audit`, `fuzz`, `hack`,
 or `sccache`. GitHub and Velnor use the same workflow, commands, cache keys, and
 failure policy; Velnor may be faster only because its runner-local state
-persists.
+persists. The prepared xtask also has a seven-day artifact keyed by the exact
+Git source tree, operating system, and architecture, so an equivalent rerun or
+post-merge tree reuses the binary instead of compiling it again. GitHub is the
+canonical Linux binary producer; both lanes restore that same portable output.
 
 A cold bootstrap is recorded as a cache miss, not hidden by raising the target.
 Fan-out jobs stay offline and consume the warmup result. Cross-run compiler

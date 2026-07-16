@@ -12,7 +12,10 @@ configuration; Velnor is faster only when runner-local state persists. The CI
 warmup also prepares one lane-scoped xtask and pinned Cargo-tool bundle for
 fan-out, replacing per-job tool downloads. The resolved tool binaries have a
 seven-day artifact keyed by platform and the pinned mise configuration, outside
-the contended target-cache quota. Rust target archives keep semantic build-shape
+the contended target-cache quota. The stripped xtask has a separate seven-day
+artifact keyed by the exact Git source tree and platform, so equivalent reruns
+and an unchanged post-merge tree skip its workspace build; GitHub is the
+canonical Linux producer and both lanes restore the same binary. Rust target archives keep semantic build-shape
 keys but prune workspace outputs: an exact-source archive trial grew to 16.9
 GiB, evicted the Rust toolchain, and made `cargo fmt` take 1m30s. Dependency
 artifacts remain reusable without letting duplicated workspace outputs displace
