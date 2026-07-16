@@ -336,8 +336,8 @@ jobs:
         working-directory: docs
         run: bun run build
 
-      - name: Restore repository-wide lychee cache
-        id: lychee-cache
+      - name: Find repository-wide successful link result
+        id: link-result
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -353,11 +353,10 @@ jobs:
           artifact_id=$(jq -r '.id // empty' <<< "$artifact")
           promoted=false
           if [ -z "$artifact_id" ]; then
-            legacy_name="lychee-v1-${RUNNER_OS}-$(sha256sum docs/lychee.toml | cut -d ' ' -f 1)"
             artifact=$(
-              gh api "repos/${REPOSITORY}/actions/artifacts?name=${legacy_name}&per_page=10" \
+              gh api "repos/${REPOSITORY}/actions/artifacts?per_page=100" \
                 | jq -c --argjson repository_id "$REPOSITORY_ID" \
-                  '[.artifacts[] | select(.expired == false and .workflow_run.head_repository_id == $repository_id)] | sort_by(.created_at) | last // {}'
+                  '[.artifacts[] | select(.expired == false and (.name | startswith("docs-result-v1-")) and .workflow_run.head_repository_id == $repository_id)] | sort_by(.created_at) | last // {}'
             )
             legacy_id=$(jq -r '.id // empty' <<< "$artifact")
             source_sha=$(jq -r '.workflow_run.head_sha // empty' <<< "$artifact")
@@ -389,50 +388,48 @@ jobs:
               fi
             fi
           fi
-          hit=false
           verified=false
           refresh=true
           if [ -n "$artifact_id" ]; then
-            gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > .lycheecache.zip
-            python3 -m zipfile -e .lycheecache.zip .
-            rm .lycheecache.zip
-            if [ -f .lycheecache ]; then
-              hit=true
-              created_at=$(jq -r '.created_at' <<< "$artifact")
-              created_epoch=$(date -u -d "$created_at" +%s)
-              if [ $(( $(date -u +%s) - created_epoch )) -lt 259200 ]; then
-                verified=true
-                if [ "$promoted" = false ]; then
-                  refresh=false
-                fi
+            created_at=$(jq -r '.created_at' <<< "$artifact")
+            created_epoch=$(date -u -d "$created_at" +%s)
+            if [ $(( $(date -u +%s) - created_epoch )) -lt 259200 ]; then
+              verified=true
+              if [ "$promoted" = false ]; then
+                refresh=false
               fi
             fi
           fi
           {
-            echo "hit=$hit"
             echo "name=$name"
             echo "refresh=$refresh"
             echo "verified=$verified"
           } >> "$GITHUB_OUTPUT"
 
       - name: Check built site links
-        if: steps.lychee-cache.outputs.verified != 'true'
+        if: steps.link-result.outputs.verified != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           scripts/ci/docs-link-check.sh
 
-      - name: Publish repository-wide lychee cache
+      - name: Stage repository-wide successful link result
+        if: steps.link-result.outputs.refresh == 'true'
+        run: |
+          mkdir -p ci-results
+          printf '%s\n' '${{ github.sha }}' > ci-results/docs-links
+
+      - name: Publish repository-wide successful link result
         if: >-
-          steps.lychee-cache.outputs.refresh == 'true' &&
+          steps.link-result.outputs.refresh == 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository))
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ steps.lychee-cache.outputs.name }}
-          path: .lycheecache
+          name: ${{ steps.link-result.outputs.name }}
+          path: ci-results/docs-links
           compression-level: 0
           retention-days: 7
 
