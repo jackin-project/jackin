@@ -956,7 +956,9 @@ jobs:
 
   construct-e2e-image:
     needs: [changes, matrix-setup, cargo-registry-warmup]
-    if: needs.changes.outputs.construct_image == 'true'
+    if: >-
+      needs.changes.outputs.construct_image == 'true' &&
+      contains(fromJSON(needs.cargo-registry-warmup.outputs.affected-packages), 'jackin')
     strategy:
       fail-fast: false
       matrix:

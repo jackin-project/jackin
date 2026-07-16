@@ -247,6 +247,15 @@ builder container. Both workflows now derive the builder name from the run ID,
 attempt, and matrix job index on every lane. The build commands and registry
 cache remain identical; only cross-job daemon ownership is isolated.
 
+CI parity run `29513391273` proved the isolated builders: both lanes completed
+the construct-E2E build, but Velnor's Results Service returned status 100 while
+uploading the resulting tar. The tar was unnecessary because every crate result
+had already hit. Construct-E2E image production now additionally requires an
+actual `jackin` crate-result miss from the pre-matrix selector. Exact-result
+hits therefore allocate neither the Docker builder nor its large artifact on
+either lane; a real `jackin`/construct miss retains the same build-and-handoff
+contract for both runners.
+
 Construct Image now applies input-identity reuse at the workflow boundary as
 well. Its marker includes the construct workflow and Docker inputs, Cargo and
 tool contracts needed by `jackin-xtask`, publish-versus-rehearsal mode, and the
