@@ -539,16 +539,16 @@ key = "crates/jackin-build-meta/README.md"
 bound = 628
 [[family.entry]]
 key = "crates/jackin-capsule/README.md"
-bound = 6235
+bound = 6294
 [[family.entry]]
 key = "crates/jackin-config/README.md"
 bound = 2745
 [[family.entry]]
 key = "crates/jackin-console-oppicker/README.md"
-bound = 1395
+bound = 1625
 [[family.entry]]
 key = "crates/jackin-console/README.md"
-bound = 2512
+bound = 2562
 [[family.entry]]
 key = "crates/jackin-core/README.md"
 bound = 5467
@@ -578,7 +578,7 @@ key = "crates/jackin-isolation/README.md"
 bound = 2155
 [[family.entry]]
 key = "crates/jackin-launch-tui/README.md"
-bound = 1695
+bound = 1762
 [[family.entry]]
 key = "crates/jackin-lints/README.md"
 bound = 2031
@@ -611,7 +611,7 @@ key = "crates/jackin-xtask/README.md"
 bound = 5038
 [[family.entry]]
 key = "crates/jackin/README.md"
-bound = 2790
+bound = 2735
 
 [[family]]
 id = "export-volume"
