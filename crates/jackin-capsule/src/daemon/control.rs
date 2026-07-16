@@ -13,6 +13,7 @@ use jackin_core::container_paths;
 use jackin_protocol::attach::{
     AttachControlOperation, AttachControlRequest, AttachControlResponse, AttachControlResult,
 };
+use jackin_telemetry::ResultTelemetryExt as _;
 
 const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
     jackin_telemetry::schema::enums::ErrorType::RpcError;
@@ -94,7 +95,6 @@ pub fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
         dir.join("evidence.json"),
         serde_json::to_string_pretty(&report)?,
     )?;
-    jackin_diagnostics::telemetry_info!("capsule", "status.capture: wrote {}", dir.display());
     Ok(())
 }
 
@@ -141,17 +141,13 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
         ClientMsg::StatusCapture { session_id } => {
             if let Some(session) = mux.session_supervisor.sessions.get(session_id) {
-                if let Err(e) = write_status_capture(session_id, session) {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "status.capture: session {session_id} failed: {e:#}"
-                    );
-                }
-            } else {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "status.capture: no live session {session_id} to capture"
+                drop(
+                    write_status_capture(session_id, session).record_telemetry_error(
+                        jackin_telemetry::schema::enums::ErrorType::IoError,
+                    ),
                 );
+            } else {
+                let _error = jackin_telemetry::record_error(RPC_ERROR);
             }
             ServerMsg::Ack
         }
@@ -184,10 +180,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
                 .map(TokenTotals::to_summary),
         },
         ClientMsg::Unknown => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "control: ignoring unknown ClientMsg variant from peer"
-            );
+            let _error = jackin_telemetry::record_error(RPC_ERROR);
             ServerMsg::Unknown
         }
     }
@@ -318,23 +311,15 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::AttachControl(request) => handle_attach_control(mux, request),
         ClientFrame::Hello { .. } => {
             // The initial Hello is consumed by the accept handler; any
-            // further Hello on the same connection is ignored.
+            // further Hello on the same connection is a protocol error.
+            let _error = jackin_telemetry::record_error(RPC_ERROR);
         }
         ClientFrame::Resize { rows, cols } => {
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "resize-event: source=client-frame rows={rows} cols={cols}"
-            );
             // resize() records the Resize invalidation (and its wipe); the
             // render loop composes the resized frame on the next pass.
             mux.resize(rows, cols);
         }
         ClientFrame::Input(bytes) => {
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "input chunk received: bytes={}",
-                bytes.len()
-            );
             let events = mux.control.input_parser.parse(&bytes);
             for event in events {
                 mux.handle_input(event);
@@ -385,20 +370,11 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             }
         }
         ClientFrame::ClipboardImageError(error) => {
-            let reason = error.reason_code();
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "clipboard-image: host request failed reason={reason}"
-            );
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "clipboard-image: host request failed detail={error}"
-            );
+            let _error_event = jackin_telemetry::record_error(RPC_ERROR);
             mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
             mux.set_clipboard_image_notice(format!("Image paste rejected: {error}"));
         }
         ClientFrame::HostNotice(message) => {
-            jackin_diagnostics::telemetry_info!("capsule", "host-affordance: {message}");
             mux.set_clipboard_image_notice(message);
         }
         ClientFrame::Detach => {
@@ -512,6 +488,7 @@ fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
         jackin_telemetry::propagation::extract(&request.context),
         jackin_telemetry::propagation::ExtractOutcome::RejectRequest
     ) {
+        let _error = jackin_telemetry::record_error(RPC_ERROR);
         send_attach_control_response(
             mux,
             request_id,
