@@ -12,12 +12,12 @@ use crate::tui::keymap::{RENAME_KEYMAP, RenameAction};
 /// Dispatches advertised keys through [`RENAME_KEYMAP`]: Enter commits,
 /// Esc / Ctrl+C / Ctrl+Q cancel, Backspace removes the trailing char.
 /// Any other printable chunk appends (the keymap `None` arm). Length cap
-/// and printable filter live inside `termrock::components::TextField` so this
+/// and printable filter live inside `TermRock`'s canonical text-input state so this
 /// handler only needs to dispatch key bytes — the buffer math is shared
 /// with the console TUI surface.
 pub(super) fn rename_tab_handle_key(
     tab_idx: usize,
-    input: &mut termrock::components::TextField,
+    input: &mut termrock::widgets::TextInputState,
     key: &[u8],
 ) -> DialogAction {
     text_input_handle_key(input, key, |value| DialogAction::RenameTab {
@@ -27,7 +27,7 @@ pub(super) fn rename_tab_handle_key(
 }
 
 pub(super) fn export_file_handle_key(
-    input: &mut termrock::components::TextField,
+    input: &mut termrock::widgets::TextInputState,
     reveal_after_export: bool,
     open_after_export: bool,
     key: &[u8],
@@ -40,20 +40,20 @@ pub(super) fn export_file_handle_key(
 }
 
 fn text_input_handle_key(
-    input: &mut termrock::components::TextField,
+    input: &mut termrock::widgets::TextInputState,
     key: &[u8],
     commit: impl FnOnce(String) -> DialogAction,
 ) -> DialogAction {
     match raw_bytes_to_chord(key).and_then(|chord| RENAME_KEYMAP.dispatch(chord)) {
         Some(RenameAction::Dismiss) => DialogAction::Dismiss,
-        Some(RenameAction::Save) => commit(input.trimmed_value()),
+        Some(RenameAction::Save) => commit(input.trimmed_value().to_owned()),
         Some(RenameAction::FieldBackspace) => {
-            input.backspace();
+            input.apply(termrock::widgets::EditAction::Backspace);
             DialogAction::Redraw
         }
         None => {
             // Accept any valid UTF-8 chunk one char at a time so CJK /
-            // emoji / combining-mark labels reach `TextField` and match
+            // emoji / combining-mark labels reach the canonical input state and match
             // the unicode-width measurement the tab strip and dialogs use.
             // C0 controls (other than the explicit Esc / Enter / Backspace
             // arms above) and invalid UTF-8 chunks fall through as redraw no-ops.
@@ -64,7 +64,7 @@ fn text_input_handle_key(
                 if (ch.is_control() && ch != '\t') || ch == '\0' {
                     continue;
                 }
-                input.insert_char(ch);
+                input.apply(termrock::widgets::EditAction::Insert(ch));
             }
             DialogAction::Redraw
         }

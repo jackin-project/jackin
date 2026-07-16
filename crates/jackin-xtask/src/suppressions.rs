@@ -81,13 +81,6 @@ fn emit(line: &str) {
     }
 }
 
-pub(crate) fn enforce() -> Result<()> {
-    run(LintSuppressionsArgs {
-        output: FormatArgs::default(),
-        print_budget: false,
-    })
-}
-
 pub(crate) fn run(args: LintSuppressionsArgs) -> Result<()> {
     let format = args.output.resolved();
     report::run_gate(

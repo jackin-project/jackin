@@ -16,7 +16,6 @@ jackin-diagnostics = { workspace = true }
 jackin-telemetry = { workspace = true }
 termrock = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync"] }
-tui-widget-list = { workspace = true }
 
 [lints]
 workspace = true

@@ -1,15 +1,22 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch failure popup rendering and hit-testing.
+//! Launch failure composition over `TermRock`'s canonical message/detail widgets.
 
-use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::widgets::Clear;
-use termrock::HintSpan;
-use termrock::components::{
-    ErrorPopupRow, ErrorPopupState, dialog_inner_chunks, error_popup_row_value_rect_groups,
-    render_error_dialog_in, required_height,
+use ratatui::{
+    Frame,
+    buffer::Buffer,
+    layout::Rect,
+    style::Style,
+    text::Text,
+    widgets::{Clear, StatefulWidget},
+};
+use termrock::{
+    Theme,
+    widgets::{
+        DetailCapability, DetailRow, DetailTableState, Dialog, HintSpan, MessageDialog,
+        PanelEmphasis,
+    },
 };
 
 use crate::tui::components::dialog::{exact_dialog_rect, render_dialog_backdrop};
@@ -40,7 +47,7 @@ pub fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailureP
             href: None,
         },
         FailurePopupRow {
-            label: "invocation id",
+            label: "run id",
             value: run_id.to_owned(),
             copy_target: Some(FailureCopyTarget::RunId),
             href: None,
@@ -65,111 +72,95 @@ pub fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailureP
     rows
 }
 
-fn failure_error_state(
-    failure: &LaunchFailure,
-    run_id: &str,
-    view: Option<&LaunchView>,
-) -> ErrorPopupState {
-    failure_error_state_with_feedback(
-        failure,
-        run_id,
-        view.map(|view| view.failure_scroll.clone()),
-        view.and_then(|view| view.failure_copy_hover),
-        view.and_then(|view| view.failure_copied),
-        view.and_then(|view| view.failure_revealed),
-        view.and_then(|view| view.failure_opened),
-    )
+fn message(rows: &[FailurePopupRow]) -> &str {
+    rows.iter()
+        .find(|row| row.label == "message")
+        .map_or("", |row| row.value.as_str())
 }
 
-fn failure_error_state_with_feedback(
-    failure: &LaunchFailure,
-    run_id: &str,
-    scroll: Option<termrock::scroll::DialogScroll>,
-    hovered: Option<FailureCopyTarget>,
-    copied: Option<FailureCopyTarget>,
-    revealed: Option<FailureCopyTarget>,
-    opened: Option<FailureCopyTarget>,
-) -> ErrorPopupState {
-    let rows = failure_popup_rows(failure, run_id)
-        .into_iter()
+fn detail_rows(rows: &[FailurePopupRow]) -> Vec<DetailRow<'_, usize>> {
+    rows.iter()
+        .enumerate()
+        .filter(|(_, row)| row.label != "message")
+        .map(|(id, row)| DetailRow {
+            id,
+            label: row.label,
+            value: &row.value,
+            href: row.href.as_deref(),
+            capability: match (row.copy_target.is_some(), row.href.is_some()) {
+                (true, true) => DetailCapability::CopyAndLink,
+                (true, false) => DetailCapability::Copy,
+                (false, true) => DetailCapability::Link,
+                (false, false) => DetailCapability::None,
+            },
+            emphasis: row.copy_target.is_some(),
+            style: None,
+        })
+        .collect()
+}
+
+fn target_id(rows: &[FailurePopupRow], target: FailureCopyTarget) -> Option<usize> {
+    rows.iter().position(|row| row.copy_target == Some(target))
+}
+
+fn popup_height(area: Rect, rows: &[FailurePopupRow]) -> u16 {
+    let width = usize::from(area.width.saturating_sub(4)).max(1);
+    let message_rows = message(rows)
+        .lines()
+        .map(|line| termrock::text::display_cols(line).div_ceil(width).max(1))
+        .sum::<usize>();
+    let detail_rows = rows
+        .iter()
         .filter(|row| row.label != "message")
         .map(|row| {
-            let mut display =
-                ErrorPopupRow::new(row.label, row.value).strong(row.copy_target.is_some());
-            if let Some(href) = row.href {
-                display = display.hyperlink(href);
-            }
-            if let Some(target) = row.copy_target {
-                display = display.highlighted(hovered == Some(target));
-                let badge = match target {
-                    _ if copied == Some(target) => Some("Copied!"),
-                    _ if revealed == Some(target) => Some("Revealed!"),
-                    _ if opened == Some(target) => Some("Opened!"),
-                    FailureCopyTarget::RunId => None,
-                };
-                if let Some(badge) = badge {
-                    display = display.badge(badge);
-                }
-            }
-            display
+            termrock::text::display_cols(&row.value)
+                .div_ceil(width)
+                .max(1)
         })
-        .collect::<Vec<_>>();
-    let mut state =
-        ErrorPopupState::new(failure.title.clone(), failure.summary.clone()).with_rows(rows);
-    if let Some(scroll) = scroll {
-        state.scroll = termrock::components::DialogBodyScroll {
-            scroll_x: scroll.scroll_x,
-            scroll_y: scroll.scroll_y,
-        };
-    }
-    state
+        .sum::<usize>();
+    u16::try_from(message_rows.saturating_add(detail_rows).saturating_add(3))
+        .unwrap_or(u16::MAX)
+        .clamp(7.min(area.height), area.height.saturating_sub(2).max(1))
 }
 
-fn failure_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
-    let popup_w = (area.width.saturating_mul(4) / 5)
+fn failure_popup_rect(area: Rect, rows: &[FailurePopupRow]) -> Rect {
+    let width = (area.width.saturating_mul(4) / 5)
         .clamp(40.min(area.width), area.width.saturating_sub(2).max(1));
-    let height = required_height(
-        state,
-        popup_w.saturating_sub(2),
-        area.height.saturating_sub(2).max(7),
-    );
-    exact_dialog_rect(area, popup_w, height)
+    exact_dialog_rect(area, width, popup_height(area, rows))
 }
 
 #[must_use]
 pub fn failure_popup_rect_for_rows(area: Rect, rows: &[FailurePopupRow]) -> Rect {
-    let display_rows = rows
-        .iter()
-        .filter(|row| row.label != "message")
-        .map(|row| {
-            let mut display =
-                ErrorPopupRow::new(row.label, row.value.clone()).strong(row.copy_target.is_some());
-            if let Some(href) = &row.href {
-                display = display.hyperlink(href.clone());
-            }
-            display
-        })
-        .collect::<Vec<_>>();
-    let message = rows
-        .iter()
-        .find(|row| row.label == "message")
-        .map_or("", |row| row.value.as_str());
-    let state = ErrorPopupState::new("Build failed", message).with_rows(display_rows);
-    failure_popup_rect(area, &state)
+    failure_popup_rect(area, rows)
 }
 
-/// Inner body rect (inside the border, plus one column of padding) where the
-/// failure rows render. Render and hit-testing derive geometry from this same
-/// helper so the clickable value columns can never drift from what is drawn.
-fn failure_popup_body_rect(rect: Rect, state: &ErrorPopupState) -> Rect {
-    let inner = rect.inner(ratatui::layout::Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
-    let content_rows = termrock::components::estimated_message_rows(state, inner.width)
-        .min(inner.height.saturating_sub(4));
-    let chunks = dialog_inner_chunks(inner, Some(content_rows));
-    chunks[1]
+fn layout_state(
+    rect: Rect,
+    title: &str,
+    rows: &[FailurePopupRow],
+    scroll: Option<termrock::scroll::DialogScroll>,
+    hovered: Option<FailureCopyTarget>,
+    copied: Option<FailureCopyTarget>,
+) -> DetailTableState<usize> {
+    let details = detail_rows(rows);
+    let theme = Theme::default();
+    let mut state = DetailTableState {
+        hovered: hovered.and_then(|target| target_id(rows, target)),
+        copied: copied.and_then(|target| target_id(rows, target)),
+        scroll: scroll.unwrap_or_default(),
+        ..DetailTableState::default()
+    };
+    let mut buffer = Buffer::empty(rect);
+    let dialog = Dialog::new(title, Text::from(message(rows)), &theme)
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused);
+    StatefulWidget::render(
+        &MessageDialog::new(dialog, &details, &theme).wrap(true),
+        rect,
+        &mut buffer,
+        &mut state,
+    );
+    state
 }
 
 #[must_use]
@@ -181,7 +172,6 @@ pub fn failure_popup_value_rect(
     failure_popup_value_rect_scrolled(rect, rows, target, None)
 }
 
-/// Value-column hit rects for `target`, using the same body scroll as render.
 #[must_use]
 pub fn failure_popup_value_rect_scrolled(
     rect: Rect,
@@ -189,7 +179,6 @@ pub fn failure_popup_value_rect_scrolled(
     target: FailureCopyTarget,
     scroll: Option<termrock::scroll::DialogScroll>,
 ) -> Option<Rect> {
-    // Structural exception: copy hit-testing derives rects from wrapped failure rows rendered by this dialog.
     failure_popup_value_rects(rect, rows, target, scroll)
         .into_iter()
         .next()
@@ -201,50 +190,16 @@ fn failure_popup_value_rects(
     target: FailureCopyTarget,
     scroll: Option<termrock::scroll::DialogScroll>,
 ) -> Vec<Rect> {
-    let display_rows = rows
-        .iter()
-        .filter(|row| row.label != "message")
-        .map(|row| {
-            let mut display =
-                ErrorPopupRow::new(row.label, row.value.clone()).strong(row.copy_target.is_some());
-            if let Some(href) = &row.href {
-                display = display.hyperlink(href.clone());
-            }
-            display
-        })
-        .collect::<Vec<_>>();
-    let message = rows
-        .iter()
-        .find(|row| row.label == "message")
-        .map_or("", |row| row.value.as_str());
-    let mut state = ErrorPopupState::new("Build failed", message).with_rows(display_rows);
-    if let Some(scroll) = scroll {
-        state.scroll = termrock::components::DialogBodyScroll {
-            scroll_x: scroll.scroll_x,
-            scroll_y: scroll.scroll_y,
-        };
-    }
-    let inner = rect.inner(ratatui::layout::Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
-    let target_idx = rows
-        .iter()
-        .filter(|row| row.label != "message")
-        .position(|row| row.copy_target == Some(target));
-    target_idx
-        .and_then(|idx| {
-            error_popup_row_value_rect_groups(inner, &state)
-                .into_iter()
-                .nth(idx)
-        })
-        .unwrap_or_default()
+    let Some(id) = target_id(rows, target) else {
+        return Vec::new();
+    };
+    layout_state(rect, "Build failed", rows, scroll, None, None)
+        .regions
+        .into_iter()
+        .filter_map(|region| (region.id == id).then_some(region.value_area))
+        .collect()
 }
 
-/// Hit-test a copy target at `(col, row)` using the same body scroll as render.
-///
-/// Pass the live `failure_scroll` so scrolled popups hit the visible rows;
-/// `None` means scroll 0 (tests and scroll-independent callers).
 #[must_use]
 pub fn failure_copy_target_at(
     area: Rect,
@@ -255,28 +210,18 @@ pub fn failure_copy_target_at(
     row: u16,
     scroll: Option<termrock::scroll::DialogScroll>,
 ) -> Option<FailureCopyTarget> {
-    let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
-    let state =
-        failure_error_state_with_feedback(failure, run_id, scroll.clone(), None, None, None, None);
-    let rect = failure_popup_rect(body_area, &state);
+    let body = launch_overlay_chrome_areas(area, debug_mode).body;
     let rows = failure_popup_rows(failure, run_id);
-    for entry in rows.iter().filter(|row| row.copy_target.is_some()) {
-        let target = entry.copy_target?;
-        for value_rect in failure_popup_value_rects(rect, &rows, target, scroll.clone()) {
-            if row == value_rect.y
-                && col >= value_rect.x
-                && col < value_rect.x.saturating_add(value_rect.width)
-            {
-                return Some(target);
-            }
+    let rect = failure_popup_rect(body, &rows);
+    let state = layout_state(rect, &failure.title, &rows, scroll, None, None);
+    state.regions.into_iter().find_map(|region| {
+        if !region.action_area.contains((col, row).into()) {
+            return None;
         }
-    }
-    None
+        rows.get(region.id)?.copy_target
+    })
 }
 
-/// Outer block rect of the failure popup within `area`, so the input layer can
-/// classify clicks (inside vs outside the modal) without re-deriving the
-/// layout. Matches the rect `render_failure_popup` draws.
 #[must_use]
 pub fn failure_popup_block_rect(
     area: Rect,
@@ -284,15 +229,10 @@ pub fn failure_popup_block_rect(
     run_id: &str,
     debug_mode: bool,
 ) -> Rect {
-    let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
-    let state = failure_error_state(failure, run_id, None);
-    failure_popup_rect(body_area, &state)
+    let body = launch_overlay_chrome_areas(area, debug_mode).body;
+    failure_popup_rect(body, &failure_popup_rows(failure, run_id))
 }
 
-/// `(body_rect, content_height)` for the failure popup body, so the input layer
-/// scrolls long diagnostics/next-step rows against the same geometry the
-/// renderer measures. `content_height` is the wrapped line count at the body
-/// width; vertical scroll is reachable when it exceeds the body viewport.
 #[must_use]
 pub fn failure_popup_body_metrics(
     area: Rect,
@@ -300,14 +240,11 @@ pub fn failure_popup_body_metrics(
     run_id: &str,
     debug_mode: bool,
 ) -> (Rect, usize) {
-    let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
-    let state = failure_error_state(failure, run_id, None);
-    let rect = failure_popup_rect(body_area, &state);
-    let body = failure_popup_body_rect(rect, &state);
-    let content_height = usize::from(termrock::components::estimated_message_rows(
-        &state, body.width,
-    ));
-    (body, content_height)
+    let body = launch_overlay_chrome_areas(area, debug_mode).body;
+    let rows = failure_popup_rows(failure, run_id);
+    let rect = failure_popup_rect(body, &rows);
+    let state = layout_state(rect, &failure.title, &rows, None, None, None);
+    (state.viewport, state.content_height)
 }
 
 #[must_use]
@@ -316,10 +253,6 @@ pub fn failure_copy_payload(
     run_id: &str,
     target: FailureCopyTarget,
 ) -> Option<String> {
-    // Derive the copied value from the same `failure_popup_rows` builder the
-    // renderer uses. Re-deriving paths/run-id here would duplicate the
-    // formatting logic and drift if `failure_popup_rows` ever changes how it
-    // displays a path (shell-escaping, `~`-collapse, etc.).
     failure_popup_rows(failure, run_id)
         .into_iter()
         .find(|row| row.copy_target == Some(target))
@@ -328,10 +261,11 @@ pub fn failure_copy_payload(
 
 #[must_use]
 pub fn failure_reveal_payload(
-    _failure: &LaunchFailure,
-    _run_id: &str,
-    _preferred: Option<FailureCopyTarget>,
+    failure: &LaunchFailure,
+    run_id: &str,
+    preferred: Option<FailureCopyTarget>,
 ) -> Option<(FailureCopyTarget, String)> {
+    let _ = (failure, run_id, preferred);
     None
 }
 
@@ -345,23 +279,43 @@ pub fn render_failure_popup(
 ) {
     let chrome = launch_overlay_chrome_areas(area, debug_mode);
     render_dialog_backdrop(frame, chrome.body);
-
-    let state = failure_error_state(failure, run_id, Some(view));
-    let rect = failure_popup_rect(chrome.body, &state);
-    render_error_dialog_in(frame, rect, &state);
-    // The popup draws no hint of its own; keys live in the shared hint row.
-    // In non-debug overlays that row replaces the base footer, so clear first
-    // or a shorter hint can leave stale right-side footer text behind.
+    let rows = failure_popup_rows(failure, run_id);
+    let details = detail_rows(&rows);
+    let rect = failure_popup_rect(chrome.body, &rows);
+    let theme = Theme::default();
+    let mut state = DetailTableState {
+        hovered: view
+            .failure_copy_hover
+            .and_then(|target| target_id(&rows, target)),
+        copied: view
+            .failure_copied
+            .and_then(|target| target_id(&rows, target)),
+        scroll: view.failure_scroll.clone(),
+        ..DetailTableState::default()
+    };
+    let dialog = Dialog::new(&failure.title, Text::from(failure.summary.as_str()), &theme)
+        .style(Style::default())
+        .emphasis(PanelEmphasis::Focused);
+    frame.render_stateful_widget(
+        &MessageDialog::new(dialog, &details, &theme).wrap(true),
+        rect,
+        &mut state,
+    );
     if !debug_mode {
         frame.render_widget(Clear, chrome.hint);
     }
-    termrock::widgets::render_hint_bar(frame, chrome.hint, &failure_hint_spans());
+    termrock::widgets::render_hint_bar(
+        frame,
+        chrome.hint,
+        &failure_hint_spans(),
+        &Theme::default(),
+    );
 }
 
 #[must_use]
 #[expect(
     clippy::too_many_arguments,
-    reason = "documented residual allow; prefer expect when site is lint-true"
+    reason = "feedback variants are independent product effects"
 )]
 pub fn failure_popup_hyperlink_overlay(
     area: Rect,
@@ -371,56 +325,48 @@ pub fn failure_popup_hyperlink_overlay(
     scroll: Option<termrock::scroll::DialogScroll>,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
-    revealed: Option<FailureCopyTarget>,
-    opened: Option<FailureCopyTarget>,
+    _revealed: Option<FailureCopyTarget>,
+    _opened: Option<FailureCopyTarget>,
 ) -> Vec<u8> {
-    let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
-    let state = failure_error_state_with_feedback(
-        failure, run_id, scroll, hovered, copied, revealed, opened,
-    );
-    let rect = failure_popup_rect(body_area, &state);
-    let inner = rect.inner(ratatui::layout::Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
-    encode_error_hyperlink_overlay(inner, &state)
-}
-
-fn encode_error_hyperlink_overlay(inner: Rect, state: &ErrorPopupState) -> Vec<u8> {
-    let groups = state.row_value_rect_groups(inner);
+    let body = launch_overlay_chrome_areas(area, debug_mode).body;
+    let rows = failure_popup_rows(failure, run_id);
+    let rect = failure_popup_rect(body, &rows);
+    let state = layout_state(rect, &failure.title, &rows, scroll, hovered, copied);
     let mut out = Vec::new();
-    for (row, rects) in state.rows.iter().zip(groups) {
+    for region in state.regions {
+        let Some(row) = rows.get(region.id) else {
+            continue;
+        };
         let Some(href) = row.href.as_deref() else {
             continue;
         };
-        let mut remaining = row.value.as_str();
-        for rect in rects {
-            let visible = termrock::display_cols_slice(remaining, 0, usize::from(rect.width));
-            if visible.is_empty() {
-                break;
-            }
-            remaining = &remaining[visible.len()..];
-            out.extend_from_slice(format!("\x1b[{};{}H", rect.y + 1, rect.x + 1).as_bytes());
-            out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, href));
-            let color = termrock::LINK_FG;
-            out.extend_from_slice(
-                format!("\x1b[38;2;{};{};{}m\x1b[1;4m", color.r, color.g, color.b).as_bytes(),
-            );
-            out.extend_from_slice(visible.as_bytes());
-            out.extend_from_slice(&termrock::osc::encode_hyperlink_close());
-            out.extend_from_slice(b"\x1b[0m");
+        let visible =
+            termrock::text::display_cols_slice(&row.value, 0, usize::from(region.value_area.width));
+        if visible.is_empty() {
+            continue;
         }
+        out.extend_from_slice(
+            format!(
+                "\x1b[{};{}H",
+                region.value_area.y + 1,
+                region.value_area.x + 1
+            )
+            .as_bytes(),
+        );
+        out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, href));
+        let ratatui::style::Color::Rgb(red, green, blue) = jackin_core::tui_theme::LINK_FG else {
+            continue;
+        };
+        out.extend_from_slice(format!("\x1b[38;2;{red};{green};{blue}m\x1b[1;4m").as_bytes());
+        out.extend_from_slice(visible.as_bytes());
+        out.extend_from_slice(&termrock::osc::encode_hyperlink_close());
+        out.extend_from_slice(b"\x1b[0m");
     }
     out
 }
 
-/// Footer-hint keys for the launch failure popup. The dismiss group derives
-/// from `FAILURE_KEYMAP` (the dispatch table); the global keys derive from
-/// `cockpit_global_hint_spans`. Only the mouse "click copy value" affordance is
-/// authored here since it is not a key.
 fn failure_hint_spans() -> Vec<HintSpan<'static>> {
     let mut spans = vec![
-        // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
         HintSpan::Key("click"),
         HintSpan::Text("copy value"),
         HintSpan::GroupSep,

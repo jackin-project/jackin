@@ -129,7 +129,7 @@ fn execute_container_info_copy(state: &mut ManagerState<'_>, row: usize, payload
     let copied = std::io::Write::write_all(
         &mut out,
         &termrock::osc::encode_clipboard(termrock::osc::ClipboardWrite {
-            selection: "c",
+            selection: termrock::osc::ClipboardSelection::Clipboard,
             text: payload,
         }),
     )

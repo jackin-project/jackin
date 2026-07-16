@@ -17,11 +17,11 @@ use crate::tui::layout::list::list_names_content_width;
 use crate::tui::state::{ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag};
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
+use jackin_core::tui_theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
-use termrock::components::scrollable_panel::max_offset;
-use termrock::style::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
+use termrock::scroll::max_offset;
 
 fn config_with_long_workspace_name() -> AppConfig {
     let mut config = AppConfig::default();
@@ -245,7 +245,7 @@ fn background_list_names_under_modal_hide_selected_cursor() {
             scope: SecretsScopeTag::Workspace,
             key: "TOKEN".into(),
         },
-        state: termrock::components::ConfirmState::new("Delete TOKEN?"),
+        state: crate::tui::components::ConfirmState::new("Delete TOKEN?"),
     });
 
     let backend = TestBackend::new(70, 24);
@@ -596,7 +596,7 @@ fn first_content_indent(terminal: &Terminal<TestBackend>) -> Option<usize> {
     // relative indent, not the absolute column.
     let border_x = (0..area.width).find(|x| {
         let sym = buf[(*x, 1)].symbol();
-        sym == "│" || sym == "║"
+        sym == "│"
     })?;
     for x in (border_x + 1)..area.width {
         let sym = buf[(x, 1)].symbol();
@@ -715,7 +715,7 @@ fn find_symbol_indent(terminal: &Terminal<TestBackend>, y: u16, needle: &str) ->
     let area = buf.area;
     let border_x = (0..area.width).find(|x| {
         let sym = buf[(*x, y)].symbol();
-        sym == "│" || sym == "║"
+        sym == "│"
     })?;
     for x in (border_x + 1)..area.width {
         if buf[(x, y)].symbol() == needle {
@@ -733,11 +733,11 @@ fn last_printable_indent(terminal: &Terminal<TestBackend>, y: u16) -> Option<usi
     let area = buf.area;
     let border_x = (0..area.width).find(|x| {
         let sym = buf[(*x, y)].symbol();
-        sym == "│" || sym == "║"
+        sym == "│"
     })?;
     let right_border_x = ((border_x + 1)..area.width).find(|x| {
         let sym = buf[(*x, y)].symbol();
-        sym == "│" || sym == "║"
+        sym == "│"
     })?;
     let mut last: Option<usize> = None;
     for x in (border_x + 1)..right_border_x {
@@ -783,7 +783,7 @@ fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
     let border_x = (0..area.width)
         .find(|x| {
             let sym = buf[(*x, 4)].symbol();
-            sym == "│" || sym == "║"
+            sym == "│"
         })
         .expect("left border on beta row");
     let name_col = ((border_x + 1)..area.width)
@@ -868,7 +868,7 @@ fn agents_subpanel_default_agent_name_starts_at_col_2_regardless_of_star() {
     let border_x = (0..area.width)
         .find(|x| {
             let sym = buf[(*x, 3)].symbol();
-            sym == "│" || sym == "║"
+            sym == "│"
         })
         .expect("left border on alpha row");
     let name_col = ((border_x + 1)..area.width)

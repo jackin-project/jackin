@@ -77,7 +77,7 @@ pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEv
         return;
     };
 
-    let chord = KeyChord::from(termrock::crossterm::key(key));
+    let chord = KeyChord::from(termrock::input::KeyEvent::from(key));
     let tab_bar_focused = settings.tab_bar_focused();
     let auth_kind_selected = settings.auth.has_selected_kind();
     let active_tab = settings.active_tab;
@@ -190,7 +190,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         &settings.mounts.mount_info_cache,
     );
     let footer_h = settings.cached_footer_h;
-    let chord = KeyChord::from(termrock::crossterm::key(key));
+    let chord = KeyChord::from(termrock::input::KeyEvent::from(key));
     match SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(chord) {
         Some(SettingsGlobalMountsTabAction::Save) => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
@@ -334,7 +334,7 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         &settings.env.expanded,
         settings.env.selected,
     );
-    let chord = KeyChord::from(termrock::crossterm::key(key));
+    let chord = KeyChord::from(termrock::input::KeyEvent::from(key));
     match SETTINGS_ENV_TAB_KEYMAP.dispatch(chord) {
         Some(SettingsEnvTabAction::MoveUp) => {
             dispatch_manager(
@@ -429,7 +429,7 @@ fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let is_dirty = settings.is_dirty();
-    let chord = KeyChord::from(termrock::crossterm::key(key));
+    let chord = KeyChord::from(termrock::input::KeyEvent::from(key));
     match SETTINGS_GENERAL_TAB_KEYMAP.dispatch(chord) {
         Some(SettingsGeneralTabAction::MoveUp) => {
             dispatch_manager(
@@ -475,7 +475,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let footer_h = settings.cached_footer_h;
     let is_dirty = settings.is_dirty();
     let content_width = settings_update::trust_content_width(&settings.trust);
-    let chord = KeyChord::from(termrock::crossterm::key(key));
+    let chord = KeyChord::from(termrock::input::KeyEvent::from(key));
     match SETTINGS_TRUST_TAB_KEYMAP.dispatch(chord) {
         Some(SettingsTrustTabAction::MoveUp) => {
             dispatch_manager(

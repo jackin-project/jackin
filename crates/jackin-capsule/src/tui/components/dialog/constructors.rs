@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use termrock::components::TextField;
+use termrock::widgets::TextInputState;
 
 use super::input::{first_selectable_idx, picker_filtered_rows};
 use super::{
@@ -25,7 +25,7 @@ impl Dialog {
     }
 
     pub fn new_rename_tab(tab_idx: usize, initial: impl Into<String>) -> Self {
-        let input = TextField::new(initial.into()).with_max_chars(MAX_CUSTOM_LABEL_LEN);
+        let input = TextInputState::new(initial.into()).with_max_graphemes(MAX_CUSTOM_LABEL_LEN);
         Self::RenameTab { tab_idx, input }
     }
 
@@ -46,7 +46,7 @@ impl Dialog {
         open_after_export: bool,
     ) -> Self {
         Self::ExportFile {
-            input: TextField::new("").with_max_chars(4096),
+            input: TextInputState::new("").with_max_graphemes(4096),
             reveal_after_export,
             open_after_export,
         }

@@ -41,7 +41,7 @@ pub fn render_launch_frame(
     // chrome stays intact — hint row, blank spacer, then the status bar at the
     // very bottom. Non-debug dialogs do not show a status footer.
     if let Some(confirm) = &view.quit_confirm {
-        draw_confirm(frame, confirm);
+        draw_confirm(frame, &mut confirm.clone());
         if debug_mode {
             render_footer(frame, bottom_chrome_areas(area).footer, view, run_id, true);
         }
@@ -79,6 +79,7 @@ pub fn render_launch_frame(
         frame,
         chrome.hint,
         &crate::tui::keymap::cockpit_global_hint_spans(),
+        &termrock::Theme::default(),
     );
     render_footer(frame, chrome.footer, view, run_id, debug_mode);
 

@@ -67,7 +67,7 @@ impl LaunchHostTerminal for SinkHostTerminal {
         let mut out = std::io::stdout();
         out.write_all(&termrock::osc::encode_clipboard(
             termrock::osc::ClipboardWrite {
-                selection: "c",
+                selection: termrock::osc::ClipboardSelection::Clipboard,
                 text: payload,
             },
         ))

@@ -182,8 +182,8 @@ struct ConsoleLoopInputs<'a, H, R> {
 
 struct ConsoleMouseState {
     last_event_at: Option<std::time::Instant>,
-    pointer_shape: termrock::PointerShape,
-    chrome_hover_tracker: termrock::components::HoverTracker<ConsoleChromeHover>,
+    pointer_shape: termrock::osc::PointerShape,
+    chrome_hover_tracker: termrock::interaction::HoverTracker<ConsoleChromeHover>,
     chrome_hover: Option<ConsoleChromeHover>,
 }
 
@@ -191,8 +191,8 @@ impl ConsoleMouseState {
     fn new() -> Self {
         Self {
             last_event_at: None,
-            pointer_shape: termrock::PointerShape::Default,
-            chrome_hover_tracker: termrock::components::HoverTracker::new(),
+            pointer_shape: termrock::osc::PointerShape::Default,
+            chrome_hover_tracker: termrock::interaction::HoverTracker::new(),
             chrome_hover: None,
         }
     }
@@ -241,6 +241,30 @@ fn widget_of(state: &ConsoleState) -> Option<&'static str> {
     }
 }
 
+fn sync_widget_focus(
+    state: &ConsoleState,
+    tracker: &mut jackin_telemetry::ui::WidgetFocusTracker,
+    action_parent: Option<&jackin_telemetry::ui::ActionParent>,
+) {
+    let next = widget_of(state);
+    if tracker.current_widget() == next {
+        return;
+    }
+    let _focus_result = if let Some(parent) = action_parent {
+        parent.in_scope(|| {
+            if let Some(widget) = next {
+                tracker.focus(widget)
+            } else {
+                tracker.unfocus()
+            }
+        })
+    } else if let Some(widget) = next {
+        tracker.focus(widget)
+    } else {
+        tracker.unfocus()
+    };
+}
+
 fn input_outcome_action(
     outcome: &crate::console::tui::InputOutcome,
 ) -> Option<jackin_telemetry::schema::enums::UiActionName> {
@@ -265,30 +289,6 @@ fn input_outcome_action(
         } => Some(UiActionName::AgentSpawn),
         InputOutcome::Continue | InputOutcome::InstanceAction { .. } => None,
     }
-}
-
-fn sync_widget_focus(
-    state: &ConsoleState,
-    tracker: &mut jackin_telemetry::ui::WidgetFocusTracker,
-    action_parent: Option<&jackin_telemetry::ui::ActionParent>,
-) {
-    let next = widget_of(state);
-    if tracker.current_widget() == next {
-        return;
-    }
-    let _focus_result = if let Some(parent) = action_parent {
-        parent.in_scope(|| {
-            if let Some(widget) = next {
-                tracker.focus(widget)
-            } else {
-                tracker.unfocus()
-            }
-        })
-    } else if let Some(widget) = next {
-        tracker.focus(widget)
-    } else {
-        tracker.unfocus()
-    };
 }
 
 fn drain_background_messages(
@@ -376,45 +376,62 @@ where
                 };
                 jackin_console::tui::view::render_modal_backdrop(frame, body);
                 let area = quit_confirm_area(body, confirm);
-                termrock::components::render_confirm_dialog(frame, area, confirm);
-                termrock::components::render_hint_bar(
+                jackin_console::tui::components::render_confirm_dialog(frame, area, confirm);
+                termrock::widgets::render_hint_bar(
                     frame,
                     hint_row,
-                    &termrock::components::confirm_hint_spans(),
+                    &jackin_console::tui::components::confirm_hint_spans(),
+                    &termrock::Theme::default(),
                 );
             }
             mouse_state.chrome_hover_tracker.clear();
             if let Some(bar_area) = debug_bar_area {
                 let active_run = jackin_diagnostics::active_run();
-                let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()), None);
+                let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
+                let run_id = debug_run_id_label(
+                    active_run.as_ref().map(|r| r.run_id()),
+                    env_run_id.as_deref(),
+                );
                 let chip_row = debug_chip_row(bar_area);
-                if let Some(chip) =
-                    jackin_console::tui::components::status_footer::status_footer_debug_chip_rect(
-                        chip_row, &run_id,
-                    )
-                {
+                let content = format!(" {run_id} ");
+                let slots = [termrock::widgets::StatusSlot {
+                    id: ConsoleChromeHover::DebugChip,
+                    content: &content,
+                    priority: 1,
+                    min_width: 0,
+                    enabled: true,
+                    style: ratatui::style::Style::default()
+                        .bg(jackin_core::tui_theme::DANGER_RED)
+                        .fg(jackin_core::tui_theme::WHITE)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                    hover_style: Some(
+                        ratatui::style::Style::default()
+                            .bg(jackin_core::tui_theme::WHITE)
+                            .fg(jackin_core::tui_theme::DANGER_RED)
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    ),
+                }];
+                let mut status_state = termrock::widgets::StatusBarState {
+                    hovered: (mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip))
+                        .then_some(ConsoleChromeHover::DebugChip),
+                    regions: Vec::new(),
+                };
+                let theme = termrock::Theme::default().with_role(
+                    termrock::style::Role::StatusBar,
+                    ratatui::style::Style::default()
+                        .bg(jackin_core::tui_theme::WHITE)
+                        .fg(jackin_core::tui_theme::INK),
+                );
+                frame.render_stateful_widget(
+                    &termrock::widgets::StatusBar::new(&[], &slots, &theme),
+                    chip_row,
+                    &mut status_state,
+                );
+                for region in status_state.regions {
                     mouse_state
                         .chrome_hover_tracker
-                        .register(chip, ConsoleChromeHover::DebugChip);
+                        .register(region.area, region.id);
                 }
-                jackin_console::tui::components::status_footer::render_status_footer_right_group(
-                    frame,
-                    chip_row,
-                    "",
-                    jackin_console::tui::components::status_footer::StatusRightGroup {
-                        usage: None,
-                        container: "",
-                        run_id: Some(&run_id),
-                    },
-                    1.0,
-                    jackin_console::tui::components::status_footer::StatusFooterHover {
-                        left: false,
-                        usage: false,
-                        right: false,
-                        right_debug: mouse_state.chrome_hover
-                            == Some(ConsoleChromeHover::DebugChip),
-                    },
-                );
             }
         });
     if let Some(operation) = render_operation {
@@ -437,7 +454,14 @@ where
     if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
         ms.list_modal.as_ref()
     {
-        let _ = (modal.rect(main_area), info);
+        let rect = modal.rect(main_area);
+        let overlay =
+            jackin_console::tui::components::container_info_surface::hyperlink_overlay(rect, info);
+        if !overlay.is_empty() {
+            let mut out = std::io::stdout();
+            drop(std::io::Write::write_all(&mut out, &overlay));
+            drop(std::io::Write::flush(&mut out));
+        }
         *container_info_overlay_active = true;
     }
     Ok(())
@@ -738,11 +762,11 @@ fn reset_modal_mouse_state(mouse_state: &mut ConsoleMouseState, needs_redraw: &m
         mouse_state.chrome_hover = None;
         *needs_redraw = true;
     }
-    if mouse_state.pointer_shape != termrock::PointerShape::Default {
-        mouse_state.pointer_shape = termrock::PointerShape::Default;
+    if mouse_state.pointer_shape != termrock::osc::PointerShape::Default {
+        mouse_state.pointer_shape = termrock::osc::PointerShape::Default;
         let mut out = std::io::stdout();
-        let seq = termrock::osc22_pointer_shape(mouse_state.pointer_shape);
-        let _unused = std::io::Write::write_all(&mut out, seq.as_bytes());
+        let seq = termrock::osc::encode_pointer(mouse_state.pointer_shape);
+        let _unused = std::io::Write::write_all(&mut out, &seq);
         drop(std::io::Write::flush(&mut out));
     }
 }
@@ -774,9 +798,9 @@ fn update_console_pointer_shape(
     );
     if next_pointer_shape != mouse_state.pointer_shape {
         mouse_state.pointer_shape = next_pointer_shape;
-        let seq = termrock::osc22_pointer_shape(mouse_state.pointer_shape);
+        let seq = termrock::osc::encode_pointer(mouse_state.pointer_shape);
         let mut out = std::io::stdout();
-        drop(std::io::Write::write_all(&mut out, seq.as_bytes()));
+        drop(std::io::Write::write_all(&mut out, &seq));
         drop(std::io::Write::flush(&mut out));
     }
 }
@@ -872,9 +896,12 @@ fn handle_mouse_event<H, R>(
         Some(inputs.config),
     );
     for effect in ms.drain_effects() {
-        *needs_redraw |= jackin_telemetry::ui::in_pending_action_scope(|| {
-            crate::console::effects::execute_manager_effect(ms, inputs.config, inputs.paths, effect)
-        });
+        *needs_redraw |= crate::console::effects::execute_manager_effect(
+            ms,
+            inputs.config,
+            inputs.paths,
+            effect,
+        );
     }
     update_console_pointer_shape(
         ms,
@@ -886,16 +913,6 @@ fn handle_mouse_event<H, R>(
         no_modal_open,
     );
     Ok(ConsoleLoopFlow::Continue)
-}
-
-fn enter_console_screen(
-    parent: Option<&TerminalSession>,
-) -> anyhow::Result<Option<TerminalSession>> {
-    if parent.is_some_and(TerminalSession::is_active) {
-        Ok(None)
-    } else {
-        Ok(Some(TerminalSession::enter(host_console_terminal())?))
-    }
 }
 
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
@@ -921,7 +938,14 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // When the launch flow in `app` already owns the host screen, draw into it
     // and leave teardown to that guard; otherwise own the screen here for the
     // lifetime of the console (standalone `jackin console` with no launch).
-    let owned_screen = enter_console_screen(options.parent_session)?;
+    let owned_screen = if options
+        .parent_session
+        .is_some_and(TerminalSession::is_active)
+    {
+        None
+    } else {
+        Some(TerminalSession::enter(host_console_terminal())?)
+    };
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
     let mut mouse_state = ConsoleMouseState::new();

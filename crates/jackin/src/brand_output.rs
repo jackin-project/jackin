@@ -1,7 +1,7 @@
 //! Raw ANSI helpers for CLI banners and terminal escape sequences.
 
+use jackin_core::Rgb;
 use std::io::Write as _;
-use termrock::Rgb;
 
 /// Dialog surface / input-band background SGR. Emits the terminal's DEFAULT
 /// background (`\x1b[49m`), not a fixed colour, so raw-ANSI overlays match
@@ -220,12 +220,12 @@ pub fn bg(buf: &mut Vec<u8>, rgb: Rgb) {
 
 const fn rain_age_to_color(age: u16) -> Option<Rgb> {
     match age {
-        0 => Some(termrock::RAIN_HEAD),
-        1..=2 => Some(termrock::RAIN_FRESH),
-        3..=5 => Some(termrock::RAIN_BODY),
-        6..=10 => Some(termrock::RAIN_MID),
-        11..=16 => Some(termrock::RAIN_DIM),
-        17..=24 => Some(termrock::RAIN_DARK),
+        0 => Some(jackin_core::RAIN_HEAD),
+        1..=2 => Some(jackin_core::RAIN_FRESH),
+        3..=5 => Some(jackin_core::RAIN_BODY),
+        6..=10 => Some(jackin_core::RAIN_MID),
+        11..=16 => Some(jackin_core::RAIN_DIM),
+        17..=24 => Some(jackin_core::RAIN_DARK),
         _ => None,
     }
 }

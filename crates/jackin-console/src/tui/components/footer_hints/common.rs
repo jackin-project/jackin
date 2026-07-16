@@ -5,7 +5,7 @@
 //! `append_save_and_escape` / `append_open_in_github` helpers used by
 //! every screen footer.
 
-use termrock::{HintSpan, keymap::glyph};
+use termrock::{keymap::glyph, widgets::HintSpan};
 
 use crate::tui::keymap::{
     EDITOR_CONTENT_KEYMAP, EDITOR_GLOBAL_KEYMAP, EDITOR_TAB_BAR_KEYMAP, EditorContentAction,

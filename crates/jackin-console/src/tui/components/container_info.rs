@@ -6,18 +6,18 @@
 /// Build the debug-info dialog state for the console surface from the shared
 /// [`DebugInfo`](crate::tui::components::container_info_surface::DebugInfo) model.
 ///
-/// The console knows only the current invocation identity.
+/// The console knows only the current run identity.
 /// `jackin_version` must be the exact `jackin --version` string (the binary
 /// crate passes `env!("JACKIN_VERSION")`) so the dialog never disagrees with
 /// the CLI. Container/role/agent rows appear later, on the launch surface,
 /// from the same model.
 pub fn debug_run_info_state(
     jackin_version: impl Into<String>,
-    invocation_id: impl Into<String>,
+    run_id: impl Into<String>,
 ) -> crate::tui::components::container_info_surface::ContainerInfoState {
     crate::tui::components::container_info_surface::DebugInfo {
         jackin_version: Some(jackin_version.into()),
-        invocation_id: Some(invocation_id.into()),
+        run_id: Some(run_id.into()),
         ..Default::default()
     }
     .into_state()

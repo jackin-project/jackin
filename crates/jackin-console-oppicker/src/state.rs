@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::{BlockingSubscription, TextInputState};
-use tui_widget_list::ListState;
+use termrock::widgets::ListState;
 
 use crate::{
     FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerCache, OpPickerField,
@@ -32,20 +32,20 @@ pub struct OpPickerState {
     pub filter_buf: String,
 
     pub accounts: Vec<OpPickerAccount>,
-    pub account_list_state: ListState,
+    pub account_list_state: ListState<usize>,
     pub selected_account: Option<OpPickerAccount>,
 
     pub vaults: Vec<OpPickerVault>,
-    pub vault_list_state: ListState,
+    pub vault_list_state: ListState<usize>,
     pub selected_vault: Option<OpPickerVault>,
 
     pub items: Vec<OpPickerItem>,
-    pub item_list_state: ListState,
+    pub item_list_state: ListState<usize>,
     pub selected_item: Option<OpPickerItem>,
 
     pub fields: Vec<OpPickerField>,
-    pub field_list_state: ListState,
-    pub section_list_state: ListState,
+    pub field_list_state: ListState<usize>,
+    pub section_list_state: ListState<usize>,
     /// The section chosen on the Section stage (Create mode), scoping the
     /// Field stage. `None` = the unsectioned `(root)` choice. Reset to
     /// `None` whenever a fresh item's fields load.
@@ -272,23 +272,10 @@ impl OpPickerState {
 }
 
 #[must_use]
-pub(crate) fn list_state_for_count(count: usize) -> ListState {
-    let mut list_state = ListState::default();
-    list_state.select(crate::first_selection(count));
-    list_state
+pub(crate) const fn list_state_for_count(count: usize) -> ListState<usize> {
+    ListState::for_count(count)
 }
 
-fn scroll_select(list_state: &mut ListState, count: usize, delta: i16) -> bool {
-    if count == 0 {
-        return false;
-    }
-    let cur = list_state.selected.unwrap_or(0).min(count - 1);
-    let next = if delta.is_negative() {
-        cur.saturating_sub(usize::from(delta.unsigned_abs()))
-    } else {
-        cur.saturating_add(usize::from(delta.unsigned_abs()))
-            .min(count - 1)
-    };
-    list_state.select(Some(next));
-    next != cur
+fn scroll_select(list_state: &mut ListState<usize>, count: usize, delta: i16) -> bool {
+    list_state.move_index(count, isize::from(delta))
 }

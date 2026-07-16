@@ -218,8 +218,8 @@ pub fn should_open_quit_confirm(
 }
 
 #[must_use]
-pub fn quit_confirm_state() -> termrock::components::ConfirmState {
-    termrock::components::ConfirmState::new("Exit jackin❯?").with_focus_yes()
+pub fn quit_confirm_state() -> crate::tui::components::ConfirmState {
+    crate::tui::components::ConfirmState::new("Exit jackin❯?").with_focus_yes()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,13 +230,13 @@ pub enum QuitConfirmPlan {
 }
 
 #[must_use]
-pub const fn quit_confirm_plan(outcome: termrock::ModalOutcome<bool>) -> QuitConfirmPlan {
+pub const fn quit_confirm_plan(outcome: jackin_core::ModalOutcome<bool>) -> QuitConfirmPlan {
     match outcome {
-        termrock::ModalOutcome::Commit(true) => QuitConfirmPlan::Exit,
-        termrock::ModalOutcome::Commit(false) | termrock::ModalOutcome::Cancel => {
+        jackin_core::ModalOutcome::Commit(true) => QuitConfirmPlan::Exit,
+        jackin_core::ModalOutcome::Commit(false) | jackin_core::ModalOutcome::Cancel => {
             QuitConfirmPlan::Dismiss
         }
-        termrock::ModalOutcome::Continue => QuitConfirmPlan::Continue,
+        jackin_core::ModalOutcome::Continue => QuitConfirmPlan::Continue,
     }
 }
 
@@ -413,8 +413,12 @@ pub const fn debug_chip_activation_allowed(
 pub const fn console_pointer_shape(
     chrome_hovered: bool,
     base_clickable: bool,
-) -> termrock::PointerShape {
-    termrock::clickable_pointer_shape(chrome_hovered || base_clickable)
+) -> termrock::osc::PointerShape {
+    if chrome_hovered || base_clickable {
+        termrock::osc::PointerShape::Pointer
+    } else {
+        termrock::osc::PointerShape::Default
+    }
 }
 
 const fn mouse_is_wheel(mouse: crossterm::event::MouseEvent) -> bool {
@@ -429,8 +433,8 @@ const fn mouse_is_wheel(mouse: crossterm::event::MouseEvent) -> bool {
 
 fn mouse_down_outside_rect(mouse: crossterm::event::MouseEvent, rect: Rect) -> bool {
     matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_))
-        && termrock::components::classify_click(rect, mouse.column, mouse.row)
-            == termrock::components::ModalClickResult::OutsideDismiss
+        && termrock::interaction::classify_click(rect, mouse.column, mouse.row)
+            == termrock::interaction::ModalClickResult::OutsideDismiss
 }
 
 #[must_use]
@@ -444,8 +448,8 @@ pub fn should_dismiss_list_modal_for_outside_click(
         return false;
     }
 
-    termrock::components::classify_click(modal_rect, column, row)
-        == termrock::components::ModalClickResult::OutsideDismiss
+    termrock::interaction::classify_click(modal_rect, column, row)
+        == termrock::interaction::ModalClickResult::OutsideDismiss
 }
 
 /// Split `area` into a main region and an optional 1-row debug bar at the
@@ -504,11 +508,12 @@ pub const fn should_debug_log_mouse(mouse: crossterm::event::MouseEvent) -> bool
 }
 
 #[must_use]
-pub fn quit_confirm_area(frame: Rect, confirm: &termrock::components::ConfirmState) -> Rect {
+pub fn quit_confirm_area(frame: Rect, confirm: &crate::tui::components::ConfirmState) -> Rect {
     // Structural exception: the root console quit prompt is outside `Modal`; it still uses shared confirm height and centered geometry.
     let width: u16 = 44.min(frame.width.saturating_sub(4));
-    let height: u16 =
-        termrock::components::confirm_required_height(confirm).min(frame.height.saturating_sub(2));
+    let height: u16 = confirm
+        .required_height()
+        .min(frame.height.saturating_sub(2));
     let x = frame.x + frame.width.saturating_sub(width) / 2;
     let y = frame.y + frame.height.saturating_sub(height) / 2;
     Rect {

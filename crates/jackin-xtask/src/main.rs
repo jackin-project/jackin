@@ -3,6 +3,7 @@
 //! **Architecture Invariant:** T1.
 //! Entry point: [`main`] — cargo xtask command dispatcher.
 
+mod affected_crates;
 mod agent_files;
 mod agent_links;
 mod arch;
@@ -42,6 +43,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Print the crates whose tests are affected by a Git diff.
+    AffectedCrates(affected_crates::AffectedCratesArgs),
     /// Run the local CI merge-readiness gate.
     ///
     /// Partitions (`--only`, repeatable): lint, policy, tests, msrv, powerset,
@@ -61,7 +64,8 @@ enum Command {
     /// Use as `cargo xtask pr body`.
     #[command(subcommand)]
     Pr(pr::PrCommand),
-    /// Copy an explicitly captured PTY byte stream into a conformance fixture.
+    /// Extract a PTY byte-stream fixture from a `--debug` run log for the
+    /// capsule render-conformance harness.
     PtyFixture(pty_fixture::PtyFixtureArgs),
     /// Measure console first-frame and input-to-frame latency through a PTY.
     FrameTiming(frame_timing::FrameTimingArgs),
@@ -92,10 +96,10 @@ enum Command {
     /// Validate the closed OpenTelemetry semantic registry and generated Rust.
     #[command(name = "telemetry-registry")]
     TelemetryRegistry(telemetry_registry::TelemetryRegistryArgs),
-    /// Capture and enforce the reviewed 5% telemetry performance baseline.
+    /// Capture and enforce the reviewed telemetry performance baseline.
     #[command(name = "telemetry-bench")]
     TelemetryBench(telemetry_bench::TelemetryBenchArgs),
-    /// Workspace lint gates.
+    /// Codebase-health lint gates (completed codebase-health W3 + W4).
     ///
     /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
     /// ratchet, the test-file-layout rule, the AGENTS/CLAUDE symlink rule, and
@@ -128,7 +132,7 @@ enum Command {
     /// Use as `cargo xtask release-verify <archive>.tar.gz`.
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
-    /// Report-only code-health dashboard.
+    /// Report-only code-health dashboard (completed codebase-health Phase 0).
     ///
     /// Use as `cargo xtask health`, `cargo xtask health --format json`, or
     /// `cargo xtask health --write-baseline`.
@@ -165,21 +169,20 @@ enum LintCommand {
     Ratchet(ratchet::LintRatchetArgs),
 }
 
-/// Run every lint gate in sequence — the `cargo xtask lint`
+/// Run every codebase-health lint gate in sequence — the `cargo xtask lint`
 /// (no subcommand) entry point used by CI. The file-size ratchet and the
 /// test-file-layout rule always hard-fail on violations; the dependency-
 /// direction gate fails only in `strict` mode (informational otherwise, while
 /// the P2 inversions are still being cleaned up).
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     fs_util::enforce_sorted_iteration(&docs::repo_root()?)?;
-    lint::enforce()?;
-    test_layout::enforce()?;
     agent_files::enforce()?;
     agent_links::enforce()?;
     container_paths_gate::enforce()?;
     headers::enforce()?;
     telemetry_registry::run(telemetry_registry::TelemetryRegistryArgs { generate: false })?;
-    suppressions::enforce()?;
+    // The unified ratchet owns file-size, test-layout, and suppression
+    // families. Running their legacy shims here measured the same tree twice.
     ratchet::enforce()?;
     arch::check(strict)
 }
@@ -187,6 +190,7 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
+        Command::AffectedCrates(args) => affected_crates::run(args),
         Command::Construct(cmd) => construct::run(cmd),
         Command::Ci(args) => ci::run(args),
         Command::Pr(cmd) => pr::run(cmd),

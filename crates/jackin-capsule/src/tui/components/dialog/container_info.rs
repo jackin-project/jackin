@@ -23,7 +23,7 @@ impl Dialog {
             diagnostics,
             copied_row: None,
             hovered_row: None,
-            scroll: termrock::components::DialogBodyScroll::new(),
+            scroll: termrock::layout::DialogBodyScroll::new(),
         }
     }
 
@@ -73,7 +73,8 @@ impl Dialog {
             role: (!role.is_empty()).then(|| role.clone()),
             agent: Some(agent_label),
             target: (!workdir.is_empty()).then(|| workdir.clone()),
-            invocation_id: debug.then(|| diagnostics.invocation_id.clone()),
+            run_id: debug.then(|| diagnostics.invocation_id.clone()),
+            diagnostics_log_path: None,
         }
         .into_state();
         if let Some(row) = *copied_row {

@@ -1,18 +1,17 @@
 # jackin-core
 
-Universal vocabulary types shared across **every** jackin❯ crate. This is the leaf at the bottom of the workspace dependency graph: no jackin❯ dependencies, no `tokio`, no subprocess, no filesystem, no presentation.
+Shared jackin❯ vocabulary and pure cross-surface projections. This L0 leaf has no jackin❯ dependencies, async runtime, filesystem, subprocess, or side effects.
 
 ## What this crate owns
 
 - Domain nouns every other crate speaks in: agent identity, instance, isolation, manifest fragments, env model, status, launch progress, operator notices.
-- Port traits and shared abstractions higher crates implement (e.g. `CommandRunner`, `Clock`), plus the constants, paths, and selector/url/path text helpers reused everywhere.
-- Small self-contained widgets/ansi/host-color tokens re-exported by presentation crates.
-
-Because everything depends on `jackin-core`, it must stay dependency-free, side-effect-free, and cheap to compile. Anything that needs `tokio`, the filesystem, a subprocess, or a real adapter belongs in a higher crate.
+- Ports, constants, paths, and selector/URL/path helpers reused by higher crates.
+- Operator-information facts projected into TermRock's neutral table contract.
+- Small self-contained ANSI and host-color tokens re-exported by presentation crates.
 
 ## Architecture tier and allowed dependencies
 
-**L0 leaf/domain.** Allowed workspace dependencies: **none**. No `tokio`, no I/O, no presentation. This is the floor; nothing in `jackin-core` may depend upward.
+**L0 leaf/domain + pure projections.** No workspace dependencies or effects. TermRock and Ratatui types are limited to pure product projections.
 
 ## Structure
 
@@ -42,7 +41,7 @@ Because everything depends on `jackin-core`, it must stay dependency-free, side-
 | [`build_log_sink.rs`](src/build_log_sink.rs) | build-log sink stub | — |
 | [`host_colors.rs`](src/host_colors.rs) | host color tokens | — |
 | [`ansi_tokens.rs`](src/ansi_tokens.rs) | ansi tokens | — |
-| [`tui_widgets.rs`](src/tui_widgets.rs) | tui widget stubs | — |
+| [`operator_info.rs`](src/operator_info.rs) | jackin❯ Debug-info facts, row policy, and pure projection into TermRock `DetailTable` | cross-surface suites |
 | [`standalone_dialog.rs`](src/standalone_dialog.rs) · [`standalone_dialog/`](src/standalone_dialog) | standalone dialog | [`tests.rs`](src/standalone_dialog/tests.rs) |
 | [`url_text.rs`](src/url_text.rs) | url text | — |
 | [`path_text.rs`](src/path_text.rs) · [`path_text/`](src/path_text) | path text | [`tests.rs`](src/path_text/tests.rs) |
@@ -63,6 +62,7 @@ Remaining root `pub mod`s (individually justified):
 |---|---|
 | `container_paths` | Namespace for container-side `/jackin/` path constants (`use jackin_core::container_paths`) across runtime/capsule/usage |
 | `debug_log` | Hosts `debug_log!` macro + sink; `#[macro_export]` shares the `jackin_core::debug_log` path with the module name |
+| `operator_info` | Product-owned cross-surface Debug-info facts and TermRock projection; effects and terminal ownership remain in consumers |
 
 Higher crates implement the port traits defined here (e.g. `CommandRunner`) and pass the domain types through.
 

@@ -84,7 +84,7 @@ use crate::tui::mount_display::global_config_mounts_content_width as global_moun
 #[cfg(test)]
 use crate::tui::mount_display::workspace_config_mounts_content_width as workspace_mounts_content_width;
 #[cfg(test)]
-use termrock::components::scrollable_panel::max_offset as max_scroll_offset;
+use termrock::scroll::max_offset_u16 as max_scroll_offset;
 
 /// Dispatch a mouse event into the workspace manager's list view. Drives
 /// the mouse-draggable seam between the list pane and the details pane.
@@ -130,11 +130,7 @@ pub fn handle_mouse_with_config(
         && info.scroll.on_mouse_scroll_for_axes(
             mouse.kind.into(),
             mouse.modifiers.into(),
-            termrock::components::dialog_scroll_axes(
-                info.content_width(),
-                info.content_height(),
-                rect,
-            ),
+            termrock::layout::dialog_scroll_axes(info.content_width(), info.content_height(), rect),
         )
     {
         info.clamp_scroll(rect);

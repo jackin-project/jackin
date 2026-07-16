@@ -68,15 +68,6 @@ fn emit(line: &str) {
     println!("{line}");
 }
 
-/// Run the file-size gate in enforce mode (no budget print). The umbrella
-/// `cargo xtask lint` entry point uses this.
-pub(crate) fn enforce() -> Result<()> {
-    run(LintFilesArgs {
-        print_budget: false,
-        format: None,
-    })
-}
-
 pub(crate) fn run(args: LintFilesArgs) -> Result<()> {
     if args.print_budget {
         return ratchet::print_families(FILE_SIZE_FAMILIES);

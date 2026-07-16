@@ -211,11 +211,11 @@ impl Multiplexer {
         // that drives pane-border focus and cursor visibility. Otherwise the
         // owner follows the focused pane.
         let focus_owner = if self.render.tab_bar_focused {
-            termrock::components::FocusOwner::TabBar
+            termrock::interaction::FocusOwner::TabBar
         } else {
             focused_id.map_or(
-                termrock::components::FocusOwner::TabBar,
-                termrock::components::FocusOwner::Content,
+                termrock::interaction::FocusOwner::TabBar,
+                termrock::interaction::FocusOwner::Content,
             )
         };
         let zoomed = self.active_zoomed_id().is_some();
@@ -297,7 +297,7 @@ impl Multiplexer {
         // overflows — the hint and the dialog scrollbar are measured the same
         // way and never disagree.
         let github_view_for_hint = self.github_context_view();
-        let dialog_hint_spans: Option<Vec<termrock::HintSpan<'static>>> =
+        let dialog_hint_spans: Option<Vec<termrock::widgets::HintSpan<'static>>> =
             dialog_snapshot.as_ref().and_then(|(snapshot, rect)| {
                 self.dialog_top().map(|dialog| {
                     let block = ratatui::layout::Rect {
@@ -325,7 +325,7 @@ impl Multiplexer {
                     *offset,
                 )
                 .is_some();
-                Some(termrock::components::ScrollAxes {
+                Some(termrock::layout::ScrollAxes {
                     vertical,
                     horizontal: false,
                 })

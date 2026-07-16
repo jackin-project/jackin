@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use termrock::display_cols;
+use termrock::text::display_cols;
 
 fn wide_row() -> MountDisplayRow {
     MountDisplayRow {

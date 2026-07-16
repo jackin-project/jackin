@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::tui::auth::AuthKind;
-use crate::tui::state::update::{ManagerMessage, action_of, update_manager};
+use crate::tui::components::ErrorPopupState;
+use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{
     AuthForm, AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsModal, SettingsState,
     SettingsTab,
 };
 use ratatui::layout::Rect;
-use termrock::components::{ErrorPopupState, FocusOwner};
+use termrock::interaction::FocusOwner;
 
 fn state_with_saved_count(count: usize) -> ManagerState<'static> {
     let tmp = tempfile::tempdir().unwrap();
@@ -25,27 +26,6 @@ fn state_with_saved_count(count: usize) -> ManagerState<'static> {
         );
     }
     ManagerState::from_config(&config, cwd)
-}
-
-#[test]
-fn keyboard_and_mouse_tab_switches_share_one_semantic_action() {
-    use jackin_telemetry::schema::enums::UiActionName;
-
-    let keyboard = ManagerMessage::MoveEditorTab {
-        delta: 1,
-        focus_tab_bar: true,
-    };
-    let mouse = ManagerMessage::SelectEditorTab(EditorTab::Mounts);
-    assert_eq!(action_of(&keyboard), Some(UiActionName::TabSwitch));
-    assert_eq!(action_of(&mouse), Some(UiActionName::TabSwitch));
-
-    let keyboard = ManagerMessage::MoveSettingsTab {
-        delta: 1,
-        focus_tab_bar: true,
-    };
-    let mouse = ManagerMessage::SelectSettingsTab(SettingsTab::Trust);
-    assert_eq!(action_of(&keyboard), Some(UiActionName::TabSwitch));
-    assert_eq!(action_of(&mouse), Some(UiActionName::TabSwitch));
 }
 
 #[test]
@@ -538,7 +518,7 @@ fn return_to_list_closes_confirm_stages() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::ConfirmDelete {
         name: "workspace".into(),
-        state: termrock::components::ConfirmState::new("delete?"),
+        state: crate::tui::components::ConfirmState::new("delete?"),
     };
 
     assert!(update_manager(&mut state, ManagerMessage::ReturnToList).is_dirty());

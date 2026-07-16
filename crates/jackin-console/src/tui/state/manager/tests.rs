@@ -5,9 +5,9 @@
 //! INV-C1 / C7–C8 / C12–C13). Pure stage/poll helpers stay in `model/tests.rs`;
 //! these pin the concrete manager impls screens and update paths call.
 
+use crate::tui::components::ErrorPopupState;
 use jackin_config::AppConfig;
 use tempfile::tempdir;
-use termrock::components::ErrorPopupState;
 
 use crate::tui::components::container_info_surface::ContainerInfoState;
 use crate::tui::model::ConsoleManagerStageState;

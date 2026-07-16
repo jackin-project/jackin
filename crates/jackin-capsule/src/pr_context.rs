@@ -13,7 +13,7 @@ use serde::Deserialize;
 use crate::git_context::GH_PULL_REQUEST_COMMAND_TIMEOUT;
 use crate::pull_request::{PullRequestChecks, PullRequestInfo};
 use crate::util::{WaitOutcome, wait_child_with_timeout};
-use termrock::sanitize_terminal_title;
+use termrock::text::sanitize_terminal_title;
 
 use std::sync::Arc;
 

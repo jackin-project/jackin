@@ -117,7 +117,7 @@ fn persistence_port_reads_live_dialog_stack() {
     );
 
     mux.control.dialog_stack.push(Dialog::SpawnFailure(
-        termrock::components::ErrorPopupState::new("Spawn failed", "test"),
+        crate::tui::components::dialog::SpawnFailureState::new("Spawn failed", "test"),
     ));
     assert_eq!(
         ports.last_session_exit(&mux.control),
