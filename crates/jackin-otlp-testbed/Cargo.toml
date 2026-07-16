@@ -13,7 +13,7 @@ publish = false
 
 [dependencies]
 opentelemetry-proto.workspace = true
-tokio = { workspace = true, features = ["rt", "sync", "net", "macros"] }
+tokio = { workspace = true, features = ["rt", "sync", "net", "macros", "time"] }
 tonic.workspace = true
 
 [lints]

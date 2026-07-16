@@ -7,15 +7,15 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use opentelemetry_proto::tonic::collector::logs::v1::{
-    ExportLogsServiceRequest, ExportLogsServiceResponse,
+    ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
     logs_service_server::{LogsService, LogsServiceServer},
 };
 use opentelemetry_proto::tonic::collector::metrics::v1::{
-    ExportMetricsServiceRequest, ExportMetricsServiceResponse,
+    ExportMetricsPartialSuccess, ExportMetricsServiceRequest, ExportMetricsServiceResponse,
     metrics_service_server::{MetricsService, MetricsServiceServer},
 };
 use opentelemetry_proto::tonic::collector::trace::v1::{
-    ExportTraceServiceRequest, ExportTraceServiceResponse,
+    ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
     trace_service_server::{TraceService, TraceServiceServer},
 };
 use tokio::sync::oneshot;
@@ -30,6 +30,10 @@ pub enum Behavior {
     Ok,
     /// Reject with the supplied gRPC status code.
     Reject(tonic::Code),
+    /// Accept while reporting one rejected item through OTLP partial success.
+    PartialSuccess,
+    /// Hold a response to exercise exporter deadline behavior.
+    Delay(std::time::Duration),
 }
 
 #[derive(Debug, Default)]
@@ -41,14 +45,21 @@ struct State {
 }
 
 impl State {
-    fn result<T: Default>(&self) -> Result<Response<T>, Status> {
-        match *self
-            .behavior
+    fn behavior(&self) -> Behavior {
+        self.behavior
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-        {
-            Behavior::Ok => Ok(Response::new(T::default())),
-            Behavior::Reject(code) => Err(Status::new(code, "scripted OTLP testbed response")),
+            .clone()
+    }
+
+    async fn apply(behavior: &Behavior) -> Result<(), Status> {
+        match behavior {
+            Behavior::Reject(code) => Err(Status::new(*code, "scripted OTLP testbed response")),
+            Behavior::Delay(duration) => {
+                tokio::time::sleep(*duration).await;
+                Ok(())
+            }
+            Behavior::Ok | Behavior::PartialSuccess => Ok(()),
         }
     }
 }
@@ -67,7 +78,16 @@ impl TraceService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
-        self.0.result()
+        let behavior = self.0.behavior();
+        State::apply(&behavior).await?;
+        let partial_success =
+            matches!(behavior, Behavior::PartialSuccess).then(|| ExportTracePartialSuccess {
+                rejected_spans: 1,
+                error_message: "scripted partial success".to_owned(),
+            });
+        Ok(Response::new(ExportTraceServiceResponse {
+            partial_success,
+        }))
     }
 }
 
@@ -82,7 +102,14 @@ impl LogsService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
-        self.0.result()
+        let behavior = self.0.behavior();
+        State::apply(&behavior).await?;
+        let partial_success =
+            matches!(behavior, Behavior::PartialSuccess).then(|| ExportLogsPartialSuccess {
+                rejected_log_records: 1,
+                error_message: "scripted partial success".to_owned(),
+            });
+        Ok(Response::new(ExportLogsServiceResponse { partial_success }))
     }
 }
 
@@ -97,7 +124,16 @@ impl MetricsService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
-        self.0.result()
+        let behavior = self.0.behavior();
+        State::apply(&behavior).await?;
+        let partial_success =
+            matches!(behavior, Behavior::PartialSuccess).then(|| ExportMetricsPartialSuccess {
+                rejected_data_points: 1,
+                error_message: "scripted partial success".to_owned(),
+            });
+        Ok(Response::new(ExportMetricsServiceResponse {
+            partial_success,
+        }))
     }
 }
 
@@ -229,5 +265,18 @@ mod tests {
             .await
             .expect_err("scripted rejection");
         assert_eq!(error.code(), tonic::Code::Unavailable);
+
+        testbed.set_behavior(Behavior::PartialSuccess);
+        let response = traces
+            .export(ExportTraceServiceRequest::default())
+            .await
+            .expect("partial success is a successful gRPC response")
+            .into_inner();
+        assert_eq!(
+            response
+                .partial_success
+                .map(|partial| partial.rejected_spans),
+            Some(1)
+        );
     }
 }
