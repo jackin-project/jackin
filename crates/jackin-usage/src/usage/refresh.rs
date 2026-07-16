@@ -35,11 +35,6 @@ where
     collect_usage_refresh_results_with_timeout(due_targets, probe, PROVIDER_PROBE_TIMEOUT)
 }
 
-#[expect(
-    clippy::excessive_nesting,
-    clippy::single_match_else,
-    reason = "the worker keeps panic, telemetry, and result ownership in one closure"
-)]
 pub(crate) fn collect_usage_refresh_results_with_timeout<F>(
     due_targets: Vec<UsageRefreshTarget>,
     probe: F,
@@ -62,55 +57,7 @@ where
     for target in due_targets {
         let tx = tx.clone();
         let probe = Arc::clone(&probe);
-        jackin_telemetry::spawn::thread_joined(move || {
-            let attrs = [jackin_telemetry::Attr {
-                key: jackin_telemetry::schema::attrs::BACKGROUND_CYCLE_NAME,
-                value: jackin_telemetry::Value::Str(
-                    jackin_telemetry::schema::enums::BackgroundCycleName::UsageAccount.as_str(),
-                ),
-            }];
-            let operation =
-                jackin_telemetry::operation(&jackin_telemetry::operation::BACKGROUND_CYCLE, &attrs)
-                    .ok();
-            let span = operation.as_ref().map(|guard| guard.span().clone());
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                span.map_or_else(
-                    || probe(target.clone()),
-                    |span| span.in_scope(|| probe(target.clone())),
-                )
-            }));
-            match result {
-                Ok(result) => {
-                    if let Some(operation) = operation {
-                        let outcome = if result.view.last_error.is_some() {
-                            jackin_telemetry::schema::enums::OutcomeValue::Failure
-                        } else {
-                            jackin_telemetry::schema::enums::OutcomeValue::Success
-                        };
-                        operation.complete(outcome, None);
-                    }
-                    if let Some(error) = result.view.last_error.as_deref() {
-                        jackin_diagnostics::operation_error(
-                            "usage.refresh",
-                            usage_refresh_error_type(error),
-                            "usage provider refresh failed",
-                            &[],
-                        );
-                    }
-                    drop(tx.send(result));
-                }
-                Err(_) => {
-                    if let Some(operation) = operation {
-                        operation
-                            .complete(jackin_telemetry::schema::enums::OutcomeValue::Error, None);
-                    }
-                    jackin_diagnostics::telemetry_error!(
-                        "panic",
-                        "usage-refresh: provider probe panicked"
-                    );
-                }
-            }
-        });
+        jackin_telemetry::spawn::thread_joined(move || run_usage_probe(probe, target, tx));
     }
     drop(tx);
 
@@ -163,6 +110,54 @@ where
         }
     }
     results
+}
+
+fn run_usage_probe<F>(
+    probe: Arc<F>,
+    target: UsageRefreshTarget,
+    tx: mpsc::Sender<UsageRefreshResult>,
+) where
+    F: Fn(UsageRefreshTarget) -> UsageRefreshResult + Send + Sync + 'static,
+{
+    let attrs = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::BACKGROUND_CYCLE_NAME,
+        value: jackin_telemetry::Value::Str(
+            jackin_telemetry::schema::enums::BackgroundCycleName::UsageAccount.as_str(),
+        ),
+    }];
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::BACKGROUND_CYCLE, &attrs).ok();
+    let span = operation.as_ref().map(|guard| guard.span().clone());
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        span.map_or_else(
+            || probe(target.clone()),
+            |span| span.in_scope(|| probe(target.clone())),
+        )
+    }));
+    let Ok(result) = result else {
+        if let Some(operation) = operation {
+            operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Error, None);
+        }
+        jackin_diagnostics::telemetry_error!("panic", "usage-refresh: provider probe panicked");
+        return;
+    };
+    if let Some(operation) = operation {
+        let outcome = if result.view.last_error.is_some() {
+            jackin_telemetry::schema::enums::OutcomeValue::Failure
+        } else {
+            jackin_telemetry::schema::enums::OutcomeValue::Success
+        };
+        operation.complete(outcome, None);
+    }
+    if let Some(error) = result.view.last_error.as_deref() {
+        jackin_diagnostics::operation_error(
+            "usage.refresh",
+            usage_refresh_error_type(error),
+            "usage provider refresh failed",
+            &[],
+        );
+    }
+    drop(tx.send(result));
 }
 
 /// Log a persistence outcome at the right tier: always-on governed INFO event once when a
