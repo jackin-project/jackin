@@ -181,7 +181,10 @@ fn download_logs(repository: &str, jobs: &[Job]) -> Result<JobLogs> {
     let logs = Arc::new(Mutex::new(BTreeMap::new()));
     let errors = Arc::new(Mutex::new(Vec::new()));
     std::thread::scope(|scope| {
-        for job in jobs.iter().filter(|job| job.status == "completed") {
+        for job in jobs
+            .iter()
+            .filter(|job| job.status == "completed" && job.conclusion.as_deref() != Some("skipped"))
+        {
             let logs = Arc::clone(&logs);
             let errors = Arc::clone(&errors);
             let endpoint = format!("repos/{repository}/actions/jobs/{}/logs", job.id);

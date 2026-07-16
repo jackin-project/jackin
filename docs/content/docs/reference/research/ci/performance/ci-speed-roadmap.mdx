@@ -301,6 +301,19 @@ independent job logs concurrently. A local audit of all 13 CI jobs completed in
 4.5 seconds with zero dependency-download, third-party-build, source-tool, or
 cache-miss markers.
 
+Run `29540579595` exercised the first Rust-auditor producer. Warmup fell to 28
+seconds, affected-crate routing to 36 seconds, and the complete changed
+`jackin-xtask` job stayed inside the objective at 59 seconds. Its longest real
+crate steps were package tests at 12 seconds, toolchain restore at 8 seconds,
+registry restore at 7 seconds, and Clippy at 4 seconds; target download took 3
+seconds and packing took 1 second. The auditor itself completed in 2 seconds.
+Construct's changed-input producers took 74--75 seconds: 20--24 seconds were
+the cached platform builds, while Rust/tool/registry/Buildx setup consumed the
+remaining time. The next input-identical run must reuse the Construct result
+rather than paying that producer path. Docs performed a required full link
+proof because the contributor README added new source links; the following
+prose-only evidence update is the semantic-proof migration test.
+
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses
 for all 26 crates. The crate-test contract now retains the last validated
