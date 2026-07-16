@@ -486,19 +486,12 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: rust@${{ needs.changes.outputs.rust-version }}
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
         run: >-
-          "$CI_XTASK" ci-toolchain prepare
+          "$CI_XTASK" ci-toolchain activate
           --version "${{ needs.changes.outputs.rust-version }}"
       - run: cargo fmt --check
 
@@ -597,8 +590,8 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
-          restore-keys: rustup-${{ runner.os }}-${{ runner.arch }}-
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          restore-keys: rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the minimal Rust CI profile
         if: >-
           steps.prepared-inputs.outputs.ready != 'true' &&
@@ -661,7 +654,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
       - id: cargo-registry-cache
         if: >-
           steps.ci-xtask-artifact.outputs.hit != 'true' &&
@@ -926,19 +919,12 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: rust@${{ needs.changes.outputs.rust-version }}
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
         run: >-
-          "$CI_XTASK" ci-toolchain prepare
+          "$CI_XTASK" ci-toolchain activate
           --version "${{ needs.changes.outputs.rust-version }}"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -1001,9 +987,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Cache audit indexes
         id: audit-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1012,16 +998,9 @@ jobs:
           key: cargo-audit-${{ runner.os }}-${{ needs.changes.outputs.audit-contract }}
           restore-keys: |
             cargo-audit-${{ runner.os }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: rust@${{ needs.changes.outputs.rust-version }}
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
         run: >-
-          "$CI_XTASK" ci-toolchain prepare
+          "$CI_XTASK" ci-toolchain activate
           --version "${{ needs.changes.outputs.rust-version }}"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry

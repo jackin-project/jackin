@@ -155,6 +155,12 @@ validation/repair and result-artifact lookup now live in `jackin-xtask`, take
 explicit inputs, and run unchanged on both lanes. Construct run `29541460946`
 proved the intended parity shape independently: the shared amd64 command took
 `46s` on Velnor and `62s` on GitHub; native GitHub arm64 took `77s`.
+Follow-up run `29542190448` rejected repair from every downstream job: four
+Velnor jobs concurrently invoked mise against the same persistent install,
+downloaded six or seven Rust components apiece, and invalidated one another's
+toolchain directories. Warmup is now the only installation owner, the invalid
+rustup cache namespace advances to `v2`, and downstream jobs use the
+download-free `ci-toolchain activate` command against that prepared cache.
 
 Target archives remain the cold-population fallback, not the final warm path.
 An exact source-closure miss now consults a small per-crate latest-target

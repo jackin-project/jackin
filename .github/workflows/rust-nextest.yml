@@ -144,13 +144,13 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rustup-contract || hashFiles('rust-toolchain.toml') }}
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rustup-contract || hashFiles('rust-toolchain.toml') }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
         if: steps.crate-result.outputs.hit != 'true'
         run: >-
-          "$CI_XTASK" ci-toolchain prepare
+          "$CI_XTASK" ci-toolchain activate
           --version "${{ inputs.rust-version }}"
       - id: cargo-registry-cache
         if: steps.crate-result.outputs.hit != 'true'

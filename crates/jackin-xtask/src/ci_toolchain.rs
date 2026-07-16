@@ -15,6 +15,8 @@ mod tests;
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiToolchainCommand {
+    /// Activate an already prepared current Rust toolchain without downloading.
+    Activate(PrepareArgs),
     /// Validate, repair, and export the current pinned Rust toolchain.
     Prepare(PrepareArgs),
 }
@@ -27,11 +29,12 @@ pub(crate) struct PrepareArgs {
 
 pub(crate) fn run(command: CiToolchainCommand) -> Result<()> {
     match command {
-        CiToolchainCommand::Prepare(args) => prepare(&args.version),
+        CiToolchainCommand::Activate(args) => activate(&args.version, false),
+        CiToolchainCommand::Prepare(args) => activate(&args.version, true),
     }
 }
 
-fn prepare(version: &str) -> Result<()> {
+fn activate(version: &str, repair: bool) -> Result<()> {
     let pinned;
     let version = if version.is_empty() {
         pinned = pinned_version()?;
@@ -50,6 +53,11 @@ fn prepare(version: &str) -> Result<()> {
 
     let install = mise_install(version)?;
     if !valid_toolchain(&install) {
+        if !repair {
+            bail!(
+                "prepared Rust toolchain {version} is unavailable; the warmup job must repair it"
+            );
+        }
         if install.exists() {
             fs::remove_dir_all(&install)
                 .with_context(|| format!("removing incomplete {}", install.display()))?;
