@@ -306,6 +306,15 @@ impl OperationGuard {
             schema::enums::OutcomeValue::Failure
                 | schema::enums::OutcomeValue::Error
                 | schema::enums::OutcomeValue::Timeout
+        ) || matches!(
+            (outcome, error_type),
+            (
+                schema::enums::OutcomeValue::Cancellation,
+                Some(
+                    schema::enums::ErrorType::DeadlineExceeded
+                        | schema::enums::ErrorType::DependencyCancelled
+                )
+            )
         );
         self.span
             .set_attribute(schema::attrs::OUTCOME, outcome.as_str());
@@ -369,7 +378,11 @@ const fn valid_completion(
             !matches!(error, ErrorType::RecoveredDegradation)
         }
         (OutcomeValue::Success, None | Some(ErrorType::RecoveredDegradation))
-        | (OutcomeValue::Skip | OutcomeValue::Cancellation, None) => true,
+        | (OutcomeValue::Skip | OutcomeValue::Cancellation, None)
+        | (
+            OutcomeValue::Cancellation,
+            Some(ErrorType::DeadlineExceeded | ErrorType::DependencyCancelled),
+        ) => true,
         _ => false,
     }
 }

@@ -50,6 +50,18 @@ fn outcome_status_mapping_is_explicit() {
     ] {
         assert_eq!(exported_status(Some(outcome), None), Status::Unset);
     }
+    for error_type in [
+        schema::enums::ErrorType::DeadlineExceeded,
+        schema::enums::ErrorType::DependencyCancelled,
+    ] {
+        assert!(matches!(
+            exported_status(
+                Some(schema::enums::OutcomeValue::Cancellation),
+                Some(error_type)
+            ),
+            Status::Error { .. }
+        ));
+    }
     for outcome in [
         schema::enums::OutcomeValue::Failure,
         schema::enums::OutcomeValue::Error,
@@ -91,9 +103,17 @@ fn completion_matrix_rejects_impossible_pairs() {
         OutcomeValue::Success,
         Some(ErrorType::RpcError)
     ));
-    assert!(!valid_completion(
+    assert!(valid_completion(
         OutcomeValue::Cancellation,
         Some(ErrorType::DependencyCancelled)
+    ));
+    assert!(valid_completion(
+        OutcomeValue::Cancellation,
+        Some(ErrorType::DeadlineExceeded)
+    ));
+    assert!(!valid_completion(
+        OutcomeValue::Cancellation,
+        Some(ErrorType::RpcError)
     ));
 }
 
