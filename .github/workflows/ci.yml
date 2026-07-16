@@ -954,110 +954,8 @@ jobs:
       - run: bash scripts/ci/check-agent-status-truthful.sh
       - run: cargo deny check licenses bans sources
 
-  construct-e2e-image:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
-    if: >-
-      needs.changes.outputs.construct_image == 'true' &&
-      contains(fromJSON(needs.cargo-registry-warmup.outputs.affected-packages), 'jackin')
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
-    runs-on: ${{ fromJSON(matrix.config.runner) }}
-    timeout-minutes: 60
-    name: construct E2E image (${{ matrix.config.lane }})
-    env:
-      BUILDX_BUILDER: jackin-construct-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
-      CARGO_NET_OFFLINE: "true"
-      CARGO_TERM_COLOR: always
-      LOCAL_REGISTRY_IMAGE: projectjackin/construct
-      RUSTC_WRAPPER: sccache
-      SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: ./.github/actions/download-ci-xtask
-        with:
-          lane: ${{ matrix.config.lane }}
-          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
-          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
-      # When docker/construct/** changes, the published construct:trixie image
-      # on Docker Hub is stale for the lifetime of the PR — it is only
-      # republished after merge to main. Build the construct image in its own
-      # job and pass it to nextest as a Docker tar so the E2E tests use the
-      # updated image rather than pulling the outdated one from the registry.
-      - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        env:
-          # sccache install: blank wrapper in case binstall source-falls-back
-          # to cargo, which would probe rustc through a missing sccache.
-          RUSTC_WRAPPER: ""
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
-        with:
-          contract-key: ${{ needs.changes.outputs.registry-contract }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: construct-e2e-image-workspace-v2
-          cache-all-crates: "false"
-          cache-workspace-crates: "false"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-      - name: Set up Docker Buildx for E2E cache
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-        with:
-          name: ${{ env.BUILDX_BUILDER }}
-      - name: Expose GitHub Actions cache runtime
-        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
-      - name: Resolve construct tool versions
-        id: versions
-        shell: bash
-        run: |
-          set -euo pipefail
-          source docker/construct/versions.env
-          echo "shellfirm-version=${SHELLFIRM_VERSION}" >> "$GITHUB_OUTPUT"
-      - name: Restore prebuilt shellfirm
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: docker/construct/prebuilt
-          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ needs.changes.outputs.rustup-contract }}
-      - name: Build construct image for E2E
-        env:
-          CACHE_FROM: |
-            type=registry,ref=projectjackin/construct:buildcache-amd64
-            type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }}
-          CACHE_TO: type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
-        run: |
-          set -euo pipefail
-          "$CI_XTASK" construct build-platform amd64
-          docker save --output construct-trixie.tar projectjackin/construct:trixie
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: construct-trixie-image-${{ matrix.config.lane }}
-          path: construct-trixie.tar
-          retention-days: 1
-      - name: Capture sccache stats
-        if: always()
-        uses: ./.github/actions/sccache-stats
-        with:
-          artifact-name: sccache-stats-ci-construct-e2e-image-${{ matrix.config.lane }}
-          heading: sccache ci construct-e2e-image (${{ matrix.config.lane }})
-
   test:
-    needs: [changes, construct-e2e-image, matrix-setup, cargo-registry-warmup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: >-
       always() && needs.changes.outputs.rust == 'true' &&
       needs.changes.outputs.result-reuse != 'true' &&
@@ -1076,6 +974,7 @@ jobs:
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
       nextest-contract: ${{ needs.changes.outputs.nextest-contract }}
       registry-contract: ${{ needs.changes.outputs.registry-contract }}
+      rustup-contract: ${{ needs.changes.outputs.rustup-contract }}
       rustup-ci-contract: ${{ needs.changes.outputs.rustup-ci-contract }}
     secrets: inherit
   audit:
@@ -1153,7 +1052,6 @@ jobs:
       - dependency-policy
       - schema-check
       - file-size-gate
-      - construct-e2e-image
       - test
     runs-on: ubuntu-latest
     timeout-minutes: 60

@@ -64,6 +64,11 @@ on:
         required: false
         default: ""
         type: string
+      rustup-contract:
+        description: Runner-independent current Rust toolchain cache contract.
+        required: false
+        default: ""
+        type: string
 permissions:
   actions: read
   contents: read
@@ -79,10 +84,12 @@ jobs:
     timeout-minutes: 60
     name: cargo test ${{ matrix.package }} (${{ matrix.config.lane }})
     env:
+      BUILDX_BUILDER: jackin-construct-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       CARGO_INCREMENTAL: "0"
       CARGO_NET_OFFLINE: "true"
       CARGO_TERM_COLOR: always
       JACKIN_TELEMETRY_VOLUME_PATH: target/telemetry-volume-ratchet.json
+      LOCAL_REGISTRY_IMAGE: projectjackin/construct
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "off"
@@ -445,46 +452,49 @@ jobs:
             exit 1
           fi
 
-      - name: Download construct image for Docker E2E
+      - name: Set up Docker Buildx for Docker E2E
         if: >-
           steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' &&
           inputs.docker-e2e && inputs.construct-image-changed
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
         with:
-          name: construct-trixie-image-${{ matrix.config.lane }}
-          path: target/construct-image
-      - name: Recover construct image through the Actions API
+          name: ${{ env.BUILDX_BUILDER }}
+      - name: Expose GitHub Actions cache runtime
+        if: >-
+          steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' &&
+          inputs.docker-e2e && inputs.construct-image-changed
+        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+      - name: Resolve construct tool versions
+        id: construct-versions
         if: >-
           steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' &&
           inputs.docker-e2e && inputs.construct-image-changed
         shell: bash
-        env:
-          ARTIFACT_NAME: construct-trixie-image-${{ matrix.config.lane }}
-          ARTIFACT_PATH: target/construct-image
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          mkdir -p "$ARTIFACT_PATH"
-          if [ -f "$ARTIFACT_PATH/construct-trixie.tar" ]; then
-            exit 0
-          fi
-          artifact_id=$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" --paginate \
-            --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" | head -n 1)
-          if [ -z "$artifact_id" ]; then
-            echo "::error::artifact not found: ${ARTIFACT_NAME}"
-            exit 1
-          fi
-          archive="$ARTIFACT_PATH/.artifact.zip"
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
-          python3 -m zipfile -e "$archive" "$ARTIFACT_PATH"
-          rm "$archive"
-      - name: Load construct image for Docker E2E
+          source docker/construct/versions.env
+          echo "shellfirm-version=${SHELLFIRM_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Restore prebuilt shellfirm
         if: >-
           steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' &&
           inputs.docker-e2e && inputs.construct-image-changed
-        run: docker load --input target/construct-image/construct-trixie.tar
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: docker/construct/prebuilt
+          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.construct-versions.outputs.shellfirm-version }}-${{ inputs.rustup-contract || hashFiles('rust-toolchain.toml') }}
+      - name: Build construct image inside the jackin crate job
+        if: >-
+          steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' &&
+          inputs.docker-e2e && inputs.construct-image-changed
+        env:
+          CACHE_FROM: |
+            type=registry,ref=projectjackin/construct:buildcache-amd64
+            type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }}
+          CACHE_TO: type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$CI_XTASK" construct build-platform amd64
       - name: Build jackin-capsule for Docker E2E
         if: >-
           steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' && inputs.docker-e2e

@@ -89,6 +89,9 @@ lookup, and reporting changes keep the identifier and reuse prior proofs. Each
 selected cache miss owns one job and one
 target-cache namespace, including default/all-feature checks, clippy, nextest, doctests,
 MSRV, applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
+When changed construct inputs require a fresh image, the `jackin` crate job
+builds that image in its own Docker daemon before its E2E smoke test. There is
+no separate construct-image test job or large tar artifact handoff.
 Scheduling follows the reverse dependency closure; the input-identical target
 artifact key follows the forward dependency closure. Each seven-day artifact
 stores the crate's first-party and third-party fingerprints, libraries,
