@@ -128,9 +128,16 @@ Add `context` to `ClientFrame::Hello` codec (encode at `attach.rs:867` region, d
 
 ### Step 5: Propagation conformance test
 
-New test (place in `crates/jackin-diagnostics` or `jackin-capsule` conformance group so CI's `telemetry-conformance` job picks it up — job filter is `-E 'test(/conformance/)'` over `-p jackin-diagnostics -p jackin-capsule`): full matrix — {valid parent, malformed traceparent, missing ctx, unsampled parent, bad invocation id} × {daemon RPC, control RPC} asserting {same trace, local root, local root, unsampled honored, rejected}.
+New tests in the telemetry conformance group are selected by CI with `-E 'test(/conformance/)'` over `-p jackin-diagnostics -p jackin-capsule -p jackin-runtime`: full matrix — {valid parent, malformed traceparent, missing ctx, unsampled parent, bad invocation id} × {daemon RPC, control RPC} asserting {same trace, local root, local root, unsampled honored, rejected}.
 
-**Verify**: `cargo nextest run -p jackin-diagnostics -p jackin-capsule --all-features --locked -E 'test(/conformance/)'` → all pass.
+**Verify**: `cargo nextest run -p jackin-diagnostics -p jackin-capsule -p jackin-runtime --all-features --locked -E 'test(/conformance/)'` → all pass.
+
+## Reopened audit additions (2026-07-16)
+
+- CLIENT/SERVER ownership ends only after response serialization and the actual socket write; response-write failures receive bounded outcomes and `error.type`.
+- Attach handshake, detach, focus, and clipboard-image-transfer controls are bounded operations. Streams remain metric/state only and never receive lifetime spans.
+- Emit RPC count, active, and duration metrics keyed only by registered `rpc.method`, outcome, and stable error type.
+- The serialized `{valid, malformed, missing, unsampled, bad product id} × {host daemon, Capsule control}` matrix proves same-trace parentage, local-root fallback, sampling preservation, rejection, and no side effects.
 
 ## Test plan
 

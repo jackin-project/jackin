@@ -132,6 +132,17 @@ Extend `cargo xtask telemetry-registry` with source-scan checks over production 
 
 **Verify**: `cargo bench -p jackin-telemetry -- --quick` completes; probe unit test passes.
 
+## Reopened audit additions (2026-07-16)
+
+- Generate non-forgeable per-event/span/instrument descriptors containing required/allowed attributes, wire types, bounded-enum validators, unit/description, and metric-dimension policy. Validate the entire initial signal before constructing/emitting it; a rejected operation exports zero spans.
+- Redact then UTF-8 truncate event bodies, exception fields, and status descriptions inside the facade. Operation completion reserves capacity and validates outcome plus a generated stable error type rather than bypassing limits.
+- Outcome tests must distinguish: expected cancellation (Unset), deadline/dependency cancellation (Error with stable `error.type`), and a guard abandoned without an explicit outcome (instrumentation fault). Recovered degradation is one governed WARN, and Plan 011 must prove no duplicate ERROR narration remains.
+- The second-line validator covers metric points as well as logs and spans, including raw/bypassed metric-point privacy, key, value, count, size, and cardinality negatives.
+- Facade health is the full `(telemetry.signal, telemetry.rejection.reason)` matrix and exports through a nonallocating observable instrument. Every rejection class must be reachable through a real governed path.
+- Construct registered metric handles once during installation. Canonicalize dimension sets by schema identity without formatting/allocation, reject duplicate keys, and prove order-independent cardinality plus exact 256-series export behavior.
+- Observable callback enforcement must structurally and dynamically reject I/O, async locks, filesystem scans, and runtime entry; callbacks may read only atomics or cheap synchronous snapshots.
+- Delete or govern every public string-name span/metric API in diagnostics, and make the source-policy lint syntax-aware with permanent allowed/prohibited fixtures.
+
 ## Test plan
 
 - Per-module `tests.rs` files as written into the steps (limits, privacy, outcome mapping, cardinality, views, health, second-line validator, disabled-probe).

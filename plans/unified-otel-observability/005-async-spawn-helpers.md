@@ -135,6 +135,15 @@ Add to the lint lane a textual heuristic: flag `.enter()`/`.entered()` appearing
 
 **Verify**: synthetic `let _g = span.enter();` inside an async fn in a product crate fails the lane; revert.
 
+## Reopened audit additions (2026-07-16)
+
+- Cycle/stream helpers declare ownership only and must not instrument the loop/stream/thread lifetime with the caller span; bounded attempt/cycle spans live inside task bodies.
+- Replace the CLI command `Span::enter()` held across awaited dispatch. Add a syntax-aware async-scope lint for `.enter()`, `.entered()`, and OpenTelemetry context guards, with explicit safe synchronous/runtime-guard cases.
+- Complete the executor matrix for runtime `Handle`, blocking/local tasks, `LocalSet`, joined/detached `JoinSet`, named/scoped OS threads, subscriptions, timers, cycles, and streams. Classify and migrate all scoped-thread sites or record a narrow tier-architecture exemption.
+- Replace substring spawn linting with syntax-aware coverage for Tokio/task/local/Handle/JoinSet, thread builder/scoped/imported/aliased forms and whitespace variants, while excluding subprocess `Command::spawn`.
+- Detached helpers are outcome-aware for success/failure/error/timeout, panic, and abort instead of completing every returned future as success. Preserve names and generic outputs.
+- Tests prove parent identity, detached root plus one link, unsampled/invalid/disabled behavior, no lifetime retention, all helper families, panic/abort outcomes, and disabled-path allocation behavior.
+
 ## Test plan
 
 In `crates/jackin-telemetry/src/spawn/tests.rs` (tokio multi-thread AND current-thread variants where relevant):

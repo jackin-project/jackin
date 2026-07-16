@@ -114,6 +114,13 @@ If default-mode signal counts changed (removed duplicate span events can lower t
 
 **Verify**: `cargo xtask lint --strict` → exit 0.
 
+## Reopened audit additions (2026-07-16)
+
+- Remove the compatibility path that re-enters `RunDiagnostics` and exports a second/spurious log. A compatibility API may remain only if it preserves the registered EventName and every typed caller field without loss.
+- Generate per-event emission from the schema's required/allowed fields so strings, booleans, signed/unsigned integers, floats, and arrays all round-trip; hard-coded severity-specific field subsets are forbidden.
+- Reject unknown governed EventName and span names before export and count `unknown_name`; callers cannot forge a registered event at a noncanonical severity.
+- One focused event-inside-span test asserts exact native EventName, native severity, body, typed fields, immutable Resource, and matching TraceId/SpanId. INFO/WARN/ERROR/DEBUG/TRACE filter matrices also assert exactly one log, zero duplicate span events, no automatic status/exception inference, and the explicit DEBUG/TRACE gates.
+
 ## Test plan
 
 - `conformance_single_delivery` (step 3) — the load-bearing test of this plan.

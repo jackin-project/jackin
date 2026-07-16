@@ -112,6 +112,11 @@ Extend the conformance group: every span/event added in this plan appears in the
 
 **Verify**: `cargo nextest run -p jackin-diagnostics -p jackin-capsule --all-features --locked -E 'test(/conformance/)'` → pass; regenerate export-volume ratchet (counts change): `cargo nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'` + `cargo xtask lint ratchet --print export-volume` → update `ratchet.toml`.
 
+## Reopened audit additions (2026-07-16)
+
+- Inventory long-lived streams and watchers. Trace bounded open, handshake, control, and close operations with truthful outcomes, while proving no stream/watcher lifetime span exists.
+- Emit launch-stage/cache and connection count, active, and duration metrics at the shared boundary choke points with only their bounded dimensions.
+
 ## Test plan
 
 - Launch shape test (step 1), subprocess privacy test (step 2), Docker template/decorator tests (step 3), provider/DB privacy + shape tests (step 4), decision-event field tests (step 5), conformance sweep (step 6).

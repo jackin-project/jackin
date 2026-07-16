@@ -113,6 +113,17 @@ Add `conformance_no_lifetime_spans`: simulate (test-level) a console session wit
 
 **Verify**: `cargo nextest run -p jackin-diagnostics -p jackin-capsule --all-features --locked -E 'test(/conformance/)'` → pass.
 
+## Reopened audit additions (2026-07-16)
+
+- Start the product-binary lifecycle before parsing/classification so help/version/parse errors and pre-dispatch configuration failures have an explicit, tested policy. Route `jackin-role` and the host `role` command through the same harness; make developer-binary exclusions explicit.
+- Generate an exhaustive typed mapper for every live nested command variant. No wildcard or silent parent collapse is allowed unless the roadmap contract explicitly lists that exception.
+- Centralize result classification so process exit, root outcome, `process.exit.code`, and the stable E001–E016/common `error.type` agree, including operator cancellation.
+- Every bounded CLI root emits invocation count, duration, and failure metrics with only `cli.command.name`, `outcome`, and stable `error.type` dimensions.
+- Startup spans readiness work and shutdown spans exit request through teardown; neither is a zero-work marker. Service identity/app mode is typed independently of command name.
+- Begin console/attach sessions only after ownership succeeds. Reattach mints a new ID with the last-ended ID as `session.previous_id`; concurrent ownership cannot overwrite one global ambient session.
+- Governed events and operations merge ambient invocation/session IDs with deterministic duplicate rules, while metrics explicitly reject invocation/session/job/visit/conversation identities.
+- Capsule identity exists before fallible startup, a bounded startup root covers listener readiness and links the launch context, and inactive/failed shutdown always clears paired ambient session state.
+
 ## Test plan
 
 - Unit: identity minting/uniqueness; command-name mapping exhaustiveness; session ambient stamping.

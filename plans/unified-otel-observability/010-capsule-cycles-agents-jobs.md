@@ -112,6 +112,17 @@ In `handle_state_tick`'s transition block (`daemon.rs:885-909` region, where `St
 
 **Verify**: launch-env test — `network.mode=none` produces NO OTEL/TRACEPARENT env and no firewall OTLP host; auth event privacy negatives pass.
 
+## Reopened audit additions (2026-07-16)
+
+- Give branch, PR, usage-account, provider-probe, instance-refresh, and agent-status work distinct generated cycle definitions. Autonomous cycles clear stale caller correlation; no-op ticks emit metrics only; substantive cycles record balanced count/duration/outcome/error metrics without job IDs.
+- Govern agent-transition event/metric attribute contracts, map the authoritative status source, record flap behavior, and prove same-state silence plus reporter-ID/privacy absence.
+- Propagate operator cancellation into PTY exit classification and emit paired spawn/exit events with stable error types for wait/signal/nonzero paths; exporter tests prove PTY content never appears.
+- Replace Capsule pane action spans with `WidgetFocusTracker` lifecycle for pane, tab, and command palette focus plus bounded duration.
+- Prewarm scheduling/attempt paths emit count, active, and duration metrics keyed only by `job.type`, outcome, and stable error type. Connection state, queue depth, standard process health, and established Tokio runtime instruments are also wired to cheap snapshots.
+- Create one linked consumer attempt per prewarm target with truthful skip/failure/error outcomes; producer and consumer never default to success, and no `job.id` enters metrics.
+- Add governed auth-provision events and standard `gen_ai.client.token.usage`, with auth/token privacy negatives. Emit a schema-valid complete Capsule `app.crash` event (UUID, session and bounded exception fields) and final flush.
+- Define an explicit Capsule-safe endpoint and authentication carrier contract. Prove classified credentials are Capsule-safe, host headers/client keys are never copied, unclassified auth reports a coverage gap, and `network.mode=none` injects nothing and opens no egress.
+
 ## Test plan
 
 - Per-step tests as above, in the owning crates' sibling `tests.rs` files; capsule daemon tests model on the existing echo-harness style (`crates/jackin-capsule/src/daemon/tests.rs`).

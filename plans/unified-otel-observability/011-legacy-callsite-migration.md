@@ -107,6 +107,10 @@ The firehose must stay gated: run the volume check (export-volume conformance) a
 
 **Verify**: `cargo nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'` → pass without ratchet bumps beyond the reviewed deltas of plans 007–010.
 
+## Reopened audit additions (2026-07-16)
+
+- For every migrated failure site, prove the operation owner is the only ERROR emitter. Deadline/dependency cancellation is an error, expected operator cancellation is not, guard abandonment is an instrumentation fault, and recovered degradation emits one governed WARN.
+
 ## Test plan
 
 - Per-crate: existing suites are the regression net (these lines are narration; behavior must not change). Add targeted tests only where a site converts to a NEW registered event with meaningful fields (isolation materialization events, cleanup-failure WARN events).

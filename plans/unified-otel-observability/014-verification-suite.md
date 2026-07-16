@@ -94,6 +94,12 @@ Against a live testbed instance (host-process side runs real providers pointed a
 4. **Performance gates** (D4). **Verify**: alloc gate passes; baseline file recorded; comparator lane exits 0 on unchanged code and non-zero when fed a doctored baseline (self-test); revert doctoring.
 5. **CI wiring + flake hardening**: update workflow package lists; run the conformance suite 10× locally (`for i in $(seq 10); do cargo nextest run … -E 'test(/conformance/)' || break; done`) — zero failures required before merge.
 
+## Reopened audit additions (2026-07-16)
+
+- Add named matrices for outcome/error ownership, all required metric families, second-line metric rejection, and bounded stream/watcher close operations.
+- Make privacy coverage case-row-complete, including arbitrary model names, agent codenames, config keys/values, role source URL/id, cache keys, allowlisted hosts, image references/labels, and credential/client-key paths.
+- Add an authenticated Capsule-safe three-signal receiver case; endpoint-only classification is insufficient when Parallax authentication is required.
+
 ## Test plan
 
 This plan IS the test plan; its own meta-verification: each suite contains at least one self-test proving the detector detects (namespace scan, privacy scanner, bench comparator, alloc counter), so green means verified, not vacuous.

@@ -194,6 +194,16 @@ Add to the new xtask lane a check that fails if any **new** `jackin.*` or `paral
 
 **Verify**: `cargo xtask telemetry-registry` → exit 0. Temporarily add `const X: &str = "jackin.bogus";` to any non-allowlisted file, re-run → non-zero exit naming the file; revert.
 
+## Reopened audit additions (2026-07-16)
+
+- Generate and validate instrument descriptions as well as names, units, types, boundaries, and requirement levels.
+- Generate the runtime event/span/instrument definition tables themselves, including required/allowed fields and histogram boundaries; the facade consumes these tables so hand-maintained parallel definitions cannot drift.
+- Preserve upstream `app.jank` and `app.crash` event lineage and requirement levels; local registry groups may import/extend them but must not weaken or redefine the standard contract.
+- Encode global and workspace config schema-version combinations separately so workspace never admits `v1alpha9` and neither scope admits `legacy` as a migration target.
+- Scan every Rust target, including tests, benches, fuzz targets, and xtask. Exempt only exact proven non-telemetry path/symbol/literal combinations; blanket syntax exemptions such as `.get`, `.join`, or `LABEL_*` are forbidden.
+- Record and validate the exact locked `opentelemetry-semantic-conventions` version and checksum, and provide checksummed Weaver artifacts for every supported developer/CI platform.
+- Vendor or content-checksum the exact semantic-conventions 1.43 Weaver input so generation is offline-reproducible and cannot change behind a mutable network tag.
+
 ## Test plan
 
 - `crates/jackin-telemetry/src/schema/tests.rs`: enum-value uniqueness, casing, closed-set sizes (e.g. `OutcomeValue::ALL.len() == 6`, `LaunchStageName::ALL.len() == 11`, `CliCommandName` covers the 17 top-level commands), namespace ban on own constants.

@@ -144,6 +144,15 @@ Run the full suite; fix compile fallout in dependents mechanically (feature-name
 
 **Verify**: `cargo nextest run --workspace --all-features --locked` → all pass; `cargo xtask ci --only lint` → exit 0.
 
+## Reopened audit additions (2026-07-16)
+
+- Build Resource from a fixed allowlist only; arbitrary `OTEL_RESOURCE_ATTRIBUTES` never flow through. Emit `container.id` only from a structurally verified container identifier, and test the complete Resource contract for every service identity plus forbidden-ID/secret injection.
+- Treat export runtime, all providers, subscriber, and facade installation as one rollback-safe transaction. TLS/exporter, metric, subscriber, and facade failures must leave no runtime, provider, or misleading active-signal state.
+- Force-flush all three signals before ordered tracer/logger/meter shutdown. Export attempts, metric reader, provider shutdown, and runtime stop share one genuine five-second process budget; slow/retry tests are mandatory and cover all three signals.
+- Wrap all three exporters so typed health records real outer attempts/results before shutdown; merge governed facade rejection counters into the same health snapshot.
+- Resource/header/endpoint/TLS errors retain only variable/key/bounded reason, reject endpoint userinfo, and render only sanitized scheme plus authority. Include deterministic `process.runtime.version`.
+- Expose a configuration input that Plan 010 can populate only from an explicitly classified Capsule-safe endpoint/auth carrier; never infer Capsule safety from host headers, client keys, or endpoint presence alone.
+
 ## Test plan
 
 New tests in the respective sibling `tests.rs` files (layout rule: single `tests.rs` per module), modeled on the existing style of `crates/jackin-diagnostics/src/observability/otlp/tests.rs`:

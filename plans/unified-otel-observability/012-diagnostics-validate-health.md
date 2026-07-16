@@ -108,6 +108,10 @@ Mirror on the control protocol: `ClientMsg::TelemetryHealth` → `ServerMsg::Tel
 
 **Verify**: capsule control round-trip test passes; `cargo nextest run -p jackin-capsule -p jackin-protocol --locked` → pass.
 
+## Reopened audit additions (2026-07-16)
+
+- Capsule health distinguishes endpoint-safe and authentication-safe coverage. It reports host-only/unclassified authentication without exposing any endpoint credential, header, client-key path, or fingerprint input.
+
 ## Test plan
 
 - Unit: `validate_delivery` success/no-endpoint/disabled/flush-fail/export-fail paths (in-memory + failing exporters).
