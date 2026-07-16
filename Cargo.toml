@@ -96,7 +96,7 @@ ratatui = "0.30"
 # Must stay lockstep-compatible with ratatui 0.30; pinned when workspace was
 # virtualized (#532/#713). Candidate: relax to "0.1" — needs lockfile-refresh PR.
 ratatui-core = "=0.1.2"
-termrock = { version = "=0.8.0", git = "https://github.com/tailrocks/termrock.git", rev = "43833584af62bc93191e94564cbdd0036948021b" }
+termrock = { version = "=0.8.0", git = "https://github.com/tailrocks/termrock.git", rev = "da54a033f368ed0888af90ae43d19bcb96fb8581" }
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false }
