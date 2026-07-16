@@ -562,21 +562,20 @@ jobs:
           chmod +x .ci-prebuilt-tools/*
           echo "hit=true" >> "$GITHUB_OUTPUT"
       - id: cargo-registry-lookup
-        name: Check prepared Cargo registry
+        name: Restore prepared Cargo registry
+        if: steps.ci-xtask-artifact.outputs.hit != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git/db
           key: cargo-registry-v5-${{ needs.changes.outputs.registry-contract }}
-          lookup-only: true
       - id: prepared-inputs
         name: Resolve warmup ownership
         shell: bash
         run: |
           if [ "${{ steps.ci-xtask-artifact.outputs.hit }}" = "true" ] && \
-             [ "${{ steps.ci-tools-artifact.outputs.hit }}" = "true" ] && \
-             [ "${{ steps.cargo-registry-lookup.outputs.cache-hit }}" = "true" ]; then
+             [ "${{ steps.ci-tools-artifact.outputs.hit }}" = "true" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
@@ -682,7 +681,9 @@ jobs:
           fi
           scripts/ci/activate-installed-rust-toolchain.sh "$version"
       - id: cargo-registry-cache
-        if: steps.cargo-registry-lookup.outputs.cache-hit != 'true'
+        if: >-
+          steps.ci-xtask-artifact.outputs.hit != 'true' &&
+          steps.cargo-registry-lookup.outputs.cache-hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
