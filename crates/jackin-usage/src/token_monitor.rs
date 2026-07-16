@@ -217,19 +217,33 @@ pub fn find_provider_files(
     base_dirs: &[&str],
     ext: &str,
     max_depth: usize,
-) -> Vec<std::path::PathBuf> {
+) -> Result<Vec<std::path::PathBuf>, ProviderReadDegraded> {
     let mut paths = Vec::new();
     let mut stack: Vec<(std::path::PathBuf, usize)> = base_dirs
         .iter()
         .map(|b| (Path::new(b).to_owned(), 0))
         .collect();
     while let Some((dir, depth)) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => {
+                let _error = jackin_telemetry::record_error(
+                    jackin_telemetry::schema::enums::ErrorType::IoError,
+                );
+                return Err(ProviderReadDegraded);
+            }
         };
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = entry
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                .map_err(|_| ProviderReadDegraded)?;
             let p = entry.path();
-            if p.is_dir() {
+            let file_type = entry
+                .file_type()
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                .map_err(|_| ProviderReadDegraded)?;
+            if file_type.is_dir() {
                 if depth < max_depth {
                     stack.push((p, depth + 1));
                 }
@@ -238,7 +252,7 @@ pub fn find_provider_files(
             }
         }
     }
-    paths
+    Ok(paths)
 }
 
 /// Read a file in full for a recompute pass. Token logs are re-read whole each

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use super::TokenSession;
 
-fn find_jsonl_files() -> Vec<PathBuf> {
+fn find_jsonl_files() -> Result<Vec<PathBuf>, super::ProviderReadDegraded> {
     super::find_provider_files(
         &["/home/agent/.codex/sessions"],
         "jsonl",
@@ -92,7 +92,9 @@ fn apply_line(line: &str, acc: &mut Acc) {
 }
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> super::PollStatus {
-    let files = find_jsonl_files();
+    let Ok(files) = find_jsonl_files() else {
+        return super::PollStatus::Degraded;
+    };
     // Aggregate ACROSS files (one rollout per session; codex retains several).
     // Each session file is monotonic-cumulative XOR headless-per-call, so take
     // that file's own total — last cumulative, or its headless sum — and add it

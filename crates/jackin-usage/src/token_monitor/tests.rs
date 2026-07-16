@@ -67,7 +67,8 @@ fn find_provider_files_walks_nested_dirs_and_filters_extension() {
     std::fs::write(base.join("top.jsonl"), "{}").unwrap();
     std::fs::write(nested.join("ignore.txt"), "x").unwrap();
 
-    let mut found = find_provider_files(&[base.to_str().unwrap()], "jsonl", PROVIDER_WALK_DEPTH);
+    let mut found =
+        find_provider_files(&[base.to_str().unwrap()], "jsonl", PROVIDER_WALK_DEPTH).unwrap();
     found.sort();
     assert_eq!(
         found.len(),
@@ -79,9 +80,27 @@ fn find_provider_files_walks_nested_dirs_and_filters_extension() {
 
     // max_depth 0 reads only the top level (Amp's flat layout): the nested
     // rollout is excluded, the top-level file is kept.
-    let flat = find_provider_files(&[base.to_str().unwrap()], "jsonl", 0);
+    let flat = find_provider_files(&[base.to_str().unwrap()], "jsonl", 0).unwrap();
     assert_eq!(flat.len(), 1, "flat walk keeps only the top-level jsonl");
     assert!(flat[0].ends_with("top.jsonl"));
+}
+
+#[test]
+fn provider_discovery_failure_exports_one_typed_error_without_path() {
+    let dir = TempDir::new().unwrap();
+    let not_a_directory = dir.path().join("private-provider-file");
+    std::fs::write(&not_a_directory, "private-provider-content").unwrap();
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+
+    let result = tracing::subscriber::with_default(subscriber, || {
+        find_provider_files(&[not_a_directory.to_str().unwrap()], "jsonl", 0)
+    });
+    export.force_flush();
+
+    assert!(matches!(result, Err(ProviderReadDegraded)));
+    assert_eq!(export.typed_error_count("error.typed", "io_error"), 1);
+    assert!(!export.contains_log_text("private-provider-file"));
+    assert!(!export.contains_log_text("private-provider-content"));
 }
 
 #[test]

@@ -13,29 +13,52 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::{TokenSession, json_u64};
+use jackin_telemetry::ResultTelemetryExt as _;
 
-fn find_wire_files() -> Vec<PathBuf> {
+fn provider_entries(
+    path: impl AsRef<std::path::Path>,
+) -> Result<Option<fs::ReadDir>, super::ProviderReadDegraded> {
+    match fs::read_dir(path) {
+        Ok(entries) => Ok(Some(entries)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => {
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+            Err(super::ProviderReadDegraded)
+        }
+    }
+}
+
+fn find_wire_files() -> Result<Vec<PathBuf>, super::ProviderReadDegraded> {
     let mut paths = Vec::new();
     let base = "/home/agent/.kimi/sessions";
-    let Ok(groups) = fs::read_dir(base) else {
-        return paths;
+    let Some(groups) = provider_entries(base)? else {
+        return Ok(paths);
     };
-    for group in groups.flatten() {
-        let Ok(sessions) = fs::read_dir(group.path()) else {
+    for group in groups {
+        let group = group
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            .map_err(|_| super::ProviderReadDegraded)?;
+        let Some(sessions) = provider_entries(group.path())? else {
             continue;
         };
         // No `exists()` stat: a non-existent wire file reads as absent
         // (`read_file_text` maps `NotFound` to `Ok(None)`), so the recompute
         // simply skips it.
-        for session in sessions.flatten() {
+        for session in sessions {
+            let session = session
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                .map_err(|_| super::ProviderReadDegraded)?;
             paths.push(session.path().join("wire.jsonl"));
         }
     }
-    paths
+    Ok(paths)
 }
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> super::PollStatus {
-    let files = find_wire_files();
+    let Ok(files) = find_wire_files() else {
+        return super::PollStatus::Degraded;
+    };
     match super::recompute_spend(&files, |text, acc| {
         for line in text.lines() {
             if line.trim().is_empty() {

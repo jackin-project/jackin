@@ -49,7 +49,7 @@ fn parse_line(line: &str) -> Option<ClaudeUsageLine> {
     })
 }
 
-fn find_jsonl_files() -> Vec<PathBuf> {
+fn find_jsonl_files() -> Result<Vec<PathBuf>, super::ProviderReadDegraded> {
     super::find_provider_files(
         &[
             "/home/agent/.config/claude/projects",
@@ -61,7 +61,9 @@ fn find_jsonl_files() -> Vec<PathBuf> {
 }
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> PollStatus {
-    let files = find_jsonl_files();
+    let Ok(files) = find_jsonl_files() else {
+        return PollStatus::Degraded;
+    };
     let acc = match super::recompute_spend(&files, |text, acc| {
         for line in text.lines() {
             if line.trim().is_empty() {
