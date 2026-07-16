@@ -172,34 +172,34 @@ pub enum CreatePreludeTextInputNamePlan<T> {
 
 #[must_use]
 pub fn create_prelude_text_input_dst_plan<T>(
-    outcome: jackin_core::ModalOutcome<T>,
+    outcome: jackin_tui::ModalOutcome<T>,
 ) -> CreatePreludeTextInputDstPlan<T> {
     match outcome {
-        jackin_core::ModalOutcome::Commit(dst) => CreatePreludeTextInputDstPlan::Commit(dst),
-        jackin_core::ModalOutcome::Cancel => CreatePreludeTextInputDstPlan::ReopenMountDstChoice,
-        jackin_core::ModalOutcome::Continue => CreatePreludeTextInputDstPlan::Continue,
+        jackin_tui::ModalOutcome::Commit(dst) => CreatePreludeTextInputDstPlan::Commit(dst),
+        jackin_tui::ModalOutcome::Cancel => CreatePreludeTextInputDstPlan::ReopenMountDstChoice,
+        jackin_tui::ModalOutcome::Continue => CreatePreludeTextInputDstPlan::Continue,
     }
 }
 
 #[must_use]
 pub fn create_prelude_text_input_name_plan<T>(
-    outcome: jackin_core::ModalOutcome<T>,
+    outcome: jackin_tui::ModalOutcome<T>,
 ) -> CreatePreludeTextInputNamePlan<T> {
     match outcome {
-        jackin_core::ModalOutcome::Commit(name) => CreatePreludeTextInputNamePlan::Commit(name),
-        jackin_core::ModalOutcome::Cancel => CreatePreludeTextInputNamePlan::ReopenWorkdirPick,
-        jackin_core::ModalOutcome::Continue => CreatePreludeTextInputNamePlan::Continue,
+        jackin_tui::ModalOutcome::Commit(name) => CreatePreludeTextInputNamePlan::Commit(name),
+        jackin_tui::ModalOutcome::Cancel => CreatePreludeTextInputNamePlan::ReopenWorkdirPick,
+        jackin_tui::ModalOutcome::Continue => CreatePreludeTextInputNamePlan::Continue,
     }
 }
 
 #[must_use]
 pub fn create_prelude_workdir_pick_plan<T>(
-    outcome: jackin_core::ModalOutcome<T>,
+    outcome: jackin_tui::ModalOutcome<T>,
     used_edit_dst: bool,
 ) -> CreatePreludeWorkdirPickPlan<T> {
     match outcome {
-        jackin_core::ModalOutcome::Commit(workdir) => CreatePreludeWorkdirPickPlan::Commit(workdir),
-        jackin_core::ModalOutcome::Cancel => {
+        jackin_tui::ModalOutcome::Commit(workdir) => CreatePreludeWorkdirPickPlan::Commit(workdir),
+        jackin_tui::ModalOutcome::Cancel => {
             match create_prelude_workdir_cancel_plan(used_edit_dst) {
                 CreatePreludeWorkdirCancelPlan::ReopenTextInputDst => {
                     CreatePreludeWorkdirPickPlan::ReopenTextInputDst
@@ -209,7 +209,7 @@ pub fn create_prelude_workdir_pick_plan<T>(
                 }
             }
         }
-        jackin_core::ModalOutcome::Continue => CreatePreludeWorkdirPickPlan::Continue,
+        jackin_tui::ModalOutcome::Continue => CreatePreludeWorkdirPickPlan::Continue,
     }
 }
 
@@ -241,19 +241,19 @@ pub fn create_prelude_file_browser_plan<T>(
 
 #[must_use]
 pub const fn create_prelude_mount_dst_choice_plan(
-    outcome: jackin_core::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
 ) -> CreatePreludeMountDstChoicePlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(
+        jackin_tui::ModalOutcome::Commit(
             crate::tui::components::mount_dst_choice::MountDstChoice::SamePath,
         ) => CreatePreludeMountDstChoicePlan::CommitSamePath,
-        jackin_core::ModalOutcome::Commit(
+        jackin_tui::ModalOutcome::Commit(
             crate::tui::components::mount_dst_choice::MountDstChoice::Edit,
         ) => CreatePreludeMountDstChoicePlan::OpenEditInput,
-        jackin_core::ModalOutcome::Cancel => {
+        jackin_tui::ModalOutcome::Cancel => {
             CreatePreludeMountDstChoicePlan::ReopenFileBrowserAtLastCwd
         }
-        jackin_core::ModalOutcome::Continue => CreatePreludeMountDstChoicePlan::Continue,
+        jackin_tui::ModalOutcome::Continue => CreatePreludeMountDstChoicePlan::Continue,
     }
 }
 

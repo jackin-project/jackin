@@ -10,7 +10,7 @@
 use std::collections::BTreeSet;
 
 use crossterm::event::{KeyCode, MouseEvent};
-use jackin_core::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
 
 use super::model::{ManagerHoverTarget, ManagerListRow};

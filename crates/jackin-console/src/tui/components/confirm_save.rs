@@ -17,7 +17,7 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use jackin_core::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use termrock::layout::render_dialog_shell;
 use termrock::scroll::ScrollAxes;
 use termrock::scroll::{

@@ -6,7 +6,7 @@
 //! Arrow keys move focus, Enter commits, Esc cancels.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_core::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use termrock::widgets::{List, ListRow, ListState, RowRole};

@@ -227,13 +227,13 @@ pub enum QuitConfirmPlan {
 }
 
 #[must_use]
-pub const fn quit_confirm_plan(outcome: jackin_core::ModalOutcome<bool>) -> QuitConfirmPlan {
+pub const fn quit_confirm_plan(outcome: jackin_tui::ModalOutcome<bool>) -> QuitConfirmPlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(true) => QuitConfirmPlan::Exit,
-        jackin_core::ModalOutcome::Commit(false) | jackin_core::ModalOutcome::Cancel => {
+        jackin_tui::ModalOutcome::Commit(true) => QuitConfirmPlan::Exit,
+        jackin_tui::ModalOutcome::Commit(false) | jackin_tui::ModalOutcome::Cancel => {
             QuitConfirmPlan::Dismiss
         }
-        jackin_core::ModalOutcome::Continue => QuitConfirmPlan::Continue,
+        jackin_tui::ModalOutcome::Continue => QuitConfirmPlan::Continue,
     }
 }
 

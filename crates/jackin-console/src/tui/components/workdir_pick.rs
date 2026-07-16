@@ -6,8 +6,8 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_core::ModalOutcome;
 use jackin_core::shorten_home;
+use jackin_tui::ModalOutcome;
 use termrock::widgets::ListState;
 
 #[derive(Debug, Clone)]

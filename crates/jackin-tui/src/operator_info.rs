@@ -12,7 +12,7 @@ use ratatui::{
     widgets::StatefulWidget,
 };
 
-use jackin_core::ModalOutcome;
+use crate::ModalOutcome;
 use termrock::scroll::DialogScroll;
 use termrock::style::Role;
 use termrock::text::display_cols;

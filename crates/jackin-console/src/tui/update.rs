@@ -599,11 +599,11 @@ pub fn inline_picker_shell_plan(key: KeyEvent, _exit_on_q: bool) -> InlinePicker
 }
 
 #[must_use]
-pub fn inline_picker_plan<T>(outcome: jackin_core::ModalOutcome<T>) -> InlinePickerPlan<T> {
+pub fn inline_picker_plan<T>(outcome: jackin_tui::ModalOutcome<T>) -> InlinePickerPlan<T> {
     match outcome {
-        jackin_core::ModalOutcome::Commit(value) => InlinePickerPlan::Commit(value),
-        jackin_core::ModalOutcome::Cancel => InlinePickerPlan::Dismiss,
-        jackin_core::ModalOutcome::Continue => InlinePickerPlan::Continue,
+        jackin_tui::ModalOutcome::Commit(value) => InlinePickerPlan::Commit(value),
+        jackin_tui::ModalOutcome::Cancel => InlinePickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => InlinePickerPlan::Continue,
     }
 }
 
@@ -666,59 +666,59 @@ pub fn auth_source_folder_picker_plan<T>(
 
 #[must_use]
 pub const fn mount_dst_choice_plan(
-    outcome: jackin_core::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
 ) -> MountDstChoicePlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(
+        jackin_tui::ModalOutcome::Commit(
             crate::tui::components::mount_dst_choice::MountDstChoice::SamePath,
         ) => MountDstChoicePlan::CommitSamePath,
-        jackin_core::ModalOutcome::Commit(
+        jackin_tui::ModalOutcome::Commit(
             crate::tui::components::mount_dst_choice::MountDstChoice::Edit,
         ) => MountDstChoicePlan::OpenEditInput,
-        jackin_core::ModalOutcome::Cancel => MountDstChoicePlan::Dismiss,
-        jackin_core::ModalOutcome::Continue => MountDstChoicePlan::Continue,
+        jackin_tui::ModalOutcome::Cancel => MountDstChoicePlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => MountDstChoicePlan::Continue,
     }
 }
 
 #[must_use]
 pub const fn save_discard_modal_plan(
-    outcome: jackin_core::ModalOutcome<crate::tui::components::SaveDiscardChoice>,
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::SaveDiscardChoice>,
 ) -> SaveDiscardModalPlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(crate::tui::components::SaveDiscardChoice::Save) => {
+        jackin_tui::ModalOutcome::Commit(crate::tui::components::SaveDiscardChoice::Save) => {
             SaveDiscardModalPlan::Save
         }
-        jackin_core::ModalOutcome::Commit(crate::tui::components::SaveDiscardChoice::Discard) => {
+        jackin_tui::ModalOutcome::Commit(crate::tui::components::SaveDiscardChoice::Discard) => {
             SaveDiscardModalPlan::Discard
         }
-        jackin_core::ModalOutcome::Cancel => SaveDiscardModalPlan::Dismiss,
-        jackin_core::ModalOutcome::Continue => SaveDiscardModalPlan::Continue,
+        jackin_tui::ModalOutcome::Cancel => SaveDiscardModalPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => SaveDiscardModalPlan::Continue,
     }
 }
 
 #[must_use]
 pub const fn confirm_save_modal_plan(
-    outcome: jackin_core::ModalOutcome<crate::tui::components::confirm_save::SaveChoice>,
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::confirm_save::SaveChoice>,
 ) -> ConfirmSaveModalPlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(
+        jackin_tui::ModalOutcome::Commit(
             crate::tui::components::confirm_save::SaveChoice::Save,
         ) => ConfirmSaveModalPlan::Commit,
-        jackin_core::ModalOutcome::Cancel => ConfirmSaveModalPlan::Dismiss,
-        jackin_core::ModalOutcome::Continue => ConfirmSaveModalPlan::Continue,
+        jackin_tui::ModalOutcome::Cancel => ConfirmSaveModalPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => ConfirmSaveModalPlan::Continue,
     }
 }
 
 #[must_use]
 pub const fn bool_confirm_modal_plan(
-    outcome: jackin_core::ModalOutcome<bool>,
+    outcome: jackin_tui::ModalOutcome<bool>,
 ) -> BoolConfirmModalPlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(true) => BoolConfirmModalPlan::Confirm,
-        jackin_core::ModalOutcome::Commit(false) | jackin_core::ModalOutcome::Cancel => {
+        jackin_tui::ModalOutcome::Commit(true) => BoolConfirmModalPlan::Confirm,
+        jackin_tui::ModalOutcome::Commit(false) | jackin_tui::ModalOutcome::Cancel => {
             BoolConfirmModalPlan::Dismiss
         }
-        jackin_core::ModalOutcome::Continue => BoolConfirmModalPlan::Continue,
+        jackin_tui::ModalOutcome::Continue => BoolConfirmModalPlan::Continue,
     }
 }
 
@@ -759,61 +759,61 @@ pub fn create_op_picker_plan<Reference, Account, Vault, Item, FieldTarget>(
 
 #[must_use]
 pub const fn scope_picker_plan(
-    outcome: jackin_core::ModalOutcome<crate::tui::components::scope_picker::ScopeChoice>,
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::scope_picker::ScopeChoice>,
 ) -> ScopePickerPlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(
+        jackin_tui::ModalOutcome::Commit(
             crate::tui::components::scope_picker::ScopeChoice::AllAgents,
         ) => ScopePickerPlan::AllAgents,
-        jackin_core::ModalOutcome::Commit(
+        jackin_tui::ModalOutcome::Commit(
             crate::tui::components::scope_picker::ScopeChoice::SpecificAgent,
         ) => ScopePickerPlan::SpecificAgent,
-        jackin_core::ModalOutcome::Cancel => ScopePickerPlan::Dismiss,
-        jackin_core::ModalOutcome::Continue => ScopePickerPlan::Continue,
+        jackin_tui::ModalOutcome::Cancel => ScopePickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => ScopePickerPlan::Continue,
     }
 }
 
 #[must_use]
 pub const fn source_picker_plan(
-    outcome: jackin_core::ModalOutcome<crate::tui::components::source_picker::SourceChoice>,
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::source_picker::SourceChoice>,
 ) -> SourcePickerPlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(
+        jackin_tui::ModalOutcome::Commit(
             crate::tui::components::source_picker::SourceChoice::Plain,
         ) => SourcePickerPlan::Plain,
-        jackin_core::ModalOutcome::Commit(
+        jackin_tui::ModalOutcome::Commit(
             crate::tui::components::source_picker::SourceChoice::Op,
         ) => SourcePickerPlan::Op,
-        jackin_core::ModalOutcome::Cancel => SourcePickerPlan::Dismiss,
-        jackin_core::ModalOutcome::Continue => SourcePickerPlan::Continue,
+        jackin_tui::ModalOutcome::Cancel => SourcePickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => SourcePickerPlan::Continue,
     }
 }
 
 #[must_use]
-pub fn list_github_picker_plan(outcome: jackin_core::ModalOutcome<String>) -> ListGithubPickerPlan {
+pub fn list_github_picker_plan(outcome: jackin_tui::ModalOutcome<String>) -> ListGithubPickerPlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(url) => ListGithubPickerPlan::OpenUrl(url),
-        jackin_core::ModalOutcome::Cancel => ListGithubPickerPlan::Dismiss,
-        jackin_core::ModalOutcome::Continue => ListGithubPickerPlan::Continue,
+        jackin_tui::ModalOutcome::Commit(url) => ListGithubPickerPlan::OpenUrl(url),
+        jackin_tui::ModalOutcome::Cancel => ListGithubPickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => ListGithubPickerPlan::Continue,
     }
 }
 
 #[must_use]
-pub fn list_role_picker_plan<R>(outcome: jackin_core::ModalOutcome<R>) -> ListRolePickerPlan<R> {
+pub fn list_role_picker_plan<R>(outcome: jackin_tui::ModalOutcome<R>) -> ListRolePickerPlan<R> {
     match outcome {
-        jackin_core::ModalOutcome::Commit(role) => ListRolePickerPlan::Launch(role),
-        jackin_core::ModalOutcome::Cancel => ListRolePickerPlan::Dismiss,
-        jackin_core::ModalOutcome::Continue => ListRolePickerPlan::Continue,
+        jackin_tui::ModalOutcome::Commit(role) => ListRolePickerPlan::Launch(role),
+        jackin_tui::ModalOutcome::Cancel => ListRolePickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => ListRolePickerPlan::Continue,
     }
 }
 
 #[must_use]
-pub fn dismissible_modal_plan<T>(outcome: jackin_core::ModalOutcome<T>) -> DismissibleModalPlan {
+pub fn dismissible_modal_plan<T>(outcome: jackin_tui::ModalOutcome<T>) -> DismissibleModalPlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(_) | jackin_core::ModalOutcome::Cancel => {
+        jackin_tui::ModalOutcome::Commit(_) | jackin_tui::ModalOutcome::Cancel => {
             DismissibleModalPlan::Dismiss
         }
-        jackin_core::ModalOutcome::Continue => DismissibleModalPlan::Continue,
+        jackin_tui::ModalOutcome::Continue => DismissibleModalPlan::Continue,
     }
 }
 

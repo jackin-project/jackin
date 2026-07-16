@@ -17,8 +17,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use jackin_core::ModalOutcome;
 use jackin_core::shorten_home;
+use jackin_tui::ModalOutcome;
 use termrock::layout::render_dialog_shell;
 use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{Action, ActionBar, ActionBarState};

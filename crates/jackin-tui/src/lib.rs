@@ -7,5 +7,8 @@
 //! application state belongs to each surface crate. This crate contains only
 //! jackin❯-specific presentation shared by multiple surfaces.
 
+mod modal_outcome;
 pub mod operator_info;
 pub mod tokens;
+
+pub use modal_outcome::ModalOutcome;
