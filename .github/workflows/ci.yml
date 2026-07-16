@@ -1008,8 +1008,10 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - name: Run OTLP receiver and detector self-tests
+        run: cargo nextest run -p jackin-otlp-testbed --locked
       - name: Run exporter-backed conformance matrix
-        run: cargo nextest run -p jackin-diagnostics -p jackin-capsule -p jackin-runtime --all-features --locked -E 'test(/conformance/)'
+        run: cargo nextest run -p jackin-diagnostics -p jackin-capsule -p jackin-runtime -p jackin-otlp-testbed --all-features --locked -E 'test(/conformance/)'
 
   audit:
     # Advisories are also covered daily by hygiene.yml (cargo deny check

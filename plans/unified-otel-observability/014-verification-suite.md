@@ -106,6 +106,8 @@ Against a live testbed instance (host-process side runs real providers pointed a
 - Make the 5% performance gate a controlled/calibrated comparison and prove disabled paths perform no formatting as well as no allocation. Run testbed detector/self-tests explicitly in CI.
 - Replace every generic/nonexistent acceptance-map claim with exact executable test names/commands and durable evidence; specifically remove `container_info_state_has_no_local_telemetry_affordance` unless that test exists.
 
+CI evidence: the `telemetry-conformance` job runs `cargo nextest run -p jackin-otlp-testbed --locked` without a name filter, so the three-signal receiver loopback and both injected-canary detector self-tests are required on every Rust CI run. The exporter-backed `/conformance/` matrix also includes the testbed package explicitly.
+
 ## Test plan
 
 This plan IS the test plan; its own meta-verification: each suite contains at least one self-test proving the detector detects (namespace scan, privacy scanner, bench comparator, alloc counter), so green means verified, not vacuous.
