@@ -70,6 +70,7 @@ jobs:
       nextest-contract: ${{ steps.contracts.outputs.nextest }}
       registry-contract: ${{ steps.contracts.outputs.registry }}
       rustup-contract: ${{ steps.contracts.outputs.rustup }}
+      rust-version: ${{ steps.contracts.outputs.rust-version }}
       result-reuse: ${{ steps.ci-result.outputs.hit }}
       result-name: ${{ steps.ci-result.outputs.name }}
       policy-reuse: ${{ steps.policy-result.outputs.hit }}
@@ -98,6 +99,7 @@ jobs:
             echo "nextest=$(scripts/ci/crate-test-contract.sh)"
             echo "registry=$REGISTRY"
             echo "rustup=$RUSTUP"
+            echo "rust-version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Reject pending insta snapshots
@@ -480,7 +482,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust"
+          install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
         run: |
@@ -629,7 +631,7 @@ jobs:
                 (github.event_name == 'pull_request' &&
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           install_args: >-
-            rust
+            rust@${{ needs.changes.outputs.rust-version }}
             ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -878,7 +880,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust"
+          install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
         run: |
@@ -961,7 +963,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust"
+          install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
         run: |

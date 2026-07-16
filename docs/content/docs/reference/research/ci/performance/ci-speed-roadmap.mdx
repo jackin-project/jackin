@@ -5,7 +5,7 @@ title: "CI/CD Speed Roadmap"
 **Current status**: The required structure is one test job for each affected
 crate, never shards or multi-crate buckets. `jackin-xtask affected-crates`
 selects directly changed crates plus transitive reverse workspace dependents;
-each selected crate's single job owns all applicable test, check, lint, MSRV,
+each selected crate's single job owns all applicable test, check, lint,
 benchmark, powerset, fuzz, and Docker coverage. The current optimization trial
 reuses exact dependency-closure target artifacts across runs and runner lanes.
 It remains experimental until sequential GitHub and dual-lane proofs show that
@@ -42,7 +42,7 @@ remote compiler backend is explicitly deferred to the
 The rejected partitioning and bucket trials either split one crate across
 runners or combined failures from unrelated crates. The current contract is one
 job per affected crate, selected from the Cargo metadata reverse-dependency
-closure. Default/all-feature checks, clippy, nextest, doctests, MSRV, applicable
+closure. Default/all-feature checks, clippy, nextest, doctests, applicable
 powerset/benchmark/fuzz checks, and conditional Docker E2E execute inside that
 crate-owned job; fuzz targets owned by the same crate remain sequential.
 Performance work must remove repeated setup and compilation rather than hide it
@@ -231,10 +231,11 @@ ready marker with no independent meaning. The v5 contract publishes one
 `target.tar.zst` archive in one step and restores it in one step. Workflow
 policy now forbids splitting one crate's tests, one artifact's bytes, or one
 conceptual command into numbered shards, batches, jobs, steps, or parts. That
-run also exposed 1,191 unchanged third-party builds in Velnor's MSRV check:
-the runner-local current target was warm, but `target/msrv` was not. A local
-target is now accepted only when both current and MSRV outputs exist; otherwise
-the job restores the portable target. Finally, registry verification triggered
+run also exposed 1,191 unchanged third-party builds in Velnor's older-compiler
+check: the runner-local current target was warm, but the compatibility target
+was not. The latest-only policy now removes that lane, its target directory,
+and its cache inputs completely. A local current target is accepted when its
+compiled dependency outputs exist. Finally, registry verification triggered
 six Rust component downloads in both crate jobs because the warmup skipped
 toolchain preparation whenever tool binaries were already available. Toolchain
 preparation is now unconditional in the single warmup owner, and crate jobs use
