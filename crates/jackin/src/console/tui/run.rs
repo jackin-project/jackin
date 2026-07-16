@@ -720,12 +720,14 @@ where
     {
         let ConsoleStage::Manager(ms) = &mut state.stage;
         for effect in ms.drain_effects() {
-            *needs_redraw |= crate::console::effects::execute_manager_effect(
-                ms,
-                inputs.config,
-                inputs.paths,
-                effect,
-            );
+            *needs_redraw |= jackin_telemetry::ui::in_pending_action_scope(|| {
+                crate::console::effects::execute_manager_effect(
+                    ms,
+                    inputs.config,
+                    inputs.paths,
+                    effect,
+                )
+            });
         }
     }
     handle_input_outcome(terminal, state, outcome, inputs, needs_redraw).await
@@ -870,12 +872,9 @@ fn handle_mouse_event<H, R>(
         Some(inputs.config),
     );
     for effect in ms.drain_effects() {
-        *needs_redraw |= crate::console::effects::execute_manager_effect(
-            ms,
-            inputs.config,
-            inputs.paths,
-            effect,
-        );
+        *needs_redraw |= jackin_telemetry::ui::in_pending_action_scope(|| {
+            crate::console::effects::execute_manager_effect(ms, inputs.config, inputs.paths, effect)
+        });
     }
     update_console_pointer_shape(
         ms,
@@ -1008,6 +1007,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             )?;
             needs_redraw = false;
         }
+        drop(action_parent);
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
         // Async event wait: yield to the Tokio reactor until either a

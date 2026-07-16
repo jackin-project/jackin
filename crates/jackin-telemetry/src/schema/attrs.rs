@@ -57,10 +57,26 @@ pub const APP_SCREEN_ID_DEF: super::AttributeMetadata = super::AttributeMetadata
     allowed_values: &[],
 };
 // registry-type: string
+pub const APP_SCREEN_NAME: &str = "app.screen.name";
+pub const APP_SCREEN_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: APP_SCREEN_NAME,
+    description: "Stable application screen name.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
+};
+// registry-type: string
 pub const APP_WIDGET_ID: &str = "app.widget.id";
 pub const APP_WIDGET_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: APP_WIDGET_ID,
     description: "Stable application widget identifier.",
+    value_type: super::ValueType::String,
+    allowed_values: &[],
+};
+// registry-type: string
+pub const APP_WIDGET_NAME: &str = "app.widget.name";
+pub const APP_WIDGET_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: APP_WIDGET_NAME,
+    description: "Stable application widget name.",
     value_type: super::ValueType::String,
     allowed_values: &[],
 };
@@ -559,7 +575,9 @@ pub const ALL_KEYS: &[&str] = &[
     AGENT_STATUS_STUCK,
     APP_MODE,
     APP_SCREEN_ID,
+    APP_SCREEN_NAME,
     APP_WIDGET_ID,
+    APP_WIDGET_NAME,
     AUTH_MODE,
     BACKGROUND_CYCLE_NAME,
     CACHE_NAME,
@@ -608,7 +626,9 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     AGENT_STATUS_STUCK_DEF,
     APP_MODE_DEF,
     APP_SCREEN_ID_DEF,
+    APP_SCREEN_NAME_DEF,
     APP_WIDGET_ID_DEF,
+    APP_WIDGET_NAME_DEF,
     AUTH_MODE_DEF,
     BACKGROUND_CYCLE_NAME_DEF,
     CACHE_NAME_DEF,

@@ -11,35 +11,56 @@ use uuid::Uuid;
 use crate::{Attr, FieldSet, Rejection, Value, counter, emit_event, histogram, metric, schema};
 
 thread_local! {
-    static COMPLETED_ACTION_PARENT: RefCell<Option<ActionParent>> = const { RefCell::new(None) };
+    static PENDING_ACTION: RefCell<Option<ActionParent>> = const { RefCell::new(None) };
 }
 
-#[derive(Debug, Clone)]
-pub struct ActionParent(tracing::Span);
+#[derive(Debug)]
+pub struct ActionParent(Option<crate::operation::OperationGuard>);
 
 impl ActionParent {
     pub fn in_scope<T>(&self, operation: impl FnOnce() -> T) -> T {
-        self.0.in_scope(operation)
+        match self.0.as_ref() {
+            Some(guard) => guard.span().in_scope(operation),
+            None => operation(),
+        }
     }
 }
 
-/// Retain the just-completed bounded action until the host observes its state
-/// change and paints the corresponding frame. The span closes when the host
-/// takes and drops this final clone; no guard survives the dispatch boundary.
-pub fn remember_action_parent(span: &tracing::Span) {
-    COMPLETED_ACTION_PARENT.with(|parent| {
-        *parent.borrow_mut() = Some(ActionParent(span.clone()));
+impl Drop for ActionParent {
+    fn drop(&mut self) {
+        if let Some(guard) = self.0.take() {
+            guard.complete(schema::enums::OutcomeValue::Success, None);
+        }
+    }
+}
+
+/// Retain a reducer-owned action through its synchronous follow-up effects and
+/// the immediate action-triggered frame. Replacing or taking it completes the
+/// prior action deterministically.
+pub fn remember_action_parent(guard: crate::operation::OperationGuard) {
+    PENDING_ACTION.with(|parent| {
+        *parent.borrow_mut() = Some(ActionParent(Some(guard)));
     });
 }
 
 #[must_use]
 pub fn take_action_parent() -> Option<ActionParent> {
-    COMPLETED_ACTION_PARENT.with(|parent| parent.borrow_mut().take())
+    PENDING_ACTION.with(|parent| parent.borrow_mut().take())
 }
 
-/// Record a completed bounded semantic action and retain its span just long
-/// enough for the single-threaded host loop to causally parent the resulting
-/// transition and paint.
+/// Run reducer follow-up effects under the semantic action that requested
+/// them, while leaving completion to the single action-triggered frame.
+pub fn in_pending_action_scope<T>(operation: impl FnOnce() -> T) -> T {
+    PENDING_ACTION.with(|parent| match parent.borrow().as_ref() {
+        Some(parent) => parent.in_scope(operation),
+        None => operation(),
+    })
+}
+
+/// Record an immediate semantic action that does not own reducer follow-up.
+///
+/// Async launch and exit outcomes use this path so no operation guard can
+/// survive across their await or loop-exit boundary.
 pub fn record_action(
     action: schema::enums::UiActionName,
     screen: schema::enums::ScreenId,
@@ -53,14 +74,21 @@ pub fn record_action(
         key: schema::attrs::std_attrs::APP_SCREEN_ID,
         value: Value::Str(screen.as_str()),
     });
+    attrs.push(Attr {
+        key: schema::attrs::std_attrs::APP_SCREEN_NAME,
+        value: Value::Str(screen.as_str()),
+    });
     if let Some(widget) = widget {
         attrs.push(Attr {
             key: schema::attrs::std_attrs::APP_WIDGET_ID,
             value: Value::Str(widget),
         });
+        attrs.push(Attr {
+            key: schema::attrs::std_attrs::APP_WIDGET_NAME,
+            value: Value::Str(widget),
+        });
     }
     if let Ok(guard) = crate::root_operation(&crate::operation::UI_ACTION, &attrs) {
-        remember_action_parent(guard.span());
         guard.complete(schema::enums::OutcomeValue::Success, None);
     }
     let counter_attrs = [Attr {

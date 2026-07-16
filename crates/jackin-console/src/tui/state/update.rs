@@ -302,8 +302,7 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
     }
     drop(action_span);
     if let (Some(guard), Some(action)) = (action_guard, action) {
-        jackin_telemetry::ui::remember_action_parent(guard.span());
-        guard.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+        jackin_telemetry::ui::remember_action_parent(guard);
         let attrs = [jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
             value: jackin_telemetry::Value::Str(action.as_str()),
@@ -336,10 +335,18 @@ fn start_manager_action(
             key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
             value: jackin_telemetry::Value::Str(telemetry_screen(state).as_str()),
         },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_NAME,
+            value: jackin_telemetry::Value::Str(telemetry_screen(state).as_str()),
+        },
     ];
     if let Some(widget) = telemetry_widget(state) {
         attrs.push(jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_ID,
+            value: jackin_telemetry::Value::Str(widget),
+        });
+        attrs.push(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_NAME,
             value: jackin_telemetry::Value::Str(widget),
         });
     }

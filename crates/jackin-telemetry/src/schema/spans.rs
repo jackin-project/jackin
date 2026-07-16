@@ -942,7 +942,7 @@ pub const TELEMETRY_VALIDATE_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
+// registry: kind=internal; attributes=app.screen.id:recommended,app.screen.name:recommended,app.widget.id:recommended,app.widget.name:recommended,cli.invocation.id:recommended,outcome:recommended,session.id:recommended,ui.action.name:required
 pub const UI_ACTION: &str = "ui.action";
 pub const UI_ACTION_DEF: super::SpanMetadata = super::SpanMetadata {
     name: UI_ACTION,
@@ -950,6 +950,30 @@ pub const UI_ACTION_DEF: super::SpanMetadata = super::SpanMetadata {
     kind: super::SpanKind::Internal,
     attributes: &[
         super::AttributeRequirement {
+            name: "app.screen.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "app.screen.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "app.widget.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "app.widget.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "cli.invocation.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
@@ -974,9 +998,44 @@ pub const UI_ACTION_DEF: super::SpanMetadata = super::SpanMetadata {
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },
+        super::AttributeRequirement {
+            name: "ui.action.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "workspace.open",
+                "workspace.save",
+                "workspace.launch",
+                "settings.open",
+                "settings.save",
+                "dialog.confirm",
+                "dialog.cancel",
+                "agent.select",
+                "agent.spawn",
+                "tab.switch",
+                "tab.rename",
+                "tab.close",
+                "pane.split",
+                "pane.focus",
+                "pane.resize",
+                "pane.zoom",
+                "pane.clear",
+                "pane.close",
+                "usage.refresh",
+                "session.detach",
+                "file.export",
+                "image.stage",
+                "link.open",
+                "app.exit_request",
+                "screen.back",
+                "workspace.create",
+                "workspace.delete",
+                "instance.purge",
+            ],
+        },
     ],
 };
-// registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
+// registry: kind=internal; attributes=app.screen.id:recommended,cli.invocation.id:recommended,outcome:recommended,session.id:recommended
 pub const UI_RENDER: &str = "ui.render";
 pub const UI_RENDER_DEF: super::SpanMetadata = super::SpanMetadata {
     name: UI_RENDER,
@@ -984,6 +1043,12 @@ pub const UI_RENDER_DEF: super::SpanMetadata = super::SpanMetadata {
     kind: super::SpanKind::Internal,
     attributes: &[
         super::AttributeRequirement {
+            name: "app.screen.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
             name: "cli.invocation.id",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
@@ -1010,13 +1075,19 @@ pub const UI_RENDER_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
+// registry: kind=internal; attributes=app.screen.id:required,cli.invocation.id:recommended,outcome:recommended,session.id:recommended,ui.transition.reason:required
 pub const UI_SCREEN_TRANSITION: &str = "ui.screen.transition";
 pub const UI_SCREEN_TRANSITION_DEF: super::SpanMetadata = super::SpanMetadata {
     name: UI_SCREEN_TRANSITION,
     description: "Bounded screen transition.",
     kind: super::SpanKind::Internal,
     attributes: &[
+        super::AttributeRequirement {
+            name: "app.screen.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
         super::AttributeRequirement {
             name: "cli.invocation.id",
             value_type: super::ValueType::String,
@@ -1041,6 +1112,22 @@ pub const UI_SCREEN_TRANSITION_DEF: super::SpanMetadata = super::SpanMetadata {
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "ui.transition.reason",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "action",
+                "launch",
+                "attach",
+                "detach",
+                "back",
+                "cancel",
+                "completion",
+                "failure",
+                "shutdown",
+            ],
         },
     ],
 };

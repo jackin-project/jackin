@@ -43,7 +43,9 @@ groups:
       - { id: telemetry.validation.values, type: "string[]", examples: [[bridge, typed]], brief: Opaque values used to verify typed telemetry delivery., stability: development }
       - { id: session.previous_id, type: string, examples: [session-previous], brief: Previous session id when a session is reattached., stability: development }
       - { id: app.screen.id, type: string, examples: [workspace.list], brief: Stable application screen identifier., stability: development }
+      - { id: app.screen.name, type: string, examples: [workspace.list], brief: Stable application screen name., stability: development }
       - { id: app.widget.id, type: string, examples: [workspace.table], brief: Stable application widget identifier., stability: development }
+      - { id: app.widget.name, type: string, examples: [workspace.table], brief: Stable application widget name., stability: development }
       - { id: gen_ai.agent.name, type: string, examples: [codex], brief: Generative AI agent name., stability: development }
       - { id: gen_ai.conversation.id, type: string, examples: [conversation-1], brief: Generative AI conversation identifier., stability: development }
       - { id: process.exit_code, type: int, brief: Process exit code., stability: stable }
