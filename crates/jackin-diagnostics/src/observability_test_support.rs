@@ -40,7 +40,7 @@ impl TestExport {
                     })
                 };
                 log.record.event_name() == Some(event_name)
-                    && attribute_equals("outcome", "failure")
+                    && attribute_equals("outcome", "error")
                     && attribute_equals("error.type", error_type)
             })
             .count()

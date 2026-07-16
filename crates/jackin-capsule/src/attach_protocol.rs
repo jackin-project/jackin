@@ -17,11 +17,8 @@ use crate::socket;
 const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
     jackin_telemetry::schema::enums::ErrorType::RpcError;
 
-fn record_attach_failure(body: &'static str) {
-    jackin_diagnostics::operation::telemetry_error_line(
-        jackin_telemetry::schema::enums::ErrorType::RpcError,
-        body,
-    );
+fn record_attach_failure() {
+    let _error = jackin_telemetry::record_error(RPC_ERROR);
 }
 
 /// A validated attach handshake produced by `perform_handshake`. The
@@ -506,29 +503,19 @@ pub(crate) async fn handle_attach_client_with_handshake(
             }
             result = stream.read_exact(&mut tag) => {
                 if let Err(e) = result {
-                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                        // Expected detach — not a failure (plan 008).
-                        jackin_diagnostics::telemetry_debug!("capsule", "attach client: socket closed (client detached)");
-                    } else {
-                        // Operator-visible breadcrumb + typed OTLP failure.
-                        jackin_diagnostics::telemetry_error!(jackin_telemetry::schema::enums::ErrorType::RpcError, "attach client: socket read failed: {e}");
-                        record_attach_failure("attach socket read failed");
+                    if e.kind() != std::io::ErrorKind::UnexpectedEof {
+                        record_attach_failure();
                     }
                     break;
                 }
                 let frame = match read_client_frame(&mut stream, tag[0]).await {
                     Ok(Some(frame)) => frame,
                     Ok(None) => {
-                        jackin_diagnostics::telemetry_warn!("capsule", "attach client: EOF mid-frame (tag={:#04x})", tag[0]);
-                        record_attach_failure("attach socket closed mid-frame");
+                        record_attach_failure();
                         break;
                     }
-                    Err(e) => {
-                        jackin_diagnostics::telemetry_error!(jackin_telemetry::schema::enums::ErrorType::RpcError,
-                            "attach client: frame decode failed (tag={:#04x}): {e}",
-                            tag[0]
-                        );
-                        record_attach_failure("attach frame decode failed");
+                    Err(_) => {
+                        record_attach_failure();
                         break;
                     }
                 };
@@ -550,7 +537,6 @@ pub(crate) async fn handle_attach_client_with_handshake(
                     continue;
                 }
                 if cmd_tx.send(frame).is_err() {
-                    jackin_diagnostics::telemetry_info!("capsule", "attach client: cmd_tx closed; daemon shutting down");
                     return;
                 }
             }
@@ -577,14 +563,11 @@ pub(crate) async fn handle_attach_client_with_handshake(
                     );
                 }
                 if let Err(e) = write_result {
-                    if matches!(
+                    if !matches!(
                         e.kind(),
                         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::BrokenPipe
                     ) {
-                        jackin_diagnostics::telemetry_warn!("capsule", "attach client: socket write failed: {e}");
-                    } else {
-                        jackin_diagnostics::telemetry_error!(jackin_telemetry::schema::enums::ErrorType::RpcError, "attach client: socket write failed: {e}");
-                        record_attach_failure("attach socket write failed");
+                        record_attach_failure();
                     }
                     break;
                 }
@@ -604,15 +587,8 @@ pub(crate) async fn handle_attach_client_with_handshake(
     // `attached_out` / `attached_task` — without this, subsequent
     // `send_to_client` calls silently drop into the closed channel
     // and the daemon keeps treating the dead socket as live. If the
-    // main loop is already shutting down the send fails; log so the
-    // exact symptom this comment warns against does not happen
-    // silently if the cmd_tx side is the one that died first.
-    if cmd_tx.send(ClientFrame::Detach).is_err() {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "attach client: cmd_tx closed before synthetic Detach could fire; main loop is already tearing down"
-        );
-    }
+    // main loop is already shutting down, channel closure is expected.
+    drop(cmd_tx.send(ClientFrame::Detach));
 }
 
 #[cfg(test)]
