@@ -4061,7 +4061,7 @@ fn container_info_copy_feedback_expires() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     });
     let now = Instant::now();
     mux.clipboard.dialog_copy_feedback_deadline = Some(now);
@@ -4088,7 +4088,7 @@ fn container_info_id_click_copies_and_renders_feedback() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(tx);

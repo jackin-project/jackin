@@ -5,7 +5,7 @@
 //! (auth form, confirm save, container info, status popup, op picker).
 
 use crate::tui::components::{error_popup_hint_spans, save_discard_hint_spans};
-use termrock::layout::ScrollAxes;
+use termrock::scroll::ScrollAxes;
 use termrock::{keymap::glyph, widgets::HintSpan};
 
 use crate::tui::components::auth_panel;
@@ -218,7 +218,7 @@ pub fn container_info_footer_items_for_dialog(
     content_height: usize,
     dialog_rect: ratatui::layout::Rect,
 ) -> Vec<HintSpan<'static>> {
-    let axes = termrock::layout::dialog_scroll_axes(content_width, content_height, dialog_rect);
+    let axes = termrock::scroll::dialog_scroll_axes(content_width, content_height, dialog_rect);
     container_info_footer_items(axes)
 }
 

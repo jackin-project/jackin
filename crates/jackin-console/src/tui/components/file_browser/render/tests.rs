@@ -67,9 +67,9 @@ fn git_entries_render_with_git_suffix() {
     assert!(dump.contains("plain/"));
 }
 
-// ── Entry name colour (WHITE) ─────────────────────────────────────
+// ── Entry name colour (text_fg()) ─────────────────────────────────────
 
-/// Plain (non-git) directory entries render their name in WHITE so
+/// Plain (non-git) directory entries render their name in text_fg() so
 /// the listing stays legible against phosphor-green accents.
 #[test]
 fn non_git_entry_renders_in_white() {
@@ -80,7 +80,7 @@ fn non_git_entry_renders_in_white() {
 
     let state = make_state_at(tmp.path().to_path_buf());
     // Make sure nothing is selected so the highlight style doesn't
-    // mask the base WHITE colour we want to assert on.
+    // mask the base text_fg() colour we want to assert on.
     let mut state = state;
     state.list_state.select(None);
 
@@ -104,8 +104,9 @@ fn non_git_entry_renders_in_white() {
         cell.symbol()
     );
     assert_eq!(
-        cell.fg, WHITE,
-        "non-git entry name should render in WHITE, got {:?}",
+        cell.fg,
+        text_fg(),
+        "non-git entry name should render in text_fg(), got {:?}",
         cell.fg
     );
 }
@@ -131,11 +132,11 @@ fn selected_entry_uses_cursor_and_full_content_width_highlight() {
     let buffer = terminal.backend().buffer();
     assert_eq!(buffer[(1, 1)].symbol(), "\u{25b8}");
     for x in 1..39 {
-        assert_eq!(buffer[(x, 1)].bg, PHOSPHOR_GREEN, "x={x}");
+        assert_eq!(buffer[(x, 1)].bg, accent_fg(), "x={x}");
     }
     assert_ne!(
         buffer[(39, 1)].bg,
-        PHOSPHOR_GREEN,
+        accent_fg(),
         "file-browser selection highlight must stop before the border"
     );
 }
@@ -174,7 +175,7 @@ fn overflowing_listing_shows_border_scrollbar_and_preserves_selected_gutter() {
         .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
         .expect("selected row should be visible in the viewport");
     for x in 1..39 {
-        assert_eq!(buffer[(x, selected_y)].bg, PHOSPHOR_GREEN, "x={x}");
+        assert_eq!(buffer[(x, selected_y)].bg, accent_fg(), "x={x}");
     }
     assert!(
         (1..4).any(|y| ["\u{2503}", "\u{00b7}"].contains(&buffer[(39, y)].symbol())),
@@ -182,7 +183,7 @@ fn overflowing_listing_shows_border_scrollbar_and_preserves_selected_gutter() {
     );
     assert_ne!(
         buffer[(39, selected_y)].bg,
-        PHOSPHOR_GREEN,
+        accent_fg(),
         "selected row must not paint behind the border scrollbar"
     );
 }
@@ -238,7 +239,7 @@ fn git_prompt_background_suppresses_browser_cursor_and_active_border() {
     );
     assert_ne!(
         buffer[(0, 0)].fg,
-        PHOSPHOR_GREEN,
+        accent_fg(),
         "background file browser border should be inactive while git prompt owns focus"
     );
 }
@@ -290,8 +291,8 @@ fn git_prompt_uses_five_slot_dialog_padding() {
     );
 }
 
-/// Git-repo entries render the name in WHITE and the ` (git)` suffix
-/// in `PHOSPHOR_GREEN` so the marker pops against the otherwise-white row.
+/// Git-repo entries render the name in text_fg() and the ` (git)` suffix
+/// in `accent_fg()` so the marker pops against the otherwise-white row.
 #[test]
 fn git_entry_name_is_white_and_suffix_is_phosphor_green() {
     use ratatui::{Terminal, backend::TestBackend};
@@ -323,8 +324,9 @@ fn git_entry_name_is_white_and_suffix_is_phosphor_green() {
         name_cell.symbol()
     );
     assert_eq!(
-        name_cell.fg, WHITE,
-        "git entry name should render in WHITE, got {:?}",
+        name_cell.fg,
+        text_fg(),
+        "git entry name should render in text_fg(), got {:?}",
         name_cell.fg
     );
 
@@ -338,8 +340,9 @@ fn git_entry_name_is_white_and_suffix_is_phosphor_green() {
         paren_cell.symbol()
     );
     assert_eq!(
-        paren_cell.fg, PHOSPHOR_GREEN,
-        "git suffix should render in PHOSPHOR_GREEN, got {:?}",
+        paren_cell.fg,
+        accent_fg(),
+        "git suffix should render in accent_fg(), got {:?}",
         paren_cell.fg
     );
 }

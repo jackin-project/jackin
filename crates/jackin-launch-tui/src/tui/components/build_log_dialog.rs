@@ -67,7 +67,7 @@ pub fn build_log_wrapped_lines(raw: &[String], width: usize) -> Vec<Line<'static
     if raw.is_empty() {
         vec![Line::from(Span::styled(
             "(waiting for docker build output…)",
-            jackin_core::tui_theme::DIM,
+            jackin_core::tui_theme::text_muted(),
         ))]
     } else {
         wrap_build_log_lines(raw, width)
@@ -221,18 +221,14 @@ pub fn render_build_log_dialog(
     // consumed by the top-offset viewport.
     let viewport_h = viewport_height(box_area);
     let lines_len = lines.len();
-    let mut scroll = termrock::scroll::DialogScroll {
-        scroll_x: 0,
-        scroll_y: u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
-            .unwrap_or(u16::MAX),
-    };
-    let theme = termrock::Theme::default().with_role(
-        termrock::style::Role::Border,
-        termrock::Theme::default().style(termrock::style::Role::BorderFocused),
-    );
+    let mut scroll = termrock::scroll::DialogScroll::default();
+    scroll.scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
+        .unwrap_or(u16::MAX);
+    let theme = termrock::Theme::default();
     let viewport = termrock::widgets::Viewport::new(&lines, &theme)
         .title(title)
-        .content_style(jackin_core::tui_theme::GREEN);
+        .emphasis(termrock::widgets::PanelEmphasis::Focused)
+        .content_style(theme.style(termrock::style::Role::Accent));
     frame.render_stateful_widget(&viewport, box_area, &mut scroll);
 
     let vertical = termrock::scroll::is_scrollable(lines_len, viewport_h);
@@ -326,7 +322,7 @@ fn push_wrapped_build_line(
             0,
             Span::styled(
                 BUILD_LOG_WRAP_PREFIX,
-                jackin_core::tui_theme::DIM.bg(DIALOG_SURFACE),
+                jackin_core::tui_theme::text_muted().bg(DIALOG_SURFACE),
             ),
         );
     }

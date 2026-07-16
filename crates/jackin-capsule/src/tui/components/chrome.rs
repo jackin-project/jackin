@@ -60,14 +60,14 @@ impl StatusBarWidget<'_> {
 
 fn tab_cell_style(active: bool, hovered: bool) -> Style {
     let background = match (active, hovered) {
-        (true, true) => jackin_core::tui_theme::TAB_BG_ACTIVE_HOVER,
-        (true, false) => jackin_core::tui_theme::TAB_BG_ACTIVE,
-        (false, true) => jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER,
-        (false, false) => jackin_core::tui_theme::TAB_BG_INACTIVE,
+        (true, true) => jackin_core::tui_theme::tab_active_hover_bg(),
+        (true, false) => jackin_core::tui_theme::tab_active_bg(),
+        (false, true) => jackin_core::tui_theme::tab_inactive_hover_bg(),
+        (false, false) => jackin_core::tui_theme::tab_inactive_bg(),
     };
     let style = Style::default()
         .bg(background)
-        .fg(jackin_core::tui_theme::WHITE);
+        .fg(jackin_core::tui_theme::text_fg());
     if active {
         style.add_modifier(Modifier::BOLD)
     } else {
@@ -134,7 +134,7 @@ impl Widget for StatusBarWidget<'_> {
             area.x.saturating_add(7),
             area.y,
             "❯",
-            pill.fg(jackin_core::tui_theme::WHITE),
+            pill.fg(jackin_core::tui_theme::text_fg()),
         );
         buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
@@ -148,11 +148,11 @@ impl Widget for StatusBarWidget<'_> {
             let (bg, fg) = match (self.prefix_mode, self.menu_hovered) {
                 (PrefixMode::Idle, false) => (
                     jackin_core::tui_theme::MENU_IDLE_BG,
-                    jackin_core::tui_theme::WHITE,
+                    jackin_core::tui_theme::text_fg(),
                 ),
                 (PrefixMode::Idle, true) => (
                     jackin_core::tui_theme::MENU_IDLE_HOVER_BG,
-                    jackin_core::tui_theme::WHITE,
+                    jackin_core::tui_theme::text_fg(),
                 ),
                 (PrefixMode::Awaiting, false) => {
                     (jackin_core::tui_theme::MENU_AWAITING_BG, Color::Black)
@@ -175,7 +175,7 @@ impl Widget for StatusBarWidget<'_> {
                 area.x.saturating_add(pos_1based.saturating_sub(1)),
                 area.y,
                 "›",
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::muted_fg()),
             );
         }
 
@@ -188,7 +188,7 @@ impl Widget for StatusBarWidget<'_> {
             let underline_fg = if self.focused {
                 termrock::style::PHOSPHOR_GREEN
             } else {
-                jackin_core::tui_theme::WHITE
+                jackin_core::tui_theme::text_fg()
             };
             buf.set_string(
                 area.x.saturating_add(active.start_col0),

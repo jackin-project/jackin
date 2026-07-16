@@ -18,7 +18,8 @@ use ratatui::{
 };
 
 use jackin_core::ModalOutcome;
-use termrock::layout::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
+use termrock::layout::{DialogBorder, dialog_inner_chunks, render_dialog_shell};
+use termrock::scroll::ScrollAxes;
 use termrock::scroll::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };

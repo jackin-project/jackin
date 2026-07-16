@@ -73,8 +73,8 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
     {
         let truncated: String = message.chars().take(120).collect();
         let line = Line::from(vec![
-            Span::styled("Error: ", jackin_core::tui_theme::BOLD_WHITE),
-            Span::styled(truncated, jackin_core::tui_theme::DIM),
+            Span::styled("Error: ", jackin_core::tui_theme::text_strong()),
+            Span::styled(truncated, jackin_core::tui_theme::text_muted()),
         ]);
         frame.render_widget(Paragraph::new(line), rows[0]);
     }
@@ -102,7 +102,7 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
     if list_lines.is_empty() {
         let para = Paragraph::new(Line::from(Span::styled(
             "(no matches)",
-            jackin_core::tui_theme::DIM,
+            jackin_core::tui_theme::text_muted(),
         )))
         .alignment(Alignment::Center);
         frame.render_widget(para, rows[3]);
@@ -158,9 +158,9 @@ fn render_loading(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRender
         .split(inner);
 
     let body = Line::from(vec![
-        Span::styled(glyph.to_owned(), jackin_core::tui_theme::GREEN),
+        Span::styled(glyph.to_owned(), jackin_core::tui_theme::accent()),
         Span::raw("  "),
-        Span::styled(descriptor, jackin_core::tui_theme::DIM),
+        Span::styled(descriptor, jackin_core::tui_theme::text_muted()),
     ]);
     frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
 }

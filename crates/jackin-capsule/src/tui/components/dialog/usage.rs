@@ -26,7 +26,7 @@ impl Dialog {
                 Some(jackin_core::tui_theme::DEBUG_AMBER)
             }
             jackin_protocol::control::UsageSeverity::Danger => {
-                Some(jackin_core::tui_theme::DANGER_RED)
+                Some(jackin_core::tui_theme::danger_fg())
             }
         }
     }
@@ -123,7 +123,7 @@ impl Dialog {
 
     fn usage_overview_state(
         view: &jackin_protocol::control::FocusedUsageView,
-        scroll: termrock::layout::DialogBodyScroll,
+        scroll: termrock::scroll::DialogScroll,
     ) -> crate::tui::components::container_info_surface::ContainerInfoState {
         let mut rows = Vec::new();
         if view.tabs.is_empty() {
@@ -363,7 +363,7 @@ impl Dialog {
             selected,
             tab_bar_focused: true,
             hovered_tab: None,
-            scroll: termrock::layout::DialogBodyScroll::new(),
+            scroll: termrock::scroll::DialogScroll::new(),
         }
     }
 }

@@ -3,36 +3,33 @@ title: "Visual Design"
 description: "PHOSPHOR color palette, border color semantics, left sidebar conventions, and tab bar specifications."
 ---
 
-## PHOSPHOR Color Palette
+## TermRock theme and product palette
 
 Reusable component styling flows through TermRock's semantic `Theme` and `Role`
-API ([TermRock source](https://github.com/tailrocks/termrock)). jackin❯-specific
-brand, rain, debug, and status tokens live once in `jackin-core`'s
-`host_colors.rs`; its `tui_theme.rs` module adapts them to Ratatui colors for
-every jackin❯ surface. Never define a second surface-local palette.
+API ([TermRock source](https://github.com/tailrocks/termrock)). jackin❯ surfaces
+call `Theme::default()` / `jackin_core::tui_theme` helpers such as `text_fg()`,
+`accent_fg()`, `border_fg()`, and `text_strong()` so ordinary, strong, muted,
+border, focus, danger, warning, tab, input, link, and scroll presentation stay
+on TermRock's default phosphor preset.
 
-**All colors come from semantic TermRock roles or named jackin❯ tokens; no
-inline `Color::Rgb(...)` literals outside `tui_theme.rs`.** Reusable component
-semantics belong in TermRock. Product-specific colors belong in
-`jackin-core/src/host_colors.rs` and receive their Ratatui adapter in
-`jackin-core/src/tui_theme.rs`.
+Product-owned tokens only — brand pill, launch rain, debug amber, blocked status,
+menu button states, action/disclosure accents, and light-bar `LINK_BLUE` — live
+in `jackin-core`'s `host_colors.rs` and are adapted in `tui_theme.rs`. Never
+define a second surface-local palette, and never import raw shared phosphor or
+neutral RGB constants for generic TUI painting.
 
-| Constant | Value | Usage |
+| Source | Examples | Usage |
 |---|---|---|
-| `PHOSPHOR_GREEN` | `Rgb(0, 255, 65)` | Active/focused elements, selected text |
-| `PHOSPHOR_DIM` | `Rgb(0, 140, 30)` | Inactive text, scrollbar thumbs |
-| `PHOSPHOR_DARK` | `Rgb(0, 80, 18)` | Separators and dark phosphor details |
-| `BORDER_GRAY` | `Rgb(80, 80, 80)` | Inactive and background container borders |
-| `WHITE` | `Rgb(255, 255, 255)` | Labels, keys, headings |
-| `WARNING_YELLOW` | `Rgb(255, 216, 94)` | Warning notes in confirmation dialogs |
-| `PREVIEW_CARD` | `Rgb(28, 28, 28)` | Lookbook preview canvas background |
-| `CAPSULE_PANE_FOCUSED` | `Rgb(180, 180, 180)` | Capsule pane focused border |
+| TermRock `Role` | `Text`, `TextStrong`, `TextMuted`, `Border`, `BorderFocused`, `Accent`, `Danger`, `Warning`, `Tab*`, `Link*`, `Scroll*` | Shared presentation via `Theme::default().style(role)` or `tui_theme` helpers |
+| Product tokens | `BRAND_BLOCK`, `DEBUG_AMBER`, `STATUS_BLOCKED_RED`, `MENU_*`, `ACTION_ACCENT`, `DISCLOSURE_ACCENT`, `LINK_BLUE`, rain RGB | Brand chrome and domain/agent states only |
+| TermRock escape hatch | `termrock::style::PHOSPHOR_GREEN`, `PREVIEW_CARD` | When the documented preset color itself is required (rare) |
 
-Every lookbook story preview card and lookbook background must use the `PREVIEW_CARD` token, never an inline `Color::Rgb(28, 28, 28)` literal. The general rule (no inline `Color::Rgb(...)` outside `theme.rs`) already covers this, but `PREVIEW_CARD` is the token to reach for whenever a dark card background is needed.
+**No inline `Color::Rgb(...)` literals outside `host_colors.rs` / `tui_theme.rs`.**
+Lookbook preview cards use TermRock's `PREVIEW_CARD` token.
 
 ### Background fills use the terminal default, never forced black
 
-**Modal backdrops and dialog surfaces paint the terminal's *default* background, not a fixed black.** The Ratatui tokens `theme::DIALOG_BACKDROP` and `theme::DIALOG_SURFACE` are `Color::Reset`; the raw-ANSI token `ansi::BG_DARK` is `\x1b[49m` (the default-background SGR). A dialog backdrop or surface must never set `Color::Black`, `Color::Rgb(0, 0, 0)`, or a `48;2;0;0;0m` fill. Forcing pure black makes overlays stand out as a dark rectangle against a themed (non-black) terminal background; emitting the default background lets every overlay match the operator's terminal theme. Occlusion still holds — a `Color::Reset` cell with a space overwrites the chrome behind it, just on the operator's background instead of black. This applies to every surface (console, launch cockpit, capsule) because all three consume the same shared tokens. Black as a **foreground** (e.g. black text on a light status chip) is unaffected by this rule; it governs background fills only.
+**Modal backdrops and dialog surfaces paint the terminal's *default* background, not a fixed black.** The Ratatui tokens `tui_theme::DIALOG_BACKDROP` and `tui_theme::DIALOG_SURFACE` are `Color::Reset`; the raw-ANSI token `ansi::BG_DARK` is `\x1b[49m` (the default-background SGR). A dialog backdrop or surface must never set `Color::Black`, `Color::Rgb(0, 0, 0)`, or a `48;2;0;0;0m` fill. Forcing pure black makes overlays stand out as a dark rectangle against a themed (non-black) terminal background; emitting the default background lets every overlay match the operator's terminal theme. Occlusion still holds — a `Color::Reset` cell with a space overwrites the chrome behind it, just on the operator's background instead of black. This applies to every surface (console, launch cockpit, capsule) because all three consume the same shared tokens. Black as a **foreground** (e.g. black text on a light status chip) is unaffected by this rule; it governs background fills only.
 
 ## Panel Title Spacing
 

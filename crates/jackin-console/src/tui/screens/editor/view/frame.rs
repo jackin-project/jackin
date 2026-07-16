@@ -280,7 +280,7 @@ fn workspace_mount_scroll_axes<
         PendingOpCommit,
     >,
     body_area: Rect,
-) -> termrock::layout::ScrollAxes {
+) -> termrock::scroll::ScrollAxes {
     let content_width = crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
         &state.pending.mounts,
         &state.mount_info_cache,

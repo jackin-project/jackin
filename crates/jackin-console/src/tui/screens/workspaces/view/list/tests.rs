@@ -17,7 +17,7 @@ use crate::tui::layout::list::list_names_content_width;
 use crate::tui::state::{ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag};
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
-use jackin_core::tui_theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
+use jackin_core::tui_theme::{accent_fg, tab_inactive_hover_bg};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
@@ -125,11 +125,11 @@ fn list_name_horizontal_scroll_keeps_selected_prefix_visible() {
 
     let buffer = terminal.backend().buffer();
     assert_eq!(buffer[(1, 2)].symbol(), "▸");
-    assert_eq!(buffer[(1, 2)].bg, PHOSPHOR_GREEN);
-    assert_eq!(buffer[(2, 2)].bg, PHOSPHOR_GREEN);
-    assert_eq!(buffer[(3, 2)].bg, PHOSPHOR_GREEN);
+    assert_eq!(buffer[(1, 2)].bg, accent_fg());
+    assert_eq!(buffer[(2, 2)].bg, accent_fg());
+    assert_eq!(buffer[(3, 2)].bg, accent_fg());
     for x in 1..20 {
-        assert_eq!(buffer[(x, 2)].bg, PHOSPHOR_GREEN, "x={x}");
+        assert_eq!(buffer[(x, 2)].bg, accent_fg(), "x={x}");
     }
 }
 
@@ -156,7 +156,7 @@ fn list_name_horizontal_scroll_keeps_hover_background_full_width() {
 
     let buffer = terminal.backend().buffer();
     for x in 1..20 {
-        assert_eq!(buffer[(x, 2)].bg, TAB_BG_INACTIVE_HOVER, "x={x}");
+        assert_eq!(buffer[(x, 2)].bg, tab_inactive_hover_bg(), "x={x}");
     }
 }
 
@@ -208,7 +208,7 @@ fn list_name_horizontal_scroll_keeps_short_selected_background_full_width() {
     let buffer = terminal.backend().buffer();
     assert_eq!(buffer[(1, 3)].symbol(), "▸");
     for x in 1..20 {
-        assert_eq!(buffer[(x, 3)].bg, PHOSPHOR_GREEN, "x={x}");
+        assert_eq!(buffer[(x, 3)].bg, accent_fg(), "x={x}");
     }
 }
 
@@ -264,7 +264,7 @@ fn background_list_names_under_modal_hide_selected_cursor() {
         "background sidebar must not show the selected cursor while a modal owns focus"
     );
     for x in 1..20 {
-        assert_eq!(buffer[(x, 2)].bg, PHOSPHOR_GREEN, "x={x}");
+        assert_eq!(buffer[(x, 2)].bg, accent_fg(), "x={x}");
     }
 }
 

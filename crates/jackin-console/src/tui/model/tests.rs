@@ -1227,7 +1227,7 @@ impl ModalConfirmSaveState for TestConfirmSave {
 impl ModalConfirmSaveFooterState for TestConfirmSave {
     fn footer_mode(&self) -> ModalFooterMode {
         ModalFooterMode::ConfirmSave {
-            scroll_axes: termrock::layout::ScrollAxes::none(),
+            scroll_axes: termrock::scroll::ScrollAxes::none(),
         }
     }
 }

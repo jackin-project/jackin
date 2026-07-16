@@ -24,7 +24,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
 dependencies = [
  "anstyle",
- "anstyle-parse 1.0.0",
+ "anstyle-parse",
  "anstyle-query",
  "anstyle-wincon",
  "colorchoice",
@@ -37,15 +37,6 @@ name = "anstyle"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
-
-[[package]]
-name = "anstyle-parse"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7644824f0aa2c7b9384579234ef10eb7efb6a0deb83f9630a49594dd9c15c2"
-dependencies = [
- "utf8parse",
-]
 
 [[package]]
 name = "anstyle-parse"
@@ -1756,10 +1747,10 @@ dependencies = [
 
 [[package]]
 name = "termrock"
-version = "0.10.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=5c4758b5167241ffef5f501f72bb76bc01e77aba#5c4758b5167241ffef5f501f72bb76bc01e77aba"
+version = "0.11.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=11b52a35410ef2eccd336ad58cdc114e57594141#11b52a35410ef2eccd336ad58cdc114e57594141"
 dependencies = [
- "anstyle-parse 0.2.7",
+ "anstyle-parse",
  "base64",
  "crossterm",
  "ratatui-core",

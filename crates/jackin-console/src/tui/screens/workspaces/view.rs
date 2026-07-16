@@ -445,13 +445,15 @@ pub fn list_name_lines(
         && let Some(line) = lines.get_mut(hovered_idx)
     {
         for span in &mut line.spans {
-            span.style = span.style.bg(jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER);
+            span.style = span
+                .style
+                .bg(jackin_core::tui_theme::tab_inactive_hover_bg());
         }
         let current_w = termrock::scroll::line_width(line);
         if current_w < content_w {
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
-                Style::default().bg(jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER),
+                Style::default().bg(jackin_core::tui_theme::tab_inactive_hover_bg()),
             ));
         }
     }
@@ -532,7 +534,7 @@ fn render_list_name_line(
 
 fn row_fg(row: &WorkspaceListDisplayRow) -> Color {
     match row.tone {
-        WorkspaceListRowTone::White => jackin_core::tui_theme::WHITE,
+        WorkspaceListRowTone::White => jackin_core::tui_theme::text_fg(),
         WorkspaceListRowTone::Workspace => termrock::style::PHOSPHOR_GREEN,
         WorkspaceListRowTone::Instance => jackin_core::tui_theme::CYAN,
     }
@@ -881,7 +883,7 @@ pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_displa
         Span::raw("  "),
         Span::styled(
             "Working dir ",
-            Style::default().fg(jackin_core::tui_theme::WHITE),
+            Style::default().fg(jackin_core::tui_theme::text_fg()),
         ),
         Span::raw(workdir_display.to_owned()),
     ])];
@@ -1058,7 +1060,7 @@ pub fn render_roles_subpanel(
         || {
             (
                 "(none)".to_owned(),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::muted_fg()),
             )
         },
         |name| {
@@ -1072,7 +1074,7 @@ pub fn render_roles_subpanel(
         Span::raw("  "),
         Span::styled(
             "Default ",
-            Style::default().fg(jackin_core::tui_theme::WHITE),
+            Style::default().fg(jackin_core::tui_theme::text_fg()),
         ),
         Span::styled(value_text, value_style),
     ]));
@@ -1082,19 +1084,19 @@ pub fn render_roles_subpanel(
         let name_style = if row.exists {
             Style::default().fg(termrock::style::PHOSPHOR_GREEN)
         } else {
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM)
+            Style::default().fg(jackin_core::tui_theme::muted_fg())
         };
         let mut spans = vec![Span::styled(format!("  {}", row.name), name_style)];
         if row.is_default {
             spans.push(Span::styled(
                 " \u{2605}",
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::muted_fg()),
             ));
         }
         if row.scoped_mount_count > 0 {
             spans.push(Span::styled(
                 format!("    +{} role mounts", row.scoped_mount_count),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::muted_fg()),
             ));
         }
         lines.push(Line::from(spans));
@@ -1290,7 +1292,7 @@ fn instance_detail_lines(content: &WorkspaceInstancePaneContent) -> Vec<Line<'st
         WorkspaceInstancePaneContent::Sessions { rows } => session_instance_lines(rows),
         WorkspaceInstancePaneContent::Empty { message } => vec![Line::from(Span::styled(
             format!("  {message}"),
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+            Style::default().fg(jackin_core::tui_theme::muted_fg()),
         ))],
     }
 }
@@ -1300,7 +1302,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
     if tabs.is_empty() {
         lines.push(Line::from(Span::styled(
             "  Daemon reports no tabs",
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+            Style::default().fg(jackin_core::tui_theme::muted_fg()),
         )));
         return lines;
     }
@@ -1308,7 +1310,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
     lines.push(Line::from(Span::styled(
         "  Live tab/pane tree (from container daemon)",
         Style::default()
-            .fg(jackin_core::tui_theme::WHITE)
+            .fg(jackin_core::tui_theme::text_fg())
             .add_modifier(Modifier::BOLD),
     )));
     for tab in tabs {
@@ -1319,13 +1321,13 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
                 Style::default().fg(if tab.active {
                     termrock::style::PHOSPHOR_GREEN
                 } else {
-                    jackin_core::tui_theme::PHOSPHOR_DIM
+                    jackin_core::tui_theme::muted_fg()
                 }),
             ),
             Span::styled(
                 tab.label.clone(),
                 Style::default()
-                    .fg(jackin_core::tui_theme::WHITE)
+                    .fg(jackin_core::tui_theme::text_fg())
                     .add_modifier(if tab.active {
                         Modifier::BOLD
                     } else {
@@ -1338,7 +1340,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
             let cursor_prefix = if pane.selected { "▶ " } else { "  " };
             let label_style = if pane.selected {
                 Style::default()
-                    .fg(jackin_core::tui_theme::WHITE)
+                    .fg(jackin_core::tui_theme::text_fg())
                     .bg(termrock::style::PHOSPHOR_DARK)
                     .add_modifier(Modifier::BOLD)
             } else {
@@ -1350,17 +1352,17 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
                     Style::default().fg(if pane.focused {
                         termrock::style::PHOSPHOR_GREEN
                     } else {
-                        jackin_core::tui_theme::PHOSPHOR_DIM
+                        jackin_core::tui_theme::muted_fg()
                     }),
                 ),
                 Span::styled(format!("{:<16}", pane.label), label_style),
                 Span::styled(
                     format!("  ({}) ", pane.agent_label),
-                    Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                    Style::default().fg(jackin_core::tui_theme::muted_fg()),
                 ),
                 Span::styled(
                     format!("[{}]", pane.state_label),
-                    Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                    Style::default().fg(jackin_core::tui_theme::muted_fg()),
                 ),
             ]));
         }
@@ -1372,7 +1374,7 @@ fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'sta
     let mut lines = vec![Line::from(Span::styled(
         format!("  {:<24}  Agent", "Session"),
         Style::default()
-            .fg(jackin_core::tui_theme::WHITE)
+            .fg(jackin_core::tui_theme::text_fg())
             .add_modifier(Modifier::BOLD),
     ))];
     for row in rows {
@@ -1389,7 +1391,7 @@ fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'sta
             ),
             Span::styled(
                 row.agent_runtime.clone(),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::muted_fg()),
             ),
         ]));
     }
@@ -1409,7 +1411,7 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
         spans.push(Span::styled(
             marker_text,
             Style::default()
-                .fg(jackin_core::tui_theme::PHOSPHOR_DIM)
+                .fg(jackin_core::tui_theme::muted_fg())
                 .add_modifier(Modifier::ITALIC),
         ));
     } else {
@@ -1430,7 +1432,7 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
         spans.push(Span::raw(" ".repeat(pad_count)));
         spans.push(Span::styled(
             role.clone(),
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+            Style::default().fg(jackin_core::tui_theme::muted_fg()),
         ));
     }
 

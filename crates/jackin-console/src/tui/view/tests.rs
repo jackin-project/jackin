@@ -446,7 +446,7 @@ fn tui_header_uses_canonical_brand_wordmark() {
 
 // Cross-widget visual-consistency pins.
 //
-// Every modal renders with the same chrome: `PHOSPHOR_GREEN` border
+// Every modal renders with the same chrome: `accent_fg()` border
 // (RGB 0/255/65) — dialogs and modal pickers are always the active/focused
 // container when visible. A title wrapped in leading + trailing spaces so
 // `┌ Title ─...` renders with breathing room. These tests pin that
@@ -454,7 +454,7 @@ fn tui_header_uses_canonical_brand_wordmark() {
 
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
-use jackin_core::tui_theme::{PHOSPHOR_GREEN, WHITE};
+use jackin_core::tui_theme::{accent_fg, text_fg};
 
 /// Render a closure into a fresh `TestBackend` and return the resulting
 /// buffer. Size is chosen to comfortably fit every modal under test.
@@ -493,8 +493,8 @@ fn top_border_title(buf: &Buffer) -> String {
 }
 
 /// Assert every cell on the top and bottom border rows uses
-/// `PHOSPHOR_GREEN` as its foreground colour (title cells are exempt —
-/// they're WHITE+BOLD). Modals are always the active/focused container
+/// `accent_fg()` as its foreground colour (title cells are exempt —
+/// they're text_fg()+BOLD). Modals are always the active/focused container
 /// when visible, so they always use the active border colour.
 fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
     assert_eq!(buf[(area.x, area.y)].symbol(), "┌", "{widget}: top-left");
@@ -534,17 +534,19 @@ fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
         if cell.symbol().is_empty() {
             continue;
         }
-        let is_title_cell = cell.fg == WHITE;
+        let is_title_cell = cell.fg == text_fg();
         if is_title_cell {
             continue;
         }
         assert_eq!(
-            cell.fg, PHOSPHOR_GREEN,
-            "{widget}: top-border cell at ({x},{}) fg={:?}, expected PHOSPHOR_GREEN",
-            area.y, cell.fg,
+            cell.fg,
+            accent_fg(),
+            "{widget}: top-border cell at ({x},{}) fg={:?}, expected accent_fg()",
+            area.y,
+            cell.fg,
         );
     }
-    // Bottom border — should be all PHOSPHOR_GREEN.
+    // Bottom border — should be all accent_fg().
     let by = area.y + area.height - 1;
     for x in area.x..area.x + area.width {
         let cell = &buf[(x, by)];
@@ -552,8 +554,9 @@ fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
             continue;
         }
         assert_eq!(
-            cell.fg, PHOSPHOR_GREEN,
-            "{widget}: bottom-border cell at ({x},{by}) fg={:?}, expected PHOSPHOR_GREEN",
+            cell.fg,
+            accent_fg(),
+            "{widget}: bottom-border cell at ({x},{by}) fg={:?}, expected accent_fg()",
             cell.fg,
         );
     }
@@ -714,7 +717,7 @@ fn all_modal_block_titles_have_padding() {
     }
 }
 
-/// Every modal's top and bottom border runs in `PHOSPHOR_GREEN` —
+/// Every modal's top and bottom border runs in `accent_fg()` —
 /// dialogs and modal pickers are always the active/focused container.
 #[test]
 fn all_modal_borders_are_phosphor_green() {
@@ -878,7 +881,7 @@ fn neighbors(x: u16, y: u16, area: Rect) -> impl Iterator<Item = (u16, u16)> {
 
 fn is_green_border_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
     let cell = &buf[coord];
-    cell.fg == PHOSPHOR_GREEN && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
+    cell.fg == accent_fg() && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
 }
 
 fn test_cwd() -> std::path::PathBuf {
@@ -1094,7 +1097,7 @@ fn host_console_content_states_have_one_green_border_cluster() {
         assert_eq!(
             green_border_cluster_count(&buf),
             1,
-            "{name} must render exactly one PHOSPHOR_GREEN border cluster"
+            "{name} must render exactly one accent_fg() border cluster"
         );
     }
 }
@@ -1169,7 +1172,7 @@ fn host_console_list_detail_transitions_have_one_green_border_cluster() {
         assert_eq!(
             green_border_cluster_count(&buf),
             1,
-            "{name} must render exactly one PHOSPHOR_GREEN border cluster"
+            "{name} must render exactly one accent_fg() border cluster"
         );
     }
 }
@@ -1650,7 +1653,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         assert_eq!(
             green_border_cluster_count(&buf),
             1,
-            "{name} must render exactly one PHOSPHOR_GREEN border cluster"
+            "{name} must render exactly one accent_fg() border cluster"
         );
     }
 }

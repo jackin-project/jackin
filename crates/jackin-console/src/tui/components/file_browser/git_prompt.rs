@@ -25,7 +25,7 @@ use termrock::runtime::{Subscription, SubscriptionPoll};
 
 use super::input::FileBrowserOutcome;
 use super::state::FileBrowserState;
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{accent_fg, muted_fg, text_fg};
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,11 +196,11 @@ pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<
 /// modal background so only the focused choice pops (canonical template).
 pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
     let focused = Style::default()
-        .bg(WHITE)
+        .bg(text_fg())
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
     let unfocused = Style::default()
-        .fg(PHOSPHOR_GREEN)
+        .fg(accent_fg())
         .add_modifier(Modifier::BOLD);
     let btn = |target: GitPromptFocus, label: &'static str| -> Span<'static> {
         let style = if focus == target { focused } else { unfocused };
@@ -285,7 +285,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            jackin_core::tui_theme::BOLD_WHITE,
+            jackin_core::tui_theme::text_strong(),
         ))
         .alignment(Alignment::Center),
         prompt_row,
@@ -302,7 +302,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
             Paragraph::new(Span::styled(
                 url.to_owned(),
                 Style::default()
-                    .fg(PHOSPHOR_DIM)
+                    .fg(muted_fg())
                     .add_modifier(Modifier::ITALIC),
             ))
             .alignment(Alignment::Center),

@@ -955,7 +955,7 @@ impl RichRenderer {
                         )
                         .with_role(
                             termrock::style::Role::DiffRemoved,
-                            Style::default().fg(jackin_core::tui_theme::DANGER_RED),
+                            Style::default().fg(jackin_core::tui_theme::danger_fg()),
                         );
                     frame.render_stateful_widget(
                         &DiffView::new(&lines, &diff_theme),
@@ -1125,12 +1125,12 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
             PromptContextLine::Emphasis(text) => Line::from(Span::styled(
                 text.clone(),
                 Style::default()
-                    .fg(jackin_core::tui_theme::WHITE)
+                    .fg(jackin_core::tui_theme::text_fg())
                     .add_modifier(Modifier::BOLD),
             )),
             PromptContextLine::Muted(text) => Line::from(Span::styled(
                 text.clone(),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(jackin_core::tui_theme::muted_fg()),
             )),
             PromptContextLine::Path(text) => Line::from(Span::styled(
                 text.clone(),

@@ -318,7 +318,7 @@ impl Multiplexer {
                     *offset,
                 )
                 .is_some();
-                Some(termrock::layout::ScrollAxes {
+                Some(termrock::scroll::ScrollAxes {
                     vertical,
                     horizontal: false,
                 })

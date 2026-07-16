@@ -64,7 +64,7 @@ fn active_tab_background_differs_from_brand_pill() {
         .filter(|x| buf[(*x, 0)].bg == jackin_core::tui_theme::BRAND_BLOCK)
         .count();
     let active_tab_cells = (0..80)
-        .filter(|x| buf[(*x, 0)].bg == jackin_core::tui_theme::TAB_BG_ACTIVE)
+        .filter(|x| buf[(*x, 0)].bg == jackin_core::tui_theme::tab_active_bg())
         .count();
     assert_eq!(brand_cells, termrock::text::display_cols(" jackin❯ "));
     assert!(active_tab_cells > 0, "active tab should use graphite bg");
@@ -78,7 +78,7 @@ fn hovered_tab_uses_lifted_background() {
     ];
     let (_, buf) = draw(80, &tabs, 0, &[], Some(1), PrefixMode::Idle);
     assert!(
-        (0..80).any(|x| buf[(x, 0)].bg == jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER),
+        (0..80).any(|x| buf[(x, 0)].bg == jackin_core::tui_theme::tab_inactive_hover_bg()),
         "hovered inactive tab should use lifted bg"
     );
 }
@@ -91,7 +91,7 @@ fn active_tab_hover_uses_lifted_graphite_background() {
     ];
     let (_, buf) = draw(80, &tabs, 0, &[], Some(0), PrefixMode::Idle);
     assert!(
-        (0..80).any(|x| buf[(x, 0)].bg == jackin_core::tui_theme::TAB_BG_ACTIVE_HOVER),
+        (0..80).any(|x| buf[(x, 0)].bg == jackin_core::tui_theme::tab_active_hover_bg()),
         "hovered active tab should use lifted graphite bg"
     );
 }

@@ -60,7 +60,7 @@ pub(crate) fn role_lines(
     let badge_bg = if is_all {
         termrock::style::PHOSPHOR_GREEN
     } else {
-        jackin_core::tui_theme::WHITE
+        jackin_core::tui_theme::text_fg()
     };
     let badge_style = Style::default()
         .bg(badge_bg)
@@ -71,7 +71,7 @@ pub(crate) fn role_lines(
         Span::styled(
             "  Allowed roles:  ",
             Style::default()
-                .fg(jackin_core::tui_theme::WHITE)
+                .fg(jackin_core::tui_theme::text_fg())
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(badge_text, badge_style),

@@ -13,7 +13,7 @@ use ratatui::{
 };
 
 use crate::ModalOutcome;
-use termrock::layout::DialogBodyScroll;
+use termrock::scroll::DialogScroll;
 use termrock::style::Role;
 use termrock::text::display_cols;
 use termrock::widgets::{
@@ -179,9 +179,9 @@ pub struct ContainerInfoState {
     hovered_row: Option<usize>,
     viewport: Option<Rect>,
     /// Scroll offsets for when the content overflows the dialog area. Shared
-    /// with every other dialog through [`DialogBodyScroll`] so vertical and
+    /// with every other dialog through [`DialogScroll`] so vertical and
     /// horizontal scroll behave identically everywhere.
-    pub scroll: DialogBodyScroll,
+    pub scroll: DialogScroll,
 }
 
 impl ContainerInfoState {
@@ -193,7 +193,7 @@ impl ContainerInfoState {
             copied_row: None,
             hovered_row: None,
             viewport: None,
-            scroll: DialogBodyScroll::new(),
+            scroll: DialogScroll::new(),
         }
     }
 
@@ -216,7 +216,7 @@ impl ContainerInfoState {
             let content_height = self.content_height();
             let content_width = self.content_width();
             let axes =
-                termrock::layout::dialog_scroll_axes(content_width, content_height, dialog_rect);
+                termrock::scroll::dialog_scroll_axes(content_width, content_height, dialog_rect);
             let viewport_width = usize::from(dialog_rect.width.saturating_sub(2));
             let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
             return self.handle_scroll_key(key, viewport_height, viewport_width, axes);
@@ -227,7 +227,7 @@ impl ContainerInfoState {
             key,
             0,
             0,
-            termrock::layout::ScrollAxes {
+            termrock::scroll::ScrollAxes {
                 vertical: true,
                 horizontal: true,
             },
@@ -248,7 +248,7 @@ impl ContainerInfoState {
         key: KeyEvent,
         viewport_height: usize,
         viewport_width: usize,
-        axes: termrock::layout::ScrollAxes,
+        axes: termrock::scroll::ScrollAxes,
     ) -> ModalOutcome<()> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
@@ -366,7 +366,7 @@ impl ContainerInfoState {
 /// persistent `ContainerInfoState` (the cockpit's `LaunchView`, the capsule's
 /// `Dialog` enum) so they get the same over-scroll guard as `clamp_scroll`.
 pub fn clamp_dialog_scroll(
-    scroll: &mut DialogBodyScroll,
+    scroll: &mut DialogScroll,
     content_width: usize,
     content_height: usize,
     dialog_rect: Rect,
@@ -391,8 +391,8 @@ pub fn clamp_dialog_scroll(
 /// copies) with no backing `Keymap<A>`, so each span carries an
 /// `// UNREGISTERABLE` annotation per the keymap/hint-bar enforcement rule.
 #[must_use]
-pub fn debug_info_hint_spans(axes: termrock::layout::ScrollAxes) -> Vec<HintSpan<'static>> {
-    let mut spans = termrock::layout::scroll_hint_spans(axes);
+pub fn debug_info_hint_spans(axes: termrock::scroll::ScrollAxes) -> Vec<HintSpan<'static>> {
+    let mut spans = termrock::scroll::scroll_hint_spans(axes);
     if axes.any() {
         spans.push(HintSpan::GroupSep);
     }
@@ -438,16 +438,8 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
     let mut table_state = detail_state(state);
     frame.render_stateful_widget(&table, table_area, &mut table_state);
 
-    let scroll = DialogBodyScroll {
-        scroll_x: table_state.scroll.scroll_x,
-        scroll_y: table_state.scroll.scroll_y,
-    };
-    scroll.render_scrollbars(
-        frame,
-        area,
-        table_state.content_height.saturating_add(1),
-        table_state.content_width,
-    );
+    // DetailTable paints its own scrollbars from table_state during render.
+    let _ = (table_state.content_height, table_state.content_width);
 }
 
 fn detail_table_area(inner: Rect) -> Rect {
@@ -482,15 +474,12 @@ fn detail_rows(state: &ContainerInfoState) -> Vec<DetailRow<'_, usize>> {
 }
 
 fn detail_state(state: &ContainerInfoState) -> DetailTableState<usize> {
-    DetailTableState {
-        hovered: state.hovered_row,
-        copied: state.copied_row,
-        scroll: termrock::scroll::DialogScroll {
-            scroll_x: state.scroll.scroll_x,
-            scroll_y: state.scroll.scroll_y,
-        },
-        ..DetailTableState::default()
-    }
+    let mut table_state = DetailTableState::default();
+    table_state.hovered = state.hovered_row;
+    table_state.copied = state.copied_row;
+    table_state.scroll.scroll_x = state.scroll.scroll_x;
+    table_state.scroll.scroll_y = state.scroll.scroll_y;
+    table_state
 }
 
 fn detail_layout(

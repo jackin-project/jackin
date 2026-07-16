@@ -10,7 +10,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::WHITE;
+use jackin_core::tui_theme::text_fg;
 
 use super::{
     FieldDisplayRow, OpPickerAccountRef, OpPickerFatalState, OpPickerFieldDisplayRef,
@@ -19,7 +19,10 @@ use super::{
 
 /// `+ New X` creation row, styled like picker list rows.
 pub fn sentinel_line(text: &str, _is_selected: bool) -> Line<'static> {
-    Line::from(Span::styled(text.to_owned(), jackin_core::tui_theme::DIM))
+    Line::from(Span::styled(
+        text.to_owned(),
+        jackin_core::tui_theme::text_muted(),
+    ))
 }
 
 pub fn account_lines<'a>(
@@ -30,9 +33,12 @@ pub fn account_lines<'a>(
         .into_iter()
         .map(|account| {
             Line::from(vec![
-                Span::styled(account.email.to_owned(), Style::default().fg(WHITE)),
+                Span::styled(account.email.to_owned(), Style::default().fg(text_fg())),
                 Span::raw("  "),
-                Span::styled(format!("({})", account.url), jackin_core::tui_theme::DIM),
+                Span::styled(
+                    format!("({})", account.url),
+                    jackin_core::tui_theme::text_muted(),
+                ),
             ])
         })
         .collect()
@@ -47,7 +53,7 @@ pub fn vault_lines<'a>(
         .map(|vault| {
             Line::from(Span::styled(
                 vault.name.to_owned(),
-                Style::default().fg(WHITE),
+                Style::default().fg(text_fg()),
             ))
         })
         .collect()
@@ -65,10 +71,10 @@ pub fn item_choice_lines<'a>(
                 |item| {
                     let mut spans = vec![Span::styled(
                         item.name.to_owned(),
-                        Style::default().fg(WHITE),
+                        Style::default().fg(text_fg()),
                     )];
                     if !item.subtitle.is_empty() {
-                        let dim = jackin_core::tui_theme::DIM;
+                        let dim = jackin_core::tui_theme::text_muted();
                         spans.push(Span::styled(" (", dim));
                         spans.push(Span::styled(item.subtitle.to_owned(), dim));
                         spans.push(Span::styled(")", dim));
@@ -91,7 +97,7 @@ pub fn section_lines(
         .into_iter()
         .map(|choice| {
             let label = choice.unwrap_or_else(|| "(root)".to_owned());
-            Line::from(Span::styled(label, Style::default().fg(WHITE)))
+            Line::from(Span::styled(label, Style::default().fg(text_fg())))
         })
         .collect();
     lines.push(sentinel_line("+ New section", false));
@@ -139,7 +145,7 @@ fn section_header_line(
     } else {
         "\u{25bc}"
     };
-    let style = jackin_core::tui_theme::DIM;
+    let style = jackin_core::tui_theme::text_muted();
     let count_label = format!(
         "({} {})",
         field_count,
@@ -148,14 +154,14 @@ fn section_header_line(
     Line::from(vec![
         Span::styled(arrow, style),
         Span::styled(format!(" {name}  "), style),
-        Span::styled(count_label, jackin_core::tui_theme::DIM),
+        Span::styled(count_label, jackin_core::tui_theme::text_muted()),
     ])
 }
 
 fn field_line(field: OpPickerFieldDisplayRef<'_>, label_w: usize) -> Line<'static> {
     let label = field_display_label(field);
     let pad = label_w.saturating_sub(label.chars().count());
-    let label_style = Style::default().fg(WHITE);
+    let label_style = Style::default().fg(text_fg());
     let annotation = if field.concealed {
         "(concealed)".to_owned()
     } else {
@@ -164,7 +170,7 @@ fn field_line(field: OpPickerFieldDisplayRef<'_>, label_w: usize) -> Line<'stati
     Line::from(vec![
         Span::styled(label, label_style),
         Span::raw(format!("{}  ", " ".repeat(pad))),
-        Span::styled(annotation, jackin_core::tui_theme::DIM),
+        Span::styled(annotation, jackin_core::tui_theme::text_muted()),
     ])
 }
 
@@ -223,52 +229,52 @@ pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
         OpPickerFatalState::NotInstalled => vec![
             Line::from(Span::styled(
                 "1Password CLI not found.",
-                jackin_core::tui_theme::BOLD_WHITE,
+                jackin_core::tui_theme::text_strong(),
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Install: brew install 1password-cli (macOS)",
-                jackin_core::tui_theme::GREEN,
+                jackin_core::tui_theme::accent(),
             )),
             Line::from(Span::styled(
                 "or visit 1password.com/downloads/command-line/",
-                jackin_core::tui_theme::GREEN,
+                jackin_core::tui_theme::accent(),
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "After install, run `op signin`, then press P to retry.",
-                jackin_core::tui_theme::DIM,
+                jackin_core::tui_theme::text_muted(),
             )),
         ],
         OpPickerFatalState::NotSignedIn => vec![
             Line::from(Span::styled(
                 "1Password CLI is not signed in.",
-                jackin_core::tui_theme::BOLD_WHITE,
+                jackin_core::tui_theme::text_strong(),
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Run `op signin` in your shell, then retry.",
-                jackin_core::tui_theme::GREEN,
+                jackin_core::tui_theme::accent(),
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "jackin❯ uses your existing op session — there is no separate jackin❯ auth.",
-                jackin_core::tui_theme::DIM,
+                jackin_core::tui_theme::text_muted(),
             )),
         ],
         OpPickerFatalState::NoVaults => vec![
             Line::from(Span::styled(
                 "No vaults available.",
-                jackin_core::tui_theme::BOLD_WHITE,
+                jackin_core::tui_theme::text_strong(),
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Check 1Password's app integration settings:",
-                jackin_core::tui_theme::GREEN,
+                jackin_core::tui_theme::accent(),
             )),
             Line::from(Span::styled(
                 "Settings \u{2192} Developer \u{2192} CLI integration.",
-                jackin_core::tui_theme::GREEN,
+                jackin_core::tui_theme::accent(),
             )),
         ],
         OpPickerFatalState::GenericFatal { message } => {
@@ -276,10 +282,13 @@ pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
             vec![
                 Line::from(Span::styled(
                     "1Password CLI error.",
-                    jackin_core::tui_theme::BOLD_WHITE,
+                    jackin_core::tui_theme::text_strong(),
                 )),
                 Line::from(""),
-                Line::from(Span::styled(truncated, jackin_core::tui_theme::DIM)),
+                Line::from(Span::styled(
+                    truncated,
+                    jackin_core::tui_theme::text_muted(),
+                )),
             ]
         }
     }

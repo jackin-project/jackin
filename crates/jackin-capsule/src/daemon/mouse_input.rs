@@ -3,9 +3,9 @@
 
 //! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
 
+use jackin_core::tui_hover::HoverTracker;
 use jackin_protocol::attach::ServerFrame;
 use ratatui::layout::Rect;
-use termrock::interaction::HoverTracker;
 
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, ColRange, branch_context_bar_layout, debug_run_id_label,

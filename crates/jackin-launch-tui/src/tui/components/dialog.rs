@@ -72,13 +72,11 @@ pub fn dialog_scroll_axes(
     }
 }
 
-pub fn dialog_scroll(
-    scroll: &termrock::scroll::DialogScroll,
-) -> termrock::layout::DialogBodyScroll {
-    termrock::layout::DialogBodyScroll {
-        scroll_x: scroll.scroll_x,
-        scroll_y: scroll.scroll_y,
-    }
+pub fn dialog_scroll(scroll: &termrock::scroll::DialogScroll) -> termrock::scroll::DialogScroll {
+    let mut copy = termrock::scroll::DialogScroll::default();
+    copy.scroll_x = scroll.scroll_x;
+    copy.scroll_y = scroll.scroll_y;
+    copy
 }
 
 /// Paint the shared solid dialog backdrop over the content body and split the

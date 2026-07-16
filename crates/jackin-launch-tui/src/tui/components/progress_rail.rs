@@ -3,7 +3,7 @@
 
 //! Launch stage progress rail and label animation.
 
-use jackin_core::tui_theme::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use jackin_core::tui_theme::{accent_fg, danger_fg, scroll_track_fg, text_fg};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -70,11 +70,11 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
         // Thin horizontal segments (a slim progress bar), not tall full
         // blocks: heavy `━` for reached/active stages, light `─` for queued.
         let (glyph, color) = match status {
-            StageStatus::Done | StageStatus::Skipped => ('━', PHOSPHOR_GREEN),
-            StageStatus::Running => ('━', if pulse { WHITE } else { PHOSPHOR_GREEN }),
-            StageStatus::Failed => ('━', DANGER_RED),
-            StageStatus::Blocked => ('━', WHITE),
-            StageStatus::Queued => ('─', PHOSPHOR_DARK),
+            StageStatus::Done | StageStatus::Skipped => ('━', accent_fg()),
+            StageStatus::Running => ('━', if pulse { text_fg() } else { accent_fg() }),
+            StageStatus::Failed => ('━', danger_fg()),
+            StageStatus::Blocked => ('━', text_fg()),
+            StageStatus::Queued => ('─', scroll_track_fg()),
         };
         spans.push(Span::styled(
             glyph.to_string().repeat(BLOCK_WIDTH),
@@ -153,19 +153,19 @@ pub fn label_strip(
 fn label_style_for_stage(status: StageStatus, active: bool, bright: bool) -> Style {
     if active {
         return match status {
-            StageStatus::Failed => jackin_core::tui_theme::DANGER,
-            _ if bright => jackin_core::tui_theme::BOLD_WHITE,
+            StageStatus::Failed => jackin_core::tui_theme::danger(),
+            _ if bright => jackin_core::tui_theme::text_strong(),
             _ => Style::default()
-                .fg(PHOSPHOR_GREEN)
+                .fg(accent_fg())
                 .add_modifier(Modifier::BOLD),
         };
     }
 
     match status {
-        StageStatus::Done | StageStatus::Skipped => jackin_core::tui_theme::DIM,
-        StageStatus::Failed => Style::default().fg(DANGER_RED),
-        StageStatus::Running | StageStatus::Blocked => jackin_core::tui_theme::GREEN,
-        StageStatus::Queued => Style::default().fg(PHOSPHOR_DARK),
+        StageStatus::Done | StageStatus::Skipped => jackin_core::tui_theme::text_muted(),
+        StageStatus::Failed => Style::default().fg(danger_fg()),
+        StageStatus::Running | StageStatus::Blocked => jackin_core::tui_theme::accent(),
+        StageStatus::Queued => Style::default().fg(scroll_track_fg()),
     }
 }
 

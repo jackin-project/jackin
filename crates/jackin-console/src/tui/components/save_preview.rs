@@ -491,7 +491,7 @@ pub fn workspace_mount_preview_row(
 
 #[must_use]
 pub fn collapse_section_lines(collapses: &[(String, String)]) -> Vec<Line<'static>> {
-    let style = Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM);
+    let style = Style::default().fg(jackin_core::tui_theme::muted_fg());
     collapses
         .iter()
         .map(|(child, parent)| {
@@ -736,10 +736,10 @@ pub struct TrustPreviewRow {
 )]
 pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
-        .fg(jackin_core::tui_theme::WHITE)
+        .fg(jackin_core::tui_theme::text_fg())
         .add_modifier(Modifier::BOLD);
     let value = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
-    let dim = Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM);
+    let dim = Style::default().fg(jackin_core::tui_theme::muted_fg());
 
     let mut out: Vec<Line<'static>> = Vec::new();
 
@@ -1007,10 +1007,10 @@ fn allowed_roles_summary(preview: &WorkspaceSavePreview) -> String {
 #[must_use]
 pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
-        .fg(jackin_core::tui_theme::WHITE)
+        .fg(jackin_core::tui_theme::text_fg())
         .add_modifier(Modifier::BOLD);
     let add_style = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
-    let remove_style = Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM);
+    let remove_style = Style::default().fg(jackin_core::tui_theme::muted_fg());
     let sep_style = Style::default().fg(termrock::style::PHOSPHOR_DARK);
 
     let mut out: Vec<Line<'static>> = Vec::new();

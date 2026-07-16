@@ -183,7 +183,7 @@ struct ConsoleLoopInputs<'a, H, R> {
 struct ConsoleMouseState {
     last_event_at: Option<std::time::Instant>,
     pointer_shape: termrock::osc::PointerShape,
-    chrome_hover_tracker: termrock::interaction::HoverTracker<ConsoleChromeHover>,
+    chrome_hover_tracker: jackin_core::tui_hover::HoverTracker<ConsoleChromeHover>,
     chrome_hover: Option<ConsoleChromeHover>,
 }
 
@@ -192,7 +192,7 @@ impl ConsoleMouseState {
         Self {
             last_event_at: None,
             pointer_shape: termrock::osc::PointerShape::Default,
-            chrome_hover_tracker: termrock::interaction::HoverTracker::new(),
+            chrome_hover_tracker: jackin_core::tui_hover::HoverTracker::new(),
             chrome_hover: None,
         }
     }
@@ -308,13 +308,13 @@ where
                 min_width: 0,
                 enabled: true,
                 style: ratatui::style::Style::default()
-                    .bg(jackin_core::tui_theme::DANGER_RED)
-                    .fg(jackin_core::tui_theme::WHITE)
+                    .bg(jackin_core::tui_theme::danger_fg())
+                    .fg(jackin_core::tui_theme::text_fg())
                     .add_modifier(ratatui::style::Modifier::BOLD),
                 hover_style: Some(
                     ratatui::style::Style::default()
-                        .bg(jackin_core::tui_theme::WHITE)
-                        .fg(jackin_core::tui_theme::DANGER_RED)
+                        .bg(jackin_core::tui_theme::text_fg())
+                        .fg(jackin_core::tui_theme::danger_fg())
                         .add_modifier(ratatui::style::Modifier::BOLD),
                 ),
             }];
@@ -326,7 +326,7 @@ where
             let theme = termrock::Theme::default().with_role(
                 termrock::style::Role::StatusBar,
                 ratatui::style::Style::default()
-                    .bg(jackin_core::tui_theme::WHITE)
+                    .bg(jackin_core::tui_theme::text_fg())
                     .fg(jackin_core::tui_theme::INK),
             );
             frame.render_stateful_widget(

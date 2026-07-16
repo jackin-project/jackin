@@ -28,15 +28,6 @@ dependencies = [
 
 [[package]]
 name = "anstyle-parse"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7644824f0aa2c7b9384579234ef10eb7efb6a0deb83f9630a49594dd9c15c2"
-dependencies = [
- "utf8parse",
-]
-
-[[package]]
-name = "anstyle-parse"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
@@ -790,7 +781,7 @@ dependencies = [
 name = "jackin-diagnostics"
 version = "0.6.0-dev"
 dependencies = [
- "anstyle-parse 1.0.0",
+ "anstyle-parse",
  "anyhow",
  "crossterm",
  "jackin-core",
@@ -1864,10 +1855,10 @@ dependencies = [
 
 [[package]]
 name = "termrock"
-version = "0.10.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=5c4758b5167241ffef5f501f72bb76bc01e77aba#5c4758b5167241ffef5f501f72bb76bc01e77aba"
+version = "0.11.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=11b52a35410ef2eccd336ad58cdc114e57594141#11b52a35410ef2eccd336ad58cdc114e57594141"
 dependencies = [
- "anstyle-parse 0.2.7",
+ "anstyle-parse",
  "base64",
  "crossterm",
  "ratatui-core",

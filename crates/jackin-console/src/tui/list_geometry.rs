@@ -5,7 +5,7 @@
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-use termrock::layout::ScrollAxes;
+use termrock::scroll::ScrollAxes;
 
 use crate::tui::screens::workspaces::model::ManagerListRow;
 

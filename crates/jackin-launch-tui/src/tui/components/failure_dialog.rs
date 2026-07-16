@@ -162,12 +162,10 @@ fn layout_state(
 ) -> DetailTableState<usize> {
     let details = detail_rows(rows);
     let theme = Theme::default();
-    let mut state = DetailTableState {
-        hovered: hovered.and_then(|target| target_id(rows, target)),
-        copied: copied.and_then(|target| target_id(rows, target)),
-        scroll: scroll.unwrap_or_default(),
-        ..DetailTableState::default()
-    };
+    let mut state = DetailTableState::default();
+    state.hovered = hovered.and_then(|target| target_id(rows, target));
+    state.copied = copied.and_then(|target| target_id(rows, target));
+    state.scroll = scroll.unwrap_or_default();
     let mut buffer = Buffer::empty(rect);
     let dialog = Dialog::new(title, Text::from(message(rows)), &theme)
         .style(Style::default())
@@ -317,16 +315,14 @@ pub fn render_failure_popup(
     let details = detail_rows(&rows);
     let rect = failure_popup_rect(chrome.body, &rows);
     let theme = Theme::default();
-    let mut state = DetailTableState {
-        hovered: view
-            .failure_copy_hover
-            .and_then(|target| target_id(&rows, target)),
-        copied: view
-            .failure_copied
-            .and_then(|target| target_id(&rows, target)),
-        scroll: view.failure_scroll.clone(),
-        ..DetailTableState::default()
-    };
+    let mut state = DetailTableState::default();
+    state.hovered = view
+        .failure_copy_hover
+        .and_then(|target| target_id(&rows, target));
+    state.copied = view
+        .failure_copied
+        .and_then(|target| target_id(&rows, target));
+    state.scroll = view.failure_scroll.clone();
     let dialog = Dialog::new(&failure.title, Text::from(failure.summary.as_str()), &theme)
         .style(Style::default())
         .emphasis(PanelEmphasis::Focused);
@@ -388,7 +384,7 @@ pub fn failure_popup_hyperlink_overlay(
             .as_bytes(),
         );
         out.extend_from_slice(&termrock::osc::encode_hyperlink_open(None, href));
-        let ratatui::style::Color::Rgb(red, green, blue) = jackin_core::tui_theme::LINK_FG else {
+        let ratatui::style::Color::Rgb(red, green, blue) = jackin_core::tui_theme::link_fg() else {
             continue;
         };
         out.extend_from_slice(format!("\x1b[38;2;{red};{green};{blue}m\x1b[1;4m").as_bytes());

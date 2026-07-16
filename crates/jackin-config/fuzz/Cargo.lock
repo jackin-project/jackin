@@ -19,9 +19,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "anstyle-parse"
-version = "0.2.7"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7644824f0aa2c7b9384579234ef10eb7efb6a0deb83f9630a49594dd9c15c2"
+checksum = "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
 dependencies = [
  "utf8parse",
 ]
@@ -1609,8 +1609,8 @@ dependencies = [
 
 [[package]]
 name = "termrock"
-version = "0.10.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=5c4758b5167241ffef5f501f72bb76bc01e77aba#5c4758b5167241ffef5f501f72bb76bc01e77aba"
+version = "0.11.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=11b52a35410ef2eccd336ad58cdc114e57594141#11b52a35410ef2eccd336ad58cdc114e57594141"
 dependencies = [
  "anstyle-parse",
  "base64",

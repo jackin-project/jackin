@@ -25,10 +25,10 @@ fn brand_header_line(label: &str) -> Line<'static> {
         .add_modifier(Modifier::BOLD);
     Line::from(vec![
         Span::styled(" jackin", block.fg(jackin_core::tui_theme::INK)),
-        Span::styled("❯", block.fg(jackin_core::tui_theme::WHITE)),
+        Span::styled("❯", block.fg(jackin_core::tui_theme::text_fg())),
         Span::styled(" ", block),
         Span::styled(" · ", Style::default().fg(termrock::style::PHOSPHOR_DARK)),
-        Span::styled(label.to_owned(), jackin_core::tui_theme::DIM),
+        Span::styled(label.to_owned(), jackin_core::tui_theme::text_muted()),
     ])
 }
 

@@ -117,7 +117,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::WHITE;
+use jackin_core::tui_theme::text_fg;
 use termrock::layout::{DialogBorder, render_dialog_shell};
 use termrock::widgets::{List, ListRow, RowRole, TextInput, TextInputState, Validation};
 
@@ -158,7 +158,7 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no matches",
-                jackin_core::tui_theme::DIM,
+                jackin_core::tui_theme::text_muted(),
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[2],
@@ -171,7 +171,10 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         .enumerate()
         .map(|(id, role)| ListRow {
             id,
-            label: Line::from(vec![Span::styled(role.key(), Style::default().fg(WHITE))]),
+            label: Line::from(vec![Span::styled(
+                role.key(),
+                Style::default().fg(text_fg()),
+            )]),
             trailing: None,
             role: RowRole::Item,
             enabled: true,

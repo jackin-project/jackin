@@ -3,7 +3,7 @@
 
 //! Launch cockpit header rendering.
 
-use jackin_core::tui_theme::WHITE;
+use jackin_core::tui_theme::text_fg;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -19,10 +19,10 @@ fn brand_header_line(label: &str) -> Line<'static> {
         .add_modifier(Modifier::BOLD);
     Line::from(vec![
         Span::styled(" jackin", block.fg(jackin_core::tui_theme::INK)),
-        Span::styled("❯", block.fg(WHITE)),
+        Span::styled("❯", block.fg(text_fg())),
         Span::styled(" ", block),
         Span::styled(" · ", Style::default().fg(termrock::style::PHOSPHOR_DARK)),
-        Span::styled(label.to_owned(), jackin_core::tui_theme::DIM),
+        Span::styled(label.to_owned(), jackin_core::tui_theme::text_muted()),
     ])
 }
 
@@ -50,7 +50,7 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
     let Some(id) = view.identity.as_ref() else {
         return vec![Span::styled(
             "Preparing launch...",
-            Style::default().fg(WHITE),
+            Style::default().fg(text_fg()),
         )];
     };
     let prep = " in ";

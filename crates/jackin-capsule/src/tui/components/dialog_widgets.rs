@@ -18,8 +18,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
+use jackin_core::tui_theme::accent_fg;
 use termrock::Theme;
-use termrock::style::PHOSPHOR_GREEN;
 use termrock::widgets::{
     Action, ChoiceDialog, ChoiceDialogState, DetailTableState, Dialog as MessageShell, List,
     ListRow, ListState, MessageDialog, Panel, PanelEmphasis, RowRole, Tab, Tabs, TabsState,
@@ -403,9 +403,9 @@ impl DialogRatatuiSnapshot {
     /// scroll. Measured the same way `render_scrollable_dialog_body` measures,
     /// so a hint built from this advertises exactly the axes whose scrollbar is
     /// drawn — the hint and the scrollbar never disagree.
-    pub(crate) fn scroll_axes(&self, block_area: Rect) -> termrock::layout::ScrollAxes {
+    pub(crate) fn scroll_axes(&self, block_area: Rect) -> termrock::scroll::ScrollAxes {
         match self {
-            Self::DebugInfo(state) => termrock::layout::dialog_scroll_axes(
+            Self::DebugInfo(state) => termrock::scroll::dialog_scroll_axes(
                 state.content_width(),
                 state.content_height(),
                 block_area,
@@ -418,9 +418,9 @@ impl DialogRatatuiSnapshot {
                 let (content_width, content_height, scroll_rect) =
                     usage_scroll_inputs(block_area, state);
                 let width = content_width.max(usage_tab_strip_width(tabs));
-                termrock::layout::dialog_scroll_axes(width, content_height, scroll_rect)
+                termrock::scroll::dialog_scroll_axes(width, content_height, scroll_rect)
             }
-            _ => termrock::layout::ScrollAxes::none(),
+            _ => termrock::scroll::ScrollAxes::none(),
         }
     }
 }
@@ -614,7 +614,7 @@ fn render_filter_picker(
     show_filter: bool,
 ) {
     // Reuse the shared modal panel so the menu/pickers match every other
-    // jackin❯ dialog: PHOSPHOR_GREEN focused border + bold-white title.
+    // jackin❯ dialog: accent_fg() focused border + bold-white title.
     let theme = Theme::default();
     let block = Panel::new(&theme)
         .title(title)
@@ -675,7 +675,7 @@ fn render_filter_picker(
                 id,
                 label: Line::from(Span::styled(
                     label.clone(),
-                    Style::default().fg(PHOSPHOR_GREEN),
+                    Style::default().fg(accent_fg()),
                 )),
                 trailing: None,
                 role: RowRole::Item,

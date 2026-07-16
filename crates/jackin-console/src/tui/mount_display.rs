@@ -11,7 +11,7 @@
 
 use ratatui::text::{Line, Span};
 
-use termrock::scroll::rendered_max_line_width as max_line_width;
+use termrock::scroll::padded_max_line_width as max_line_width;
 
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::components::mount_rows::{
@@ -166,7 +166,7 @@ pub fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
 fn none_placeholder_line() -> Line<'static> {
     Line::from(Span::styled(
         "  (none)",
-        ratatui::style::Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+        ratatui::style::Style::default().fg(jackin_core::tui_theme::muted_fg()),
     ))
 }
 

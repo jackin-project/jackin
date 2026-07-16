@@ -122,7 +122,7 @@ pub fn render_footer(
         min_width: 0,
         enabled: true,
         style: Style::default()
-            .bg(jackin_core::tui_theme::WHITE)
+            .bg(jackin_core::tui_theme::text_fg())
             .fg(if view.footer_hover.left {
                 jackin_core::tui_theme::LINK_BLUE
             } else {
@@ -139,7 +139,7 @@ pub fn render_footer(
             min_width: 0,
             enabled: !instance.is_empty(),
             style: Style::default()
-                .bg(jackin_core::tui_theme::WHITE)
+                .bg(jackin_core::tui_theme::text_fg())
                 .fg(if view.footer_hover.right {
                     jackin_core::tui_theme::DEBUG_AMBER
                 } else {
@@ -156,14 +156,14 @@ pub fn render_footer(
             enabled: debug_chip.is_some_and(|value| !value.is_empty()),
             style: Style::default()
                 .bg(if view.footer_hover.right_debug {
-                    jackin_core::tui_theme::WHITE
+                    jackin_core::tui_theme::text_fg()
                 } else {
-                    jackin_core::tui_theme::DANGER_RED
+                    jackin_core::tui_theme::danger_fg()
                 })
                 .fg(if view.footer_hover.right_debug {
-                    jackin_core::tui_theme::DANGER_RED
+                    jackin_core::tui_theme::danger_fg()
                 } else {
-                    jackin_core::tui_theme::WHITE
+                    jackin_core::tui_theme::text_fg()
                 })
                 .add_modifier(Modifier::BOLD),
             hover_style: None,
@@ -172,7 +172,7 @@ pub fn render_footer(
     let theme = termrock::Theme::default().with_role(
         termrock::style::Role::StatusBar,
         Style::default()
-            .bg(jackin_core::tui_theme::WHITE)
+            .bg(jackin_core::tui_theme::text_fg())
             .fg(jackin_core::tui_theme::INK),
     );
     frame.render_stateful_widget(

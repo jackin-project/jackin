@@ -79,7 +79,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::{PHOSPHOR_DIM, WHITE};
+use jackin_core::tui_theme::{muted_fg, text_fg};
 use termrock::layout::{DialogBorder, render_dialog_shell};
 use termrock::widgets::{List, ListRow, RowRole};
 
@@ -98,7 +98,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no GitHub sources",
-                jackin_core::tui_theme::DIM,
+                jackin_core::tui_theme::text_muted(),
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],
@@ -125,12 +125,12 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
             ListRow {
                 id: i,
                 label: Line::from(vec![
-                    Span::styled(display.to_owned(), Style::default().fg(WHITE)),
+                    Span::styled(display.to_owned(), Style::default().fg(text_fg())),
                     Span::raw(format!("{}  ", " ".repeat(pad))),
                     Span::styled(
                         format!("github \u{b7} {}", c.branch),
                         Style::default()
-                            .fg(PHOSPHOR_DIM)
+                            .fg(muted_fg())
                             .add_modifier(Modifier::ITALIC),
                     ),
                 ]),

@@ -246,7 +246,7 @@ pub(crate) fn render_branch_context_bar(
         .map(|value| format!(" {value} "))
         .unwrap_or_default();
     let usage = usage_content(area.width, usage_status_label, &container, &run);
-    let white_bg = Style::default().bg(jackin_core::tui_theme::WHITE);
+    let white_bg = Style::default().bg(jackin_core::tui_theme::text_fg());
     let left = [StatusSlot {
         style: white_bg
             .fg(if left_clickable {
@@ -292,13 +292,13 @@ pub(crate) fn render_branch_context_bar(
         },
         StatusSlot {
             style: Style::default()
-                .bg(jackin_core::tui_theme::DANGER_RED)
-                .fg(jackin_core::tui_theme::WHITE)
+                .bg(jackin_core::tui_theme::danger_fg())
+                .fg(jackin_core::tui_theme::text_fg())
                 .add_modifier(Modifier::BOLD),
             hover_style: Some(
                 Style::default()
-                    .bg(jackin_core::tui_theme::WHITE)
-                    .fg(jackin_core::tui_theme::DANGER_RED)
+                    .bg(jackin_core::tui_theme::text_fg())
+                    .fg(jackin_core::tui_theme::danger_fg())
                     .add_modifier(Modifier::BOLD),
             ),
             ..status_slot(BranchBarSlot::RunId, &run, 4, !run.is_empty())

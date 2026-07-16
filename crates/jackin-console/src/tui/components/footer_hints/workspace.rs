@@ -4,14 +4,14 @@
 //! Workspace-list footer facts, mode resolver, and the matching hint-span
 //! builders for the workspace-list screen.
 
-use termrock::layout::ScrollAxes;
+use termrock::scroll::ScrollAxes;
 use termrock::widgets::HintSpan;
 
 use crate::tui::keymap::{
     PREVIEW_PANE_KEYMAP, PreviewPaneAction, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
 };
 use crate::tui::screens::workspaces::model::ManagerListRow;
-use termrock::layout::scroll_hint_spans;
+use termrock::scroll::scroll_hint_spans;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListFooterMode {

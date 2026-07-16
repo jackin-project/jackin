@@ -130,7 +130,7 @@ pub fn handle_mouse_with_config(
         && info.scroll.on_mouse_scroll_for_axes(
             mouse.kind.into(),
             mouse.modifiers.into(),
-            termrock::layout::dialog_scroll_axes(info.content_width(), info.content_height(), rect),
+            termrock::scroll::dialog_scroll_axes(info.content_width(), info.content_height(), rect),
         )
     {
         info.clamp_scroll(rect);
