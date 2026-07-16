@@ -1075,7 +1075,7 @@ pub const UI_RENDER_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
-// registry: kind=internal; attributes=app.screen.id:required,cli.invocation.id:recommended,outcome:recommended,session.id:recommended,ui.transition.reason:required
+// registry: kind=internal; attributes=app.screen.id:required,cli.invocation.id:recommended,outcome:recommended,session.id:recommended,ui.screen.previous.id:required,ui.transition.reason:required
 pub const UI_SCREEN_TRANSITION: &str = "ui.screen.transition";
 pub const UI_SCREEN_TRANSITION_DEF: super::SpanMetadata = super::SpanMetadata {
     name: UI_SCREEN_TRANSITION,
@@ -1112,6 +1112,19 @@ pub const UI_SCREEN_TRANSITION_DEF: super::SpanMetadata = super::SpanMetadata {
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "ui.screen.previous.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "workspace.list",
+                "workspace.editor",
+                "settings",
+                "workspace.create",
+                "launch.progress",
+                "capsule",
+            ],
         },
         super::AttributeRequirement {
             name: "ui.transition.reason",

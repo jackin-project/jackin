@@ -200,6 +200,10 @@ impl ScreenVisitTracker {
         }
         let attrs = [
             Attr {
+                key: schema::attrs::UI_SCREEN_PREVIOUS_ID,
+                value: Value::Str(previous.as_str()),
+            },
+            Attr {
                 key: schema::attrs::std_attrs::APP_SCREEN_ID,
                 value: Value::Str(screen.as_str()),
             },

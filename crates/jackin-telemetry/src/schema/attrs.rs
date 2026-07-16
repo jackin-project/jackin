@@ -533,6 +533,21 @@ pub const UI_NAVIGATION_SEQUENCE_DEF: super::AttributeMetadata = super::Attribut
     value_type: super::ValueType::Integer,
     allowed_values: &[],
 };
+// registry-type: enum
+pub const UI_SCREEN_PREVIOUS_ID: &str = "ui.screen.previous.id";
+pub const UI_SCREEN_PREVIOUS_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: UI_SCREEN_PREVIOUS_ID,
+    description: "Stable prior screen identifier on a bounded transition; isolated until semantic conventions define transition endpoints.",
+    value_type: super::ValueType::String,
+    allowed_values: &[
+        "workspace.list",
+        "workspace.editor",
+        "settings",
+        "workspace.create",
+        "launch.progress",
+        "capsule",
+    ],
+};
 // registry-type: string
 pub const UI_SCREEN_VISIT_ID: &str = "ui.screen.visit.id";
 pub const UI_SCREEN_VISIT_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
@@ -614,6 +629,7 @@ pub const ALL_KEYS: &[&str] = &[
     TRUST_SOURCE_TYPE,
     UI_ACTION_NAME,
     UI_NAVIGATION_SEQUENCE,
+    UI_SCREEN_PREVIOUS_ID,
     UI_SCREEN_VISIT_ID,
     UI_TRANSITION_REASON,
     WORKSPACE_ISOLATION_MODE,
@@ -665,6 +681,7 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     TRUST_SOURCE_TYPE_DEF,
     UI_ACTION_NAME_DEF,
     UI_NAVIGATION_SEQUENCE_DEF,
+    UI_SCREEN_PREVIOUS_ID_DEF,
     UI_SCREEN_VISIT_ID_DEF,
     UI_TRANSITION_REASON_DEF,
     WORKSPACE_ISOLATION_MODE_DEF,
