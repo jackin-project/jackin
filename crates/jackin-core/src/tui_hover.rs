@@ -1,26 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Product-owned hover registry for surfaces that assemble hit geometry
-//! incrementally before querying pointer identity.
+//! Incremental hover registration on TermRock [`HitRegion`] geometry.
 //!
-//! TermRock's [`termrock::interaction::HoverState`] is the preferred API when
-//! painted [`termrock::interaction::HitRegion`]s are already available. This
-//! registry only exists for jackin❯ paths that still register rects while
-//! building chrome geometry.
+//! Surfaces that assemble hit geometry over the course of a frame register
+//! regions here, then query pointer identity. Geometry uses TermRock's
+//! canonical [`HitRegion`] type; when a full painted region slice is already
+//! available prefer [`termrock::interaction::HoverState`] directly.
 
 use ratatui::layout::{Position, Rect};
-
-#[derive(Debug, Clone)]
-struct Entry<K> {
-    rect: Rect,
-    key: K,
-}
+use termrock::interaction::HitRegion;
 
 /// Incremental hover registry used by console and capsule chrome hit-testing.
 #[derive(Debug, Clone, Default)]
 pub struct HoverTracker<K: Clone + PartialEq> {
-    entries: Vec<Entry<K>>,
+    regions: Vec<HitRegion<K>>,
 }
 
 impl<K: Clone + PartialEq> HoverTracker<K> {
@@ -28,28 +22,37 @@ impl<K: Clone + PartialEq> HoverTracker<K> {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            regions: Vec::new(),
         }
     }
 
     /// Drop every registered hit rectangle.
     pub fn clear(&mut self) {
-        self.entries.clear();
+        self.regions.clear();
     }
 
     /// Register a painted rectangle and its product identity.
     pub fn register(&mut self, rect: Rect, key: K) {
-        self.entries.push(Entry { rect, key });
+        self.regions.push(HitRegion {
+            id: key,
+            area: rect,
+        });
+    }
+
+    /// Borrow the registered regions for a TermRock [`HoverState`] update.
+    #[must_use]
+    pub fn regions(&self) -> &[HitRegion<K>] {
+        &self.regions
     }
 
     /// Return the identity under `(col, row)`, if any.
     #[must_use]
     pub fn hovered(&self, col: u16, row: u16) -> Option<&K> {
         let position = Position { x: col, y: row };
-        self.entries
+        self.regions
             .iter()
-            .find(|entry| entry.rect.contains(position))
-            .map(|entry| &entry.key)
+            .find(|region| region.area.contains(position))
+            .map(|region| &region.id)
     }
 
     /// Return whether `key` is currently under the pointer.

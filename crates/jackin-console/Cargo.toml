@@ -20,7 +20,7 @@ jackin-core = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-env = { workspace = true }
 jackin-protocol = { workspace = true }
-termrock = { workspace = true, features = ["crossterm"] }
+termrock = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync"] }
 nix = { workspace = true, features = ["term"] }
 open = "5.3.4"

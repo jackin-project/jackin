@@ -334,8 +334,12 @@ fn render_link_hover_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_
 
 fn render_notice_toast(frame: &mut Frame<'_>, area: RatatuiRect, message: &str) {
     let theme = termrock::Theme::default();
+    // Full TermRock toast contract: severity border role, bottom-left anchor
+    // under the status strip, and theme-derived text — no product local chrome.
     frame.render_widget(
-        termrock::widgets::Toast::new(&theme, message, termrock::widgets::Severity::Success),
+        termrock::widgets::Toast::new(&theme, message, termrock::widgets::Severity::Success)
+            .anchor(termrock::widgets::Anchor::BottomLeft)
+            .margins(1, 0),
         area,
     );
 }

@@ -96,7 +96,9 @@ ratatui = "0.30"
 # Must stay lockstep-compatible with ratatui 0.30; pinned when workspace was
 # virtualized (#532/#713). Candidate: relax to "0.1" — needs lockfile-refresh PR.
 ratatui-core = "=0.1.2"
-termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "11b52a35410ef2eccd336ad58cdc114e57594141" }
+# Enable the full public feature matrix TermRock ships: Crossterm session/input
+# adapters plus serde for persistable widget state (DialogScroll, ListState, …).
+termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "11b52a35410ef2eccd336ad58cdc114e57594141", features = ["crossterm", "serde"] }
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false }

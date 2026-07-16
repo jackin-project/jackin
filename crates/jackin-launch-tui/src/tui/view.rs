@@ -122,7 +122,7 @@ fn render_body(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),    // rain
-            Constraint::Length(2), // progress blocks + stage words
+            Constraint::Length(3), // stage blocks + labels + TermRock Progress
             Constraint::Length(2), // gap above the status bar
         ])
         .split(inner);

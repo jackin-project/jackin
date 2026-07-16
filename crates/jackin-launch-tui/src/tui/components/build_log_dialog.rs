@@ -225,10 +225,16 @@ pub fn render_build_log_dialog(
     scroll.scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
         .unwrap_or(u16::MAX);
     let theme = termrock::Theme::default();
+    // Revision tracks wrap width + line count so TermRock reuses measurement
+    // across cursor-only repaints while still invalidating on wrap changes.
+    let content_revision = (view.build_log_wrapped_width as u64)
+        .wrapping_mul(1_000_003)
+        .wrapping_add(lines_len as u64);
     let viewport = termrock::widgets::Viewport::new(&lines, &theme)
         .title(title)
         .emphasis(termrock::widgets::PanelEmphasis::Focused)
-        .content_style(theme.style(termrock::style::Role::Accent));
+        .content_style(theme.style(termrock::style::Role::Accent))
+        .content_revision(content_revision);
     frame.render_stateful_widget(&viewport, box_area, &mut scroll);
 
     let vertical = termrock::scroll::is_scrollable(lines_len, viewport_h);

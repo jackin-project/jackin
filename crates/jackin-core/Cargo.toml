@@ -28,7 +28,7 @@ ratatui = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-termrock = { workspace = true, features = ["crossterm"] }
+termrock = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

@@ -26,11 +26,53 @@ pub const LABEL_VIEW_WIDTH: usize = PROGRESS_RAIL_WIDTH + LABEL_SIDE_OVERHANG * 
 
 pub fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
     let label_width = usize::from(area.width).min(LABEL_VIEW_WIDTH);
+    let rail_height = area.height.min(2);
+    let rail = Rect {
+        height: rail_height,
+        ..area
+    };
     let lines = vec![
         blocks_line(view, frozen),
         labels_line(view, frozen, label_width),
     ];
-    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
+    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), rail);
+
+    // Overall completion uses TermRock's determinate Progress so the fraction
+    // and non-color percentage cue stay on the shared widget contract.
+    if area.height >= 3 {
+        let fraction = overall_stage_fraction(view);
+        let theme = termrock::Theme::default();
+        let progress = termrock::widgets::Progress::new(
+            termrock::widgets::ProgressKind::Determinate { fraction },
+            &theme,
+        )
+        .label(if frozen { "done" } else { "load" });
+        let bar = Rect {
+            y: area.y.saturating_add(2),
+            height: 1,
+            ..area
+        };
+        frame.render_widget(&progress, bar);
+    }
+}
+
+#[must_use]
+pub fn overall_stage_fraction(view: &LaunchView) -> f64 {
+    let statuses = display_stage_statuses(view);
+    if statuses.is_empty() {
+        return 0.0;
+    }
+    let done = statuses
+        .iter()
+        .filter(|status| matches!(status, StageStatus::Done | StageStatus::Skipped))
+        .count();
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "stage counts are tiny; f64 is exact for these values"
+    )]
+    {
+        done as f64 / statuses.len() as f64
+    }
 }
 
 #[must_use]
@@ -190,18 +232,8 @@ pub fn label_edge_fade_factor(index: usize, width: usize) -> f32 {
 
 #[must_use]
 pub fn faded_color(color: Color, factor: f32) -> Color {
-    match color {
-        Color::Rgb(r, g, b) => {
-            let factor = factor.clamp(0.0, 1.0);
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "factor clamped to 0.0..=1.0; product stays in u8 range"
-            )]
-            let scale = |c: u8| (f32::from(c) * factor) as u8;
-            Color::Rgb(scale(r), scale(g), scale(b))
-        }
-        other => other,
-    }
+    // TermRock owns the phosphor fade math used across the ecosystem.
+    termrock::style::faded(color, factor)
 }
 
 fn faded_label_cell(cell: LabelCell, factor: f32) -> LabelCell {

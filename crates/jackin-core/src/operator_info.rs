@@ -434,7 +434,7 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
     frame.render_widget(&panel, area);
 
     let rows = detail_rows(state);
-    let table = DetailTable::new(&rows, &theme);
+    let table = DetailTable::new(&rows, &theme).content_revision(detail_content_revision(state));
     let mut table_state = detail_state(state);
     frame.render_stateful_widget(&table, table_area, &mut table_state);
 
@@ -482,6 +482,15 @@ fn detail_state(state: &ContainerInfoState) -> DetailTableState<usize> {
     table_state
 }
 
+fn detail_content_revision(state: &ContainerInfoState) -> u64 {
+    state.rows.iter().fold(state.rows.len() as u64, |acc, row| {
+        acc.wrapping_mul(131)
+            .wrapping_add(row.label().len() as u64)
+            .wrapping_mul(131)
+            .wrapping_add(row.value().len() as u64)
+    })
+}
+
 fn detail_layout(
     area: Rect,
     state: &ContainerInfoState,
@@ -492,7 +501,7 @@ fn detail_layout(
         .title(&state.title)
         .emphasis(PanelEmphasis::Focused);
     let table_area = detail_table_area(panel.inner(area));
-    let table = DetailTable::new(&rows, &theme);
+    let table = DetailTable::new(&rows, &theme).content_revision(detail_content_revision(state));
     let mut table_state = detail_state(state);
     let mut buffer = Buffer::empty(area);
     (&table).render(table_area, &mut buffer, &mut table_state);
@@ -540,6 +549,7 @@ pub fn hyperlink_regions(area: Rect, state: &ContainerInfoState) -> Vec<(Rect, S
     let (rows, table_state, _) = detail_layout(area, state);
     let theme = termrock::Theme::default();
     DetailTable::new(&rows, &theme)
+        .content_revision(detail_content_revision(state))
         .hyperlink_regions(&table_state)
         .into_iter()
         .map(|region| (region.area, region.url.to_owned()))
@@ -551,7 +561,7 @@ pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
     let mut out = Vec::new();
     let (rows, table_state, buffer) = detail_layout(area, state);
     let theme = termrock::Theme::default();
-    let table = DetailTable::new(&rows, &theme);
+    let table = DetailTable::new(&rows, &theme).content_revision(detail_content_revision(state));
     for region in table.hyperlink_regions(&table_state) {
         let role = if state.hovered_row == Some(region.id) {
             Role::LinkHover
