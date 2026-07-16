@@ -108,10 +108,19 @@ These variables control direct OTLP delivery; see [Run Telemetry](/guides/run-te
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Enables direct OTLP export for traces, logs, and metrics through one base gRPC endpoint. The backend owns history; jackin❯ does not write a local telemetry file. |
 | `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_ENDPOINT` | Overrides the endpoint per signal. jackin❯ still exports over gRPC only. |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_PROTOCOL` | Must be `grpc` or unset when an endpoint is configured; any other value stops startup with [E016](/reference/errors/E016/). |
+| `OTEL_EXPORTER_OTLP_HEADERS` / `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_HEADERS` | Adds standard comma-separated `key=value` gRPC metadata. Per-signal values override the generic value. Invalid names, empty values, malformed percent encoding, and non-ASCII metadata are rejected before providers start. Header values are credentials: they are never printed or added to telemetry. |
+| `OTEL_EXPORTER_OTLP_COMPRESSION` / `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_COMPRESSION` | Must be `gzip` or unset. Other values are rejected before providers start. |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` / `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_TIMEOUT` | Positive integer timeout in milliseconds. Per-signal values override the generic value; jackin❯ caps each exporter deadline at five seconds. |
+| `OTEL_EXPORTER_OTLP_CERTIFICATE` / `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_CERTIFICATE` | CA certificate path for TLS. Per-signal paths override the generic path. Paths are treated as sensitive configuration and are never telemetry fields. |
+| `OTEL_EXPORTER_OTLP_CLIENT_KEY` + `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` and per-signal variants | Optional mutual-TLS identity. Key and certificate must be configured together for each effective signal configuration; values and paths are never printed or exported. |
+| `OTEL_TRACES_SAMPLER` | May be unset or `parentbased_always_on`. A conflicting sampler is rejected because jackin❯ owns the fixed sampling contract. |
+| `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES` | Validated before provider startup, but they do not override the stable jackin❯ service identity or inject arbitrary Resource attributes. Empty service names and malformed `key=value` resource entries are rejected; exported Resources remain allowlisted and process-stable. |
 | `OTEL_SDK_DISABLED` | Set to `true` to disable OpenTelemetry provider and exporter activity explicitly. |
 | `JACKIN_DEBUG` | Backs the host `--debug` flag for operator-facing troubleshooting output. It does not enable delivery or create telemetry files. |
 | `JACKIN_TELEMETRY_LEVEL` | Overrides `[telemetry].level` from `config.toml`: `info` (default), `debug`, or `trace`. Every level remains governed by the schema and privacy allowlist. |
 | `JACKIN_TELEMETRY_CATEGORIES` | Overrides `[telemetry].categories` from `config.toml` with a comma-separated debug-category allowlist such as `docker,launch`; `*` allows every registered debug category. |
+
+The host never forwards OTLP headers, client credentials, certificate paths, or arbitrary Resource attributes into a Capsule. Capsule export receives only routing and explicitly safe launch context when the network policy permits it; `network.mode=none` disables Capsule telemetry egress. `jackin diagnostics validate` currently checks marker emission and exporter flush only. Positive per-signal backend receipt and the final typed daemon-health contract remain pending.
 
 ## Host attach validation
 

@@ -4,7 +4,7 @@ Host composition root for jackin❯ observability and bounded in-memory invocati
 
 ## What this crate owns
 
-- Direct OTLP/gRPC provider construction, stable process resources, delivery health, retry classification, flush, and shutdown.
+- Direct OTLP/gRPC provider construction, stable process resources, current provider observations, retry classification, flush, and shutdown.
 - Bounded current-invocation progress and timing state used by operator surfaces; this state is never a telemetry history store.
 - Operator-output routing, secret scrubbing, and explicit build-log capture requested by product workflows.
 
@@ -27,7 +27,7 @@ The closed schema and all governed emission APIs live in `jackin-telemetry`. Thi
 
 ## Public API
 
-Consumers initialize process telemetry, query typed health, validate delivery, manage bounded invocation progress, and route operator notices. Instrumentation uses `jackin-telemetry` directly.
+Consumers initialize process telemetry, inspect current provider state, request marker/flush validation, manage bounded invocation progress, and route operator notices. Positive per-signal backend delivery proof and the final typed health contract remain pending. Instrumentation uses `jackin-telemetry` directly.
 
 ## How to verify
 

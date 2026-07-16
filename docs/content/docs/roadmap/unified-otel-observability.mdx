@@ -4,9 +4,9 @@ title: "Unified OpenTelemetry observability"
 
 **Status**: In progress
 
-The local-artifact cutover has landed: each production process exports traces, logs, and metrics directly over OTLP/gRPC, the configured backend owns durable history, and product processes retain only bounded current-invocation state for operator UI. They do not write telemetry files, local logs, sidecars, spools, or Collector configuration.
+The local-artifact cutover has landed: when configured and permitted by network policy, production processes export traces, logs, and metrics directly over OTLP/gRPC; the configured backend owns durable history, and product processes retain only bounded current-invocation state for operator UI. They do not write telemetry files, local logs, sidecars, spools, or Collector configuration.
 
-The landed design uses the closed, Weaver-validated semantic-convention 1.43 registry in `jackin-telemetry`; generated constants and typed facade APIs prevent naming drift and raw emission bypasses. Operation spans are bounded. Lifecycle and state are events and metrics. W3C context crosses synchronous process boundaries, while detached work starts a new trace linked to its producer. Resource identity is stable per process, correlation identities stay out of Resource and metric dimensions, and allowlist-first validation rejects prohibited data before export.
+The landed foundation includes the semantic-convention 1.43 extension registry, generated vocabulary, typed facade APIs, direct providers, bounded current-invocation progress, and selected propagation and instrumentation paths. Complete Weaver reproducibility and schema enforcement, legacy-call-site migration, operation and propagation coverage, event/metric families, privacy gates, and conformance evidence remain active work. Stable process Resource identity and the rule that correlation identifiers stay out of Resource and metric dimensions remain binding requirements.
 
 `jackin diagnostics validate` currently emits markers and requests a force-flush, but positive per-signal backend delivery proof is not complete. The final typed health contract for persistent daemons is also pending. `--debug` remains operator troubleshooting output and may raise governed telemetry verbosity when OTLP is enabled; it does not create an artifact.
 
@@ -16,7 +16,7 @@ The landed design uses the closed, Weaver-validated semantic-convention 1.43 reg
 - [Application observability](/reference/runtime/diagnostics/) — contributor schema, facade, propagation, privacy, lifecycle, and shutdown rules.
 - [Diagnostics command](/commands/diagnostics/) — the current three-signal marker and flush command, with positive delivery proof still pending.
 - <RepoFile path="ENGINEERING.md" /> and <RepoFile path="TESTING.md" /> — instrumentation ownership and deterministic verification workflow.
-- <RepoFile path="plans/unified-otel-observability/worksheets/014-acceptance-map.md" /> — named evidence for every acceptance criterion.
+- <RepoFile path="plans/unified-otel-observability/worksheets/014-acceptance-map.md" /> — the working evidence inventory; unresolved and replacement evidence remains tracked by the reopened audit.
 
 ## Remaining work
 

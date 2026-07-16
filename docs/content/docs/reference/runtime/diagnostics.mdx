@@ -9,7 +9,9 @@ This page is the living instrumentation contract. Schema changes start in the cl
 
 ## Composition and delivery
 
-Each host, daemon, and Capsule process owns its OpenTelemetry providers and exports traces, logs, and metrics directly. There is no embedded or configured Collector. Standard `OTEL_EXPORTER_OTLP_ENDPOINT` and per-signal endpoint variables select the backend; only the `grpc` protocol is supported. `OTEL_SDK_DISABLED=true` disables providers explicitly.
+When OTLP is configured and the network policy permits it, each host, daemon, and Capsule process owns its providers and exports traces, logs, and metrics directly. There is no embedded or configured Collector. Standard generic and per-signal endpoint, header, gzip compression, millisecond timeout, CA certificate, and client key/certificate variables are validated before provider construction; only the `grpc` protocol is supported. Per-signal values override generic values, client key and certificate must be paired, and each timeout is capped at five seconds. `OTEL_TRACES_SAMPLER` may be unset or `parentbased_always_on`. `OTEL_SDK_DISABLED=true` disables providers explicitly.
+
+`OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` are syntax-validated but cannot override jackin❯-owned service identity or inject arbitrary Resource fields. Header values, certificate and key paths, and resource input are sensitive configuration: they are never rendered or exported as telemetry attributes. Host exporter credentials and arbitrary Resource input do not cross into a Capsule; only routing and explicitly safe launch context are propagated when Capsule egress is allowed.
 
 Provider construction is best-effort and product work stays fail-open. Export uses bounded batches, five-second per-export deadlines, bounded retry for retryable gRPC status codes, and no retry for authentication or partial-success responses. Saturation drops telemetry instead of blocking product threads. Graceful shutdown force-flushes traces, logs, and metrics concurrently within one shared budget, then shuts providers down in tracer, logger, meter order. Shutdown is idempotent.
 
@@ -17,33 +19,33 @@ Provider construction is best-effort and product work stays fail-open. Export us
 
 ## Schema authority
 
-<RepoFile path="crates/jackin-telemetry/registry/manifest.yaml">`crates/jackin-telemetry/registry`</RepoFile> is a closed Weaver-validated OpenTelemetry semantic-convention 1.43 extension registry. Generated names and bounded enums are the only signal vocabulary. The governed facade rejects unknown names, unknown attributes, invalid bounded values, privacy violations, oversized fields, excess links/events, and cardinality overflow.
+<RepoFile path="crates/jackin-telemetry/registry/manifest.yaml">`crates/jackin-telemetry/registry`</RepoFile> is the closed OpenTelemetry semantic-convention 1.43 extension registry and generates the current names and bounded enums. Complete offline-reproducible Weaver generation, bidirectional schema comparison, per-event required/allowed-field enforcement, and the remaining limit and second-line validation matrices are active roadmap work.
 
-Product code emits through `jackin-telemetry`: registered events, operation guards, metric handles, and ownership-aware spawn helpers. Direct OpenTelemetry SDK use and arbitrary `tracing` telemetry targets are architecture-gate violations. Operator-facing prose remains a separate output port.
+New product instrumentation uses `jackin-telemetry` registered events, operation guards, metric handles, and ownership-aware spawn helpers. Architecture gates constrain direct OpenTelemetry SDK use and arbitrary telemetry targets, but legacy call-site migration and complete synthetic gate coverage are not finished. Operator-facing prose remains a separate output port.
 
 ## Identity and resources
 
 Resources are stable for one process and identical across its three providers. They contain service identity and deployment-safe process attributes such as `service.name`, `service.version`, `service.instance.id`, and `app.mode`. Invocation, session, job, workspace, role, container, and other correlation values do not belong on the Resource.
 
-Every command mints one `cli.invocation.id`. Each interactive attachment mints a `session.id`; a reconnect rotates it and may record `session.previous_id`. Detached jobs mint `job.id`. These identifiers are UUIDs and are correlation fields on governed signals, not backend-specific resource keys.
+The command process mints a `cli.invocation.id`. Interactive attachments mint a `session.id`, and detached work can use `job.id`. These identifiers are UUID correlation fields rather than backend-specific resource keys. Complete dotted-command roots, reconnect linkage, detached-work coverage, and metric-dimension conformance remain active work.
 
 Internal launch handoff uses `JACKIN_INVOCATION_ID` and marks a network-safe Capsule endpoint with `JACKIN_CAPSULE_OTLP_SAFE`. They are process-boundary implementation variables, not operator configuration.
 
 ## Trace model
 
-There are no process-, console-, screen-, tab-, pane-, or session-lifetime spans. Spans represent bounded work: application startup/shutdown, a non-interactive command, UI action, launch stage, subprocess, Docker request, provider request, database operation, connection attempt, cycle, RPC request, stream segment, or prewarm attempt.
+The contract prohibits process-, console-, screen-, tab-, pane-, and session-lifetime spans. Implemented instrumentation uses bounded operations; complete coverage of launch stages, subprocess and provider boundaries, connections, cycles, RPCs, streams, and prewarm attempts remains tracked by the active roadmap.
 
-Client/server RPC boundaries use `CLIENT` and `SERVER` span kinds. Detached scheduling uses a `PRODUCER` decision and a linked `CONSUMER` attempt sharing `job.id`. Joined tasks inherit their current operation; detached, cycle, stream, and blocking helpers encode ownership explicitly. Cancellation and failure still close operation guards with governed outcomes.
+The target RPC model uses `CLIENT` and `SERVER` span kinds, and detached scheduling uses producer/consumer links rather than false parentage. Helpers exist for joined and detached ownership, but full protocol, cycle, stream, blocking, cancellation, and response-write coverage is not yet complete.
 
-W3C `traceparent` and `tracestate` cross CLI-to-daemon and host-to-Capsule control envelopes together with versioned correlation fields. A valid remote context parents the receiving server operation. Missing, malformed, unsupported, or disabled context creates a safe local root. Detached work uses span links rather than false parentage.
+W3C context and versioned correlation fields are implemented on selected CLI/daemon and host/Capsule boundaries. Completing every sender, serialized protocol matrix, response-write outcome, and payload privacy negative remains active work. Missing, malformed, unsupported, or disabled context must create a safe local root.
 
 ## Events and metrics
 
-Events are native OpenTelemetry log records with `EventName`, severity, trace/span correlation when active, and registered attributes. One governed event produces one log record; it is not duplicated as a span event. INFO records lifecycle and state transitions, WARN handled degradation, ERROR failed operations, DEBUG diagnostic decisions, and TRACE narrowly governed high-frequency detail. Default mode excludes DEBUG and TRACE.
+The native event bridge emits OpenTelemetry log records with `EventName`, severity, and active trace/span correlation. The contract requires one governed event to produce one log record without a duplicate span event; complete severity, field, Resource, correlation, and no-duplication conformance is still pending. INFO is for lifecycle and state transitions, WARN for handled degradation, ERROR for failed operations, DEBUG for diagnostic decisions, and TRACE for narrowly governed high-frequency detail. Default mode excludes DEBUG and TRACE.
 
-Screen entry/exit and widget focus are events. Operator actions are short root operations so latency and outcome remain measurable without lifetime UI traces. Agent state, PTY/session lifecycle, attach state, and periodic work use change-only events plus low-cardinality counters, histograms, and gauges.
+Selected UI, agent, PTY/session, attach, and periodic-work instrumentation has landed. Complete action causality, screen/focus lifecycle, background-cycle ownership, and the corresponding low-cardinality metric families remain active roadmap work.
 
-Metric attribute sets are capped per stream. Runtime/export health, operation duration/outcome, lifecycle counts, queue pressure, drops, and process/runtime gauges remain bounded. Attribute values such as ids never become metric dimensions unless the registry explicitly permits them.
+Metric handles and cardinality controls exist for selected streams. Complete family coverage, second-line metric rejection, cardinality conformance, and runtime/export health are unfinished. Identifiers must not become metric dimensions unless the registry explicitly permits them.
 
 ## Privacy
 
@@ -63,7 +65,7 @@ Generative-AI signals use standard semantic conventions only where content captu
 
 ## Verification
 
-The dev-only <RepoFile path="crates/jackin-otlp-testbed/README.md">`jackin-otlp-testbed`</RepoFile> receives real OTLP/gRPC requests and supports deterministic failure responses. Conformance tests decode every signal, validate resources, namespaces, privacy, propagation, lifecycle, volume, cardinality, shutdown, and failure behavior. Allocation and reviewed five-percent performance gates protect disabled and active hot paths.
+The dev-only <RepoFile path="crates/jackin-otlp-testbed/README.md">`jackin-otlp-testbed`</RepoFile> receives real OTLP/gRPC requests and supports deterministic failure responses. Current tests cover selected wire, resource, privacy, shutdown, and failure behavior. Representative host/daemon/Capsule flows, complete protocol and privacy matrices, cardinality/volume/soak proof, required CI wiring, and the reviewed active-path performance gate remain unfinished.
 
 Run focused contract checks with:
 

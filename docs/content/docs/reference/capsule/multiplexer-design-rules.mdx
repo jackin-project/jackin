@@ -87,7 +87,7 @@ Every capability the base image supports must reach the agent inside the pane.
 
 ### CSI passthrough: default-deny with a documented allowlist
 
-Unknown CSI from an agent never reaches the outer terminal. The grid handles what it emulates, answers device/mode queries itself (DA, DSR, DECRQM, kitty query, OSC 10/11 default-color queries — to the agent, never the host), and **default-denies everything else**; each drop is `cdebug!`-logged with the exact bytes so a `--debug` run is the triage trail and the input for allowlist changes. The forward allowlist, with reasons:
+Unknown CSI from an agent never reaches the outer terminal. The grid handles what it emulates, answers device/mode queries itself (DA, DSR, DECRQM, kitty query, OSC 10/11 default-color queries — to the agent, never the host), and **default-denies everything else**. Raw terminal bytes are not telemetry; allowlist changes use an explicit reviewed PTY fixture or synthetic reproduction. The forward allowlist, with reasons:
 
 | Sequence | Why it is forwarded |
 |---|---|
