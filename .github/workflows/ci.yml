@@ -86,11 +86,13 @@ jobs:
             echo "::warning::successful-pipeline lookup failed; running CI in full"
             artifact_id=
           fi
+          if [ -n "$artifact_id" ]; then
+            echo "::notice::reusing exact successful CI result for ${GITHUB_SHA}"
+          fi
           {
             echo "name=$name"
             if [ -n "$artifact_id" ]; then
               echo "hit=true"
-              echo "::notice::reusing exact successful CI result for ${GITHUB_SHA}"
             else
               echo "hit=false"
             fi
@@ -376,7 +378,7 @@ jobs:
       affected-cache-keys: ${{ steps.affected-crates.outputs.cache-keys }}
       reused-packages: ${{ steps.affected-crates.outputs.reused-packages }}
     env:
-      CARGO_TARGET_DIR: target/ci-xtask
+      CARGO_TARGET_DIR: target
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -433,6 +435,74 @@ jobs:
           rm "$archive"
           chmod +x .ci-prebuilt-tools/*
           echo "hit=true" >> "$GITHUB_OUTPUT"
+      - id: xtask-target-seed
+        name: Find latest successful jackin-xtask target
+        if: steps.ci-xtask-artifact.outputs.hit != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER_NAME: ci-crate-target-latest-v4-${{ runner.os }}-${{ runner.arch }}-jackin-xtask-ready
+          PREFIX_BASE: ci-crate-target-v4-${{ runner.os }}-${{ runner.arch }}-jackin-xtask-
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          artifact=$(
+            gh api "repos/${REPOSITORY}/actions/artifacts?name=${MARKER_NAME}&per_page=10" \
+              --jq '.artifacts[] | select(.expired == false) | [.id, .workflow_run.id] | @tsv' \
+              | head -n 1
+          )
+          if [ -z "$artifact" ]; then
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          read -r artifact_id run_id <<< "$artifact"
+          mkdir -p target/.ci-latest-marker
+          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            > target/.ci-latest-marker/artifact.zip
+          python3 -m zipfile -e \
+            target/.ci-latest-marker/artifact.zip target/.ci-latest-marker
+          prefix=$(cat target/.ci-latest-marker/target.latest)
+          rm -rf target/.ci-latest-marker
+          if [[ ! "$prefix" =~ ^${PREFIX_BASE}[0-9a-f]{64}$ ]]; then
+            echo "::error::invalid latest-target prefix for jackin-xtask"
+            exit 1
+          fi
+          {
+            echo "hit=true"
+            echo "prefix=$prefix"
+            echo "run-id=$run_id"
+          } >> "$GITHUB_OUTPUT"
+      - name: Download latest successful jackin-xtask target
+        if: >-
+          steps.ci-xtask-artifact.outputs.hit != 'true' &&
+          steps.xtask-target-seed.outputs.hit == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ${{ steps.xtask-target-seed.outputs.prefix }}-part-*
+          path: target/.ci-restore
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.xtask-target-seed.outputs.run-id }}
+      - name: Restore latest successful jackin-xtask target
+        if: >-
+          steps.ci-xtask-artifact.outputs.hit != 'true' &&
+          steps.xtask-target-seed.outputs.hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pids=()
+          for archive in target/.ci-restore/target.part-*; do
+            tar --zstd -xf "$archive" &
+            pids+=("$!")
+          done
+          failed=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || failed=1
+          done
+          [ "$failed" -eq 0 ]
+          rm -rf target/.ci-restore
+          git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
       - name: Check prepared Rust toolchains
         id: toolchain-lookup
         if: >-
@@ -520,7 +590,7 @@ jobs:
             strip .ci-prebuilt-tools/*
           fi
           if [ "${{ steps.ci-xtask-artifact.outputs.hit }}" != "true" ]; then
-            cp target/ci-xtask/debug/jackin-xtask .ci-prebuilt-xtask/jackin-xtask
+            cp target/debug/jackin-xtask .ci-prebuilt-xtask/jackin-xtask
             strip .ci-prebuilt-xtask/jackin-xtask
             cargo metadata --format-version 1 --locked --offline \
               > .ci-prebuilt-xtask/workspace-metadata.json

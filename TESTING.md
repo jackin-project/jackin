@@ -96,6 +96,13 @@ feature, profile, and toolchain variants without placing 26 mostly overlapping
 archives in GitHub's small repository cache quota. The configured canonical
 writer publishes one output for both GitHub and Velnor to restore.
 
+An exact target-key miss first restores that crate's latest successful target
+as a seed. Cargo still validates every fingerprint and rebuilds changed
+first-party outputs, but unchanged registry and git dependencies remain
+available instead of being recompiled solely because the crate source key
+changed. A successful miss publishes both the new exact target and a small
+latest-target pointer; it does not duplicate the target archive.
+
 ## Verification matrix
 
 | Change surface | Command | When |
@@ -191,6 +198,17 @@ requires the identical source SHA, event type, and requested lane set, so it
 cannot substitute a GitHub-only result for a parity run or carry a pull-request
 mode result into `main`. Crate closure markers remain the cross-revision layer
 that avoids retesting unchanged crates and their unchanged dependencies.
+
+Construct Image uses the same pattern at its own correctness boundary. Its
+seven-day marker covers the construct sources, Docker and Cargo/tool inputs,
+publish-versus-rehearsal mode, and requested runner lanes. An unrelated commit
+therefore does not rebuild unchanged amd64/arm64 images, while any construct
+input or lane-mode change runs the complete platform matrix.
+
+Docs prepares the pinned `codebook-lsp` binary once and publishes a seven-day
+platform/tool-contract artifact. The docs and source spell jobs download that
+same binary instead of each invoking Cargo through mise; only a genuinely new
+Codebook version or platform may take the source-build fallback.
 
 Required PR/main CI runs the real
 `jackin_load_ctrl_q_yes_exits_cold_build_quickly` Docker smoke inside the

@@ -129,6 +129,8 @@ jobs:
           ARTIFACT_PREFIX: ci-crate-target-${{ inputs.all-features && 'v4' || 'default-v4' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
           LEGACY_SPLIT_PREFIX: ci-crate-target-${{ inputs.all-features && 'v3' || 'default-v3' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
           LEGACY_ARTIFACT_NAME: ci-crate-target-${{ inputs.all-features && 'v2' || 'default-v2' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          LATEST_MARKER_NAME: ci-crate-target-${{ inputs.all-features && 'latest-v4' || 'default-latest-v4' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-ready
+          LATEST_PREFIX_BASE: ci-crate-target-${{ inputs.all-features && 'v4' || 'default-v4' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -169,6 +171,30 @@ jobs:
                 format=v2
                 legacy_name=$LEGACY_ARTIFACT_NAME
               fi
+            fi
+          fi
+          if [ "$hit" != "true" ]; then
+            latest_artifact=$(
+              gh api "repos/${REPOSITORY}/actions/artifacts?name=${LATEST_MARKER_NAME}&per_page=10" \
+                --jq '.artifacts[] | select(.expired == false) | [.id, .workflow_run.id] | @tsv' \
+                | head -n 1
+            )
+            if [ -n "$latest_artifact" ]; then
+              read -r latest_artifact_id run_id <<< "$latest_artifact"
+              mkdir -p target/.ci-latest-marker
+              gh api "repos/${REPOSITORY}/actions/artifacts/${latest_artifact_id}/zip" \
+                > target/.ci-latest-marker/artifact.zip
+              python3 -m zipfile -e \
+                target/.ci-latest-marker/artifact.zip target/.ci-latest-marker
+              download_prefix=$(cat target/.ci-latest-marker/target.latest)
+              rm -rf target/.ci-latest-marker
+              if [[ ! "$download_prefix" =~ ^${LATEST_PREFIX_BASE}[0-9a-f]{64}$ ]]; then
+                echo "::error::invalid latest-target prefix for ${{ matrix.package }}"
+                exit 1
+              fi
+              hit=true
+              format=v4
+              echo "::notice::seeding ${{ matrix.package }} from its latest successful target"
             fi
           fi
 
@@ -509,6 +535,16 @@ jobs:
           [ "$failed" -eq 0 ]
           rm target.list-*
           sha256sum target.part-* > target.ready
+      - name: Stage latest successful crate target pointer
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-result.outputs.hit != 'true' &&
+          matrix.config.cache_writer &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        run: printf '%s\n' "${{ steps.crate-target.outputs.prefix }}" > target.latest
       - name: Publish input-identical crate target part 0
         if: >-
           always() && !cancelled() && !failure() &&
@@ -607,6 +643,21 @@ jobs:
         with:
           name: ${{ steps.crate-target.outputs.prefix }}-ready
           path: target.ready
+          compression-level: 0
+          retention-days: 7
+      - name: Publish latest successful crate target pointer
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-result.outputs.hit != 'true' &&
+          matrix.config.cache_writer &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-crate-target-${{ inputs.all-features && 'latest-v4' || 'default-latest-v4' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-ready
+          path: target.latest
           compression-level: 0
           retention-days: 7
 
