@@ -115,7 +115,7 @@ pub async fn unpushed_commit_count(worktree_path: &str, runner: &mut impl Comman
 /// Assess whether `worktree_path` is safe to auto-clean.
 ///
 /// `log` receives diagnostic lines describing each fail-closed decision; the
-/// caller routes them to its own debug channel (host `debug_log!`, Capsule
+/// caller routes them to its own debug channel (host `telemetry_debug!`, Capsule
 /// `cdebug!`). The full per-branch policy lives in the host's finalize docs.
 ///
 /// # Errors

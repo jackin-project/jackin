@@ -572,7 +572,7 @@ where
     {
         return Ok(ConsoleLoopFlow::Continue);
     }
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "tui",
         "key={} location={}",
         jackin_console::tui::debug::key_debug_name_for_input(
@@ -677,7 +677,7 @@ fn handle_mouse_event<H, R>(
 ) -> anyhow::Result<ConsoleLoopFlow> {
     mouse_state.last_event_at = Some(std::time::Instant::now());
     if should_debug_log_mouse(mouse) {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "tui",
             "mouse={mouse:?} location={}",
             console_location_debug(state)

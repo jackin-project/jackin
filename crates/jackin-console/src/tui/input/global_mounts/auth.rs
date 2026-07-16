@@ -435,7 +435,7 @@ pub fn apply_plain_text_to_settings_auth_form(
         target, mut state, ..
     }) = auth.pop_parent_modal()
     else {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "auth",
             "apply_plain_text_to_settings_auth_form: modal parent auth form missing — \
              minted plain token dropped"
@@ -462,7 +462,7 @@ pub(crate) fn apply_source_folder_to_settings_auth_form(
         ..
     }) = auth.pop_parent_modal()
     else {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "auth",
             "apply_source_folder_to_settings_auth_form: modal_parents missing — path dropped"
         );
@@ -516,7 +516,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
         // global token with no form to return to would otherwise vanish
         // silently. Should be unreachable (the `g`/`G` trigger always
         // stashes), so a hit here means a broken stash invariant.
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "auth",
             "apply_op_picker_to_settings_auth_form: modal parent auth form missing — \
              minted op ref dropped"
@@ -567,7 +567,7 @@ pub fn apply_op_picker_to_settings_auth_form_committed(
         ..
     }) = auth.pop_parent_modal()
     else {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "auth",
             "apply_op_picker_to_settings_auth_form_committed: modal_parents missing \
              — async OpRef commit dropped"

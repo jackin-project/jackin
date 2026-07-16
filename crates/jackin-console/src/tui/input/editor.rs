@@ -1112,7 +1112,7 @@ fn open_role_resolution_error(
         configured_role_load_error_message, generic_role_repository_error_message,
         repository_role_load_error_message,
     };
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "role",
         "showing role-load error popup for raw={raw:?}: {err:?}"
     );

@@ -164,7 +164,6 @@ pub async fn run(cli: Cli) -> Result<()> {
     // crates (L0) can call `jackin_core::emit_compact_line` without
     // depending on the L2 diagnostics layer.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
-    jackin_diagnostics::install_debug_log_sink();
     jackin_launch_tui::install_standalone_dialog_sink();
     if debug {
         announce_debug_run(&diagnostics);

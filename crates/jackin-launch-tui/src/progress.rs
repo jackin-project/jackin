@@ -302,7 +302,7 @@ fn failure_acknowledged(view: &SharedView) -> bool {
     match view.lock() {
         Ok(view) => view.failure_ack,
         Err(poisoned) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "launch",
                 "recovering poisoned launch failure view lock while waiting for acknowledgement"
             );

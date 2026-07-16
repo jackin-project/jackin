@@ -316,7 +316,7 @@ fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
     let title = match InstanceManifest::read(&paths.data_dir.join(container_name)) {
         Ok(m) => m.role_display_name,
         Err(e) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "attach",
                 "set_role_terminal_title: manifest read failed for {container_name}: {e:#}; \
                  using container name as title",
@@ -900,7 +900,7 @@ pub(crate) async fn hardline_docker_agent_with_focus(
     // and reads exit-action.json, so it handles both a clean exit and a genuine
     // failure. Only a clean exit reaches here in practice; log and proceed.
     if let Err(err) = attach_outcome {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "hardline",
             "attach for {container_name} ended with ({err}); proceeding to finalize"
         );

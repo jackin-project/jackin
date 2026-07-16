@@ -29,7 +29,7 @@ pub(super) fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) 
         .filter(|(_, source)| source.trusted)
         .map(|(key, _)| key.clone())
         .collect();
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "role",
         "opening role loader input; {trusted_roles_count} trusted role(s) are blocked by the duplicate guard",
         trusted_roles_count = trusted_roles.len()

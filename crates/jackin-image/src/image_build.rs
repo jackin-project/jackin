@@ -169,7 +169,7 @@ pub fn dockerfile_requests_github_token_secret(dockerfile_path: &std::path::Path
     match std::fs::read_to_string(dockerfile_path) {
         Ok(body) => dockerfile_body_requests_github_token_secret(&body),
         Err(error) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "image",
                 "could not read DerivedDockerfile {} before token lookup ({error}); resolving GitHub token conservatively",
                 dockerfile_path.display()
@@ -190,7 +190,7 @@ pub fn dockerfile_requests_role_git_sha_arg(dockerfile_path: &std::path::Path) -
     match std::fs::read_to_string(dockerfile_path) {
         Ok(body) => dockerfile_body_requests_role_git_sha_arg(&body),
         Err(error) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "image",
                 "could not read DerivedDockerfile {} before ROLE_GIT_SHA arg detection ({error}); omitting unused build arg",
                 dockerfile_path.display()

@@ -155,7 +155,10 @@ pub async fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<Str
             (!s.is_empty()).then_some(s)
         }
         Err(e) => {
-            jackin_diagnostics::debug_log!("github_token", "gh auth token failed (no token): {e}");
+            jackin_diagnostics::telemetry_debug!(
+                "github_token",
+                "gh auth token failed (no token): {e}"
+            );
             None
         }
     }

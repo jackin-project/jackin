@@ -213,7 +213,7 @@ where
                         inspect_agent_sessions(docker, container_name, &ContainerState::Running)
                             .await;
                     if let AgentSessionInventory::Unavailable(ref reason) = sessions {
-                        jackin_diagnostics::debug_log!(
+                        jackin_diagnostics::telemetry_debug!(
                             "instance",
                             "inspect_agent_sessions unavailable for {container_name}: {reason}; \
                              treating conservatively as sessions-present (container preserved)",
@@ -283,7 +283,7 @@ where
                 );
             }
             ContainerState::NotFound if is_preserved => {
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "instance",
                     "container {container_name} not found after session with Preserved decision; \
                      removed externally during finalization — tearing down DinD/network, \
@@ -835,7 +835,7 @@ where
         common.restoring,
         common.container_name,
     );
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "image",
         "derived image build required from {source}: {}",
         reason.as_str(),
@@ -1426,7 +1426,7 @@ where
     let workspace_label = workspace
         .as_workspace_label()
         .map_err(anyhow::Error::from)?;
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "isolation",
         "load_role: invoking materialize_workspace for container {container_name} \
          (interactive=true, force={force})",

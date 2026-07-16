@@ -182,7 +182,7 @@ pub async fn read_image_from_pasted_path(
     let text = text.trim();
     // A candidate image-path paste was recognized; record it (path only, no
     // bytes) so a `--debug` run shows whether the host file resolved.
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "clipboard-image",
         "pasted-path candidate: {}",
         text.escape_default()
@@ -208,7 +208,7 @@ pub async fn read_image_from_pasted_path(
         // as ordinary text rather than nagging — the implicit paste did not ask to
         // stage — but a `--debug` run can now see that a recognized candidate
         // failed (the path was logged above).
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "clipboard-image",
             "pasted-path candidate did not resolve to a readable image"
         );

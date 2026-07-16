@@ -331,10 +331,6 @@ pub fn migrate_file_if_needed(
     apply_migrations(&mut doc, &old_version, &current, migrations, label)?;
     atomic_write(path, &doc.to_string())
         .with_context(|| format!("writing migrated {label} to {}", path.display()))?;
-    // Migration is a silent, automatic upgrade — the operator never asked for
-    // it and must not see it on screen. Record it in the run diagnostics log
-    // (debug runs only); a clean (non-debug) run stays quiet.
-    jackin_core::debug_log!("config", "{label} migrated {old_version} -> {current_raw}");
     Ok(Some(old_version))
 }
 

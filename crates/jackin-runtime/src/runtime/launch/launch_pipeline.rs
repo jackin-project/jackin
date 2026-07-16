@@ -293,14 +293,14 @@ pub async fn resolve_supported_agents_for_console(
     if cached.repo_dir.join(".git").is_dir() {
         match jackin_manifest::load_role_manifest(&cached.repo_dir) {
             Ok(manifest) => return Ok(manifest.supported_agents()),
-            Err(error) => jackin_diagnostics::debug_log!(
+            Err(error) => jackin_diagnostics::telemetry_debug!(
                 "console",
                 "cached manifest for {} present but failed to parse ({error:#}); refetching",
                 selector.key()
             ),
         }
     } else {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "console",
             "no cached repo for {}; falling back to git fetch",
             selector.key()
@@ -482,7 +482,7 @@ pub(crate) async fn load_role_with(
             .await?
             {
                 Some(super::RestoreResolution::StartCurrentRole(container)) => {
-                    jackin_diagnostics::debug_log!(
+                    jackin_diagnostics::telemetry_debug!(
                         "restore",
                         "starting current stopped instance {container} before role repo, credentials, and image prep"
                     );
@@ -498,7 +498,7 @@ pub(crate) async fn load_role_with(
                             container.clone(),
                         )),
                     };
-                    jackin_diagnostics::debug_log!(
+                    jackin_diagnostics::telemetry_debug!(
                         "restore",
                         "recreating missing current instance {container} after role repo resolution"
                     );
@@ -534,7 +534,7 @@ pub(crate) async fn load_role_with(
                     resolution: super::RestoreResolution::StartCurrentRole(container),
                     ..
                 }) => {
-                    jackin_diagnostics::debug_log!(
+                    jackin_diagnostics::telemetry_debug!(
                         "restore",
                         "starting single-agent current instance {container} before role repo, credentials, and image prep"
                     );
@@ -554,7 +554,7 @@ pub(crate) async fn load_role_with(
                             container.clone(),
                         )),
                     };
-                    jackin_diagnostics::debug_log!(
+                    jackin_diagnostics::telemetry_debug!(
                         "restore",
                         "recreating single-agent missing current instance {container} after role repo resolution"
                     );
@@ -611,7 +611,7 @@ pub(crate) async fn load_role_with(
                     "explicit_restore_container_running",
                     Some(container),
                 );
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "restore",
                     "attaching explicit restore container {container} before role repo, credentials, and image prep"
                 );
@@ -626,7 +626,7 @@ pub(crate) async fn load_role_with(
                     "explicit_restore_container_startable",
                     Some(container),
                 );
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "restore",
                     "starting explicit restore container {container} before role repo, credentials, and image prep"
                 );
@@ -840,7 +840,7 @@ pub(crate) async fn load_role_with(
         {
             super::RestoreResolution::StartFresh => None,
             super::RestoreResolution::StartCurrentRole(container) => {
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "restore",
                     "starting current stopped instance {container} before credentials and image prep"
                 );
@@ -850,7 +850,7 @@ pub(crate) async fn load_role_with(
                 .await;
             }
             super::RestoreResolution::RecreateCurrentRole(container) => {
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "restore",
                     "recreating missing current instance {container} with normal image decision"
                 );
@@ -923,7 +923,7 @@ pub(crate) async fn load_role_with(
                 )
                 .await
                 {
-                    jackin_diagnostics::debug_log!(
+                    jackin_diagnostics::telemetry_debug!(
                         "instance",
                         "purge after launch-dialog delete failed for {container}: {err}; \
                          state will be removed on next prune",
@@ -1385,7 +1385,7 @@ pub(super) async fn purge_or_mark_clean_exited(
     if let Err(err) =
         crate::runtime::cleanup::purge_container_state(paths, container_name, docker, runner).await
     {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "instance",
             "inline cleanup after {context} failed for {container_name}: {err}; \
              state will be removed on next prune",

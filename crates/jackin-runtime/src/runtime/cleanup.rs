@@ -845,7 +845,7 @@ fn reap_orphaned_name_locks(paths: &JackinPaths) {
             drop(file); // Release before removing
             match std::fs::remove_file(&lock_path) {
                 Ok(()) => {
-                    jackin_diagnostics::debug_log!(
+                    jackin_diagnostics::telemetry_debug!(
                         "runtime",
                         "reap_orphaned_name_locks: removed orphaned lock for {base}",
                     );

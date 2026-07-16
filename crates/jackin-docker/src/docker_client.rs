@@ -108,7 +108,7 @@ impl DockerContextEndpoint {
     fn connection_choice(self) -> ConnectionChoice {
         let host = self.host.as_str();
         if host.is_empty() {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "docker",
                 "context endpoint host empty; using bollard defaults"
             );
@@ -180,7 +180,7 @@ fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
             Docker::connect_with_defaults().context("connect to Docker daemon via bollard defaults")
         }
         ConnectionChoice::Host(host) => {
-            jackin_diagnostics::debug_log!("docker", "connect context host {host}");
+            jackin_diagnostics::telemetry_debug!("docker", "connect context host {host}");
             Docker::connect_with_host(&host)
                 .with_context(|| format!("connect to Docker host {host}"))
         }
@@ -222,7 +222,11 @@ fn docker_host_env_is_set_from(value: Option<&OsStr>) -> bool {
 fn cached_context_endpoint() -> Option<DockerContextEndpoint> {
     static CACHE: OnceLock<DockerContextEndpoint> = OnceLock::new();
     if let Some(cached) = CACHE.get() {
-        jackin_diagnostics::debug_log!("docker", "context endpoint cache hit host={}", cached.host);
+        jackin_diagnostics::telemetry_debug!(
+            "docker",
+            "context endpoint cache hit host={}",
+            cached.host
+        );
         return Some(cached.clone());
     }
     let endpoint = active_docker_context_endpoint()?;
@@ -248,12 +252,12 @@ fn active_docker_context_endpoint() -> Option<DockerContextEndpoint> {
     let output = match cmd.output() {
         Ok(output) => output,
         Err(err) => {
-            jackin_diagnostics::debug_log!("docker", "context inspect spawn failed: {err}");
+            jackin_diagnostics::telemetry_debug!("docker", "context inspect spawn failed: {err}");
             return None;
         }
     };
     if !output.status.success() {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "docker",
             "context inspect exit={:?} stderr={}",
             output.status.code(),
@@ -268,7 +272,7 @@ fn parse_docker_context_endpoint(stdout: &[u8]) -> Option<DockerContextEndpoint>
     let context: DockerContextInspect = match serde_json::from_slice(stdout) {
         Ok(context) => context,
         Err(err) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "docker",
                 "context inspect json parse failed: {err} stdout={}",
                 String::from_utf8_lossy(stdout).trim()
@@ -277,7 +281,7 @@ fn parse_docker_context_endpoint(stdout: &[u8]) -> Option<DockerContextEndpoint>
         }
     };
     let Some(endpoint) = context.endpoints.docker else {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "docker",
             "context inspect missing Endpoints.docker stdout={}",
             String::from_utf8_lossy(stdout).trim()
@@ -336,7 +340,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn inspect_container_state(&self, name: &str) -> ContainerState {
-        jackin_diagnostics::debug_log!("docker", "inspect container {name}");
+        jackin_diagnostics::telemetry_debug!("docker", "inspect container {name}");
         jackin_diagnostics::incr_docker_inspect();
         let result = self
             .inner
@@ -374,7 +378,7 @@ impl DockerApi for BollardDockerClient {
                 }
             }
         };
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "docker",
             "inspect container {name} -> {}",
             state.inspect_label()
@@ -383,7 +387,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn remove_container(&self, name: &str) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "rm -f {name}");
+        jackin_diagnostics::telemetry_debug!("docker", "rm -f {name}");
         match self
             .inner
             .remove_container(
@@ -406,7 +410,7 @@ impl DockerApi for BollardDockerClient {
         label_filters: &[&str],
         all: bool,
     ) -> anyhow::Result<Vec<ContainerRow>> {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "docker",
             "ps{} --filter label=...",
             if all { " -a" } else { "" }
@@ -439,7 +443,11 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "create container {name} image={}", spec.image);
+        jackin_diagnostics::telemetry_debug!(
+            "docker",
+            "create container {name} image={}",
+            spec.image
+        );
         self.inner
             .create_container(
                 Some(CreateContainerOptions {
@@ -468,7 +476,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn start_container(&self, name: &str) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "start container {name}");
+        jackin_diagnostics::telemetry_debug!("docker", "start container {name}");
         self.inner
             .start_container(name, None::<StartContainerOptions>)
             .await
@@ -476,7 +484,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "volume rm {name}");
+        jackin_diagnostics::telemetry_debug!("docker", "volume rm {name}");
         match self
             .inner
             .remove_volume(name, None::<RemoveVolumeOptions>)
@@ -494,7 +502,7 @@ impl DockerApi for BollardDockerClient {
         labels: HashMap<String, String>,
         internal: bool,
     ) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "network create {name} internal={internal}");
+        jackin_diagnostics::telemetry_debug!("docker", "network create {name} internal={internal}");
         self.inner
             .create_network(NetworkCreateRequest {
                 name: name.to_owned(),
@@ -508,7 +516,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "network rm {name}");
+        jackin_diagnostics::telemetry_debug!("docker", "network rm {name}");
         match self.inner.remove_network(name).await {
             Ok(()) => Ok(()),
             Err(e) if is_http_status(&e, 404) => Ok(()),
@@ -517,7 +525,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
-        jackin_diagnostics::debug_log!("docker", "network ls --filter label=...");
+        jackin_diagnostics::telemetry_debug!("docker", "network ls --filter label=...");
         let filters = build_label_filter(label_filters);
         let networks = self
             .inner
@@ -536,7 +544,10 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>> {
-        jackin_diagnostics::debug_log!("docker", "images --filter reference={reference_filter}");
+        jackin_diagnostics::telemetry_debug!(
+            "docker",
+            "images --filter reference={reference_filter}"
+        );
         let mut filters = HashMap::new();
         filters.insert("reference".to_owned(), vec![reference_filter.to_owned()]);
         let images = self
@@ -557,7 +568,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome> {
-        jackin_diagnostics::debug_log!("docker", "rmi {name}");
+        jackin_diagnostics::telemetry_debug!("docker", "rmi {name}");
         match self
             .inner
             .remove_image(
@@ -586,7 +597,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn inspect_image_labels(&self, image: &str) -> anyhow::Result<HashMap<String, String>> {
-        jackin_diagnostics::debug_log!("docker", "inspect image:{image}");
+        jackin_diagnostics::telemetry_debug!("docker", "inspect image:{image}");
         match self.inner.inspect_image(image).await {
             Err(e) if is_http_status(&e, 404) => Ok(HashMap::new()),
             Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting image {image}"))),
@@ -602,7 +613,7 @@ impl DockerApi for BollardDockerClient {
 
     async fn pull_image(&self, image: &str) -> anyhow::Result<()> {
         use bollard::query_parameters::CreateImageOptions;
-        jackin_diagnostics::debug_log!("docker", "pull {image}");
+        jackin_diagnostics::telemetry_debug!("docker", "pull {image}");
         let mut stream = self.inner.create_image(
             Some(CreateImageOptions {
                 from_image: Some(image.to_owned()),
@@ -623,7 +634,7 @@ impl DockerApi for BollardDockerClient {
             .map(|arg| jackin_diagnostics::redact::redact_text(arg).into_owned())
             .collect::<Vec<_>>()
             .join(" ");
-        jackin_diagnostics::debug_log!("docker", "exec {} {}", container, redacted_cmd);
+        jackin_diagnostics::telemetry_debug!("docker", "exec {} {}", container, redacted_cmd);
         let exec = self
             .inner
             .create_exec(
@@ -682,7 +693,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
-        jackin_diagnostics::debug_log!("docker", "network inspect {name}");
+        jackin_diagnostics::telemetry_debug!("docker", "network inspect {name}");
         match self
             .inner
             .inspect_network(

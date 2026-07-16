@@ -319,7 +319,7 @@ impl InstanceManifest {
     /// Collapses [`Self::read_optional`]'s three outcomes into the two
     /// the discovery surfaces care about — `Some` (use the manifest)
     /// vs `None` (skip the candidate). Logs parse/IO failures via
-    /// `debug_log!` so unreadable manifests surface under `--debug`
+    /// `telemetry_debug!` so unreadable manifests surface under `--debug`
     /// without polluting normal output: callers run inside discovery
     /// loops that iterate every entry in the instance index, so an
     /// always-on warning would emit N lines per command for any
@@ -328,7 +328,7 @@ impl InstanceManifest {
         match Self::read_optional(state_dir) {
             Ok(value) => value,
             Err(error) => {
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "instance",
                     "{site}: skipping {} due to unreadable manifest: {error:#}",
                     state_dir.display(),
@@ -349,7 +349,7 @@ impl InstanceManifest {
 ///
 /// Falls back to the raw input when `canonicalize` fails (path does
 /// not exist yet, unreadable, symlink loop) and logs the underlying
-/// error via `debug_log!` so an operator hitting a fingerprint
+/// error via `telemetry_debug!` so an operator hitting a fingerprint
 /// mismatch can correlate it back to the canonicalize fault. A bare
 /// `canonicalize().ok()` would silently produce identical fingerprints
 /// across hosts with the same broken input.
@@ -357,7 +357,7 @@ pub fn host_path_fingerprint(path: &str) -> String {
     let canonical = match std::fs::canonicalize(path) {
         Ok(c) => c.to_string_lossy().into_owned(),
         Err(error) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "instance",
                 "host_path_fingerprint: canonicalize({path}) failed ({error}); falling back to raw input",
             );
@@ -526,7 +526,7 @@ impl InstanceIndex {
                 // the operator still sees that this container was
                 // purged. Log the read error so `--debug` surfaces the
                 // underlying file fault for forensics.
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "instance",
                     "mark_purged: manifest for `{container_base}` unreadable: {error}; synthesizing tombstone",
                 );

@@ -128,7 +128,7 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
             detail: format!("{err:?}"),
         })
     })?;
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "download",
         "{url}: size={}, parallel={}",
         info.size,
@@ -187,16 +187,19 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
     // deadline. A persistently-failing chunk retries forever (every bounded
     // range is classified recoverable), so both the drain and the join can hang
     // indefinitely; the timeout + abort is the only ceiling. Per-chunk errors
-    // are recoverable and high-frequency, so they go on the gated `debug_log!`
+    // are recoverable and high-frequency, so they go on the gated `telemetry_debug!`
     // tier, not the always-on diagnostics log.
     let drive = async {
         while let Ok(event) = result.event_chain.recv().await {
             match event {
                 Event::PullError(id, err) => {
-                    jackin_diagnostics::debug_log!("download", "worker {id} pull error: {err:?}");
+                    jackin_diagnostics::telemetry_debug!(
+                        "download",
+                        "worker {id} pull error: {err:?}"
+                    );
                 }
                 Event::PushError(_, _, err) | Event::FlushError(err) => {
-                    jackin_diagnostics::debug_log!("download", "write error: {err}");
+                    jackin_diagnostics::telemetry_debug!("download", "write error: {err}");
                 }
                 _ => {}
             }

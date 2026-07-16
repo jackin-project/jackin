@@ -14,7 +14,7 @@
 
 use anyhow::Context;
 use jackin_core::WorkspaceName;
-use jackin_diagnostics::debug_log;
+use jackin_diagnostics::telemetry_debug;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -153,7 +153,7 @@ pub fn write_records(
         .with_context(|| format!("write tmp isolation file {}", tmp.display()))?;
     std::fs::rename(&tmp, &path)
         .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
-    debug_log!(
+    telemetry_debug!(
         "isolation",
         "wrote {n} record(s) to {path}",
         n = records.len(),
@@ -184,7 +184,7 @@ pub fn upsert_record(container_state_dir: &Path, record: IsolationRecord) -> any
             records.push(record);
             "inserted"
         };
-    debug_log!(
+    telemetry_debug!(
         "isolation",
         "isolation.json upsert: {action} record for {dst} in {dir}",
         dst = mount_dst,
@@ -199,14 +199,14 @@ pub fn remove_record(container_state_dir: &Path, mount_dst: &str) -> anyhow::Res
     let before = records.len();
     records.retain(|r| r.mount_dst != mount_dst);
     if records.len() == before {
-        debug_log!(
+        telemetry_debug!(
             "isolation",
             "isolation.json remove: no record for {dst} in {dir} (no-op)",
             dst = mount_dst,
             dir = container_state_dir.display(),
         );
     } else {
-        debug_log!(
+        telemetry_debug!(
             "isolation",
             "isolation.json remove: dropped record for {dst} in {dir}",
             dst = mount_dst,

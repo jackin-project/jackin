@@ -27,10 +27,6 @@ mod container_id;
 /// Container-side path constants. Kept as a `pub mod` so call sites can
 /// `use jackin_core::container_paths` as a namespace (many sites; plan 019).
 pub mod container_paths;
-/// Debug-log sink + `debug_log!` macro. Kept as a `pub mod` because
-/// `#[macro_export] debug_log!` shares the `jackin_core::debug_log` path with
-/// the module name (plan 019 justified remainder).
-pub mod debug_log;
 mod docker;
 mod docker_security;
 mod env_model;
@@ -69,10 +65,6 @@ pub use clock::*;
 pub use constants::*;
 pub use container_id::*;
 pub use container_paths::*;
-pub use debug_log::{DebugLogSink, emit_debug_line, is_debug_mode, set_global_sink};
-// Note: `set_global_sink` for operator notices is not re-exported at root (name
-// collision); use `operator_notice::set_global_sink` via the notice helpers or
-// the diagnostics bridge.
 pub use docker::*;
 pub use docker_security::*;
 pub use env_model::*;

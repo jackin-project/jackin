@@ -216,7 +216,7 @@ pub(super) fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
         // would silently suppress the outro, so leave a breadcrumb under
         // --debug to tell the two cases apart.
         if error.kind() != std::io::ErrorKind::NotFound {
-            jackin_diagnostics::debug_log!("universe", "exit-claim rename failed: {error}");
+            jackin_diagnostics::telemetry_debug!("universe", "exit-claim rename failed: {error}");
         }
         return ExitClaim::Missing;
     }

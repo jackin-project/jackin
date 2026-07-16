@@ -1,10 +1,9 @@
 //! jackin-diagnostics: compact/debug telemetry and observability plumbing.
 //!
 //! **Architecture Invariant:** T2.
-//! Entry point: [`debug_log!`] — compact always-on telemetry macro.
+//! Entry point: [`telemetry_debug!`] — compact always-on telemetry macro.
 
 pub mod build_log;
-mod debug_log_adapter;
 pub mod logging;
 pub mod metrics;
 pub mod observability;
@@ -18,14 +17,6 @@ pub mod screen;
 pub mod secret_scrub;
 mod stage;
 pub mod terminal;
-
-// Single debug_log! definition lives in jackin-core (port-based).
-pub use jackin_core::debug_log;
-
-/// Install the diagnostics adapter as the global `DebugLogSink`.
-pub fn install_debug_log_sink() {
-    debug_log_adapter::install_debug_log_sink();
-}
 
 pub use logging::{
     TelemetryLevel, TelemetrySink, begin_debug_buffering, drain_debug_buffer_for_test,

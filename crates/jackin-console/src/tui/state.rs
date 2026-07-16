@@ -415,7 +415,10 @@ pub fn open_role_trust_confirm(
 
 /// Open an editor action error popup with the given error.
 pub fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Display) {
-    jackin_diagnostics::debug_log!("editor", "failed to apply confirmed editor action: {err}");
+    jackin_diagnostics::telemetry_debug!(
+        "editor",
+        "failed to apply confirmed editor action: {err}"
+    );
     editor.open_error_popup(
         crate::tui::components::error_popup::editor_action_error_popup_state(err),
     );
@@ -423,7 +426,7 @@ pub fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt
 
 /// Open a role-input error popup with the given message.
 pub fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
-    jackin_diagnostics::debug_log!("role", "showing direct role-load error popup: {message}");
+    jackin_diagnostics::telemetry_debug!("role", "showing direct role-load error popup: {message}");
     editor.open_error_popup(
         crate::tui::components::error_popup::role_load_error_popup_state(message),
     );

@@ -125,7 +125,7 @@ pub(crate) async fn ensure_local_role_base(
                 )
             })
     {
-        jackin_diagnostics::debug_log!("image", "reusing local role base {base_name}");
+        jackin_diagnostics::telemetry_debug!("image", "reusing local role base {base_name}");
         return Ok(base_name);
     }
 

@@ -379,7 +379,7 @@ pub(super) mod instances {
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        jackin_diagnostics::debug_log!(
+                        jackin_diagnostics::telemetry_debug!(
                             "console",
                             "manifest read failed for {}: {e:#}",
                             entry.container_base
@@ -406,7 +406,7 @@ pub(super) mod instances {
                     exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
                 }
                 Err(e) => {
-                    jackin_diagnostics::debug_log!(
+                    jackin_diagnostics::telemetry_debug!(
                         "console",
                         "snapshot fetch failed for {container}: {e:#}"
                     );

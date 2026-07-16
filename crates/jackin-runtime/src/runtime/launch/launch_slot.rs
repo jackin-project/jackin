@@ -77,7 +77,7 @@ pub(crate) async fn claim_container_name(
             match try_acquire_name_lock(&paths.data_dir, &name) {
                 Ok(lock_file) => return Ok((name, lock_file)),
                 Err(NameLockError { lock, unlink }) => {
-                    jackin_diagnostics::debug_log!(
+                    jackin_diagnostics::telemetry_debug!(
                         "runtime",
                         "claim_container_name: lock contention on {name} (attempt {attempt}): {lock}",
                     );
@@ -167,7 +167,7 @@ fn try_acquire_name_lock(
         let lock = std::io::Error::from(lock);
         drop(lock_file);
         let unlink = std::fs::remove_file(&lock_path).err().inspect(|err| {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "runtime",
                 "try_acquire_name_lock: failed to unlink {} after lock contention: {err}",
                 lock_path.display(),

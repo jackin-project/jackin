@@ -216,7 +216,7 @@ impl<D: NotificationDispatcher> AttentionNotifier for HostAttentionNotifier<D> {
         );
         let title = jackin_diagnostics::scrub_secrets(&title).into_owned();
         let body = jackin_diagnostics::scrub_secrets(&body).into_owned();
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "daemon",
             "attention state={} container={} session={} muted={}",
             notification.state.label(),

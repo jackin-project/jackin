@@ -8,7 +8,7 @@
 //! same standalone dialog renderers that `jackin_runtime::progress`
 //! historically called directly. Keeping the impl in `jackin-launch-tui`
 //! preserves the L0 (port) → L3 (impl) Branch-by-Abstraction layout that
-//! the rest of the codebase applies to `BuildLogSink`, `DebugLogSink`,
+//! the rest of the codebase applies to `BuildLogSink`, the operator notice sink,
 //! and `OperatorNoticeSink`.
 //!
 //! The renderer only needs [`LaunchHostTerminal::is_debug_mode`] during

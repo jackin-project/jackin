@@ -405,7 +405,7 @@ async fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::R
     // teardown with the role exit. `capture` (vs `run`) folds the
     // kill's stderr into the error message — preserving the prior
     // behaviour where `ESRCH`/`EPERM` text reached the breadcrumb.
-    jackin_diagnostics::debug_log!("keep_awake", "stopping caffeinate (PID {pid})");
+    jackin_diagnostics::telemetry_debug!("keep_awake", "stopping caffeinate (PID {pid})");
     runner
         .capture("kill", &[&pid.to_string()], None)
         .await

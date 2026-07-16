@@ -178,7 +178,7 @@ pub fn recipe_label_mismatch(
 }
 
 pub fn emit_image_decision(image: &str, reason: ImageInvalidationReason) {
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "image",
         "derived image {image} requires build: {}",
         reason.as_str()

@@ -68,7 +68,7 @@ pub fn start(
             // credential resolution is unavailable for the whole session, so
             // surface it on the always-on tier rather than only under --debug.
             eprintln!("[jackin] warning: jackin-exec credential resolver unavailable: {e:#}");
-            jackin_diagnostics::debug_log!("exec_host", "listener error: {e:#}");
+            jackin_diagnostics::telemetry_debug!("exec_host", "listener error: {e:#}");
         }
     })
 }
@@ -123,7 +123,7 @@ async fn run_listener(
     let listener = UnixListener::bind(sock_path)
         .with_context(|| format!("binding host.sock at {}", sock_path.display()))?;
 
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "exec_host",
         "listening at {} with {} allowed bindings",
         sock_path.display(),
@@ -134,11 +134,11 @@ async fn run_listener(
         match listener.accept().await {
             Ok((stream, _)) => {
                 if let Err(e) = handle_connection(stream, allowed_bindings, caller_auth).await {
-                    jackin_diagnostics::debug_log!("exec_host", "connection error: {e:#}");
+                    jackin_diagnostics::telemetry_debug!("exec_host", "connection error: {e:#}");
                 }
             }
             Err(e) => {
-                jackin_diagnostics::debug_log!("exec_host", "accept error: {e:#}");
+                jackin_diagnostics::telemetry_debug!("exec_host", "accept error: {e:#}");
                 // Brief back-off to avoid tight loop on persistent errors.
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
@@ -153,7 +153,10 @@ async fn handle_connection(
 ) -> Result<()> {
     const MAX_REQ: usize = 512 * 1024;
     if let Err(error) = authenticate_caller(&stream, caller_auth) {
-        jackin_diagnostics::debug_log!("exec_host", "rejected unauthenticated caller: {error:#}");
+        jackin_diagnostics::telemetry_debug!(
+            "exec_host",
+            "rejected unauthenticated caller: {error:#}"
+        );
         return Ok(());
     }
 
@@ -188,7 +191,7 @@ async fn handle_connection(
             .iter()
             .any(|b| b.name == r.name && b.kind == r.kind && b.source == r.source);
         if !approved {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "exec_host",
                 "rejected unauthorized ref: name={:?} kind={:?} source={:?}",
                 r.name,
@@ -206,7 +209,7 @@ async fn handle_connection(
         }
     }
 
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "exec_host",
         "resolving {} approved credential(s)",
         req.refs.len()
@@ -260,7 +263,7 @@ fn authenticate_capsule_daemon_peer(stream: &UnixStream) -> Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 fn authenticate_capsule_daemon_peer(_stream: &UnixStream) -> Result<()> {
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "exec_host",
         "peer credential daemon authentication unavailable on this host OS"
     );

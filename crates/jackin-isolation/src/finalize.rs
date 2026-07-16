@@ -35,7 +35,7 @@ use jackin_core::JACKIN_STATUS_CMD;
 use jackin_core::PromptContextLine;
 use jackin_core::error_popup;
 use jackin_core::exit_dialog_with_inspect;
-use jackin_diagnostics::debug_log;
+use jackin_diagnostics::telemetry_debug;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,7 +272,7 @@ pub async fn finalize_foreground_session(
     docker: &impl jackin_docker::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
-    debug_log!(
+    telemetry_debug!(
         "isolation",
         "finalize_foreground_session: container={c} outcome={o:?} interactive={i}",
         c = container_name,
@@ -288,7 +288,7 @@ pub async fn finalize_foreground_session(
         if matches!(outcome, AttachOutcome::StillRunning)
             && !has_jackin_sessions(docker, container_name).await
         {
-            debug_log!(
+            telemetry_debug!(
                 "isolation",
                 "finalize: container={c} still running but no jackin sessions; \
                  capsule still running after clean exit — proceeding to isolation cleanup",
@@ -304,7 +304,7 @@ pub async fn finalize_foreground_session(
             )
             .await;
         }
-        debug_log!(
+        telemetry_debug!(
             "isolation",
             "finalize: container={c} preserved (non-clean exit)",
             c = container_name,
@@ -378,7 +378,7 @@ async fn finalize_clean_exit(
     // preserved record so the prompt loop below can address them all.
     for record in records {
         let assessment = assess_cleanup(&record, runner).await?;
-        debug_log!(
+        telemetry_debug!(
             "isolation",
             "finalize assess: container={c} mount={d} → {a:?}",
             c = record.container_name,
@@ -548,7 +548,7 @@ enum CleanupAssessment {
 ///
 /// Each `runner.capture` failure is matched explicitly and routed to
 /// `PreservedUnpushed` (the "I don't know, keep it" outcome) with a
-/// `debug_log!` of the underlying error so `--debug` shows what went
+/// `telemetry_debug!` of the underlying error so `--debug` shows what went
 /// wrong.
 async fn assess_cleanup(
     record: &IsolationRecord,
@@ -560,7 +560,7 @@ async fn assess_cleanup(
     // assessment's fail-closed diagnostics back into the host debug channel.
     let state =
         jackin_core::assess_worktree(&record.worktree_path, &record.base_commit, runner, |msg| {
-            debug_log!("isolation", "finalize {}", msg);
+            telemetry_debug!("isolation", "finalize {}", msg);
         })
         .await?;
     Ok(match state {

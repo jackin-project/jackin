@@ -15,7 +15,7 @@
 
 use crate::state::{IsolationRecord, remove_record};
 use jackin_core::CommandRunner;
-use jackin_diagnostics::debug_log;
+use jackin_diagnostics::telemetry_debug;
 use std::path::Path;
 
 /// Force-delete an isolated worktree and its scratch branch, then remove
@@ -42,7 +42,7 @@ pub async fn force_cleanup_isolated(
     }
 
     let host_repo_exists = Path::new(&record.original_src).exists();
-    debug_log!(
+    telemetry_debug!(
         "isolation",
         "force_cleanup_isolated: container={c} mount={d} branch={b} worktree={w} host_repo_exists={exists}",
         c = record.container_name,
@@ -53,7 +53,7 @@ pub async fn force_cleanup_isolated(
     );
 
     if host_repo_exists {
-        debug_log!(
+        telemetry_debug!(
             "isolation",
             "git -C {src} worktree remove --force {wt}",
             src = record.original_src,
@@ -78,13 +78,13 @@ pub async fn force_cleanup_isolated(
             )
             .await;
         if let Err(e) = &wt_remove_result {
-            debug_log!(
+            telemetry_debug!(
                 "isolation",
                 "git worktree remove returned error for {wt}: {e} (verifying via wt.exists())",
                 wt = record.worktree_path,
             );
         }
-        debug_log!(
+        telemetry_debug!(
             "isolation",
             "git -C {src} branch -D {branch}",
             src = record.original_src,
@@ -108,7 +108,7 @@ pub async fn force_cleanup_isolated(
             )
             .await;
         if let Err(e) = &branch_delete_result {
-            debug_log!(
+            telemetry_debug!(
                 "isolation",
                 "git branch -D returned error for {branch}: {e} (verifying via branch_still_present())",
                 branch = record.scratch_branch,
@@ -131,7 +131,7 @@ pub async fn force_cleanup_isolated(
             .into());
         }
     } else {
-        debug_log!(
+        telemetry_debug!(
             "isolation",
             "skipping git cleanup: host repo {src} no longer exists",
             src = record.original_src,
@@ -151,7 +151,7 @@ pub async fn force_cleanup_isolated(
     // worktree still present means cleanup didn't really happen.
     let wt = Path::new(&record.worktree_path);
     if wt.exists() {
-        debug_log!(
+        telemetry_debug!(
             "isolation",
             "fallback rm -rf {wt} (git did not remove it)",
             wt = record.worktree_path,
@@ -181,7 +181,7 @@ pub async fn force_cleanup_isolated(
 }
 
 fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> anyhow::Result<()> {
-    debug_log!(
+    telemetry_debug!(
         "isolation",
         "force_cleanup_clone: container={c} mount={d} clone={w}",
         c = record.container_name,
@@ -238,7 +238,7 @@ pub async fn purge_isolated_for_container(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let records = crate::state::read_records(container_state_dir)?;
-    debug_log!(
+    telemetry_debug!(
         "isolation",
         "purge_isolated_for_container: {n} record(s) under {dir}",
         n = records.len(),

@@ -320,7 +320,7 @@ pub(crate) async fn launch_role_runtime(
         {
             Ok(info) => crate::runtime::docker_profile::parse_apparmor_from_docker_info(&info),
             Err(err) => {
-                jackin_diagnostics::debug_log!("launch", "apparmor probe failed: {err:#}");
+                jackin_diagnostics::telemetry_debug!("launch", "apparmor probe failed: {err:#}");
                 (false, "unknown")
             }
         }
@@ -436,11 +436,11 @@ pub(crate) async fn launch_role_runtime(
     // (emitted below, once credential state is known) is the human-readable
     // summary of the same data.
     let yes_no = |enabled: bool| if enabled { "yes" } else { "no" };
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "launch",
         "profile_selected profile={profile} source={profile_source}",
     );
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "launch",
         "cap_drop_all={} cap_add={}",
         yes_no(crate::runtime::docker_profile::drops_all_caps(*profile)),
@@ -450,18 +450,18 @@ pub(crate) async fn launch_role_runtime(
             grants.capabilities_add.join(",")
         },
     );
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "launch",
         "no_new_privileges enforced={}",
         yes_no(grants.no_new_privileges),
     );
-    jackin_diagnostics::debug_log!("launch", "seccomp profile=docker-default");
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!("launch", "seccomp profile=docker-default");
+    jackin_diagnostics::telemetry_debug!(
         "launch",
         "apparmor available={} profile=docker-default layer={apparmor_layer}",
         yes_no(apparmor_available),
     );
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "launch",
         "read_only_root enforced={} tmpfs={}",
         yes_no(!grants.system_writes),
@@ -471,21 +471,28 @@ pub(crate) async fn launch_role_runtime(
             crate::runtime::docker_profile::tmpfs_paths(*profile).join(",")
         },
     );
-    jackin_diagnostics::debug_log!("launch", "cgroup_version v={cgroup_version}");
+    jackin_diagnostics::telemetry_debug!("launch", "cgroup_version v={cgroup_version}");
     for (kind, value) in [
         ("memory", grants.memory_bytes.map(|b| b.to_string())),
         ("cpus", grants.cpus.map(|c| c.to_string())),
         ("pids", grants.pids.map(|p| p.to_string())),
     ] {
         if let Some(value) = value {
-            jackin_diagnostics::debug_log!("launch", "resource_limit kind={kind} value={value}");
+            jackin_diagnostics::telemetry_debug!(
+                "launch",
+                "resource_limit kind={kind} value={value}"
+            );
         }
     }
-    jackin_diagnostics::debug_log!("launch", "dind enabled={dind_enabled} mode={}", grants.dind);
+    jackin_diagnostics::telemetry_debug!(
+        "launch",
+        "dind enabled={dind_enabled} mode={}",
+        grants.dind
+    );
     // Host Docker socket is never mounted into a role container (hard rule);
     // guarded by `role_container_never_mounts_host_docker_socket` in tests.
-    jackin_diagnostics::debug_log!("launch", "host_socket_check passed=yes");
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!("launch", "host_socket_check passed=yes");
+    jackin_diagnostics::telemetry_debug!(
         "launch",
         "network mode={} enforcement={}",
         crate::runtime::docker_profile::network_grant_label(grants.network),
@@ -713,7 +720,7 @@ pub(crate) async fn launch_role_runtime(
             },
             gh_token.is_some(),
         );
-        jackin_diagnostics::debug_log!("launch", "session_contract\n{session_contract}");
+        jackin_diagnostics::telemetry_debug!("launch", "session_contract\n{session_contract}");
     }
     push_env_if_present(
         &mut env_strings,
@@ -941,7 +948,7 @@ pub(crate) async fn launch_role_runtime(
     for mount in &extrausers_mounts {
         run_args.extend_from_slice(&["-v", mount.as_str()]);
     }
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "launch",
         "prepared host socket dir {socket_dir_str} (owned by host UID, default umask) and Capsule config for bind-mount at /jackin/run",
     );
@@ -1011,7 +1018,7 @@ pub(crate) async fn launch_role_runtime(
     }
     for (label, argv, failure_context) in post_run_steps {
         let result = runner.run("docker", &argv, None, &docker_run_opts).await;
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "launch",
             "{label} exit={}",
             if result.is_ok() { "0" } else { "nonzero" },
@@ -1147,7 +1154,7 @@ pub(crate) async fn launch_role_runtime(
         // finalize, which reads exit-action.json and executes the choice. The
         // attach detail is kept only as a diagnostic breadcrumb.
         let attach_detail = attach_failure_error(container_name, &err);
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "session",
             "clean container exit for {container_name}; proceeding to finalize \
              (attach shutdown detail: {attach_detail})"

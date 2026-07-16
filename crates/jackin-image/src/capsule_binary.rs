@@ -70,7 +70,7 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         // gate from `download_and_cache`. The note is debug-only so
         // it never streams over the launch progress surface; the
         // rich launch screen owns the terminal during this call.
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "capsule_binary",
             "JACKIN_CAPSULE_BIN override at {} (skipping SHA-256 verification)",
             path.display()
@@ -93,14 +93,14 @@ async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
     let cached = cached_binary_path(&paths.cache_dir, &cache_version, arch);
 
     if is_executable_file(&cached) {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "capsule_binary",
             "cache hit for jackin-capsule {REQUIRED_VERSION} linux/{arch} (cache key {cache_version})"
         );
         return Ok(cached);
     }
     if repair_executable_file(&cached)? {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "capsule_binary",
             "repaired executable bit for cached jackin-capsule {REQUIRED_VERSION} linux/{arch} (cache key {cache_version}) at {}",
             cached.display()
@@ -133,7 +133,7 @@ async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
     }
 
     if let Some(packaged) = packaged_binary_path(REQUIRED_VERSION, arch).await {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "capsule_binary",
             "using packaged jackin-capsule {REQUIRED_VERSION} linux/{arch} at {}",
             packaged.display()
@@ -175,7 +175,7 @@ fn record(kind: &str, message: &str) {
     if let Some(run) = jackin_diagnostics::active_run() {
         run.compact(kind, message);
     } else {
-        jackin_diagnostics::debug_log!("capsule_binary", "{kind}: {message}");
+        jackin_diagnostics::telemetry_debug!("capsule_binary", "{kind}: {message}");
     }
 }
 
@@ -187,7 +187,7 @@ async fn packaged_binary_path(version: &str, arch: &str) -> Option<PathBuf> {
         }
         match verify_version(&candidate, version, is_preview).await {
             Ok(()) => return Some(candidate),
-            Err(err) => jackin_diagnostics::debug_log!(
+            Err(err) => jackin_diagnostics::telemetry_debug!(
                 "capsule_binary",
                 "ignoring packaged jackin-capsule at {}: {err}",
                 candidate.display()
@@ -250,7 +250,7 @@ fn remove_with_debug_log(path: &Path) {
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let base_url = base_download_url(version);
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "capsule_binary",
         "downloading jackin-capsule {version} for linux/{arch}"
     );
@@ -402,7 +402,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         });
     }
 
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "capsule_binary",
         "jackin-capsule {version} cached at {} (sha256 {})",
         dest.display(),
@@ -741,7 +741,7 @@ async fn fetch_and_verify_manifest(
     let manifest_url = format!("{base_url}/capsule-manifest.json");
     let bundle_url = format!("{base_url}/capsule-manifest.json.bundle");
 
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "capsule_binary",
         "fetching signed capsule manifest for jackin-capsule {version} linux/{arch}"
     );
@@ -809,7 +809,7 @@ async fn fetch_and_verify_manifest(
         .into());
     }
 
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "capsule_binary",
         "capsule manifest signature verified for {version} linux/{arch}: signer = {san}"
     );
@@ -824,7 +824,7 @@ async fn fetch_and_verify_manifest(
     // -preview. build and may legitimately differ from the capsule build version, so
     // we log it rather than assert equality.
     if is_preview {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "capsule_binary",
             "signed capsule manifest version: {} (host version: {version})",
             manifest.version

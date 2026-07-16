@@ -591,7 +591,7 @@ async fn github_auth_token_uncached() -> Option<String> {
             (!token.is_empty()).then_some(token)
         }
         Ok(output) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "agent_binary",
                 "gh auth token exited {}: {} — proceeding unauthenticated",
                 output.status,
@@ -600,7 +600,7 @@ async fn github_auth_token_uncached() -> Option<String> {
             None
         }
         Err(e) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "agent_binary",
                 "gh auth token not runnable ({e}) — proceeding unauthenticated"
             );
@@ -843,7 +843,7 @@ fn record(kind: &str, message: &str) {
     if let Some(run) = jackin_diagnostics::active_run() {
         run.compact(kind, message);
     } else {
-        jackin_diagnostics::debug_log!("agent_binary", "{kind}: {message}");
+        jackin_diagnostics::telemetry_debug!("agent_binary", "{kind}: {message}");
     }
 }
 
@@ -916,7 +916,7 @@ async fn read_cached_release_async(paths: &JackinPaths, agent: Agent) -> Option<
             // A join error here means the worker was cancelled or panicked; the
             // read itself is panic-free today, so report it rather than letting a
             // future panicking read masquerade as a cache miss.
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "agent_binary",
                 "cache read worker failed for {}: {error:#}",
                 agent.slug()
@@ -965,7 +965,7 @@ async fn newest_cached_executable_release_async(
     {
         Ok(found) => found,
         Err(error) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "agent_binary",
                 "cache scan worker failed for {}: {error:#}",
                 agent.slug()
@@ -1011,19 +1011,19 @@ async fn persist_release_cache_async(paths: &JackinPaths, release: &AgentRelease
     match result {
         Ok((cached, version)) => {
             if let Err(e) = cached {
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "agent_binary",
                     "caching {slug} release metadata failed: {e:#}"
                 );
             }
             if let Err(e) = version {
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "agent_binary",
                     "writing {slug} version sidecar failed: {e:#}"
                 );
             }
         }
-        Err(e) => jackin_diagnostics::debug_log!(
+        Err(e) => jackin_diagnostics::telemetry_debug!(
             "agent_binary",
             "cache metadata worker failed for {slug}: {e:#}"
         ),

@@ -373,7 +373,7 @@ fn read_prewarmed_dind_state(
         Ok(json) => json,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "sidecar",
                 "could not read prewarm sidecar state {}: {error:#}",
                 path.display()
@@ -382,7 +382,7 @@ fn read_prewarmed_dind_state(
         }
     };
     serde_json::from_str(&json).map(Some).map_err(|error| {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "sidecar",
             "could not parse prewarm sidecar state {}: {error:#}",
             path.display()
@@ -396,7 +396,7 @@ fn remove_prewarmed_dind_state(paths: &JackinPaths) {
     if let Err(error) = std::fs::remove_file(&path)
         && error.kind() != std::io::ErrorKind::NotFound
     {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "sidecar",
             "could not remove consumed prewarm sidecar state {}: {error:#}",
             path.display()
@@ -554,7 +554,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             return None;
         }
         Err(error) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "sidecar",
                 "could not inspect kept prewarm network {network}: {error:#}"
             );
@@ -587,7 +587,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
 
     let started = std::time::Instant::now();
     if let Err(error) = wait_for_dind(&dind, &certs_volume, docker).await {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "sidecar",
             "kept prewarm dind {dind} was running but not ready: {error:#}"
         );
@@ -629,7 +629,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
 
 pub(crate) fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
     if let Err(error) = std::fs::create_dir_all(&paths.data_dir) {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "sidecar",
             "could not create prewarm sidecar lock dir {}: {error:#}",
             paths.data_dir.display()
@@ -640,7 +640,7 @@ pub(crate) fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::Fi
     let lock = match std::fs::File::create(&lock_path) {
         Ok(lock) => lock,
         Err(error) => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "sidecar",
                 "could not open prewarm sidecar lock {}: {error:#}",
                 lock_path.display()
@@ -649,7 +649,7 @@ pub(crate) fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::Fi
         }
     };
     if let Err(error) = FileExt::try_lock(&lock) {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "sidecar",
             "prewarm sidecar lock {} is held by another launch: {error:#}",
             lock_path.display()

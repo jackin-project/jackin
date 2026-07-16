@@ -111,7 +111,7 @@ impl AppleContainerClient {
     /// outcome and bailing on a non-zero exit. Shared by `stop`/`remove`, which
     /// differ only in the subcommand.
     async fn lifecycle(&self, name: &str, sub: &str) -> Result<()> {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "apple-container",
             "container_state action={sub} name={name}"
         );
@@ -120,14 +120,14 @@ impl AppleContainerClient {
                 .await?;
         if !output.success {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "apple-container",
                 "container_state action={sub} name={name} result=failure reason={}",
                 stderr.trim()
             );
             anyhow::bail!("container {sub} failed: {}", stderr.trim());
         }
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "apple-container",
             "container_state action={sub} name={name} result=ok"
         );
@@ -160,7 +160,7 @@ impl AppleContainerApi for AppleContainerClient {
         }
         args.extend([spec.image.clone().into(), "jackin-capsule".into()]);
 
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "apple-container",
             "container_run name={name} image={}",
             spec.image
@@ -173,12 +173,12 @@ impl AppleContainerApi for AppleContainerClient {
             let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!("container run failed: {}", stderr.trim());
         }
-        jackin_diagnostics::debug_log!("apple-container", "container_run name={name} ok");
+        jackin_diagnostics::telemetry_debug!("apple-container", "container_run name={name} ok");
         Ok(())
     }
 
     async fn exec_attach(&self, name: &str) -> Result<tokio::process::Child> {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "apple-container",
             "attach transport=container-exec name={name}"
         );
@@ -220,7 +220,7 @@ impl AppleContainerApi for AppleContainerClient {
             // failure as an empty list, making is_container_running report
             // false and producing inexplicable reconnect behavior.
             let stderr = String::from_utf8_lossy(&output.stderr);
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "apple-container",
                 "container ps failed: {}",
                 stderr.trim()

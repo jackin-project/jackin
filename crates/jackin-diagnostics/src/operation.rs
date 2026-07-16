@@ -23,6 +23,30 @@ use crate::logging::{emit_compact_line, emit_debug_line};
 use crate::redact::redact_text;
 use jackin_telemetry::schema::enums::OutcomeValue as Outcome;
 
+/// Emit bounded diagnostic detail through the governed DEBUG event.
+#[macro_export]
+macro_rules! telemetry_debug {
+    ($category:expr, $($arg:tt)*) => {{
+        if $crate::is_debug_mode() {
+            $crate::operation::telemetry_debug_line(
+                $category,
+                &::std::format!($($arg)*),
+            );
+        }
+    }};
+}
+
+#[doc(hidden)]
+pub fn telemetry_debug_line(category: &'static str, body: &str) {
+    operation_log(
+        OperationLevel::Debug,
+        jackin_telemetry::event::DEBUG_LINE.name,
+        category,
+        body,
+        &[],
+    );
+}
+
 /// Severity for [`operation_log`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OperationLevel {

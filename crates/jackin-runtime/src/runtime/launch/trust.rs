@@ -94,7 +94,7 @@ pub(crate) fn seed_codex_project_trust(
             .with_context(|| format!("parsing Codex config at {}", config_path.display()))?
     };
 
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "codex-trust",
         "seeding trust_level=trusted for {} workspace path(s) in {}",
         trusted_paths.len(),

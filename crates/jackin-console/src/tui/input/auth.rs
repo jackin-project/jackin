@@ -50,7 +50,7 @@ impl AuthFormKeyOutcome {
 /// what's there.
 pub fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     let Some((target, form)) = editor.focused_auth_form(config) else {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "auth_form",
             "open_auth_form_modal: no target for cursor row (cursor may be on Spacer / AddSentinel / out-of-range)"
         );
@@ -73,7 +73,7 @@ pub fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
 /// rendered dimmed in that state).
 pub fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
     let Some(candidates) = editor.auth_role_override_selectors(config.roles.keys()) else {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "auth_role_picker",
             "open_auth_role_picker: no auth kind selected (root view or stale state)"
         );
@@ -260,7 +260,7 @@ const AUTH_MISSING_OP_COMMIT: &str = "AUTH005";
 const AUTH_MISSING_FOLDER_COMMIT: &str = "AUTH006";
 
 fn log_missing_return_path(code: &'static str, fn_name: &'static str, suffix: &str) {
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "auth",
         "{} {}: modal parent auth form missing{}",
         code,

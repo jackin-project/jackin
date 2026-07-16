@@ -158,7 +158,7 @@ pub(super) async fn decide_role_image(
     let tags = match tag_result {
         Ok(tags) => tags,
         Err(error) => {
-            // Always-on, not just `debug_log!`: a failing tag lookup forces a
+            // Always-on, not just `telemetry_debug!`: a failing tag lookup forces a
             // full rebuild, and a persistently degraded Docker daemon turns
             // that into a silent rebuild storm whose only symptom is every
             // launch being slow. Surface the cause at the always-on tier.
@@ -167,7 +167,7 @@ pub(super) async fn decide_role_image(
                 error = format!("{error:#}"),
                 "could not list local image tags; falling back to a full rebuild (Docker daemon may be unhealthy)"
             );
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "image",
                 "could not list local image tags for {image}; rebuilding: {error:#}"
             );
@@ -197,7 +197,7 @@ pub(super) async fn decide_role_image(
                 }
             };
             if stale {
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "image",
                     "published image {published} is out of date; building from workspace Dockerfile"
                 );
@@ -255,7 +255,7 @@ pub(super) async fn decide_role_image(
                 error = format!("{error:#}"),
                 "local image exists but label inspection failed; falling back to a full rebuild (Docker daemon may be unhealthy)"
             );
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "image",
                 "local image {image} exists but label inspection failed; rebuilding: {error:#}"
             );
@@ -270,7 +270,7 @@ pub(super) async fn decide_role_image(
 
     match classify_image_labels(&labels, &expected_recipes) {
         None => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "image",
                 "reusing derived image {image}; recipe hash matches one current recipe"
             );
@@ -287,13 +287,13 @@ pub(super) async fn decide_role_image(
                 )
                 .await
             {
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "image",
                     "published image {published} is out of date; building from workspace Dockerfile"
                 );
                 base_image_override = None;
             }
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "image",
                 "derived image {image} invalidated ({}); expected one of current recipe hashes",
                 reason.as_str()
@@ -1004,7 +1004,7 @@ async fn reuse_staleness_reason(
         .into_iter()
         .find(|(_, check)| *check == version_check::AgentVersionCheck::Stale)
     {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "image",
             "derived image {image}: {} baked version is outdated",
             agent.runtime().slug()
@@ -1021,7 +1021,7 @@ async fn reuse_staleness_reason(
         )
         .await
     {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "image",
             "published image {published} is out of date; refreshing reused workspace image"
         );
@@ -1097,7 +1097,7 @@ async fn prewarm_agent_image_from_validated_repo(
             role_git_sha,
             base_image,
         } => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "image_prewarm",
                 "building {} image from published base: {}",
                 agent.slug(),
@@ -1134,7 +1134,7 @@ async fn prewarm_agent_image_from_validated_repo(
             reason,
             role_git_sha,
         } => {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "image_prewarm",
                 "building {} image from workspace Dockerfile: {}",
                 agent.slug(),
@@ -1191,7 +1191,7 @@ async fn refresh_agent_image_from_validated_repo(
     role_git_sha: Option<&str>,
 ) -> anyhow::Result<RoleImagePrewarmRow> {
     super::launch::emit_prewarm_launch_plan(&format!("image_refresh:{}", reason.as_str()));
-    jackin_diagnostics::debug_log!(
+    jackin_diagnostics::telemetry_debug!(
         "image_prewarm",
         "refreshing {} image from workspace Dockerfile: {}",
         agent.slug(),
@@ -1321,7 +1321,7 @@ async fn prepare_agent_binaries(
                         ),
                     );
                 } else {
-                    jackin_diagnostics::debug_log!(
+                    jackin_diagnostics::telemetry_debug!(
                         "runtime_prewarm",
                         "could not prewarm {} binary; fallback installer remains available: {error:#}",
                         agent.slug()

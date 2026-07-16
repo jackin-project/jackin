@@ -361,7 +361,7 @@ impl RepoResolveOptions {
     /// `debug` is intentionally absent — non-interactive callers run
     /// from inside the TUI alt-screen, where streaming git output via
     /// `--debug` would corrupt the render. Diagnostics go through the
-    /// buffered `jackin_diagnostics::debug_log!` channel instead.
+    /// buffered `jackin_diagnostics::telemetry_debug!` channel instead.
     pub(super) fn non_interactive() -> Self {
         Self {
             debug: false,
@@ -505,7 +505,7 @@ pub(super) async fn resolve_agent_repo_with(
         if !repo_matches(git_url, &remote_url) {
             // TUI alt-screen corruption: `eprintln!` from inside a
             // console session paints over the render.
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "repo_cache",
                 "cached role repo remote mismatch: expected={git_url:?} \
                  found={remote_url:?} path={}",
@@ -555,7 +555,7 @@ pub(super) async fn resolve_agent_repo_with(
                 .flatten()
         });
         if let Some(age) = fresh_fetch_age {
-            jackin_diagnostics::debug_log!(
+            jackin_diagnostics::telemetry_debug!(
                 "repo_cache",
                 "skipping role repo fetch for {}: FETCH_HEAD is {}s old",
                 selector.key(),
@@ -605,7 +605,7 @@ pub(super) async fn resolve_agent_repo_with(
             if ff_result.is_err() {
                 // Route through buffered debug channel so the TUI alt-screen
                 // is not corrupted when this fires under `jackin console`.
-                jackin_diagnostics::debug_log!(
+                jackin_diagnostics::telemetry_debug!(
                     "repo_cache",
                     "cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
                 );

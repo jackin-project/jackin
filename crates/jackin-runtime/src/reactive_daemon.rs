@@ -86,7 +86,7 @@ pub struct DiagnosticNotifier;
 
 impl AttentionNotifier for DiagnosticNotifier {
     fn notify(&mut self, notification: &AttentionNotification) -> Result<()> {
-        jackin_diagnostics::debug_log!(
+        jackin_diagnostics::telemetry_debug!(
             "daemon",
             "attention container={} session={} state={} label={}",
             notification.container_name,
