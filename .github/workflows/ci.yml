@@ -317,11 +317,13 @@ jobs:
             echo "::warning::repository-policy result lookup failed; running policies"
             artifact_id=
           fi
+          if [ -n "$artifact_id" ]; then
+            echo "::notice::reusing input-identical repository policy result"
+          fi
           {
             echo "name=$name"
             if [ -n "$artifact_id" ]; then
               echo "hit=true"
-              echo "::notice::reusing input-identical repository policy result"
             else
               echo "hit=false"
             fi
