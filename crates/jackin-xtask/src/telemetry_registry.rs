@@ -18,6 +18,9 @@ use syn::visit::Visit as _;
 
 use crate::docs::repo_root;
 
+mod source_policy;
+use source_policy::AsyncScopeGuardScanner;
+
 // Shrink-only migration inventories. A new file never joins these lists: it
 // must use the governed facade/spawn helpers from its first commit.
 const RAW_SPAWN_ALLOWLIST: &[&str] = &[];
@@ -370,6 +373,7 @@ struct SourcePolicyScanner<'a> {
     path: &'a str,
     violations: BTreeSet<(usize, &'static str)>,
     spawn_aliases: BTreeSet<String>,
+    spawn_module_aliases: BTreeMap<String, String>,
     spawn_receivers: BTreeSet<String>,
 }
 
@@ -379,6 +383,7 @@ impl<'a> SourcePolicyScanner<'a> {
             path,
             violations: BTreeSet::new(),
             spawn_aliases: BTreeSet::new(),
+            spawn_module_aliases: BTreeMap::new(),
             spawn_receivers: BTreeSet::new(),
         }
     }
@@ -418,6 +423,45 @@ impl<'a> SourcePolicyScanner<'a> {
         )
     }
 
+    fn spawn_module_path(name: &str) -> bool {
+        matches!(name, "tokio" | "tokio::task" | "std::thread" | "thread")
+    }
+
+    fn resolved_spawn_path(&self, name: &str) -> String {
+        let Some((head, tail)) = name.split_once("::") else {
+            return name.to_owned();
+        };
+        self.spawn_module_aliases
+            .get(head)
+            .map_or_else(|| name.to_owned(), |module| format!("{module}::{tail}"))
+    }
+
+    fn spawn_receiver_type(ty: &syn::Type) -> bool {
+        match ty {
+            syn::Type::Path(path) => path.path.segments.last().is_some_and(|segment| {
+                matches!(segment.ident.to_string().as_str(), "Handle" | "JoinSet")
+            }),
+            syn::Type::Reference(reference) => Self::spawn_receiver_type(&reference.elem),
+            syn::Type::Paren(paren) => Self::spawn_receiver_type(&paren.elem),
+            syn::Type::Group(group) => Self::spawn_receiver_type(&group.elem),
+            _ => false,
+        }
+    }
+
+    fn typed_spawn_receiver(pat: &syn::Pat, ty: &syn::Type) -> Option<String> {
+        if !Self::spawn_receiver_type(ty) {
+            return None;
+        }
+        match pat {
+            syn::Pat::Ident(binding) => Some(binding.ident.to_string()),
+            syn::Pat::Reference(reference) => match reference.pat.as_ref() {
+                syn::Pat::Ident(binding) => Some(binding.ident.to_string()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn collect_spawn_imports(&mut self, tree: &syn::UseTree, prefix: &mut Vec<String>) {
         match tree {
             syn::UseTree::Path(path) => {
@@ -428,16 +472,19 @@ impl<'a> SourcePolicyScanner<'a> {
             syn::UseTree::Name(name) => {
                 prefix.push(name.ident.to_string());
                 let source = prefix.join("::");
-                if Self::raw_spawn_path(&source) {
+                if Self::raw_spawn_path(&self.resolved_spawn_path(&source)) {
                     self.spawn_aliases.insert(name.ident.to_string());
                 }
                 prefix.pop();
             }
             syn::UseTree::Rename(rename) => {
                 prefix.push(rename.ident.to_string());
-                let source = prefix.join("::");
-                if Self::raw_spawn_path(&source) {
+                let source = prefix.join("::").trim_end_matches("::self").to_owned();
+                if Self::raw_spawn_path(&self.resolved_spawn_path(&source)) {
                     self.spawn_aliases.insert(rename.rename.to_string());
+                } else if Self::spawn_module_path(&source) {
+                    self.spawn_module_aliases
+                        .insert(rename.rename.to_string(), source);
                 }
                 prefix.pop();
             }
@@ -486,8 +533,9 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
         if let syn::Expr::Path(function) = node.func.as_ref() {
             let name = Self::path_name(&function.path);
+            let resolved_name = self.resolved_spawn_path(&name);
             if !self.allows_spawn()
-                && (Self::raw_spawn_path(&name)
+                && (Self::raw_spawn_path(&resolved_name)
                     || self.spawn_aliases.contains(&name)
                     || matches!(name.as_str(), "spawn_blocking" | "spawn_local"))
             {
@@ -537,12 +585,17 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
     }
 
     fn visit_local(&mut self, node: &'ast syn::Local) {
+        if let syn::Pat::Type(typed) = &node.pat
+            && let Some(receiver) = Self::typed_spawn_receiver(&typed.pat, &typed.ty)
+        {
+            self.spawn_receivers.insert(receiver);
+        }
         if let syn::Pat::Ident(binding) = &node.pat
             && let Some(initializer) = &node.init
         {
             if let syn::Expr::Path(path) = initializer.expr.as_ref() {
                 let source = Self::path_name(&path.path);
-                if Self::raw_spawn_path(&source) {
+                if Self::raw_spawn_path(&self.resolved_spawn_path(&source)) {
                     self.spawn_aliases.insert(binding.ident.to_string());
                 }
             }
@@ -554,6 +607,17 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
             }
         }
         syn::visit::visit_local(self, node);
+    }
+
+    fn visit_signature(&mut self, node: &'ast syn::Signature) {
+        for input in &node.inputs {
+            if let syn::FnArg::Typed(typed) = input
+                && let Some(receiver) = Self::typed_spawn_receiver(&typed.pat, &typed.ty)
+            {
+                self.spawn_receivers.insert(receiver);
+            }
+        }
+        syn::visit::visit_signature(self, node);
     }
 
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
@@ -589,7 +653,7 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
 
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
         if node.sig.asyncness.is_some() {
-            let mut scanner = AsyncScopeGuardScanner::default();
+            let mut scanner = AsyncScopeGuardScanner::for_signature(&node.sig);
             scanner.visit_block(&node.block);
             for (span, violation) in scanner.violations {
                 self.reject(span, violation);
@@ -605,49 +669,6 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
             self.reject(span, violation);
         }
         syn::visit::visit_expr_async(self, node);
-    }
-}
-
-#[derive(Default)]
-struct AsyncScopeGuardScanner {
-    violations: Vec<(proc_macro2::Span, &'static str)>,
-}
-
-impl AsyncScopeGuardScanner {
-    fn runtime_receiver(receiver: &syn::Expr) -> bool {
-        matches!(receiver, syn::Expr::Path(path) if path.path.segments.last().is_some_and(|segment| {
-            let name = segment.ident.to_string();
-            name.contains("runtime") || name == "handle"
-        }))
-    }
-}
-
-impl<'ast> syn::visit::Visit<'ast> for AsyncScopeGuardScanner {
-    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
-        if matches!(node.method.to_string().as_str(), "enter" | "entered")
-            && !Self::runtime_receiver(&node.receiver)
-        {
-            self.violations
-                .push((node.span(), "span guard created inside async scope"));
-        }
-        if node.method == "attach" {
-            self.violations.push((
-                node.span(),
-                "OpenTelemetry context guard created inside async scope",
-            ));
-        }
-        syn::visit::visit_expr_method_call(self, node);
-    }
-
-    fn visit_local(&mut self, node: &'ast syn::Local) {
-        if matches!(&node.pat, syn::Pat::Type(typed) if matches!(typed.ty.as_ref(), syn::Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "ContextGuard")))
-        {
-            self.violations.push((
-                node.span(),
-                "OpenTelemetry context guard created inside async scope",
-            ));
-        }
-        syn::visit::visit_local(self, node);
     }
 }
 

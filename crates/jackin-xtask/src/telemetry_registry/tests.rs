@@ -45,6 +45,13 @@ fn spawn_policy_covers_executor_forms_without_matching_processes() {
         "fn raw() { std::thread::scope(|scope| { scope.spawn(|| {}); }); }",
         "use tokio::spawn as launch; fn raw() { launch(async {}); }",
         "fn raw() { let launch = tokio::spawn; launch(async {}); }",
+        "use tokio::task as runner; fn raw() { runner::spawn(async {}); }",
+        "use tokio::task as runner; fn raw() { let launch = runner::spawn; launch(async {}); }",
+        "use std::thread as worker; fn raw() { worker::spawn(|| {}); }",
+        "use tokio as executor; fn raw() { executor::spawn(async {}); }",
+        "fn raw(arbitrary: tokio::runtime::Handle) { arbitrary.spawn(async {}); }",
+        "fn raw(arbitrary: &mut tokio::task::JoinSet<()>) { arbitrary.spawn(async {}); }",
+        "fn raw() { let arbitrary: tokio::runtime::Handle = make_handle(); arbitrary.spawn(async {}); }",
     ] {
         assert_eq!(
             source_policy_violations(path, source),
@@ -66,6 +73,9 @@ fn async_scope_policy_rejects_guards_and_allows_sync_scopes() {
         "fn bad(span: Span) { async move { let _guard = span.entered(); work().await; }; }",
         "async fn bad(context: Context) { let _guard = context.attach(); work().await; }",
         "async fn bad(context: Context) { let _guard: ContextGuard = context.attach(); work().await; }",
+        "async fn bad(runtime_span: Span) { let _guard = runtime_span.enter(); work().await; }",
+        "async fn bad(span: Span) { let _guard: tracing::span::Entered<'_> = helper(span); work().await; }",
+        "async fn bad(span: Span) { let _guard: tracing::span::EnteredSpan = helper(span); work().await; }",
     ] {
         assert!(
             !source_policy_violations(path, source).is_empty(),
@@ -75,7 +85,14 @@ fn async_scope_policy_rejects_guards_and_allows_sync_scopes() {
     assert!(
         source_policy_violations(
             path,
-            "async fn safe(runtime: Runtime, span: Span) { let _runtime = runtime.enter(); span.in_scope(|| sync_work()); work().await; }"
+            "async fn safe(runtime: tokio::runtime::Runtime, span: Span) { let _runtime = runtime.enter(); span.in_scope(|| sync_work()); work().await; }"
+        )
+        .is_empty()
+    );
+    assert!(
+        source_policy_violations(
+            path,
+            "async fn safe(span: Span) { let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap(); let _runtime = runtime.enter(); span.in_scope(|| sync_work()); work().await; }"
         )
         .is_empty()
     );
