@@ -56,6 +56,24 @@ pub(crate) fn assert_three_signal_delivery(identity: jackin_diagnostics::Service
     assert!(!traces.is_empty(), "trace request missing");
     assert!(!logs.is_empty(), "logs request missing");
     assert!(!metrics.is_empty(), "metrics request missing");
+    assert!(
+        testbed
+            .spans()
+            .iter()
+            .any(|span| span.name == "telemetry.validate"),
+        "governed validation span missing"
+    );
+    assert!(
+        testbed.find_event("telemetry.validate").is_some(),
+        "native governed validation event missing"
+    );
+    assert!(
+        testbed
+            .metric_names()
+            .iter()
+            .any(|name| name == "telemetry.validate"),
+        "governed validation metric missing"
+    );
     for resource in traces
         .iter()
         .flat_map(|request| &request.resource_spans)

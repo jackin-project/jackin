@@ -207,6 +207,17 @@ impl Testbed {
             .clone()
     }
 
+    /// Decoded spans across all captured trace requests.
+    #[must_use]
+    pub fn spans(&self) -> Vec<opentelemetry_proto::tonic::trace::v1::Span> {
+        self.traces()
+            .into_iter()
+            .flat_map(|request| request.resource_spans)
+            .flat_map(|resource| resource.scope_spans)
+            .flat_map(|scope| scope.spans)
+            .collect()
+    }
+
     /// Captured log requests.
     #[must_use]
     pub fn logs(&self) -> Vec<ExportLogsServiceRequest> {
@@ -217,6 +228,28 @@ impl Testbed {
             .clone()
     }
 
+    /// Decoded log records across all captured log requests.
+    #[must_use]
+    pub fn log_records(&self) -> Vec<opentelemetry_proto::tonic::logs::v1::LogRecord> {
+        self.logs()
+            .into_iter()
+            .flat_map(|request| request.resource_logs)
+            .flat_map(|resource| resource.scope_logs)
+            .flat_map(|scope| scope.log_records)
+            .collect()
+    }
+
+    /// Find a native OTLP event by its governed EventName.
+    #[must_use]
+    pub fn find_event(
+        &self,
+        name: &str,
+    ) -> Option<opentelemetry_proto::tonic::logs::v1::LogRecord> {
+        self.log_records()
+            .into_iter()
+            .find(|record| record.event_name == name)
+    }
+
     /// Captured metric requests.
     #[must_use]
     pub fn metrics(&self) -> Vec<ExportMetricsServiceRequest> {
@@ -225,6 +258,25 @@ impl Testbed {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+
+    /// Decoded metric names across all captured metric requests.
+    #[must_use]
+    pub fn metric_names(&self) -> Vec<String> {
+        self.metrics()
+            .into_iter()
+            .flat_map(|request| request.resource_metrics)
+            .flat_map(|resource| resource.scope_metrics)
+            .flat_map(|scope| scope.metrics)
+            .map(|metric| metric.name)
+            .collect()
+    }
+
+    /// Stop the receiver while retaining captured requests for assertions.
+    pub fn stop(&mut self) {
+        if let Some(shutdown) = self.shutdown.take()
+            && shutdown.send(()).is_err()
+        {}
     }
 
     /// Wait until at least one request for every signal has arrived.
@@ -247,9 +299,7 @@ impl Testbed {
 
 impl Drop for Testbed {
     fn drop(&mut self) {
-        if let Some(shutdown) = self.shutdown.take()
-            && shutdown.send(()).is_err()
-        {}
+        self.stop();
     }
 }
 
