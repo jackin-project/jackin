@@ -346,10 +346,6 @@ pub(super) fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
     anyhow::bail!("docker grants validation failed:\n{}", errors.join("\n"))
 }
 
-#[tracing::instrument(
-    skip_all,
-    fields(role = %selector.key())
-)]
 #[expect(
     clippy::too_many_lines,
     reason = "Top-level launch pipeline that drives run_launch_core with preflight \

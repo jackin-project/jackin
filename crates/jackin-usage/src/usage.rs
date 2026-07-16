@@ -419,14 +419,6 @@ impl UsageCache {
         Some(view)
     }
 
-    #[tracing::instrument(
-        skip_all,
-        fields(
-            otel.name = "usage:refresh_accounts",
-            active = active_targets.len(),
-            focused = focused.is_some(),
-        )
-    )]
     pub fn refresh_active_account_snapshots(
         &mut self,
         active_targets: &[UsageRefreshTarget],

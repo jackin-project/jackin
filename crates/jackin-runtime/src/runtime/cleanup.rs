@@ -218,7 +218,8 @@ pub(crate) fn docker_resources_for_state(
         // a renamed volume/network and silently leak it. Always-on (not the
         // debug firehose) because the outcome is an operator-actionable resource
         // leak, matching the degraded-path warns in runtime/image.rs.
-        tracing::warn!(
+        jackin_diagnostics::telemetry_warn!(
+            "cleanup",
             "reading manifest for {container_name} failed ({err}); deriving docker \
              resources from the container name (a renamed volume/network may leak)"
         );

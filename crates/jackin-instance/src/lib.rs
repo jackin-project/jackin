@@ -121,7 +121,7 @@ pub enum HostMissingReason {
 }
 
 // `Debug` is implemented manually to redact the token in `Synced` /
-// `TokenMode` so the value never lands in a `tracing::debug!`,
+// `TokenMode` so the value never lands in diagnostic telemetry,
 // `eprintln!("{state:?}")`, or panic backtrace.
 impl std::fmt::Debug for GithubProvisionOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -377,7 +377,7 @@ impl RoleState {
 /// `config::resolve_github_mode` and the merged `[github.env]` map.
 ///
 /// `Debug` is implemented manually to redact `token` so the value
-/// cannot leak through `tracing::debug!`, panic messages, or
+/// cannot leak through diagnostic telemetry, panic messages, or
 /// `eprintln!("{ctx:?}")`.
 #[derive(Clone, Default)]
 pub struct GithubAuthContext {
@@ -417,7 +417,6 @@ impl RoleState {
     ///
     /// `resolvers.sync_source_dirs` returns an optional override source
     /// directory for each agent's auth sync, overriding `host_home`.
-    #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
     pub fn prepare(
         paths: &JackinPaths,
         container_name: &str,
@@ -445,7 +444,6 @@ impl RoleState {
     /// need only a subset (such as tests) can pass a narrower slice. The
     /// foreground launch path passes the full `manifest.supported_agents()` set;
     /// [`Self::prepare`] is a convenience wrapper that does the same.
-    #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
     #[expect(
         clippy::too_many_arguments,
         reason = "Per-agent prepare carries every per-agent + per-container input \
@@ -624,7 +622,6 @@ impl RoleState {
     /// GitHub context needed for the current `docker run`. Background sibling
     /// prep may create/update only jackin-owned per-agent state under the
     /// instance data dir so opening a later sibling runtime has less work.
-    #[tracing::instrument(skip_all, fields(container = container_name))]
     pub fn prewarm_auth_for_agents(
         paths: &JackinPaths,
         container_name: &str,

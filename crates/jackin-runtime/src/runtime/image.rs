@@ -162,12 +162,7 @@ pub(super) async fn decide_role_image(
             // full rebuild, and a persistently degraded Docker daemon turns
             // that into a silent rebuild storm whose only symptom is every
             // launch being slow. Surface the cause at the always-on tier.
-            tracing::warn!(
-                %image,
-                error = format!("{error:#}"),
-                "could not list local image tags; falling back to a full rebuild (Docker daemon may be unhealthy)"
-            );
-            jackin_diagnostics::telemetry_debug!(
+            jackin_diagnostics::telemetry_warn!(
                 "image",
                 "could not list local image tags for {image}; rebuilding: {error:#}"
             );
@@ -250,12 +245,7 @@ pub(super) async fn decide_role_image(
             // Always-on (see the tag-lookup fallback above): label inspection
             // failing forces a rebuild despite the image existing, so a flaky
             // daemon silently rebuilds on every launch. Make the cause visible.
-            tracing::warn!(
-                %image,
-                error = format!("{error:#}"),
-                "local image exists but label inspection failed; falling back to a full rebuild (Docker daemon may be unhealthy)"
-            );
-            jackin_diagnostics::telemetry_debug!(
+            jackin_diagnostics::telemetry_warn!(
                 "image",
                 "local image {image} exists but label inspection failed; rebuilding: {error:#}"
             );
@@ -993,7 +983,8 @@ async fn reuse_staleness_reason(
 
     for (agent, check) in &results {
         if *check == version_check::AgentVersionCheck::Unknown {
-            tracing::warn!(
+            jackin_diagnostics::telemetry_warn!(
+                "image",
                 "derived image {image}: could not verify {} version; \
                  staleness undetermined (latest release unresolvable)",
                 agent.runtime().slug()

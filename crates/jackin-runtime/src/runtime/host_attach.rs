@@ -1125,12 +1125,18 @@ impl Drop for RawModeGuard {
             .write_all(&outer_terminal_reset_sequence())
             .and_then(|()| stdout.flush())
         {
-            tracing::warn!("host attach: failed to write terminal reset on detach: {err}");
+            jackin_diagnostics::telemetry_warn!(
+                "attach",
+                "failed to write terminal reset on detach: {err}"
+            );
         }
         if self.raw_mode
             && let Err(err) = crossterm::terminal::disable_raw_mode()
         {
-            tracing::warn!("host attach: failed to disable raw mode on detach: {err}");
+            jackin_diagnostics::telemetry_warn!(
+                "attach",
+                "failed to disable raw mode on detach: {err}"
+            );
         }
     }
 }

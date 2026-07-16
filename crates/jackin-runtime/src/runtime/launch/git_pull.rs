@@ -52,12 +52,11 @@ pub(crate) fn pull_git_sources_with_git(
         if debug {
             jackin_diagnostics::active_debug("git_pull", &format!("git pull in {src}"));
             if jackin_diagnostics::active_run().is_none() {
-                tracing::debug!(src, "git pull in workspace");
+                jackin_diagnostics::telemetry_debug!("git_pull", "git pull in workspace");
             }
         }
         if print_starts {
             let src_display = jackin_diagnostics::shorten_home(&src);
-            tracing::info!(src = src_display.as_str(), "pulling workspace");
             eprintln!("  Pulling {src_display} …");
         }
         let git_program = git_program.to_path_buf();

@@ -28,19 +28,7 @@ const NON_TELEMETRY_DOTTED_NAME_FILES: &[&str] = &["crates/jackin-runtime/src/ru
 // must use the governed facade/spawn helpers from its first commit.
 const RAW_SPAWN_ALLOWLIST: &[&str] = &[];
 
-const RAW_TRACING_ALLOWLIST: &[&str] = &[
-    "crates/jackin-instance/src/lib.rs",
-    "crates/jackin-runtime/src/runtime/attach.rs",
-    "crates/jackin-runtime/src/runtime/cleanup.rs",
-    "crates/jackin-runtime/src/runtime/host_attach.rs",
-    "crates/jackin-runtime/src/runtime/image.rs",
-    "crates/jackin-runtime/src/runtime/launch/git_pull.rs",
-    "crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs",
-    "crates/jackin-runtime/src/runtime/progress.rs",
-    "crates/jackin-usage/src/telemetry.rs",
-    "crates/jackin-usage/src/usage.rs",
-    "crates/jackin-usage/src/usage/refresh.rs",
-];
+const RAW_TRACING_ALLOWLIST: &[&str] = &[];
 
 #[derive(Args, Debug)]
 pub(crate) struct TelemetryRegistryArgs {
@@ -112,9 +100,12 @@ fn validate_source_policy(root: &Path) -> Result<()> {
             violations.push(format!("{path}: raw tracing call outside governed facade"));
         }
         if (source.contains("#[tracing::instrument") || source.contains("#[instrument"))
-            && !source.contains("skip_all")
+            && !path.starts_with("crates/jackin-telemetry/")
+            && !path.starts_with("crates/jackin-diagnostics/")
         {
-            violations.push(format!("{path}: tracing instrument must declare skip_all"));
+            violations.push(format!(
+                "{path}: tracing instrument outside governed facade"
+            ));
         }
         if (source.contains("opentelemetry::logs") || source.contains("LoggerProvider"))
             && !path.starts_with("crates/jackin-telemetry/")
