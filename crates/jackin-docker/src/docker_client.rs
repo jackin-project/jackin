@@ -361,14 +361,36 @@ fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<Stri
 
 impl DockerApi for BollardDockerClient {
     async fn ping(&self) -> anyhow::Result<()> {
-        docker_http(PING, async {
+        let connection_attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::CONNECTION_PEER_TYPE,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::ConnectionPeerType::Docker.as_str(),
+            ),
+        }];
+        let connection = jackin_telemetry::operation_or_disabled(
+            &jackin_telemetry::operation::CONNECTION_ATTEMPT,
+            &connection_attrs,
+        );
+        let result = docker_http(PING, async {
             self.inner
                 .ping()
                 .await
                 .map(|_| ())
                 .context("pinging Docker daemon")
         })
-        .await
+        .await;
+        connection.complete(
+            if result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::DockerDaemonUnreachable),
+        );
+        result
     }
 
     async fn inspect_container_state(&self, name: &str) -> ContainerState {
