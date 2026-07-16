@@ -8,15 +8,16 @@ title: "Shared TUI Extraction Follow-through"
 
 TermRock is the single implementation and conformance owner for every
 product-neutral terminal component used by jackin❯. jackin❯ pins one exact
-TermRock Git revision (`0.11.0` / `11b52a3…`), assembles surfaces through
+TermRock Git revision (`0.11.0` / `ac54f91…`), assembles surfaces through
 `Theme::default()` and semantic `Role` helpers, and keeps only product-owned
 tokens (brand pill, rain/launch effects, agent menu and status accents) in
 `jackin-core`. Exact component visual contracts live in TermRock tests and
 catalog previews; jackin❯ tests cover product state, composition, and
 interaction outcomes.
 
-The design record that authorized the extraction has been retired. Normative
-TUI guidance lives under [TUI Architecture](/reference/tui/architecture/),
+The design record that authorized the extraction has been retired (the
+`reference/research/shared-tui-extraction` tree is gone). Normative TUI
+guidance lives under [TUI Architecture](/reference/tui/architecture/),
 [TUI Components](/reference/tui/components/), and
 [TUI Visual Design](/reference/tui/visual-design/). TermRock migrations are
 indexed in the [TermRock repository](https://github.com/tailrocks/termrock)
@@ -44,8 +45,10 @@ palettes, geometry, focus behavior, scrolling, hit-testing, or rendering.
    glyphs, role mapping, and deterministic render. jackin❯ tests assert product
    state projection and composition.
 4. **Forward-only TermRock API documentation** — sequential migrations
-   `0013`–`0017` (and prior) are indexed on TermRock `main` with before/after
-   consumer guidance. TermRock work landed on `main` only (no TermRock PRs).
+   through `0018` (theme-explicit scroll, `Viewport`, `PanelEmphasis`, neutral
+   `DialogScroll` input) and prior are indexed on TermRock `main` with
+   before/after consumer guidance. TermRock work landed on `main` only (no
+   TermRock PRs).
 
 ## Acceptance evidence
 

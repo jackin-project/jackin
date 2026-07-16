@@ -43,7 +43,7 @@ A title passed as `"  Title  "` (extra spaces) or `"Title"` (no spaces) is a des
 
 Panel body content must be inset from the border by exactly 1 cell horizontally. Use TermRock `Panel::inner` and the canonical content padding rather than rendering directly against the border. The inset prevents text from touching the left and right border characters and is a visual requirement across all titled panels.
 
-`render_scrollable_block` applies this inset automatically. Direct callers that render text content into a titled panel via the ratatui `Block` API must call `panel_body_area` to obtain the inset rect and render into that, not into the raw `inner` rect.
+TermRock `Viewport` and `Panel` apply this inset through their chrome. Direct callers that render text content into a titled panel must paint into `Panel::inner(area)` (or the inner rect returned by `render_dialog_shell`), not into the raw outer rect.
 
 ---
 
@@ -72,7 +72,7 @@ containers use `Role::Border` (neutral gray). Double-line, heavy, or mixed
 panel borders are a design violation. Scrollbar thumbs may occupy edge cells
 without changing the surrounding panel's border contract.
 
-`render_scrollable_block` enforces the passive-scroll logic internally. Callers only supply `focused: bool` from state; the renderer decides whether to use green. Active interaction containers that are not passive scroll blocks must use the same token rule directly or through their shared component: bright border for the active container, dark border for inactive/background containers.
+TermRock `Viewport` paints border emphasis from `PanelEmphasis`. Console scrollable panels go through `scroll_block::render_scrollable_block_at`, which maps the caller's `focused` flag to `PanelEmphasis::Focused` / `Normal`. Passive list-detail surfaces clear focus state when content no longer overflows so a non-scrollable detail block does not keep a false green affordance. Active interaction containers (forms, dialogs, pickers) keep the bright border whenever they own interaction.
 
 ---
 
