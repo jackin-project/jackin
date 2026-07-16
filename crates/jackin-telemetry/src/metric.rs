@@ -167,6 +167,16 @@ pub const TERMINAL_RENDER_DURATION: InstrumentDef = InstrumentDef {
     unit: "s",
     kind: InstrumentKind::Histogram,
 };
+pub const TERMINAL_RENDER_FRAMES: InstrumentDef = InstrumentDef {
+    name: "terminal.render.frames",
+    unit: "{frame}",
+    kind: InstrumentKind::Counter,
+};
+pub const TERMINAL_INPUT_MOUSE: InstrumentDef = InstrumentDef {
+    name: "terminal.input.mouse",
+    unit: "{event}",
+    kind: InstrumentKind::Counter,
+};
 pub const TELEMETRY_REJECTIONS: InstrumentDef = InstrumentDef {
     name: "telemetry.rejections",
     unit: "{rejection}",

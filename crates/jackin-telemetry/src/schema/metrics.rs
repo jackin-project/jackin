@@ -29,6 +29,8 @@ pub const TERMINAL_IO_BYTES: &str = "terminal.io.bytes";
 pub const TERMINAL_CURSOR_MOVES: &str = "terminal.cursor.moves";
 pub const TERMINAL_RENDER_CELLS: &str = "terminal.render.cells";
 pub const TERMINAL_RENDER_DURATION: &str = "terminal.render.duration";
+pub const TERMINAL_RENDER_FRAMES: &str = "terminal.render.frames";
+pub const TERMINAL_INPUT_MOUSE: &str = "terminal.input.mouse";
 pub const TELEMETRY_REJECTIONS: &str = "telemetry.rejections";
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 
@@ -61,6 +63,8 @@ pub const ALL: &[&str] = &[
     TERMINAL_CURSOR_MOVES,
     TERMINAL_RENDER_CELLS,
     TERMINAL_RENDER_DURATION,
+    TERMINAL_RENDER_FRAMES,
+    TERMINAL_INPUT_MOUSE,
     TELEMETRY_REJECTIONS,
     TELEMETRY_VALIDATE,
 ];

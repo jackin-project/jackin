@@ -1,284 +1,94 @@
-//! Hot-path metric instruments for terminal/render/input/usage/errors.
+//! Governed hot-path metric wrappers.
 //!
-//! Counters and histograms replace per-event DEBUG log rows on the high-
-//! frequency paths (plan 042). All recorders no-op when OTLP metrics were not
-//! installed (no provider → zero cost beyond one atomic load).
+//! Instrument definitions, privacy validation, and cardinality limits live in
+//! `jackin-telemetry`; this composition-root crate only exposes product-facing
+//! recording helpers.
 
-use std::sync::OnceLock;
+use jackin_telemetry::{Attr, Value, counter, histogram, metric};
 
-/// Install hot-path instruments on the process meter. Called once from
-/// `init_metrics` (host and capsule).
-///
-/// Returns `true` when this call won the process-wide `OnceLock` (first install).
-pub(crate) fn install_hot_path(meter: &opentelemetry::metrics::Meter) -> bool {
-    use crate::observability::otel_metrics as names;
-    let metrics = HotPathMetrics {
-        terminal_bytes_sent: meter
-            .u64_counter(names::TERMINAL_BYTES_SENT)
-            .with_unit("By")
-            .with_description("Terminal bytes sent to the client")
-            .build(),
-        terminal_bytes_received: meter
-            .u64_counter(names::TERMINAL_BYTES_RECEIVED)
-            .with_unit("By")
-            .with_description("Terminal bytes received from a PTY")
-            .build(),
-        terminal_cursor_moves: meter
-            .u64_counter(names::TERMINAL_CURSOR_MOVES)
-            .with_unit("1")
-            .with_description("Cursor-move sequences in emitted frames")
-            .build(),
-        render_duration: meter
-            .u64_histogram(names::RENDER_DURATION)
-            .with_unit("us")
-            .with_description("Render frame duration")
-            .build(),
-        render_painted_cells: meter
-            .u64_counter(names::RENDER_PAINTED_CELLS)
-            .with_unit("1")
-            .with_description("Painted cells in emitted frames")
-            .build(),
-        render_frames: meter
-            .u64_counter(names::RENDER_FRAMES)
-            .with_unit("1")
-            .with_description("Composed render frames")
-            .build(),
-        input_mouse_events: meter
-            .u64_counter(names::INPUT_MOUSE_EVENTS)
-            .with_unit("1")
-            .with_description("Mouse events handled by the host cockpit")
-            .build(),
-        usage_accounts_refreshed: meter
-            .u64_counter(names::USAGE_ACCOUNTS_REFRESHED)
-            .with_unit("1")
-            .with_description("Usage account snapshots refreshed")
-            .build(),
-        errors_count: meter
-            .u64_counter(names::ERRORS_COUNT)
-            .with_unit("1")
-            .with_description("Typed diagnostics errors by error.type")
-            .build(),
-        docker_inspect_count: meter
-            .u64_counter(names::DOCKER_INSPECT_COUNT)
-            .with_unit("{inspection}")
-            .with_description("Docker inspect operations")
-            .build(),
-        db_statement_count: meter
-            .u64_counter(names::DB_STATEMENT_COUNT)
-            .with_unit("{statement}")
-            .with_description("Database statements executed (bounded statement.name)")
-            .build(),
-    };
-    HOT_PATH.set(metrics).is_ok()
-}
-
-struct HotPathMetrics {
-    terminal_bytes_sent: opentelemetry::metrics::Counter<u64>,
-    terminal_bytes_received: opentelemetry::metrics::Counter<u64>,
-    terminal_cursor_moves: opentelemetry::metrics::Counter<u64>,
-    render_duration: opentelemetry::metrics::Histogram<u64>,
-    render_painted_cells: opentelemetry::metrics::Counter<u64>,
-    render_frames: opentelemetry::metrics::Counter<u64>,
-    input_mouse_events: opentelemetry::metrics::Counter<u64>,
-    usage_accounts_refreshed: opentelemetry::metrics::Counter<u64>,
-    errors_count: opentelemetry::metrics::Counter<u64>,
-    docker_inspect_count: opentelemetry::metrics::Counter<u64>,
-    db_statement_count: opentelemetry::metrics::Counter<u64>,
-}
-
-static HOT_PATH: OnceLock<HotPathMetrics> = OnceLock::new();
-
-/// Record one emitted client frame: bytes, cursor moves, painted cells.
+/// Record one emitted client frame: bytes, cursor moves, and painted cells.
 pub fn record_frame(bytes: u64, cursor_moves: u64, painted_cells: u64) {
-    if let Some(m) = HOT_PATH.get() {
-        let dims = screen_metric_dims();
-        m.terminal_bytes_sent.add(bytes, &dims);
-        m.terminal_cursor_moves.add(cursor_moves, &dims);
-        m.render_painted_cells.add(painted_cells, &dims);
-    }
+    let output = [Attr {
+        key: jackin_telemetry::schema::attrs::STREAM_DIRECTION,
+        value: Value::Str("output"),
+    }];
+    let _ = counter(&metric::TERMINAL_BYTES).add(bytes, &output);
+    let _ = counter(&metric::TERMINAL_CURSOR_MOVES).add(cursor_moves, &[]);
+    let _ = counter(&metric::TERMINAL_RENDER_CELLS).add(painted_cells, &[]);
+    let _ = counter(&metric::TERMINAL_RENDER_FRAMES).add(1, &[]);
 }
 
-/// Record one render: duration histogram + frames counter (+ optional cells).
+/// Record one render using the registry's seconds unit.
 pub fn record_render(duration_us: u64, painted_cells: u64) {
-    if let Some(m) = HOT_PATH.get() {
-        let dims = screen_metric_dims();
-        m.render_duration.record(duration_us, &dims);
-        m.render_frames.add(1, &dims);
-        if painted_cells > 0 {
-            m.render_painted_cells.add(painted_cells, &dims);
-        }
+    let _ =
+        histogram(&metric::TERMINAL_RENDER_DURATION).record(duration_us as f64 / 1_000_000.0, &[]);
+    if painted_cells > 0 {
+        let _ = counter(&metric::TERMINAL_RENDER_CELLS).add(painted_cells, &[]);
     }
 }
 
-fn screen_metric_dims() -> Vec<opentelemetry::KeyValue> {
-    use opentelemetry::KeyValue;
-    match crate::current_screen_name() {
-        Some(name) => vec![KeyValue::new("jackin.screen.name", name)],
-        None => Vec::new(),
-    }
-}
-
-/// PTY bytes received into a session.
+/// Record bytes read from a PTY.
 pub fn incr_terminal_bytes_received(bytes: u64) {
-    if let Some(m) = HOT_PATH.get() {
-        m.terminal_bytes_received.add(bytes, &[]);
-    }
+    let input = [Attr {
+        key: jackin_telemetry::schema::attrs::STREAM_DIRECTION,
+        value: Value::Str("input"),
+    }];
+    let _ = counter(&metric::TERMINAL_BYTES).add(bytes, &input);
 }
 
-/// Host cockpit mouse event handled.
+/// Record one semantic mouse input without coordinates or payload.
 pub fn incr_mouse_events() {
-    if let Some(m) = HOT_PATH.get() {
-        let dims = screen_metric_dims();
-        m.input_mouse_events.add(1, &dims);
-    }
+    let _ = counter(&metric::TERMINAL_INPUT_MOUSE).add(1, &[]);
 }
 
-/// Docker inspect operation completed.
-pub fn incr_docker_inspect() {
-    if let Some(m) = HOT_PATH.get() {
-        m.docker_inspect_count.add(1, &[]);
-    }
-}
+/// Docker inspection is represented by its governed connection/HTTP boundary.
+pub fn incr_docker_inspect() {}
 
-/// Database statement executed (`statement.name` is a registered const, never SQL).
-pub fn incr_db_statement(statement_name: &'static str) {
-    if let Some(m) = HOT_PATH.get() {
-        use opentelemetry::KeyValue;
-        m.db_statement_count
-            .add(1, &[KeyValue::new("statement.name", statement_name)]);
-    }
-}
+/// Database activity is represented by governed database operation spans.
+pub fn incr_db_statement(_statement_name: &'static str) {}
 
-/// Usage accounts refreshed in one pass.
-pub fn incr_accounts_refreshed(count: u64) {
-    if let Some(m) = HOT_PATH.get() {
-        m.usage_accounts_refreshed.add(count, &[]);
-    }
-}
+/// Account reconciliation is represented by its governed background cycle.
+pub fn incr_accounts_refreshed(_count: u64) {}
 
-/// Typed error counter (`error.type` attribute).
-pub fn incr_errors(error_type: &str) {
-    if let Some(m) = HOT_PATH.get() {
-        use opentelemetry::KeyValue;
-        m.errors_count
-            .add(1, &[KeyValue::new("error.type", error_type.to_owned())]);
-    }
-}
+/// Errors are represented by the owning operation and typed error event.
+pub fn incr_errors(_error_type: &str) {}
 
-/// Process-wide test rig: instruments + collectible in-memory exporter.
-///
-/// `HOT_PATH` is a `OnceLock`, so the first install wins for the whole test
-/// process. Always install through this helper so the provider has a reader
-/// that can force-flush into `InMemoryMetricExporter`.
 #[cfg(test)]
-struct HotPathTestRig {
+struct TestRig {
     provider: opentelemetry_sdk::metrics::SdkMeterProvider,
     exporter: opentelemetry_sdk::metrics::InMemoryMetricExporter,
-    /// Whether `HOT_PATH` instruments were minted from this provider.
-    instruments_owned: bool,
 }
 
 #[cfg(test)]
-static HOT_PATH_TEST_RIG: OnceLock<HotPathTestRig> = OnceLock::new();
+static TEST_RIG: std::sync::OnceLock<TestRig> = std::sync::OnceLock::new();
 
-/// Test-only: install instruments once with an in-memory metric exporter.
-///
-/// Safe to call from multiple tests; subsequent calls are no-ops once the
-/// process-wide rig (or production `HOT_PATH`) is set.
-#[cfg(test)]
-pub(crate) fn install_hot_path_for_test(_meter: &opentelemetry::metrics::Meter) {
-    ensure_hot_path_test_rig();
-}
-
-/// Ensure hot-path instruments are installed against a collectible provider.
-///
-/// Returns `true` when counters can be read back via
-/// [`collect_hot_path_counter_sums`] (instruments owned by this rig).
 #[cfg(test)]
 pub(crate) fn ensure_hot_path_test_rig() -> bool {
     use opentelemetry::metrics::MeterProvider as _;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 
-    let rig = HOT_PATH_TEST_RIG.get_or_init(|| {
+    TEST_RIG.get_or_init(|| {
         let exporter = InMemoryMetricExporter::default();
         let reader = PeriodicReader::builder(exporter.clone()).build();
         let provider = SdkMeterProvider::builder().with_reader(reader).build();
-        let meter = provider.meter("jackin-hot-path-test");
-        // Own only when set succeeds — concurrent init_metrics may race.
-        let instruments_owned = install_hot_path(&meter);
-        HotPathTestRig {
-            provider,
-            exporter,
-            instruments_owned,
-        }
+        jackin_telemetry::install(&provider.meter("jackin-telemetry-test"));
+        TestRig { provider, exporter }
     });
-    rig.instruments_owned
+    true
 }
 
-/// Force-flush the test meter provider and sum each requested u64 counter
-/// (cumulative totals since process start for this provider).
-///
-/// Returns `None` when the test rig does not own the process instruments
-/// (another install won the `OnceLock`) or export failed. Missing names map
-/// to `0` (instrument never recorded).
-#[cfg(test)]
-pub(crate) fn collect_hot_path_counter_sums(names: &[&str]) -> Option<Vec<u64>> {
-    let rig = HOT_PATH_TEST_RIG.get()?;
-    if !rig.instruments_owned {
-        return None;
-    }
-    // Drop prior exports so this flush is the only window we sum.
-    rig.exporter.reset();
-    rig.provider.force_flush().ok()?;
-    let finished = rig.exporter.get_finished_metrics().ok()?;
-
-    let mut totals = vec![0u64; names.len()];
-    for resource in &finished {
-        sum_resource_counters(resource, names, &mut totals);
-    }
-    Some(totals)
-}
-
-/// Number of metric streams with exported data in the test provider.
 #[cfg(test)]
 pub(crate) fn collect_hot_path_metric_count() -> Option<usize> {
-    let rig = HOT_PATH_TEST_RIG.get()?;
-    if !rig.instruments_owned {
-        return None;
-    }
+    ensure_hot_path_test_rig();
+    let rig = TEST_RIG.get()?;
     rig.exporter.reset();
     rig.provider.force_flush().ok()?;
-    let finished = rig.exporter.get_finished_metrics().ok()?;
+    let metrics = rig.exporter.get_finished_metrics().ok()?;
     Some(
-        finished
+        metrics
             .iter()
             .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
             .map(|scope| scope.metrics().count())
             .sum(),
     )
 }
-
-#[cfg(test)]
-fn sum_resource_counters(
-    resource: &opentelemetry_sdk::metrics::data::ResourceMetrics,
-    names: &[&str],
-    totals: &mut [u64],
-) {
-    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
-    for scope in resource.scope_metrics() {
-        for metric in scope.metrics() {
-            let Some(idx) = names.iter().position(|&n| n == metric.name()) else {
-                continue;
-            };
-            let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() else {
-                continue;
-            };
-            for point in sum.data_points() {
-                totals[idx] = totals[idx].saturating_add(point.value());
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests;
