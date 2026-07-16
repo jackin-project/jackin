@@ -71,10 +71,33 @@ pub fn validate_delivery() -> Result<ValidationReport, ValidationFailure> {
     let started = std::time::Instant::now();
     otlp::validate_flush()?;
     let health = telemetry_health_snapshot();
+    validate_delivery_delta(before, health)?;
     Ok(ValidationReport {
         elapsed: started.elapsed(),
         health,
     })
+}
+
+fn validate_delivery_delta(
+    before: TelemetryHealth,
+    after: TelemetryHealth,
+) -> Result<(), ValidationFailure> {
+    if after.flush != TelemetryFlushStatus::Succeeded {
+        return Err(ValidationFailure::Export("flush"));
+    }
+    if after.facade_rejections > before.facade_rejections {
+        return Err(ValidationFailure::Rejected);
+    }
+    for (name, prior, current) in [
+        ("traces", before.traces, after.traces),
+        ("logs", before.logs, after.logs),
+        ("metrics", before.metrics, after.metrics),
+    ] {
+        if current.failures > prior.failures || current.successes <= prior.successes {
+            return Err(ValidationFailure::Export(name));
+        }
+    }
+    Ok(())
 }
 
 /// Install the global subscriber and direct OTLP exporters when configured.
