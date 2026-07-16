@@ -417,26 +417,23 @@ fn render_agents_subpanel(
     render_config_roles_subpanel(frame, area, ws_config, config, 0, 0, false);
 }
 
-/// Scan the first content row inside a sub-panel block (y = 1, skipping
-/// the top border at y = 0) for the first cell holding a printable
-/// non-space character, skipping the left vertical border. Returns the
-/// offset of that character *from the left border* — i.e. the indent —
-/// so values can be compared against `SUBPANEL_CONTENT_INDENT` directly.
+fn panel_inner(area: Rect) -> Rect {
+    let theme = termrock::Theme::default();
+    termrock::widgets::Panel::new(&theme).inner(area)
+}
+
+/// Scan the first content row inside a sub-panel for its first printable
+/// character. The content rectangle comes from the owning TermRock component,
+/// so this product test does not infer geometry from border glyphs.
 fn first_content_indent(terminal: &Terminal<TestBackend>) -> Option<usize> {
     let buf = terminal.backend().buffer();
-    let area = buf.area;
-    // Locate the left border column first so the returned value is the
-    // relative indent, not the absolute column.
-    let border_x = (0..area.width).find(|x| {
-        let sym = buf[(*x, 1)].symbol();
-        sym == "│"
-    })?;
-    for x in (border_x + 1)..area.width {
-        let sym = buf[(x, 1)].symbol();
+    let inner = panel_inner(buf.area);
+    for x in inner.x..inner.right() {
+        let sym = buf[(x, inner.y)].symbol();
         if sym.is_empty() || sym == " " {
             continue;
         }
-        return Some((x - border_x - 1) as usize);
+        return Some((x - inner.x) as usize);
     }
     None
 }
@@ -545,14 +542,10 @@ fn subpanel_content_column_alignment() {
 /// Used to locate the trailing star glyph on a default-role row.
 fn find_symbol_indent(terminal: &Terminal<TestBackend>, y: u16, needle: &str) -> Option<usize> {
     let buf = terminal.backend().buffer();
-    let area = buf.area;
-    let border_x = (0..area.width).find(|x| {
-        let sym = buf[(*x, y)].symbol();
-        sym == "│"
-    })?;
-    for x in (border_x + 1)..area.width {
+    let inner = panel_inner(buf.area);
+    for x in inner.x..inner.right() {
         if buf[(x, y)].symbol() == needle {
-            return Some((x - border_x - 1) as usize);
+            return Some((x - inner.x) as usize);
         }
     }
     None
@@ -563,20 +556,12 @@ fn find_symbol_indent(terminal: &Terminal<TestBackend>, y: u16, needle: &str) ->
 /// a non-default row has no trailing suffix past the name.
 fn last_printable_indent(terminal: &Terminal<TestBackend>, y: u16) -> Option<usize> {
     let buf = terminal.backend().buffer();
-    let area = buf.area;
-    let border_x = (0..area.width).find(|x| {
-        let sym = buf[(*x, y)].symbol();
-        sym == "│"
-    })?;
-    let right_border_x = ((border_x + 1)..area.width).find(|x| {
-        let sym = buf[(*x, y)].symbol();
-        sym == "│"
-    })?;
+    let inner = panel_inner(buf.area);
     let mut last: Option<usize> = None;
-    for x in (border_x + 1)..right_border_x {
+    for x in inner.x..inner.right() {
         let sym = buf[(x, y)].symbol();
         if !sym.is_empty() && sym != " " {
-            last = Some((x - border_x - 1) as usize);
+            last = Some((x - inner.x) as usize);
         }
     }
     last
@@ -612,19 +597,13 @@ fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
 
     // Locate the first printable char on the beta row (y=4).
     let buf = term.backend().buffer();
-    let area = buf.area;
-    let border_x = (0..area.width)
-        .find(|x| {
-            let sym = buf[(*x, 4)].symbol();
-            sym == "│"
-        })
-        .expect("left border on beta row");
-    let name_col = ((border_x + 1)..area.width)
+    let inner = panel_inner(buf.area);
+    let name_col = (inner.x..inner.right())
         .find(|x| {
             let sym = buf[(*x, 4)].symbol();
             !sym.is_empty() && sym != " "
         })
-        .map(|x| (x - border_x - 1) as usize)
+        .map(|x| (x - inner.x) as usize)
         .expect("beta row has content");
     assert_eq!(
         name_col, SUBPANEL_CONTENT_INDENT,
@@ -697,19 +676,13 @@ fn agents_subpanel_default_agent_name_starts_at_col_2_regardless_of_star() {
 
     // Locate the first printable char on the alpha row (y=3).
     let buf = term.backend().buffer();
-    let area = buf.area;
-    let border_x = (0..area.width)
-        .find(|x| {
-            let sym = buf[(*x, 3)].symbol();
-            sym == "│"
-        })
-        .expect("left border on alpha row");
-    let name_col = ((border_x + 1)..area.width)
+    let inner = panel_inner(buf.area);
+    let name_col = (inner.x..inner.right())
         .find(|x| {
             let sym = buf[(*x, 3)].symbol();
             !sym.is_empty() && sym != " "
         })
-        .map(|x| (x - border_x - 1) as usize)
+        .map(|x| (x - inner.x) as usize)
         .expect("alpha row has content");
     assert_eq!(
         name_col, SUBPANEL_CONTENT_INDENT,

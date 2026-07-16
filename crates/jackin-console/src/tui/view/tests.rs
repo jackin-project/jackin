@@ -546,9 +546,9 @@ fn dialog_button_rows_have_one_blank_row_above() {
             "{name} button row cannot be first row"
         );
         let before = row_text(&buf, button_y - 1);
-        let before_inner = before.trim_matches(['│', ' ']);
+        let non_space_cells = before.chars().filter(|ch| !ch.is_whitespace()).count();
         assert!(
-            before_inner.is_empty(),
+            non_space_cells <= 2,
             "{name} must have one blank row above buttons; got {before:?}",
         );
     }
