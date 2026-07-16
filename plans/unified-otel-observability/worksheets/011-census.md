@@ -19,7 +19,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-capsule/src/daemon/mouse_input.rs` | 0 | 2 | 25 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/daemon/multiplexer_utils.rs` | 0 | 3 | 1 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/daemon/pane_layout.rs` | 0 | 3 | 1 | 0 | 0 | 0 | COMPLETE — reaped split races emit one recovered-degradation warning; registered PTY/session/UI signals own successful split, close, focus, and resize behavior; pane/session/agent/provider labels and geometry are deleted |
-| `crates/jackin-capsule/src/daemon/ports.rs` | 0 | 0 | 1 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-capsule/src/daemon/ports.rs` | 0 | 0 | 1 | 0 | 0 | 0 | COMPLETE — stale reporter events retain the explicit always-ACK contract and remain silent; registered agent-state signals own applied transitions, and raw session identity is deleted |
 | `crates/jackin-capsule/src/daemon/resource_metrics.rs` | 0 | 0 | 3 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-capsule/src/daemon/session_lifecycle.rs` | 0 | 8 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
 | `crates/jackin-capsule/src/debug_panic.rs` | 0 | 1 | 0 | 0 | 0 | 0 | COMPLETE — the shared panic hook owns one registered `app.crash`; pre-panic narration is deleted |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, Capsule daemon/attach/client/clipboard/context/firewall/compositor/context-management/control/file-export/input-dispatch/pane-layout, and recovered-degradation migration passes: 51 `telemetry_info!` and 213 `telemetry_debug!` sites. The generic macro machinery and these 264 sites remain open; `telemetry_trace!`, `telemetry_warn!`, and `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.
+Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, Capsule daemon/attach/client/clipboard/context/firewall/compositor/context-management/control/file-export/input-dispatch/pane-layout/ports, and recovered-degradation migration passes: 51 `telemetry_info!` and 212 `telemetry_debug!` sites. The generic macro machinery and these 263 sites remain open; `telemetry_trace!`, `telemetry_warn!`, and `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.

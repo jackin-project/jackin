@@ -96,12 +96,6 @@ impl ControlPort for DefaultDaemonPorts {
                 event.payload,
                 event.observed_at,
             );
-        } else {
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "agent-status: runtime event for unknown session {}",
-                event.session_id
-            );
         }
         // INV-D12: reporter hooks always receive an ACK, including when the
         // addressed session disappeared before the event was processed.
