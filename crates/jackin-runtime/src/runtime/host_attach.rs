@@ -179,9 +179,7 @@ where
     let (rows, cols) = terminal_size();
     let mut stdout = std::io::stdout();
     let _cleanup = enter_host_attach_terminal(&mut stdout)?;
-    let _session = jackin_telemetry::identity::SessionGuard::begin(
-        jackin_telemetry::identity::SessionKind::Attachment,
-    )?;
+    let _session = jackin_telemetry::identity::SessionGuard::begin_attachment()?;
     let mut stdin = tokio::io::stdin();
     let host_colors =
         query_host_terminal_colors(request.terminal.term.as_deref(), &mut stdin, &mut stdout).await;

@@ -142,6 +142,7 @@ fn end_session(id: SessionId) {
 pub struct SessionGuard {
     context: SessionContext,
     started: bool,
+    owns_session: bool,
 }
 
 impl SessionGuard {
@@ -151,6 +152,7 @@ impl SessionGuard {
         Ok(Self {
             context: claim_session(kind)?,
             started: false,
+            owns_session: true,
         })
     }
 
@@ -159,6 +161,26 @@ impl SessionGuard {
         let mut guard = Self::claim(kind)?;
         guard.start();
         Ok(guard)
+    }
+
+    /// Begin a direct attachment, or continue the session already owned by
+    /// the console that transferred its terminal into the attachment flow.
+    /// Other active owners remain conflicts.
+    pub fn begin_attachment() -> Result<Self, SessionOwnershipError> {
+        if let Some(context) = current_session() {
+            if context.kind == SessionKind::Console {
+                return Ok(Self {
+                    context,
+                    started: false,
+                    owns_session: false,
+                });
+            }
+            return Err(SessionOwnershipError {
+                active: context,
+                requested: SessionKind::Attachment,
+            });
+        }
+        Self::begin(SessionKind::Attachment)
     }
 
     pub fn start(&mut self) {
@@ -176,6 +198,9 @@ impl SessionGuard {
 
 impl Drop for SessionGuard {
     fn drop(&mut self) {
+        if !self.owns_session {
+            return;
+        }
         if self.started {
             emit_session_event(&crate::event::SESSION_END, self.context);
         }

@@ -52,3 +52,28 @@ fn interleaved_non_owner_drop_cannot_clear_active_session() {
     drop(owner);
     assert_eq!(current_session(), None);
 }
+
+#[test]
+fn attachment_continues_console_session_without_ending_it() {
+    let _serial = TEST_SESSION_LOCK.lock().unwrap();
+    let console = SessionGuard::begin(SessionKind::Console).unwrap();
+    let console_context = console.context();
+
+    let attachment = SessionGuard::begin_attachment().unwrap();
+    assert_eq!(attachment.context(), console_context);
+    drop(attachment);
+    assert_eq!(current_session(), Some(console_context));
+
+    drop(console);
+    assert_eq!(current_session(), None);
+}
+
+#[test]
+fn attachment_cannot_continue_non_console_owner() {
+    let _serial = TEST_SESSION_LOCK.lock().unwrap();
+    let capsule = SessionGuard::begin(SessionKind::Capsule).unwrap();
+    let conflict = SessionGuard::begin_attachment().unwrap_err();
+    assert_eq!(conflict.active, capsule.context());
+    assert_eq!(conflict.requested, SessionKind::Attachment);
+    drop(capsule);
+}
