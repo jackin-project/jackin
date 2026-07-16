@@ -121,9 +121,7 @@ syn = { version = "2", features = ["full", "visit"] }
 tabled = "0.21.0"
 tempfile = "=3.27.0"
 thiserror = "2.0"
-# Renovate exact pin (#394 → workspace #713). Candidate: relax to ~1.52 —
-# needs a lockfile-refresh PR; do not float minors without a full test run.
-tokio = { version = "=1.52.3", default-features = false }
+tokio = { version = "1.52.4", default-features = false }
 tokio-util = "0.7"
 # Exact pin from workspace virtualization (#713); no recovered bug citation.
 # Candidate for caret "1" in a dedicated lockfile-refresh PR.
