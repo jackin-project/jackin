@@ -10,7 +10,7 @@ use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use ratatui::layout::Rect;
-use termrock::ModalOutcome;
+use termrock::interaction::Outcome;
 use termrock::keymap::KeyChord;
 use termrock::scroll::ScrollAxes;
 use tokio_util::sync::CancellationToken;
@@ -74,16 +74,17 @@ fn apply_quit_confirm_key(view: &mut LaunchView, key: event::KeyEvent) -> QuitCo
     let Some(confirm) = view.quit_confirm.as_mut() else {
         return QuitConfirmOutcome::Pending;
     };
-    match confirm.handle_key(key.into()) {
-        ModalOutcome::Commit(true) => {
+    match confirm.handle_key(key) {
+        Outcome::Activated(true) => {
             view.quit_confirm = None;
             QuitConfirmOutcome::Confirmed
         }
-        ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
+        Outcome::Activated(false) | Outcome::Cancelled => {
             view.quit_confirm = None;
             QuitConfirmOutcome::Dismissed
         }
-        ModalOutcome::Continue => QuitConfirmOutcome::Pending,
+        Outcome::Ignored | Outcome::Changed => QuitConfirmOutcome::Pending,
+        _ => QuitConfirmOutcome::Pending,
     }
 }
 
@@ -578,11 +579,13 @@ pub fn handle_cockpit_input(
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && crate::tui::keymap::COCKPIT_KEYMAP
-                        .dispatch(KeyChord::from(termrock::crossterm::key(k)))
+                        .dispatch(KeyChord::from(termrock::input::KeyEvent::from(k)))
                         == Some(crate::tui::keymap::CockpitAction::OpenQuitConfirm) =>
             {
-                v.quit_confirm =
-                    Some(termrock::components::ConfirmState::new("Exit jackin❯?").with_focus_yes());
+                v.quit_confirm = Some(
+                    crate::tui::components::prompts::PromptConfirm::new("Exit jackin❯?")
+                        .with_focus_yes(),
+                );
                 return CockpitOutcome::Continue;
             }
             Event::Mouse(m) => {
@@ -695,7 +698,9 @@ pub fn handle_cockpit_input(
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.container_info_open => {
                 use crate::tui::keymap::{CONTAINER_INFO_KEYMAP, ContainerInfoAction};
-                match CONTAINER_INFO_KEYMAP.dispatch(KeyChord::from(termrock::crossterm::key(k))) {
+                match CONTAINER_INFO_KEYMAP
+                    .dispatch(KeyChord::from(termrock::input::KeyEvent::from(k)))
+                {
                     Some(ContainerInfoAction::CopyValue) => {
                         let state = launch_container_info_state(
                             &v,
@@ -741,7 +746,7 @@ pub fn handle_cockpit_input(
                 if k.kind == KeyEventKind::Press
                     && v.failure.is_some()
                     && crate::tui::keymap::FAILURE_KEYMAP
-                        .dispatch(KeyChord::from(termrock::crossterm::key(k)))
+                        .dispatch(KeyChord::from(termrock::input::KeyEvent::from(k)))
                         .is_some() =>
             {
                 // Failure popup is modal over the cockpit; Enter/Esc acknowledges
@@ -752,7 +757,8 @@ pub fn handle_cockpit_input(
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => {
                 use crate::tui::keymap::{BUILD_LOG_KEYMAP, BuildLogAction};
                 let vertical = build_log_scroll_axes(&v, area).vertical;
-                match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(termrock::crossterm::key(k))) {
+                match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(termrock::input::KeyEvent::from(k)))
+                {
                     Some(BuildLogAction::Close) => {
                         let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
                     }

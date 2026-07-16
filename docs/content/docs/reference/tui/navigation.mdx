@@ -64,7 +64,7 @@ The `h`/`l` bindings remain horizontal-scroll aliases; they do not expand or col
 
 **Every keyboard shortcut that is active on the current screen must appear in the footer hint bar. No key may be silently available — users must never have to guess.** The hint bar updates whenever the focused area or row context changes.
 
-Shared keys use `jackin_tui::keymap::glyph` constants. A hint PR introducing `Tab`, `↑/↓`, `←/→`, `PgUp PgDn`, or `+`-joined modifiers is a design violation.
+Shared keys use `termrock::keymap::glyph` constants. A hint PR introducing `Tab`, `↑/↓`, `←/→`, `PgUp PgDn`, or `+`-joined modifiers is a design violation.
 
 Rules:
 - `↑↓ navigate` must appear whenever a list, table, or form with multiple rows is active. It is a global footer item, not a conditional one.
@@ -95,7 +95,7 @@ Review checklist: whenever a PR adds or changes a TUI action that can wait, revi
 This mirrors the web/W3C convention: on a website you know something is clickable because (1) the cursor turns into a hand pointer over it, and (2) it changes appearance on hover. Every jackin❯ TUI element that performs an action on click **must** expose both, plus a distinct resting style:
 
 1. **Hand pointer on hover.** When the pointer is over a clickable element, the terminal cursor must switch to the hand/pointer shape via OSC 22 (`\x1b]22;pointer\x1b\\`); it returns to the default shape (`\x1b]22;default`) when the pointer leaves. This is the single most important "you can click this" signal. Both surfaces already own the mechanism — the in-container multiplexer's `PointerShape` in <RepoFile path="crates/jackin-capsule/src/tui.rs">crates/jackin-capsule/src/tui.rs</RepoFile>, OSC 22 encoder in <RepoFile path="crates/jackin-capsule/src/tui/terminal.rs">crates/jackin-capsule/src/tui/terminal.rs</RepoFile>, and `update_pointer_shape_for_mouse` in <RepoFile path="crates/jackin-capsule/src/daemon/mouse_input.rs">crates/jackin-capsule/src/daemon/mouse_input.rs</RepoFile>, plus the console's pointer handling — so a new clickable wires into the existing hover→pointer-shape resolution rather than inventing its own.
-2. **Hover style change.** The element must visibly change while hovered — a lifted background, brighter foreground, or equivalent — modest but unmistakable, matching the website's "this is interactive" clarity without overpowering the surrounding chrome. The **gold-standard exemplar is the tab strip**: hovering a tab lifts its background (`TAB_BG_INACTIVE_HOVER` / `TAB_BG_ACTIVE_HOVER`) and the console + multiplexer share the same hit-test (`jackin_tui::lay_out_tabs` + `tab_at_column`) so hover and click stay in lock-step. Model new clickables on it.
+2. **Hover style change.** The element must visibly change while hovered — a lifted background, brighter foreground, or equivalent — modest but unmistakable, matching the website's "this is interactive" clarity without overpowering the surrounding chrome. The **gold-standard exemplar is TermRock `Tabs`**: hovering a tab lifts its background and its render-produced regions keep hover and click in lock-step. Model new clickables on it.
 3. **Distinct resting style.** The element looks different from inert text even when not hovered (e.g. the blue instance-id link chip, the emphasized copy value).
 
 The visual target must be the exact value or control that will act. For copy dialogs, only the value copied by `Enter` is rendered as the emphasized clickable value; informational rows stay in the normal value color. When a footer says `Enter copy <value>`, clicking that same emphasized value must perform the same copy action and show visible feedback. Do not make a whole dialog row look actionable if only one value is copied.
@@ -256,7 +256,7 @@ This means the rule is **impossible to accidentally violate** through the shared
 
 Both checks must use the **same content height and width values** as `render_scrollable_block` uses for the actual rendered lines. Any mismatch causes the bug where the input handler clamps scroll to the wrong maximum — the scrollbar thumb stops short of the track end even though the operator has not reached the actual content limit.
 
-**Derive content extents from the rendered lines, never from a parallel column-sum.** A block's `content_width` must be `jackin_tui::components::scrollable_panel::max_line_width(&lines)` over the exact `Vec<Line>` the block renders, and its `content_height` must be that line count. Build the lines once in a pure function (e.g. `mount_display::workspace_mount_block_lines`) and feed the *same* function to both `render_scrollable_block_at` and the scroll-clamp width. Do not re-derive width by summing column widths in a separate helper: `render_scrollable_block` mirrors a row's leading indent as trailing scroll padding (`padded_line_display_cols`), so a hand-rolled column-sum is short by the indent width and the thumb stops that many cells short of the end. This is the failure mode that hid in the mount blocks — a `*_content_width` that summed columns while the renderer measured `max_line_width`.
+**Derive content extents from the rendered lines, never from a parallel column-sum.** A block's `content_width` must use TermRock's rendered-line width helpers over the exact `Vec<Line>` the block renders, and its `content_height` must be that line count. Build the lines once in a pure function and feed the same function to rendering and scroll clamping. A parallel column sum drifts from Unicode display width and trailing padding.
 
 ### Click hit-test area must cover the full rendered block
 
@@ -332,7 +332,7 @@ The workspace mounts formula uses `.max(1)` because an empty mount list renders 
 - Scrollbar thumb length is invariant for a fixed `content_length` + `viewport` + track length. Scrolling moves the thumb; it must never resize by one cell because of offset-dependent rounding.
 - Horizontal scrolling preserves matching trailing padding for each row's leading padding, so two-space-indented tables do not pin their final visible character against the right border or scrollbar column at maximum horizontal offset.
 
-Input hit-testing, focusability, cursor-follow scrolling, selected-list windowing, scrollbar dragging, wheel/key max-offset math, right-padding content width, and scrollbar rendering must flow through `jackin_tui::scroll` in [TermRock source](https://github.com/tailrocks/termrock) and its Ratatui adapter in [TermRock source](https://github.com/tailrocks/termrock). Those modules are the source of truth for clamping, top-relative offsets, tail-relative offsets, full-cell thumb conversion, and `tui-scrollbar` metrics / interaction types. Do not reimplement `area.width - 2`, `area.height - 2`, `content - viewport`, cursor-follow viewport offsets, selected-list slicing, proportional thumb sizing, trailing scroll padding, scrollbar hit areas, track-position formulas, or wheel/key offset math in input handlers or widget renderers; drift between input geometry and renderer geometry is a scroll bug.
+Input hit-testing, focusability, cursor-follow scrolling, selected-list windowing, scrollbar dragging, wheel/key max-offset math, right-padding content width, and scrollbar rendering must flow through `termrock::scroll` and canonical widget state. Those modules are the source of truth for clamping, top-relative offsets, tail-relative offsets, full-cell thumb conversion, and scrollbar metrics. Do not reimplement viewport, thumb, track, or offset formulas in product input handlers or renderers.
 
 The shared model does **not** make every scrollbar look the same. jackin❯ owns renderer output: console horizontal scrollbars keep dotted tracks with `━` thumbs, console vertical scrollbars keep dotted tracks with `█` thumbs, and capsule panes paint only `█` thumb cells into the right border column. Do not adopt `tui-scrollbar`'s fractional glyph renderer, arrows, or default styles for these surfaces unless this decision is explicitly revisited.
 
@@ -381,6 +381,6 @@ In `scroll_active_panel`, dispatch order for the list stage:
 
 Every wheel path must resolve the target from the pointer position immediately before applying the delta. Stale focus state must never decide where a wheel event goes: when independently scrollable blocks share a screen, a wheel over one block must not scroll another block or no-op because a prior click or focus belonged elsewhere.
 
-The left pane scroll uses the shared `jackin_tui::scroll` clamping path after each wheel/key mutation, then the renderer clamps defensively again on every frame.
+The left pane scroll uses the shared `termrock::scroll` clamping path after each wheel/key mutation, then the renderer clamps defensively again on every frame.
 
 ---

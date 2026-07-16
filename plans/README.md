@@ -8,7 +8,6 @@ Plans hold **unfinished** multi-step work. Fully shipped plan bodies are removed
 |------|--------|--------|
 | [agent-status/](agent-status/) | Product detection (live goldens, pack rewrite, live authority, remote packs) | Deferred / open residuals |
 | [codebase-health/](codebase-health/) | Deep advisor gap-audit of the codebase-health enforcement roadmap (2026-07-14, commit 846038946): 27 unfinished plans, telemetry/OTLP first (001–009), then lints/CI/ownership/testing/perf/docs | Open / in progress |
-| [shared-tui-extraction/](shared-tui-extraction/) | Full implementation of the Shared TUI Extraction roadmap item (2026-07-15, commit 03928e9dd): 9 stage plans executing the research dossier — freeze, filtered history, TermRock bootstrap/publish, catalog, jackin❯ migration, donor retirement, first tag — one branch (`feature/shared-tui-extraction`, PR #794) | Open / not started |
 
 ## Removed (shipped)
 
@@ -22,6 +21,8 @@ Individually verified codebase-health plans removed on 2026-07-15:
 
 - **014** — OSC 8 hyperlink identity repointing fix
 - **025** — deterministic-time seam and first boundary conversions
+
+Shared TUI extraction plans **001–009** were removed after the standalone TermRock repository, first release, immutable jackin❯ dependency, and donor retirement shipped. Unfinished canonical-API migration and neutral-duplication work is tracked in the Shared TUI Extraction Follow-through roadmap item.
 
 Completed routine code-health implementation archive: [codebase-health](codebase-health/).
 

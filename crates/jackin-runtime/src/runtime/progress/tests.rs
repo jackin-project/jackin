@@ -130,10 +130,10 @@ fn env_prompts_error_without_rich_renderer() {
 fn text_prompt_dialog_renders_prompt_and_default() {
     let backend = TestBackend::new(90, 24);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
-    let input = TextInputState::new("Branch name", "main");
+    let mut input = PromptText::new("Branch name", "main");
 
     terminal
-        .draw(|frame| draw_text_prompt(frame, &input, false))
+        .draw(|frame| draw_text_prompt(frame, &mut input, false))
         .unwrap();
 
     let rendered = format!("{:?}", terminal.backend().buffer());
@@ -146,7 +146,7 @@ fn text_prompt_dialog_renders_prompt_and_default() {
 fn confirm_dialog_renders_role_trust_details() {
     let backend = TestBackend::new(100, 26);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
-    let state = ConfirmState::details(
+    let mut state = PromptConfirm::details(
         "Trust role source",
         "Trust this role source?",
         vec![
@@ -162,7 +162,9 @@ fn confirm_dialog_renders_role_trust_details() {
         ],
     );
 
-    terminal.draw(|frame| draw_confirm(frame, &state)).unwrap();
+    terminal
+        .draw(|frame| draw_confirm(frame, &mut state))
+        .unwrap();
 
     let rendered = format!("{:?}", terminal.backend().buffer());
     assert!(rendered.contains("Trust role source"), "{rendered}");
@@ -175,10 +177,10 @@ fn confirm_dialog_renders_role_trust_details() {
 fn error_popup_dialog_renders_title_and_message() {
     let backend = TestBackend::new(100, 26);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
-    let state = ErrorPopupState::new("Cleanup failed", "could not render the cleanup dialog");
+    let mut state = PromptError::new("Cleanup failed", "could not render the cleanup dialog");
 
     terminal
-        .draw(|frame| draw_error_popup(frame, &state))
+        .draw(|frame| draw_error_popup(frame, &mut state))
         .unwrap();
 
     let rendered = format!("{:?}", terminal.backend().buffer());
@@ -458,7 +460,7 @@ fn build_log_lines_wrap_with_visible_continuation() {
     let lines = wrap_build_log_lines(&raw, 32);
 
     assert!(lines.len() > 1);
-    assert!(termrock::components::max_line_width(&lines) <= 32);
+    assert!(termrock::scroll::max_line_width(&lines) <= 32);
     let rendered = lines
         .iter()
         .map(|line| {
@@ -888,7 +890,7 @@ fn failure_popup_renders_copyable_rows_and_copied_badge() {
         "/jk/run/x.jsonl",
         "docker output",
         "/jk/run/x.docker-build.log",
-        "Copied!",    // badge next to the row whose target is `failure_copied`
+        "✓",          // canonical badge next to the row whose target is `failure_copied`
         "copy value", // footer hint
     ] {
         assert!(

@@ -13,12 +13,12 @@ fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
 #[test]
 fn text_prompt_uses_shared_bottom_chrome_rows() {
     let area = Rect::new(0, 0, 80, 12);
-    let input = TextInputState::new_allow_empty("Context7 API key", "");
+    let mut input = PromptText::new_allow_empty("Context7 API key", "");
     let backend = TestBackend::new(area.width, area.height);
     let mut terminal = Terminal::new(backend).expect("test backend should initialize");
 
     terminal
-        .draw(|frame| draw_text_prompt(frame, &input, true))
+        .draw(|frame| draw_text_prompt(frame, &mut input, true))
         .expect("render should succeed");
 
     let hint = row_text(terminal.backend().buffer(), area.height - 3, area.width);

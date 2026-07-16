@@ -41,6 +41,7 @@ mod isolation;
 mod isolation_record;
 mod launch_progress;
 mod manifest;
+mod modal_outcome;
 mod op_cache;
 mod op_probe_error;
 mod op_reference;
@@ -54,7 +55,8 @@ mod selector;
 mod session_id;
 mod standalone_dialog;
 mod status;
-mod tui_widgets;
+/// Ratatui adapters for the product-owned jackin❯ palette.
+pub mod tui_theme;
 mod url_text;
 mod workspace_label;
 mod workspace_name;
@@ -83,6 +85,7 @@ pub use isolation::*;
 pub use isolation_record::*;
 pub use launch_progress::*;
 pub use manifest::*;
+pub use modal_outcome::*;
 pub use op_cache::*;
 pub use op_probe_error::*;
 pub use op_reference::*;
@@ -98,8 +101,12 @@ pub use selector::*;
 pub use session_id::*;
 pub use standalone_dialog::*;
 pub use status::*;
-pub use tui_widgets::*;
 pub use url_text::*;
 pub use workspace_label::*;
 pub use workspace_name::*;
 pub use worktree_dirty::*;
+#[expect(
+    missing_docs,
+    reason = "operator-information projection is documented as one cohesive product facade"
+)]
+pub mod operator_info;

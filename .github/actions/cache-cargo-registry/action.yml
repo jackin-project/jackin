@@ -4,6 +4,12 @@
 name: Cache Cargo registry
 description: Restore the shared Cargo registry/index/git DB cache.
 
+inputs:
+  contract-key:
+    description: Runner-independent registry contract computed by a metadata job.
+    required: false
+    default: ""
+
 outputs:
   cache-hit:
     description: Whether the exact Cargo registry cache key was restored.
@@ -22,7 +28,7 @@ runs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git/db
-        key: cargo-registry-v5-${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+        key: cargo-registry-v5-${{ inputs.contract-key || hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
         restore-keys: |
           cargo-registry-v5-
           cargo-registry-v4-
@@ -80,7 +86,12 @@ runs:
           done
         done < <(find crates -path '*/fuzz/Cargo.toml' -type f | sort)
     - name: Save Cargo registry
-      if: github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true' && steps.verify.outputs.ready != 'true'
+      if: >-
+        steps.restore.outputs.cache-hit != 'true' &&
+        (github.ref == 'refs/heads/main' ||
+         github.event_name == 'workflow_dispatch' ||
+         (github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository))
       continue-on-error: true
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

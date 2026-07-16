@@ -53,15 +53,6 @@ pub(crate) struct LintTestsArgs {
     print_allowlist: bool,
 }
 
-/// Run the test-layout gate in enforce mode. The umbrella `cargo xtask lint`
-/// entry point uses this.
-pub(crate) fn enforce() -> Result<()> {
-    run(LintTestsArgs {
-        output: FormatArgs::default(),
-        print_allowlist: false,
-    })
-}
-
 pub(crate) fn run(args: LintTestsArgs) -> Result<()> {
     let format = args.output.resolved();
     report::run_gate(

@@ -45,7 +45,6 @@ pub use super::palette::{PaletteCloseLabel, PaletteCommand};
 
 use crate::tui::components::modal_rects::{ModalRectSpec, modal_rect};
 use crate::tui::keymap::raw_bytes_to_chord;
-use termrock::components::{CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction};
 
 use crate::tui::keymap::{FILTER_LIST_KEYMAP, FilterListAction, READ_ONLY_DISMISS_KEYMAP};
 
@@ -111,6 +110,22 @@ pub struct ProviderChoice {
     pub label: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpawnFailureState {
+    pub title: String,
+    pub message: String,
+}
+
+impl SpawnFailureState {
+    #[must_use]
+    pub fn new(title: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            message: message.into(),
+        }
+    }
+}
+
 impl ProviderChoice {
     pub fn new(label: impl Into<String>) -> Self {
         Self {
@@ -146,20 +161,20 @@ pub enum Dialog {
     },
     /// Text-input modal opened when the operator double-clicks a tab.
     /// `tab_idx` records which tab to rename. `input` reuses the
-    /// shared `termrock::components::TextField` so the buffer + cursor + max
+    /// shared `termrock::widgets::TextInputState` so the buffer + cursor + max
     /// length live in the same place as the console TUI text input. Enter
     /// commits; Esc cancels; empty input clears any previous custom
     /// label so the tab returns to auto-naming.
     RenameTab {
         tab_idx: usize,
-        input: termrock::components::TextField,
+        input: termrock::widgets::TextInputState,
     },
     /// Text-input modal opened from the command palette. The operator
     /// types a workspace-relative path, workspace absolute path, or a
     /// `/jackin/run/` path; the daemon validates and transfers it over
     /// the host attach protocol.
     ExportFile {
-        input: termrock::components::TextField,
+        input: termrock::widgets::TextInputState,
         reveal_after_export: bool,
         open_after_export: bool,
     },
@@ -179,7 +194,7 @@ pub enum Dialog {
         focused_agent: Option<String>,
         workdir: String,
         diagnostics: ContainerInfoDiagnostics,
-        /// Index of the row whose value was just copied (shows "Copied!"),
+        /// Index of the row whose value was just copied (shows a check affordance),
         /// or `None`. Indexes into the shared `ContainerInfoState` rows.
         copied_row: Option<usize>,
         /// Index of the copyable row under the pointer (link hover colour).
@@ -187,7 +202,7 @@ pub enum Dialog {
         /// Persisted scroll offsets. The shared `ContainerInfoState` is rebuilt
         /// every frame, so the scroll must live here on the dialog enum to
         /// survive across redraws.
-        scroll: termrock::components::DialogBodyScroll,
+        scroll: termrock::layout::DialogBodyScroll,
     },
     /// Read-only modal opened from the bottom branch/PR context.
     /// Branch / PR / loading state come from `GithubContextView` at
@@ -196,7 +211,7 @@ pub enum Dialog {
     GitHubContext {
         copied: bool,
         /// Persisted scroll offsets (rebuilt each frame like `ContainerInfo`).
-        scroll: termrock::components::DialogBodyScroll,
+        scroll: termrock::layout::DialogBodyScroll,
     },
     /// Read-only usage/quota modal for the focused pane.
     Usage {
@@ -204,12 +219,12 @@ pub enum Dialog {
         selected: UsageDialogTab,
         tab_bar_focused: bool,
         hovered_tab: Option<usize>,
-        scroll: termrock::components::DialogBodyScroll,
+        scroll: termrock::layout::DialogBodyScroll,
     },
     /// Operator-facing spawn failure surfaced through the shared error popup.
     /// This is intentionally modal: Enter / Esc / O dismiss, while unrelated
     /// printable input is consumed so the reason cannot vanish unread.
-    SpawnFailure(termrock::components::ErrorPopupState),
+    SpawnFailure(SpawnFailureState),
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
     /// on confirm, the dialog is replaced with an `AgentPicker` carrying
@@ -463,23 +478,17 @@ impl Dialog {
             return export_file_handle_key(input, *reveal_after_export, *open_after_export, key);
         }
         if let Self::SpawnFailure(state) = self {
-            return match raw_bytes_to_chord(key)
-                .and_then(|chord| termrock::components::ERROR_POPUP_KEYMAP.dispatch(chord))
-            {
-                Some(termrock::components::ErrorPopupAction::Dismiss) => DialogAction::Dismiss,
-                None => {
-                    // Touch the state so this branch remains explicitly tied to
-                    // `ErrorPopupState`; printable input is consumed and does
-                    // not reach the PTY behind the modal.
-                    let _ = state;
-                    DialogAction::Redraw
-                }
+            let _ = state;
+            return if matches!(key, b"\r" | b"\n" | b"\x1b" | b"\x03" | b"\x11") {
+                DialogAction::Dismiss
+            } else {
+                DialogAction::Redraw
             };
         }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the
         // operator's clipboard with the `copied` flag flipped to true
-        // so the next render's "Copied!" indicator confirms the OSC 52
+        // so the next render's check affordance confirms the OSC 52
         // fired. The dialog stays open until dismissed so the feedback
         // is actually visible.
         if matches!(self, Self::Usage { .. }) {
@@ -533,7 +542,7 @@ impl Dialog {
             if let Self::Usage { scroll, .. } = self
                 && scroll.handle_raw_key_for_axes(
                     key,
-                    termrock::components::ScrollAxes {
+                    termrock::layout::ScrollAxes {
                         vertical: true,
                         horizontal: true,
                     },
@@ -565,7 +574,7 @@ impl Dialog {
             if let Some(scroll) = body_scroll
                 && scroll.handle_raw_key_for_axes(
                     key,
-                    termrock::components::ScrollAxes {
+                    termrock::layout::ScrollAxes {
                         vertical: true,
                         horizontal: true,
                     },
@@ -637,27 +646,22 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
-        // ConfirmAction: dispatch through shared CONFIRM_KEYMAP so key
-        // behaviour and hint advertisement stay coupled.
         if let Self::ConfirmAction { kind, selected_yes } = self {
-            let action = raw_bytes_to_chord(key).and_then(|chord| CONFIRM_KEYMAP.dispatch(chord));
-            return match action {
-                Some(SharedConfirmAction::Yes) => DialogAction::ConfirmedAction(*kind),
-                Some(SharedConfirmAction::No | SharedConfirmAction::Cancel) => {
-                    DialogAction::Dismiss
-                }
-                Some(SharedConfirmAction::ToggleFocus) => {
+            return match key {
+                b"y" | b"Y" => DialogAction::ConfirmedAction(*kind),
+                b"n" | b"N" | b"\x1b" | b"\x03" | b"\x11" => DialogAction::Dismiss,
+                b"\t" | b"\x1b[Z" | b"\x1b[D" | b"\x1b[C" | b"h" | b"l" => {
                     *selected_yes = !*selected_yes;
                     DialogAction::Redraw
                 }
-                Some(SharedConfirmAction::CommitFocused) => {
+                b"\r" | b"\n" => {
                     if *selected_yes {
                         DialogAction::ConfirmedAction(*kind)
                     } else {
                         DialogAction::Dismiss
                     }
                 }
-                None => DialogAction::Redraw,
+                _ => DialogAction::Redraw,
             };
         }
         // From here on, only the type-to-filter list dialogs reach this
@@ -941,8 +945,8 @@ impl Dialog {
         };
         // Outside the box dismisses; an inside hit falls through to the
         // per-dialog click handling below.
-        if termrock::components::classify_click(area, col, row)
-            == termrock::components::ModalClickResult::OutsideDismiss
+        if termrock::interaction::classify_click(area, col, row)
+            == termrock::interaction::ModalClickResult::OutsideDismiss
         {
             return DialogAction::Dismiss;
         }
@@ -957,7 +961,7 @@ impl Dialog {
         }
         // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
         // log) copies via the shared hit-test. The clicked row's value goes to
-        // the clipboard and that row shows the "Copied!" badge.
+        // the clipboard and that row shows the copied check affordance.
         if matches!(self, Self::ContainerInfo { .. }) {
             let hit = self.container_info_state().and_then(|state| {
                 crate::tui::components::container_info_surface::container_info_copy_payload_at(
@@ -1030,28 +1034,50 @@ impl Dialog {
         // dismiss. The shared confirm widget owns button geometry, including
         // the taller data-loss exit variant.
         if let Self::ConfirmAction { kind, selected_yes } = self {
-            let mut state = if matches!(kind, ConfirmKind::Exit) {
-                crate::tui::components::exit_confirm_state_with_data_loss()
+            let body = if matches!(kind, ConfirmKind::Exit) {
+                "Exit jackin❯?\n\n! Exiting force-stops the container immediately.\n! Work not saved outside the container will be lost.".to_owned()
             } else {
-                termrock::components::ConfirmState::new(format!(
-                    "{}\n\n{}",
-                    kind.title(),
-                    kind.message()
-                ))
+                format!("{}\n\n{}", kind.title(), kind.message())
             };
-            if *selected_yes {
-                state = state.with_focus_yes();
-            }
             let area = ratatui::layout::Rect {
                 x: box_col,
                 y: box_row,
                 width,
                 height,
             };
-            return match termrock::components::confirm_button_hit(area, &state, col, row) {
-                Some(true) => DialogAction::ConfirmedAction(*kind),
-                Some(false) => DialogAction::Dismiss,
-                None => DialogAction::Consume,
+            let actions = [
+                termrock::widgets::Action {
+                    id: true,
+                    label: "Yes",
+                    enabled: true,
+                    style: None,
+                },
+                termrock::widgets::Action {
+                    id: false,
+                    label: "No",
+                    enabled: true,
+                    style: None,
+                },
+            ];
+            let mut state = termrock::widgets::ChoiceDialogState::new(Some(*selected_yes));
+            let theme = termrock::Theme::default();
+            let mut buffer = ratatui::buffer::Buffer::empty(area);
+            let dialog =
+                termrock::widgets::Dialog::new("Confirm", ratatui::text::Text::from(body), &theme)
+                    .style(ratatui::style::Style::default())
+                    .emphasis(termrock::widgets::PanelEmphasis::Focused);
+            ratatui::widgets::StatefulWidget::render(
+                &termrock::widgets::ChoiceDialog::new(dialog, &actions).gap(" "),
+                area,
+                &mut buffer,
+                &mut state,
+            );
+            return match state.click(ratatui::layout::Position::new(col, row)) {
+                termrock::interaction::Outcome::Activated(true) => {
+                    DialogAction::ConfirmedAction(*kind)
+                }
+                termrock::interaction::Outcome::Activated(false) => DialogAction::Dismiss,
+                _ => DialogAction::Consume,
             };
         }
         // ProviderPicker: flat list, no filter row. Items start at box_row + 1.
@@ -1348,16 +1374,23 @@ impl Dialog {
             }),
             Self::SpawnFailure(state) => {
                 let inner_width = PALETTE_WIDTH.saturating_sub(2);
-                termrock::components::required_height(state, inner_width, term_rows)
+                let rows = state
+                    .message
+                    .lines()
+                    .map(|line| {
+                        termrock::text::display_cols(line)
+                            .div_ceil(usize::from(inner_width).max(1))
+                            .max(1)
+                    })
+                    .sum::<usize>();
+                u16::try_from(rows.saturating_add(2)).unwrap_or(u16::MAX)
             }
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
             // Exit shows the shared data-loss variant (extra warning notes), so
             // size it from that state rather than the fixed single-line height.
             Self::ConfirmAction { kind, .. } => match kind {
-                ConfirmKind::Exit => termrock::components::confirm_required_height(
-                    &crate::tui::components::exit_confirm_state_with_data_loss(),
-                ),
+                ConfirmKind::Exit => 10,
                 ConfirmKind::ClosePane | ConfirmKind::CloseTab => 9,
             },
             // No filter row: top border + items + bottom border.

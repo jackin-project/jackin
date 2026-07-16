@@ -5,13 +5,13 @@
 //! per-row contextual footer (general / mount / role / secret / auth).
 
 use ratatui::layout::Rect;
-use termrock::{HintSpan, keymap::glyph};
+use termrock::{keymap::glyph, widgets::HintSpan};
 
 use crate::tui::keymap::{
     AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_GENERAL_RENAME_KEYMAP,
     EDITOR_GENERAL_TOGGLE_KEYMAP, EDITOR_GENERAL_WORKDIR_KEYMAP, EDITOR_ROLE_NEW_KEYMAP,
 };
-use termrock::components::ScrollAxes;
+use termrock::layout::ScrollAxes;
 
 use super::settings::{
     add_row_footer_items, secret_add_row_footer_items, secret_op_ref_row_footer_items,

@@ -1,7 +1,7 @@
 //! Capsule-local raw ANSI helpers.
 
+use jackin_core::Rgb;
 use std::io::Write as _;
-use termrock::Rgb;
 
 pub const RESET: &str = "\x1b[0m";
 pub const BRAND_BANNER: &str = "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin\x1b[38;2;255;255;255m❯\x1b[38;2;0;0;0m \x1b[0m\n";

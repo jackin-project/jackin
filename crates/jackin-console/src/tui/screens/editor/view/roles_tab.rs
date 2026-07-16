@@ -60,7 +60,7 @@ pub(crate) fn role_lines(
     let badge_bg = if is_all {
         termrock::style::PHOSPHOR_GREEN
     } else {
-        termrock::style::WHITE
+        jackin_core::tui_theme::WHITE
     };
     let badge_style = Style::default()
         .bg(badge_bg)
@@ -71,7 +71,7 @@ pub(crate) fn role_lines(
         Span::styled(
             "  Allowed roles:  ",
             Style::default()
-                .fg(termrock::style::WHITE)
+                .fg(jackin_core::tui_theme::WHITE)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(badge_text, badge_style),
@@ -80,7 +80,7 @@ pub(crate) fn role_lines(
         status_spans.push(Span::styled(
             format!("   ({allowed_count} of {} allowed)", rows.len()),
             Style::default()
-                .fg(termrock::style::ACTION_ACCENT)
+                .fg(jackin_core::tui_theme::ACTION_ACCENT)
                 .add_modifier(Modifier::ITALIC),
         ));
     }

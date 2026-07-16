@@ -10,7 +10,7 @@ use crate::tui::components::container_info::{
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
-use termrock::HintSpan;
+use termrock::widgets::HintSpan;
 
 use crate::LaunchView;
 use crate::tui::components::dialog::{
@@ -119,7 +119,12 @@ pub fn render_launch_container_info(
     if !debug_mode {
         frame.render_widget(Clear, chrome.hint);
     }
-    termrock::widgets::render_hint_bar(frame, chrome.hint, &hint_spans);
+    termrock::widgets::render_hint_bar(
+        frame,
+        chrome.hint,
+        &hint_spans,
+        &termrock::Theme::default(),
+    );
     if debug_mode {
         frame.render_widget(Clear, chrome.spacer);
         render_footer(frame, chrome.footer, view, run_id, true);

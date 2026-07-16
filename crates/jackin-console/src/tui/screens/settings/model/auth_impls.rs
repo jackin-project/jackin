@@ -8,7 +8,7 @@ use super::{
     SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved,
     SettingsPanelTakeError, SettingsState,
 };
-use termrock::components::ModalStack;
+use termrock::interaction::ModalStack;
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]

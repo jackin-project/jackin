@@ -7,7 +7,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 
-use termrock::{RAIN_BODY, RAIN_DARK, RAIN_DIM, RAIN_FRESH, RAIN_HEAD, RAIN_MID, Rgb};
+use jackin_core::{RAIN_BODY, RAIN_DARK, RAIN_DIM, RAIN_FRESH, RAIN_HEAD, RAIN_MID, Rgb};
 
 #[derive(Debug, Clone)]
 pub struct RainCell {

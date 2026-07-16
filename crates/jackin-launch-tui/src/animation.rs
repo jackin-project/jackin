@@ -13,7 +13,7 @@ use owo_colors::OwoColorize as _;
 use std::io::{self, Write};
 
 use crate::output::clear_screen;
-use termrock::{
+use jackin_core::{
     BRAND_BLOCK, RAIN_BODY, RAIN_DARK, RAIN_DIM, RAIN_FRESH, RAIN_HEAD, RAIN_MID, Rgb, WHITE,
 };
 
@@ -188,7 +188,7 @@ fn draw_brand_pill_bottom() {
         "\x1b[{row};{col}H{}{}{}",
         " jackin"
             .bold()
-            .color(owo_rgb(termrock::BLACK))
+            .color(owo_rgb(jackin_core::BLACK))
             .on_color(owo_rgb(BRAND_BLOCK)),
         "❯"
             .bold()
