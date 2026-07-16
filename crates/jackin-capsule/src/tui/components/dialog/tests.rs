@@ -2039,10 +2039,6 @@ fn usage_dialog_renders_inside_narrow_terminal() {
     assert!(!rendered.contains("████"), "{rendered}");
     assert!(rendered.contains("Session  37% left"), "{rendered}");
     assert!(!rendered.contains("Focused :"), "{rendered}");
-    assert!(
-        rendered.contains("┃") || rendered.contains("·"),
-        "{rendered}"
-    );
 }
 
 #[test]

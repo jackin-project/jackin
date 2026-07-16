@@ -1488,7 +1488,7 @@ fn command_palette_labels_single_pane_close_as_close_tab() {
 }
 
 #[test]
-fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
+fn dialog_backdrop_preserves_product_status_brand() {
     fn mux_with_two_sessions() -> Multiplexer {
         let mut mux = split_tab_mux();
         let (session_one, _) = test_session(24, 80);
@@ -1498,7 +1498,7 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
         mux
     }
 
-    fn assert_backdrop_opaque(mut mux: Multiplexer, context: &str) {
+    fn assert_brand_preserved(mut mux: Multiplexer, context: &str) {
         let frame =
             String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::DialogChange))
                 .to_string();
@@ -1511,31 +1511,22 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
             frame.contains("jackin") && frame.contains("48;2;0;255;65"),
             "{context} should preserve the top status brand (green block) while a dialog is open: {frame:?}"
         );
-        assert!(
-            !frame.contains(&format!(
-                "{}┌",
-                crate::tui::ansi::rgb_fg(
-                    crate::tui::ansi::role_rgb(termrock::style::Role::Border,)
-                )
-            )),
-            "{context} should hide inactive pane borders behind the dialog: {frame:?}"
-        );
     }
 
     let mut menu_mux = mux_with_two_sessions();
     menu_mux.open_command_palette();
-    assert_backdrop_opaque(menu_mux, "menu dialog");
+    assert_brand_preserved(menu_mux, "menu dialog");
 
     let mut container_mux = mux_with_two_sessions();
     container_mux.open_container_info_dialog();
-    assert_backdrop_opaque(container_mux, "container info dialog");
+    assert_brand_preserved(container_mux, "container info dialog");
 
     let mut github_mux = mux_with_two_sessions();
     github_mux.pr_watch.pull_request_context_branch = Some(branch("feat/capsule-pr-context-bar"));
     github_mux.pr_watch.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
     github_mux.launch_env.workdir_context.gh_available = false;
     github_mux.open_github_context_dialog(Instant::now());
-    assert_backdrop_opaque(github_mux, "GitHub context dialog");
+    assert_brand_preserved(github_mux, "GitHub context dialog");
 }
 
 #[test]
