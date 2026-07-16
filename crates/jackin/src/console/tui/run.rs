@@ -183,7 +183,7 @@ struct ConsoleLoopInputs<'a, H, R> {
 struct ConsoleMouseState {
     last_event_at: Option<std::time::Instant>,
     pointer_shape: termrock::osc::PointerShape,
-    chrome_hover_tracker: jackin_console::tui::hover::HoverTracker<ConsoleChromeHover>,
+    chrome_regions: Vec<termrock::interaction::HitRegion<ConsoleChromeHover>>,
     chrome_hover: Option<ConsoleChromeHover>,
 }
 
@@ -192,7 +192,7 @@ impl ConsoleMouseState {
         Self {
             last_event_at: None,
             pointer_shape: termrock::osc::PointerShape::Default,
-            chrome_hover_tracker: jackin_console::tui::hover::HoverTracker::new(),
+            chrome_regions: Vec::new(),
             chrome_hover: None,
         }
     }
@@ -291,7 +291,7 @@ where
                 &termrock::Theme::default(),
             );
         }
-        mouse_state.chrome_hover_tracker.clear();
+        mouse_state.chrome_regions.clear();
         if let Some(bar_area) = debug_bar_area {
             let active_run = jackin_diagnostics::active_run();
             let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
@@ -350,9 +350,7 @@ where
                 &mut status_state,
             );
             for region in status_state.regions {
-                mouse_state
-                    .chrome_hover_tracker
-                    .register(region.area, region.id);
+                mouse_state.chrome_regions.push(region);
             }
         }
     })?;
@@ -690,9 +688,14 @@ fn update_console_pointer_shape(
 ) {
     let next_chrome_hover = if no_modal_open {
         mouse_state
-            .chrome_hover_tracker
-            .hovered(mouse.column, mouse.row)
-            .copied()
+            .chrome_regions
+            .iter()
+            .find(|region| {
+                region
+                    .area
+                    .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+            })
+            .map(|region| region.id)
     } else {
         None
     };
@@ -773,11 +776,7 @@ fn handle_mouse_event<H, R>(
     }
 
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    let debug_chip_hovered = mouse_state.chrome_hover_tracker.is_hovered(
-        mouse.column,
-        mouse.row,
-        &ConsoleChromeHover::DebugChip,
-    );
+    let debug_chip_hovered = mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip);
     let active_run = jackin_diagnostics::active_run();
     if debug_chip_activation_allowed(
         mouse,

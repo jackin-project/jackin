@@ -12,7 +12,6 @@ pub mod dialog_layout;
 pub mod effect;
 pub mod file_browser;
 pub mod focus;
-pub mod hover;
 pub mod input;
 pub(crate) mod keymap;
 pub mod launch;

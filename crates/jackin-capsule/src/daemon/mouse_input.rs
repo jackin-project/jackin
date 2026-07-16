@@ -3,9 +3,9 @@
 
 //! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
 
-use crate::tui::hover::HoverTracker;
 use jackin_protocol::attach::ServerFrame;
 use ratatui::layout::Rect;
+use termrock::interaction::HitRegion;
 
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, ColRange, branch_context_bar_layout, debug_run_id_label,
@@ -117,9 +117,13 @@ impl Multiplexer {
             });
         }
 
-        let mut tracker = HoverTracker::new();
-        self.register_chrome_hover_targets(&mut tracker);
-        let target = tracker.hovered(col, row).copied();
+        let mut regions = Vec::new();
+        self.register_chrome_hover_targets(&mut regions);
+        let position = ratatui::layout::Position::new(col, row);
+        let target = regions
+            .iter()
+            .find(|region| region.area.contains(position))
+            .map(|region| region.id);
         chrome_hover_target_for_state(ChromeHitState {
             dialog_copy_target,
             dialog_open: false,
@@ -138,7 +142,7 @@ impl Multiplexer {
         })
     }
 
-    fn register_chrome_hover_targets(&self, tracker: &mut HoverTracker<HoverTarget>) {
+    fn register_chrome_hover_targets(&self, regions: &mut Vec<HitRegion<HoverTarget>>) {
         for (idx, (start, end)) in self
             .status
             .status_bar
@@ -147,10 +151,10 @@ impl Multiplexer {
             .copied()
             .enumerate()
         {
-            register_row0_range_1based(tracker, start, end, HoverTarget::Tab(idx));
+            register_row0_range_1based(regions, start, end, HoverTarget::Tab(idx));
         }
         if let Some((start, end)) = self.status.status_bar.hint_region {
-            register_row0_range_1based(tracker, start, end, HoverTarget::Menu);
+            register_row0_range_1based(regions, start, end, HoverTarget::Menu);
         }
 
         let Some(layout) = branch_context_bar_layout(
@@ -167,20 +171,20 @@ impl Multiplexer {
         };
         let row0 = self.render.term_rows.saturating_sub(1);
         register_col_range_1based(
-            tracker,
+            regions,
             row0,
             layout.left_region,
             HoverTarget::BranchContext,
         );
-        register_col_range_1based(tracker, row0, layout.usage_region, HoverTarget::UsageStatus);
+        register_col_range_1based(regions, row0, layout.usage_region, HoverTarget::UsageStatus);
         register_col_range_1based(
-            tracker,
+            regions,
             row0,
             layout.container_region,
             HoverTarget::Container,
         );
         register_col_range_1based(
-            tracker,
+            regions,
             row0,
             layout.debug_chip_region,
             HoverTarget::DebugChip,
@@ -863,18 +867,18 @@ fn is_host_url_hover_button(button: u8) -> bool {
 }
 
 fn register_row0_range_1based(
-    tracker: &mut HoverTracker<HoverTarget>,
+    regions: &mut Vec<HitRegion<HoverTarget>>,
     start: u16,
     end: u16,
     key: HoverTarget,
 ) {
     if let Some(range) = ColRange::new(start, end) {
-        register_col_range_1based(tracker, 0, Some(range), key);
+        register_col_range_1based(regions, 0, Some(range), key);
     }
 }
 
 fn register_col_range_1based(
-    tracker: &mut HoverTracker<HoverTarget>,
+    regions: &mut Vec<HitRegion<HoverTarget>>,
     row0: u16,
     range: Option<ColRange>,
     key: HoverTarget,
@@ -885,7 +889,10 @@ fn register_col_range_1based(
     let x = range.start.saturating_sub(1);
     let width = range.end.saturating_sub(range.start);
     if width > 0 {
-        tracker.register(Rect::new(x, row0, width, 1), key);
+        regions.push(HitRegion {
+            id: key,
+            area: Rect::new(x, row0, width, 1),
+        });
     }
 }
 
