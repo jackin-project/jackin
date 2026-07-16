@@ -942,16 +942,14 @@ where
                 input.container_name,
             );
             drop(input.repo_lock.take());
-            if let Some(progress) = input.steps.progress_mut() {
-                progress.stage_skipped(
-                    crate::runtime::progress::LaunchStage::AgentBinaries,
-                    "image reused",
-                );
-                progress.stage_done(
-                    crate::runtime::progress::LaunchStage::DerivedImage,
-                    "reused local image",
-                );
-            }
+            input.steps.stage_skipped(
+                crate::runtime::progress::LaunchStage::AgentBinaries,
+                "image reused",
+            );
+            input.steps.stage_done(
+                crate::runtime::progress::LaunchStage::DerivedImage,
+                "reused local image",
+            );
             Ok(ImageMaterialized {
                 image,
                 selected_image_reused: true,
@@ -1435,12 +1433,10 @@ where
     if let Some(git_pull_join) = git_pull_join {
         super::super::finish_deferred_git_pull(git_pull_join, steps).await?;
     }
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Workspace,
-            "materializing workspace",
-        );
-    }
+    steps.stage_started(
+        crate::runtime::progress::LaunchStage::Workspace,
+        "materializing workspace",
+    );
     let preflight = crate::isolation::materialize::PreflightContext {
         workspace_label: workspace_label.clone(),
         force: opts.force,
@@ -1475,9 +1471,7 @@ where
         }
     };
     let (sidecar_result, materialize_result) = tokio::join!(sidecar_wait, materialize_wait);
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(crate::runtime::progress::LaunchStage::Network, "isolated");
-    }
+    steps.stage_done(crate::runtime::progress::LaunchStage::Network, "isolated");
     if let Err(error) = sidecar_result {
         super::super::launch_phases::mark_failed_setup_then_cleanup(
             paths,
@@ -1517,12 +1511,10 @@ where
         "materialize_workspace",
         Some("materialized"),
     );
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(
-            crate::runtime::progress::LaunchStage::Workspace,
-            "materialized",
-        );
-    }
+    steps.stage_done(
+        crate::runtime::progress::LaunchStage::Workspace,
+        "materialized",
+    );
     let dirty_exit_policy =
         config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
     let launch_config = workspace_launch_config(
@@ -1784,12 +1776,10 @@ where
     };
     // Start the sidecar future before image materialization so network/DinD
     // setup can make progress while runtime binaries and Docker build run.
-    if let Some(progress) = launch.steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Network,
-            "wiring private network",
-        );
-    }
+    launch.steps.stage_started(
+        crate::runtime::progress::LaunchStage::Network,
+        "wiring private network",
+    );
     let sidecar_container = launch.container_name.clone();
     let sidecar_network = launch.initialized.network.clone();
     let sidecar_dind = launch.initialized.dind.clone();

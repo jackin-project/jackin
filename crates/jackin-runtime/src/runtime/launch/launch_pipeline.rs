@@ -71,9 +71,7 @@ pub(super) async fn finish_deferred_git_pull(
         "git_pull_on_entry",
         Some(&detail),
     );
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
-    }
+    steps.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
     Ok(())
 }
 
@@ -601,11 +599,11 @@ fn initialize_launch_progress(
         image: None,
         container: None,
     });
-    progress.stage_done(
+    steps.start_progress(progress);
+    steps.stage_done(
         crate::runtime::progress::LaunchStage::Identity,
         "resolved operator",
     );
-    steps.start_progress(progress);
     Ok(())
 }
 
@@ -617,14 +615,11 @@ fn confirm_cached_repo_removal(steps: &mut super::StepCounter) -> anyhow::Result
 }
 
 fn mark_construct_ready(steps: &mut super::StepCounter) {
-    let Some(progress) = steps.progress_mut() else {
-        return;
-    };
-    progress.stage_started(
+    steps.stage_started(
         crate::runtime::progress::LaunchStage::Construct,
         "verifying construct",
     );
-    progress.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
+    steps.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
 }
 
 #[expect(
@@ -1072,32 +1067,32 @@ pub(crate) async fn load_role_with(
     // pulling would advance the role repo past the pinned SHA.
     if restore_container.is_none() && workspace.git_pull_on_entry {
         let sources = super::git_pull_sources(workspace);
-        if let Some(progress) = steps.progress_mut() {
-            if sources.is_empty() {
-                jackin_diagnostics::active_timing_started(
-                    jackin_diagnostics::DiagnosticStage::Workspace,
-                    "git_pull_on_entry",
-                    None,
-                );
-                jackin_diagnostics::active_timing_done(
-                    jackin_diagnostics::DiagnosticStage::Workspace,
-                    "git_pull_on_entry",
-                    Some("skipped_no_git_repos"),
-                );
-                progress.stage_skipped(
-                    crate::runtime::progress::LaunchStage::Workspace,
-                    "no mounted git repositories",
-                );
-            } else {
-                jackin_diagnostics::active_timing_started(
-                    jackin_diagnostics::DiagnosticStage::Workspace,
-                    "git_pull_on_entry",
-                    Some(&format!("{} repo(s)", sources.len())),
-                );
-                progress.stage_started(
-                    crate::runtime::progress::LaunchStage::Workspace,
-                    format!("polling {} workspace repositories", sources.len()),
-                );
+        if sources.is_empty() {
+            jackin_diagnostics::active_timing_started(
+                jackin_diagnostics::DiagnosticStage::Workspace,
+                "git_pull_on_entry",
+                None,
+            );
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Workspace,
+                "git_pull_on_entry",
+                Some("skipped_no_git_repos"),
+            );
+            steps.stage_skipped(
+                crate::runtime::progress::LaunchStage::Workspace,
+                "no mounted git repositories",
+            );
+        } else {
+            jackin_diagnostics::active_timing_started(
+                jackin_diagnostics::DiagnosticStage::Workspace,
+                "git_pull_on_entry",
+                Some(&format!("{} repo(s)", sources.len())),
+            );
+            steps.stage_started(
+                crate::runtime::progress::LaunchStage::Workspace,
+                format!("polling {} workspace repositories", sources.len()),
+            );
+            if steps.progress_mut().is_some() {
                 let debug = opts.debug;
                 let git_program = git_pull_program(opts);
                 let handle = jackin_telemetry::spawn::joined_blocking(move || {
@@ -1107,24 +1102,19 @@ pub(crate) async fn load_role_with(
                     handle,
                     print_results: false,
                 });
+            } else {
+                // Run the blocking git pulls on a blocking-pool thread so the
+                // single-threaded executor is never parked on the join.
+                let debug = opts.debug;
+                let git_program = git_pull_program(opts);
+                let handle = jackin_telemetry::spawn::joined_blocking(move || {
+                    super::pull_git_sources_with_git(sources, debug, &git_program, true)
+                });
+                git_pull_join = Some(DeferredGitPull {
+                    handle,
+                    print_results: true,
+                });
             }
-        } else if !sources.is_empty() {
-            jackin_diagnostics::active_timing_started(
-                jackin_diagnostics::DiagnosticStage::Workspace,
-                "git_pull_on_entry",
-                Some(&format!("{} repo(s)", sources.len())),
-            );
-            // Run the blocking git pulls on a blocking-pool thread so the
-            // single-threaded executor is never parked on the join.
-            let debug = opts.debug;
-            let git_program = git_pull_program(opts);
-            let handle = jackin_telemetry::spawn::joined_blocking(move || {
-                super::pull_git_sources_with_git(sources, debug, &git_program, true)
-            });
-            git_pull_join = Some(DeferredGitPull {
-                handle,
-                print_results: true,
-            });
         }
     }
     let restoring = restore_container.is_some();
@@ -1159,11 +1149,11 @@ pub(crate) async fn load_role_with(
             image: Some(image_tag.clone()),
             container: Some(container_name.clone()),
         });
-        progress.stage_done(
-            crate::runtime::progress::LaunchStage::Role,
-            "trusted source",
-        );
     }
+    steps.stage_done(
+        crate::runtime::progress::LaunchStage::Role,
+        "trusted source",
+    );
 
     // Resolve every credential any agent the role can run might read from the
     // container env, plus generic operator vars. The selected agent is one of
@@ -1201,12 +1191,10 @@ pub(crate) async fn load_role_with(
     )
     .await?;
 
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Credentials,
-            "resolving launch credentials",
-        );
-    }
+    steps.stage_started(
+        crate::runtime::progress::LaunchStage::Credentials,
+        "resolving launch credentials",
+    );
 
     // Resolve operator env layers (global / role / workspace /
     // workspace × role) before manifest env. Operator-provided values
@@ -1324,12 +1312,10 @@ pub(crate) async fn load_role_with(
             opts.debug,
         );
     }
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(
-            crate::runtime::progress::LaunchStage::Credentials,
-            "resolved",
-        );
-    }
+    steps.stage_done(
+        crate::runtime::progress::LaunchStage::Credentials,
+        "resolved",
+    );
 
     // D7: capture recipe fields before image_decision is consumed by match below.
     let recipe_role_git_sha = image_decision.role_git_sha();
@@ -1396,21 +1382,15 @@ pub(crate) async fn load_role_with(
                 .unwrap_or(crate::runtime::progress::LaunchStage::Capsule);
             let run = jackin_diagnostics::active_run();
             let final_error = super::launch_failure_cli_error(failed_stage, &error, run.as_deref());
-            if let Some(progress) = steps.progress_mut() {
-                progress
-                    .stage_failed(crate::runtime::progress::LaunchFailure {
-                        title: super::launch_failure_title(failed_stage, &error, run.as_deref()),
-                        summary: super::short_launch_diagnosis(
-                            failed_stage,
-                            &error,
-                            run.as_deref(),
-                        ),
-                        detail: Some(format!("{error:#}")),
-                        next_step: None,
-                        stage: failed_stage,
-                    })
-                    .await;
-            }
+            steps
+                .stage_failed(crate::runtime::progress::LaunchFailure {
+                    title: super::launch_failure_title(failed_stage, &error, run.as_deref()),
+                    summary: super::short_launch_diagnosis(failed_stage, &error, run.as_deref()),
+                    detail: Some(format!("{error:#}")),
+                    next_step: None,
+                    stage: failed_stage,
+                })
+                .await;
             // Stop the cockpit render task and release the rich surface before
             // the exit warp writes to the terminal. A pre-attach failure returns
             // before the success path's pre-handoff teardown runs, so without

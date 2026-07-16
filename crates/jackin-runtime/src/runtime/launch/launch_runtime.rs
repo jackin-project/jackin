@@ -1132,9 +1132,9 @@ pub(crate) async fn launch_role_runtime(
     // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
     // to answer `status`; jackin-capsule detects PID != 1 and then runs in
     // client mode, connecting to that daemon socket inside the container.
+    steps.stage_done(crate::runtime::progress::LaunchStage::Capsule, "ready");
+    steps.opening_hardline();
     if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(crate::runtime::progress::LaunchStage::Capsule, "ready");
-        progress.opening_hardline();
         progress.settle_stage_visual().await;
     }
     // Tear down the loading cockpit before the interactive attach: the
@@ -1223,9 +1223,7 @@ pub(crate) async fn launch_role_runtime(
             );
         }
     }
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(crate::runtime::progress::LaunchStage::Hardline, "open");
-    }
+    steps.stage_done(crate::runtime::progress::LaunchStage::Hardline, "open");
     if matches!(
         sidecar_prewarm_replenish,
         SidecarPrewarmReplenish::AfterAttach

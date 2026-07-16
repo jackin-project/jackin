@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::StepCounter;
+use super::{StepCounter, stage_index, telemetry_stage};
 use crate::runtime::progress::LaunchProgress;
 use jackin_launch_tui::{LaunchCancelled, LaunchDiagnostics};
 use std::sync::Arc;
@@ -56,4 +56,30 @@ async fn next_proceeds_when_not_cancelled() {
         .next("Launching role")
         .await
         .expect("an un-cancelled step boundary must proceed");
+    steps.stage_done(jackin_core::LaunchStage::Capsule, "ready");
+}
+
+#[test]
+fn launch_stage_registry_mapping_is_exhaustive_and_ordered() {
+    for (index, stage) in jackin_core::LaunchStage::ALL.into_iter().enumerate() {
+        assert_eq!(stage_index(stage), index);
+        assert_eq!(
+            telemetry_stage(stage),
+            jackin_telemetry::schema::enums::LaunchStageName::ALL[index]
+        );
+    }
+}
+
+#[test]
+fn renderer_teardown_does_not_end_hardline_telemetry() {
+    let mut steps = steps_with_progress(false);
+    steps.opening_hardline();
+    let index = stage_index(jackin_core::LaunchStage::Hardline);
+    assert!(steps.stage_telemetry[index].is_some());
+
+    steps.finish_progress();
+    assert!(steps.stage_telemetry[index].is_some());
+
+    steps.stage_done(jackin_core::LaunchStage::Hardline, "open");
+    assert!(steps.stage_telemetry[index].is_none());
 }

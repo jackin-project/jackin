@@ -22,39 +22,6 @@ use crate::{
 
 const STAGE_VISUAL_SETTLE: Duration = Duration::from_millis(140);
 
-const fn stage_index(stage: LaunchStage) -> usize {
-    match stage {
-        LaunchStage::Identity => 0,
-        LaunchStage::Role => 1,
-        LaunchStage::Credentials => 2,
-        LaunchStage::Construct => 3,
-        LaunchStage::AgentBinaries => 4,
-        LaunchStage::DerivedImage => 5,
-        LaunchStage::Workspace => 6,
-        LaunchStage::Network => 7,
-        LaunchStage::Sidecar => 8,
-        LaunchStage::Capsule => 9,
-        LaunchStage::Hardline => 10,
-    }
-}
-
-const fn telemetry_stage(stage: LaunchStage) -> jackin_telemetry::schema::enums::LaunchStageName {
-    use jackin_telemetry::schema::enums::LaunchStageName as TelemetryStage;
-    match stage {
-        LaunchStage::Identity => TelemetryStage::Identity,
-        LaunchStage::Role => TelemetryStage::Role,
-        LaunchStage::Credentials => TelemetryStage::Credentials,
-        LaunchStage::Construct => TelemetryStage::Construct,
-        LaunchStage::AgentBinaries => TelemetryStage::AgentBinaries,
-        LaunchStage::DerivedImage => TelemetryStage::DerivedImage,
-        LaunchStage::Workspace => TelemetryStage::Workspace,
-        LaunchStage::Network => TelemetryStage::Network,
-        LaunchStage::Sidecar => TelemetryStage::Sidecar,
-        LaunchStage::Capsule => TelemetryStage::Capsule,
-        LaunchStage::Hardline => TelemetryStage::Hardline,
-    }
-}
-
 #[expect(
     missing_debug_implementations,
     reason = "LaunchProgress owns terminal and diagnostics trait objects that do not expose useful Debug output."
@@ -65,7 +32,6 @@ pub struct LaunchProgress {
     view: SharedView,
     host: &'static dyn LaunchHostTerminal,
     cancel_token: CancellationToken,
-    stage_telemetry: [Option<jackin_telemetry::launch::StageGuard>; 11],
 }
 
 enum Renderer {
@@ -101,7 +67,6 @@ impl LaunchProgress {
             view,
             host,
             cancel_token,
-            stage_telemetry: std::array::from_fn(|_| None),
         })
     }
 
@@ -113,7 +78,6 @@ impl LaunchProgress {
             view: Arc::new(std::sync::Mutex::new(initial_view())),
             host: crate::test_support::test_host_terminal(),
             cancel_token: CancellationToken::new(),
-            stage_telemetry: std::array::from_fn(|_| None),
         }
     }
 
@@ -165,7 +129,6 @@ impl LaunchProgress {
     }
 
     pub fn stage_started(&mut self, stage: LaunchStage, detail: impl Into<String>) {
-        self.start_stage_telemetry(stage);
         self.emit_stage(stage, StageStatus::Running, "stage_started", detail);
     }
 
@@ -174,30 +137,15 @@ impl LaunchProgress {
     }
 
     pub fn stage_done(&mut self, stage: LaunchStage, detail: impl Into<String>) {
-        self.finish_stage_telemetry(
-            stage,
-            jackin_telemetry::schema::enums::OutcomeValue::Success,
-            None,
-        );
         self.emit_stage(stage, StageStatus::Done, "stage_done", detail);
     }
 
     pub fn stage_skipped(&mut self, stage: LaunchStage, reason: impl Into<String>) {
-        self.finish_stage_telemetry(
-            stage,
-            jackin_telemetry::schema::enums::OutcomeValue::Skip,
-            None,
-        );
         self.emit_stage(stage, StageStatus::Skipped, "stage_skipped", reason);
     }
 
     pub async fn stage_failed(&mut self, failure: LaunchFailure) {
         let stage = failure.stage;
-        self.finish_stage_telemetry(
-            stage,
-            jackin_telemetry::schema::enums::OutcomeValue::Failure,
-            Some(jackin_telemetry::schema::enums::ErrorType::LaunchStageFailed),
-        );
         let summary = failure.summary.clone();
         let next_step = failure.next_step.clone();
         let detail = failure.detail.clone();
@@ -222,35 +170,6 @@ impl LaunchProgress {
                 }
             }
         }
-    }
-
-    fn start_stage_telemetry(&mut self, stage: LaunchStage) {
-        let index = stage_index(stage);
-        if let Some(previous) = self.stage_telemetry[index].take() {
-            previous.complete(
-                jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
-                None,
-            );
-        }
-        self.stage_telemetry[index] = Some(jackin_telemetry::launch::StageGuard::start(
-            telemetry_stage(stage),
-        ));
-    }
-
-    fn finish_stage_telemetry(
-        &mut self,
-        stage: LaunchStage,
-        outcome: jackin_telemetry::schema::enums::OutcomeValue,
-        error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
-    ) {
-        let index = stage_index(stage);
-        if self.stage_telemetry[index].is_none() {
-            self.start_stage_telemetry(stage);
-        }
-        let Some(telemetry) = self.stage_telemetry[index].take() else {
-            return;
-        };
-        telemetry.complete(outcome, error_type);
     }
 
     pub fn opening_hardline(&mut self) {
