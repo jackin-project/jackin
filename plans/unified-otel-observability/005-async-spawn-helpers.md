@@ -142,6 +142,7 @@ Add to the lint lane a textual heuristic: flag `.enter()`/`.entered()` appearing
 - Complete the executor matrix for runtime `Handle`, blocking/local tasks, `LocalSet`, joined/detached `JoinSet`, named/scoped OS threads, subscriptions, timers, cycles, and streams. Classify and migrate all scoped-thread sites or record a narrow tier-architecture exemption.
 - Replace substring spawn linting with syntax-aware coverage for Tokio/task/local/Handle/JoinSet, thread builder/scoped/imported/aliased forms and whitespace variants, while excluding subprocess `Command::spawn`.
 - Detached helpers are outcome-aware for success/failure/error/timeout, panic, and abort instead of completing every returned future as success. Preserve names and generic outputs.
+- Detached completion now automatically emits one bodyless `error.typed` event for failure/error/timeout and panic while completing the owning span with the same bounded `error.type`; callers do not repeat error-recording code.
 - Tests prove parent identity, detached root plus one link, unsampled/invalid/disabled behavior, no lifetime retention, all helper families, panic/abort outcomes, and disabled-path allocation behavior.
 
 ## Test plan

@@ -914,6 +914,52 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
     );
 }
 
+#[test]
+fn detached_failure_automatically_exports_one_typed_error() {
+    use opentelemetry::logs::AnyValue;
+
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
+    let (export, subscriber) = super::test_layers(false, "unused");
+    let default = tracing::subscriber::set_default(subscriber);
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("test runtime")
+        .block_on(async {
+            jackin_telemetry::spawn::spawn_detached(
+                &jackin_telemetry::operation::PROCESS_COMMAND,
+                async {},
+                |()| {
+                    jackin_telemetry::spawn::DetachedCompletion::failure(
+                        jackin_telemetry::schema::enums::ErrorType::IoError,
+                    )
+                },
+            )
+            .await
+            .expect("detached task");
+        });
+    drop(default);
+    export.logger_provider.force_flush().unwrap();
+    export.tracer_provider.force_flush().unwrap();
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].record.event_name(), Some("error.typed"));
+    assert_eq!(logs[0].record.body(), None);
+    assert_eq!(
+        log_attribute(&logs[0].record, "error.type"),
+        Some(&AnyValue::String("io_error".into()))
+    );
+    let spans = export.spans.get_finished_spans().unwrap();
+    assert_eq!(spans.len(), 1);
+    let log_context = logs[0].record.trace_context().expect("error trace context");
+    assert_eq!(log_context.trace_id, spans[0].span_context.trace_id());
+    assert_eq!(log_context.span_id, spans[0].span_context.span_id());
+    assert!(spans[0].attributes.iter().any(|attribute| {
+        attribute.key.as_str() == "error.type" && attribute.value.as_str() == "io_error"
+    }));
+}
+
 fn emit_severity_matrix() {
     let outcome = [jackin_telemetry::Attr {
         key: jackin_telemetry::schema::attrs::OUTCOME,

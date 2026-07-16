@@ -78,6 +78,17 @@ impl DetachedGuard {
 
     fn complete(mut self, completion: DetachedCompletion) {
         if let Some(operation) = self.0.take() {
+            if matches!(
+                completion.outcome,
+                crate::schema::enums::OutcomeValue::Failure
+                    | crate::schema::enums::OutcomeValue::Error
+                    | crate::schema::enums::OutcomeValue::Timeout
+            ) && let Some(error_type) = completion.error_type
+            {
+                operation.span().in_scope(|| {
+                    let _error = crate::record_error(error_type);
+                });
+            }
             operation.complete(completion.outcome, completion.error_type);
         }
     }
@@ -89,6 +100,9 @@ impl Drop for DetachedGuard {
             return;
         };
         if thread::panicking() {
+            operation.span().in_scope(|| {
+                let _error = crate::record_error(crate::schema::enums::ErrorType::Panic);
+            });
             operation.complete(
                 crate::schema::enums::OutcomeValue::Error,
                 Some(crate::schema::enums::ErrorType::Panic),

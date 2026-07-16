@@ -140,21 +140,13 @@ pub(crate) async fn perform_handshake(
     let mut first = [0u8; 1];
     match tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.read_exact(&mut first)).await {
         Ok(Ok(_)) => {}
-        Ok(Err(e)) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "attach: handshake read_exact(first byte) failed: {e}"
-            );
+        Ok(Err(_)) => {
             drop(client_permit);
             return jackin_telemetry::spawn::DetachedCompletion::error(
                 jackin_telemetry::schema::enums::ErrorType::RpcError,
             );
         }
         Err(_) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "attach: handshake first byte not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
-            );
             drop(client_permit);
             return jackin_telemetry::spawn::DetachedCompletion::timeout();
         }
@@ -169,42 +161,28 @@ pub(crate) async fn perform_handshake(
         )
         .await;
     }
-    let initial_frame = match tokio::time::timeout(
-        HANDSHAKE_TIMEOUT,
-        read_client_frame(&mut stream, first[0]),
-    )
-    .await
-    {
-        Ok(Ok(Some(frame))) => frame,
-        Ok(Ok(None)) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "attach: handshake EOF before initial frame"
-            );
-            drop(client_permit);
-            return jackin_telemetry::spawn::DetachedCompletion::failure(
-                jackin_telemetry::schema::enums::ErrorType::RpcError,
-            );
-        }
-        Ok(Err(e)) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "attach: handshake frame decode failed: {e}"
-            );
-            drop(client_permit);
-            return jackin_telemetry::spawn::DetachedCompletion::error(
-                jackin_telemetry::schema::enums::ErrorType::RpcError,
-            );
-        }
-        Err(_) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "attach: handshake Hello frame not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
-            );
-            drop(client_permit);
-            return jackin_telemetry::spawn::DetachedCompletion::timeout();
-        }
-    };
+    let initial_frame =
+        match tokio::time::timeout(HANDSHAKE_TIMEOUT, read_client_frame(&mut stream, first[0]))
+            .await
+        {
+            Ok(Ok(Some(frame))) => frame,
+            Ok(Ok(None)) => {
+                drop(client_permit);
+                return jackin_telemetry::spawn::DetachedCompletion::failure(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                );
+            }
+            Ok(Err(_)) => {
+                drop(client_permit);
+                return jackin_telemetry::spawn::DetachedCompletion::error(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                );
+            }
+            Err(_) => {
+                drop(client_permit);
+                return jackin_telemetry::spawn::DetachedCompletion::timeout();
+            }
+        };
     let ClientFrame::Hello {
         rows,
         cols,
@@ -215,10 +193,6 @@ pub(crate) async fn perform_handshake(
         focus_session,
     } = initial_frame
     else {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "attach: rejected client whose first frame was not Hello: {initial_frame:?}"
-        );
         drop(client_permit);
         return jackin_telemetry::spawn::DetachedCompletion::failure(
             jackin_telemetry::schema::enums::ErrorType::RpcError,
@@ -230,10 +204,6 @@ pub(crate) async fn perform_handshake(
             jackin_telemetry::propagation::ExtractOutcome::RejectRequest
         )
     }) {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "attach: rejected invalid telemetry correlation"
-        );
         drop(client_permit);
         return jackin_telemetry::spawn::DetachedCompletion::failure(
             jackin_telemetry::schema::enums::ErrorType::RpcError,
@@ -251,10 +221,6 @@ pub(crate) async fn perform_handshake(
         client_permit,
     };
     if handshake_tx.send(handshake).is_err() {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "attach: handshake channel closed; daemon shutting down"
-        );
         return jackin_telemetry::spawn::DetachedCompletion::error(
             jackin_telemetry::schema::enums::ErrorType::RpcError,
         );
@@ -269,17 +235,10 @@ async fn perform_control_handshake(
     control_tx: mpsc::UnboundedSender<ControlRequest>,
     timeout: Duration,
 ) -> jackin_telemetry::spawn::DetachedCompletion {
-    let request = match socket::read_control_msg(&mut stream, first_tag).await {
-        Ok(request) => request,
-        Err(error) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "control: rejecting malformed request: {error:#}"
-            );
-            return jackin_telemetry::spawn::DetachedCompletion::failure(
-                jackin_telemetry::schema::enums::ErrorType::RpcError,
-            );
-        }
+    let Ok(request) = socket::read_control_msg(&mut stream, first_tag).await else {
+        return jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
     };
     let (reply_tx, reply_rx) = oneshot::channel();
     if control_tx
@@ -290,10 +249,6 @@ async fn perform_control_handshake(
         })
         .is_err()
     {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "control: daemon loop unavailable while handling request"
-        );
         return jackin_telemetry::spawn::DetachedCompletion::error(
             jackin_telemetry::schema::enums::ErrorType::RpcError,
         );
@@ -301,12 +256,6 @@ async fn perform_control_handshake(
     let completion = match tokio::time::timeout(timeout, reply_rx).await {
         Ok(Ok(response)) => {
             let write_result = socket::write_control_reply(stream, &response.msg).await;
-            if let Err(error) = &write_result {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "control reply delivery failed: {error:#}"
-                );
-            }
             let completion = if write_result.is_ok() {
                 jackin_telemetry::spawn::DetachedCompletion::success()
             } else {
@@ -317,22 +266,10 @@ async fn perform_control_handshake(
             response.complete(&write_result);
             completion
         }
-        Ok(Err(_)) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "control: reply channel closed before response"
-            );
-            jackin_telemetry::spawn::DetachedCompletion::error(
-                jackin_telemetry::schema::enums::ErrorType::RpcError,
-            )
-        }
-        Err(_) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "control: daemon reply timed out after {timeout:?}"
-            );
-            jackin_telemetry::spawn::DetachedCompletion::timeout()
-        }
+        Ok(Err(_)) => jackin_telemetry::spawn::DetachedCompletion::error(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        ),
+        Err(_) => jackin_telemetry::spawn::DetachedCompletion::timeout(),
     };
     drop(client_permit);
     completion
@@ -353,26 +290,14 @@ pub(crate) async fn drain_and_exit_with_reason(mux: &mut Multiplexer, reason: Op
 const ATTACH_SHUTDOWN_FLUSH_GRACE_MS: u64 = 50;
 const ATTACH_SHUTDOWN_CLOSE_GRACE_MS: u64 = 1000;
 
-pub(crate) fn send_attached_shutdown(
-    mux: &mut Multiplexer,
-    context: &str,
-    reason: Option<&str>,
-) -> bool {
+pub(crate) fn send_attached_shutdown(mux: &mut Multiplexer, reason: Option<&str>) -> bool {
     mux.client_registry.client.flush_out_of_band();
     let Some(tx) = mux.client_registry.client.take() else {
         return false;
     };
-    if tx
-        .send(encode_server(ServerFrame::Shutdown {
-            reason: reason.map(str::to_owned),
-        }))
-        .is_err()
-    {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "{context}: client receiver already dropped; Shutdown frame not delivered"
-        );
-    }
+    drop(tx.send(encode_server(ServerFrame::Shutdown {
+        reason: reason.map(str::to_owned),
+    })));
     true
 }
 
@@ -391,10 +316,10 @@ pub(crate) async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
 
 async fn detach_attached_task_with_reason(
     mux: &mut Multiplexer,
-    context: &str,
+    _context: &str,
     reason: Option<&str>,
 ) {
-    let had_sender = send_attached_shutdown(mux, context, reason);
+    let had_sender = send_attached_shutdown(mux, reason);
     // The latch is paired with the sender's lifetime: clearing
     // `attached_out` invalidates the previous attach, so the next
     // assignment (in the takeover branch of `run_daemon`) starts from
@@ -409,10 +334,10 @@ async fn detach_attached_task_with_reason(
 
 async fn gracefully_detach_attached_task_with_reason(
     mux: &mut Multiplexer,
-    context: &str,
+    _context: &str,
     reason: Option<&str>,
 ) {
-    let had_sender = send_attached_shutdown(mux, context, reason);
+    let had_sender = send_attached_shutdown(mux, reason);
     let Some(mut handle) = mux.client_registry.attached_task.take() else {
         return;
     };
@@ -422,15 +347,17 @@ async fn gracefully_detach_attached_task_with_reason(
     }
     tokio::select! {
         result = &mut handle => {
-            if let Err(err) = result
-                && !err.is_cancelled()
+            if let Err(error) = result
+                && !error.is_cancelled()
             {
-                jackin_diagnostics::telemetry_info!("capsule", "{context}: attach task ended with join error: {err}");
+                let _error = jackin_telemetry::record_error(
+                    jackin_telemetry::schema::enums::ErrorType::Panic,
+                );
             }
         }
         () = tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_CLOSE_GRACE_MS)) => {
-            jackin_diagnostics::telemetry_info!("capsule",
-                "{context}: attach client did not close after Shutdown within {ATTACH_SHUTDOWN_CLOSE_GRACE_MS}ms; aborting"
+            let _error = jackin_telemetry::record_error(
+                jackin_telemetry::schema::enums::ErrorType::Timeout,
             );
             handle.abort();
         }
