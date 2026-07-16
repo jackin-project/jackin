@@ -701,18 +701,13 @@ fn launch_stage_span(stage: crate::DiagnosticStage) -> tracing::Span {
     let otel_name = crate::registry::launch_stage_span_name(stage);
     let span = tracing::info_span!(
         "launch_stage",
-        "jackin.stage" = stage.as_str(),
+        "launch.stage.name" = stage.as_str(),
         otel.name = otel_name,
         otel.status_code = tracing::field::Empty,
         otel.status_description = tracing::field::Empty,
     );
     {
-        use crate::observability::otel_keys;
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-        span.set_attribute(otel_keys::COMPONENT, "host".to_owned());
-        if let Some(run) = active_run() {
-            span.set_attribute(otel_keys::RUN_ID, run.run_id().to_owned());
-        }
         // Derived-image build is a peer subsystem of launch: link it to the active
         // launch span so the BuildKit trace is not a peer without a parent (plan 044).
         if stage == crate::DiagnosticStage::DerivedImage {

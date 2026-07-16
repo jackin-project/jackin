@@ -311,19 +311,19 @@ pub fn configured_endpoint_summary() -> Option<String> {
     otlp::endpoint_summary()
 }
 
-/// Operator-facing backend query line for a run id, when an OTLP endpoint is
+/// Operator-facing backend query line for an invocation id, when an OTLP endpoint is
 /// configured. Returns `None` when export is off (the JSONL path is enough).
 ///
 /// Renders `parallax run <id>` when the endpoint summary looks like the
 /// Parallax reference backend; otherwise a backend-neutral
-/// `parallax.run.id=<id>` filter string.
+/// `cli.invocation.id=<id>` filter string.
 #[must_use]
-pub fn backend_query_hint(run_id: &str) -> Option<String> {
+pub fn backend_query_hint(invocation_id: &str) -> Option<String> {
     let endpoint = configured_endpoint_summary()?;
     let query = if endpoint.to_ascii_lowercase().contains("parallax") {
-        format!("parallax run {run_id}")
+        format!("parallax invocation {invocation_id}")
     } else {
-        format!("query your OTLP backend for parallax.run.id={run_id}")
+        format!("query your OTLP backend for cli.invocation.id={invocation_id}")
     };
     Some(query)
 }
@@ -767,9 +767,8 @@ mod otlp {
         Ok(())
     }
 
-    /// Stable source identity only. Run/session/component live on records and
-    /// spans (`parallax.run.id`, `session.id`, `jackin.component`) so two runs
-    /// of the same build share Resource identity.
+    /// Stable source identity only; invocation and session identities remain
+    /// signal attributes so repeated executions share Resource identity.
     fn resource(_run_id: &str, identity: ServiceIdentity) -> Resource {
         build_resource_for(identity)
     }
@@ -1110,7 +1109,6 @@ mod otlp {
     }
 
     /// Capsule Resource is stable source identity only (same as host).
-    /// `session.id` / `parallax.run.id` / `jackin.component` are record/span attrs.
     fn capsule_resource() -> Resource {
         build_resource_for(ServiceIdentity::CAPSULE)
     }
