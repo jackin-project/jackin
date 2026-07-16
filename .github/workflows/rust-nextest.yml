@@ -232,16 +232,26 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ steps.crate-target.outputs.format }}" = "v4" ]; then
-            pids=()
-            for archive in target/.ci-restore/target.part-*; do
-              tar --zstd -xf "$archive" &
-              pids+=("$!")
-            done
-            failed=0
-            for pid in "${pids[@]}"; do
-              wait "$pid" || failed=1
-            done
-            [ "$failed" -eq 0 ]
+            shopt -s nullglob
+            archives=(target/.ci-restore/target.part-*)
+            if [ "${#archives[@]}" -eq 0 ]; then
+              if [ "${{ steps.crate-target.outputs.canonical-hit }}" = "true" ]; then
+                echo "::error::canonical crate target has no partition artifacts"
+                exit 1
+              fi
+              echo "::notice::latest crate target partitions expired; continuing from a cold target"
+            else
+              pids=()
+              for archive in "${archives[@]}"; do
+                tar --zstd -xf "$archive" &
+                pids+=("$!")
+              done
+              failed=0
+              for pid in "${pids[@]}"; do
+                wait "$pid" || failed=1
+              done
+              [ "$failed" -eq 0 ]
+            fi
           elif [ "${{ steps.crate-target.outputs.format }}" = "v3" ]; then
             cat target/.ci-restore/target.part-* > target/.ci-restore/target.tar.zst
             tar --zstd -xf target/.ci-restore/target.tar.zst
