@@ -948,7 +948,7 @@ pub const SESSION_START_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,session.id:recommended,telemetry.validation.values:recommended
+// registry: attributes=cli.invocation.id:recommended,session.id:recommended
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 pub const TELEMETRY_VALIDATE_DEF: super::EventMetadata = super::EventMetadata {
     name: TELEMETRY_VALIDATE,
@@ -963,12 +963,6 @@ pub const TELEMETRY_VALIDATE_DEF: super::EventMetadata = super::EventMetadata {
         super::AttributeRequirement {
             name: "session.id",
             value_type: super::ValueType::String,
-            requirement: super::RequirementLevel::Recommended,
-            allowed_values: &[],
-        },
-        super::AttributeRequirement {
-            name: "telemetry.validation.values",
-            value_type: super::ValueType::StringArray,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
         },

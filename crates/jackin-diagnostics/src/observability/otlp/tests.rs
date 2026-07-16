@@ -681,7 +681,7 @@ fn conformance_single_delivery_preserves_native_shape() {
 }
 
 #[test]
-fn registered_scalar_and_array_types_round_trip() {
+fn registered_scalar_types_round_trip() {
     use opentelemetry::logs::AnyValue;
 
     let (export, subscriber) = super::test_layers(false, "unused");
@@ -730,14 +730,9 @@ fn registered_scalar_and_array_types_round_trip() {
         )
         .unwrap();
 
-        let values = ["bridge", "typed"];
-        let validation = [jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::TELEMETRY_VALIDATION_VALUES,
-            value: jackin_telemetry::Value::StrArray(&values),
-        }];
         jackin_telemetry::emit_event(
             &jackin_telemetry::event::TELEMETRY_VALIDATE,
-            jackin_telemetry::FieldSet::new(&validation, None),
+            jackin_telemetry::FieldSet::default(),
         )
         .unwrap();
     });
@@ -756,13 +751,7 @@ fn registered_scalar_and_array_types_round_trip() {
         log_attribute(&logs[1].record, "agent.status.stuck"),
         Some(&AnyValue::Boolean(true))
     );
-    assert_eq!(
-        log_attribute(&logs[2].record, "telemetry.validation.values"),
-        Some(&AnyValue::ListAny(Box::new(vec![
-            AnyValue::String("bridge".into()),
-            AnyValue::String("typed".into()),
-        ])))
-    );
+    assert_eq!(logs[2].record.event_name(), Some("telemetry.validate"));
 }
 
 #[test]

@@ -15,9 +15,6 @@ macro_rules! event_field_value {
     ($fields:expr, $key:literal, String) => {
         $fields.str($key)
     };
-    ($fields:expr, $key:literal, StringArray) => {
-        tracing::field::Empty
-    };
 }
 
 fn emit_registered_event(def: &'static EventDef, fields: FieldSet<'_>) {
@@ -518,11 +515,6 @@ fn emit_telemetry_validate(def: &'static EventDef, fields: FieldSet<'_>) {
         [
             ("cli.invocation.id", field_cli_invocation_id, String),
             ("session.id", field_session_id, String),
-            (
-                "telemetry.validation.values",
-                field_telemetry_validation_values,
-                StringArray
-            ),
         ]
     );
 }
