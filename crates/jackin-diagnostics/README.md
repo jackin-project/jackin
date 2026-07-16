@@ -39,7 +39,7 @@ Terminal-ownership and title policy for rich surfaces live in this crate's `term
 
 Typed operation facade: `operation_span` / `operation_log` / `operation_error` / `operation_metric` (and `enter_operation` RAII guard). Names from the semconv registry.
 
-`debug_log!`/`clog!`/`cdebug!`, the run-diagnostics writer, redaction helpers, and the debug-mode flag — consumed by nearly every crate. Two-tier telemetry contract is documented in `ENGINEERING.md`.
+`debug_log!`/`clog!`/`cdebug!`, the run-diagnostics writer, redaction helpers, and the debug-mode flag — consumed by nearly every crate. The two-tier telemetry contract is documented in [ENGINEERING.md](../../ENGINEERING.md).
 
 ## How to verify
 

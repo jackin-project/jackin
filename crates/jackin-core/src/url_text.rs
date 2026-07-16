@@ -3,7 +3,7 @@
 
 //! URL text helpers that are small enough to avoid a parser dependency at
 //! shared-core level. Product-local URL policy retained during TUI extraction per
-//! A5 unblock — runtime no longer needs the L3 jackin-tui dep
+//! Runtime keeps URL policy in the domain layer without a presentation dependency.
 //! for these.
 
 /// Return true when a URL is safe for host-side open requests.

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Pure ANSI terminal control constants and helpers relocated from
-//! `jackin-tui` (ansi module). These have no ratatui or crossterm
+//! the former in-tree TUI donor. These have no Ratatui or Crossterm
 //! dependencies and are safe to use from `jackin-runtime` (and below)
 //! for host pointer/clipboard signaling.
 

@@ -11,6 +11,10 @@
 //! [`PanelEmphasis::Focused`]). Callers that implement the passive-scroll
 //! focusability rule must clear their focus state when content fits, before
 //! calling this helper.
+//!
+//! Visual contracts for [`Viewport`] itself are owned by TermRock tests; jackin❯
+//! product tests assert screen-level composition (one focus owner, product
+//! wording) rather than TermRock role RGB mapping.
 
 use ratatui::{Frame, layout::Rect, text::Line};
 use termrock::{
@@ -43,52 +47,4 @@ pub fn render_scrollable_block_at(
         viewport = viewport.title(title);
     }
     frame.render_stateful_widget(viewport, area, &mut scroll);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::{Terminal, backend::TestBackend, style::Color};
-    use termrock::style::Role;
-
-    fn border_fg(role: Role) -> Color {
-        Theme::default().style(role).fg.expect("theme role has fg")
-    }
-
-    #[test]
-    fn focused_content_uses_focused_border_even_when_content_fits() {
-        let backend = TestBackend::new(24, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                render_scrollable_block_at(
-                    frame,
-                    area,
-                    vec![Line::from("fits")],
-                    0,
-                    0,
-                    true,
-                    Some("Body"),
-                );
-            })
-            .unwrap();
-        let cell = &terminal.backend().buffer()[(0, 0)];
-        assert_eq!(cell.fg, border_fg(Role::BorderFocused));
-    }
-
-    #[test]
-    fn unfocused_content_uses_normal_border() {
-        let backend = TestBackend::new(24, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let lines: Vec<Line<'_>> = (0..20).map(|i| Line::from(format!("row {i}"))).collect();
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                render_scrollable_block_at(frame, area, lines, 0, 0, false, Some("Body"));
-            })
-            .unwrap();
-        let cell = &terminal.backend().buffer()[(0, 0)];
-        assert_eq!(cell.fg, border_fg(Role::Border));
-    }
 }

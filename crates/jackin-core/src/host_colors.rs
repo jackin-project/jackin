@@ -5,7 +5,7 @@
 //!
 //! Shared neutral presentation (ordinary/strong/muted text, borders, tabs,
 //! inputs, links on dark surfaces, danger/warning, scroll tracks) lives in
-//! TermRock's `Theme` / `Role` API. This module keeps only:
+//! `TermRock`'s `Theme` / `Role` API. This module keeps only:
 //!
 //! - brand chrome and launch rain animation colors;
 //! - domain agent/menu/status accents;

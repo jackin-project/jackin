@@ -983,13 +983,13 @@ fn account_stage_render_uses_shared_full_width_highlight() {
     for x in 1..75 {
         assert_eq!(
             buffer[(x, selected_y)].bg,
-            termrock::style::PHOSPHOR_GREEN,
+            jackin_core::tui_theme::accent_fg(),
             "x={x}"
         );
     }
     assert_ne!(
         buffer[(75, selected_y)].bg,
-        termrock::style::PHOSPHOR_GREEN,
+        jackin_core::tui_theme::accent_fg(),
         "selection must not paint the dialog border"
     );
 }
@@ -1005,13 +1005,13 @@ fn item_stage_render_uses_shared_full_width_highlight() {
     for x in 1..75 {
         assert_eq!(
             buffer[(x, selected_y)].bg,
-            termrock::style::PHOSPHOR_GREEN,
+            jackin_core::tui_theme::accent_fg(),
             "x={x}"
         );
     }
     assert_ne!(
         buffer[(75, selected_y)].bg,
-        termrock::style::PHOSPHOR_GREEN,
+        jackin_core::tui_theme::accent_fg(),
         "selection must not paint the dialog border"
     );
 }
@@ -1334,13 +1334,13 @@ fn recoverable_banner_preserves_selected_list_geometry() {
     for x in 1..59 {
         assert_eq!(
             buffer[(x, selected_y)].bg,
-            termrock::style::PHOSPHOR_GREEN,
+            jackin_core::tui_theme::accent_fg(),
             "x={x}"
         );
     }
     assert_ne!(
         buffer[(59, selected_y)].bg,
-        termrock::style::PHOSPHOR_GREEN,
+        jackin_core::tui_theme::accent_fg(),
         "selected row must not paint the dialog border"
     );
 }

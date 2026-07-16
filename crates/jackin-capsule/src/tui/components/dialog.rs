@@ -540,7 +540,7 @@ impl Dialog {
                 return DialogAction::Redraw;
             }
             if let Self::Usage { scroll, .. } = self
-                && jackin_core::tui_scroll_input::apply_raw_dialog_scroll_key(
+                && crate::tui::scroll_input::apply_raw_dialog_scroll_key(
                     scroll,
                     key,
                     termrock::scroll::ScrollAxes {
@@ -573,7 +573,7 @@ impl Dialog {
                 _ => None,
             };
             if let Some(scroll) = body_scroll
-                && jackin_core::tui_scroll_input::apply_raw_dialog_scroll_key(
+                && crate::tui::scroll_input::apply_raw_dialog_scroll_key(
                     scroll,
                     key,
                     termrock::scroll::ScrollAxes {

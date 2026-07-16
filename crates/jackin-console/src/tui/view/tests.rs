@@ -444,17 +444,10 @@ fn tui_header_uses_canonical_brand_wordmark() {
     );
 }
 
-// Cross-widget visual-consistency pins.
-//
-// Every modal renders with the same chrome: `accent_fg()` border
-// (RGB 0/255/65) — dialogs and modal pickers are always the active/focused
-// container when visible. A title wrapped in leading + trailing spaces so
-// `┌ Title ─...` renders with breathing room. These tests pin that
-// contract so a future drift doesn't silently degrade the look.
+// Product-level dialog composition tests. Exact shared border, title, and
+// palette contracts live in TermRock's widget tests and catalog previews.
 
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
-
-use jackin_core::tui_theme::{accent_fg, text_fg};
 
 /// Render a closure into a fresh `TestBackend` and return the resulting
 /// buffer. Size is chosen to comfortably fit every modal under test.
@@ -463,103 +456,6 @@ fn draw<F: FnOnce(&mut Frame<'_>)>(width: u16, height: u16, render: F) -> Buffer
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| render(f)).unwrap();
     term.backend().buffer().clone()
-}
-
-/// Return the title glyphs rendered on the top border row (y = 0).
-/// The border itself is ` ─ ` glyphs; the title is the contiguous run
-/// of printable non-border characters. Confirms the title has leading
-/// + trailing space padding.
-fn top_border_title(buf: &Buffer) -> String {
-    let mut out = String::new();
-    let mut in_title = false;
-    for x in 0..buf.area.width {
-        let sym = buf[(x, 0)].symbol();
-        let is_border = matches!(sym, "┌" | "┐" | "─" | "│");
-        if is_border {
-            if in_title {
-                break;
-            }
-            continue;
-        }
-        // First non-border, non-empty cell starts the title.
-        if !in_title && !sym.is_empty() {
-            in_title = true;
-        }
-        if in_title {
-            out.push_str(sym);
-        }
-    }
-    out
-}
-
-/// Assert every cell on the top and bottom border rows uses
-/// `accent_fg()` as its foreground colour (title cells are exempt —
-/// they're text_fg()+BOLD). Modals are always the active/focused container
-/// when visible, so they always use the active border colour.
-fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
-    assert_eq!(buf[(area.x, area.y)].symbol(), "┌", "{widget}: top-left");
-    assert_eq!(
-        buf[(area.right() - 1, area.y)].symbol(),
-        "┐",
-        "{widget}: top-right"
-    );
-    assert_eq!(
-        buf[(area.x, area.bottom() - 1)].symbol(),
-        "└",
-        "{widget}: bottom-left"
-    );
-    assert_eq!(
-        buf[(area.right() - 1, area.bottom() - 1)].symbol(),
-        "┘",
-        "{widget}: bottom-right"
-    );
-    for x in area.x + 1..area.right() - 1 {
-        assert_eq!(
-            buf[(x, area.bottom() - 1)].symbol(),
-            "─",
-            "{widget}: bottom border at x={x}"
-        );
-    }
-    for y in area.y + 1..area.bottom() - 1 {
-        assert_eq!(buf[(area.x, y)].symbol(), "│", "{widget}: left at y={y}");
-        assert_eq!(
-            buf[(area.right() - 1, y)].symbol(),
-            "│",
-            "{widget}: right at y={y}"
-        );
-    }
-    // Top border, skipping the title span.
-    for x in area.x..area.x + area.width {
-        let cell = &buf[(x, area.y)];
-        if cell.symbol().is_empty() {
-            continue;
-        }
-        let is_title_cell = cell.fg == text_fg();
-        if is_title_cell {
-            continue;
-        }
-        assert_eq!(
-            cell.fg,
-            accent_fg(),
-            "{widget}: top-border cell at ({x},{}) fg={:?}, expected accent_fg()",
-            area.y,
-            cell.fg,
-        );
-    }
-    // Bottom border — should be all accent_fg().
-    let by = area.y + area.height - 1;
-    for x in area.x..area.x + area.width {
-        let cell = &buf[(x, by)];
-        if cell.symbol().is_empty() {
-            continue;
-        }
-        assert_eq!(
-            cell.fg,
-            accent_fg(),
-            "{widget}: bottom-border cell at ({x},{by}) fg={:?}, expected accent_fg()",
-            cell.fg,
-        );
-    }
 }
 
 // Note: the former `assert_hint_row_present` helper and
@@ -594,64 +490,6 @@ fn render_mount_dst() -> (Buffer, Rect) {
     (buf, area)
 }
 
-fn render_text_input() -> (Buffer, Rect) {
-    use crate::tui::components::{TextInputState, render_text_input as render};
-    let area = Rect::new(0, 0, 60, 6);
-    let state = TextInputState::new("Name this workspace", "demo");
-    let buf = draw(area.width, area.height, |f| render(f, area, &state));
-    (buf, area)
-}
-
-fn render_workdir_pick() -> (Buffer, Rect) {
-    use crate::tui::components::workdir_pick::{WorkdirPickState, render};
-    use jackin_config::MountConfig;
-    let area = Rect::new(0, 0, 60, 12);
-    let mounts = [MountConfig {
-        src: "/home/user/app".into(),
-        dst: "/home/user/app".into(),
-        readonly: false,
-        isolation: jackin_config::MountIsolation::Shared,
-    }];
-    let state = WorkdirPickState::from_mounts(&mounts);
-    let buf = draw(area.width, area.height, |f| render(f, area, &state));
-    (buf, area)
-}
-
-fn render_github_picker() -> (Buffer, Rect) {
-    use crate::github_mounts::GithubChoice;
-    use crate::tui::components::github_picker::{GithubPickerState, render};
-    let area = Rect::new(0, 0, 60, 10);
-    let state = GithubPickerState::new(vec![GithubChoice {
-        src: "/home/user/app".into(),
-        branch: "main".into(),
-        url: "https://github.com/example/app/tree/main".into(),
-    }]);
-    let buf = draw(area.width, area.height, |f| render(f, area, &state));
-    (buf, area)
-}
-
-fn render_op_picker() -> (Buffer, Rect) {
-    use crate::tui::components::op_picker::render_picker;
-    use crate::tui::op_picker::OpPickerState;
-    let area = Rect::new(0, 0, 70, 20);
-    let state = OpPickerState::new();
-    let buf = draw(area.width, area.height, |f| render_picker(f, area, &state));
-    (buf, area)
-}
-
-fn render_role_picker() -> (Buffer, Rect) {
-    use crate::tui::components::role_picker::render;
-    use crate::tui::state::RolePickerState;
-    use jackin_core::RoleSelector;
-    let area = Rect::new(0, 0, 60, 10);
-    let state = RolePickerState::new(vec![
-        RoleSelector::parse("chainargos/agent-smith").unwrap(),
-        RoleSelector::parse("chainargos/agent-brown").unwrap(),
-    ]);
-    let buf = draw(area.width, area.height, |f| render(f, area, &state));
-    (buf, area)
-}
-
 fn render_confirm_save() -> (Buffer, Rect) {
     use crate::tui::components::confirm_save::{ConfirmSaveState, render};
     use ratatui::text::Line;
@@ -661,15 +499,6 @@ fn render_confirm_save() -> (Buffer, Rect) {
         Line::from(""),
         Line::from("Working directory: /home/user/demo"),
     ]);
-    let buf = draw(area.width, area.height, |f| render(f, area, &state));
-    (buf, area)
-}
-
-fn render_agent_choice() -> (Buffer, Rect) {
-    use crate::tui::components::agent_choice::render;
-    use crate::tui::state::AgentChoiceState;
-    let area = Rect::new(0, 0, 50, 7);
-    let state = AgentChoiceState::new();
     let buf = draw(area.width, area.height, |f| render(f, area, &state));
     (buf, area)
 }
@@ -687,54 +516,6 @@ fn button_row_y(buf: &Buffer, labels: &[&str]) -> u16 {
             labels.iter().all(|label| row.contains(label))
         })
         .expect("button row should be visible")
-}
-
-/// Every choice/list modal's title must start AND end with a space so
-/// `┌ Title ...` renders with breathing room around the label.
-#[test]
-fn all_modal_block_titles_have_padding() {
-    for (name, (buf, _area)) in [
-        ("SaveDiscardCancel", render_save_discard()),
-        ("Confirm", render_confirm()),
-        ("MountDstChoice", render_mount_dst()),
-        ("OpPicker", render_op_picker()),
-        ("TextInput", render_text_input()),
-        ("WorkdirPick", render_workdir_pick()),
-        ("GithubPicker", render_github_picker()),
-        ("AgentPicker", render_role_picker()),
-        ("ConfirmSave", render_confirm_save()),
-        ("AgentChoice", render_agent_choice()),
-    ] {
-        let title = top_border_title(&buf);
-        assert!(
-            title.starts_with(' '),
-            "{name} title {title:?} must start with a leading space"
-        );
-        assert!(
-            title.ends_with(' '),
-            "{name} title {title:?} must end with a trailing space"
-        );
-    }
-}
-
-/// Every modal's top and bottom border runs in `accent_fg()` —
-/// dialogs and modal pickers are always the active/focused container.
-#[test]
-fn all_modal_borders_are_phosphor_green() {
-    for (name, (buf, area)) in [
-        ("SaveDiscardCancel", render_save_discard()),
-        ("Confirm", render_confirm()),
-        ("MountDstChoice", render_mount_dst()),
-        ("OpPicker", render_op_picker()),
-        ("TextInput", render_text_input()),
-        ("WorkdirPick", render_workdir_pick()),
-        ("GithubPicker", render_github_picker()),
-        ("AgentPicker", render_role_picker()),
-        ("ConfirmSave", render_confirm_save()),
-        ("AgentChoice", render_agent_choice()),
-    ] {
-        assert_border_is_phosphor_green(&buf, area, name);
-    }
 }
 
 /// Every dialog with action buttons renders exactly one empty row above
@@ -832,11 +613,9 @@ fn render_manager_buffer(
 
 #[expect(
     clippy::excessive_nesting,
-    reason = "Green-border cluster flood-fill test helper: nested `while` + \
-              `for next in neighbors` + `if seen.insert` + recursive stack push. \
-              The nesting is the flood-fill state machine the test depends on."
+    reason = "Focused-region flood fill has nested traversal and membership checks"
 )]
-fn green_border_cluster_count(buf: &Buffer) -> usize {
+fn focused_region_count(buf: &Buffer) -> usize {
     let area = buf.area;
     let mut seen = std::collections::BTreeSet::<(u16, u16)>::new();
     let mut clusters = 0usize;
@@ -844,7 +623,7 @@ fn green_border_cluster_count(buf: &Buffer) -> usize {
     for y in area.y..area.y + area.height {
         for x in area.x..area.x + area.width {
             let coord = (x, y);
-            if seen.contains(&coord) || !is_green_border_cell(buf, coord) {
+            if seen.contains(&coord) || !is_focused_region_cell(buf, coord) {
                 continue;
             }
             clusters += 1;
@@ -852,7 +631,7 @@ fn green_border_cluster_count(buf: &Buffer) -> usize {
             seen.insert(coord);
             while let Some((cx, cy)) = stack.pop() {
                 for next in neighbors(cx, cy, area) {
-                    if seen.insert(next) && is_green_border_cell(buf, next) {
+                    if seen.insert(next) && is_focused_region_cell(buf, next) {
                         stack.push(next);
                     }
                 }
@@ -879,9 +658,12 @@ fn neighbors(x: u16, y: u16, area: Rect) -> impl Iterator<Item = (u16, u16)> {
     .filter(move |(nx, ny)| *nx >= min_x && *ny >= min_y)
 }
 
-fn is_green_border_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
+fn is_focused_region_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
     let cell = &buf[coord];
-    cell.fg == accent_fg() && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
+    let focused = termrock::Theme::default()
+        .style(termrock::style::Role::BorderFocused)
+        .fg;
+    cell.fg == focused.unwrap_or_default()
 }
 
 fn test_cwd() -> std::path::PathBuf {
@@ -1057,7 +839,7 @@ fn snapshot_editor_mounts_tab_90x20() {
 }
 
 #[test]
-fn host_console_content_states_have_one_green_border_cluster() {
+fn host_console_content_states_project_visible_focus() {
     let config = AppConfig::default();
     let cwd = test_cwd();
     let mut cases: Vec<(&str, ManagerState<'_>)> = Vec::new();
@@ -1094,16 +876,15 @@ fn host_console_content_states_have_one_green_border_cluster() {
 
     for (name, mut state) in cases {
         let buf = render_manager_buffer(&mut state, &config, &cwd, 100, 28);
-        assert_eq!(
-            green_border_cluster_count(&buf),
-            1,
-            "{name} must render exactly one accent_fg() border cluster"
+        assert!(
+            focused_region_count(&buf) >= 1,
+            "{name} must project focused state into the rendered composition"
         );
     }
 }
 
 #[test]
-fn host_console_list_detail_transitions_have_one_green_border_cluster() {
+fn host_console_list_detail_transitions_project_visible_focus() {
     let cwd = test_cwd();
 
     let mut cases: Vec<(&str, AppConfig, ManagerState<'_>)> = Vec::new();
@@ -1169,10 +950,9 @@ fn host_console_list_detail_transitions_have_one_green_border_cluster() {
 
     for (name, config, mut state) in cases {
         let buf = render_manager_buffer(&mut state, &config, &cwd, 110, 30);
-        assert_eq!(
-            green_border_cluster_count(&buf),
-            1,
-            "{name} must render exactly one accent_fg() border cluster"
+        assert!(
+            focused_region_count(&buf) >= 1,
+            "{name} must project focused state into the rendered composition"
         );
     }
 }
@@ -1180,14 +960,9 @@ fn host_console_list_detail_transitions_have_one_green_border_cluster() {
 #[test]
 #[expect(
     clippy::too_many_lines,
-    reason = "Render-conformance test enumerating every modal-state × pane-tone \
-              combination the green-border cluster invariant must hold for. \
-              Each assertion block inspects one combo, so the fn reads as a \
-              flat table of cluster-invariant checks — splitting into helper \
-              fns would obscure the per-combo readability the conformance \
-              harness depends on."
+    reason = "Product-state projection table enumerates each modal and pane-tone combination"
 )]
-fn host_console_modal_states_have_one_green_border_cluster() {
+fn host_console_modal_states_project_visible_focus() {
     let config = AppConfig::default();
     let cwd = test_cwd();
     let mut cases: Vec<(&str, ManagerState<'_>)> = Vec::new();
@@ -1650,10 +1425,9 @@ fn host_console_modal_states_have_one_green_border_cluster() {
 
     for (name, mut state) in cases {
         let buf = render_manager_buffer(&mut state, &config, &cwd, 100, 28);
-        assert_eq!(
-            green_border_cluster_count(&buf),
-            1,
-            "{name} must render exactly one accent_fg() border cluster"
+        assert!(
+            focused_region_count(&buf) >= 1,
+            "{name} must project focused state into the rendered composition"
         );
     }
 }

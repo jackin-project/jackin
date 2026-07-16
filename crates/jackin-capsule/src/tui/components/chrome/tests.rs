@@ -146,78 +146,16 @@ fn status_bar_renders_working_idle_done_and_unknown_glyphs() {
     );
     assert_eq!(
         glyph_cell(&plan.cells[1]),
-        ("◆".to_owned(), termrock::style::PHOSPHOR_GREEN)
+        ("◆".to_owned(), jackin_core::tui_theme::accent_fg())
     );
     assert_eq!(glyph_cell(&plan.cells[2]).0, "○");
     assert_eq!(glyph_cell(&plan.cells[3]).0, " ");
 }
 
 #[test]
-fn dialog_backdrop_fills_with_black() {
-    let backend = TestBackend::new(10, 5);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|frame| {
-            frame.render_widget(termrock::widgets::Backdrop::default(), frame.area());
-        })
-        .unwrap();
-    let buf = terminal.backend().buffer();
-    let expected = jackin_core::tui_theme::DIALOG_BACKDROP;
-    assert_eq!(buf[(0, 0)].bg, expected);
-    assert_eq!(buf[(9, 4)].bg, expected);
-}
-
-#[test]
-fn pane_border_renders_border() {
-    let backend = TestBackend::new(20, 10);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|frame| {
-            frame.render_widget(
-                PaneBorderWidget {
-                    title: "shell".into(),
-                    focused: true,
-                },
-                frame.area(),
-            );
-        })
-        .unwrap();
-    let buf = terminal.backend().buffer();
-    assert_eq!(buf[(0, 0)].symbol(), "┌");
-    assert_eq!(buf[(19, 0)].symbol(), "┐");
-    assert_eq!(buf[(0, 9)].symbol(), "└");
-    assert_eq!(buf[(19, 9)].symbol(), "┘");
-    assert_eq!(buf[(0, 0)].fg, termrock::style::PHOSPHOR_GREEN);
-    assert_eq!(buf[(2, 0)].fg, jackin_core::tui_theme::text_fg());
-}
-
-#[test]
-fn unfocused_pane_border_uses_shared_panel_palette() {
-    let backend = TestBackend::new(20, 10);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|frame| {
-            frame.render_widget(
-                PaneBorderWidget {
-                    title: "shell".into(),
-                    focused: false,
-                },
-                frame.area(),
-            );
-        })
-        .unwrap();
-    let buf = terminal.backend().buffer();
-    assert_eq!(buf[(0, 0)].symbol(), "┌");
-    assert_eq!(buf[(19, 0)].symbol(), "┐");
-    assert_eq!(buf[(0, 9)].symbol(), "└");
-    assert_eq!(buf[(19, 9)].symbol(), "┘");
-    assert_eq!(
-        buf[(0, 0)].fg,
-        Theme::default()
-            .style(termrock::style::Role::Border)
-            .fg
-            .expect("border role must define a foreground")
-    );
+fn pane_border_projects_focus_into_shared_emphasis() {
+    assert_eq!(pane_border_emphasis(true), PanelEmphasis::Focused);
+    assert_eq!(pane_border_emphasis(false), PanelEmphasis::Normal);
 }
 
 // ── wrapped hint rows ─────────────────────────────────────────────────────────

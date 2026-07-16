@@ -52,7 +52,7 @@ pub fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, fro
             height: 1,
             ..area
         };
-        frame.render_widget(&progress, bar);
+        frame.render_widget(progress, bar);
     }
 }
 

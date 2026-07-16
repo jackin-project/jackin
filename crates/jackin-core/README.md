@@ -11,7 +11,7 @@ Shared jackin❯ vocabulary and pure cross-surface projections. This L0 leaf has
 
 ## Architecture tier and allowed dependencies
 
-**L0 leaf/domain + pure projections.** No workspace dependencies or effects. TermRock and Ratatui types are limited to pure product projections.
+**L0 leaf/domain + pure projections.** No workspace dependencies or effects. TermRock and Ratatui types are limited to pure product projections (Debug-info facts, brand/domain color tokens, Role accessors). Presentation layout, hover builders, terminal-protocol scroll decode, and surface widgets live in `jackin-console` / `jackin-capsule` / `jackin-launch-tui` — not here.
 
 ## Structure
 
@@ -40,7 +40,8 @@ Shared jackin❯ vocabulary and pure cross-surface projections. This L0 leaf has
 | [`docker_security.rs`](src/docker_security.rs) · [`docker_security/`](src/docker_security) | docker security | [`tests.rs`](src/docker_security/tests.rs) |
 | [`debug_log.rs`](src/debug_log.rs) | `debug_log` stub | — |
 | [`build_log_sink.rs`](src/build_log_sink.rs) | build-log sink stub | — |
-| [`host_colors.rs`](src/host_colors.rs) | host color tokens | — |
+| [`host_colors.rs`](src/host_colors.rs) | product brand/domain RGB tokens | — |
+| [`tui_theme.rs`](src/tui_theme.rs) | pure Theme/Role access helpers for product paint (no widgets/layout) | product-token tests |
 | [`ansi_tokens.rs`](src/ansi_tokens.rs) | ansi tokens | — |
 | [`operator_info.rs`](src/operator_info.rs) | jackin❯ Debug-info facts, row policy, and pure projection into TermRock `DetailTable` | cross-surface suites |
 | [`standalone_dialog.rs`](src/standalone_dialog.rs) · [`standalone_dialog/`](src/standalone_dialog) | standalone dialog | [`tests.rs`](src/standalone_dialog/tests.rs) |

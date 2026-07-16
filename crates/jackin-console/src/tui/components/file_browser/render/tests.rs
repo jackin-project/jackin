@@ -69,7 +69,7 @@ fn git_entries_render_with_git_suffix() {
 
 // ── Entry name colour (text_fg()) ─────────────────────────────────────
 
-/// Plain (non-git) directory entries render their name in text_fg() so
+/// Plain (non-git) directory entries render their name in `text_fg()` so
 /// the listing stays legible against phosphor-green accents.
 #[test]
 fn non_git_entry_renders_in_white() {
@@ -291,7 +291,7 @@ fn git_prompt_uses_five_slot_dialog_padding() {
     );
 }
 
-/// Git-repo entries render the name in text_fg() and the ` (git)` suffix
+/// Git-repo entries render the name in `text_fg()` and the ` (git)` suffix
 /// in `accent_fg()` so the marker pops against the otherwise-white row.
 #[test]
 fn git_entry_name_is_white_and_suffix_is_phosphor_green() {

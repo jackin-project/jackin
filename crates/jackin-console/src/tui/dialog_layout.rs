@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Product dialog body composition via TermRock [`bottom_rows`] (migration 0018).
+//! Product dialog body composition via `TermRock` [`bottom_rows`] (migration 0018).
 //!
-//! TermRock no longer ships a fixed five-slot dialog facade. Console modals
+//! `TermRock` no longer ships a fixed five-slot dialog facade. Console modals
 //! that still want a leading spacer, scrollable body, mid spacer, action row,
 //! and trailing spacer compose that shape explicitly here.
 

@@ -166,7 +166,7 @@ pub fn git_prompt_rect(listing: Rect, has_url: bool) -> Option<Rect> {
 /// screen coordinates. Returns `None` when `has_url` is false — the
 /// URL row isn't rendered then and a click there shouldn't open anything.
 ///
-/// Row order inside the overlay follows TermRock `bottom_rows` composition:
+/// Row order inside the overlay follows `TermRock` `bottom_rows` composition:
 /// leading spacer, content (prompt + url), mid spacer, buttons, trailing spacer.
 /// The URL row sits at content row index 1 when the URL is present.
 pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<Rect> {

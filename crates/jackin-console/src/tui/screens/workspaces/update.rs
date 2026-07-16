@@ -744,7 +744,7 @@ pub fn workspace_list_hover_row_at_position(
         return None;
     }
 
-    let mut tracker = jackin_core::tui_hover::HoverTracker::new();
+    let mut tracker = crate::tui::hover::HoverTracker::new();
     for (visual_idx, row_value) in visual_rows.iter().enumerate() {
         let Some(row_value) = row_value else {
             continue;

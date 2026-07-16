@@ -1,12 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capsule/console adapters that decode terminal-protocol input into TermRock
-//! neutral scroll handlers (migration 0018).
+//! Capsule terminal-protocol adapters into TermRock neutral scroll handlers.
 //!
-//! Shared widget state no longer parses escape bytes or SGR button masks;
-//! product backends do that once and call [`DialogScroll::handle_key_for_axes`]
-//! / [`DialogScroll::handle_mouse`].
+//! Lives on the capsule presentation surface (not jackin-core): decode raw
+//! ANSI/SGR once, then call [`DialogScroll::handle_key_for_axes`] /
+//! [`DialogScroll::handle_mouse`].
 
 use termrock::input::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 use termrock::scroll::{DialogScroll, ScrollAxes};

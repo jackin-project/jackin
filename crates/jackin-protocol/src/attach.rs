@@ -1717,7 +1717,7 @@ impl<'a> PayloadCursor<'a> {
 
 /// Returns true when `url` uses one of the schemes the host-side opener
 /// accepts: `http://`, `https://`, or `mailto:`. Inlined here so the
-/// protocol layer (L0) does not depend on `jackin-tui` (L3) for a
+/// protocol layer (L0) does not depend on presentation crates for a
 /// three-line policy check.
 fn is_host_open_url_scheme(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();

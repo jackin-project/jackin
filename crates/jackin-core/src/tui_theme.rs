@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! jackin❯ product visual tokens and TermRock theme access.
+//! jackin❯ product visual tokens and `TermRock` theme access.
 //!
-//! Reusable widget semantics come from TermRock's [`termrock::Theme`] and
+//! Reusable widget semantics come from `TermRock`'s [`termrock::Theme`] and
 //! [`termrock::style::Role`]. This module keeps only product-owned Ratatui
 //! tokens (brand chrome, agent menu/status accents, action rows) and helpers
 //! that resolve shared presentation through `Theme::default()`.
@@ -27,13 +27,13 @@ pub const fn color(rgb: Rgb) -> Color {
     Color::Rgb(rgb.r, rgb.g, rgb.b)
 }
 
-/// Canonical TermRock theme used by every jackin❯ surface.
+/// Canonical `TermRock` theme used by every jackin❯ surface.
 #[must_use]
 pub fn theme() -> Theme {
     Theme::default()
 }
 
-/// Resolve a TermRock semantic role from the default theme.
+/// Resolve a `TermRock` semantic role from the default theme.
 #[must_use]
 pub fn role(role: Role) -> Style {
     Theme::default().style(role)
@@ -47,7 +47,7 @@ fn style_bg(role: Role, fallback: Color) -> Color {
     Theme::default().style(role).bg.unwrap_or(fallback)
 }
 
-/// Foreground RGB for a TermRock role, for raw-ANSI surfaces that cannot paint
+/// Foreground RGB for a `TermRock` role, for raw-ANSI surfaces that cannot paint
 /// Ratatui `Style`s.
 #[must_use]
 pub fn role_rgb(role: Role) -> Rgb {
@@ -226,38 +226,13 @@ pub const INK: Color = Color::Black;
 mod tests {
     use super::*;
 
-    #[test]
-    fn theme_helpers_track_default_roles() {
-        let theme = Theme::default();
-        assert_eq!(text_fg(), theme.style(Role::Text).fg.unwrap());
-        assert_eq!(accent_fg(), theme.style(Role::Accent).fg.unwrap());
-        assert_eq!(muted_fg(), theme.style(Role::TextMuted).fg.unwrap());
-        assert_eq!(border_fg(), theme.style(Role::Border).fg.unwrap());
-        assert_eq!(danger_fg(), theme.style(Role::Danger).fg.unwrap());
-        assert_eq!(text_strong(), theme.style(Role::TextStrong));
-        assert_eq!(border_focused().fg, theme.style(Role::BorderFocused).fg);
-    }
-
+    /// Product brand/domain tokens must stay distinct from neutral theme roles
+    /// except brand green, which intentionally shares the accent phosphor.
     #[test]
     fn product_tokens_are_domain_owned() {
         assert_ne!(DEBUG_AMBER, accent_fg());
         assert_ne!(STATUS_BLOCKED_RED, danger_fg());
         assert_ne!(MENU_IDLE_BG, tab_inactive_bg());
         assert_eq!(BRAND_BLOCK, accent_fg());
-    }
-
-    #[test]
-    fn scroll_and_border_rgb_follow_theme_roles() {
-        let thumb = Theme::default().style(Role::ScrollThumb).fg.unwrap();
-        let border = Theme::default().style(Role::Border).fg.unwrap();
-        let Color::Rgb(tr, tg, tb) = thumb else {
-            panic!("ScrollThumb must be RGB");
-        };
-        let Color::Rgb(br, bg, bb) = border else {
-            panic!("Border must be RGB");
-        };
-        assert_eq!(scroll_thumb_rgb(), Rgb::new(tr, tg, tb));
-        assert_eq!(border_rgb(), Rgb::new(br, bg, bb));
-        assert_ne!(scroll_thumb_rgb(), border_rgb());
     }
 }

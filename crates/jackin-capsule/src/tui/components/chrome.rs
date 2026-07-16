@@ -211,17 +211,20 @@ pub struct PaneBorderWidget {
     pub focused: bool,
 }
 
+const fn pane_border_emphasis(focused: bool) -> PanelEmphasis {
+    if focused {
+        PanelEmphasis::Focused
+    } else {
+        PanelEmphasis::Normal
+    }
+}
+
 impl Widget for PaneBorderWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let emphasis = if self.focused {
-            PanelEmphasis::Focused
-        } else {
-            PanelEmphasis::Normal
-        };
         let theme = Theme::default();
         let block = Panel::new(&theme)
             .title(&self.title)
-            .emphasis(emphasis)
+            .emphasis(pane_border_emphasis(self.focused))
             .block();
         block.render(area, buf);
     }

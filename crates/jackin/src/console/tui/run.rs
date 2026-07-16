@@ -183,7 +183,7 @@ struct ConsoleLoopInputs<'a, H, R> {
 struct ConsoleMouseState {
     last_event_at: Option<std::time::Instant>,
     pointer_shape: termrock::osc::PointerShape,
-    chrome_hover_tracker: jackin_core::tui_hover::HoverTracker<ConsoleChromeHover>,
+    chrome_hover_tracker: jackin_console::tui::hover::HoverTracker<ConsoleChromeHover>,
     chrome_hover: Option<ConsoleChromeHover>,
 }
 
@@ -192,7 +192,7 @@ impl ConsoleMouseState {
         Self {
             last_event_at: None,
             pointer_shape: termrock::osc::PointerShape::Default,
-            chrome_hover_tracker: jackin_core::tui_hover::HoverTracker::new(),
+            chrome_hover_tracker: jackin_console::tui::hover::HoverTracker::new(),
             chrome_hover: None,
         }
     }

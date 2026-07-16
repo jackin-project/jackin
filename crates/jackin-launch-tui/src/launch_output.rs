@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `LaunchTuiOutputSink`: adapter from the `LaunchOutputSink` port (in
-//! jackin-core) to the `jackin-tui` output + animation helpers.
+//! jackin-core) to this crate's product-owned output and animation helpers.
 //!
 //! `jackin-runtime` obtains the singleton via `progress::launch_output()`
 //! (self-owned static, exactly as it owns `host_terminal()`). This keeps
-//! the production call sites in runtime free of a direct `jackin-tui` dep.
+//! the production call sites in runtime free of presentation details.
 
 use std::future::Future;
 use std::pin::Pin;

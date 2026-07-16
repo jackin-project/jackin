@@ -6,7 +6,7 @@
 //! `ManagerState` is the single central struct that the host console TUI
 //! owns across its entire lifetime. All field types are lower-crate types
 //! (from `jackin-core`, `jackin-config`, `jackin-env`, `jackin-protocol`,
-//! `jackin-tui`, and this crate) so the root binary can depend on this
+//! `TermRock`, and this crate) so the root binary can depend on this
 //! module without creating a circular dependency.
 
 use std::cell::RefCell;

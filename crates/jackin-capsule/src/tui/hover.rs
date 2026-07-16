@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Incremental hover registration on TermRock [`HitRegion`] geometry.
+//! Incremental hover registration on `TermRock` [`HitRegion`] geometry.
 //!
-//! Migration 0014 removed TermRock's free-standing hover registry in favor of
+//! Migration 0014 removed `TermRock`'s free-standing hover registry in favor of
 //! [`HitRegion`] + [`termrock::interaction::HoverState`]. Surfaces that assemble
 //! hit geometry over a frame still need a product-side builder; this type only
-//! accumulates TermRock regions. When a full painted region slice is already
+//! accumulates `TermRock` regions. When a full painted region slice is already
 //! available, call [`termrock::interaction::HoverState::update`] directly.
 
 use ratatui::layout::{Position, Rect};
@@ -40,7 +40,7 @@ impl<K: Clone + PartialEq> HoverTracker<K> {
         });
     }
 
-    /// Borrow the registered regions for a TermRock [`HoverState`] update.
+    /// Borrow the registered regions for a `TermRock` [`HoverState`] update.
     #[must_use]
     pub fn regions(&self) -> &[HitRegion<K>] {
         &self.regions

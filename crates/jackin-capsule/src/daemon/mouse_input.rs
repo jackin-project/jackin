@@ -3,7 +3,7 @@
 
 //! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
 
-use jackin_core::tui_hover::HoverTracker;
+use crate::tui::hover::HoverTracker;
 use jackin_protocol::attach::ServerFrame;
 use ratatui::layout::Rect;
 

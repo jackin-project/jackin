@@ -3,9 +3,8 @@
 
 //! Ratatui rendering for capsule dialog overlays.
 //!
-//! Every `Dialog` variant is rendered as a Ratatui widget using shared
-//! `jackin-tui` components (Panel, `FilterInput`, `ConfirmDialog`, etc.) so
-//! the capsule and the host share one component vocabulary.
+//! Every `Dialog` variant is rendered by composing `TermRock` widgets so the
+//! Capsule and host share one neutral component vocabulary.
 //!
 //! Rendering happens inside `compose_ratatui_frame()` via
 //! `render_dialog_ratatui()`. The dialog state is snapshotted into
@@ -90,11 +89,9 @@ pub(crate) enum DialogRatatuiSnapshot {
     },
     /// Shared error popup used for capsule-owned modal errors.
     ErrorPopup(crate::tui::components::dialog::SpawnFailureState),
-    /// The "Debug info" dialog, rendered through the shared jackin-tui
-    /// `ContainerInfoState` so its rows, copy affordances, focused shell,
-    /// spacing, link styling, and hover behaviour are identical to the host
-    /// console and launch cockpit. GitHub context uses the same variant with
-    /// GitHub-specific rows.
+    /// The "Debug info" dialog, rendered from product-owned container facts
+    /// through `TermRock` detail-table, focus, scroll, copy, and link primitives.
+    /// GitHub context uses the same variant with GitHub-specific rows.
     DebugInfo(crate::tui::components::container_info_surface::ContainerInfoState),
     /// Usage overlay, rendered from the same scrollable row model as `DebugInfo`
     /// but laid out as CodexBar-style sections instead of generic key/value
