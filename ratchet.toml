@@ -532,7 +532,7 @@ key = "crates/jackin-dev/README.md"
 bound = 1199
 [[family.entry]]
 key = "crates/jackin-diagnostics/README.md"
-bound = 2130
+bound = 1988
 [[family.entry]]
 key = "crates/jackin-docker/README.md"
 bound = 1681
@@ -586,7 +586,7 @@ key = "crates/jackin-test-support/README.md"
 bound = 2633
 [[family.entry]]
 key = "crates/jackin-usage/README.md"
-bound = 2312
+bound = 1969
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
 bound = 5453

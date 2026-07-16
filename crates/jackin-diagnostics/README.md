@@ -1,18 +1,18 @@
 # jackin-diagnostics
 
-Host composition root for jackin❯ observability and bounded in-memory invocation progress.
+Composition root for jackin❯ observability and in-memory invocation progress.
 
 ## What this crate owns
 
-- Direct OTLP/gRPC provider construction, stable process resources, current provider observations, retry classification, flush, and shutdown.
-- Bounded current-invocation progress and timing state used by operator surfaces; this state is never a telemetry history store.
-- Operator-output routing, secret scrubbing, and explicit build-log capture requested by product workflows.
+- Direct OTLP/gRPC providers, stable process resources, current observations, retry, flush, and shutdown.
+- Bounded current-invocation progress and timing for operator surfaces, never telemetry history.
+- Operator output, secret scrubbing, and explicit workflow build-log capture.
 
-The closed schema and all governed emission APIs live in `jackin-telemetry`. This crate must not invent signal names or bypass that facade.
+The closed schema and governed emission APIs live in `jackin-telemetry`; do not bypass them.
 
 ## Architecture tier and allowed dependencies
 
-**L2 infrastructure.** Allowed workspace dependencies are enforced by the architecture-tier gate. Product crates may consume composition and operator-output services without depending on OpenTelemetry SDK details.
+**L2 infrastructure.** Architecture gates enforce dependencies. Product crates consume composition and operator-output services without OpenTelemetry SDK details.
 
 ## Structure
 
@@ -27,7 +27,7 @@ The closed schema and all governed emission APIs live in `jackin-telemetry`. Thi
 
 ## Public API
 
-Consumers initialize process telemetry, inspect current provider state, request marker/flush validation, manage bounded invocation progress, and route operator notices. Positive per-signal backend delivery proof and the final typed health contract remain pending. Instrumentation uses `jackin-telemetry` directly.
+Consumers initialize telemetry, inspect provider state, request marker/flush checks, manage invocation progress, and route operator notices. Per-signal backend proof and final typed health remain pending. Instrumentation uses `jackin-telemetry`.
 
 ## How to verify
 
