@@ -163,7 +163,7 @@ This rule is broader than scroll focus. Scrollable blocks still use the overflow
 - `Panel::new(&theme).title("…").emphasis(PanelEmphasis::Focused)` — titled active container (modal, picker, form, tab panel).
 - `layout::render_dialog_shell(frame, area, title, PanelEmphasis::Focused, &theme)` — themed dialog shell that clears, paints the panel, and returns the inner body rect.
 - `Panel::new(&theme).emphasis(PanelEmphasis::Normal)` — background container or non-top dialog in a stack.
-- `Viewport::new(&lines, &theme).emphasis(…)` (console `scroll_block` adapter for call-shape compatibility) — passive scroll block; the console adapter only promotes `PanelEmphasis::Focused` when content actually overflows.
+- `Viewport::new(&lines, &theme).emphasis(…)` (console `scroll_block` adapter for call-shape compatibility) — maps the caller's `focused` flag to `PanelEmphasis::Focused` / `Normal` with no overflow gate. Passive list-detail surfaces clear focus in state when content fits (`list_pre_render_focus_plan` / `focused_block_still_scrollable`); forms and other interaction owners keep `focused = true` and paint green even when content fits.
 - `Panel::inner(area)` — body rect inset by the panel chrome so content never touches the border.
 
 Never construct `Block::default().borders(Borders::ALL).border_style(Style::default().fg(…))` for a modal — that silently bypasses semantic roles and produces a wrong focus indicator. TermRock panel/viewport tests own glyph and role-color regressions.
