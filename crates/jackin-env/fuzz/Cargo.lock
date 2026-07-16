@@ -28,6 +28,15 @@ dependencies = [
 
 [[package]]
 name = "anstyle-parse"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7644824f0aa2c7b9384579234ef10eb7efb6a0deb83f9630a49594dd9c15c2"
+dependencies = [
+ "utf8parse",
+]
+
+[[package]]
+name = "anstyle-parse"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
@@ -181,9 +190,9 @@ checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "cfg_aliases"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
+checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
 name = "chacha20"
@@ -766,12 +775,14 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "base64",
+ "crossterm",
  "directories",
  "hex",
  "owo-colors",
  "ratatui",
  "serde",
  "sha2 0.11.0",
+ "termrock",
  "thiserror 2.0.18",
 ]
 
@@ -779,7 +790,7 @@ dependencies = [
 name = "jackin-diagnostics"
 version = "0.6.0-dev"
 dependencies = [
- "anstyle-parse",
+ "anstyle-parse 1.0.0",
  "anyhow",
  "crossterm",
  "jackin-core",
@@ -815,6 +826,7 @@ dependencies = [
 name = "jackin-env-fuzz"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "jackin-config",
  "jackin-core",
  "jackin-env",
@@ -1030,7 +1042,7 @@ checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
 dependencies = [
  "bitflags 2.13.1",
  "cfg-if",
- "cfg_aliases 0.2.1",
+ "cfg_aliases 0.2.2",
  "libc",
  "memoffset",
 ]
@@ -1851,6 +1863,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "termrock"
+version = "0.10.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=5c4758b5167241ffef5f501f72bb76bc01e77aba#5c4758b5167241ffef5f501f72bb76bc01e77aba"
+dependencies = [
+ "anstyle-parse 0.2.7",
+ "base64",
+ "crossterm",
+ "ratatui-core",
+ "ratatui-crossterm",
+ "ratatui-widgets",
+ "tui-scrollbar",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "termwiz"
 version = "0.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1964,9 +1992,9 @@ checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
 
 [[package]]
 name = "tokio"
-version = "1.52.3"
+version = "1.52.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
+checksum = "317fafbbe3f02fc663dad00ea6186197de963cd4190e86a26d8d0fae095539af"
 dependencies = [
  "bytes",
  "libc",
@@ -2087,6 +2115,16 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tui-scrollbar"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a495ec7eb64f1505a94d56bbb337792b15448394879552b09be2a1460846d99b"
+dependencies = [
+ "document-features",
+ "ratatui-core",
 ]
 
 [[package]]

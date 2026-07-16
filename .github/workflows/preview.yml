@@ -4,8 +4,10 @@
 name: Publish Homebrew Preview
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
     branches: [main]
+    types: [completed]
   workflow_dispatch:
     inputs:
       lanes:
@@ -66,7 +68,8 @@ jobs:
   source-changed:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -82,15 +85,15 @@ jobs:
           # template substitution — keeps the script style identical to
           # the rest of this workflow's run blocks.
           DISPATCH_SHA: ${{ github.sha }}
-          PUSH_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           case "$EVENT_NAME" in
             workflow_dispatch)
               echo "sha=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
               ;;
-            push)
-              echo "sha=${PUSH_SHA}" >> "$GITHUB_OUTPUT"
+            workflow_run)
+              echo "sha=${WORKFLOW_SHA}" >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "::error::Unsupported event: ${EVENT_NAME}"
@@ -136,14 +139,20 @@ jobs:
             echo "::warning::failed to fetch homebrew-tap formula: ${formula_err}; falling open"
           fi
 
+          # An input-identical source is already represented by the live
+          # release and formula, so do not rebuild its six signed archives.
+          if [ -n "$old_sha" ] && [ "$old_sha" = "$sha" ]; then
+            echo "source=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Fall open to source=true when curl failed, when there is no
-          # prior published SHA, when the head SHA is already published,
-          # or when the prior SHA is not reachable in the current
-          # checkout. The publish job's `git diff --cached --quiet`
+          # prior published SHA, or when the prior SHA is not reachable in
+          # the current checkout. The publish job's `git diff --cached --quiet`
           # guard catches a no-op formula rewrite, so a spurious "true"
           # at most costs a wasted run — never a silently-missed source
           # change.
-          if [ -n "$formula_err" ] || [ -z "$old_sha" ] || [ "$old_sha" = "$sha" ] \
+          if [ -n "$formula_err" ] || [ -z "$old_sha" ] \
              || ! git rev-parse --verify "${old_sha}^{commit}" >/dev/null 2>&1; then
             echo "source=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -310,7 +319,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          cache_save: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
@@ -321,7 +330,7 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
           # Only main saves, preserving limited cache quota for reusable entries.
@@ -406,7 +415,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          cache_save: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
@@ -417,7 +426,7 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
           # Only main saves, preserving limited cache quota for reusable entries.
@@ -437,7 +446,10 @@ jobs:
 
   publish-gate:
     needs: [matrix-setup, source-changed, build-preview, build-jackin-capsule]
-    if: github.ref == 'refs/heads/main' && needs.source-changed.outputs.source == 'true' && needs.matrix-setup.outputs.has_github == 'true'
+    if: >-
+      (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main') &&
+      needs.source-changed.outputs.source == 'true' &&
+      needs.matrix-setup.outputs.has_github == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
@@ -446,13 +458,13 @@ jobs:
       actions: read
       contents: read
     steps:
-      - name: Wait for matching CI
+      - name: Accept successful triggering CI
         id: ci
         env:
           EVENT_NAME: ${{ github.event_name }}
-          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
           set -euo pipefail
 
@@ -460,46 +472,18 @@ jobs:
             echo "ok=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          deadline=$((SECONDS + 2400))
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            run=$(
-              curl -fsSL \
-                -H "Authorization: Bearer $GH_TOKEN" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${FULL_SHA}&branch=main&event=push&per_page=10" |
-                jq -c '[.workflow_runs[] | select(.head_sha == "'"$FULL_SHA"'")] | sort_by(.run_started_at) | reverse | .[0] // empty'
-            )
-
-            if [ -z "$run" ]; then
-              echo "Waiting for CI run for ${FULL_SHA}"
-              sleep 30
-              continue
-            fi
-
-            status=$(jq -r '.status' <<< "$run")
-            conclusion=$(jq -r '.conclusion // ""' <<< "$run")
-            url=$(jq -r '.html_url' <<< "$run")
-            echo "CI status for ${FULL_SHA}: ${status} ${conclusion} (${url})"
-
-            if [ "$status" = "completed" ]; then
-              if [ "$conclusion" = "success" ]; then
-                echo "ok=true" >> "$GITHUB_OUTPUT"
-              else
-                echo "ok=false" >> "$GITHUB_OUTPUT"
-              fi
-              exit 0
-            fi
-
-            sleep 30
-          done
-
-          echo "::error::Timed out waiting for CI run for ${FULL_SHA}"
-          exit 1
+          if [ "$CI_CONCLUSION" != "success" ] || [ "$CI_SHA" != "$SOURCE_SHA" ]; then
+            echo "::error::triggering CI does not prove source ${SOURCE_SHA}"
+            exit 1
+          fi
+          echo "ok=true" >> "$GITHUB_OUTPUT"
 
   publish-preview:
     needs: [source-changed, build-preview, build-jackin-capsule, publish-gate]
-    if: github.ref == 'refs/heads/main' && needs.source-changed.outputs.source == 'true' && needs.publish-gate.outputs.ci_ok == 'true'
+    if: >-
+      (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main') &&
+      needs.source-changed.outputs.source == 'true' &&
+      needs.publish-gate.outputs.ci_ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     concurrency:

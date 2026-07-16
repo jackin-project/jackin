@@ -9,7 +9,7 @@
 //! cannot live in a static `Keymap`. What IS static is the set of commands
 //! that follow the prefix key — those are registered here.
 
-use termrock::input::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
+use termrock::input::{KeyBinding, KeyChord, KeyCode, Keymap, Visibility};
 use termrock::keymap::glyph;
 
 /// Decode Capsule's raw terminal bytes into the neutral logical key contract.
@@ -40,7 +40,7 @@ impl GlobalCapsuleAction {
 /// Global keymap for capsule-wide shortcuts. Dispatched before any modal or
 /// prefix check so these chords work on every surface without per-mode wiring.
 pub(crate) static CAPSULE_GLOBAL_KEYMAP: Keymap<GlobalCapsuleAction> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::ctrl(LogicalKey::Char('q'))],
+    chords: &[KeyChord::ctrl(KeyCode::Char('q'))],
     action: GlobalCapsuleAction::RequestExit,
     hint: Some("quit"),
     visibility: Visibility::Shown,
@@ -58,21 +58,21 @@ pub(crate) static CAPSULE_GLOBAL_KEYMAP: Keymap<GlobalCapsuleAction> = Keymap::n
 /// but listed for dispatch completeness.
 pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('c'))],
+        chords: &[KeyChord::plain(KeyCode::Char('c'))],
         action: PrefixCommand::NewTab,
         hint: Some("new tab"),
         visibility: Visibility::Shown,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('n'))],
+        chords: &[KeyChord::plain(KeyCode::Char('n'))],
         action: PrefixCommand::NextTab,
         hint: Some("next tab"),
         visibility: Visibility::Shown,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('x'))],
+        chords: &[KeyChord::plain(KeyCode::Char('x'))],
         action: PrefixCommand::KillPane,
         hint: Some("close"),
         visibility: Visibility::Shown,
@@ -80,7 +80,7 @@ pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
     },
     // h — primary focus nav; grouped glyph advertises all four directions.
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('h'))],
+        chords: &[KeyChord::plain(KeyCode::Char('h'))],
         action: PrefixCommand::MoveFocus(ArrowDir::Left),
         hint: Some("nav"),
         visibility: Visibility::Shown,
@@ -88,77 +88,77 @@ pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
     },
     // j, k, l — dispatch but do not produce hint spans.
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('j'))],
+        chords: &[KeyChord::plain(KeyCode::Char('j'))],
         action: PrefixCommand::MoveFocus(ArrowDir::Down),
         hint: None,
         visibility: Visibility::HiddenAlias,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('k'))],
+        chords: &[KeyChord::plain(KeyCode::Char('k'))],
         action: PrefixCommand::MoveFocus(ArrowDir::Up),
         hint: None,
         visibility: Visibility::HiddenAlias,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('l'))],
+        chords: &[KeyChord::plain(KeyCode::Char('l'))],
         action: PrefixCommand::MoveFocus(ArrowDir::Right),
         hint: None,
         visibility: Visibility::HiddenAlias,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('"'))],
+        chords: &[KeyChord::plain(KeyCode::Char('"'))],
         action: PrefixCommand::SplitTopBottom,
         hint: Some("split ↕"),
         visibility: Visibility::Shown,
         glyph: Some("\""),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('%'))],
+        chords: &[KeyChord::plain(KeyCode::Char('%'))],
         action: PrefixCommand::SplitSideBySide,
         hint: Some("split ↔"),
         visibility: Visibility::Shown,
         glyph: Some("%"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('z'))],
+        chords: &[KeyChord::plain(KeyCode::Char('z'))],
         action: PrefixCommand::ZoomToggle,
         hint: Some("zoom"),
         visibility: Visibility::Shown,
         glyph: Some("z"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('p'))],
+        chords: &[KeyChord::plain(KeyCode::Char('p'))],
         action: PrefixCommand::PrevTab,
         hint: Some("prev tab"),
         visibility: Visibility::Shown,
         glyph: Some("p"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('&'))],
+        chords: &[KeyChord::plain(KeyCode::Char('&'))],
         action: PrefixCommand::KillTab,
         hint: Some("kill tab"),
         visibility: Visibility::Shown,
         glyph: Some("&"),
     },
     KeyBinding {
-        chords: &[KeyChord::ctrl(LogicalKey::Char('l'))],
+        chords: &[KeyChord::ctrl(KeyCode::Char('l'))],
         action: PrefixCommand::ClearPane,
         hint: Some("clear"),
         visibility: Visibility::Shown,
         glyph: Some("Ctrl-L"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('d'))],
+        chords: &[KeyChord::plain(KeyCode::Char('d'))],
         action: PrefixCommand::Detach,
         hint: Some("detach"),
         visibility: Visibility::Shown,
         glyph: Some("d"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('u'))],
+        chords: &[KeyChord::plain(KeyCode::Char('u'))],
         action: PrefixCommand::Usage,
         hint: Some("usage"),
         visibility: Visibility::Shown,
@@ -166,8 +166,8 @@ pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Char(' ')),
-            KeyChord::plain(LogicalKey::Char(':')),
+            KeyChord::plain(KeyCode::Char(' ')),
+            KeyChord::plain(KeyCode::Char(':')),
         ],
         action: PrefixCommand::Palette,
         hint: None,
@@ -175,7 +175,7 @@ pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('r'))],
+        chords: &[KeyChord::plain(KeyCode::Char('r'))],
         action: PrefixCommand::Redraw,
         hint: None,
         visibility: Visibility::Internal,
@@ -183,70 +183,70 @@ pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
     },
     // JumpTab 0-9 — register as Internal since full list is not hint-bar-friendly
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('0'))],
+        chords: &[KeyChord::plain(KeyCode::Char('0'))],
         action: PrefixCommand::JumpTab(0),
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('1'))],
+        chords: &[KeyChord::plain(KeyCode::Char('1'))],
         action: PrefixCommand::JumpTab(1),
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('2'))],
+        chords: &[KeyChord::plain(KeyCode::Char('2'))],
         action: PrefixCommand::JumpTab(2),
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('3'))],
+        chords: &[KeyChord::plain(KeyCode::Char('3'))],
         action: PrefixCommand::JumpTab(3),
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('4'))],
+        chords: &[KeyChord::plain(KeyCode::Char('4'))],
         action: PrefixCommand::JumpTab(4),
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('5'))],
+        chords: &[KeyChord::plain(KeyCode::Char('5'))],
         action: PrefixCommand::JumpTab(5),
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('6'))],
+        chords: &[KeyChord::plain(KeyCode::Char('6'))],
         action: PrefixCommand::JumpTab(6),
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('7'))],
+        chords: &[KeyChord::plain(KeyCode::Char('7'))],
         action: PrefixCommand::JumpTab(7),
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('8'))],
+        chords: &[KeyChord::plain(KeyCode::Char('8'))],
         action: PrefixCommand::JumpTab(8),
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('9'))],
+        chords: &[KeyChord::plain(KeyCode::Char('9'))],
         action: PrefixCommand::JumpTab(9),
         hint: None,
         visibility: Visibility::Internal,
@@ -276,28 +276,28 @@ pub(crate) enum FilterListAction {
 
 pub(crate) static FILTER_LIST_KEYMAP: Keymap<FilterListAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Up)],
+        chords: &[KeyChord::plain(KeyCode::Up)],
         action: FilterListAction::NavigateUp,
         hint: Some("navigate"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Down)],
+        chords: &[KeyChord::plain(KeyCode::Down)],
         action: FilterListAction::NavigateDown,
         hint: None,
         visibility: Visibility::Internal,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        chords: &[KeyChord::plain(KeyCode::Enter)],
         action: FilterListAction::Confirm,
         hint: Some("select"),
         visibility: Visibility::Shown,
         glyph: Some("↵"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Backspace)],
+        chords: &[KeyChord::plain(KeyCode::Backspace)],
         action: FilterListAction::FilterBackspace,
         hint: None,
         visibility: Visibility::Internal,
@@ -305,9 +305,9 @@ pub(crate) static FILTER_LIST_KEYMAP: Keymap<FilterListAction> = Keymap::new(&[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Esc),
-            KeyChord::ctrl(LogicalKey::Char('c')),
-            KeyChord::ctrl(LogicalKey::Char('q')),
+            KeyChord::plain(KeyCode::Esc),
+            KeyChord::ctrl(KeyCode::Char('c')),
+            KeyChord::ctrl(KeyCode::Char('q')),
         ],
         action: FilterListAction::Dismiss,
         hint: Some("cancel"),
@@ -321,7 +321,7 @@ pub(crate) static FILTER_LIST_KEYMAP: Keymap<FilterListAction> = Keymap::new(&[
 /// Actions for the rename-tab text-input dialog.
 ///
 /// Printable `Char` input is absent — it falls through (the `None` arm) to
-/// `TextField` insertion. Backspace is `Internal`: it edits the field rather
+/// canonical text-input insertion. Backspace is `Internal`: it edits the field rather
 /// than being advertised.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RenameAction {
@@ -332,14 +332,14 @@ pub(crate) enum RenameAction {
 
 pub(crate) static RENAME_KEYMAP: Keymap<RenameAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        chords: &[KeyChord::plain(KeyCode::Enter)],
         action: RenameAction::Save,
         hint: Some("save"),
         visibility: Visibility::Shown,
         glyph: Some("↵"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Backspace)],
+        chords: &[KeyChord::plain(KeyCode::Backspace)],
         action: RenameAction::FieldBackspace,
         hint: None,
         visibility: Visibility::Internal,
@@ -347,9 +347,9 @@ pub(crate) static RENAME_KEYMAP: Keymap<RenameAction> = Keymap::new(&[
     },
     KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Esc),
-            KeyChord::ctrl(LogicalKey::Char('c')),
-            KeyChord::ctrl(LogicalKey::Char('q')),
+            KeyChord::plain(KeyCode::Esc),
+            KeyChord::ctrl(KeyCode::Char('c')),
+            KeyChord::ctrl(KeyCode::Char('q')),
         ],
         action: RenameAction::Dismiss,
         hint: Some("cancel"),
@@ -365,7 +365,7 @@ pub(crate) static RENAME_KEYMAP: Keymap<RenameAction> = Keymap::new(&[
 ///
 /// The accept-set mirrors the historical `is_dismiss_key`: Esc, `q`/`Q`,
 /// Ctrl+C, Ctrl+Q, and Backspace (DEL `0x7f` / Ctrl+H `0x08`, both mapped to
-/// `LogicalKey::Backspace`). The advertised glyph stays `"q/Esc"`.
+/// `KeyCode::Backspace`). The advertised glyph stays `"q/Esc"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReadOnlyDismissAction {
     Dismiss,
@@ -374,12 +374,12 @@ pub(crate) enum ReadOnlyDismissAction {
 pub(crate) static READ_ONLY_DISMISS_KEYMAP: Keymap<ReadOnlyDismissAction> =
     Keymap::new(&[KeyBinding {
         chords: &[
-            KeyChord::plain(LogicalKey::Esc),
-            KeyChord::plain(LogicalKey::Char('q')),
-            KeyChord::plain(LogicalKey::Char('Q')),
-            KeyChord::ctrl(LogicalKey::Char('c')),
-            KeyChord::ctrl(LogicalKey::Char('q')),
-            KeyChord::plain(LogicalKey::Backspace),
+            KeyChord::plain(KeyCode::Esc),
+            KeyChord::plain(KeyCode::Char('q')),
+            KeyChord::plain(KeyCode::Char('Q')),
+            KeyChord::ctrl(KeyCode::Char('c')),
+            KeyChord::ctrl(KeyCode::Char('q')),
+            KeyChord::plain(KeyCode::Backspace),
         ],
         action: ReadOnlyDismissAction::Dismiss,
         hint: Some("dismiss"),
@@ -423,28 +423,28 @@ impl ResizePaneAction {
 /// this keymap, keeping dispatch and hint advertisement in sync.
 pub(crate) static RESIZE_PANE_KEYMAP: Keymap<ResizePaneAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::alt_shift(LogicalKey::Up)],
+        chords: &[KeyChord::alt_shift(KeyCode::Up)],
         action: ResizePaneAction::Up,
         hint: Some("resize pane"),
         visibility: Visibility::Shown,
         glyph: Some(glyph::ALT_SHIFT_ALL_ARROWS),
     },
     KeyBinding {
-        chords: &[KeyChord::alt_shift(LogicalKey::Down)],
+        chords: &[KeyChord::alt_shift(KeyCode::Down)],
         action: ResizePaneAction::Down,
         hint: None,
         visibility: Visibility::HiddenAlias,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::alt_shift(LogicalKey::Left)],
+        chords: &[KeyChord::alt_shift(KeyCode::Left)],
         action: ResizePaneAction::Left,
         hint: None,
         visibility: Visibility::HiddenAlias,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::alt_shift(LogicalKey::Right)],
+        chords: &[KeyChord::alt_shift(KeyCode::Right)],
         action: ResizePaneAction::Right,
         hint: None,
         visibility: Visibility::HiddenAlias,

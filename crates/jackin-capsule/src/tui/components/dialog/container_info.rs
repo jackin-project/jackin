@@ -23,7 +23,7 @@ impl Dialog {
             diagnostics,
             copied_row: None,
             hovered_row: None,
-            scroll: termrock::components::DialogBodyScroll::new(),
+            scroll: termrock::layout::DialogBodyScroll::new(),
         }
     }
 

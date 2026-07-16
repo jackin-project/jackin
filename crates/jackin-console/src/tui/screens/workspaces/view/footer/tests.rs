@@ -4,7 +4,7 @@
 use jackin_config::{AppConfig, WorkspaceConfig};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
-use termrock::{HintSpan, keymap::glyph};
+use termrock::{keymap::glyph, widgets::HintSpan};
 
 use super::workspace_screen_footer_items_for_state;
 use crate::tui::components::file_browser::FileBrowserState;

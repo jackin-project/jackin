@@ -4,9 +4,8 @@
 //! Modal picker for role disambiguation.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use tui_widget_list::ListState;
-
-use termrock::ModalOutcome;
+use jackin_core::ModalOutcome;
+use termrock::widgets::ListState;
 
 pub trait RoleChoice: Clone {
     fn key(&self) -> String;
@@ -15,7 +14,7 @@ pub trait RoleChoice: Clone {
 #[derive(Debug)]
 pub struct RolePickerState<R: RoleChoice> {
     pub roles: Vec<R>,
-    pub list_state: ListState,
+    pub list_state: ListState<usize>,
     pub filter: String,
     pub filtered: Vec<R>,
     /// Verb after `Enter` in the footer (`launch` for launch
@@ -37,7 +36,7 @@ impl<R: RoleChoice> RolePickerState<R> {
     #[must_use]
     pub fn with_confirm_label(roles: Vec<R>, confirm_label: &str) -> Self {
         let filtered = roles.clone();
-        let list_state = crate::tui::components::list_helpers::list_state_for_count(filtered.len());
+        let list_state = ListState::for_count(filtered.len());
         Self {
             roles,
             list_state,
@@ -52,41 +51,28 @@ impl<R: RoleChoice> RolePickerState<R> {
             .roles
             .iter()
             .filter(|role| {
-                crate::tui::components::list_helpers::matches_filter(
-                    &self.filter,
-                    [role.key().as_str()],
-                )
+                self.filter.is_empty()
+                    || role
+                        .key()
+                        .to_lowercase()
+                        .contains(&self.filter.to_lowercase())
             })
             .cloned()
             .collect();
-        self.list_state
-            .select(crate::tui::components::list_helpers::first_selection(
-                self.filtered.len(),
-            ));
+        self.list_state = ListState::for_count(self.filtered.len());
     }
 
     fn move_up(&mut self) {
-        crate::tui::components::list_helpers::cycle_select(
-            &mut self.list_state,
-            self.filtered.len(),
-            -1,
-        );
+        self.list_state.cycle_index(self.filtered.len(), -1);
     }
 
     fn move_down(&mut self) {
-        crate::tui::components::list_helpers::cycle_select(
-            &mut self.list_state,
-            self.filtered.len(),
-            1,
-        );
+        self.list_state.cycle_index(self.filtered.len(), 1);
     }
 
     pub fn scroll_selection(&mut self, delta: i16) -> bool {
-        crate::tui::components::list_helpers::scroll_select(
-            &mut self.list_state,
-            self.filtered.len(),
-            delta,
-        )
+        self.list_state
+            .move_index(self.filtered.len(), isize::from(delta))
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<R> {
@@ -106,10 +92,7 @@ impl<R: RoleChoice> RolePickerState<R> {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                if let Some(role) = crate::tui::components::list_helpers::selected_choice(
-                    &self.filtered,
-                    self.list_state.selected,
-                ) {
+                if let Some(role) = self.list_state.selected_item(&self.filtered) {
                     return ModalOutcome::Commit(role.clone());
                 }
                 ModalOutcome::Continue
@@ -134,10 +117,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use termrock::components::render_filter_input;
-use termrock::components::render_picker_lines;
-use termrock::components::{DialogBorder, render_dialog_shell};
-use termrock::style::WHITE;
+use jackin_core::tui_theme::WHITE;
+use termrock::layout::{DialogBorder, render_dialog_shell};
+use termrock::widgets::{List, ListRow, RowRole, TextInput, TextInputState, Validation};
 
 pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
     let inner = render_dialog_shell(frame, area, Some("Select Role"), DialogBorder::Default);
@@ -151,7 +133,23 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         ])
         .split(inner);
 
-    render_filter_input(frame, rows[0], &state.filter);
+    let theme = termrock::Theme::default();
+    let mut filter = TextInputState::new(&state.filter).with_allow_empty(true);
+    let filter_columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(8), Constraint::Min(1)])
+        .split(rows[0]);
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new("Filter: "),
+        filter_columns[0],
+    );
+    frame.render_stateful_widget(
+        &TextInput::new("Filter", &theme)
+            .placeholder("░░░")
+            .validation(Validation::Valid),
+        filter_columns[1],
+        &mut filter,
+    );
 
     // List body. When the filter narrows the visible set to nothing, show
     // a dim centered placeholder so the operator knows the list is empty,
@@ -160,23 +158,29 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no matches",
-                termrock::style::DIM,
+                jackin_core::tui_theme::DIM,
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[2],
         );
         return;
     }
-    let lines: Vec<Line<'_>> = state
+    let items: Vec<ListRow<'_, usize>> = state
         .filtered
         .iter()
-        .map(|role| Line::from(vec![Span::styled(role.key(), Style::default().fg(WHITE))]))
+        .enumerate()
+        .map(|(id, role)| ListRow {
+            id,
+            label: Line::from(vec![Span::styled(role.key(), Style::default().fg(WHITE))]),
+            trailing: None,
+            role: RowRole::Item,
+            enabled: true,
+        })
         .collect();
-    render_picker_lines(
+    frame.render_stateful_widget(
+        &List::new(&items, &theme),
         rows[2],
-        frame.buffer_mut(),
-        lines,
-        state.list_state.selected,
+        &mut ListState::new(state.list_state.selected),
     );
 }
 

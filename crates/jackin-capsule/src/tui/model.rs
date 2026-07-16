@@ -10,7 +10,7 @@
 use crate::protocol::AgentState;
 use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::layout::{Rect, SplitOrient, Tab};
-pub(crate) use termrock::PointerShape;
+pub(crate) use termrock::osc::PointerShape;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MuxMode {

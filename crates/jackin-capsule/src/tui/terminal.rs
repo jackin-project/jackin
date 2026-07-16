@@ -9,7 +9,7 @@
 use std::io::Write;
 
 use anyhow::{Context, Result};
-use termrock::PointerShape;
+use termrock::osc::PointerShape;
 
 use crate::tui::components::status_bar::STATUS_BAR_ROWS;
 
@@ -74,7 +74,7 @@ pub(crate) fn client_owned_mode_state() -> &'static [u8] {
 }
 
 pub(crate) fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {
-    termrock::osc22_pointer_shape(shape).into_bytes()
+    termrock::osc::encode_pointer(shape)
 }
 
 pub(crate) fn enter_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawModeGuard> {

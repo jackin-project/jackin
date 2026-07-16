@@ -467,7 +467,7 @@ jobs:
           set -euo pipefail
           mkdir -p target
           cp build-times.json target/build-times.json
-          cargo run -p jackin-xtask --locked -- lint ratchet
+          cargo run -p jackin-xtask --locked -- lint ratchet --only build-time
       - name: Upload build-time artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -851,7 +851,7 @@ jobs:
           if-no-files-found: warn
 
   dind-chaos:
-    name: DinD chaos E2E
+    name: Full DinD E2E
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -889,9 +889,9 @@ jobs:
           set -euo pipefail
           eval "$(cargo run -p jackin --bin build-jackin-capsule -- --export)"
           echo "JACKIN_CAPSULE_BIN=$JACKIN_CAPSULE_BIN" >> "$GITHUB_ENV"
-      - name: Run dind chaos scenarios
+      - name: Run full DinD E2E suite
         run: |
-          cargo nextest run -p jackin --features e2e --profile docker-e2e -E 'test(chaos)' --locked
+          cargo nextest run -p jackin --features e2e --profile docker-e2e --locked
 
 
   # Plan 027: per-main health JSON snapshot (advisory series seed).

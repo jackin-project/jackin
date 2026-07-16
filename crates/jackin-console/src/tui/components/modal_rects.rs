@@ -82,13 +82,13 @@ pub trait ModalConfirmState {
     fn required_height(&self) -> u16;
 }
 
-impl ModalConfirmState for termrock::components::ConfirmState {
+impl ModalConfirmState for crate::tui::components::ConfirmState {
     fn width_pct(&self) -> u16 {
-        termrock::components::confirm_width_pct(self)
+        self.width_pct()
     }
 
     fn required_height(&self) -> u16 {
-        termrock::components::confirm_required_height(self)
+        self.required_height()
     }
 }
 
@@ -146,9 +146,9 @@ pub trait ModalErrorPopupState {
     fn required_height(&self, inner_width: u16, max_rows: u16) -> u16;
 }
 
-impl ModalErrorPopupState for termrock::components::ErrorPopupState {
+impl ModalErrorPopupState for crate::tui::components::ErrorPopupState {
     fn required_height(&self, inner_width: u16, max_rows: u16) -> u16 {
-        termrock::components::error_dialog::required_height(self, inner_width, max_rows)
+        self.required_height(inner_width, max_rows)
     }
 }
 
@@ -289,12 +289,9 @@ pub fn modal_rect(outer: Rect, spec: ModalRectSpec) -> Rect {
             let height = height.min(outer.height.saturating_sub(height_margin));
             centered_rect_exact(outer, width, height)
         }
-        ModalRectSpec::TopAligned { width, height } => Rect {
-            x: outer.x + outer.width.saturating_sub(width) / 2,
-            y: outer.y,
-            width,
-            height: height.min(outer.height),
-        },
+        ModalRectSpec::TopAligned { width, height } => {
+            resolve_exact(outer, width, height, termrock::layout::Placement::Top)
+        }
         ModalRectSpec::TopAlignedMaxWidthMin {
             max_width,
             min_width,
@@ -304,12 +301,7 @@ pub fn modal_rect(outer: Rect, spec: ModalRectSpec) -> Rect {
             let width = max_width
                 .min(outer.width.saturating_sub(side_margin))
                 .max(min_width);
-            Rect {
-                x: outer.x + outer.width.saturating_sub(width) / 2,
-                y: outer.y,
-                width,
-                height: height.min(outer.height),
-            }
+            resolve_exact(outer, width, height, termrock::layout::Placement::Top)
         }
     }
 }
@@ -341,12 +333,8 @@ pub fn role_picker_rect_for_count(outer: Rect, filtered_len: usize) -> Rect {
 }
 
 #[must_use]
-pub fn confirm_rect(outer: Rect, state: &termrock::components::ConfirmState) -> Rect {
-    centered_rect_fixed(
-        outer,
-        termrock::components::confirm_width_pct(state),
-        termrock::components::confirm_required_height(state),
-    )
+pub fn confirm_rect(outer: Rect, state: &crate::tui::components::ConfirmState) -> Rect {
+    centered_rect_fixed(outer, state.width_pct(), state.required_height())
 }
 
 #[must_use]
@@ -387,10 +375,27 @@ pub fn centered_rect_preferred(outer: Rect, preferred_w: u16, rows: u16) -> Rect
 
 #[must_use]
 pub fn centered_rect_exact(outer: Rect, width: u16, height: u16) -> Rect {
-    Rect {
-        x: outer.x + outer.width.saturating_sub(width) / 2,
-        y: outer.y + outer.height.saturating_sub(height) / 2,
-        width,
-        height: height.min(outer.height),
-    }
+    resolve_exact(outer, width, height, termrock::layout::Placement::Centered)
+}
+
+fn resolve_exact(
+    outer: Rect,
+    width: u16,
+    height: u16,
+    placement: termrock::layout::Placement,
+) -> Rect {
+    termrock::layout::resolve_dialog(
+        outer,
+        termrock::layout::DialogSpec {
+            min_width: width,
+            preferred_width: width,
+            max_width: width,
+            min_height: 0,
+            preferred_height: height,
+            max_height: height,
+            horizontal_margin: 0,
+            vertical_margin: 0,
+            placement,
+        },
+    )
 }

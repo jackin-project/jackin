@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use termrock::keymap::{KeyChord, LogicalKey, glyph};
+use termrock::input::KeyCode;
+use termrock::keymap::{KeyChord, glyph};
 
 use super::{
     BUILD_LOG_KEYMAP, BuildLogAction, COCKPIT_KEYMAP, CONTAINER_INFO_KEYMAP, CockpitAction,
@@ -10,7 +11,7 @@ use super::{
 
 fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(keymap: &termrock::keymap::Keymap<A>) {
     for span in keymap.hint_spans() {
-        let termrock::HintSpan::Key(key) = span else {
+        let termrock::widgets::HintSpan::Key(key) = span else {
             continue;
         };
         assert_ne!(key, concat!("T", "ab"));
@@ -36,13 +37,13 @@ fn shown_keymap_glyphs_use_canonical_spellings() {
 #[test]
 fn cockpit_global_keys_dispatch() {
     assert_eq!(
-        COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(LogicalKey::Char('q'))),
+        COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(KeyCode::Char('q'))),
         Some(CockpitAction::OpenQuitConfirm)
     );
     // Ctrl+C is intercepted before dispatch, but is registered so its hint
     // derives from the same table as Ctrl+Q.
     assert_eq!(
-        COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(LogicalKey::Char('c'))),
+        COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(KeyCode::Char('c'))),
         Some(CockpitAction::HardExit)
     );
 }
@@ -52,7 +53,7 @@ fn cockpit_global_hint_spans_advertise_both_keys() {
     let text: String = super::cockpit_global_hint_spans()
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -63,9 +64,9 @@ fn cockpit_global_hint_spans_advertise_both_keys() {
 #[test]
 fn cockpit_non_registered_keys_return_none() {
     for chord in [
-        KeyChord::plain(LogicalKey::Char('q')),
-        KeyChord::plain(LogicalKey::Esc),
-        KeyChord::plain(LogicalKey::Enter),
+        KeyChord::plain(KeyCode::Char('q')),
+        KeyChord::plain(KeyCode::Esc),
+        KeyChord::plain(KeyCode::Enter),
     ] {
         assert_eq!(
             COCKPIT_KEYMAP.dispatch(chord),
@@ -81,15 +82,15 @@ fn cockpit_non_registered_keys_return_none() {
 fn build_log_dispatches_all_advertised_keys() {
     use BuildLogAction::*;
     let cases = [
-        (KeyChord::plain(LogicalKey::Esc), Close),
-        (KeyChord::plain(LogicalKey::Up), ScrollUp),
-        (KeyChord::plain(LogicalKey::Down), ScrollDown),
-        (KeyChord::plain(LogicalKey::Char('j')), ScrollDown),
-        (KeyChord::plain(LogicalKey::Char('J')), ScrollDown),
-        (KeyChord::plain(LogicalKey::Char('k')), ScrollUp),
-        (KeyChord::plain(LogicalKey::Char('K')), ScrollUp),
-        (KeyChord::plain(LogicalKey::PageUp), PageUp),
-        (KeyChord::plain(LogicalKey::PageDown), PageDown),
+        (KeyChord::plain(KeyCode::Esc), Close),
+        (KeyChord::plain(KeyCode::Up), ScrollUp),
+        (KeyChord::plain(KeyCode::Down), ScrollDown),
+        (KeyChord::plain(KeyCode::Char('j')), ScrollDown),
+        (KeyChord::plain(KeyCode::Char('J')), ScrollDown),
+        (KeyChord::plain(KeyCode::Char('k')), ScrollUp),
+        (KeyChord::plain(KeyCode::Char('K')), ScrollUp),
+        (KeyChord::plain(KeyCode::PageUp), PageUp),
+        (KeyChord::plain(KeyCode::PageDown), PageDown),
     ];
     for (chord, expected) in cases {
         assert_eq!(
@@ -103,10 +104,10 @@ fn build_log_dispatches_all_advertised_keys() {
 #[test]
 fn build_log_non_registered_keys_return_none() {
     for chord in [
-        KeyChord::plain(LogicalKey::Enter),
-        KeyChord::plain(LogicalKey::Tab),
-        KeyChord::plain(LogicalKey::Char('q')),
-        KeyChord::ctrl(LogicalKey::Char('q')),
+        KeyChord::plain(KeyCode::Enter),
+        KeyChord::plain(KeyCode::Tab),
+        KeyChord::plain(KeyCode::Char('q')),
+        KeyChord::ctrl(KeyCode::Char('q')),
     ] {
         assert_eq!(
             BUILD_LOG_KEYMAP.dispatch(chord),
@@ -122,7 +123,7 @@ fn build_log_hints_advertise_esc_and_scroll() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -140,11 +141,11 @@ fn build_log_hints_advertise_esc_and_scroll() {
 #[test]
 fn failure_dispatches_enter_and_esc() {
     assert_eq!(
-        FAILURE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Enter)),
+        FAILURE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Enter)),
         Some(FailureAction::Dismiss)
     );
     assert_eq!(
-        FAILURE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Esc)),
+        FAILURE_KEYMAP.dispatch(KeyChord::plain(KeyCode::Esc)),
         Some(FailureAction::Dismiss)
     );
 }
@@ -152,10 +153,10 @@ fn failure_dispatches_enter_and_esc() {
 #[test]
 fn failure_non_registered_keys_return_none() {
     for chord in [
-        KeyChord::plain(LogicalKey::Char('y')),
-        KeyChord::plain(LogicalKey::Char('q')),
-        KeyChord::plain(LogicalKey::Tab),
-        KeyChord::ctrl(LogicalKey::Char('q')),
+        KeyChord::plain(KeyCode::Char('y')),
+        KeyChord::plain(KeyCode::Char('q')),
+        KeyChord::plain(KeyCode::Tab),
+        KeyChord::ctrl(KeyCode::Char('q')),
     ] {
         assert_eq!(
             FAILURE_KEYMAP.dispatch(chord),
@@ -171,7 +172,7 @@ fn failure_hints_advertise_dismiss() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -188,11 +189,11 @@ fn failure_hints_advertise_dismiss() {
 #[test]
 fn container_info_dispatches_enter_copy_and_esc_close() {
     assert_eq!(
-        CONTAINER_INFO_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Enter)),
+        CONTAINER_INFO_KEYMAP.dispatch(KeyChord::plain(KeyCode::Enter)),
         Some(ContainerInfoAction::CopyValue)
     );
     assert_eq!(
-        CONTAINER_INFO_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Esc)),
+        CONTAINER_INFO_KEYMAP.dispatch(KeyChord::plain(KeyCode::Esc)),
         Some(ContainerInfoAction::Close)
     );
 }
@@ -200,10 +201,10 @@ fn container_info_dispatches_enter_copy_and_esc_close() {
 #[test]
 fn container_info_non_registered_keys_return_none() {
     for chord in [
-        KeyChord::plain(LogicalKey::Tab),
-        KeyChord::plain(LogicalKey::Char('q')),
-        KeyChord::plain(LogicalKey::Up),
-        KeyChord::ctrl(LogicalKey::Char('q')),
+        KeyChord::plain(KeyCode::Tab),
+        KeyChord::plain(KeyCode::Char('q')),
+        KeyChord::plain(KeyCode::Up),
+        KeyChord::ctrl(KeyCode::Char('q')),
     ] {
         assert_eq!(
             CONTAINER_INFO_KEYMAP.dispatch(chord),
@@ -219,7 +220,7 @@ fn container_info_hints_advertise_copy_and_close() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()

@@ -3,8 +3,8 @@
 
 //! Tests for `editor_rows`.
 use super::*;
+use jackin_core::tui_theme::{ACTION_ACCENT, PHOSPHOR_GREEN};
 use ratatui::style::{Color, Modifier};
-use termrock::style::{ACTION_ACCENT, PHOSPHOR_GREEN};
 
 #[test]
 fn selected_action_row_uses_high_contrast_list_fill() {

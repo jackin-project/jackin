@@ -5,20 +5,19 @@
 //! GitHub-hosted mounts.
 //!
 //! Mirrors `WorkdirPickState`'s shape — one `Vec`-driven list +
-//! `tui_widget_list::ListState` — so the rest of the launch TUI can
+//! `termrock::widgets::ListState` — so the rest of the launch TUI can
 //! dispatch it with the same Up/Down/Enter pattern.
 
-use crossterm::event::{KeyCode, KeyEvent};
-use tui_widget_list::ListState;
-
 use crate::github_mounts::GithubChoice;
+use crossterm::event::{KeyCode, KeyEvent};
+use jackin_core::ModalOutcome;
 use jackin_core::shorten_home;
-use termrock::ModalOutcome;
+use termrock::widgets::ListState;
 
 #[derive(Debug)]
 pub struct GithubPickerState {
     pub choices: Vec<GithubChoice>,
-    pub list_state: ListState,
+    pub list_state: ListState<usize>,
 }
 
 #[derive(Debug)]
@@ -39,7 +38,7 @@ pub fn github_open_plan(choices: Vec<GithubChoice>) -> GithubOpenPlan {
 
 impl GithubPickerState {
     pub fn new(choices: Vec<GithubChoice>) -> Self {
-        let list_state = crate::tui::components::list_helpers::list_state_for_count(choices.len());
+        let list_state = ListState::for_count(choices.len());
         Self {
             choices,
             list_state,
@@ -49,26 +48,15 @@ impl GithubPickerState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                crate::tui::components::list_helpers::cycle_select(
-                    &mut self.list_state,
-                    self.choices.len(),
-                    -1,
-                );
+                self.list_state.cycle_index(self.choices.len(), -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                crate::tui::components::list_helpers::cycle_select(
-                    &mut self.list_state,
-                    self.choices.len(),
-                    1,
-                );
+                self.list_state.cycle_index(self.choices.len(), 1);
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                if let Some(c) = crate::tui::components::list_helpers::selected_choice(
-                    &self.choices,
-                    self.list_state.selected,
-                ) {
+                if let Some(c) = self.list_state.selected_item(&self.choices) {
                     return ModalOutcome::Commit(c.url.clone());
                 }
                 ModalOutcome::Continue
@@ -79,11 +67,8 @@ impl GithubPickerState {
     }
 
     pub fn scroll_selection(&mut self, delta: i16) -> bool {
-        crate::tui::components::list_helpers::scroll_select(
-            &mut self.list_state,
-            self.choices.len(),
-            delta,
-        )
+        self.list_state
+            .move_index(self.choices.len(), isize::from(delta))
     }
 }
 
@@ -94,9 +79,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use termrock::components::render_picker_lines;
-use termrock::components::{DialogBorder, render_dialog_shell};
-use termrock::style::{PHOSPHOR_DIM, WHITE};
+use jackin_core::tui_theme::{PHOSPHOR_DIM, WHITE};
+use termrock::layout::{DialogBorder, render_dialog_shell};
+use termrock::widgets::{List, ListRow, RowRole};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
     let inner = render_dialog_shell(frame, area, Some("Open in GitHub"), DialogBorder::Default);
@@ -113,7 +98,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no GitHub sources",
-                termrock::style::DIM,
+                jackin_core::tui_theme::DIM,
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],
@@ -130,31 +115,36 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         .unwrap_or(0)
         .max(10);
 
-    let lines: Vec<Line<'_>> = state
+    let items: Vec<ListRow<'_, usize>> = state
         .choices
         .iter()
         .enumerate()
         .map(|(i, c)| {
             let display = &displays[i];
             let pad = path_w.saturating_sub(display.chars().count());
-            Line::from(vec![
-                Span::styled(display.to_owned(), Style::default().fg(WHITE)),
-                Span::raw(format!("{}  ", " ".repeat(pad))),
-                Span::styled(
-                    format!("github \u{b7} {}", c.branch),
-                    Style::default()
-                        .fg(PHOSPHOR_DIM)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ])
+            ListRow {
+                id: i,
+                label: Line::from(vec![
+                    Span::styled(display.to_owned(), Style::default().fg(WHITE)),
+                    Span::raw(format!("{}  ", " ".repeat(pad))),
+                    Span::styled(
+                        format!("github \u{b7} {}", c.branch),
+                        Style::default()
+                            .fg(PHOSPHOR_DIM)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                ]),
+                trailing: None,
+                role: RowRole::Item,
+                enabled: true,
+            }
         })
         .collect();
-
-    render_picker_lines(
+    let theme = termrock::Theme::default();
+    frame.render_stateful_widget(
+        &List::new(&items, &theme),
         rows[1],
-        frame.buffer_mut(),
-        lines,
-        state.list_state.selected,
+        &mut ListState::new(state.list_state.selected),
     );
 }
 

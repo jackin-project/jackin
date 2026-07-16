@@ -15,11 +15,12 @@ use std::rc::Rc;
 
 use ratatui::layout::Rect;
 
+use crate::tui::components::{ConfirmState, ErrorPopupState, TextInputState};
 use crate::tui::runtime::BlockingSubscription;
 use jackin_config::{AppConfig, MountConfig, WorkspaceConfig};
 use jackin_core::EnvValue;
 use jackin_env::OpCache;
-use termrock::components::{ConfirmState, ErrorPopupState, FocusOwner, TextInputState};
+use termrock::interaction::FocusOwner;
 
 use crate::tui::auth::AuthKind;
 use crate::tui::components::confirm_save::ConfirmSaveState;
@@ -205,12 +206,12 @@ pub type Modal<'a> = crate::tui::model::ConsoleModal<
     WorkdirPickState,
     ConfirmTarget,
     ConfirmState,
-    termrock::components::SaveDiscardState,
+    crate::tui::components::SaveDiscardState,
     GithubPickerState,
     ConfirmSaveState<MountConfig>,
     ErrorPopupState,
     ContainerInfoState,
-    termrock::components::StatusPopupState,
+    crate::tui::components::StatusPopupState,
     OpPickerState,
     RolePickerState,
     SourcePickerState,
@@ -238,7 +239,7 @@ pub struct ManagerState<'a> {
     /// Passive overlay drawn on top of `list_modal` for the duration of
     /// a single frame while a blocking async operation runs (currently
     /// the console role-resolution path). Input handlers do not see it.
-    pub status_overlay: Option<termrock::components::StatusPopupState>,
+    pub status_overlay: Option<crate::tui::components::StatusPopupState>,
     pub inline_role_picker: Option<RolePickerState>,
     pub inline_agent_picker: Option<(jackin_core::RoleSelector, AgentChoiceState)>,
     /// Agent picker opened when the operator presses `N` on an instance row

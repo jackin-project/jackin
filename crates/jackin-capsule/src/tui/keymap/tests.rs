@@ -8,11 +8,11 @@ use super::{
 };
 use crate::tui::input::{ArrowDir, PrefixCommand};
 use crate::tui::keymap::raw_bytes_to_chord;
-use termrock::input::{KeyChord, LogicalKey};
+use termrock::input::{KeyChord, KeyCode};
 
 fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(keymap: &termrock::input::Keymap<A>) {
     for span in keymap.hint_spans() {
-        let termrock::HintSpan::Key(key) = span else {
+        let termrock::widgets::HintSpan::Key(key) = span else {
             continue;
         };
         assert_ne!(key, concat!("T", "ab"));
@@ -67,7 +67,7 @@ fn prefix_keymap_covers_all_prefix_binding_keys() {
 #[test]
 fn prefix_keymap_covers_ctrl_l() {
     let chord = raw_bytes_to_chord(&[0x0c]).expect("0x0c → Ctrl-L");
-    assert_eq!(chord, KeyChord::ctrl(LogicalKey::Char('l')));
+    assert_eq!(chord, KeyChord::ctrl(KeyCode::Char('l')));
     assert_eq!(
         PREFIX_COMMAND_KEYMAP.dispatch(chord),
         Some(PrefixCommand::ClearPane),
@@ -81,7 +81,7 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
     let keys: Vec<&str> = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) => Some(*k),
+            termrock::widgets::HintSpan::Key(k) => Some(*k),
             _ => None,
         })
         .collect();
@@ -118,7 +118,7 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
 fn capsule_global_keymap_dispatches_ctrl_q() {
     // Acceptance criterion for roadmap item A.
     let chord = raw_bytes_to_chord(&[0x11]).expect("0x11 → Ctrl-Q chord");
-    assert_eq!(chord, KeyChord::ctrl(LogicalKey::Char('q')));
+    assert_eq!(chord, KeyChord::ctrl(KeyCode::Char('q')));
     assert_eq!(
         CAPSULE_GLOBAL_KEYMAP.dispatch(chord),
         Some(GlobalCapsuleAction::RequestExit),
@@ -132,8 +132,8 @@ fn capsule_global_keymap_hint_spans_include_ctrl_q_quit() {
     let combined: String = spans
         .iter()
         .filter_map(|s| match s {
-            termrock::HintSpan::Key(k) => Some(*k),
-            termrock::HintSpan::Text(t) => Some(*t),
+            termrock::widgets::HintSpan::Key(k) => Some(*k),
+            termrock::widgets::HintSpan::Text(t) => Some(*t),
             _ => None,
         })
         .collect::<Vec<_>>()

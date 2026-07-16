@@ -181,7 +181,10 @@ impl<
     }
 
     #[must_use]
-    pub fn footer_items(&self, can_generate_token: bool) -> Vec<termrock::HintSpan<'static>>
+    pub fn footer_items(
+        &self,
+        can_generate_token: bool,
+    ) -> Vec<termrock::widgets::HintSpan<'static>>
     where
         FileBrowserState: ModalFileBrowserFooterState,
         ConfirmSaveState: ModalConfirmSaveFooterState,
@@ -233,7 +236,7 @@ impl<
         &self,
         can_generate_token: bool,
         outer: Rect,
-    ) -> Vec<termrock::HintSpan<'static>>
+    ) -> Vec<termrock::widgets::HintSpan<'static>>
     where
         FileBrowserState: ModalFileBrowserFooterState,
         ConfirmSaveState: ModalConfirmSaveFooterState,
@@ -260,6 +263,6 @@ impl<
     }
 }
 
-fn footer_items_for_mode(mode: ModalFooterMode) -> Vec<termrock::HintSpan<'static>> {
+fn footer_items_for_mode(mode: ModalFooterMode) -> Vec<termrock::widgets::HintSpan<'static>> {
     crate::tui::components::footer_hints::modal_footer_items(mode)
 }

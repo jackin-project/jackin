@@ -5,7 +5,7 @@
 
 use jackin_protocol::attach::ServerFrame;
 use ratatui::layout::Rect;
-use termrock::components::HoverTracker;
+use termrock::interaction::HoverTracker;
 
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, ColRange, branch_context_bar_layout, debug_run_id_label,
@@ -320,7 +320,7 @@ impl Multiplexer {
         // Same content-length convention as the painted scrollbar
         // (`apply_pane_scrollbar`): scrollback rows plus the visible interior.
         let content_len = filled.saturating_add(interior_rows);
-        let top_offset = termrock::components::scrollbar_offset_for_track_position(
+        let top_offset = termrock::scroll::scrollbar_offset_for_track_position(
             content_len,
             interior_rows,
             interior_rows,

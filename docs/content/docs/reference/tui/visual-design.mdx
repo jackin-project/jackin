@@ -5,15 +5,24 @@ description: "PHOSPHOR color palette, border color semantics, left sidebar conve
 
 ## PHOSPHOR Color Palette
 
-The canonical RGB values live in the TermRock crate palette ([TermRock source](https://github.com/tailrocks/termrock)) so the host TUI and the in-container multiplexer cannot drift; [TermRock source](https://github.com/tailrocks/termrock) adapts them into ratatui `Color` constants that the rest of the host TUI imports. Never define local color constants.
+Reusable component styling flows through TermRock's semantic `Theme` and `Role`
+API ([TermRock source](https://github.com/tailrocks/termrock)). jackin❯-specific
+brand, rain, debug, and status tokens live once in `jackin-core`'s
+`host_colors.rs`; its `tui_theme.rs` module adapts them to Ratatui colors for
+every jackin❯ surface. Never define a second surface-local palette.
 
-**All colors come from named theme tokens; no inline `Color::Rgb(...)` literals outside `theme.rs`.** Every new color must be added as a named constant in `lib.rs` and re-exported from `theme.rs` as a ratatui `Color`. Inline RGB literals are a design-decision violation.
+**All colors come from semantic TermRock roles or named jackin❯ tokens; no
+inline `Color::Rgb(...)` literals outside `tui_theme.rs`.** Reusable component
+semantics belong in TermRock. Product-specific colors belong in
+`jackin-core/src/host_colors.rs` and receive their Ratatui adapter in
+`jackin-core/src/tui_theme.rs`.
 
 | Constant | Value | Usage |
 |---|---|---|
 | `PHOSPHOR_GREEN` | `Rgb(0, 255, 65)` | Active/focused elements, selected text |
 | `PHOSPHOR_DIM` | `Rgb(0, 140, 30)` | Inactive text, scrollbar thumbs |
-| `PHOSPHOR_DARK` | `Rgb(0, 80, 18)` | Borders (unfocused), separators |
+| `PHOSPHOR_DARK` | `Rgb(0, 80, 18)` | Separators and dark phosphor details |
+| `BORDER_GRAY` | `Rgb(80, 80, 80)` | Inactive and background container borders |
 | `WHITE` | `Rgb(255, 255, 255)` | Labels, keys, headings |
 | `WARNING_YELLOW` | `Rgb(255, 216, 94)` | Warning notes in confirmation dialogs |
 | `PREVIEW_CARD` | `Rgb(28, 28, 28)` | Lookbook preview canvas background |
@@ -35,7 +44,7 @@ A title passed as `"  Title  "` (extra spaces) or `"Title"` (no spaces) is a des
 
 ## Panel Body Inset
 
-Panel body content must be inset from the border by exactly 1 cell horizontally. Use `panel_body_area(block_area, inner_area)` from `jackin_tui::components::panel` instead of rendering content directly into `block.inner(area)`. The 1-cell inset prevents text from touching the left and right border characters and is a visual requirement across all titled panels.
+Panel body content must be inset from the border by exactly 1 cell horizontally. Use TermRock `Panel::inner` and the canonical content padding rather than rendering directly against the border. The inset prevents text from touching the left and right border characters and is a visual requirement across all titled panels.
 
 `render_scrollable_block` applies this inset automatically. Direct callers that render text content into a titled panel via the ratatui `Block` API must call `panel_body_area` to obtain the inset rect and render into that, not into the raw `inner` rect.
 
@@ -56,8 +65,15 @@ Every row that begins with `+` is an add/create action and must render through t
 
 - **Active interaction container**: `PHOSPHOR_GREEN` border — dialogs, pickers, forms, tab panels, and the currently active list/sidebar use the bright border whenever they own keyboard or scroll interaction.
 - **Passive scroll block, focused and scrollable**: `PHOSPHOR_GREEN` border — both `focused = true` and content overflows in at least one axis.
-- **Passive scroll block, focused but not scrollable**: `PHOSPHOR_DARK` border — `focused = true` is ignored when content fits; no false scroll affordance.
-- **Unfocused / background container**: `PHOSPHOR_DARK` border regardless of scrollability.
+- **Passive scroll block, focused but not scrollable**: `BORDER_GRAY` border — `focused = true` is ignored when content fits; no false scroll affordance.
+- **Unfocused / background container**: `BORDER_GRAY` border regardless of scrollability.
+
+Every container uses plain single-line glyphs (`┌─┐`, `│ │`, `└─┘`). Border
+weight never signals focus. The one interaction owner uses TermRock
+`Role::BorderFocused` (phosphor green in the default theme); all other visible
+containers use `Role::Border` (neutral gray). Double-line, heavy, or mixed
+panel borders are a design violation. Scrollbar thumbs may occupy edge cells
+without changing the surrounding panel's border contract.
 
 `render_scrollable_block` enforces the passive-scroll logic internally. Callers only supply `focused: bool` from state; the renderer decides whether to use green. Active interaction containers that are not passive scroll blocks must use the same token rule directly or through their shared component: bright border for the active container, dark border for inactive/background containers.
 
@@ -66,7 +82,7 @@ Every row that begins with `+` is an add/create action and must render through t
 ## Left Sidebar (Workspace Name List)
 
 - Horizontal scroll only — no vertical scroll.
-- Uses the shared fixed-prefix line renderer (`render_line_with_fixed_prefix_scroll`) so the disclosure/cursor prefix stays visible while only the workspace label scrolls. The renderer must slice by display columns through `jackin_tui::fixed_prefix_scroll_segments`, not by Rust `char` or byte count.
+- Uses the shared fixed-prefix line renderer (`render_line_with_fixed_prefix_scroll`) so the disclosure/cursor prefix stays visible while only the workspace label scrolls. The renderer must slice by display columns through TermRock text helpers, not by Rust `char` or byte count.
 - H/L keys and `ScrollLeft`/`ScrollRight` both update `state.list_names_scroll_x`.
 - Focus set on click via `update_scroll_focus`; persists until user clicks the right pane.
 - Focus persists until the user explicitly clicks the right pane. Horizontal scroll is clamped on resize, but focus state is not cleared (focus-sustainability rule).
@@ -79,7 +95,7 @@ Every row that begins with `+` is an add/create action and must render through t
 **W3C ARIA Tabs pattern** (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> → TUI navigation conventions for full spec). Summary:
 
 - Tab bar has its own focus area (`tab_bar_focused: bool` in state).
-- **Tab chrome is shared with the in-container multiplexer status bar** (`jackin-capsule`): inactive tabs render on a dark-grey background (`TAB_BG_INACTIVE`), the active tab lifts to graphite (`TAB_BG_ACTIVE` — never the brand green, so it stays distinct from the ` jackin❯ ` pill), both with WHITE text and the active tab bold. These backgrounds and the Ratatui renderer live in the shared TermRock crate (`TAB_BG_*`, `components::TabStrip`) and are consumed by the console tab strips (workspace editor, settings) and the capsule Ratatui status bar.
+- **Tab chrome is shared with the in-container multiplexer status bar** (`jackin-capsule`): inactive tabs render on a dark-grey background (`TAB_BG_INACTIVE`), the active tab lifts to graphite (`TAB_BG_ACTIVE` — never the brand green, so it stays distinct from the ` jackin❯ ` pill), both with WHITE text and the active tab bold. These backgrounds and the canonical `widgets::Tabs` renderer live in TermRock and are consumed by the console tab strips (workspace editor, settings) and capsule status bar.
 - **Capsule agent tabs reserve one status glyph cell** after the tab label: blocked `●` in red, working `▶` in bold amber, done `○`, idle `◆` in bright phosphor green, and unknown blank. Working and idle must be full-cell visible marks, not tiny or subtle separator-like glyphs, so they cannot be confused with usage/status text separators.
 - **Tab bar focused**: the active tab shows a `PHOSPHOR_GREEN` `━` underline bar — the keyboard-focus cue. GREEN = "tab bar owns focus."
 - **Content focused** (tab bar NOT focused): the active tab still shows a `━` underline bar, but in `WHITE` — a dim context indicator. This tells the operator which tab is selected without implying the tab bar is the focus owner. The GREEN border on the content block below is the real focus signal.
@@ -89,7 +105,7 @@ Every row that begins with `+` is an add/create action and must render through t
 - `Tab`/`↓` moves focus from tab bar into the first content block.
 - `BackTab`/`Esc` returns focus to the tab bar from content.
 
-- **Tab hover lifts the cell under the pointer** (`TAB_BG_INACTIVE_HOVER` / `TAB_BG_ACTIVE_HOVER` in the shared palette), matching the in-container multiplexer's pointer feedback. The console enables any-event motion tracking (`?1003h` alongside `?1000h`/`?1002h`/`?1015h`/`?1006h`) so a `MouseEventKind::Moved` event repaints the hovered tab; moving off the strip clears it. The motion-flood concern that deferred this earlier is moot host-side — events are local (no pty) and the manager coalesces renders at 20Hz, so a stream of motion events costs one repaint per frame. The hit-test that maps a column to a tab index is the shared `jackin_tui::lay_out_tabs` + `jackin_tui::tab_at_column`, the same geometry the multiplexer uses, so click-selection and hover stay in lock-step with the rendered cells.
+- **Tab hover lifts the cell under the pointer** (`TAB_BG_INACTIVE_HOVER` / `TAB_BG_ACTIVE_HOVER` in the shared palette), matching the in-container multiplexer's pointer feedback. The console enables any-event motion tracking (`?1003h` alongside `?1000h`/`?1002h`/`?1015h`/`?1006h`) so a `MouseEventKind::Moved` event repaints the hovered tab; moving off the strip clears it. TermRock `TabsState` regions are produced by the same `Tabs` render that paints the strip, so click-selection and hover stay in lock-step with the visible cells.
 
 ---
 

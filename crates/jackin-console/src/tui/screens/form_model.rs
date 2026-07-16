@@ -83,7 +83,7 @@ impl FormSection {
                     row.value,
                     width = self.label_width
                 );
-                termrock::display_cols(&s)
+                termrock::text::display_cols(&s)
             })
             .max()
             .unwrap_or(0)
