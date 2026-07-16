@@ -402,14 +402,14 @@ pub fn list_name_lines(
         }
     }
 
-    let content_w = termrock::components::scrollable_panel::max_line_width(&lines).max(max_w);
+    let content_w = termrock::scroll::max_line_width(&lines).max(max_w);
 
     if let Some(selected_idx) = visual_rows
         .iter()
         .position(|row| row.as_ref().is_some_and(|row| row.selected))
         && let Some(line) = lines.get_mut(selected_idx)
     {
-        let current_w = termrock::components::scrollable_panel::line_width(line);
+        let current_w = termrock::scroll::line_width(line);
         if current_w < content_w {
             let bg = match visual_rows[selected_idx].as_ref().map(|row| row.tone) {
                 Some(WorkspaceListRowTone::Instance) => termrock::style::CYAN,
@@ -430,7 +430,7 @@ pub fn list_name_lines(
         for span in &mut line.spans {
             span.style = span.style.bg(termrock::style::TAB_BG_INACTIVE_HOVER);
         }
-        let current_w = termrock::components::scrollable_panel::line_width(line);
+        let current_w = termrock::scroll::line_width(line);
         if current_w < content_w {
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
@@ -448,8 +448,8 @@ pub fn workspace_list_names_render_plan(
 ) -> WorkspaceListNamesRenderPlan {
     let viewport_h = usize::from(facts.area.height.saturating_sub(2));
     WorkspaceListNamesRenderPlan {
-        viewport_width: termrock::components::scrollable_panel::viewport_width(facts.area),
-        follow_scroll_y: termrock::components::scrollable_panel::cursor_follow_offset(
+        viewport_width: termrock::scroll::viewport_width(facts.area),
+        follow_scroll_y: crate::tui::focus::follow_cursor_y(
             facts.selected_index,
             facts.row_count,
             viewport_h,
@@ -468,12 +468,10 @@ pub fn render_list_names_block(
     scroll_y: u16,
 ) {
     let content_height = lines.len();
-    let viewport_w = termrock::components::scrollable_panel::viewport_width(area);
-    let viewport_h = termrock::components::scrollable_panel::viewport_height(area);
-    let h_scrollable =
-        termrock::components::scrollable_panel::is_scrollable(content_width, viewport_w);
-    let v_scrollable =
-        termrock::components::scrollable_panel::is_scrollable(content_height, viewport_h);
+    let viewport_w = termrock::scroll::viewport_width(area);
+    let viewport_h = termrock::scroll::viewport_height(area);
+    let h_scrollable = termrock::scroll::is_scrollable(content_width, viewport_w);
+    let v_scrollable = termrock::scroll::is_scrollable(content_height, viewport_h);
     let block = termrock::components::Panel::new()
         .focus(if focused {
             termrock::components::PanelFocus::Focused
@@ -495,20 +493,10 @@ pub fn render_list_names_block(
         render_list_name_line(frame, inner, row_idx as u16, line, usize::from(scroll_x));
     }
     if h_scrollable {
-        termrock::components::scrollable_panel::render_horizontal_scrollbar(
-            frame,
-            area,
-            content_width,
-            scroll_x,
-        );
+        termrock::scroll::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
     }
     if v_scrollable {
-        termrock::components::scrollable_panel::render_vertical_scrollbar(
-            frame,
-            area,
-            content_height,
-            scroll_y,
-        );
+        termrock::scroll::render_vertical_scrollbar(frame, area, content_height, scroll_y);
     }
 }
 
@@ -520,7 +508,7 @@ fn render_list_name_line(
     scroll_x: usize,
 ) {
     const PREFIX_COLS: usize = 3;
-    termrock::components::scrollable_panel::render_line_with_fixed_prefix_scroll(
+    termrock::scroll::render_line_with_fixed_prefix_scroll(
         frame,
         area,
         row,
@@ -952,7 +940,7 @@ pub fn render_environments_subpanel(
             })
     });
 
-    let inner_width = termrock::components::scrollable_panel::viewport_width(area);
+    let inner_width = termrock::scroll::viewport_width(area);
     let lines: Vec<Line<'_>> = rows
         .iter()
         .map(|row| env_row_line(row, inner_width))
@@ -972,7 +960,7 @@ pub fn render_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         crate::tui::mount_display::workspace_mount_block_lines(rows),
@@ -1005,7 +993,7 @@ pub fn render_global_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         crate::tui::mount_display::global_mount_block_lines(rows),
@@ -1106,7 +1094,7 @@ pub fn render_roles_subpanel(
         lines.push(Line::from(spans));
     }
 
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         lines,

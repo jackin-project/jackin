@@ -17,10 +17,10 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use termrock::components::scrollable_panel::{
+use termrock::components::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
+use termrock::scroll::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };
-use termrock::components::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
 use termrock::{
     HintSpan, ModalOutcome,
     components::ButtonFocus,

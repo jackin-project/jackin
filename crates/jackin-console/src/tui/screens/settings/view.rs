@@ -215,9 +215,7 @@ pub fn render_general_tab<
 ) {
     let focused = !state.tab_bar_focused() && state.error_popup.is_none();
     let lines = general_state_lines(&state.general, focused);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
-        frame, area, lines, 0, 0, focused, None,
-    );
+    termrock::scroll::render_scrollable_block_at(frame, area, lines, 0, 0, focused, None);
 }
 
 pub fn render_mounts_tab<
@@ -246,7 +244,7 @@ pub fn render_mounts_tab<
         None
     };
     let lines = global_mount_state_lines(&state.mounts, selected, true);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -278,7 +276,7 @@ pub fn render_env_tab<
 ) {
     let focused = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
     let lines = env_state_lines(&state.env, focused, area.width);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -314,7 +312,7 @@ pub fn render_auth_tab<
         .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
     let focused = state.content_focused(SettingsTab::Auth) && state.auth.modal.is_none();
     let lines = auth_state_lines(&state.auth, &state.env, focused);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -346,7 +344,7 @@ pub fn render_trust_tab<
 ) {
     let lines = settings_trust_lines_for_state(state);
     let focused = settings_trust_focused(state);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -1027,9 +1025,9 @@ fn truncate(value: &str, width: usize) -> String {
 
 pub fn clamp_mounts_scroll_x_for_frame(area: Rect, content_width: usize, scroll_x: &mut u16) {
     let areas = settings_frame_areas(area, 2);
-    termrock::components::scrollable_panel::clamp_scroll_offset(
+    termrock::scroll::clamp_scroll_offset(
         content_width,
-        termrock::components::scrollable_panel::viewport_width(areas.body),
+        termrock::scroll::viewport_width(areas.body),
         scroll_x,
     );
 }

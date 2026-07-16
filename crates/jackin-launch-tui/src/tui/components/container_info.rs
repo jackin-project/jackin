@@ -12,11 +12,11 @@ use ratatui::{
 };
 
 use termrock::ModalOutcome;
-use termrock::components::dialog_layout::{
+use termrock::components::panel::{Panel, PanelFocus};
+use termrock::layout::{
     DialogBodyScroll, DialogBorder, render_dialog_shell, render_scrollable_dialog_body,
 };
-use termrock::components::panel::{Panel, PanelFocus};
-use termrock::components::scrollable_panel::effective_offset;
+use termrock::scroll::effective_offset;
 use termrock::style::{LINK_FG, LINK_FG_HOVER, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 /// Body line indent (matches the canonical dialog content padding).
@@ -375,7 +375,7 @@ pub fn clamp_dialog_scroll(
     content_height: usize,
     dialog_rect: Rect,
 ) {
-    use termrock::components::scrollable_panel::effective_offset;
+    use termrock::scroll::effective_offset;
     let vp_w = usize::from(dialog_rect.width.saturating_sub(2));
     let vp_h = usize::from(dialog_rect.height.saturating_sub(2));
     scroll.scroll_x = effective_offset(content_width, vp_w, scroll.scroll_x);

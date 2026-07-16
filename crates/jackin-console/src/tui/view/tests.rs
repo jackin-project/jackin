@@ -375,8 +375,8 @@ fn list_vertical_clamp_uses_rendered_sidebar_height() {
     use crate::tui::state::ManagerState;
     use jackin_config::{AppConfig, MountConfig, MountIsolation, WorkspaceConfig};
     use ratatui::layout::Rect;
-    use termrock::components::scrollable_panel::{
-        max_offset as max_scroll_offset, viewport_height as scroll_viewport_height,
+    use termrock::scroll::{
+        max_offset_u16 as max_scroll_offset, viewport_height as scroll_viewport_height,
     };
 
     fn split_mount(idx: usize) -> MountConfig {

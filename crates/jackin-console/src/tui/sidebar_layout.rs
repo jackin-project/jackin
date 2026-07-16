@@ -529,19 +529,19 @@ fn mount_data_row_count(same_path_rows: impl IntoIterator<Item = bool>) -> Optio
 }
 
 fn clamp_scroll_x(content: usize, viewport: usize, value: &mut u16) {
-    termrock::components::scrollable_panel::clamp_scroll_offset(content, viewport, value);
+    termrock::scroll::clamp_scroll_offset(content, viewport, value);
 }
 
 fn scroll_viewport_width(area: Rect) -> usize {
-    termrock::components::scrollable_panel::viewport_width(area)
+    termrock::scroll::viewport_width(area)
 }
 
 fn scroll_viewport_height(area: Rect) -> usize {
-    termrock::components::scrollable_panel::viewport_height(area)
+    termrock::scroll::viewport_height(area)
 }
 
 fn is_scrollable(content: usize, viewport: usize) -> bool {
-    termrock::components::scrollable_panel::is_scrollable(content, viewport)
+    termrock::scroll::is_scrollable(content, viewport)
 }
 
 #[cfg(test)]

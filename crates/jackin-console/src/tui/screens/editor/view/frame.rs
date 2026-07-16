@@ -319,7 +319,7 @@ pub(crate) fn render_general_tab<
 ) {
     let rows = editor_general_lines_for_state(state);
     let focused = editor_tab_content_focused(state);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         rows,
@@ -356,7 +356,7 @@ pub(crate) fn render_mounts_tab<
     >,
 ) {
     let lines = editor_mount_lines_for_state(state);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -395,7 +395,7 @@ pub(crate) fn render_roles_tab<
 ) {
     let lines = editor_role_lines_for_state(state, config);
     let focused = editor_tab_content_focused(state);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -434,7 +434,7 @@ pub(crate) fn render_secrets_tab<
 ) {
     let lines = editor_secret_lines_for_state(area, state, config);
     let focused = editor_tab_content_focused(state);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -476,7 +476,7 @@ pub(crate) fn render_auth_tab<
         .auth_selected_kind
         .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
     let focused = editor_tab_content_focused(state);
-    termrock::components::scrollable_panel::render_scrollable_block_at(
+    termrock::scroll::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -780,26 +780,18 @@ pub(crate) fn clamp_editor_scroll_for_frame(
     tab_scroll_y: &mut u16,
     mounts_scroll_x: &mut u16,
 ) {
-    let viewport_w = termrock::components::scrollable_panel::viewport_width(body);
-    let viewport_h = termrock::components::scrollable_panel::viewport_height(body);
+    let viewport_w = termrock::scroll::viewport_width(body);
+    let viewport_h = termrock::scroll::viewport_height(body);
     if geometry.active_mounts {
-        termrock::components::scrollable_panel::clamp_scroll_offset(
+        termrock::scroll::clamp_scroll_offset(
             geometry.mounts_content_width,
             viewport_w,
             mounts_scroll_x,
         );
     } else {
-        termrock::components::scrollable_panel::clamp_scroll_offset(
-            geometry.content_width,
-            viewport_w,
-            tab_scroll_x,
-        );
+        termrock::scroll::clamp_scroll_offset(geometry.content_width, viewport_w, tab_scroll_x);
     }
-    termrock::components::scrollable_panel::clamp_scroll_offset(
-        geometry.content_height,
-        viewport_h,
-        tab_scroll_y,
-    );
+    termrock::scroll::clamp_scroll_offset(geometry.content_height, viewport_h, tab_scroll_y);
 }
 
 pub(crate) fn editor_body_area(area: Rect, footer_h: u16) -> Rect {

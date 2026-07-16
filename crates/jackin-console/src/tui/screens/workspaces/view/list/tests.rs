@@ -20,7 +20,7 @@ use jackin_config::WorkspaceConfig;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
-use termrock::components::scrollable_panel::max_offset;
+use termrock::scroll::max_offset;
 use termrock::style::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
 
 fn config_with_long_workspace_name() -> AppConfig {

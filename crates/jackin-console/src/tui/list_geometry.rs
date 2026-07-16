@@ -116,8 +116,8 @@ pub fn manager_list_names_content_width(
 }
 
 pub fn clamp_list_names_scroll(list_area: Rect, content_width: usize, scroll_x: &mut u16) {
-    let viewport = termrock::components::scrollable_panel::viewport_width(list_area);
-    termrock::components::scrollable_panel::clamp_scroll_offset(content_width, viewport, scroll_x);
+    let viewport = termrock::scroll::viewport_width(list_area);
+    termrock::scroll::clamp_scroll_offset(content_width, viewport, scroll_x);
 }
 
 #[must_use]
@@ -125,19 +125,19 @@ pub fn horizontal_scroll_axes(has_content: bool, content_width: usize, area: Rec
     if !has_content {
         return ScrollAxes::none();
     }
-    let viewport = termrock::components::scrollable_panel::viewport_width(area);
+    let viewport = termrock::scroll::viewport_width(area);
     ScrollAxes {
-        horizontal: termrock::components::scrollable_panel::is_scrollable(content_width, viewport),
+        horizontal: termrock::scroll::is_scrollable(content_width, viewport),
         vertical: false,
     }
 }
 
 #[must_use]
 pub fn vertical_scroll_axes(content_height: usize, area: Rect) -> ScrollAxes {
-    let viewport = termrock::components::scrollable_panel::viewport_height(area);
+    let viewport = termrock::scroll::viewport_height(area);
     ScrollAxes {
         horizontal: false,
-        vertical: termrock::components::scrollable_panel::is_scrollable(content_height, viewport),
+        vertical: termrock::scroll::is_scrollable(content_height, viewport),
     }
 }
 
@@ -145,7 +145,7 @@ pub fn vertical_scroll_axes(content_height: usize, area: Rect) -> ScrollAxes {
 pub fn list_names_scroll_axes(content_width: usize, list_area: Rect) -> ScrollAxes {
     let viewport = crate::tui::layout::scroll_viewport_width(list_area);
     ScrollAxes {
-        horizontal: termrock::components::scrollable_panel::max_offset(content_width, viewport) > 0,
+        horizontal: termrock::scroll::max_offset(content_width, viewport) > 0,
         vertical: false,
     }
 }

@@ -546,7 +546,7 @@ use jackin_config::WorkspaceConfig;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
-use termrock::components::scrollable_panel::viewport_width as scroll_viewport_width;
+use termrock::scroll::viewport_width as scroll_viewport_width;
 
 fn ws_with_allowed(names: &[&str]) -> WorkspaceConfig {
     WorkspaceConfig {
@@ -624,7 +624,7 @@ fn roles_tab_clamps_horizontal_scroll_with_shared_state() {
     let viewport = scroll_viewport_width(area);
     assert_eq!(
         editor.tab_scroll_x,
-        termrock::components::scrollable_panel::max_offset(editor.tab_content_width, viewport)
+        termrock::scroll::max_offset_u16(editor.tab_content_width, viewport)
     );
     assert!(editor.tab_scroll_x > 0);
 }
@@ -887,7 +887,7 @@ fn general_tab_clamps_horizontal_scroll_with_shared_scrollable_block() {
     let viewport = scroll_viewport_width(area);
     assert_eq!(
         editor.tab_scroll_x,
-        termrock::components::scrollable_panel::max_offset(editor.tab_content_width, viewport)
+        termrock::scroll::max_offset_u16(editor.tab_content_width, viewport)
     );
     assert!(editor.tab_scroll_x > 0);
 }

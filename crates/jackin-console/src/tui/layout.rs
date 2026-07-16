@@ -115,7 +115,7 @@ pub fn scrollbar_drag_offset(
     pointer_col: u16,
     pointer_row: u16,
 ) -> Option<u16> {
-    use termrock::components::scrollable_panel::{
+    use termrock::scroll::{
         horizontal_scrollbar_area, is_scrollable, scrollbar_offset_for_track_position,
         vertical_scrollbar_area, viewport_height, viewport_width,
     };
@@ -273,7 +273,7 @@ pub fn apply_horizontal_scroll(
     area: ratatui::layout::Rect,
     content_width: usize,
 ) -> bool {
-    use termrock::components::scrollable_panel::apply_scroll_delta;
+    use termrock::scroll::apply_scroll_delta;
 
     let before = *value;
     apply_scroll_delta(value, delta, scroll_viewport_width(area), content_width);
@@ -287,7 +287,7 @@ pub fn apply_vertical_scroll(
     area: ratatui::layout::Rect,
     content_height: usize,
 ) -> bool {
-    use termrock::components::scrollable_panel::apply_scroll_delta;
+    use termrock::scroll::apply_scroll_delta;
 
     let before = *value;
     apply_scroll_delta(value, delta, scroll_viewport_height(area), content_height);
@@ -296,20 +296,17 @@ pub fn apply_vertical_scroll(
 
 #[must_use]
 pub const fn scroll_viewport_width(area: ratatui::layout::Rect) -> usize {
-    termrock::components::scrollable_panel::viewport_width(area)
+    termrock::scroll::viewport_width(area)
 }
 
 #[must_use]
 pub const fn scroll_viewport_height(area: ratatui::layout::Rect) -> usize {
-    termrock::components::scrollable_panel::viewport_height(area)
+    termrock::scroll::viewport_height(area)
 }
 
 #[must_use]
 pub const fn is_horizontally_scrollable(area: ratatui::layout::Rect, content_width: usize) -> bool {
-    termrock::components::scrollable_panel::is_scrollable(
-        content_width,
-        scroll_viewport_width(area),
-    )
+    termrock::scroll::is_scrollable(content_width, scroll_viewport_width(area))
 }
 
 /// Center a dialog at a stable preferred width derived from `pct_w` of a 160-col
