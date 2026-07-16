@@ -334,6 +334,7 @@ jobs:
     name: cargo registry warmup (${{ matrix.config.lane }})
     outputs:
       affected-packages: ${{ steps.affected-crates.outputs.packages }}
+      affected-cache-keys: ${{ steps.affected-crates.outputs.cache-keys }}
     env:
       CARGO_TARGET_DIR: target/ci-xtask
       CARGO_TERM_COLOR: always
@@ -346,7 +347,7 @@ jobs:
         name: Restore input-identical CI xtask
         shell: bash
         env:
-          ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/Cargo.toml', 'crates/jackin-process/src/**') }}
+          ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -481,9 +482,11 @@ jobs:
           if [ "${{ steps.ci-xtask-artifact.outputs.hit }}" != "true" ]; then
             cp target/ci-xtask/debug/jackin-xtask .ci-prebuilt-xtask/jackin-xtask
             strip .ci-prebuilt-xtask/jackin-xtask
+            cargo metadata --format-version 1 --locked --offline \
+              > .ci-prebuilt-xtask/workspace-metadata.json
           fi
           cp .ci-prebuilt-tools/* target/ci-tools/
-          cp .ci-prebuilt-xtask/jackin-xtask target/ci-tools/jackin-xtask
+          cp .ci-prebuilt-xtask/* target/ci-tools/
       - id: affected-crates
         name: Select affected crate tests
         shell: bash
@@ -494,17 +497,22 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            packages=$(target/ci-tools/jackin-xtask affected-crates --all)
+            selection=(--all)
           elif [ -n "$BASE_REF" ]; then
             git fetch --no-tags --depth=1 origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
-            packages=$(target/ci-tools/jackin-xtask affected-crates --base "origin/$BASE_REF")
+            selection=(--base "origin/$BASE_REF")
           elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
-            packages=$(target/ci-tools/jackin-xtask affected-crates --base "$BEFORE_SHA")
+            selection=(--base "$BEFORE_SHA")
           else
-            packages=$(target/ci-tools/jackin-xtask affected-crates --all)
+            selection=(--all)
           fi
+          packages=$(target/ci-tools/jackin-xtask affected-crates \
+            --metadata target/ci-tools/workspace-metadata.json "${selection[@]}")
+          cache_keys=$(target/ci-tools/jackin-xtask affected-crates \
+            --metadata target/ci-tools/workspace-metadata.json "${selection[@]}" --cache-keys)
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          echo "cache-keys=$cache_keys" >> "$GITHUB_OUTPUT"
       - name: Publish resolved CI tool binaries
         if: >-
           steps.ci-tools-artifact.outputs.hit != 'true' &&
@@ -520,8 +528,8 @@ jobs:
         if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.lane == 'GitHub'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/jackin-xtask/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/Cargo.toml', 'crates/jackin-process/src/**') }}
-          path: .ci-prebuilt-xtask/jackin-xtask
+          name: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          path: .ci-prebuilt-xtask/*
           compression-level: 0
           retention-days: 7
       - name: Upload shared CI xtask
@@ -758,6 +766,7 @@ jobs:
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       packages-json: ${{ needs.cargo-registry-warmup.outputs.affected-packages }}
+      package-cache-keys-json: ${{ needs.cargo-registry-warmup.outputs.affected-cache-keys }}
       all-features: true
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}

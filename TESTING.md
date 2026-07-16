@@ -170,6 +170,14 @@ Does not apply to:
 
 CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate; it has no shards, multi-crate buckets, or second jobs for crate-specific MSRV, clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
+An input-identical successful crate result is reused for seven days before any
+toolchain, registry, or target restore. Its key includes the crate's forward
+workspace dependency closure, Cargo and toolchain inputs, runner platform,
+feature and Docker modes, and the test-workflow contract. A hit preserves the
+crate's single status job while skipping Cargo and test execution; any changed
+input runs the complete contract and publishes a replacement marker from the
+canonical GitHub lane for both GitHub and Velnor to consume.
+
 Required PR/main CI runs the real
 `jackin_load_ctrl_q_yes_exits_cold_build_quickly` Docker smoke inside the
 `jackin` crate job. Scheduled hygiene runs the complete serialized Docker E2E

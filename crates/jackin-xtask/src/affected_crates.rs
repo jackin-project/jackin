@@ -13,6 +13,9 @@ use crate::cmd;
 
 #[derive(Args)]
 pub(crate) struct AffectedCratesArgs {
+    /// Read a previously resolved Cargo metadata document instead of invoking Cargo.
+    #[arg(long, value_name = "PATH")]
+    metadata: Option<PathBuf>,
     /// Git revision at the base of the diff.
     #[arg(long, required_unless_present = "all")]
     base: Option<String>,
@@ -65,7 +68,7 @@ struct WorkspaceGraph {
 }
 
 pub(crate) fn run(args: AffectedCratesArgs) -> Result<()> {
-    let metadata = cargo_metadata()?;
+    let metadata = cargo_metadata(args.metadata.as_deref())?;
     let graph = WorkspaceGraph::from_metadata(metadata)?;
     let selected = if args.all {
         graph.all_names()
@@ -83,7 +86,13 @@ pub(crate) fn run(args: AffectedCratesArgs) -> Result<()> {
     Ok(())
 }
 
-fn cargo_metadata() -> Result<Metadata> {
+fn cargo_metadata(snapshot: Option<&Path>) -> Result<Metadata> {
+    if let Some(path) = snapshot {
+        let contents = std::fs::read(path)
+            .with_context(|| format!("reading Cargo metadata snapshot {}", path.display()))?;
+        return serde_json::from_slice(&contents)
+            .with_context(|| format!("parsing Cargo metadata snapshot {}", path.display()));
+    }
     let output = cmd::output(cmd::command("cargo").args([
         "metadata",
         "--format-version",
