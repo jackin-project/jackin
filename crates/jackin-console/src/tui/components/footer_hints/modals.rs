@@ -4,8 +4,8 @@
 //! Modal footer dispatcher + the per-modal-mode hint-span builders
 //! (auth form, confirm save, container info, status popup, op picker).
 
-use jackin_tui::components::{ScrollAxes, error_popup_hint_spans, save_discard_hint_spans};
-use jackin_tui::{HintSpan, keymap::glyph};
+use termrock::components::{ScrollAxes, error_popup_hint_spans, save_discard_hint_spans};
+use termrock::{HintSpan, keymap::glyph};
 
 use crate::tui::components::auth_panel;
 use crate::tui::components::confirm_save;
@@ -88,7 +88,9 @@ pub trait ModalContainerInfoFooterState {
     fn content_height(&self) -> usize;
 }
 
-impl ModalContainerInfoFooterState for jackin_tui::components::ContainerInfoState {
+impl ModalContainerInfoFooterState
+    for crate::tui::components::container_info_surface::ContainerInfoState
+{
     fn content_width(&self) -> usize {
         Self::content_width(self)
     }
@@ -151,7 +153,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
             items
         }
         ModalFooterMode::ConfirmDismiss | ModalFooterMode::OpNamingTextInput => {
-            jackin_tui::components::text_input_hint_spans()
+            termrock::components::text_input_hint_spans()
         }
         ModalFooterMode::FileBrowser => Vec::new(),
         ModalFooterMode::MountDestination => super::settings::mount_destination_footer_items(),
@@ -173,7 +175,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
             include_refresh,
             include_collapse,
         } => super::settings::filtered_picker_footer_items(include_refresh, include_collapse),
-        ModalFooterMode::YesNo => jackin_tui::components::confirm_hint_spans(),
+        ModalFooterMode::YesNo => termrock::components::confirm_hint_spans(),
     }
 }
 
@@ -185,7 +187,7 @@ pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'stati
 /// Hint spans for inline yes/no confirm modals (`Modal::Confirm`,
 /// `SettingsModal::MountConfirm`, `SettingsModal::EnvConfirm`).
 ///
-/// Delegates to [`jackin_tui::components::confirm_hint_spans`] so this matches
+/// Delegates to [`termrock::components::confirm_hint_spans`] so this matches
 #[must_use]
 pub fn save_discard_cancel_footer_items() -> Vec<HintSpan<'static>> {
     save_discard_hint_spans()
@@ -205,8 +207,8 @@ pub fn container_info_footer_items(axes: ScrollAxes) -> Vec<HintSpan<'static>> {
     // Delegate to the shared Debug-info hint builder so the console list modal,
     // the launch cockpit, and any future surface render byte-identical hint bars
     // for the same dialog. The UNREGISTERABLE annotations live at the shared
-    // definition in `jackin_tui::components::debug_info_hint_spans`.
-    jackin_tui::components::debug_info_hint_spans(axes)
+    // definition in `crate::tui::components::container_info_surface::debug_info_hint_spans`.
+    crate::tui::components::container_info_surface::debug_info_hint_spans(axes)
 }
 
 #[must_use]
@@ -215,8 +217,7 @@ pub fn container_info_footer_items_for_dialog(
     content_height: usize,
     dialog_rect: ratatui::layout::Rect,
 ) -> Vec<HintSpan<'static>> {
-    let axes =
-        jackin_tui::components::dialog_scroll_axes(content_width, content_height, dialog_rect);
+    let axes = termrock::components::dialog_scroll_axes(content_width, content_height, dialog_rect);
     container_info_footer_items(axes)
 }
 

@@ -83,7 +83,7 @@ impl FormSection {
                     row.value,
                     width = self.label_width
                 );
-                jackin_tui::display_cols(&s)
+                termrock::display_cols(&s)
             })
             .max()
             .unwrap_or(0)

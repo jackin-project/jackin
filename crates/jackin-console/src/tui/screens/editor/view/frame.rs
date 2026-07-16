@@ -13,7 +13,7 @@ use ratatui::{
     text::Line,
 };
 
-use jackin_tui::HintSpan;
+use termrock::HintSpan;
 
 use crate::tui::components::editor_rows::render_tab_strip;
 use crate::tui::components::footer_hints::{
@@ -280,7 +280,7 @@ fn workspace_mount_scroll_axes<
         PendingOpCommit,
     >,
     body_area: Rect,
-) -> jackin_tui::components::ScrollAxes {
+) -> termrock::components::ScrollAxes {
     let content_width = crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
         &state.pending.mounts,
         &state.mount_info_cache,
@@ -319,7 +319,7 @@ pub(crate) fn render_general_tab<
 ) {
     let rows = editor_general_lines_for_state(state);
     let focused = editor_tab_content_focused(state);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         rows,
@@ -356,7 +356,7 @@ pub(crate) fn render_mounts_tab<
     >,
 ) {
     let lines = editor_mount_lines_for_state(state);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -395,7 +395,7 @@ pub(crate) fn render_roles_tab<
 ) {
     let lines = editor_role_lines_for_state(state, config);
     let focused = editor_tab_content_focused(state);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -434,7 +434,7 @@ pub(crate) fn render_secrets_tab<
 ) {
     let lines = editor_secret_lines_for_state(area, state, config);
     let focused = editor_tab_content_focused(state);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -476,7 +476,7 @@ pub(crate) fn render_auth_tab<
         .auth_selected_kind
         .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
     let focused = editor_tab_content_focused(state);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+    termrock::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -780,22 +780,22 @@ pub(crate) fn clamp_editor_scroll_for_frame(
     tab_scroll_y: &mut u16,
     mounts_scroll_x: &mut u16,
 ) {
-    let viewport_w = jackin_tui::components::scrollable_panel::viewport_width(body);
-    let viewport_h = jackin_tui::components::scrollable_panel::viewport_height(body);
+    let viewport_w = termrock::components::scrollable_panel::viewport_width(body);
+    let viewport_h = termrock::components::scrollable_panel::viewport_height(body);
     if geometry.active_mounts {
-        jackin_tui::components::scrollable_panel::clamp_scroll_offset(
+        termrock::components::scrollable_panel::clamp_scroll_offset(
             geometry.mounts_content_width,
             viewport_w,
             mounts_scroll_x,
         );
     } else {
-        jackin_tui::components::scrollable_panel::clamp_scroll_offset(
+        termrock::components::scrollable_panel::clamp_scroll_offset(
             geometry.content_width,
             viewport_w,
             tab_scroll_x,
         );
     }
-    jackin_tui::components::scrollable_panel::clamp_scroll_offset(
+    termrock::components::scrollable_panel::clamp_scroll_offset(
         geometry.content_height,
         viewport_h,
         tab_scroll_y,

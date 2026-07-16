@@ -84,13 +84,13 @@ impl LaunchHostTerminal for RecordingTerminal {
 
 fn hit_point_for_payload(
     area: Rect,
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info::ContainerInfoState,
     payload: &str,
 ) -> (u16, u16) {
     let rect = launch_container_info_rect(area, state, true);
     for row in rect.y..rect.y.saturating_add(rect.height) {
         for col in rect.x..rect.x.saturating_add(rect.width) {
-            if jackin_tui::components::container_info_copy_payload_at(rect, state, col, row)
+            if crate::tui::components::container_info::copy_payload_at(rect, state, col, row)
                 .is_some_and(|(_, candidate)| candidate == payload)
             {
                 return (col, row);
@@ -327,7 +327,8 @@ fn container_info_click_copies_real_run_id_and_log_path() {
 
 fn quit_confirm_view() -> crate::LaunchView {
     let mut view = crate::initial_view();
-    view.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
+    view.quit_confirm =
+        Some(termrock::components::ConfirmState::new("Exit jackin❯?").with_focus_yes());
     view
 }
 

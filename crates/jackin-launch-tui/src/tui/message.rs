@@ -3,7 +3,7 @@
 
 //! Launch cockpit message vocabulary.
 
-use jackin_tui::components::StatusFooterHover;
+use crate::tui::components::footer::StatusFooterHover;
 use ratatui::layout::Rect;
 
 use crate::tui::model::{

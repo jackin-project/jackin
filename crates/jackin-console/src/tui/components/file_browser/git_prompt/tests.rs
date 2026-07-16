@@ -60,7 +60,7 @@ fn handle_with_services(
 }
 
 fn attach_git_url_resolution(state: &mut FileBrowserState, repo: PathBuf) {
-    let rx = jackin_tui::runtime::spawn_named_blocking_subscription(
+    let rx = crate::tui::runtime::spawn_named_blocking_subscription(
         "jackin-file-browser-git-url-test",
         move || crate::services::file_browser::resolve_git_url(&repo),
     );

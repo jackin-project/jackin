@@ -41,6 +41,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
 ratatui = { workspace = true }
+termrock = { workspace = true }
 crossterm = { workspace = true }
 dialoguer = { workspace = true }
 sha2 = { workspace = true }
@@ -57,7 +58,6 @@ nix = { workspace = true, features = ["user"] }
 
 [dev-dependencies]
 jackin-test-support = { workspace = true }
-jackin-tui = { workspace = true }
 jackin-image = { workspace = true }
 jackin-manifest = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }

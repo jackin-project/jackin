@@ -14,7 +14,6 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -22,6 +21,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use termrock::runtime::{Subscription, SubscriptionPoll};
 
 use super::input::FileBrowserOutcome;
 use super::state::FileBrowserState;
@@ -56,7 +56,7 @@ impl FileBrowserState {
 
     pub fn attach_git_url_resolution(
         &mut self,
-        rx: jackin_tui::runtime::BlockingSubscription<Option<String>>,
+        rx: crate::tui::runtime::BlockingSubscription<Option<String>>,
     ) {
         self.pending_git_url = None;
         self.pending_git_url_rx = Some(rx);
@@ -179,7 +179,7 @@ pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<
         width: overlay.width.saturating_sub(2),
         height: overlay.height.saturating_sub(2),
     };
-    let chunks = jackin_tui::components::dialog_inner_chunks(inner, Some(2));
+    let chunks = termrock::components::dialog_inner_chunks(inner, Some(2));
     if chunks[1].height < 2 {
         return None;
     }
@@ -222,8 +222,8 @@ pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
 /// When `has_url` is false, the `· O open` segment is dropped so the
 /// hint doesn't advertise a disabled action:
 /// `M mount · P pick · C/Esc cancel`.
-pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<jackin_tui::HintSpan<'static>> {
-    use jackin_tui::HintSpan;
+pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<termrock::HintSpan<'static>> {
+    use termrock::HintSpan;
     let mut spans = vec![
         // UNREGISTERABLE(git-prompt-no-keymap): M handled inline; no GIT_PROMPT_KEYMAP registered.
         HintSpan::Key("M"),
@@ -268,15 +268,15 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
         return;
     };
 
-    let inner = jackin_tui::components::render_dialog_shell(
+    let inner = termrock::components::render_dialog_shell(
         frame,
         area,
         Some("Git repository detected"),
-        jackin_tui::components::DialogBorder::Default,
+        termrock::components::DialogBorder::Default,
     );
 
     let content_rows = if has_url { 2 } else { 1 };
-    let chunks = jackin_tui::components::dialog_inner_chunks(inner, Some(content_rows));
+    let chunks = termrock::components::dialog_inner_chunks(inner, Some(content_rows));
     let prompt_row = Rect {
         height: 1,
         ..chunks[1]
@@ -285,7 +285,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            jackin_tui::theme::BOLD_WHITE,
+            termrock::style::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
         prompt_row,

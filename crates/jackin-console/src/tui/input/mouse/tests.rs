@@ -418,12 +418,14 @@ const fn mouse_down_at(col: u16, row: u16) -> MouseEvent {
 fn container_info_copy_click_queues_typed_effect() {
     let mut state = list_state();
     state.list_modal = Some(Modal::ContainerInfo {
-        state: jackin_tui::components::ContainerInfoState::new(
+        state: crate::tui::components::container_info_surface::ContainerInfoState::new(
             "Debug info",
             vec![
-                jackin_tui::components::ContainerInfoRow::new("Run ID", "run-123")
-                    .copyable()
-                    .emphasised(),
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Run ID", "run-123",
+                )
+                .copyable()
+                .emphasised(),
             ],
         ),
     });
@@ -1513,7 +1515,7 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
         )
     );
     assert!(
-        hints.contains(jackin_tui::keymap::glyph::PGUP_PGDN),
+        hints.contains(termrock::keymap::glyph::PGUP_PGDN),
         "footer hints missing page keys: {hints}"
     );
 

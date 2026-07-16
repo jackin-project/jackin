@@ -899,7 +899,7 @@ async fn role_input_resolves_then_persists_namespaced_role_after_trust() {
     match &editor.modal {
         Some(Modal::Confirm { target, state }) => {
             assert_eq!(state.title(), "Trust role source");
-            let jackin_tui::components::ConfirmKind::Details { rows, notes, .. } = state.kind()
+            let termrock::components::ConfirmKind::Details { rows, notes, .. } = state.kind()
             else {
                 panic!("expected Details kind, got {:?}", state.kind());
             };
@@ -997,7 +997,7 @@ fn role_load_poll_success_replaces_loading_popup_with_trust_prompt() {
     std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
-    let (tx, rx) = tokio::sync::oneshot::channel();
+    let rx = jackin_console::tui::runtime::ready_blocking_subscription(Ok(()));
     let source = jackin_config::RoleSource {
         git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
         trusted: false,
@@ -1014,8 +1014,6 @@ fn role_load_poll_success_replaces_loading_popup_with_trust_prompt() {
             "chainargos/agent-brown",
         ),
     });
-    tx.send(Ok(())).unwrap();
-
     poll_role_load(&mut editor, &mut config, &paths);
 
     assert!(
@@ -1364,7 +1362,7 @@ fn role_input_rejects_invalid_selector_with_error_popup() {
     });
     if let Some(Modal::TextInput { state, .. }) = editor.modal.as_mut() {
         for ch in "Chain Argus Agent Brown".chars() {
-            state.handle_key(key(KeyCode::Char(ch)));
+            state.handle_key(key(KeyCode::Char(ch)).into());
         }
     }
 

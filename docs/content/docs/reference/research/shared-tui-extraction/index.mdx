@@ -6,7 +6,7 @@ title: "Shared TUI Extraction Research"
 
 Research and implementation plan for extracting the neutral parts of `jackin-tui` and `jackin-tui-lookbook` into an independent Tailrocks Rust project and migrating `jackin❯` as its first consumer. The public design anticipates later Tailrocks consumers without sharing product state or domain code, but no other product is migrated or validated by this roadmap. **Research conducted: 2026-07-15.**
 
-Execution starts from the [Shared TUI Extraction roadmap item](/roadmap/shared-tui-extraction/). The roadmap owns the goal and live milestone status; this dossier owns the normative decisions, implementation steps, and completion evidence. Checkboxes in the dossier define required gates rather than a second status tracker.
+The extraction is complete. This dossier is the canonical record of the goal, normative decisions, implementation steps, and completion evidence. Its checkboxes record the gates that authorized each ownership transition.
 
 Future cross-product reuse explains the extraction, but execution is limited to TermRock and `jackin❯`. Database-client research, engine selection, product workflows, and native database-app plans belong in a separate database repository and are intentionally absent here.
 
@@ -33,7 +33,7 @@ All measurements were taken from the active jackin❯ branch on 2026-07-15. File
 - **Later consumers:** Holla, Velnor runner/job TUI, justified Parallax interactive CLI workflows, TableRock, and independent Tailrocks development tools, all through separately scoped future work.
 - **Boundary:** shared components, terminal lifecycle, theme, input/focus/layout, lookbook, and render-conformance only. No agent, job, trace, database, credential, command-execution, or telemetry models.
 - **Post-bootstrap consumption:** branches and trusted forks support cross-repository iteration, while durable consumer changes pin a full Git commit SHA and commit <RepoFile path="Cargo.lock" />.
-- **Implementation delivery:** one future `jackin❯` branch/PR covers the complete roadmap; filtered history is prepared locally, every new TermRock commit is signed/buildable, only the neutral standalone head and later checkpoints push directly to `main`, and `jackin❯` pins each exact revision.
+- **Implementation delivery:** one `jackin❯` branch/PR delivered the complete roadmap; signed, buildable TermRock bootstrap checkpoints preceded the `v0.6.0` tag and protected-main transition, and `jackin❯` pins the exact tested revision.
 - **Execution scope:** only TermRock and `jackin❯`; no other product checkout, change, validation, or migration is a gate.
 - **Release:** crates.io is optional; consumers can adopt immutable Git revisions before any registry publication and may later pin semver releases.
 - **Terminal baseline:** modern truecolor terminals (Ghostty-class) with OSC 8/22/52 support; the library ships no capability-degradation code.

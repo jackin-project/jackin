@@ -1,7 +1,7 @@
 //! Input/update handlers for the 1Password picker.
 
+use crate::ModalOutcome;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use jackin_tui::ModalOutcome;
 
 use crate::state::{OpPickerState, list_state_for_count};
 use crate::{

@@ -82,7 +82,7 @@ fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
 }
 
 fn text_width(text: &str) -> usize {
-    jackin_tui::display_cols(text)
+    termrock::display_cols(text)
 }
 
 #[cfg(test)]

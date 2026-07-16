@@ -1,12 +1,12 @@
 use super::{
     failure_copy_target_at, failure_popup_hyperlink_overlay, failure_popup_value_rect_scrolled,
 };
+use crate::tui::components::chrome::bottom_chrome_areas;
 use crate::tui::components::failure_dialog::failure_popup_rows;
 use crate::tui::model::{LaunchIdentity, LaunchTargetKind};
 use crate::tui::update::initial_view;
 use crate::tui::view::render_launch_frame;
 use crate::{FailureCopyTarget, LaunchStage, tui::model::LaunchFailure};
-use jackin_tui::components::bottom_chrome_areas;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
 fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
@@ -298,7 +298,7 @@ fn scrolled_failure_copy_hit_and_overlay_follow_failure_scroll() {
 
     // Large scroll: the same screen y must no longer hit that absolute row
     // unless we pass the matching scroll into hit-test.
-    let mut scrolled = jackin_tui::components::DialogBodyScroll::new();
+    let mut scrolled = termrock::scroll::DialogScroll::new();
     scrolled.scroll_y = 8;
     let vr_scrolled = failure_popup_value_rect_scrolled(
         rect0,

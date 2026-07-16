@@ -1,6 +1,6 @@
 //! Rendering facade for the shared 1Password picker modal.
 
-use jackin_tui::components::TextInputState;
+use jackin_console_oppicker::TextInputState as OppickerTextInputState;
 use ratatui::text::Line;
 
 pub use crate::tui::op_picker::model::*;
@@ -24,7 +24,7 @@ pub trait OpPickerRenderState {
     fn selected_vault_name(&self) -> &str;
     fn selected_item_name(&self) -> &str;
     fn selected_item_subtitle(&self) -> &str;
-    fn naming_stage_input(&self) -> Option<&TextInputState<'static>>;
+    fn naming_stage_input(&self) -> Option<&OppickerTextInputState<'static>>;
     fn account_lines(&self) -> Vec<Line<'static>>;
     fn vault_lines(&self) -> Vec<Line<'static>>;
     fn item_lines(&self) -> Vec<Line<'static>>;

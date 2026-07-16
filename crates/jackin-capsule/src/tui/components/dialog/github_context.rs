@@ -56,7 +56,7 @@ impl Dialog {
     pub(crate) fn github_context_state(
         &self,
         github: Option<&GithubContextView<'_>>,
-    ) -> Option<jackin_tui::components::ContainerInfoState> {
+    ) -> Option<crate::tui::components::container_info_surface::ContainerInfoState> {
         let Self::GitHubContext { copied, scroll } = self else {
             return None;
         };
@@ -88,28 +88,39 @@ impl Dialog {
             crate::pull_request::PullRequestChecks::summary,
         );
         let mut rows = vec![
-            jackin_tui::components::ContainerInfoRow::new("Branch", branch),
-            jackin_tui::components::ContainerInfoRow::new("Pull Request", pr_number),
-            jackin_tui::components::ContainerInfoRow::new("PR Title", pr_title),
+            crate::tui::components::container_info_surface::ContainerInfoRow::new("Branch", branch),
+            crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                "Pull Request",
+                pr_number,
+            ),
+            crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                "PR Title", pr_title,
+            ),
         ];
-        let mut url_row = jackin_tui::components::ContainerInfoRow::new("GitHub URL", pr_url);
+        let mut url_row = crate::tui::components::container_info_surface::ContainerInfoRow::new(
+            "GitHub URL",
+            pr_url,
+        );
         if let Some(pr) = pr {
             url_row = url_row.copyable().hyperlink(pr.url.clone());
         }
         rows.extend([
             url_row,
-            jackin_tui::components::ContainerInfoRow::new("CI Status", ci),
+            crate::tui::components::container_info_surface::ContainerInfoRow::new("CI Status", ci),
         ]);
         if let Some(pr) = pr {
             rows.push(
-                jackin_tui::components::ContainerInfoRow::new("Open PR", pr.url.clone())
-                    .hyperlink(pr.url.clone()),
+                crate::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Open PR",
+                    pr.url.clone(),
+                )
+                .hyperlink(pr.url.clone()),
             );
             let ci_url = pr
                 .checks
                 .as_ref()
                 .and_then(crate::pull_request::PullRequestChecks::ci_url);
-            let mut ci_row = jackin_tui::components::ContainerInfoRow::new(
+            let mut ci_row = crate::tui::components::container_info_surface::ContainerInfoRow::new(
                 "Open CI",
                 ci_url.unwrap_or("(unavailable)"),
             );
@@ -118,7 +129,10 @@ impl Dialog {
             }
             rows.push(ci_row);
         }
-        let mut state = jackin_tui::components::ContainerInfoState::new("GitHub context", rows);
+        let mut state = crate::tui::components::container_info_surface::ContainerInfoState::new(
+            "GitHub context",
+            rows,
+        );
         if *copied {
             state.mark_copied(super::GITHUB_URL_ROW);
         }
@@ -129,7 +143,7 @@ impl Dialog {
     pub fn new_github_context() -> Self {
         Self::GitHubContext {
             copied: false,
-            scroll: jackin_tui::components::DialogBodyScroll::new(),
+            scroll: termrock::components::DialogBodyScroll::new(),
         }
     }
 }

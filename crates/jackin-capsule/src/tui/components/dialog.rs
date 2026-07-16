@@ -43,10 +43,9 @@ pub use super::container_info_dialog::ContainerInfoDiagnostics;
 pub(super) use super::palette::{PALETTE_ITEMS, palette_filtered_indices};
 pub use super::palette::{PaletteCloseLabel, PaletteCommand};
 
-use jackin_tui::components::{
-    CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction, ModalRectSpec, modal_rect,
-};
-use jackin_tui::keymap::raw_bytes_to_chord;
+use crate::tui::components::modal_rects::{ModalRectSpec, modal_rect};
+use crate::tui::keymap::raw_bytes_to_chord;
+use termrock::components::{CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction};
 
 use crate::tui::keymap::{FILTER_LIST_KEYMAP, FilterListAction, READ_ONLY_DISMISS_KEYMAP};
 
@@ -147,20 +146,20 @@ pub enum Dialog {
     },
     /// Text-input modal opened when the operator double-clicks a tab.
     /// `tab_idx` records which tab to rename. `input` reuses the
-    /// shared `jackin_tui::TextField` so the buffer + cursor + max
+    /// shared `termrock::components::TextField` so the buffer + cursor + max
     /// length live in the same place as the console TUI text input. Enter
     /// commits; Esc cancels; empty input clears any previous custom
     /// label so the tab returns to auto-naming.
     RenameTab {
         tab_idx: usize,
-        input: jackin_tui::TextField,
+        input: termrock::components::TextField,
     },
     /// Text-input modal opened from the command palette. The operator
     /// types a workspace-relative path, workspace absolute path, or a
     /// `/jackin/run/` path; the daemon validates and transfers it over
     /// the host attach protocol.
     ExportFile {
-        input: jackin_tui::TextField,
+        input: termrock::components::TextField,
         reveal_after_export: bool,
         open_after_export: bool,
     },
@@ -188,7 +187,7 @@ pub enum Dialog {
         /// Persisted scroll offsets. The shared `ContainerInfoState` is rebuilt
         /// every frame, so the scroll must live here on the dialog enum to
         /// survive across redraws.
-        scroll: jackin_tui::components::DialogBodyScroll,
+        scroll: termrock::components::DialogBodyScroll,
     },
     /// Read-only modal opened from the bottom branch/PR context.
     /// Branch / PR / loading state come from `GithubContextView` at
@@ -197,7 +196,7 @@ pub enum Dialog {
     GitHubContext {
         copied: bool,
         /// Persisted scroll offsets (rebuilt each frame like `ContainerInfo`).
-        scroll: jackin_tui::components::DialogBodyScroll,
+        scroll: termrock::components::DialogBodyScroll,
     },
     /// Read-only usage/quota modal for the focused pane.
     Usage {
@@ -205,12 +204,12 @@ pub enum Dialog {
         selected: UsageDialogTab,
         tab_bar_focused: bool,
         hovered_tab: Option<usize>,
-        scroll: jackin_tui::components::DialogBodyScroll,
+        scroll: termrock::components::DialogBodyScroll,
     },
     /// Operator-facing spawn failure surfaced through the shared error popup.
     /// This is intentionally modal: Enter / Esc / O dismiss, while unrelated
     /// printable input is consumed so the reason cannot vanish unread.
-    SpawnFailure(jackin_tui::components::ErrorPopupState),
+    SpawnFailure(termrock::components::ErrorPopupState),
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
     /// on confirm, the dialog is replaced with an `AgentPicker` carrying
@@ -465,9 +464,9 @@ impl Dialog {
         }
         if let Self::SpawnFailure(state) = self {
             return match raw_bytes_to_chord(key)
-                .and_then(|chord| jackin_tui::components::ERROR_POPUP_KEYMAP.dispatch(chord))
+                .and_then(|chord| termrock::components::ERROR_POPUP_KEYMAP.dispatch(chord))
             {
-                Some(jackin_tui::components::ErrorPopupAction::Dismiss) => DialogAction::Dismiss,
+                Some(termrock::components::ErrorPopupAction::Dismiss) => DialogAction::Dismiss,
                 None => {
                     // Touch the state so this branch remains explicitly tied to
                     // `ErrorPopupState`; printable input is consumed and does
@@ -534,7 +533,7 @@ impl Dialog {
             if let Self::Usage { scroll, .. } = self
                 && scroll.handle_raw_key_for_axes(
                     key,
-                    jackin_tui::components::ScrollAxes {
+                    termrock::components::ScrollAxes {
                         vertical: true,
                         horizontal: true,
                     },
@@ -566,7 +565,7 @@ impl Dialog {
             if let Some(scroll) = body_scroll
                 && scroll.handle_raw_key_for_axes(
                     key,
-                    jackin_tui::components::ScrollAxes {
+                    termrock::components::ScrollAxes {
                         vertical: true,
                         horizontal: true,
                     },
@@ -942,8 +941,8 @@ impl Dialog {
         };
         // Outside the box dismisses; an inside hit falls through to the
         // per-dialog click handling below.
-        if jackin_tui::components::classify_click(area, col, row)
-            == jackin_tui::components::ModalClickResult::OutsideDismiss
+        if termrock::components::classify_click(area, col, row)
+            == termrock::components::ModalClickResult::OutsideDismiss
         {
             return DialogAction::Dismiss;
         }
@@ -961,7 +960,9 @@ impl Dialog {
         // the clipboard and that row shows the "Copied!" badge.
         if matches!(self, Self::ContainerInfo { .. }) {
             let hit = self.container_info_state().and_then(|state| {
-                jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
+                crate::tui::components::container_info_surface::container_info_copy_payload_at(
+                    area, &state, col, row,
+                )
             });
             if let Some((hit_row, payload)) = hit {
                 if let Self::ContainerInfo { copied_row, .. } = self {
@@ -970,7 +971,9 @@ impl Dialog {
                 return DialogAction::CopyToClipboard(payload);
             }
             let reveal_hit = self.container_info_state().and_then(|state| {
-                jackin_tui::components::container_info_hyperlink_payload_at(area, &state, col, row)
+                crate::tui::components::container_info_surface::container_info_hyperlink_payload_at(
+                    area, &state, col, row,
+                )
             });
             return match reveal_hit.and_then(|(_, href)| file_url_path(&href).map(str::to_owned)) {
                 Some(path) => DialogAction::RevealHostPath(path),
@@ -985,7 +988,9 @@ impl Dialog {
                 height,
             };
             let hit = self.github_context_state(github).and_then(|state| {
-                jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
+                crate::tui::components::container_info_surface::container_info_copy_payload_at(
+                    area, &state, col, row,
+                )
             });
             if let Some((_hit_row, payload)) = hit {
                 if let Self::GitHubContext { copied, .. } = self {
@@ -994,7 +999,9 @@ impl Dialog {
                 return DialogAction::CopyToClipboard(payload);
             }
             let open_hit = self.github_context_state(github).and_then(|state| {
-                jackin_tui::components::container_info_hyperlink_payload_at(area, &state, col, row)
+                crate::tui::components::container_info_surface::container_info_hyperlink_payload_at(
+                    area, &state, col, row,
+                )
             });
             return match open_hit {
                 Some((GITHUB_OPEN_PR_ROW | GITHUB_OPEN_CI_ROW, payload)) => {
@@ -1024,9 +1031,9 @@ impl Dialog {
         // the taller data-loss exit variant.
         if let Self::ConfirmAction { kind, selected_yes } = self {
             let mut state = if matches!(kind, ConfirmKind::Exit) {
-                jackin_tui::components::exit_confirm_state_with_data_loss()
+                crate::tui::components::exit_confirm_state_with_data_loss()
             } else {
-                jackin_tui::components::ConfirmState::new(format!(
+                termrock::components::ConfirmState::new(format!(
                     "{}\n\n{}",
                     kind.title(),
                     kind.message()
@@ -1041,7 +1048,7 @@ impl Dialog {
                 width,
                 height,
             };
-            return match jackin_tui::components::confirm_button_hit(area, &state, col, row) {
+            return match termrock::components::confirm_button_hit(area, &state, col, row) {
                 Some(true) => DialogAction::ConfirmedAction(*kind),
                 Some(false) => DialogAction::Dismiss,
                 None => DialogAction::Consume,
@@ -1224,9 +1231,9 @@ impl Dialog {
                     height,
                 };
                 self.container_info_state().is_some_and(|state| {
-                    jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
+                    crate::tui::components::container_info_surface::container_info_copy_payload_at(area, &state, col, row)
                         .is_some()
-                        || jackin_tui::components::container_info_hyperlink_payload_at(
+                        || crate::tui::components::container_info_surface::container_info_hyperlink_payload_at(
                             area, &state, col, row,
                         )
                         .is_some_and(|(_, href)| file_url_path(&href).is_some())
@@ -1240,9 +1247,9 @@ impl Dialog {
                     height,
                 };
                 self.github_context_state(github).is_some_and(|state| {
-                    jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
+                    crate::tui::components::container_info_surface::container_info_copy_payload_at(area, &state, col, row)
                         .is_some()
-                        || jackin_tui::components::container_info_hyperlink_payload_at(
+                        || crate::tui::components::container_info_surface::container_info_hyperlink_payload_at(
                             area, &state, col, row,
                         )
                         .is_some_and(|(idx, _)| {
@@ -1331,7 +1338,9 @@ impl Dialog {
             }
             Self::RenameTab { .. } | Self::ExportFile { .. } => 5,
             Self::ContainerInfo { .. } => self.container_info_state().map_or(10, |state| {
-                jackin_tui::components::container_info_required_height(&state)
+                crate::tui::components::container_info_surface::container_info_required_height(
+                    &state,
+                )
             }),
             Self::GitHubContext { .. } => 11,
             Self::Usage { .. } => self.usage_state().map_or(10, |state| {
@@ -1339,15 +1348,15 @@ impl Dialog {
             }),
             Self::SpawnFailure(state) => {
                 let inner_width = PALETTE_WIDTH.saturating_sub(2);
-                jackin_tui::components::required_height(state, inner_width, term_rows)
+                termrock::components::required_height(state, inner_width, term_rows)
             }
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
             // Exit shows the shared data-loss variant (extra warning notes), so
             // size it from that state rather than the fixed single-line height.
             Self::ConfirmAction { kind, .. } => match kind {
-                ConfirmKind::Exit => jackin_tui::components::confirm_required_height(
-                    &jackin_tui::components::exit_confirm_state_with_data_loss(),
+                ConfirmKind::Exit => termrock::components::confirm_required_height(
+                    &crate::tui::components::exit_confirm_state_with_data_loss(),
                 ),
                 ConfirmKind::ClosePane | ConfirmKind::CloseTab => 9,
             },

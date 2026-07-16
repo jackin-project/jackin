@@ -51,7 +51,7 @@ use crate::tui::update::{
 };
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
-use jackin_tui::components::KeyChord;
+use termrock::keymap::KeyChord;
 
 use crate::tui::keymap::{
     EDITOR_CONTENT_KEYMAP, EDITOR_GLOBAL_KEYMAP, EDITOR_TAB_BAR_KEYMAP, EditorContentAction,
@@ -61,7 +61,7 @@ use crate::tui::keymap::{
 fn dispatch_editor_top_level(key: KeyEvent, tab_bar_focused: bool) -> EditorTopLevelKeyPlan {
     use crossterm::event::KeyCode;
 
-    let chord = KeyChord::from(key);
+    let chord = KeyChord::from(termrock::crossterm::key(key));
 
     if let Some(action) = EDITOR_GLOBAL_KEYMAP.dispatch(chord) {
         return match action {
@@ -576,7 +576,7 @@ pub fn handle_editor_modal(
     };
     match modal {
         Modal::TextInput { target, state } => {
-            match inline_picker_plan(state.handle_key(key)) {
+            match inline_picker_plan(state.handle_key(key.into())) {
                 InlinePickerPlan::Commit(value) => {
                     let target = target.clone();
                     if target == TextInputTarget::Role {
@@ -625,43 +625,45 @@ pub fn handle_editor_modal(
             }
             InlinePickerPlan::Continue => {}
         },
-        Modal::Confirm { target, state } => match bool_confirm_modal_plan(state.handle_key(key)) {
-            BoolConfirmModalPlan::Confirm => {
-                let target = target.clone();
-                editor.clear_modal_chain();
-                // Source-drift acknowledgement consumes `plan` and
-                // re-stashes it as a `PendingCommit` for the outer
-                // dispatcher (which owns `paths` / `cwd` / `runner`)
-                // to drain via `commit_editor_save`.
-                if let ConfirmTarget::DeleteIsolatedAndSave {
-                    mut plan,
-                    exit_on_success,
-                    ..
-                } = target
-                {
-                    plan.delete_isolated_acknowledged = true;
-                    plan.isolated_cleanup_complete = false;
-                    editor.save_flow = EditorSaveFlow::PendingCommit {
-                        plan,
+        Modal::Confirm { target, state } => {
+            match bool_confirm_modal_plan(state.handle_key(key.into())) {
+                BoolConfirmModalPlan::Confirm => {
+                    let target = target.clone();
+                    editor.clear_modal_chain();
+                    // Source-drift acknowledgement consumes `plan` and
+                    // re-stashes it as a `PendingCommit` for the outer
+                    // dispatcher (which owns `paths` / `cwd` / `runner`)
+                    // to drain via `commit_editor_save`.
+                    if let ConfirmTarget::DeleteIsolatedAndSave {
+                        mut plan,
                         exit_on_success,
-                    };
-                } else {
-                    match apply_editor_confirm(editor, &target) {
-                        Ok(EditorModalOutcome::Continue) => {}
-                        Ok(outcome) => return outcome,
-                        Err(e) => open_editor_action_error(editor, &e),
+                        ..
+                    } = target
+                    {
+                        plan.delete_isolated_acknowledged = true;
+                        plan.isolated_cleanup_complete = false;
+                        editor.save_flow = EditorSaveFlow::PendingCommit {
+                            plan,
+                            exit_on_success,
+                        };
+                    } else {
+                        match apply_editor_confirm(editor, &target) {
+                            Ok(EditorModalOutcome::Continue) => {}
+                            Ok(outcome) => return outcome,
+                            Err(e) => open_editor_action_error(editor, &e),
+                        }
                     }
                 }
-            }
-            BoolConfirmModalPlan::Dismiss => {
-                let was_drift = matches!(target, ConfirmTarget::DeleteIsolatedAndSave { .. });
-                editor.clear_modal_chain();
-                if was_drift {
-                    editor.save_flow = EditorSaveFlow::Idle;
+                BoolConfirmModalPlan::Dismiss => {
+                    let was_drift = matches!(target, ConfirmTarget::DeleteIsolatedAndSave { .. });
+                    editor.clear_modal_chain();
+                    if was_drift {
+                        editor.save_flow = EditorSaveFlow::Idle;
+                    }
                 }
+                BoolConfirmModalPlan::Continue => {}
             }
-            BoolConfirmModalPlan::Continue => {}
-        },
+        }
         Modal::MountDstChoice {
             target,
             state: modal_state,
@@ -672,7 +674,7 @@ pub fn handle_editor_modal(
             dispatch_editor_mount_dst_choice(editor, target, &src, &outcome);
         }
         Modal::SaveDiscardCancel { state: modal_state } => {
-            match save_discard_modal_plan(modal_state.handle_key(key)) {
+            match save_discard_modal_plan(modal_state.handle_key(key.into())) {
                 SaveDiscardModalPlan::Save => {
                     editor.clear_modal_chain();
                     editor.exit_after_save = Some(ExitIntent::Save);
@@ -750,7 +752,7 @@ pub fn handle_editor_modal(
             }
         }
         Modal::ErrorPopup { state: popup_state } => {
-            match dismissible_modal_plan(popup_state.handle_key(key)) {
+            match dismissible_modal_plan(popup_state.handle_key(key.into())) {
                 DismissibleModalPlan::Dismiss => {
                     // A source-folder validation rejection stacks this popup
                     // directly over the auth source-folder picker. Dismissing it
@@ -892,30 +894,31 @@ pub fn handle_editor_modal(
                 return EditorModalOutcome::OpenAuthSourceFolderBrowser;
             }
         }
-        Modal::AuthRolePicker { state: picker } => match inline_picker_plan(picker.handle_key(key))
-        {
-            InlinePickerPlan::Commit(role) => {
-                if let Some(kind) = editor.auth_selected_kind {
-                    let target = crate::tui::state::AuthFormTarget::WorkspaceRole {
-                        role: role.key(),
-                        kind,
-                    };
-                    let form = crate::tui::state::AuthForm::new(kind);
-                    editor.open_sub_modal(Modal::AuthForm {
-                        target,
-                        state: Box::new(form),
-                        focus: crate::tui::state::AuthFormFocus::Mode,
-                        literal_buffer: String::new(),
-                    });
-                } else {
+        Modal::AuthRolePicker { state: picker } => {
+            match inline_picker_plan(picker.handle_key(key)) {
+                InlinePickerPlan::Commit(role) => {
+                    if let Some(kind) = editor.auth_selected_kind {
+                        let target = crate::tui::state::AuthFormTarget::WorkspaceRole {
+                            role: role.key(),
+                            kind,
+                        };
+                        let form = crate::tui::state::AuthForm::new(kind);
+                        editor.open_sub_modal(Modal::AuthForm {
+                            target,
+                            state: Box::new(form),
+                            focus: crate::tui::state::AuthFormFocus::Mode,
+                            literal_buffer: String::new(),
+                        });
+                    } else {
+                        editor.pop_modal_chain();
+                    }
+                }
+                InlinePickerPlan::Dismiss => {
                     editor.pop_modal_chain();
                 }
+                InlinePickerPlan::Continue => {}
             }
-            InlinePickerPlan::Dismiss => {
-                editor.pop_modal_chain();
-            }
-            InlinePickerPlan::Continue => {}
-        },
+        }
         Modal::OpPicker {
             secrets_target,
             state: picker,
@@ -930,7 +933,7 @@ pub fn handle_editor_modal(
                 handle_token_generate_pick(editor, target, outcome);
                 return EditorModalOutcome::Continue;
             }
-            match inline_picker_plan(outcome) {
+            match crate::tui::update::op_picker_inline_plan(outcome) {
                 // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }
@@ -1048,7 +1051,7 @@ fn dispatch_editor_mount_dst_choice(
     editor: &mut EditorState<'_>,
     target: FileBrowserTarget,
     src: &str,
-    outcome: &jackin_tui::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
+    outcome: &termrock::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
 ) {
     match mount_dst_choice_plan(outcome.clone()) {
         MountDstChoicePlan::CommitSamePath => {

@@ -112,8 +112,8 @@ pub fn workspace_save_preview<
     WorkspaceSavePreview {
         mode,
         original_workdir: matches!(editor.mode, EditorMode::Edit { .. })
-            .then(|| jackin_tui::shorten_home(&editor.original.workdir)),
-        pending_workdir: jackin_tui::shorten_home(&editor.pending.workdir),
+            .then(|| jackin_core::shorten_home(&editor.original.workdir)),
+        pending_workdir: jackin_core::shorten_home(&editor.pending.workdir),
         mount_diffs: workspace_mount_diffs_preview(editor),
         auth_changes: workspace_auth_changes(
             config,
@@ -481,8 +481,8 @@ pub fn workspace_mount_preview_row(
     cache: &crate::mount_info_cache::MountInfoCache,
 ) -> WorkspaceMountPreviewRow {
     WorkspaceMountPreviewRow {
-        src: jackin_tui::shorten_home(&mount.src),
-        dst: jackin_tui::shorten_home(&mount.dst),
+        src: jackin_core::shorten_home(&mount.src),
+        dst: jackin_core::shorten_home(&mount.dst),
         readonly: mount.readonly,
         isolation: mount.isolation.as_str().to_owned(),
         kind: cache.label(&mount.src),
@@ -491,7 +491,7 @@ pub fn workspace_mount_preview_row(
 
 #[must_use]
 pub fn collapse_section_lines(collapses: &[(String, String)]) -> Vec<Line<'static>> {
-    let style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
+    let style = Style::default().fg(termrock::style::PHOSPHOR_DIM);
     collapses
         .iter()
         .map(|(child, parent)| {
@@ -509,8 +509,8 @@ pub fn collapse_removal_lines(collapses: &[jackin_config::Removal]) -> Vec<Line<
         .iter()
         .map(|removal| {
             (
-                jackin_tui::shorten_home(&removal.child.src),
-                jackin_tui::shorten_home(&removal.covered_by.src),
+                jackin_core::shorten_home(&removal.child.src),
+                jackin_core::shorten_home(&removal.covered_by.src),
             )
         })
         .collect();
@@ -689,8 +689,8 @@ pub fn global_mount_preview_row(row: &jackin_config::GlobalMountRow) -> MountPre
     MountPreviewRow {
         scope: row.scope.clone(),
         name: row.name.clone(),
-        src: jackin_tui::shorten_home(&row.mount.src),
-        dst: jackin_tui::shorten_home(&row.mount.dst),
+        src: jackin_core::shorten_home(&row.mount.src),
+        dst: jackin_core::shorten_home(&row.mount.dst),
         readonly: row.mount.readonly,
     }
 }
@@ -736,10 +736,10 @@ pub struct TrustPreviewRow {
 )]
 pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
-        .fg(jackin_tui::theme::WHITE)
+        .fg(termrock::style::WHITE)
         .add_modifier(Modifier::BOLD);
-    let value = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
-    let dim = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
+    let value = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
+    let dim = Style::default().fg(termrock::style::PHOSPHOR_DIM);
 
     let mut out: Vec<Line<'static>> = Vec::new();
 
@@ -1007,11 +1007,11 @@ fn allowed_roles_summary(preview: &WorkspaceSavePreview) -> String {
 #[must_use]
 pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
-        .fg(jackin_tui::theme::WHITE)
+        .fg(termrock::style::WHITE)
         .add_modifier(Modifier::BOLD);
-    let add_style = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
-    let remove_style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
-    let sep_style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DARK);
+    let add_style = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
+    let remove_style = Style::default().fg(termrock::style::PHOSPHOR_DIM);
+    let sep_style = Style::default().fg(termrock::style::PHOSPHOR_DARK);
 
     let mut out: Vec<Line<'static>> = Vec::new();
 

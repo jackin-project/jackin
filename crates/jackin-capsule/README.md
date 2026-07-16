@@ -17,7 +17,7 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 
 ## Architecture tier and allowed dependencies
 
-**L4 entry/glue (binary + lib).** Allowed workspace dependencies: `jackin-core`, `jackin-diagnostics` (OTLP), `jackin-protocol`, `jackin-usage`, `jackin-term`, `jackin-tui`, `jackin-agent-status`, `jackin-build-meta` (build.rs). Must **not** depend on host-side runtime (`jackin-runtime`) or other host binary crates — the capsule is a different process tree.
+**L4 entry/glue (binary + lib).** Allowed workspace dependencies include `jackin-core`, `jackin-diagnostics` (OTLP), `jackin-protocol`, `jackin-usage`, `jackin-term`, TermRock, `jackin-agent-status`, and `jackin-build-meta` (build.rs). Must **not** depend on host-side runtime (`jackin-runtime`) or other host binary crates — the capsule is a different process tree.
 
 ## Structure
 
@@ -32,7 +32,7 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 | [`attach_context.rs`](src/attach_context.rs) | single host-connection state | — |
 | [`attach_protocol.rs`](src/attach_protocol.rs) | attach lifecycle helpers | — |
 | [`protocol.rs`](src/protocol.rs) · [`protocol/`](src/protocol) | capsule wire framing helpers | — |
-| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | in-container TUI render/input | nested |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | in-container TUI render/input, product chrome, ANSI policy, and TermRock adapters | nested |
 | [`clipboard.rs`](src/clipboard.rs) · [`clipboard/`](src/clipboard) | clipboard image staging + idle expiry | [`tests.rs`](src/clipboard/tests.rs) |
 | [`runtime_setup.rs`](src/runtime_setup.rs) · [`runtime_setup/`](src/runtime_setup) | in-container git/auth/MCP setup | [`tests.rs`](src/runtime_setup/tests.rs) |
 | [`config.rs`](src/config.rs) | `CapsuleConfig` load/validate | — |

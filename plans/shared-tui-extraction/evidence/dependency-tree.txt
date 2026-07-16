@@ -1,0 +1,734 @@
+# command: mise x -- cargo tree -p jackin-tui; mise x -- cargo tree -p jackin-tui --all-features; mise x -- cargo tree -p jackin-tui-lookbook; mise x -- cargo tree -p jackin-tui-lookbook --all-features
+
+jackin-tui v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-tui)
+├── anstyle-parse v1.0.0
+│   └── utf8parse v0.2.2
+├── base64 v0.22.1
+├── crossterm v0.29.0
+│   ├── bitflags v2.13.0
+│   ├── derive_more v2.1.1
+│   │   └── derive_more-impl v2.1.1 (proc-macro)
+│   │       ├── convert_case v0.10.0
+│   │       │   └── unicode-segmentation v1.13.3
+│   │       ├── proc-macro2 v1.0.106
+│   │       │   └── unicode-ident v1.0.24
+│   │       ├── quote v1.0.46
+│   │       │   └── proc-macro2 v1.0.106 (*)
+│   │       └── syn v2.0.118
+│   │           ├── proc-macro2 v1.0.106 (*)
+│   │           ├── quote v1.0.46 (*)
+│   │           └── unicode-ident v1.0.24
+│   │       [build-dependencies]
+│   │       └── rustc_version v0.4.1
+│   │           └── semver v1.0.28
+│   ├── document-features v0.2.12 (proc-macro)
+│   │   └── litrs v1.0.0
+│   ├── mio v1.2.1
+│   │   ├── libc v0.2.186
+│   │   └── log v0.4.33
+│   ├── parking_lot v0.12.5
+│   │   ├── lock_api v0.4.14
+│   │   │   └── scopeguard v1.2.0
+│   │   └── parking_lot_core v0.9.12
+│   │       ├── cfg-if v1.0.4
+│   │       ├── libc v0.2.186
+│   │       └── smallvec v1.15.2
+│   ├── rustix v1.1.4
+│   │   ├── bitflags v2.13.0
+│   │   └── linux-raw-sys v0.12.1
+│   ├── signal-hook v0.3.18
+│   │   ├── libc v0.2.186
+│   │   └── signal-hook-registry v1.4.8
+│   │       ├── errno v0.3.14
+│   │       │   └── libc v0.2.186
+│   │       └── libc v0.2.186
+│   └── signal-hook-mio v0.2.5
+│       ├── libc v0.2.186
+│       ├── mio v1.2.1 (*)
+│       └── signal-hook v0.3.18 (*)
+├── jackin-core v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-core)
+│   ├── anyhow v1.0.103
+│   ├── base64 v0.22.1
+│   ├── directories v6.0.0
+│   │   └── dirs-sys v0.5.0
+│   │       ├── libc v0.2.186
+│   │       └── option-ext v0.2.0
+│   ├── hex v0.4.3
+│   ├── owo-colors v4.3.0
+│   │   ├── supports-color v2.1.0
+│   │   │   ├── is-terminal v0.4.17
+│   │   │   │   └── libc v0.2.186
+│   │   │   └── is_ci v1.2.0
+│   │   └── supports-color v3.0.2
+│   │       └── is_ci v1.2.0
+│   ├── ratatui v0.30.2
+│   │   ├── instability v0.3.12 (proc-macro)
+│   │   │   ├── darling v0.23.0
+│   │   │   │   ├── darling_core v0.23.0
+│   │   │   │   │   ├── ident_case v1.0.1
+│   │   │   │   │   ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   │   ├── quote v1.0.46 (*)
+│   │   │   │   │   ├── strsim v0.11.1
+│   │   │   │   │   └── syn v2.0.118 (*)
+│   │   │   │   └── darling_macro v0.23.0 (proc-macro)
+│   │   │   │       ├── darling_core v0.23.0 (*)
+│   │   │   │       ├── quote v1.0.46 (*)
+│   │   │   │       └── syn v2.0.118 (*)
+│   │   │   ├── indoc v2.0.7 (proc-macro)
+│   │   │   │   [build-dependencies]
+│   │   │   │   └── rustversion v1.0.23 (proc-macro)
+│   │   │   ├── proc-macro2 v1.0.106 (*)
+│   │   │   ├── quote v1.0.46 (*)
+│   │   │   └── syn v2.0.118 (*)
+│   │   ├── ratatui-core v0.1.2
+│   │   │   ├── bitflags v2.13.0
+│   │   │   ├── compact_str v0.9.1
+│   │   │   │   ├── castaway v0.2.4
+│   │   │   │   │   └── rustversion v1.0.23 (proc-macro)
+│   │   │   │   ├── cfg-if v1.0.4
+│   │   │   │   ├── itoa v1.0.18
+│   │   │   │   ├── rustversion v1.0.23 (proc-macro)
+│   │   │   │   ├── ryu v1.0.23
+│   │   │   │   └── static_assertions v1.1.0
+│   │   │   ├── critical-section v1.2.0
+│   │   │   ├── hashbrown v0.17.1
+│   │   │   │   ├── allocator-api2 v0.2.21
+│   │   │   │   ├── equivalent v1.0.2
+│   │   │   │   └── foldhash v0.2.0
+│   │   │   ├── itertools v0.14.0
+│   │   │   │   └── either v1.16.0
+│   │   │   ├── kasuari v0.4.12
+│   │   │   │   ├── hashbrown v0.16.1
+│   │   │   │   │   ├── allocator-api2 v0.2.21
+│   │   │   │   │   ├── equivalent v1.0.2
+│   │   │   │   │   └── foldhash v0.2.0
+│   │   │   │   └── thiserror v2.0.18
+│   │   │   │       └── thiserror-impl v2.0.18 (proc-macro)
+│   │   │   │           ├── proc-macro2 v1.0.106 (*)
+│   │   │   │           ├── quote v1.0.46 (*)
+│   │   │   │           └── syn v2.0.118 (*)
+│   │   │   ├── lru v0.18.1
+│   │   │   │   └── hashbrown v0.17.1 (*)
+│   │   │   ├── strum v0.28.0
+│   │   │   │   └── strum_macros v0.28.0 (proc-macro)
+│   │   │   │       ├── heck v0.5.0
+│   │   │   │       ├── proc-macro2 v1.0.106 (*)
+│   │   │   │       ├── quote v1.0.46 (*)
+│   │   │   │       └── syn v2.0.118 (*)
+│   │   │   ├── thiserror v2.0.18 (*)
+│   │   │   ├── unicode-segmentation v1.13.3
+│   │   │   ├── unicode-truncate v2.0.1
+│   │   │   │   ├── itertools v0.14.0 (*)
+│   │   │   │   ├── unicode-segmentation v1.13.3
+│   │   │   │   └── unicode-width v0.2.2
+│   │   │   └── unicode-width v0.2.2
+│   │   ├── ratatui-crossterm v0.1.2
+│   │   │   ├── cfg-if v1.0.4
+│   │   │   ├── crossterm v0.29.0 (*)
+│   │   │   ├── instability v0.3.12 (proc-macro) (*)
+│   │   │   └── ratatui-core v0.1.2 (*)
+│   │   ├── ratatui-macros v0.7.2
+│   │   │   ├── ratatui-core v0.1.2 (*)
+│   │   │   └── ratatui-widgets v0.3.2
+│   │   │       ├── bitflags v2.13.0
+│   │   │       ├── hashbrown v0.17.1 (*)
+│   │   │       ├── indoc v2.0.7 (proc-macro) (*)
+│   │   │       ├── instability v0.3.12 (proc-macro) (*)
+│   │   │       ├── itertools v0.14.0 (*)
+│   │   │       ├── line-clipping v0.3.7
+│   │   │       │   └── bitflags v2.13.0
+│   │   │       ├── ratatui-core v0.1.2 (*)
+│   │   │       ├── strum v0.28.0 (*)
+│   │   │       ├── time v0.3.53
+│   │   │       │   ├── deranged v0.5.8
+│   │   │       │   ├── libc v0.2.186
+│   │   │       │   ├── num-conv v0.2.2
+│   │   │       │   ├── num_threads v0.1.7
+│   │   │       │   ├── powerfmt v0.2.0
+│   │   │       │   └── time-core v0.1.9
+│   │   │       ├── unicode-segmentation v1.13.3
+│   │   │       └── unicode-width v0.2.2
+│   │   └── ratatui-widgets v0.3.2 (*)
+│   ├── serde v1.0.228
+│   │   ├── serde_core v1.0.228
+│   │   └── serde_derive v1.0.228 (proc-macro)
+│   │       ├── proc-macro2 v1.0.106 (*)
+│   │       ├── quote v1.0.46 (*)
+│   │       └── syn v2.0.118 (*)
+│   ├── sha2 v0.11.0
+│   │   ├── cfg-if v1.0.4
+│   │   ├── cpufeatures v0.3.0
+│   │   │   └── libc v0.2.186
+│   │   └── digest v0.11.3
+│   │       ├── block-buffer v0.12.1
+│   │       │   └── hybrid-array v0.4.13
+│   │       │       └── typenum v1.20.1
+│   │       ├── const-oid v0.10.2
+│   │       └── crypto-common v0.2.2
+│   │           └── hybrid-array v0.4.13 (*)
+│   └── thiserror v2.0.18 (*)
+├── owo-colors v4.3.0 (*)
+├── ratatui v0.30.2 (*)
+├── similar v3.1.1
+├── tokio v1.52.3
+│   ├── bytes v1.12.1
+│   ├── pin-project-lite v0.2.17
+│   └── tokio-macros v2.7.0 (proc-macro)
+│       ├── proc-macro2 v1.0.106 (*)
+│       ├── quote v1.0.46 (*)
+│       └── syn v2.0.118 (*)
+├── tui-scrollbar v0.2.7
+│   ├── document-features v0.2.12 (proc-macro) (*)
+│   └── ratatui-core v0.1.2 (*)
+└── unicode-width v0.2.2
+[dev-dependencies]
+└── tokio v1.52.3 (*)
+
+===== jackin-tui all features =====
+jackin-tui v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-tui)
+├── anstyle-parse v1.0.0
+│   └── utf8parse v0.2.2
+├── base64 v0.22.1
+├── crossterm v0.29.0
+│   ├── bitflags v2.13.0
+│   ├── derive_more v2.1.1
+│   │   └── derive_more-impl v2.1.1 (proc-macro)
+│   │       ├── convert_case v0.10.0
+│   │       │   └── unicode-segmentation v1.13.3
+│   │       ├── proc-macro2 v1.0.106
+│   │       │   └── unicode-ident v1.0.24
+│   │       ├── quote v1.0.46
+│   │       │   └── proc-macro2 v1.0.106 (*)
+│   │       └── syn v2.0.118
+│   │           ├── proc-macro2 v1.0.106 (*)
+│   │           ├── quote v1.0.46 (*)
+│   │           └── unicode-ident v1.0.24
+│   │       [build-dependencies]
+│   │       └── rustc_version v0.4.1
+│   │           └── semver v1.0.28
+│   ├── document-features v0.2.12 (proc-macro)
+│   │   └── litrs v1.0.0
+│   ├── mio v1.2.1
+│   │   ├── libc v0.2.186
+│   │   └── log v0.4.33
+│   ├── parking_lot v0.12.5
+│   │   ├── lock_api v0.4.14
+│   │   │   └── scopeguard v1.2.0
+│   │   └── parking_lot_core v0.9.12
+│   │       ├── cfg-if v1.0.4
+│   │       ├── libc v0.2.186
+│   │       └── smallvec v1.15.2
+│   ├── rustix v1.1.4
+│   │   ├── bitflags v2.13.0
+│   │   └── linux-raw-sys v0.12.1
+│   ├── signal-hook v0.3.18
+│   │   ├── libc v0.2.186
+│   │   └── signal-hook-registry v1.4.8
+│   │       ├── errno v0.3.14
+│   │       │   └── libc v0.2.186
+│   │       └── libc v0.2.186
+│   └── signal-hook-mio v0.2.5
+│       ├── libc v0.2.186
+│       ├── mio v1.2.1 (*)
+│       └── signal-hook v0.3.18 (*)
+├── jackin-core v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-core)
+│   ├── anyhow v1.0.103
+│   ├── base64 v0.22.1
+│   ├── directories v6.0.0
+│   │   └── dirs-sys v0.5.0
+│   │       ├── libc v0.2.186
+│   │       └── option-ext v0.2.0
+│   ├── hex v0.4.3
+│   ├── owo-colors v4.3.0
+│   │   ├── supports-color v2.1.0
+│   │   │   ├── is-terminal v0.4.17
+│   │   │   │   └── libc v0.2.186
+│   │   │   └── is_ci v1.2.0
+│   │   └── supports-color v3.0.2
+│   │       └── is_ci v1.2.0
+│   ├── ratatui v0.30.2
+│   │   ├── instability v0.3.12 (proc-macro)
+│   │   │   ├── darling v0.23.0
+│   │   │   │   ├── darling_core v0.23.0
+│   │   │   │   │   ├── ident_case v1.0.1
+│   │   │   │   │   ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   │   ├── quote v1.0.46 (*)
+│   │   │   │   │   ├── strsim v0.11.1
+│   │   │   │   │   └── syn v2.0.118 (*)
+│   │   │   │   └── darling_macro v0.23.0 (proc-macro)
+│   │   │   │       ├── darling_core v0.23.0 (*)
+│   │   │   │       ├── quote v1.0.46 (*)
+│   │   │   │       └── syn v2.0.118 (*)
+│   │   │   ├── indoc v2.0.7 (proc-macro)
+│   │   │   │   [build-dependencies]
+│   │   │   │   └── rustversion v1.0.23 (proc-macro)
+│   │   │   ├── proc-macro2 v1.0.106 (*)
+│   │   │   ├── quote v1.0.46 (*)
+│   │   │   └── syn v2.0.118 (*)
+│   │   ├── ratatui-core v0.1.2
+│   │   │   ├── bitflags v2.13.0
+│   │   │   ├── compact_str v0.9.1
+│   │   │   │   ├── castaway v0.2.4
+│   │   │   │   │   └── rustversion v1.0.23 (proc-macro)
+│   │   │   │   ├── cfg-if v1.0.4
+│   │   │   │   ├── itoa v1.0.18
+│   │   │   │   ├── rustversion v1.0.23 (proc-macro)
+│   │   │   │   ├── ryu v1.0.23
+│   │   │   │   └── static_assertions v1.1.0
+│   │   │   ├── critical-section v1.2.0
+│   │   │   ├── hashbrown v0.17.1
+│   │   │   │   ├── allocator-api2 v0.2.21
+│   │   │   │   ├── equivalent v1.0.2
+│   │   │   │   └── foldhash v0.2.0
+│   │   │   ├── itertools v0.14.0
+│   │   │   │   └── either v1.16.0
+│   │   │   ├── kasuari v0.4.12
+│   │   │   │   ├── hashbrown v0.16.1
+│   │   │   │   │   ├── allocator-api2 v0.2.21
+│   │   │   │   │   ├── equivalent v1.0.2
+│   │   │   │   │   └── foldhash v0.2.0
+│   │   │   │   └── thiserror v2.0.18
+│   │   │   │       └── thiserror-impl v2.0.18 (proc-macro)
+│   │   │   │           ├── proc-macro2 v1.0.106 (*)
+│   │   │   │           ├── quote v1.0.46 (*)
+│   │   │   │           └── syn v2.0.118 (*)
+│   │   │   ├── lru v0.18.1
+│   │   │   │   └── hashbrown v0.17.1 (*)
+│   │   │   ├── strum v0.28.0
+│   │   │   │   └── strum_macros v0.28.0 (proc-macro)
+│   │   │   │       ├── heck v0.5.0
+│   │   │   │       ├── proc-macro2 v1.0.106 (*)
+│   │   │   │       ├── quote v1.0.46 (*)
+│   │   │   │       └── syn v2.0.118 (*)
+│   │   │   ├── thiserror v2.0.18 (*)
+│   │   │   ├── unicode-segmentation v1.13.3
+│   │   │   ├── unicode-truncate v2.0.1
+│   │   │   │   ├── itertools v0.14.0 (*)
+│   │   │   │   ├── unicode-segmentation v1.13.3
+│   │   │   │   └── unicode-width v0.2.2
+│   │   │   └── unicode-width v0.2.2
+│   │   ├── ratatui-crossterm v0.1.2
+│   │   │   ├── cfg-if v1.0.4
+│   │   │   ├── crossterm v0.29.0 (*)
+│   │   │   ├── instability v0.3.12 (proc-macro) (*)
+│   │   │   └── ratatui-core v0.1.2 (*)
+│   │   ├── ratatui-macros v0.7.2
+│   │   │   ├── ratatui-core v0.1.2 (*)
+│   │   │   └── ratatui-widgets v0.3.2
+│   │   │       ├── bitflags v2.13.0
+│   │   │       ├── hashbrown v0.17.1 (*)
+│   │   │       ├── indoc v2.0.7 (proc-macro) (*)
+│   │   │       ├── instability v0.3.12 (proc-macro) (*)
+│   │   │       ├── itertools v0.14.0 (*)
+│   │   │       ├── line-clipping v0.3.7
+│   │   │       │   └── bitflags v2.13.0
+│   │   │       ├── ratatui-core v0.1.2 (*)
+│   │   │       ├── strum v0.28.0 (*)
+│   │   │       ├── time v0.3.53
+│   │   │       │   ├── deranged v0.5.8
+│   │   │       │   ├── libc v0.2.186
+│   │   │       │   ├── num-conv v0.2.2
+│   │   │       │   ├── num_threads v0.1.7
+│   │   │       │   ├── powerfmt v0.2.0
+│   │   │       │   └── time-core v0.1.9
+│   │   │       ├── unicode-segmentation v1.13.3
+│   │   │       └── unicode-width v0.2.2
+│   │   └── ratatui-widgets v0.3.2 (*)
+│   ├── serde v1.0.228
+│   │   ├── serde_core v1.0.228
+│   │   └── serde_derive v1.0.228 (proc-macro)
+│   │       ├── proc-macro2 v1.0.106 (*)
+│   │       ├── quote v1.0.46 (*)
+│   │       └── syn v2.0.118 (*)
+│   ├── sha2 v0.11.0
+│   │   ├── cfg-if v1.0.4
+│   │   ├── cpufeatures v0.3.0
+│   │   │   └── libc v0.2.186
+│   │   └── digest v0.11.3
+│   │       ├── block-buffer v0.12.1
+│   │       │   └── hybrid-array v0.4.13
+│   │       │       └── typenum v1.20.1
+│   │       ├── const-oid v0.10.2
+│   │       └── crypto-common v0.2.2
+│   │           └── hybrid-array v0.4.13 (*)
+│   └── thiserror v2.0.18 (*)
+├── owo-colors v4.3.0 (*)
+├── ratatui v0.30.2 (*)
+├── similar v3.1.1
+├── tokio v1.52.3
+│   ├── bytes v1.12.1
+│   ├── pin-project-lite v0.2.17
+│   └── tokio-macros v2.7.0 (proc-macro)
+│       ├── proc-macro2 v1.0.106 (*)
+│       ├── quote v1.0.46 (*)
+│       └── syn v2.0.118 (*)
+├── tui-scrollbar v0.2.7
+│   ├── document-features v0.2.12 (proc-macro) (*)
+│   └── ratatui-core v0.1.2 (*)
+└── unicode-width v0.2.2
+[dev-dependencies]
+└── tokio v1.52.3 (*)
+
+===== lookbook =====
+jackin-tui-lookbook v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-tui-lookbook)
+├── crossterm v0.29.0
+│   ├── bitflags v2.13.0
+│   ├── derive_more v2.1.1
+│   │   └── derive_more-impl v2.1.1 (proc-macro)
+│   │       ├── convert_case v0.10.0
+│   │       │   └── unicode-segmentation v1.13.3
+│   │       ├── proc-macro2 v1.0.106
+│   │       │   └── unicode-ident v1.0.24
+│   │       ├── quote v1.0.46
+│   │       │   └── proc-macro2 v1.0.106 (*)
+│   │       └── syn v2.0.118
+│   │           ├── proc-macro2 v1.0.106 (*)
+│   │           ├── quote v1.0.46 (*)
+│   │           └── unicode-ident v1.0.24
+│   │       [build-dependencies]
+│   │       └── rustc_version v0.4.1
+│   │           └── semver v1.0.28
+│   ├── document-features v0.2.12 (proc-macro)
+│   │   └── litrs v1.0.0
+│   ├── mio v1.2.1
+│   │   ├── libc v0.2.186
+│   │   └── log v0.4.33
+│   ├── parking_lot v0.12.5
+│   │   ├── lock_api v0.4.14
+│   │   │   └── scopeguard v1.2.0
+│   │   └── parking_lot_core v0.9.12
+│   │       ├── cfg-if v1.0.4
+│   │       ├── libc v0.2.186
+│   │       └── smallvec v1.15.2
+│   ├── rustix v1.1.4
+│   │   ├── bitflags v2.13.0
+│   │   └── linux-raw-sys v0.12.1
+│   ├── signal-hook v0.3.18
+│   │   ├── libc v0.2.186
+│   │   └── signal-hook-registry v1.4.8
+│   │       ├── errno v0.3.14
+│   │       │   └── libc v0.2.186
+│   │       └── libc v0.2.186
+│   └── signal-hook-mio v0.2.5
+│       ├── libc v0.2.186
+│       ├── mio v1.2.1 (*)
+│       └── signal-hook v0.3.18 (*)
+├── jackin-tui v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-tui)
+│   ├── anstyle-parse v1.0.0
+│   │   └── utf8parse v0.2.2
+│   ├── base64 v0.22.1
+│   ├── crossterm v0.29.0 (*)
+│   ├── jackin-core v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-core)
+│   │   ├── anyhow v1.0.103
+│   │   ├── base64 v0.22.1
+│   │   ├── directories v6.0.0
+│   │   │   └── dirs-sys v0.5.0
+│   │   │       ├── libc v0.2.186
+│   │   │       └── option-ext v0.2.0
+│   │   ├── hex v0.4.3
+│   │   ├── owo-colors v4.3.0
+│   │   │   ├── supports-color v2.1.0
+│   │   │   │   ├── is-terminal v0.4.17
+│   │   │   │   │   └── libc v0.2.186
+│   │   │   │   └── is_ci v1.2.0
+│   │   │   └── supports-color v3.0.2
+│   │   │       └── is_ci v1.2.0
+│   │   ├── ratatui v0.30.2
+│   │   │   ├── instability v0.3.12 (proc-macro)
+│   │   │   │   ├── darling v0.23.0
+│   │   │   │   │   ├── darling_core v0.23.0
+│   │   │   │   │   │   ├── ident_case v1.0.1
+│   │   │   │   │   │   ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   │   │   ├── quote v1.0.46 (*)
+│   │   │   │   │   │   ├── strsim v0.11.1
+│   │   │   │   │   │   └── syn v2.0.118 (*)
+│   │   │   │   │   └── darling_macro v0.23.0 (proc-macro)
+│   │   │   │   │       ├── darling_core v0.23.0 (*)
+│   │   │   │   │       ├── quote v1.0.46 (*)
+│   │   │   │   │       └── syn v2.0.118 (*)
+│   │   │   │   ├── indoc v2.0.7 (proc-macro)
+│   │   │   │   │   [build-dependencies]
+│   │   │   │   │   └── rustversion v1.0.23 (proc-macro)
+│   │   │   │   ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   ├── quote v1.0.46 (*)
+│   │   │   │   └── syn v2.0.118 (*)
+│   │   │   ├── ratatui-core v0.1.2
+│   │   │   │   ├── bitflags v2.13.0
+│   │   │   │   ├── compact_str v0.9.1
+│   │   │   │   │   ├── castaway v0.2.4
+│   │   │   │   │   │   └── rustversion v1.0.23 (proc-macro)
+│   │   │   │   │   ├── cfg-if v1.0.4
+│   │   │   │   │   ├── itoa v1.0.18
+│   │   │   │   │   ├── rustversion v1.0.23 (proc-macro)
+│   │   │   │   │   ├── ryu v1.0.23
+│   │   │   │   │   └── static_assertions v1.1.0
+│   │   │   │   ├── critical-section v1.2.0
+│   │   │   │   ├── hashbrown v0.17.1
+│   │   │   │   │   ├── allocator-api2 v0.2.21
+│   │   │   │   │   ├── equivalent v1.0.2
+│   │   │   │   │   └── foldhash v0.2.0
+│   │   │   │   ├── itertools v0.14.0
+│   │   │   │   │   └── either v1.16.0
+│   │   │   │   ├── kasuari v0.4.12
+│   │   │   │   │   ├── hashbrown v0.16.1
+│   │   │   │   │   │   ├── allocator-api2 v0.2.21
+│   │   │   │   │   │   ├── equivalent v1.0.2
+│   │   │   │   │   │   └── foldhash v0.2.0
+│   │   │   │   │   └── thiserror v2.0.18
+│   │   │   │   │       └── thiserror-impl v2.0.18 (proc-macro)
+│   │   │   │   │           ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   │           ├── quote v1.0.46 (*)
+│   │   │   │   │           └── syn v2.0.118 (*)
+│   │   │   │   ├── lru v0.18.1
+│   │   │   │   │   └── hashbrown v0.17.1 (*)
+│   │   │   │   ├── strum v0.28.0
+│   │   │   │   │   └── strum_macros v0.28.0 (proc-macro)
+│   │   │   │   │       ├── heck v0.5.0
+│   │   │   │   │       ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   │       ├── quote v1.0.46 (*)
+│   │   │   │   │       └── syn v2.0.118 (*)
+│   │   │   │   ├── thiserror v2.0.18 (*)
+│   │   │   │   ├── unicode-segmentation v1.13.3
+│   │   │   │   ├── unicode-truncate v2.0.1
+│   │   │   │   │   ├── itertools v0.14.0 (*)
+│   │   │   │   │   ├── unicode-segmentation v1.13.3
+│   │   │   │   │   └── unicode-width v0.2.2
+│   │   │   │   └── unicode-width v0.2.2
+│   │   │   ├── ratatui-crossterm v0.1.2
+│   │   │   │   ├── cfg-if v1.0.4
+│   │   │   │   ├── crossterm v0.29.0 (*)
+│   │   │   │   ├── instability v0.3.12 (proc-macro) (*)
+│   │   │   │   └── ratatui-core v0.1.2 (*)
+│   │   │   ├── ratatui-macros v0.7.2
+│   │   │   │   ├── ratatui-core v0.1.2 (*)
+│   │   │   │   └── ratatui-widgets v0.3.2
+│   │   │   │       ├── bitflags v2.13.0
+│   │   │   │       ├── hashbrown v0.17.1 (*)
+│   │   │   │       ├── indoc v2.0.7 (proc-macro) (*)
+│   │   │   │       ├── instability v0.3.12 (proc-macro) (*)
+│   │   │   │       ├── itertools v0.14.0 (*)
+│   │   │   │       ├── line-clipping v0.3.7
+│   │   │   │       │   └── bitflags v2.13.0
+│   │   │   │       ├── ratatui-core v0.1.2 (*)
+│   │   │   │       ├── strum v0.28.0 (*)
+│   │   │   │       ├── time v0.3.53
+│   │   │   │       │   ├── deranged v0.5.8
+│   │   │   │       │   ├── libc v0.2.186
+│   │   │   │       │   ├── num-conv v0.2.2
+│   │   │   │       │   ├── num_threads v0.1.7
+│   │   │   │       │   ├── powerfmt v0.2.0
+│   │   │   │       │   └── time-core v0.1.9
+│   │   │   │       ├── unicode-segmentation v1.13.3
+│   │   │   │       └── unicode-width v0.2.2
+│   │   │   └── ratatui-widgets v0.3.2 (*)
+│   │   ├── serde v1.0.228
+│   │   │   ├── serde_core v1.0.228
+│   │   │   └── serde_derive v1.0.228 (proc-macro)
+│   │   │       ├── proc-macro2 v1.0.106 (*)
+│   │   │       ├── quote v1.0.46 (*)
+│   │   │       └── syn v2.0.118 (*)
+│   │   ├── sha2 v0.11.0
+│   │   │   ├── cfg-if v1.0.4
+│   │   │   ├── cpufeatures v0.3.0
+│   │   │   │   └── libc v0.2.186
+│   │   │   └── digest v0.11.3
+│   │   │       ├── block-buffer v0.12.1
+│   │   │       │   └── hybrid-array v0.4.13
+│   │   │       │       └── typenum v1.20.1
+│   │   │       ├── const-oid v0.10.2
+│   │   │       └── crypto-common v0.2.2
+│   │   │           └── hybrid-array v0.4.13 (*)
+│   │   └── thiserror v2.0.18 (*)
+│   ├── owo-colors v4.3.0 (*)
+│   ├── ratatui v0.30.2 (*)
+│   ├── similar v3.1.1
+│   ├── tokio v1.52.3
+│   │   ├── bytes v1.12.1
+│   │   └── pin-project-lite v0.2.17
+│   ├── tui-scrollbar v0.2.7
+│   │   ├── document-features v0.2.12 (proc-macro) (*)
+│   │   └── ratatui-core v0.1.2 (*)
+│   └── unicode-width v0.2.2
+└── ratatui v0.30.2 (*)
+
+===== lookbook all features =====
+jackin-tui-lookbook v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-tui-lookbook)
+├── crossterm v0.29.0
+│   ├── bitflags v2.13.0
+│   ├── derive_more v2.1.1
+│   │   └── derive_more-impl v2.1.1 (proc-macro)
+│   │       ├── convert_case v0.10.0
+│   │       │   └── unicode-segmentation v1.13.3
+│   │       ├── proc-macro2 v1.0.106
+│   │       │   └── unicode-ident v1.0.24
+│   │       ├── quote v1.0.46
+│   │       │   └── proc-macro2 v1.0.106 (*)
+│   │       └── syn v2.0.118
+│   │           ├── proc-macro2 v1.0.106 (*)
+│   │           ├── quote v1.0.46 (*)
+│   │           └── unicode-ident v1.0.24
+│   │       [build-dependencies]
+│   │       └── rustc_version v0.4.1
+│   │           └── semver v1.0.28
+│   ├── document-features v0.2.12 (proc-macro)
+│   │   └── litrs v1.0.0
+│   ├── mio v1.2.1
+│   │   ├── libc v0.2.186
+│   │   └── log v0.4.33
+│   ├── parking_lot v0.12.5
+│   │   ├── lock_api v0.4.14
+│   │   │   └── scopeguard v1.2.0
+│   │   └── parking_lot_core v0.9.12
+│   │       ├── cfg-if v1.0.4
+│   │       ├── libc v0.2.186
+│   │       └── smallvec v1.15.2
+│   ├── rustix v1.1.4
+│   │   ├── bitflags v2.13.0
+│   │   └── linux-raw-sys v0.12.1
+│   ├── signal-hook v0.3.18
+│   │   ├── libc v0.2.186
+│   │   └── signal-hook-registry v1.4.8
+│   │       ├── errno v0.3.14
+│   │       │   └── libc v0.2.186
+│   │       └── libc v0.2.186
+│   └── signal-hook-mio v0.2.5
+│       ├── libc v0.2.186
+│       ├── mio v1.2.1 (*)
+│       └── signal-hook v0.3.18 (*)
+├── jackin-tui v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-tui)
+│   ├── anstyle-parse v1.0.0
+│   │   └── utf8parse v0.2.2
+│   ├── base64 v0.22.1
+│   ├── crossterm v0.29.0 (*)
+│   ├── jackin-core v0.6.0-dev (/Users/donbeave/Projects/jackin-project/jackin/crates/jackin-core)
+│   │   ├── anyhow v1.0.103
+│   │   ├── base64 v0.22.1
+│   │   ├── directories v6.0.0
+│   │   │   └── dirs-sys v0.5.0
+│   │   │       ├── libc v0.2.186
+│   │   │       └── option-ext v0.2.0
+│   │   ├── hex v0.4.3
+│   │   ├── owo-colors v4.3.0
+│   │   │   ├── supports-color v2.1.0
+│   │   │   │   ├── is-terminal v0.4.17
+│   │   │   │   │   └── libc v0.2.186
+│   │   │   │   └── is_ci v1.2.0
+│   │   │   └── supports-color v3.0.2
+│   │   │       └── is_ci v1.2.0
+│   │   ├── ratatui v0.30.2
+│   │   │   ├── instability v0.3.12 (proc-macro)
+│   │   │   │   ├── darling v0.23.0
+│   │   │   │   │   ├── darling_core v0.23.0
+│   │   │   │   │   │   ├── ident_case v1.0.1
+│   │   │   │   │   │   ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   │   │   ├── quote v1.0.46 (*)
+│   │   │   │   │   │   ├── strsim v0.11.1
+│   │   │   │   │   │   └── syn v2.0.118 (*)
+│   │   │   │   │   └── darling_macro v0.23.0 (proc-macro)
+│   │   │   │   │       ├── darling_core v0.23.0 (*)
+│   │   │   │   │       ├── quote v1.0.46 (*)
+│   │   │   │   │       └── syn v2.0.118 (*)
+│   │   │   │   ├── indoc v2.0.7 (proc-macro)
+│   │   │   │   │   [build-dependencies]
+│   │   │   │   │   └── rustversion v1.0.23 (proc-macro)
+│   │   │   │   ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   ├── quote v1.0.46 (*)
+│   │   │   │   └── syn v2.0.118 (*)
+│   │   │   ├── ratatui-core v0.1.2
+│   │   │   │   ├── bitflags v2.13.0
+│   │   │   │   ├── compact_str v0.9.1
+│   │   │   │   │   ├── castaway v0.2.4
+│   │   │   │   │   │   └── rustversion v1.0.23 (proc-macro)
+│   │   │   │   │   ├── cfg-if v1.0.4
+│   │   │   │   │   ├── itoa v1.0.18
+│   │   │   │   │   ├── rustversion v1.0.23 (proc-macro)
+│   │   │   │   │   ├── ryu v1.0.23
+│   │   │   │   │   └── static_assertions v1.1.0
+│   │   │   │   ├── critical-section v1.2.0
+│   │   │   │   ├── hashbrown v0.17.1
+│   │   │   │   │   ├── allocator-api2 v0.2.21
+│   │   │   │   │   ├── equivalent v1.0.2
+│   │   │   │   │   └── foldhash v0.2.0
+│   │   │   │   ├── itertools v0.14.0
+│   │   │   │   │   └── either v1.16.0
+│   │   │   │   ├── kasuari v0.4.12
+│   │   │   │   │   ├── hashbrown v0.16.1
+│   │   │   │   │   │   ├── allocator-api2 v0.2.21
+│   │   │   │   │   │   ├── equivalent v1.0.2
+│   │   │   │   │   │   └── foldhash v0.2.0
+│   │   │   │   │   └── thiserror v2.0.18
+│   │   │   │   │       └── thiserror-impl v2.0.18 (proc-macro)
+│   │   │   │   │           ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   │           ├── quote v1.0.46 (*)
+│   │   │   │   │           └── syn v2.0.118 (*)
+│   │   │   │   ├── lru v0.18.1
+│   │   │   │   │   └── hashbrown v0.17.1 (*)
+│   │   │   │   ├── strum v0.28.0
+│   │   │   │   │   └── strum_macros v0.28.0 (proc-macro)
+│   │   │   │   │       ├── heck v0.5.0
+│   │   │   │   │       ├── proc-macro2 v1.0.106 (*)
+│   │   │   │   │       ├── quote v1.0.46 (*)
+│   │   │   │   │       └── syn v2.0.118 (*)
+│   │   │   │   ├── thiserror v2.0.18 (*)
+│   │   │   │   ├── unicode-segmentation v1.13.3
+│   │   │   │   ├── unicode-truncate v2.0.1
+│   │   │   │   │   ├── itertools v0.14.0 (*)
+│   │   │   │   │   ├── unicode-segmentation v1.13.3
+│   │   │   │   │   └── unicode-width v0.2.2
+│   │   │   │   └── unicode-width v0.2.2
+│   │   │   ├── ratatui-crossterm v0.1.2
+│   │   │   │   ├── cfg-if v1.0.4
+│   │   │   │   ├── crossterm v0.29.0 (*)
+│   │   │   │   ├── instability v0.3.12 (proc-macro) (*)
+│   │   │   │   └── ratatui-core v0.1.2 (*)
+│   │   │   ├── ratatui-macros v0.7.2
+│   │   │   │   ├── ratatui-core v0.1.2 (*)
+│   │   │   │   └── ratatui-widgets v0.3.2
+│   │   │   │       ├── bitflags v2.13.0
+│   │   │   │       ├── hashbrown v0.17.1 (*)
+│   │   │   │       ├── indoc v2.0.7 (proc-macro) (*)
+│   │   │   │       ├── instability v0.3.12 (proc-macro) (*)
+│   │   │   │       ├── itertools v0.14.0 (*)
+│   │   │   │       ├── line-clipping v0.3.7
+│   │   │   │       │   └── bitflags v2.13.0
+│   │   │   │       ├── ratatui-core v0.1.2 (*)
+│   │   │   │       ├── strum v0.28.0 (*)
+│   │   │   │       ├── time v0.3.53
+│   │   │   │       │   ├── deranged v0.5.8
+│   │   │   │       │   ├── libc v0.2.186
+│   │   │   │       │   ├── num-conv v0.2.2
+│   │   │   │       │   ├── num_threads v0.1.7
+│   │   │   │       │   ├── powerfmt v0.2.0
+│   │   │   │       │   └── time-core v0.1.9
+│   │   │   │       ├── unicode-segmentation v1.13.3
+│   │   │   │       └── unicode-width v0.2.2
+│   │   │   └── ratatui-widgets v0.3.2 (*)
+│   │   ├── serde v1.0.228
+│   │   │   ├── serde_core v1.0.228
+│   │   │   └── serde_derive v1.0.228 (proc-macro)
+│   │   │       ├── proc-macro2 v1.0.106 (*)
+│   │   │       ├── quote v1.0.46 (*)
+│   │   │       └── syn v2.0.118 (*)
+│   │   ├── sha2 v0.11.0
+│   │   │   ├── cfg-if v1.0.4
+│   │   │   ├── cpufeatures v0.3.0
+│   │   │   │   └── libc v0.2.186
+│   │   │   └── digest v0.11.3
+│   │   │       ├── block-buffer v0.12.1
+│   │   │       │   └── hybrid-array v0.4.13
+│   │   │       │       └── typenum v1.20.1
+│   │   │       ├── const-oid v0.10.2
+│   │   │       └── crypto-common v0.2.2
+│   │   │           └── hybrid-array v0.4.13 (*)
+│   │   └── thiserror v2.0.18 (*)
+│   ├── owo-colors v4.3.0 (*)
+│   ├── ratatui v0.30.2 (*)
+│   ├── similar v3.1.1
+│   ├── tokio v1.52.3
+│   │   ├── bytes v1.12.1
+│   │   └── pin-project-lite v0.2.17
+│   ├── tui-scrollbar v0.2.7
+│   │   ├── document-features v0.2.12 (proc-macro) (*)
+│   │   └── ratatui-core v0.1.2 (*)
+│   └── unicode-width v0.2.2
+└── ratatui v0.30.2 (*)

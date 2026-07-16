@@ -1,0 +1,42 @@
+schema = 1
+recorded_at = "2026-07-15"
+release = "v0.6.0"
+termrock_implementation_revision = "41db0be7a6b166200b4b3661b5594a49700b5570"
+jackin_implementation_revision = "6549d18be34bbe9a908fda875ae28475821ba42e"
+rust_version_floor = "1.95"
+tested_toolchain = "1.97.0"
+ratatui_core = "0.1.2"
+ratatui_crossterm = "0.1.2"
+crossterm = "0.29.0"
+canonical_render_platform = "linux"
+supported_operating_systems = ["linux", "macos"]
+
+[[verification]]
+repository = "tailrocks/termrock"
+platform = "linux"
+command = "mise x -- cargo fmt --all -- --check && mise x -- cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && mise x -- cargo nextest run --workspace --all-features --locked && mise x -- cargo test --doc --workspace --locked"
+result = "pass"
+
+[[verification]]
+repository = "tailrocks/termrock"
+platform = "linux"
+command = "mise x -- cargo hack check --workspace --feature-powerset --all-targets --locked && mise x -- cargo deny check advisories bans licenses sources && mise x -- cargo shear --deny-warnings && mise x -- cargo package -p termrock --locked"
+result = "pass"
+
+[[verification]]
+repository = "tailrocks/termrock"
+platform = "linux"
+command = "mise x -- cargo run -p termrock-lookbook -- render --out docs/public/component-previews && mise x -- cargo run -p termrock-lookbook -- check --dir docs/public/component-previews"
+result = "pass; deterministic canonical previews"
+
+[[verification]]
+repository = "jackin-project/jackin"
+platform = "linux"
+command = "mise x -- cargo xtask ci"
+result = "pass against the exact TermRock implementation revision"
+
+[[verification]]
+repository = "tailrocks/termrock"
+platform = "macos"
+command = "GitHub required rust-required and docs-required workflows"
+result = "required compatibility contract; canonical SVG generation remains Linux-only"

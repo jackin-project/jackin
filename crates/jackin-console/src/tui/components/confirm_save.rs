@@ -17,11 +17,11 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use jackin_tui::components::scrollable_panel::{
+use termrock::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };
-use jackin_tui::components::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
-use jackin_tui::{
+use termrock::components::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
+use termrock::{
     HintSpan, ModalOutcome,
     components::ButtonFocus,
     keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, SCROLL_HINT_KEYMAP, Visibility},
@@ -179,7 +179,7 @@ impl<M: Clone> ConfirmSaveState<M> {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<SaveChoice> {
-        match CONFIRM_SAVE_KEYMAP.dispatch(KeyChord::from(key)) {
+        match CONFIRM_SAVE_KEYMAP.dispatch(KeyChord::from(termrock::crossterm::key(key))) {
             Some(ConfirmSaveAction::Save) => ModalOutcome::Commit(SaveChoice::Save),
             Some(ConfirmSaveAction::Cancel) => ModalOutcome::Cancel,
             Some(ConfirmSaveAction::ScrollUp) => {
@@ -283,15 +283,15 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
     render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
 
     let items = [
-        jackin_tui::components::ButtonStripItem::new("Save"),
-        jackin_tui::components::ButtonStripItem::new("Cancel"),
+        termrock::components::ButtonStripItem::new("Save"),
+        termrock::components::ButtonStripItem::new("Cancel"),
     ];
     let focused = match state.focus {
         ConfirmSaveFocus::Save => 0,
         ConfirmSaveFocus::Cancel => 1,
     };
     frame.render_widget(
-        jackin_tui::components::ButtonStrip::new(&items).focused(focused),
+        termrock::components::ButtonStrip::new(&items).focused(focused),
         chunks[3],
     );
 }

@@ -22,9 +22,12 @@ pub fn try_copy_container_info_value(
     let Some(area) = modal.container_info_rect(term_size) else {
         return false;
     };
-    let Some((row, payload)) =
-        jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
-    else {
+    let Some((row, payload)) = crate::tui::components::container_info_surface::copy_payload_at(
+        area,
+        info,
+        mouse.column,
+        mouse.row,
+    ) else {
         return false;
     };
     state.request_effect(ManagerEffect::CopyContainerInfoValue { row, payload });
@@ -42,8 +45,13 @@ pub fn container_info_copyable_row_at(
     let Some(area) = modal.container_info_rect(term_size) else {
         return false;
     };
-    jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
-        .is_some()
+    crate::tui::components::container_info_surface::copy_payload_at(
+        area,
+        info,
+        mouse.column,
+        mouse.row,
+    )
+    .is_some()
 }
 
 /// Brighten the hovered copyable row in the Debug info dialog (link hover cue),
@@ -62,9 +70,13 @@ pub fn update_container_info_hover(
     let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() else {
         return;
     };
-    let hovered =
-        jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
-            .map(|(row, _)| row);
+    let hovered = crate::tui::components::container_info_surface::copy_payload_at(
+        area,
+        info,
+        mouse.column,
+        mouse.row,
+    )
+    .map(|(row, _)| row);
     info.set_hovered_row(hovered);
 }
 

@@ -34,16 +34,16 @@ pub(crate) fn secret_delete_confirm_prompt(key: &str) -> String {
 }
 
 #[must_use]
-pub(crate) fn secret_delete_confirm_state(key: &str) -> jackin_tui::components::ConfirmState {
-    jackin_tui::components::ConfirmState::new(secret_delete_confirm_prompt(key))
+pub(crate) fn secret_delete_confirm_state(key: &str) -> termrock::components::ConfirmState {
+    termrock::components::ConfirmState::new(secret_delete_confirm_prompt(key))
 }
 
 #[must_use]
 pub(crate) fn secret_value_input_state<'a>(
     key: &str,
     current: impl Into<String>,
-) -> jackin_tui::components::TextInputState<'a> {
-    jackin_tui::components::TextInputState::new_allow_empty(format!("Edit {key}"), current)
+) -> termrock::components::TextInputState<'a> {
+    termrock::components::TextInputState::new_allow_empty(format!("Edit {key}"), current)
 }
 
 #[must_use]
@@ -54,11 +54,8 @@ pub(crate) fn secret_value_current_text(value: Option<&str>) -> String {
 #[must_use]
 pub(crate) fn secret_new_value_input_state<'a>(
     key: &str,
-) -> jackin_tui::components::TextInputState<'a> {
-    jackin_tui::components::TextInputState::new_allow_empty(
-        format!("Value for {key}"),
-        String::new(),
-    )
+) -> termrock::components::TextInputState<'a> {
+    termrock::components::TextInputState::new_allow_empty(format!("Value for {key}"), String::new())
 }
 
 #[must_use]
@@ -97,8 +94,8 @@ pub(crate) fn secret_empty_key_label() -> &'static str {
 pub(crate) fn role_trust_confirm_state(
     role: String,
     repository: String,
-) -> jackin_tui::components::ConfirmState {
-    jackin_tui::components::ConfirmState::details(
+) -> termrock::components::ConfirmState {
+    termrock::components::ConfirmState::details(
         "Trust role source",
         "Trust this role source?",
         vec![("Role".into(), role), ("Repository".into(), repository)],
@@ -112,8 +109,8 @@ pub(crate) fn role_trust_confirm_state(
 #[must_use]
 pub(crate) fn isolated_state_save_confirm_state(
     affected_containers: &[String],
-) -> jackin_tui::components::ConfirmState {
-    jackin_tui::components::ConfirmState::new(format!(
+) -> termrock::components::ConfirmState {
+    termrock::components::ConfirmState::new(format!(
         "Edit affects preserved isolated state for {} stopped container(s):\n  {}\n\n\
          Delete the preserved state and save?",
         affected_containers.len(),
@@ -143,9 +140,9 @@ pub(crate) fn secret_key_input_state<'a>(
     label: impl Into<String>,
     initial: impl Into<String>,
     forbidden_keys: Vec<String>,
-) -> jackin_tui::components::TextInputState<'a> {
+) -> termrock::components::TextInputState<'a> {
     let mut state =
-        jackin_tui::components::TextInputState::new_with_forbidden(label, initial, forbidden_keys);
+        termrock::components::TextInputState::new_with_forbidden(label, initial, forbidden_keys);
     state.forbidden_label = secrets_forbidden_label(scope);
     state
 }
@@ -158,7 +155,7 @@ pub(crate) fn secret_key_input_state_from_pending<'a, R, V>(
     label: impl Into<String>,
     initial: impl Into<String>,
     role_env: impl Fn(&R) -> &std::collections::BTreeMap<String, V>,
-) -> jackin_tui::components::TextInputState<'a> {
+) -> termrock::components::TextInputState<'a> {
     secret_key_input_state(
         scope,
         label,

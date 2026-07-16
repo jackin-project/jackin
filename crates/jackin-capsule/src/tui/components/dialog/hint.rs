@@ -3,7 +3,7 @@
 
 //! Footer hint rows for capsule dialogs.
 
-use jackin_tui::{HintSpan, keymap::glyph};
+use termrock::{HintSpan, keymap::glyph};
 
 use crate::tui::keymap::{
     CAPSULE_GLOBAL_KEYMAP, FILTER_LIST_KEYMAP, FilterListAction, PREFIX_COMMAND_KEYMAP,
@@ -13,7 +13,7 @@ use crate::tui::keymap::{
 
 /// Derive a display glyph for a raw palette-key byte.
 ///
-/// Mirrors the `Ctrl-` prefix convention used by [`jackin_tui::keymap::chord_glyph`]
+/// Mirrors the `Ctrl-` prefix convention used by [`termrock::keymap::chord_glyph`]
 /// so the hint bar is visually consistent regardless of which key the operator
 /// configured via `JACKIN_PALETTE_KEY`.
 fn format_key_glyph(byte: u8) -> String {
@@ -36,7 +36,7 @@ fn format_key_glyph(byte: u8) -> String {
 pub(crate) fn main_view_hint(
     scrollback_active: bool,
     palette_key: u8,
-    axes: jackin_tui::components::ScrollAxes,
+    axes: termrock::components::ScrollAxes,
     prefix_awaiting: bool,
 ) -> Vec<HintSpan<'static>> {
     if prefix_awaiting {
@@ -49,7 +49,7 @@ pub(crate) fn main_view_hint(
         return spans;
     }
     if scrollback_active {
-        let mut spans = jackin_tui::components::scroll_hint_spans(axes);
+        let mut spans = termrock::components::scroll_hint_spans(axes);
         if !spans.is_empty() {
             spans.push(HintSpan::GroupSep);
         }
@@ -67,7 +67,7 @@ pub(crate) fn main_view_hint(
             HintSpan::DynKey(format_key_glyph(palette_key)),
             HintSpan::Text("menu"),
         ];
-        let scroll = jackin_tui::components::scroll_hint_spans(axes);
+        let scroll = termrock::components::scroll_hint_spans(axes);
         if !scroll.is_empty() {
             spans.push(HintSpan::GroupSep);
             spans.extend(scroll);
@@ -149,11 +149,11 @@ pub(super) fn export_file_hint() -> Vec<HintSpan<'static>> {
 /// `GitHubContext`, which differ only in their copy label.
 pub(super) fn info_dialog_hint(
     copy_label: &'static str,
-    axes: jackin_tui::components::ScrollAxes,
+    axes: termrock::components::ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
     // UNREGISTERABLE(info-dialog-copy): Enter selects the active copy target inline; no InfoDialog keymap registered.
     let mut spans = vec![HintSpan::Key("↵"), HintSpan::Text(copy_label)];
-    let scroll = jackin_tui::components::scroll_hint_spans(axes);
+    let scroll = termrock::components::scroll_hint_spans(axes);
     if !scroll.is_empty() {
         spans.push(HintSpan::GroupSep);
         spans.extend(scroll);
@@ -166,7 +166,7 @@ pub(super) fn info_dialog_hint(
     spans
 }
 
-pub(super) fn usage_hint(axes: jackin_tui::components::ScrollAxes) -> Vec<HintSpan<'static>> {
+pub(super) fn usage_hint(axes: termrock::components::ScrollAxes) -> Vec<HintSpan<'static>> {
     let mut spans = vec![
         HintSpan::Key(glyph::LEFT_RIGHT),
         HintSpan::Text("switch provider"),
@@ -177,7 +177,7 @@ pub(super) fn usage_hint(axes: jackin_tui::components::ScrollAxes) -> Vec<HintSp
         HintSpan::Key("r"),
         HintSpan::Text("refresh"),
     ];
-    let scroll = jackin_tui::components::scroll_hint_spans(axes);
+    let scroll = termrock::components::scroll_hint_spans(axes);
     if !scroll.is_empty() {
         spans.push(HintSpan::GroupSep);
         spans.extend(scroll);
@@ -195,7 +195,7 @@ pub(super) fn read_only_hint() -> Vec<HintSpan<'static>> {
 }
 
 pub(super) fn confirm_hint() -> Vec<HintSpan<'static>> {
-    jackin_tui::components::confirm_hint_spans()
+    termrock::components::confirm_hint_spans()
 }
 
 #[cfg(test)]

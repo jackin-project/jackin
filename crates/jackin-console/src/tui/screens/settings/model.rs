@@ -42,7 +42,7 @@ use crate::tui::components::modal_rects::{
     ModalAuthFormState, ModalConfirmSavePrepareState, ModalConfirmSaveState, ModalConfirmState,
     ModalOpPickerState, ModalRectMode, ModalRolePickerState,
 };
-use jackin_tui::components::{FocusOwner, ModalStack};
+use termrock::components::{FocusOwner, ModalStack};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
@@ -314,7 +314,7 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 }
 
 impl<Mounts, Env, Auth, Trust, PendingToken>
-    SettingsState<Mounts, Env, Auth, Trust, jackin_tui::components::ErrorPopupState, PendingToken>
+    SettingsState<Mounts, Env, Auth, Trust, termrock::components::ErrorPopupState, PendingToken>
 {
     pub fn open_error_popup(&mut self, title: impl Into<String>, message: impl Into<String>) {
         self.error_popup = Some(crate::tui::components::error_popup::error_popup_state(
@@ -861,7 +861,7 @@ where
     }
 
     #[must_use]
-    pub fn env_footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>>
+    pub fn env_footer_items(&self) -> Vec<termrock::HintSpan<'static>>
     where
         OpPickerState: ModalOpPickerFooterState,
     {
@@ -881,7 +881,7 @@ where
     }
 
     #[must_use]
-    pub fn mounts_footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>>
+    pub fn mounts_footer_items(&self) -> Vec<termrock::HintSpan<'static>>
     where
         FileBrowserState: ModalFileBrowserFooterState,
         ConfirmSaveState: ModalConfirmSaveFooterState,
@@ -906,7 +906,7 @@ where
     }
 
     #[must_use]
-    pub fn auth_footer_items(&self, can_generate_token: bool) -> Vec<jackin_tui::HintSpan<'static>>
+    pub fn auth_footer_items(&self, can_generate_token: bool) -> Vec<termrock::HintSpan<'static>>
     where
         FileBrowserState: ModalFileBrowserFooterState,
         OpPickerState: ModalOpPickerFooterState,
@@ -1345,7 +1345,7 @@ pub struct GlobalMountDraft {
     pub scope: Option<String>,
 }
 
-fn footer_items_for_mode(mode: ModalFooterMode) -> Vec<jackin_tui::HintSpan<'static>> {
+fn footer_items_for_mode(mode: ModalFooterMode) -> Vec<termrock::HintSpan<'static>> {
     crate::tui::components::footer_hints::modal_footer_items(mode)
 }
 

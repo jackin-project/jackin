@@ -19,9 +19,11 @@
 )]
 
 mod app;
+pub mod brand_output;
 
 pub mod cli;
 pub mod console;
+pub mod terminal_ownership;
 
 pub mod error;
 pub(crate) mod preflight;

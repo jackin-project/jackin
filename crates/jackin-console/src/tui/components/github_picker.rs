@@ -12,7 +12,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
 use crate::github_mounts::GithubChoice;
-use jackin_tui::{ModalOutcome, shorten_home};
+use jackin_core::shorten_home;
+use termrock::ModalOutcome;
 
 #[derive(Debug)]
 pub struct GithubPickerState {
@@ -93,9 +94,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::components::render_picker_lines;
-use jackin_tui::components::{DialogBorder, render_dialog_shell};
-use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
+use termrock::components::render_picker_lines;
+use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::style::{PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
     let inner = render_dialog_shell(frame, area, Some("Open in GitHub"), DialogBorder::Default);
@@ -112,7 +113,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no GitHub sources",
-                jackin_tui::theme::DIM,
+                termrock::style::DIM,
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],

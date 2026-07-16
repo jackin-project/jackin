@@ -8,7 +8,7 @@ use super::{
     SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved,
     SettingsPanelTakeError, SettingsState,
 };
-use jackin_tui::components::ModalStack;
+use termrock::components::ModalStack;
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]
@@ -278,7 +278,7 @@ impl<EnvValue, Modal, OpRef> crate::tui::model::ConsolePendingOpCommit
     type OpRef = OpRef;
 
     fn poll_pending_op_commit(&mut self) -> Option<(Self::OpRef, anyhow::Result<()>)> {
-        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
+        use termrock::runtime::{Subscription, SubscriptionPoll};
 
         let pending = self.pending_op_commit.as_mut()?;
         let result = match pending.rx.poll_next() {

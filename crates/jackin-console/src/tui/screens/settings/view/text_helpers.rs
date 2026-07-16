@@ -35,8 +35,8 @@ pub const fn global_mount_confirm_prompt(action: GlobalMountConfirm) -> &'static
 #[must_use]
 pub fn global_mount_confirm_state(
     action: GlobalMountConfirm,
-) -> jackin_tui::components::ConfirmState {
-    jackin_tui::components::ConfirmState::new(global_mount_confirm_prompt(action))
+) -> termrock::components::ConfirmState {
+    termrock::components::ConfirmState::new(global_mount_confirm_prompt(action))
 }
 
 #[must_use]
@@ -50,8 +50,8 @@ pub fn global_mount_scope_picker_state() -> crate::tui::components::scope_picker
 pub fn global_mount_text_input_state<'a>(
     label: impl Into<String>,
     initial: impl Into<String>,
-) -> jackin_tui::components::TextInputState<'a> {
-    jackin_tui::components::TextInputState::new(label, initial)
+) -> termrock::components::TextInputState<'a> {
+    termrock::components::TextInputState::new(label, initial)
 }
 
 #[must_use]
@@ -120,11 +120,11 @@ pub fn settings_env_text_input_state<'a>(
     target: &SettingsEnvTextTarget,
     label: impl Into<String>,
     initial: impl Into<String>,
-) -> jackin_tui::components::TextInputState<'a> {
+) -> termrock::components::TextInputState<'a> {
     if matches!(target, SettingsEnvTextTarget::EnvValue { .. }) {
-        jackin_tui::components::TextInputState::new_allow_empty(label, initial)
+        termrock::components::TextInputState::new_allow_empty(label, initial)
     } else {
-        jackin_tui::components::TextInputState::new(label, initial)
+        termrock::components::TextInputState::new(label, initial)
     }
 }
 
@@ -197,8 +197,8 @@ pub fn settings_env_delete_confirm_prompt(key: &str) -> String {
 }
 
 #[must_use]
-pub fn settings_env_delete_confirm_state(key: &str) -> jackin_tui::components::ConfirmState {
-    jackin_tui::components::ConfirmState::new(settings_env_delete_confirm_prompt(key))
+pub fn settings_env_delete_confirm_state(key: &str) -> termrock::components::ConfirmState {
+    termrock::components::ConfirmState::new(settings_env_delete_confirm_prompt(key))
 }
 
 #[must_use]
@@ -331,8 +331,8 @@ pub fn settings_env_key_input_state<'a, V>(
     scope: &SettingsEnvScope,
     label: impl Into<String>,
     initial: impl Into<String>,
-) -> jackin_tui::components::TextInputState<'a> {
-    let mut state = jackin_tui::components::TextInputState::new_with_forbidden(
+) -> termrock::components::TextInputState<'a> {
+    let mut state = termrock::components::TextInputState::new_with_forbidden(
         label,
         initial,
         forbidden_settings_env_keys(pending, scope),

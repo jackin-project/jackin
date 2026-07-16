@@ -17,9 +17,8 @@ use ratatui::{
 
 use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
 
-use jackin_tui::components::{
-    FooterLeft, Panel, PanelFocus, StatusFooter, StatusRightGroup, tab_cell_style,
-};
+use crate::tui::components::status_footer::{FooterLeft, StatusFooter, StatusRightGroup};
+use termrock::components::{Panel, PanelFocus, tab_cell_style};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
@@ -51,7 +50,7 @@ impl StatusBarWidget<'_> {
         let x = area.x.saturating_add(cell.start_col0);
         buf.set_string(x, area.y, &content, style);
         if let Some(glyph_style) = tab_glyph_style(cell.glyph, bg) {
-            let name_cols = u16::try_from(jackin_tui::display_cols(&cell.name)).unwrap_or(u16::MAX);
+            let name_cols = u16::try_from(termrock::display_cols(&cell.name)).unwrap_or(u16::MAX);
             let glyph_x = x.saturating_add(name_cols).saturating_add(2);
             buf.set_string(glyph_x, area.y, glyph_char.to_string(), glyph_style);
         }
@@ -73,19 +72,19 @@ fn tab_glyph_style(glyph: TabGlyph, bg: Color) -> Option<Style> {
         TabGlyph::Blocked => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_tui::theme::STATUS_BLOCKED_RED)
+                .fg(termrock::style::STATUS_BLOCKED_RED)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Working => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_tui::theme::DEBUG_AMBER)
+                .fg(termrock::style::DEBUG_AMBER)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Idle => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .fg(termrock::style::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Done | TabGlyph::Unknown => None,
@@ -110,14 +109,14 @@ impl Widget for StatusBarWidget<'_> {
 
         // Row 0: brand pill — green block, black word, white chevron.
         let pill = Style::default()
-            .bg(jackin_tui::theme::BRAND_BLOCK)
+            .bg(termrock::style::BRAND_BLOCK)
             .add_modifier(Modifier::BOLD);
         buf.set_string(area.x, area.y, " jackin", pill.fg(Color::Black));
         buf.set_string(
             area.x.saturating_add(7),
             area.y,
             "❯",
-            pill.fg(jackin_tui::theme::WHITE),
+            pill.fg(termrock::style::WHITE),
         );
         buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
@@ -129,21 +128,16 @@ impl Widget for StatusBarWidget<'_> {
         // Row 0: right-side menu button.
         if let Some(start_1based) = plan.hint_start {
             let (bg, fg) = match (self.prefix_mode, self.menu_hovered) {
-                (PrefixMode::Idle, false) => (
-                    jackin_tui::theme::CAPSULE_MENU_IDLE_BG,
-                    jackin_tui::theme::WHITE,
-                ),
-                (PrefixMode::Idle, true) => (
-                    jackin_tui::theme::CAPSULE_MENU_IDLE_HOVER_BG,
-                    jackin_tui::theme::WHITE,
-                ),
-                (PrefixMode::Awaiting, false) => {
-                    (jackin_tui::theme::CAPSULE_MENU_AWAITING_BG, Color::Black)
+                (PrefixMode::Idle, false) => {
+                    (termrock::style::MENU_IDLE_BG, termrock::style::WHITE)
                 }
-                (PrefixMode::Awaiting, true) => (
-                    jackin_tui::theme::CAPSULE_MENU_AWAITING_HOVER_BG,
-                    Color::Black,
-                ),
+                (PrefixMode::Idle, true) => {
+                    (termrock::style::MENU_IDLE_HOVER_BG, termrock::style::WHITE)
+                }
+                (PrefixMode::Awaiting, false) => (termrock::style::MENU_AWAITING_BG, Color::Black),
+                (PrefixMode::Awaiting, true) => {
+                    (termrock::style::MENU_AWAITING_HOVER_BG, Color::Black)
+                }
             };
             buf.set_string(
                 area.x.saturating_add(start_1based.saturating_sub(1)),
@@ -159,7 +153,7 @@ impl Widget for StatusBarWidget<'_> {
                 area.x.saturating_add(pos_1based.saturating_sub(1)),
                 area.y,
                 "›",
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::style::PHOSPHOR_DIM),
             );
         }
 
@@ -170,9 +164,9 @@ impl Widget for StatusBarWidget<'_> {
         {
             let underline = "━".repeat(active.cell_cols as usize);
             let underline_fg = if self.focused {
-                jackin_tui::theme::PHOSPHOR_GREEN
+                termrock::style::PHOSPHOR_GREEN
             } else {
-                jackin_tui::theme::WHITE
+                termrock::style::WHITE
             };
             buf.set_string(
                 area.x.saturating_add(active.start_col0),
@@ -207,7 +201,7 @@ impl Widget for PaneBorderWidget {
     }
 }
 
-pub use jackin_tui::components::ModalBackdrop as DialogBackdrop;
+pub use termrock::components::ModalBackdrop as DialogBackdrop;
 
 /// Bottom chrome (branch/PR bar, hint row, debug chip) as a widget. Replaces
 /// the raw-ANSI append + byte cache: the rows ride the Ratatui cell buffer
@@ -221,7 +215,7 @@ pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) instance_id_label: &'a str,
     pub(crate) hover_target: Option<crate::tui::model::HoverTarget>,
     pub(crate) scrollback_active: bool,
-    pub(crate) scroll_axes: jackin_tui::scroll::ScrollAxes,
+    pub(crate) scroll_axes: termrock::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
     /// When the operator has pressed the prefix key and the multiplexer is
     /// awaiting a command chord, the hint bar switches to a prefix-command
@@ -265,7 +259,7 @@ pub(crate) struct DialogBottomChromeWidget<'a> {
     pub(crate) pull_request_loading: bool,
     pub(crate) debug_run_id: Option<&'a str>,
     pub(crate) instance_id_label: &'a str,
-    pub(crate) hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
+    pub(crate) hint_spans: Option<&'a [termrock::HintSpan<'a>]>,
 }
 
 impl Widget for DialogBottomChromeWidget<'_> {
@@ -353,7 +347,7 @@ fn render_branch_bar_row(
 
 /// The pane and footer chrome need one spacer each, so hints stay visually
 /// separate from both the agent border and the branch context bar.
-fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::HintSpan<'_>]) {
+fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::HintSpan<'_>]) {
     use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
     use crate::tui::layout::{
         CAPSULE_HINT_BAR_ROWS, CAPSULE_HINT_SEPARATOR_ROWS, CAPSULE_HINT_TOP_SEPARATOR_ROWS,
@@ -367,7 +361,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
         return;
     }
     let available = area.width.saturating_sub(4); // 2 col padding each side
-    let lines = jackin_tui::components::wrapped_lines(spans, available);
+    let lines = termrock::components::wrapped_lines(spans, available);
     let hint_rows = usize::from(CAPSULE_HINT_BAR_ROWS);
     if lines.is_empty() {
         return;
@@ -385,7 +379,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
         for span in &line.spans {
             let content = span.content.as_ref();
             buf.set_string(x, row_y, content, span.style);
-            x += jackin_tui::display_cols(content) as u16;
+            x += termrock::display_cols(content) as u16;
         }
     }
 }
@@ -393,7 +387,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
 fn line_display_cols(line: &ratatui::text::Line<'_>) -> usize {
     line.spans
         .iter()
-        .map(|span| jackin_tui::display_cols(span.content.as_ref()))
+        .map(|span| termrock::display_cols(span.content.as_ref()))
         .sum()
 }
 

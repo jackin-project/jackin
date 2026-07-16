@@ -7,14 +7,12 @@ use super::{
     ReadOnlyDismissAction, RenameAction,
 };
 use crate::tui::input::{ArrowDir, PrefixCommand};
-use jackin_tui::components::{KeyChord, LogicalKey};
-use jackin_tui::keymap::raw_bytes_to_chord;
+use crate::tui::keymap::raw_bytes_to_chord;
+use termrock::input::{KeyChord, LogicalKey};
 
-fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(
-    keymap: &jackin_tui::components::Keymap<A>,
-) {
+fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(keymap: &termrock::input::Keymap<A>) {
     for span in keymap.hint_spans() {
-        let jackin_tui::HintSpan::Key(key) = span else {
+        let termrock::HintSpan::Key(key) = span else {
             continue;
         };
         assert_ne!(key, concat!("T", "ab"));
@@ -83,7 +81,7 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
     let keys: Vec<&str> = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) => Some(*k),
+            termrock::HintSpan::Key(k) => Some(*k),
             _ => None,
         })
         .collect();
@@ -134,8 +132,8 @@ fn capsule_global_keymap_hint_spans_include_ctrl_q_quit() {
     let combined: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) => Some(*k),
-            jackin_tui::HintSpan::Text(t) => Some(*t),
+            termrock::HintSpan::Key(k) => Some(*k),
+            termrock::HintSpan::Text(t) => Some(*t),
             _ => None,
         })
         .collect::<Vec<_>>()

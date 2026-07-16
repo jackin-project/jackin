@@ -5,7 +5,7 @@ description: "Modal sizing rules, confirmation layouts, sub-dialog stacking, err
 
 ## Modal Sizing Rules
 
-Modal sizes come from the `modal_rects` registry in `jackin-tui`. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
+Modal sizes come from the `modal_rects` registry in TermRock. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
 
 | Modal | `pct_w` | `rows` | Reasoning |
 |---|---|---|---|
@@ -29,7 +29,7 @@ The reserved status/hint rows at the bottom of every screen are inviolable: no m
 
 ### Text input dialogs use shared widgets
 
-Text-input dialogs are shared components, not surface-local drawings. A one-label prompt uses `TextInputState` + `render_text_input` from <RepoFile path="crates/jackin-tui/src/components/text_input.rs">crates/jackin-tui/src/components/text_input.rs</RepoFile> and computes its outer area with `text_input_prompt_rect`. A prompt whose box title differs from its field label, such as capsule `Rename tab` with field `Name`, uses `render_labeled_text_input_dialog` from the same file.
+Text-input dialogs are shared components, not surface-local drawings. A one-label prompt uses `TextInputState` + `render_text_input` from [TermRock source](https://github.com/tailrocks/termrock) and computes its outer area with `text_input_prompt_rect`. A prompt whose box title differs from its field label, such as capsule `Rename tab` with field `Name`, uses `render_labeled_text_input_dialog` from the same file.
 
 Surface code may still compute the outer dialog rectangle and footer hints, but it must not draw its own text-input border, title, label row, input band, or cursor styling. If a surface needs a different title/label combination, add parameters to the shared helper instead of copying the renderer.
 
@@ -86,7 +86,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 **Implementation:** In height calculations, use `content_rows + 6` (= 2 borders + 1 leading spacer + 1 spacer + 1 button + 1 trailing spacer). For any new dialog: compute the exact row count and add exactly 6 overhead rows. Use `jackin_tui::components::dialog_inner_chunks(inner, Some(content_rows))` to split the inner area into the canonical five slots and render into the correct slots.
 
-**Universal dialog scroll rule:** No dialog may silently clip content. When a dialog's body cannot fit in the dialog area, it must scroll on the overflowing axis with a scrollbar on the matching border — vertical on the right, horizontal on the bottom — and the bar appears **only** when content actually overflows that axis. Both axes go through one shared mechanism in <RepoFile path="crates/jackin-tui/src/components/dialog_layout.rs">crates/jackin-tui/src/components/dialog_layout.rs</RepoFile>: a `DialogBodyScroll` field (`scroll_x` + `scroll_y`) plus `render_scrollable_dialog_body(frame, block_area, inner, &lines, &mut scroll)`, which renders the body's `Vec<Line>` with both-axis offset (`Paragraph::scroll`) and draws the scrollbars when overflowing. Keyboard scroll is `↑`/`↓`/`j`/`k` (vertical) and `←`/`→`/`h`/`l` (horizontal); the mouse wheel scrolls both axes. Never hand-roll per-row clipping or a bespoke scrollbar — route the body through `render_scrollable_dialog_body`.
+**Universal dialog scroll rule:** No dialog may silently clip content. When a dialog's body cannot fit in the dialog area, it must scroll on the overflowing axis with a scrollbar on the matching border — vertical on the right, horizontal on the bottom — and the bar appears **only** when content actually overflows that axis. Both axes go through one shared mechanism in [TermRock source](https://github.com/tailrocks/termrock): a `DialogBodyScroll` field (`scroll_x` + `scroll_y`) plus `render_scrollable_dialog_body(frame, block_area, inner, &lines, &mut scroll)`, which renders the body's `Vec<Line>` with both-axis offset (`Paragraph::scroll`) and draws the scrollbars when overflowing. Keyboard scroll is `↑`/`↓`/`j`/`k` (vertical) and `←`/`→`/`h`/`l` (horizontal); the mouse wheel scrolls both axes. Never hand-roll per-row clipping or a bespoke scrollbar — route the body through `render_scrollable_dialog_body`.
 
 **Wheel routing is per-surface but uses one handler.** Each surface has its own input loop, so each must route the wheel to the open dialog's scroll state — but all of them call the shared `DialogBodyScroll::on_mouse_scroll(kind, modifiers)` so the behaviour is identical. Two non-obvious requirements that this rule exists to enforce:
 
@@ -99,7 +99,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 ### Debug info dialog contract
 
-`DebugInfo::into_state()` in <RepoFile path="crates/jackin-tui/src/components/container_info.rs">crates/jackin-tui/src/components/container_info.rs</RepoFile> is the only row-order and row-label source for the Debug info dialog. Console, launch, and capsule surfaces may supply different facts, but they all render through `render_container_info()` and must not fork the shell, row labels, copy behavior, hover styling, or scroll behavior.
+`DebugInfo::into_state()` in [TermRock source](https://github.com/tailrocks/termrock) is the only row-order and row-label source for the Debug info dialog. Console, launch, and capsule surfaces may supply different facts, but they all render through `render_container_info()` and must not fork the shell, row labels, copy behavior, hover styling, or scroll behavior.
 
 The canonical row order is:
 
@@ -129,7 +129,7 @@ Dragging outside the top or bottom of the pane auto-scrolls retained scrollback 
 
 ### Confirmation dialogs use the canonical Yes/No layout
 
-**Every Yes/No confirmation rendered on any jackin❯ TUI surface — host console (<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs">crates/jackin-tui/src/components/confirm_dialog.rs</RepoFile>) and the in-container multiplexer (<RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile>'s `Dialog::ConfirmAction`) — must use the same compact shape so the operator's eye recognises "this is a confirmation" instantly regardless of surface.** Different shapes per surface train the operator to re-read each dialog from scratch and erode the muscle memory for `N` / Esc / Enter.
+**Every Yes/No confirmation rendered on any jackin❯ TUI surface — host console ([TermRock source](https://github.com/tailrocks/termrock)) and the in-container multiplexer (<RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile>'s `Dialog::ConfirmAction`) — must use the same compact shape so the operator's eye recognises "this is a confirmation" instantly regardless of surface.** Different shapes per surface train the operator to re-read each dialog from scratch and erode the muscle memory for `N` / Esc / Enter.
 
 The canonical layout, top to bottom, inside the dialog's interior columns:
 
@@ -140,13 +140,13 @@ The canonical layout, top to bottom, inside the dialog's interior columns:
 5. **Default focus = `No` for destructive confirmations.** Confirms usually exist because the action is destructive; Enter on a freshly-opened destructive confirm must never fire the destructive arm. The operator has to deliberately Tab / Right / Y to commit Yes. The plain host `Exit jackin❯?` confirmation is the exception: it defaults to `Yes` because the operator already invoked the explicit quit chord, and the action is immediate exit rather than delete/discard of dirty state.
 6. **Key bindings (TUI design contract, not surface-specific):** Tab / Right / Left / Shift-Tab cycle focus, `Y` / `y` always commits Yes, `N` / `n` / Esc always cancels, Enter commits whichever button is focused. Mouse click on a button focuses + commits in one step (matches W3C button semantics).
 
-The reusable host widget is `<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs">crates/jackin-tui/src/components/confirm_dialog.rs</RepoFile>` (`ConfirmState` + `render`). In-container confirms render through the daemon's `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs">crates/jackin-capsule/src/tui/components/dialog_widgets.rs</RepoFile>, which wraps that same shared widget; any other in-container confirm must call it (or a sibling helper with the same layout output) rather than rolling a third shape.
+The reusable host widget is `[TermRock source](https://github.com/tailrocks/termrock)` (`ConfirmState` + `render`). In-container confirms render through the daemon's `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs">crates/jackin-capsule/src/tui/components/dialog_widgets.rs</RepoFile>, which wraps that same shared widget; any other in-container confirm must call it (or a sibling helper with the same layout output) rather than rolling a third shape.
 
 Why this rule exists: confirms are the operator's "are you sure?" gate. They appear at the worst moments — about to lose work, about to nuke a workspace, about to ship a destructive change. Surface-specific variants ("Yes, continue" / "No, go back" stacked vertically on one screen; "  Yes  " / "  No  " inline on the next) make the operator's eyes hunt for the right button under stress. The cost of one shared layout is small; the cost of mis-clicking a destructive confirm because the buttons moved is huge.
 
 ### Exit confirmation: one wording, `Ctrl+Q` opens it, `Ctrl+C` bypasses it
 
-**Quitting jackin❯ shows the same "Exit jackin❯?" confirmation on every surface, built from one place.** The canonical builders live in <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs">crates/jackin-tui/src/components/confirm_dialog.rs</RepoFile>: `exit_confirm_state()` (the plain prompt) and `exit_confirm_state_with_data_loss()` (the prompt plus warning notes). No surface hand-writes the wording. The host console's `quit_confirm_state()` delegates to `exit_confirm_state()`; the launch cockpit opens it as an overlay; the in-container multiplexer's `render_confirm_action` builds the data-loss variant for its Exit confirm.
+**Quitting jackin❯ shows the same "Exit jackin❯?" confirmation on every surface, built from one place.** The canonical builders live in [TermRock source](https://github.com/tailrocks/termrock): `exit_confirm_state()` (the plain prompt) and `exit_confirm_state_with_data_loss()` (the prompt plus warning notes). No surface hand-writes the wording. The host console's `quit_confirm_state()` delegates to `exit_confirm_state()`; the launch cockpit opens it as an overlay; the in-container multiplexer's `render_confirm_action` builds the data-loss variant for its Exit confirm.
 
 **`Ctrl+Q` is the universal quit chord.** It opens the exit confirmation on the console, the launch cockpit, and the capsule — regardless of screen or focus, since it is a control chord rather than a text character. The console also accepts a bare `q` off the main screen as a convenience, but `Ctrl+Q` always works. The plain host exit confirmation defaults focus to `Yes`, so Enter follows the operator's explicit quit intent; destructive data-loss confirmations still default to `No`.
 
@@ -172,7 +172,7 @@ Concrete obligations:
 - **Commit / terminal action** (agent picked, role selected, destructive action confirmed, copy fired, env key + value both committed): clear the entire chain so the operator lands on the underlying screen in one step. A terminal action means "the chain achieved its goal" — walking back through every intermediate step would be noise.
 - **Sub-dialog titles** read as a step inside the parent's flow — `Split: ← Left` for the agent picker opened from a `SplitDirectionPicker`, not `Agent picker` again. The title is what surfaces the breadcrumb to the operator.
 
-The shared mechanism for this contract is `ModalStack` in <RepoFile path="crates/jackin-tui/src/components/modal_lifecycle.rs">crates/jackin-tui/src/components/modal_lifecycle.rs</RepoFile>. `open_sub` pushes the visible modal as a parent and opens the child, `pop` restores one parent for Esc/cancel, and `clear_chain` closes the whole flow after a terminal commit. Host console editor/settings lifecycle methods route through this primitive even while their public state still exposes `modal` / `modal_parents` compatibility fields.
+The shared mechanism for this contract is `ModalStack` in [TermRock source](https://github.com/tailrocks/termrock). `open_sub` pushes the visible modal as a parent and opens the child, `pop` restores one parent for Esc/cancel, and `clear_chain` closes the whole flow after a terminal commit. Host console editor/settings lifecycle methods route through this primitive even while their public state still exposes `modal` / `modal_parents` compatibility fields.
 
 Settings uses one `SettingsModal` union for global mounts, environment, and auth dialogs. Tab-specific render and input helpers accept that same modal type and treat a wrong-tab variant as a routing bug, so shared modal behavior has one container shape instead of three parallel enum families.
 
@@ -262,7 +262,7 @@ Never silently truncate: `path.display().to_string().chars().take(N).collect()` 
 
 ## Error Surface — ErrorPopup Only, No Ephemeral Overlays
 
-All error conditions surfaced to the operator must use the red-border `ErrorPopup` dialog (<RepoFile path="crates/jackin-tui/src/components/error_dialog.rs">crates/jackin-tui/src/components/error_dialog.rs</RepoFile>). Ephemeral overlays (shimmer banners, auto-expiring toasts, single-line status strips) are banned for error display.
+All error conditions surfaced to the operator must use the red-border `ErrorPopup` dialog ([TermRock source](https://github.com/tailrocks/termrock)). Ephemeral overlays (shimmer banners, auto-expiring toasts, single-line status strips) are banned for error display.
 
 **Why:** Auto-expiring errors vanish before the operator reads them, have no scroll support for long messages, and render over content rather than blocking it. `ErrorPopup` is dismissible (Enter / Esc / O), scrollable, and modal — the operator cannot miss it or accidentally dismiss it.
 
@@ -282,7 +282,7 @@ Copy feedback is the exception because copy does not navigate or otherwise chang
 
 ## Debug info dialog — one shared, accumulating component
 
-The "Debug info" dialog is a single reusable component, not a per-surface reimplementation. Every surface that shows it — the console manager, the launch cockpit, and the in-container capsule — builds it from the shared `DebugInfo` model (<RepoFile path="crates/jackin-tui/src/components/container_info.rs">crates/jackin-tui/src/components/container_info.rs</RepoFile>) and renders it through `render_container_info`. The look, row order, labels, and copy affordances must be identical on every surface; a surface that hand-rolls its own rows or renderer is a violation.
+The "Debug info" dialog is a single reusable component, not a per-surface reimplementation. Every surface that shows it — the console manager, the launch cockpit, and the in-container capsule — builds it from the shared `DebugInfo` model ([TermRock source](https://github.com/tailrocks/termrock)) and renders it through `render_container_info`. The look, row order, labels, and copy affordances must be identical on every surface; a surface that hand-rolls its own rows or renderer is a violation.
 
 **The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin❯ version, Run ID, diagnostics log path when one exists). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Run ID, Container ID, jackin❯ version, jackin-capsule, Role, Agent, Target, Diagnostics log, Telemetry. If `Run ID` is present, it is always the first visible row — not merely the first debug-only row or first copy target — and the default Enter-copy target.
 

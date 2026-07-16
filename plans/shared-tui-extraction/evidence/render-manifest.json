@@ -1,0 +1,208 @@
+{
+  "command": "target/generate_stage0_evidence.py",
+  "renders": [
+    {
+      "fixture": "brand-header-console.svg",
+      "sha256": "c473108352e8143e1eb1a4c65dc735d46303aba6bc81b08233eca5528df5e11f",
+      "bytes": 8819,
+      "width": 504,
+      "height": 54
+    },
+    {
+      "fixture": "button-strip-all-disabled.svg",
+      "sha256": "db60168fe18de66ab7289cc138f1474a1e6ae300df240371ee5f53706359ad2e",
+      "bytes": 7930,
+      "width": 504,
+      "height": 90
+    },
+    {
+      "fixture": "button-strip-basic.svg",
+      "sha256": "b2554edb72eb868e0bf8179d77bc9de6b29f9d997125406310b29f3120827051",
+      "bytes": 8642,
+      "width": 504,
+      "height": 90
+    },
+    {
+      "fixture": "confirm-default.svg",
+      "sha256": "cedd4878461297f24b52239b3be543704382bf4739988a14aa43ff81abbb5b43",
+      "bytes": 15350,
+      "width": 450,
+      "height": 180
+    },
+    {
+      "fixture": "confirm-focus-yes.svg",
+      "sha256": "0463d6c7ac0cf4ed22082df53971e69fa66c01347fc3dfe109f5a95ad01dd8d6",
+      "bytes": 13226,
+      "width": 450,
+      "height": 162
+    },
+    {
+      "fixture": "confirm-role-trust.svg",
+      "sha256": "c44d6efab1d6044c6d155fc8f8562b959ed3a06f78f4fa243687eb2812162700",
+      "bytes": 24997,
+      "width": 648,
+      "height": 270
+    },
+    {
+      "fixture": "container-info-debug.svg",
+      "sha256": "349ee6985d77fcfd8d58bf22aa5801cd96b0964703ad88aeec369e5fd0534041",
+      "bytes": 28658,
+      "width": 666,
+      "height": 252
+    },
+    {
+      "fixture": "diff-view-side-by-side.svg",
+      "sha256": "8b288051d84c854c42203de6d922108a7224701f5aacf694faf489ea7b00911a",
+      "bytes": 32834,
+      "width": 684,
+      "height": 234
+    },
+    {
+      "fixture": "diff-view-single-pane.svg",
+      "sha256": "76884fc607427bb09f2a3c5547eaa3cbeb2787bda53044d3ae4e022015bdcc96",
+      "bytes": 24737,
+      "width": 540,
+      "height": 198
+    },
+    {
+      "fixture": "error-default.svg",
+      "sha256": "93819f2e3a49bf3b24ab26a0cb115daea0503c93a7e6db5f1e824ef3e3313531",
+      "bytes": 17810,
+      "width": 576,
+      "height": 216
+    },
+    {
+      "fixture": "error-structured-rows.svg",
+      "sha256": "25c4bfa64194f831932758a5aa05571407478f08146c457d147078a08df6a302",
+      "bytes": 21549,
+      "width": 666,
+      "height": 234
+    },
+    {
+      "fixture": "filter-input-populated.svg",
+      "sha256": "ef797d8548c9700dbae1c5a907885a4db19a0e3985e178bf9101a1dacf3096cd",
+      "bytes": 6068,
+      "width": 396,
+      "height": 54
+    },
+    {
+      "fixture": "hint-bar-manager-footer.svg",
+      "sha256": "4d9ffab497441d47f0a71f20a4a2d099e9327d86b7108cfcdc1bd12534d44791",
+      "bytes": 8592,
+      "width": 504,
+      "height": 72
+    },
+    {
+      "fixture": "panel-focused.svg",
+      "sha256": "7c7f9a7194aa35e25ca0452755371c9d596733dd512604388fbd9fa32bba6df6",
+      "bytes": 17470,
+      "width": 504,
+      "height": 180
+    },
+    {
+      "fixture": "panel-unfocused.svg",
+      "sha256": "1ef2d84e88041a35955b1a6b59c32f6c01b9d3b8dc0fce8b5e1bd5b719a1480e",
+      "bytes": 13838,
+      "width": 504,
+      "height": 144
+    },
+    {
+      "fixture": "save-discard-default.svg",
+      "sha256": "9a4e612f62b8d6f9d7283714ce54b7d15a40884d458204167183968ee1f99154",
+      "bytes": 15838,
+      "width": 504,
+      "height": 162
+    },
+    {
+      "fixture": "save-discard-focus-discard.svg",
+      "sha256": "dc1209e0bed9133079f386f1a81e9c15a159bc8e9d0141221b7f9f8d7087158c",
+      "bytes": 15700,
+      "width": 504,
+      "height": 162
+    },
+    {
+      "fixture": "save-discard-focus-save.svg",
+      "sha256": "4bb81d7429ebb127394e8273652bcf42c83b1e527374cb36d6b10f1aab9c9734",
+      "bytes": 15734,
+      "width": 504,
+      "height": 162
+    },
+    {
+      "fixture": "scrollable-panel-mounts.svg",
+      "sha256": "c1960efa310daf2c9999266a232742cfb649ffe7ff48927f9146971cdea5ac62",
+      "bytes": 24557,
+      "width": 594,
+      "height": 198
+    },
+    {
+      "fixture": "scrollable-panel-scrolled.svg",
+      "sha256": "a9935d42b89664fbaca75406707b5cb801ea76f3e568b1c52e7518ccc4a5d465",
+      "bytes": 21669,
+      "width": 504,
+      "height": 180
+    },
+    {
+      "fixture": "select-list-agent-picker.svg",
+      "sha256": "a0cd5bdab0bbf1d621f30077c0469238185eef2757c518439dbc5887839547a7",
+      "bytes": 21517,
+      "width": 540,
+      "height": 234
+    },
+    {
+      "fixture": "select-list-empty.svg",
+      "sha256": "5360791640bf6e991f6fa1f9f5d928a3dfa3fc9ea09e261388486a525b9f6300",
+      "bytes": 13507,
+      "width": 450,
+      "height": 180
+    },
+    {
+      "fixture": "select-list-filtered-empty.svg",
+      "sha256": "4adbaf61400e8681cdc84b82745836c2ad52d064d29c1897b2f7979b602570bc",
+      "bytes": 12882,
+      "width": 450,
+      "height": 180
+    },
+    {
+      "fixture": "status-footer-cockpit-chrome.svg",
+      "sha256": "dcb295f5afc7182f9b6fd5323ef8f80f61d4d946edcc558ed9d685cc8ed174ba",
+      "bytes": 16496,
+      "width": 666,
+      "height": 90
+    },
+    {
+      "fixture": "status-footer-launch-progress.svg",
+      "sha256": "2c4a18fe1c38448e287538c1fcbcd46e80378635bfea056eb995c16761b518fc",
+      "bytes": 15340,
+      "width": 666,
+      "height": 54
+    },
+    {
+      "fixture": "status-popup-default.svg",
+      "sha256": "4e13d691bb05278db60a65598214fc9812b5a1a595647cb421a8c1d1c1ef89b1",
+      "bytes": 13970,
+      "width": 450,
+      "height": 162
+    },
+    {
+      "fixture": "tab-strip-basic.svg",
+      "sha256": "00c7b4c75a5b6c9fbff2bf1e466cc0654bc33c882db4558b4e9c9042a2dcfaa1",
+      "bytes": 10952,
+      "width": 540,
+      "height": 72
+    },
+    {
+      "fixture": "text-input-workspace-name.svg",
+      "sha256": "82d34ab3b4bd0e9318b1e761f0bb5bf3a8dffeab3421dc384533f6f42cd06a1c",
+      "bytes": 17059,
+      "width": 540,
+      "height": 126
+    },
+    {
+      "fixture": "toast-selection-copied.svg",
+      "sha256": "be7d85605ff8f62140a3022cbfb96a75a166334fb46d8626b73c3e07084bc6fd",
+      "bytes": 20144,
+      "width": 504,
+      "height": 180
+    }
+  ]
+}

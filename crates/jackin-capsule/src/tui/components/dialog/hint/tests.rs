@@ -21,7 +21,7 @@ fn main_view_hint_omits_scroll_when_focused_pane_fits() {
     let hint = labels(&main_view_hint(
         false,
         0x1C,
-        jackin_tui::components::ScrollAxes::default(),
+        termrock::components::ScrollAxes::default(),
         false,
     ));
     // palette key renders with Ctrl- prefix (format_key_glyph(0x1C) = "Ctrl-\")
@@ -35,7 +35,7 @@ fn main_view_hint_omits_scroll_when_focused_pane_fits() {
 
 #[test]
 fn usage_hint_names_provider_switch_focus_refresh_and_close() {
-    let hint = labels(&usage_hint(jackin_tui::components::ScrollAxes {
+    let hint = labels(&usage_hint(termrock::components::ScrollAxes {
         vertical: true,
         horizontal: false,
     }));
@@ -59,7 +59,7 @@ fn main_view_hint_advertises_only_visible_scroll_axis() {
     let hint = labels(&main_view_hint(
         false,
         0x1C,
-        jackin_tui::components::ScrollAxes {
+        termrock::components::ScrollAxes {
             vertical: true,
             horizontal: false,
         },
@@ -78,7 +78,7 @@ fn scrollback_hint_omits_scroll_when_no_axis_is_visible() {
     let hint = labels(&main_view_hint(
         true,
         0x1C,
-        jackin_tui::components::ScrollAxes::default(),
+        termrock::components::ScrollAxes::default(),
         false,
     ));
     assert!(hint.contains("Esc exit scrollback"), "hint: {hint}");
@@ -94,7 +94,7 @@ fn prefix_awaiting_shows_cheat_sheet_not_nav_hints() {
     let hint = labels(&main_view_hint(
         false,
         0x1C,
-        jackin_tui::components::ScrollAxes::default(),
+        termrock::components::ScrollAxes::default(),
         true,
     ));
     // Palette key glyph is format_key_glyph(0x1C) = "Ctrl-\"
@@ -117,7 +117,7 @@ fn main_view_hint_includes_resize_pane_group() {
     let hint = labels(&main_view_hint(
         false,
         0x1C,
-        jackin_tui::components::ScrollAxes::default(),
+        termrock::components::ScrollAxes::default(),
         false,
     ));
     assert!(
@@ -132,7 +132,7 @@ fn scrollback_hint_does_not_include_resize_pane() {
     let hint = labels(&main_view_hint(
         true,
         0x1C,
-        jackin_tui::components::ScrollAxes::default(),
+        termrock::components::ScrollAxes::default(),
         false,
     ));
     assert!(
@@ -147,7 +147,7 @@ fn custom_palette_key_glyph_appears_in_hint() {
     let hint = labels(&main_view_hint(
         false,
         0x05,
-        jackin_tui::components::ScrollAxes::default(),
+        termrock::components::ScrollAxes::default(),
         false,
     ));
     assert!(

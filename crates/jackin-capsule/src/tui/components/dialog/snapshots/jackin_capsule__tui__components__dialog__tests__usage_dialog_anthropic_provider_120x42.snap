@@ -1,6 +1,5 @@
 ---
 source: crates/jackin-capsule/src/tui/components/dialog/tests.rs
-assertion_line: 2044
 expression: "render_usage_dialog_snapshot_for_view(120, 42, UsageDialogTab::Provider,\nanthropic_usage_view_fixture())"
 ---
 

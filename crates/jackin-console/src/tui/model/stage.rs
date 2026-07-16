@@ -16,12 +16,12 @@ pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
     CreatePrelude(CreatePrelude),
     ConfirmDelete {
         name: String,
-        state: jackin_tui::components::ConfirmState,
+        state: termrock::components::ConfirmState,
     },
     ConfirmInstancePurge {
         container: String,
         label: String,
-        state: jackin_tui::components::ConfirmState,
+        state: termrock::components::ConfirmState,
     },
 }
 

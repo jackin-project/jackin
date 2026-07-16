@@ -26,8 +26,6 @@
     "jackin-runtime",
     "jackin-term",
     "jackin-test-support",
-    "jackin-tui",
-    "jackin-tui-lookbook",
     "jackin-usage",
     "jackin-xtask"
   ]

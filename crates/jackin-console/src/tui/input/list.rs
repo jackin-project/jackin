@@ -557,7 +557,7 @@ pub fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOu
             }
         }
         (ListModalKeyTarget::ErrorPopup, Modal::ErrorPopup { state: popup }) => {
-            match dismissible_modal_plan(popup.handle_key(key)) {
+            match dismissible_modal_plan(popup.handle_key(key.into())) {
                 DismissibleModalPlan::Dismiss => {
                     dispatch_manager(state, ManagerMessage::DismissListModal);
                     InputOutcome::Continue

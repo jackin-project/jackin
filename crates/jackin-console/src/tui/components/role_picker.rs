@@ -6,7 +6,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
-use jackin_tui::ModalOutcome;
+use termrock::ModalOutcome;
 
 pub trait RoleChoice: Clone {
     fn key(&self) -> String;
@@ -134,10 +134,10 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::components::render_filter_input;
-use jackin_tui::components::render_picker_lines;
-use jackin_tui::components::{DialogBorder, render_dialog_shell};
-use jackin_tui::theme::WHITE;
+use termrock::components::render_filter_input;
+use termrock::components::render_picker_lines;
+use termrock::components::{DialogBorder, render_dialog_shell};
+use termrock::style::WHITE;
 
 pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
     let inner = render_dialog_shell(frame, area, Some("Select Role"), DialogBorder::Default);
@@ -160,7 +160,7 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no matches",
-                jackin_tui::theme::DIM,
+                termrock::style::DIM,
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[2],

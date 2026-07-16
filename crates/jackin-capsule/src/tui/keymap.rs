@@ -9,8 +9,13 @@
 //! cannot live in a static `Keymap`. What IS static is the set of commands
 //! that follow the prefix key — those are registered here.
 
-use jackin_tui::components::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
-use jackin_tui::keymap::glyph;
+use termrock::input::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
+use termrock::keymap::glyph;
+
+/// Decode Capsule's raw terminal bytes into the neutral logical key contract.
+pub(crate) fn raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord> {
+    termrock::keymap::raw_bytes_to_chord(bytes)
+}
 
 use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand};
 

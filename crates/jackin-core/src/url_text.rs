@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! URL text helpers that are small enough to avoid a parser dependency at
-//! shared-core level. Verbatim copy of `jackin_tui::url_text` per
+//! shared-core level. Product-local URL policy retained during TUI extraction per
 //! A5 unblock — runtime no longer needs the L3 jackin-tui dep
 //! for these.
 

@@ -8,7 +8,7 @@
 use std::io::Write;
 use std::ops::Range;
 
-use jackin_tui::ansi::{RESET, fg};
+use crate::tui::ansi::{RESET, fg};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CellSnapshot {
@@ -119,7 +119,7 @@ pub fn draw_scrollbar(
     // scrollback was at the live tail (or the top), producing the
     // visible "scrollbar sticks out past the pane" symptom.
     let interior_rows = pane_rows.saturating_sub(2);
-    let Some(thumb) = jackin_tui::scroll::tail_vertical_thumb(interior_rows, filled, offset) else {
+    let Some(thumb) = termrock::scroll::tail_vertical_thumb(interior_rows, filled, offset) else {
         return;
     };
     let col = pane_col.saturating_add(pane_cols).saturating_sub(1);
@@ -127,9 +127,9 @@ pub fn draw_scrollbar(
     // Active pane uses the brand phosphor-green; inactive panes a
     // neutral gray that matches their inactive border colour.
     let thumb_color = if focused {
-        jackin_tui::PHOSPHOR_GREEN
+        termrock::PHOSPHOR_GREEN
     } else {
-        jackin_tui::Rgb::new(160, 160, 160)
+        termrock::Rgb::new(160, 160, 160)
     };
 
     // Thumb rows are 0-based relative to the interior; skip the top

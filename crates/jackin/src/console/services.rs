@@ -68,7 +68,7 @@ pub(super) mod config {
     pub(crate) fn start_role_source_persist(
         paths: JackinPaths,
         origin: jackin_console::tui::subscriptions::RoleSourcePersistOrigin<RoleSource>,
-    ) -> jackin_tui::runtime::BlockingSubscription<
+    ) -> jackin_console::tui::runtime::BlockingSubscription<
         jackin_console::tui::state::ManagerConfigSaveResult,
     > {
         let (key, source) = match &origin {
@@ -82,7 +82,7 @@ pub(super) mod config {
                 source,
             } => (key.clone(), source.clone()),
         };
-        jackin_tui::runtime::spawn_blocking_subscription(move || {
+        jackin_console::tui::runtime::spawn_blocking_subscription(move || {
             let result = upsert_role_source_on_disk(&paths, &key, &source);
             jackin_console::tui::subscriptions::ConfigSaveResult::RoleSourcePersist {
                 result,
@@ -101,10 +101,10 @@ pub(super) mod config {
         paths: JackinPaths,
         cwd: std::path::PathBuf,
         name: String,
-    ) -> jackin_tui::runtime::BlockingSubscription<
+    ) -> jackin_console::tui::runtime::BlockingSubscription<
         jackin_console::tui::state::ManagerConfigSaveResult,
     > {
-        jackin_tui::runtime::spawn_blocking_subscription(move || {
+        jackin_console::tui::runtime::spawn_blocking_subscription(move || {
             let result = remove_workspace_from_disk(&paths, &name);
             jackin_console::tui::subscriptions::ConfigSaveResult::RemoveWorkspace { result, cwd }
         })
@@ -215,10 +215,10 @@ pub(super) mod config {
         original: WorkspaceConfig,
         pending: WorkspaceConfig,
         exit_on_success: bool,
-    ) -> jackin_tui::runtime::BlockingSubscription<
+    ) -> jackin_console::tui::runtime::BlockingSubscription<
         jackin_console::tui::state::ManagerConfigSaveResult,
     > {
-        jackin_tui::runtime::spawn_blocking_subscription(move || {
+        jackin_console::tui::runtime::spawn_blocking_subscription(move || {
             let result = save_workspace(
                 &paths,
                 WorkspaceSaveInput {
@@ -274,10 +274,10 @@ pub(super) mod config {
     pub(crate) fn start_settings_save(
         paths: JackinPaths,
         input: OwnedSettingsSaveInput,
-    ) -> jackin_tui::runtime::BlockingSubscription<
+    ) -> jackin_console::tui::runtime::BlockingSubscription<
         jackin_console::tui::state::ManagerConfigSaveResult,
     > {
-        jackin_tui::runtime::spawn_blocking_subscription(move || {
+        jackin_console::tui::runtime::spawn_blocking_subscription(move || {
             let result = save_settings(&paths, input.as_borrowed());
             jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result)
         })
@@ -586,14 +586,14 @@ pub(super) mod instances {
 }
 pub(super) mod role_load {
     use futures_util::FutureExt as _;
-    use jackin_tui::runtime::BlockingSubscription;
+    use jackin_console::tui::runtime::BlockingSubscription;
 
     pub(crate) fn start_role_registration(
         paths: jackin_core::JackinPaths,
         selector: jackin_core::RoleSelector,
         git_url: String,
     ) -> BlockingSubscription<anyhow::Result<()>> {
-        jackin_tui::runtime::spawn_named_async_subscription(
+        jackin_console::tui::runtime::spawn_named_async_subscription(
             "jackin-role-registration",
             async move {
                 let mut runner = jackin_docker::ShellRunner {
@@ -643,7 +643,7 @@ pub(super) mod role_load {
 }
 
 pub(super) mod workspace_save {
-    use jackin_tui::runtime::BlockingSubscription;
+    use jackin_console::tui::runtime::BlockingSubscription;
 
     /// Start the Docker-backed drift check for an edited workspace.
     pub(crate) fn start_drift_check(
@@ -651,21 +651,24 @@ pub(super) mod workspace_save {
         workspace_name: String,
         prospective_mounts: Vec<jackin_config::MountConfig>,
     ) -> BlockingSubscription<anyhow::Result<jackin_runtime::runtime::drift::DriftDetection>> {
-        jackin_tui::runtime::spawn_named_async_subscription("jackin-drift-check", async move {
-            async {
-                let docker = jackin_docker::docker_client::BollardDockerClient::connect()?;
-                let wn = jackin_core::WorkspaceName::parse(&workspace_name)
-                    .map_err(anyhow::Error::from)?;
-                jackin_runtime::runtime::drift::detect_workspace_edit_drift(
-                    &paths,
-                    &wn,
-                    &prospective_mounts,
-                    &docker,
-                )
+        jackin_console::tui::runtime::spawn_named_async_subscription(
+            "jackin-drift-check",
+            async move {
+                async {
+                    let docker = jackin_docker::docker_client::BollardDockerClient::connect()?;
+                    let wn = jackin_core::WorkspaceName::parse(&workspace_name)
+                        .map_err(anyhow::Error::from)?;
+                    jackin_runtime::runtime::drift::detect_workspace_edit_drift(
+                        &paths,
+                        &wn,
+                        &prospective_mounts,
+                        &docker,
+                    )
+                    .await
+                }
                 .await
-            }
-            .await
-        })
+            },
+        )
     }
 
     /// Start cleanup for isolated mount records removed by a workspace save.
@@ -673,7 +676,7 @@ pub(super) mod workspace_save {
         paths: jackin_core::JackinPaths,
         records: Vec<jackin_runtime::isolation::state::IsolationRecord>,
     ) -> BlockingSubscription<anyhow::Result<()>> {
-        jackin_tui::runtime::spawn_named_async_subscription(
+        jackin_console::tui::runtime::spawn_named_async_subscription(
             "jackin-isolation-cleanup",
             async move {
                 async {

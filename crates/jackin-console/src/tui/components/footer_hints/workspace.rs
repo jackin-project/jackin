@@ -4,14 +4,14 @@
 //! Workspace-list footer facts, mode resolver, and the matching hint-span
 //! builders for the workspace-list screen.
 
-use jackin_tui::HintSpan;
-use jackin_tui::components::ScrollAxes;
+use termrock::HintSpan;
+use termrock::components::ScrollAxes;
 
 use crate::tui::keymap::{
     PREVIEW_PANE_KEYMAP, PreviewPaneAction, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
 };
 use crate::tui::screens::workspaces::model::ManagerListRow;
-use jackin_tui::components::scroll_hint_spans;
+use termrock::components::scroll_hint_spans;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListFooterMode {
@@ -232,7 +232,7 @@ pub fn workspace_screen_footer_items(facts: WorkspaceScreenFooterFacts) -> Vec<H
 
 #[must_use]
 pub fn destructive_confirm_footer_items() -> Vec<HintSpan<'static>> {
-    jackin_tui::components::confirm_hint_spans()
+    termrock::components::confirm_hint_spans()
 }
 
 #[must_use]

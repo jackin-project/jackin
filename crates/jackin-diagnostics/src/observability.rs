@@ -994,8 +994,8 @@ mod otlp {
         "jackin_protocol",
         "jackin_runtime",
         "jackin_term",
-        "jackin_tui",
-        "jackin_tui_lookbook",
+        "termrock",
+        "termrock_lookbook",
         "jackin_usage",
     ];
 

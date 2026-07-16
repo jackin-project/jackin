@@ -40,7 +40,7 @@ pub struct FileBrowserState {
     /// whose origin can't be resolved — the overlay then omits the row.
     pub pending_git_url: Option<String>,
     pub(super) pending_git_url_rx:
-        Option<jackin_tui::runtime::BlockingSubscription<Option<String>>>,
+        Option<crate::tui::runtime::BlockingSubscription<Option<String>>>,
     /// Which button is highlighted in the git-repo prompt.
     pub pending_git_focus: GitPromptFocus,
 }
@@ -49,12 +49,12 @@ impl FileBrowserState {
     /// Footer-bar hints for the current state. The screen footer renders these
     /// (hints are footer-only — the browser draws no internal hint row); the
     /// git-repo confirm overlay swaps in its own confirm/cancel keys.
-    pub fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>> {
-        use jackin_tui::HintSpan;
+    pub fn footer_items(&self) -> Vec<termrock::HintSpan<'static>> {
+        use termrock::HintSpan;
         if self.pending_git_prompt.is_some() {
             super::git_prompt::git_prompt_footer_items(self.pending_git_url.is_some())
         } else {
-            use jackin_tui::keymap::glyph;
+            use termrock::keymap::glyph;
             vec![
                 // UNREGISTERABLE(multi-key-display-group): ↑↓/j/k combines arrow keys and vim aliases.
                 HintSpan::Key("\u{2191}\u{2193}/j/k"),

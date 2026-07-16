@@ -88,10 +88,10 @@ Read [TUI Design](docs/content/docs/reference/tui/index.mdx) before any TUI chan
 
 | Surface | Directory |
 |---|---|
-| Shared components | `crates/jackin-tui/src/` |
+| Shared components | [TermRock](https://github.com/tailrocks/termrock) |
 | Capsule | `crates/jackin-capsule/src/tui/` |
 | Host console | `src/console/tui/` |
-| Lookbook | `crates/jackin-tui-lookbook/src/` |
+| Lookbook | [TermRock catalog](https://github.com/tailrocks/termrock/tree/main/docs) |
 
 Cross-cutting TUI behaviour (focusability, navigation, color, modal sizing, hints) → matching page under `docs/content/docs/reference/tui/` same PR.
 

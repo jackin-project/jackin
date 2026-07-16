@@ -36,7 +36,7 @@ pub fn follow_cursor_y(
     viewport_h: usize,
     stored_scroll_y: u16,
 ) -> u16 {
-    jackin_tui::components::scrollable_panel::cursor_follow_offset(
+    termrock::components::scrollable_panel::cursor_follow_offset(
         cursor,
         content_height,
         viewport_h,

@@ -3,20 +3,17 @@
 
 //! Launch docker-build log overlay helpers.
 
-use jackin_tui::HintSpan;
-use jackin_tui::components::{
-    bottom_chrome_areas, is_scrollable, render_hint_bar, render_scrollable_block,
-    scrollbar_offset_for_track_position, vertical_scrollbar_area, viewport_height, viewport_width,
-};
-use jackin_tui::theme::DIALOG_SURFACE;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear};
+use termrock::HintSpan;
+use termrock::style::DIALOG_SURFACE;
 
 use crate::LaunchView;
 use crate::tui::components::cells::coalesce_cells;
+use crate::tui::components::chrome::bottom_chrome_areas;
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +21,26 @@ pub struct BuildLogScrollMetrics {
     pub content_len: usize,
     pub viewport_h: usize,
     pub filled: usize,
+}
+
+#[must_use]
+pub const fn viewport_width(area: Rect) -> usize {
+    area.width.saturating_sub(2) as usize
+}
+
+#[must_use]
+pub const fn viewport_height(area: Rect) -> usize {
+    area.height.saturating_sub(2) as usize
+}
+
+#[must_use]
+const fn vertical_scrollbar_area(area: Rect) -> Rect {
+    Rect {
+        x: area.x.saturating_add(area.width.saturating_sub(1)),
+        y: area.y.saturating_add(1),
+        width: 1,
+        height: area.height.saturating_sub(2),
+    }
 }
 
 #[must_use]
@@ -41,7 +58,7 @@ pub fn build_log_scroll_metrics(area: Rect, raw: &[String]) -> BuildLogScrollMet
     BuildLogScrollMetrics {
         content_len,
         viewport_h,
-        filled: jackin_tui::scroll::max_offset(content_len, viewport_h),
+        filled: termrock::scroll::max_offset(content_len, viewport_h),
     }
 }
 
@@ -50,7 +67,7 @@ pub fn build_log_wrapped_lines(raw: &[String], width: usize) -> Vec<Line<'static
     if raw.is_empty() {
         vec![Line::from(Span::styled(
             "(waiting for docker build output…)",
-            jackin_tui::theme::DIM,
+            termrock::style::DIM,
         ))]
     } else {
         wrap_build_log_lines(raw, width)
@@ -69,7 +86,7 @@ pub fn refresh_build_log_layout(view: &mut LaunchView, area: Rect, force: bool) 
         return;
     }
     let wrapped = build_log_wrapped_lines(&view.build_log_lines, viewport_w);
-    view.build_log_filled = jackin_tui::scroll::max_offset(wrapped.len(), viewport_h);
+    view.build_log_filled = termrock::scroll::max_offset(wrapped.len(), viewport_h);
     view.build_log_wrapped_lines = wrapped;
     view.build_log_wrapped_width = viewport_w;
     view.build_log_viewport_height = viewport_h;
@@ -106,7 +123,7 @@ pub fn build_log_scrollbar_top_offset_for_row(
     row: u16,
 ) -> Option<usize> {
     let metrics = build_log_scroll_metrics(area, raw);
-    if !is_scrollable(metrics.content_len, metrics.viewport_h) {
+    if !termrock::scroll::is_scrollable(metrics.content_len, metrics.viewport_h) {
         return None;
     }
     let scrollbar = vertical_scrollbar_area(build_log_box_area(area));
@@ -116,12 +133,14 @@ pub fn build_log_scrollbar_top_offset_for_row(
     }
     let max_position = scrollbar.height.saturating_sub(1);
     let track_position = row.saturating_sub(scrollbar.y).min(max_position);
-    Some(usize::from(scrollbar_offset_for_track_position(
-        metrics.content_len,
-        metrics.viewport_h,
-        track_len,
-        usize::from(track_position),
-    )))
+    Some(usize::from(
+        termrock::scroll::offset_for_track_position_u16(
+            metrics.content_len,
+            metrics.viewport_h,
+            track_len,
+            usize::from(track_position),
+        ),
+    ))
 }
 
 #[must_use]
@@ -149,12 +168,14 @@ pub fn build_log_scrollbar_top_offset_for_row_cached(
     }
     let max_position = scrollbar.height.saturating_sub(1);
     let track_position = row.saturating_sub(scrollbar.y).min(max_position);
-    Some(usize::from(scrollbar_offset_for_track_position(
-        view.build_log_wrapped_lines.len(),
-        view.build_log_viewport_height,
-        track_len,
-        usize::from(track_position),
-    )))
+    Some(usize::from(
+        termrock::scroll::offset_for_track_position_u16(
+            view.build_log_wrapped_lines.len(),
+            view.build_log_viewport_height,
+            track_len,
+            usize::from(track_position),
+        ),
+    ))
 }
 
 /// Footer-hint keys for the build-log overlay.
@@ -181,7 +202,7 @@ pub fn render_build_log_dialog(
     debug_mode: bool,
 ) {
     frame.render_widget(
-        Block::default().style(Style::default().bg(jackin_tui::theme::DIALOG_BACKDROP)),
+        Block::default().style(Style::default().bg(termrock::style::DIALOG_BACKDROP)),
         area,
     );
     let chrome = launch_overlay_chrome_areas(area, debug_mode);
@@ -197,27 +218,32 @@ pub fn render_build_log_dialog(
     // Live build output is tail-relative (0 = follow newest), unlike ordinary
     // top-offset panels that can use `apply_scroll_delta` directly. Keep the
     // state in the shared `TailScroll` adapter, then convert to the top-offset
-    // consumed by `render_scrollable_block`/`FixedScrollbar`.
+    // consumed by the top-offset viewport.
     let viewport_h = viewport_height(box_area);
     let lines_len = lines.len();
-    let mut scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
-        .unwrap_or(u16::MAX);
-    let mut scroll_x = 0u16;
-    render_scrollable_block(
-        frame,
-        box_area,
-        lines,
-        &mut scroll_x,
-        &mut scroll_y,
-        true,
-        Some(title),
-    );
+    let mut scroll = termrock::scroll::DialogScroll {
+        scroll_x: 0,
+        scroll_y: u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
+            .unwrap_or(u16::MAX),
+    };
+    let viewport = termrock::widgets::Viewport {
+        lines: &lines,
+        title: Some(title),
+        content_style: termrock::style::GREEN,
+        border_style: Style::new().fg(termrock::style::PHOSPHOR_GREEN),
+        title_style: Style::new()
+            .fg(termrock::style::WHITE)
+            .add_modifier(Modifier::BOLD),
+        scroll_track_style: Style::new().fg(termrock::style::DIALOG_SCROLL_TRACK),
+        scroll_thumb_style: Style::new().fg(termrock::style::DIALOG_SCROLL_THUMB),
+    };
+    frame.render_stateful_widget(&viewport, box_area, &mut scroll);
 
-    let vertical = is_scrollable(lines_len, viewport_h);
+    let vertical = termrock::scroll::is_scrollable(lines_len, viewport_h);
     if !debug_mode {
         frame.render_widget(Clear, chrome.hint);
     }
-    render_hint_bar(frame, chrome.hint, &build_log_hint(vertical));
+    termrock::widgets::render_hint_bar(frame, chrome.hint, &build_log_hint(vertical));
     if debug_mode {
         render_footer(frame, chrome.footer, view, run_id, true);
     }
@@ -239,7 +265,7 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
     }
 
     let default_style = Style::default().fg(Color::Gray).bg(DIALOG_SURFACE);
-    let spans = jackin_tui::ansi_text::styled_spans(line.trim_end(), default_style);
+    let spans = termrock::ansi_text::styled_spans(line.trim_end(), default_style);
     wrap_build_log_spans(spans, width)
 }
 
@@ -304,7 +330,7 @@ fn push_wrapped_build_line(
             0,
             Span::styled(
                 BUILD_LOG_WRAP_PREFIX,
-                jackin_tui::theme::DIM.bg(DIALOG_SURFACE),
+                termrock::style::DIM.bg(DIALOG_SURFACE),
             ),
         );
     }

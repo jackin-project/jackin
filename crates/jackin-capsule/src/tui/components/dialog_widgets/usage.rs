@@ -15,8 +15,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::components::tab_strip::TabStrip;
-use jackin_tui::theme::{DIM, PHOSPHOR_GREEN, WHITE};
+use termrock::components::tab_strip::TabStrip;
+use termrock::style::{DIM, PHOSPHOR_GREEN, WHITE};
 
 pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
     Rect {
@@ -29,7 +29,7 @@ pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
 
 pub(crate) fn usage_tab_strip_area(inner: Rect, tabs: &[(String, bool)]) -> Rect {
     let strip_width = usage_tab_strip_width(tabs)
-        .saturating_sub(usize::from(jackin_tui::TAB_GAP))
+        .saturating_sub(usize::from(termrock::TAB_GAP))
         .min(usize::from(inner.width));
     let strip_offset = usize::from(inner.width).saturating_sub(strip_width) / 2;
     Rect {
@@ -83,9 +83,9 @@ pub(crate) fn usage_provider_display_label(label: &str) -> &str {
 }
 
 pub(crate) fn usage_tab_strip_width(tabs: &[(String, bool)]) -> usize {
-    let gap = usize::from(jackin_tui::TAB_GAP);
+    let gap = usize::from(termrock::TAB_GAP);
     tabs.iter()
-        .map(|(label, _)| jackin_tui::display_cols(label) + 2 + gap)
+        .map(|(label, _)| termrock::display_cols(label) + 2 + gap)
         .sum()
 }
 
@@ -93,7 +93,7 @@ pub(crate) fn usage_tab_strip_width(tabs: &[(String, bool)]) -> usize {
 /// `Usage: <provider>` (matching the narrow preview); the wide layout and the
 /// Overview/Instance panels keep their own titles.
 pub(crate) fn usage_panel_title(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
     width: u16,
 ) -> String {
     let base = state.title();
@@ -114,7 +114,7 @@ pub(crate) fn usage_panel_title(
 }
 
 pub(crate) fn usage_info_required_height(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
 ) -> u16 {
     // Add the fixed chrome rows that frame the content (borders, title, and
     // padding) on top of the content-line count, then keep a 7-row floor so the
@@ -154,7 +154,7 @@ pub(crate) fn usage_body_rect(box_rect: Rect) -> Rect {
 /// the true body viewport — box minus border minus tab strip — is what clamps).
 pub(crate) fn usage_scroll_inputs(
     box_rect: Rect,
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
 ) -> (usize, usize, Rect) {
     let body = usage_body_rect(box_rect);
     let lines = usage_info_lines_for_width(state, body.width);
@@ -168,7 +168,7 @@ pub(crate) fn usage_scroll_inputs(
 }
 
 pub(crate) fn usage_info_lines(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
 ) -> Vec<Line<'static>> {
     // Width 0 disables right-alignment so content-size/height measurement
     // reflects the intrinsic line width, not a padded-to-panel width.
@@ -176,7 +176,7 @@ pub(crate) fn usage_info_lines(
 }
 
 pub(crate) fn usage_info_lines_for_width(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
     width: u16,
 ) -> Vec<Line<'static>> {
     // Below 64 cols the two-column rows can no longer right-align without the
@@ -185,7 +185,7 @@ pub(crate) fn usage_info_lines_for_width(
 }
 
 pub(crate) fn usage_info_lines_impl(
-    state: &jackin_tui::components::ContainerInfoState,
+    state: &crate::tui::components::container_info_surface::ContainerInfoState,
     list_layout: bool,
     width: u16,
 ) -> Vec<Line<'static>> {
@@ -251,20 +251,20 @@ pub(crate) fn usage_meter_char(ch: char) -> bool {
 }
 
 pub(crate) fn usage_row_value<'a>(
-    state: &'a jackin_tui::components::ContainerInfoState,
+    state: &'a crate::tui::components::container_info_surface::ContainerInfoState,
     label: &str,
 ) -> Option<&'a str> {
     state
         .rows()
         .iter()
         .find(|row| row.label() == label)
-        .map(jackin_tui::components::ContainerInfoRow::value)
+        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
 }
 
 pub(crate) fn usage_line_width(line: &Line<'_>) -> usize {
     line.spans
         .iter()
-        .map(|span| jackin_tui::display_cols(span.content.as_ref()))
+        .map(|span| termrock::display_cols(span.content.as_ref()))
         .sum()
 }
 
@@ -384,9 +384,9 @@ pub(crate) fn usage_overview_provider_lines(
         ));
         return;
     };
-    let left_cols = jackin_tui::display_cols(&left);
-    let reset_cols = jackin_tui::display_cols(reset);
-    let local_cols = jackin_tui::display_cols(local_timestamp);
+    let left_cols = termrock::display_cols(&left);
+    let reset_cols = termrock::display_cols(reset);
+    let local_cols = termrock::display_cols(local_timestamp);
     let available = width.saturating_sub(USAGE_CONTENT_PAD_LEFT + USAGE_CONTENT_PAD_RIGHT);
     let left_gap = 3;
     let right_gap = available
@@ -476,8 +476,8 @@ pub(crate) fn usage_header_two_column(
     right_style: Style,
     width: usize,
 ) -> Line<'static> {
-    let left_cols = jackin_tui::display_cols(left);
-    let right_cols = jackin_tui::display_cols(right);
+    let left_cols = termrock::display_cols(left);
+    let right_cols = termrock::display_cols(right);
     let gap = width
         .checked_sub(USAGE_CONTENT_PAD_LEFT + USAGE_CONTENT_PAD_RIGHT + left_cols + right_cols)
         .filter(|gap| *gap >= 1)
@@ -754,7 +754,7 @@ pub(crate) fn compact_bucket_detail_for_width(label: &str, detail: &str, width: 
     if width == 0 {
         return detail.to_owned();
     }
-    let prefix_cols = 2 + jackin_tui::display_cols(label) + 2;
+    let prefix_cols = 2 + termrock::display_cols(label) + 2;
     let Some(detail_cols) = width.checked_sub(prefix_cols) else {
         return String::new();
     };
@@ -762,7 +762,7 @@ pub(crate) fn compact_bucket_detail_for_width(label: &str, detail: &str, width: 
 }
 
 pub(crate) fn truncate_display_with_ellipsis(value: &str, width: usize) -> String {
-    if jackin_tui::display_cols(value) <= width {
+    if termrock::display_cols(value) <= width {
         return value.to_owned();
     }
     if width == 0 {
@@ -771,7 +771,7 @@ pub(crate) fn truncate_display_with_ellipsis(value: &str, width: usize) -> Strin
     if width == 1 {
         return "…".to_owned();
     }
-    format!("{}…", jackin_tui::take_display_cols(value, width - 1))
+    format!("{}…", termrock::take_display_cols(value, width - 1))
 }
 
 pub(crate) fn usage_quota_bucket_detail_parts(label: &str, value: &str) -> Vec<String> {

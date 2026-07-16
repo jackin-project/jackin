@@ -130,7 +130,7 @@ pub async fn run_client(
                         }
                     }
                     ServerFrame::HostOpenUrl(url) => {
-                        let redacted = jackin_tui::url_text::redact_url_for_log(&url);
+                        let redacted = crate::tui::url_text::redact_url_for_log(&url);
                         crate::cdebug!(
                             "attach-client: ignoring host-open-url frame in in-container client: {redacted:?}"
                         );

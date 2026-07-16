@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use jackin_tui::TextField;
+use termrock::components::TextField;
 
 use super::input::{first_selectable_idx, picker_filtered_rows};
 use super::{

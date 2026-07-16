@@ -248,13 +248,13 @@ fn selected_row_uses_shared_full_width_highlight() {
     for x in 1..59 {
         assert_eq!(
             buffer[(x, selected_y)].bg,
-            jackin_tui::theme::PHOSPHOR_GREEN,
+            termrock::style::PHOSPHOR_GREEN,
             "x={x}"
         );
     }
     assert_ne!(
         buffer[(59, selected_y)].bg,
-        jackin_tui::theme::PHOSPHOR_GREEN,
+        termrock::style::PHOSPHOR_GREEN,
         "selection must not paint the dialog border"
     );
 }

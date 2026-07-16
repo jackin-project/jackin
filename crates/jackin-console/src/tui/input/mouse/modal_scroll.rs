@@ -5,10 +5,10 @@
 //! currently-open modal's body (file browser, picker, settings env/auth
 //! tabs).
 //!
-//! Wheel classification uses [`jackin_tui::scroll`] so modal surfaces share
+//! Wheel classification uses [`termrock::scroll`] so modal surfaces share
 //! the same axis/modifier rules as panels and capsule scroll regions.
 
-use jackin_tui::scroll::{ScrollAxes, ScrollAxis, ScrollDelta, mouse_scroll_delta};
+use termrock::scroll::{ScrollAxes, ScrollAxis, ScrollDelta, mouse_scroll_delta};
 
 use super::{
     FileBrowserState, ListModalScrollTarget, MOUSE_VERTICAL_SCROLL_STEP, ManagerStage,
@@ -19,8 +19,8 @@ use super::{
 /// Vertical modal wheel delta via the shared classifier (vertical-only axes).
 fn modal_vertical_scroll_delta(mouse: MouseEvent) -> Option<i16> {
     let ScrollDelta { axis, amount } = mouse_scroll_delta(
-        mouse.kind,
-        mouse.modifiers,
+        mouse.kind.into(),
+        mouse.modifiers.into(),
         ScrollAxes {
             vertical: true,
             horizontal: false,

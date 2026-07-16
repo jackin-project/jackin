@@ -84,7 +84,7 @@ use crate::tui::mount_display::global_config_mounts_content_width as global_moun
 #[cfg(test)]
 use crate::tui::mount_display::workspace_config_mounts_content_width as workspace_mounts_content_width;
 #[cfg(test)]
-use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
+use termrock::components::scrollable_panel::max_offset as max_scroll_offset;
 
 /// Dispatch a mouse event into the workspace manager's list view. Drives
 /// the mouse-draggable seam between the list pane and the details pane.
@@ -128,9 +128,9 @@ pub fn handle_mouse_with_config(
     if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut()
         && let Some(rect) = container_info_rect
         && info.scroll.on_mouse_scroll_for_axes(
-            mouse.kind,
-            mouse.modifiers,
-            jackin_tui::components::dialog_scroll_axes(
+            mouse.kind.into(),
+            mouse.modifiers.into(),
+            termrock::components::dialog_scroll_axes(
                 info.content_width(),
                 info.content_height(),
                 rect,

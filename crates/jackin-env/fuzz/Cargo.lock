@@ -123,16 +123,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bstr"
-version = "1.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f7dc094d718f2e1c1559ad110e27eeaae14a5465d3d56dd6dbd793079fbd530"
-dependencies = [
- "memchr",
- "serde_core",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -791,8 +781,8 @@ version = "0.6.0-dev"
 dependencies = [
  "anstyle-parse",
  "anyhow",
+ "crossterm",
  "jackin-core",
- "jackin-tui",
  "owo-colors",
  "rand 0.10.2",
  "regex",
@@ -840,22 +830,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
-]
-
-[[package]]
-name = "jackin-tui"
-version = "0.6.0-dev"
-dependencies = [
- "anstyle-parse",
- "base64",
- "crossterm",
- "jackin-core",
- "owo-colors",
- "ratatui",
- "similar",
- "tokio",
- "tui-scrollbar",
- "unicode-width",
 ]
 
 [[package]]
@@ -1741,15 +1715,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "similar"
-version = "3.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6505efef05804732ed8a3f2d4f279429eb485bd69d5b0cc6b19cc02005cda16"
-dependencies = [
- "bstr",
-]
-
-[[package]]
 name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2122,16 +2087,6 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
-]
-
-[[package]]
-name = "tui-scrollbar"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a495ec7eb64f1505a94d56bbb337792b15448394879552b09be2a1460846d99b"
-dependencies = [
- "document-features",
- "ratatui-core",
 ]
 
 [[package]]

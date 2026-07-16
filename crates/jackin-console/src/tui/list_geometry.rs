@@ -5,7 +5,7 @@
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-use jackin_tui::components::ScrollAxes;
+use termrock::components::ScrollAxes;
 
 use crate::tui::screens::workspaces::model::ManagerListRow;
 
@@ -116,12 +116,8 @@ pub fn manager_list_names_content_width(
 }
 
 pub fn clamp_list_names_scroll(list_area: Rect, content_width: usize, scroll_x: &mut u16) {
-    let viewport = jackin_tui::components::scrollable_panel::viewport_width(list_area);
-    jackin_tui::components::scrollable_panel::clamp_scroll_offset(
-        content_width,
-        viewport,
-        scroll_x,
-    );
+    let viewport = termrock::components::scrollable_panel::viewport_width(list_area);
+    termrock::components::scrollable_panel::clamp_scroll_offset(content_width, viewport, scroll_x);
 }
 
 #[must_use]
@@ -129,22 +125,19 @@ pub fn horizontal_scroll_axes(has_content: bool, content_width: usize, area: Rec
     if !has_content {
         return ScrollAxes::none();
     }
-    let viewport = jackin_tui::components::scrollable_panel::viewport_width(area);
+    let viewport = termrock::components::scrollable_panel::viewport_width(area);
     ScrollAxes {
-        horizontal: jackin_tui::components::scrollable_panel::is_scrollable(
-            content_width,
-            viewport,
-        ),
+        horizontal: termrock::components::scrollable_panel::is_scrollable(content_width, viewport),
         vertical: false,
     }
 }
 
 #[must_use]
 pub fn vertical_scroll_axes(content_height: usize, area: Rect) -> ScrollAxes {
-    let viewport = jackin_tui::components::scrollable_panel::viewport_height(area);
+    let viewport = termrock::components::scrollable_panel::viewport_height(area);
     ScrollAxes {
         horizontal: false,
-        vertical: jackin_tui::components::scrollable_panel::is_scrollable(content_height, viewport),
+        vertical: termrock::components::scrollable_panel::is_scrollable(content_height, viewport),
     }
 }
 
@@ -152,8 +145,7 @@ pub fn vertical_scroll_axes(content_height: usize, area: Rect) -> ScrollAxes {
 pub fn list_names_scroll_axes(content_width: usize, list_area: Rect) -> ScrollAxes {
     let viewport = crate::tui::layout::scroll_viewport_width(list_area);
     ScrollAxes {
-        horizontal: jackin_tui::components::scrollable_panel::max_offset(content_width, viewport)
-            > 0,
+        horizontal: termrock::components::scrollable_panel::max_offset(content_width, viewport) > 0,
         vertical: false,
     }
 }
@@ -189,7 +181,7 @@ pub fn workspace_list_names_viewport_width(term_size: Rect, list_split_pct: u16)
 
 #[must_use]
 pub fn workspace_row_width(name: &str, has_instances: bool, selected_with_cursor: bool) -> usize {
-    let width = 3 + jackin_tui::display_cols(name);
+    let width = 3 + termrock::display_cols(name);
     let leading_padding = if selected_with_cursor {
         0
     } else if has_instances {
@@ -214,7 +206,7 @@ pub fn instance_row_width(
         role_key,
         status,
     );
-    let width = 5 + jackin_tui::display_cols(&label);
+    let width = 5 + termrock::display_cols(&label);
     if selected_with_cursor {
         width
     } else {

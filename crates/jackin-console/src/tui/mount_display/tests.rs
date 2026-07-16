@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use jackin_tui::display_cols;
+use termrock::display_cols;
 
 fn wide_row() -> MountDisplayRow {
     MountDisplayRow {

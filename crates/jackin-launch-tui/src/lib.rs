@@ -3,8 +3,10 @@
 //! **Architecture Invariant:** T3.
 //! Entry point: [`LaunchTui`] — launch progress UI.
 
+pub mod animation;
 pub mod build_log;
 pub mod launch_output;
+pub mod output;
 pub mod progress;
 pub mod standalone_dialog_sink;
 pub mod tui;

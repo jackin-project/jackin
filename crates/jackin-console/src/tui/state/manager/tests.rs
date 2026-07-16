@@ -6,9 +6,10 @@
 //! these pin the concrete manager impls screens and update paths call.
 
 use jackin_config::AppConfig;
-use jackin_tui::components::{ContainerInfoState, ErrorPopupState};
 use tempfile::tempdir;
+use termrock::components::ErrorPopupState;
 
+use crate::tui::components::container_info_surface::ContainerInfoState;
 use crate::tui::model::ConsoleManagerStageState;
 use crate::tui::screens::workspaces::update::{
     PreviewFocusState, PreviewPaneCursorState, WorkspaceListSelectionState,

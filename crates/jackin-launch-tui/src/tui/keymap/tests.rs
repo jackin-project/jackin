@@ -1,19 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_tui::components::{KeyChord, LogicalKey};
-use jackin_tui::keymap::glyph;
+use termrock::keymap::{KeyChord, LogicalKey, glyph};
 
 use super::{
     BUILD_LOG_KEYMAP, BuildLogAction, COCKPIT_KEYMAP, CONTAINER_INFO_KEYMAP, CockpitAction,
     ContainerInfoAction, FAILURE_KEYMAP, FailureAction,
 };
 
-fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(
-    keymap: &jackin_tui::components::Keymap<A>,
-) {
+fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(keymap: &termrock::keymap::Keymap<A>) {
     for span in keymap.hint_spans() {
-        let jackin_tui::HintSpan::Key(key) = span else {
+        let termrock::HintSpan::Key(key) = span else {
             continue;
         };
         assert_ne!(key, concat!("T", "ab"));
@@ -55,7 +52,7 @@ fn cockpit_global_hint_spans_advertise_both_keys() {
     let text: String = super::cockpit_global_hint_spans()
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -125,7 +122,7 @@ fn build_log_hints_advertise_esc_and_scroll() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -174,7 +171,7 @@ fn failure_hints_advertise_dismiss() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -222,7 +219,7 @@ fn container_info_hints_advertise_copy_and_close() {
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
-            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            termrock::HintSpan::Key(k) | termrock::HintSpan::Text(k) => Some(*k),
             _ => None,
         })
         .collect::<Vec<_>>()

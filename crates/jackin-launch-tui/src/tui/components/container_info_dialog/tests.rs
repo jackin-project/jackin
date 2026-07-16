@@ -46,7 +46,7 @@ fn launch_container_info_keeps_run_id_bare_and_log_path_separate() {
     let rows = state.rows();
     assert_eq!(
         rows.first()
-            .map(jackin_tui::components::ContainerInfoRow::value),
+            .map(crate::tui::components::container_info::ContainerInfoRow::value),
         Some("jk-run-b93735"),
         "Run ID must stay the first Debug info row even when launch knows the container"
     );

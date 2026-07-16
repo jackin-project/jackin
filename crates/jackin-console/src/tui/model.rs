@@ -35,7 +35,7 @@ pub struct ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache> {
     /// Probed once at startup; mid-session installs require restart.
     pub op_available: bool,
     /// Overlay above any sub-stage.
-    pub quit_confirm: Option<jackin_tui::components::ConfirmState>,
+    pub quit_confirm: Option<termrock::components::ConfirmState>,
 }
 
 impl<Manager, LaunchInput, RoleSelector, OpCache>
@@ -53,7 +53,7 @@ impl<Manager, LaunchInput, RoleSelector, OpCache>
     }
 
     #[must_use]
-    pub fn quit_confirm_state(&self) -> Option<&jackin_tui::components::ConfirmState> {
+    pub fn quit_confirm_state(&self) -> Option<&termrock::components::ConfirmState> {
         self.quit_confirm.as_ref()
     }
 
@@ -75,7 +75,7 @@ impl<Manager, LaunchInput, RoleSelector, OpCache>
         key: crossterm::event::KeyEvent,
     ) -> Option<crate::tui::run::QuitConfirmPlan> {
         let confirm = self.quit_confirm.as_mut()?;
-        let plan = crate::tui::run::quit_confirm_plan(confirm.handle_key(key));
+        let plan = crate::tui::run::quit_confirm_plan(confirm.handle_key(key.into()));
         if matches!(plan, crate::tui::run::QuitConfirmPlan::Dismiss) {
             self.dismiss_quit_confirm();
         }

@@ -17,7 +17,6 @@ use crate::tui::update::{
     AuthSourceFolderPickerPlan, CreateOpPickerPlan, InlinePickerPlan, SourcePickerPlan,
     auth_source_folder_picker_plan, create_op_picker_plan, inline_picker_plan, source_picker_plan,
 };
-use jackin_tui::ModalOutcome;
 
 pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
@@ -269,11 +268,15 @@ pub fn handle_settings_auth_modal(
                 SourcePickerPlan::Continue => auth.set_modal(modal),
             }
         }
-        SettingsModal::AuthTextInput { state } => match inline_picker_plan(state.handle_key(key)) {
-            InlinePickerPlan::Commit(value) => apply_plain_text_to_settings_auth_form(auth, &value),
-            InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
-            InlinePickerPlan::Continue => auth.set_modal(modal),
-        },
+        SettingsModal::AuthTextInput { state } => {
+            match inline_picker_plan(state.handle_key(key.into())) {
+                InlinePickerPlan::Commit(value) => {
+                    apply_plain_text_to_settings_auth_form(auth, &value);
+                }
+                InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
+                InlinePickerPlan::Continue => auth.set_modal(modal),
+            }
+        }
         SettingsModal::AuthSourceFolderPicker { state } => {
             let page_rows = page_rows_for_modal(term_size, state);
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
@@ -318,7 +321,7 @@ pub fn handle_settings_auth_modal(
                 handle_settings_token_generate_pick(auth, pending_token_generate, outcome, modal);
                 return SettingsAuthOutcome::Continue;
             }
-            match inline_picker_plan(outcome) {
+            match crate::tui::update::op_picker_inline_plan(outcome) {
                 // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }
@@ -350,7 +353,7 @@ pub fn handle_settings_auth_modal(
 fn handle_settings_token_generate_pick(
     auth: &mut crate::tui::state::SettingsAuthState,
     pending_token_generate: &mut Option<crate::tui::state::PendingTokenGenerate>,
-    outcome: ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
+    outcome: jackin_console_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
     modal: SettingsModal<'static>,
 ) {
     use crate::tui::op_picker::OpPickerSelection;

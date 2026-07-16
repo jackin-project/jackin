@@ -4,8 +4,8 @@
 //! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
 
 use jackin_protocol::attach::ServerFrame;
-use jackin_tui::components::HoverTracker;
 use ratatui::layout::Rect;
+use termrock::components::HoverTracker;
 
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, ColRange, branch_context_bar_layout, debug_run_id_label,
@@ -320,7 +320,7 @@ impl Multiplexer {
         // Same content-length convention as the painted scrollbar
         // (`apply_pane_scrollbar`): scrollback rows plus the visible interior.
         let content_len = filled.saturating_add(interior_rows);
-        let top_offset = jackin_tui::components::scrollbar_offset_for_track_position(
+        let top_offset = termrock::components::scrollbar_offset_for_track_position(
             content_len,
             interior_rows,
             interior_rows,
@@ -726,16 +726,16 @@ impl Multiplexer {
         };
 
         if let Some(osc8_target) = session.hyperlink_target_at_content_row(row_idx, anchor_col) {
-            if jackin_tui::url_text::is_host_open_url(osc8_target) {
+            if crate::tui::url_text::is_host_open_url(osc8_target) {
                 if let Some(log_suffix) = log_suffix {
                     crate::cdebug!(
                         "host-affordance: resolved {log_suffix} OSC8 url: {}",
-                        jackin_tui::url_text::redact_url_for_log(osc8_target)
+                        crate::tui::url_text::redact_url_for_log(osc8_target)
                     );
                 }
                 return Some(HostOpenTarget::Allowed(osc8_target.to_owned()));
             }
-            if !jackin_tui::url_text::has_url_scheme(osc8_target) {
+            if !crate::tui::url_text::has_url_scheme(osc8_target) {
                 if let Some(log_suffix) = log_suffix {
                     crate::cdebug!(
                         "visible url open skipped ({log_suffix}): OSC8 target has no URL scheme at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
@@ -771,8 +771,8 @@ impl Multiplexer {
             return None;
         };
         let url = row.text_range(start_col, end_col);
-        if !jackin_tui::url_text::is_host_open_url(&url) {
-            if !jackin_tui::url_text::has_url_scheme(&url) {
+        if !crate::tui::url_text::is_host_open_url(&url) {
+            if !crate::tui::url_text::has_url_scheme(&url) {
                 if let Some(log_suffix) = log_suffix {
                     crate::cdebug!(
                         "visible url open skipped ({log_suffix}): token has no URL scheme at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
@@ -790,7 +790,7 @@ impl Multiplexer {
         if let Some(log_suffix) = log_suffix {
             crate::cdebug!(
                 "host-affordance: resolved {log_suffix} visible-token url: {}",
-                jackin_tui::url_text::redact_url_for_log(&url)
+                crate::tui::url_text::redact_url_for_log(&url)
             );
         }
         Some(HostOpenTarget::Allowed(url))
@@ -811,7 +811,7 @@ impl Multiplexer {
     fn send_host_open_url(&mut self, log_suffix: &str, url: String) -> bool {
         crate::clog!(
             "host-affordance: opening {log_suffix} visible url from pane: {}",
-            jackin_tui::url_text::redact_url_for_log(&url)
+            crate::tui::url_text::redact_url_for_log(&url)
         );
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
         true
@@ -820,7 +820,7 @@ impl Multiplexer {
     fn reject_host_open_url(&mut self, log_suffix: &str, token: &str) {
         crate::clog!(
             "host-affordance: rejected {log_suffix} visible url from pane: {}",
-            jackin_tui::url_text::redact_url_for_log(token)
+            crate::tui::url_text::redact_url_for_log(token)
         );
         self.set_clipboard_image_notice("Host link rejected: unsupported URL scheme".to_owned());
     }
