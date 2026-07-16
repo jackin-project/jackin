@@ -160,7 +160,7 @@ impl Testbed {
         let state = Arc::new(State::default());
         let services = Services(Arc::clone(&state));
         let (shutdown, shutdown_rx) = oneshot::channel();
-        tokio::spawn(async move {
+        jackin_telemetry::spawn::spawn_stream("otlp-testbed.receiver", async move {
             let result = Server::builder()
                 .add_service(
                     TraceServiceServer::new(services.clone())

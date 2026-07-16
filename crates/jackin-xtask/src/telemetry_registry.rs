@@ -411,7 +411,6 @@ impl<'a> SourcePolicyScanner<'a> {
 
     fn allows_spawn(&self) -> bool {
         self.path == "crates/jackin-telemetry/src/spawn.rs"
-            || self.path.starts_with("crates/jackin-otlp-testbed/")
             || RAW_SPAWN_ALLOWLIST.contains(&self.path)
     }
 

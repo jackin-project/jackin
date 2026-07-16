@@ -12,6 +12,7 @@ description = "Test-only in-process OTLP/gRPC receiver for jackin conformance te
 publish = false
 
 [dependencies]
+jackin-telemetry = { workspace = true }
 opentelemetry-proto.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "net", "macros", "time"] }
 tonic.workspace = true

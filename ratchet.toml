@@ -22,7 +22,7 @@ key = "crates/jackin-diagnostics/src/observability.rs"
 bound = 1980
 [[family.entry]]
 key = "crates/jackin-xtask/src/telemetry_registry.rs"
-bound = 1866
+bound = 1865
 
 [[family]]
 id = "file-size-test"

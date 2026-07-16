@@ -26,6 +26,13 @@ fn source_policy_is_syntax_aware_and_blocks_raw_meters() {
         ["unmanaged async/thread spawn"]
     );
     assert_eq!(
+        source_policy_violations(
+            "crates/jackin-otlp-testbed/src/lib.rs",
+            "fn raw() { tokio::spawn(async {}); }"
+        ),
+        ["unmanaged async/thread spawn"]
+    );
+    assert_eq!(
         source_policy_violations(path, "fn raw() { tracing::info!(\"raw\"); }"),
         ["raw tracing call outside governed facade"]
     );
