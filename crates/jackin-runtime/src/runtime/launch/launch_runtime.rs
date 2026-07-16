@@ -659,12 +659,15 @@ pub(crate) async fn launch_role_runtime(
     env_strings.extend(crate::runtime::docker_profile::readonly_home_env(grants));
     // Computed once here so the WP1 allowlist (below) can include the OTLP
     // endpoint host; reused for OTLP propagation after env_strings is flushed.
-    let container_otlp = jackin_diagnostics::container_otlp();
+    let capsule_otlp_safe = std::env::var("JACKIN_CAPSULE_OTLP_SAFE").as_deref() == Ok("1");
+    let container_otlp = capsule_otlp_allowed(network_disabled, capsule_otlp_safe)
+        .then(jackin_diagnostics::container_otlp)
+        .flatten();
     // WP1: egress allowlist enforcement. Inject the assembled allowlist and the
     // truthful enforcement label so the `firewall-apply` exec (after the
     // container starts) installs an iptables OUTPUT allowlist. The OTLP host is
-    // always included (Decision 9) so telemetry keeps flowing. Only the
-    // allowlist tier installs a firewall; open/none get none.
+    // included only when the endpoint is explicitly classified Capsule-safe.
+    // Only the allowlist tier installs a firewall; open/none get none.
     if grants.network == crate::runtime::docker_profile::NetworkGrant::Allowlist {
         let github_hosts = if gh_token.is_some() {
             crate::runtime::docker_profile::github_allowlist_hosts(
@@ -747,8 +750,8 @@ pub(crate) async fn launch_role_runtime(
         run_args.push(env_str);
     }
 
-    // OTLP cross-process propagation: hand the container the launch trace
-    // context (W3C traceparent) and a container-reachable endpoint, so the
+    // OTLP cross-process propagation: for an explicitly Capsule-safe endpoint,
+    // hand the container the launch trace context and reachable endpoint, so the
     // capsule's telemetry links back to this launch trace and shares the run.
     // host.docker.internal must be wired to the host gateway for the rewritten
     // loopback endpoint to resolve on Linux engines. `container_otlp` is
@@ -1219,4 +1222,8 @@ pub(crate) fn run_runtime_envs() -> Vec<String> {
     jackin_telemetry::identity::current_invocation().map_or_else(Vec::new, |invocation| {
         vec![format!("JACKIN_INVOCATION_ID={invocation}")]
     })
+}
+
+pub(crate) const fn capsule_otlp_allowed(network_disabled: bool, classified_safe: bool) -> bool {
+    !network_disabled && classified_safe
 }

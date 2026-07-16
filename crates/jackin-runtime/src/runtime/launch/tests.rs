@@ -7,7 +7,17 @@
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 use super::*;
-use crate::runtime::launch::launch_runtime::{debug_runtime_envs, telemetry_runtime_envs_for};
+use crate::runtime::launch::launch_runtime::{
+    capsule_otlp_allowed, debug_runtime_envs, telemetry_runtime_envs_for,
+};
+
+#[test]
+fn capsule_otlp_fails_closed_for_network_none_and_unclassified_endpoints() {
+    assert!(!capsule_otlp_allowed(true, true));
+    assert!(!capsule_otlp_allowed(true, false));
+    assert!(!capsule_otlp_allowed(false, false));
+    assert!(capsule_otlp_allowed(false, true));
+}
 use jackin_config::AppConfig;
 use jackin_core::WorkspaceName;
 use jackin_test_support::FakeRunner;
