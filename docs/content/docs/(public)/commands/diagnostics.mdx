@@ -1,6 +1,6 @@
 ---
 title: jackin❯ diagnostics
-description: Validate direct OTLP telemetry delivery
+description: Emit OTLP markers and request an exporter flush
 ---
 
 ## Synopsis
@@ -9,15 +9,17 @@ description: Validate direct OTLP telemetry delivery
 jackin diagnostics validate
 ```
 
-`validate` emits one governed trace, event, and metric marker, flushes all three OTLP exporters, and confirms delivery to the configured gRPC endpoint. It does not read or write local telemetry files.
+`validate` emits one governed trace, event, and metric marker and requests a flush from all three OTLP exporters. It does not read or write local telemetry files. Positive per-signal backend acknowledgement remains pending, so current success is not proof that the endpoint accepted every signal.
 
-Successful output identifies the endpoint, reports all three signals as healthy, and includes the flush time:
+Current successful output identifies the endpoint, reports the exporter flush result, and includes the flush time:
 
 ```text
 telemetry: endpoint http://127.0.0.1:4317
 signals:   traces ok  logs ok  metrics ok
 delivery:  confirmed (flush 12ms)
 ```
+
+The `delivery: confirmed` label is provisional: it reports current marker/flush completion, not backend receipt. The unified observability roadmap tracks replacing it with genuine per-signal proof.
 
 The command exits non-zero when `OTEL_SDK_DISABLED=true`, no endpoint is configured, providers are inactive, the governed marker is rejected, or any signal cannot be flushed. Confirm that the endpoint is reachable and that `OTEL_EXPORTER_OTLP_PROTOCOL` is unset or `grpc`, then retry.
 

@@ -11,9 +11,9 @@ This page is the living instrumentation contract. Schema changes start in the cl
 
 Each host, daemon, and Capsule process owns its OpenTelemetry providers and exports traces, logs, and metrics directly. There is no embedded or configured Collector. Standard `OTEL_EXPORTER_OTLP_ENDPOINT` and per-signal endpoint variables select the backend; only the `grpc` protocol is supported. `OTEL_SDK_DISABLED=true` disables providers explicitly.
 
-Provider construction is best-effort and product work stays fail-open. Export uses bounded batches, five-second per-export deadlines, bounded retry for retryable gRPC status codes, and no retry for authentication or partial-success responses. Saturation drops telemetry instead of blocking product threads. Shutdown flushes traces, logs, then metrics and is idempotent.
+Provider construction is best-effort and product work stays fail-open. Export uses bounded batches, five-second per-export deadlines, bounded retry for retryable gRPC status codes, and no retry for authentication or partial-success responses. Saturation drops telemetry instead of blocking product threads. Graceful shutdown force-flushes traces, logs, and metrics concurrently within one shared budget, then shuts providers down in tracer, logger, meter order. Shutdown is idempotent.
 
-`jackin diagnostics validate` emits one marker per signal and synchronously flushes them. Typed health reports active signals, attempts, success/failure counts, drops, last success/error state, and shutdown state through host-daemon protocols.
+`jackin diagnostics validate` emits one marker per signal and requests a force-flush. Positive per-signal backend delivery proof and the final typed daemon-health contract remain pending roadmap work; current flush completion must not be interpreted as confirmation that the backend accepted every signal.
 
 ## Schema authority
 

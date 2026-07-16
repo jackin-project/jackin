@@ -40,7 +40,7 @@ Open the command palette from an attached Capsule session with `Ctrl+\` unless y
 
 Image staging accepts PNG, JPEG, GIF, WebP, and TIFF by magic-byte validation. Small images use one typed attach frame; larger images are chunked with SHA-256 verification. Exported files are chunked and verified the same way. Host files are written with collision-resistant names; jackin❯ does not overwrite an existing host file silently.
 
-Host-open, host-reveal, and file-export results are reported back into Capsule as transient host notices. The operator should see a visible success or rejection message instead of having to inspect host logs. Revealing or opening an exported file is never automatic; it only happens after an explicit reveal/open export action, including the prompt-based and under-cursor variants. Revealing diagnostics artifacts is similarly explicit through Debug info's `R` / `O` key or **Reveal diagnostics** row in both the launch cockpit and Capsule, or through the launch failure popup's `R` key when a run-diagnostics or docker-output artifact is visible. Opening launch-failure artifacts is also explicit through the launch failure popup's `O` key.
+Host-open, host-reveal, and file-export results are reported back into Capsule as transient host notices. The operator should see a visible success or rejection message instead of having to inspect host logs. Revealing or opening an exported file is never automatic; it only happens after an explicit reveal/open export action, including the prompt-based and under-cursor variants. Debug info copies `cli.invocation.id` for backend correlation; telemetry and launch failures do not expose a local file, reveal action, or open action.
 
 ## Clipboard Expectations
 

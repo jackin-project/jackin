@@ -2,24 +2,26 @@
 title: "Unified OpenTelemetry observability"
 ---
 
-**Status**: Resolved
+**Status**: In progress
 
-jackin❯ now has one governed application-observability contract. Each production process exports traces, logs, and metrics directly over OTLP/gRPC; the configured backend owns durable history. Product processes retain only bounded current-invocation state for operator UI and never write telemetry files, local logs, sidecars, spools, or Collector configuration.
+The local-artifact cutover has landed: each production process exports traces, logs, and metrics directly over OTLP/gRPC, the configured backend owns durable history, and product processes retain only bounded current-invocation state for operator UI. They do not write telemetry files, local logs, sidecars, spools, or Collector configuration.
 
 The landed design uses the closed, Weaver-validated semantic-convention 1.43 registry in `jackin-telemetry`; generated constants and typed facade APIs prevent naming drift and raw emission bypasses. Operation spans are bounded. Lifecycle and state are events and metrics. W3C context crosses synchronous process boundaries, while detached work starts a new trace linked to its producer. Resource identity is stable per process, correlation identities stay out of Resource and metric dimensions, and allowlist-first validation rejects prohibited data before export.
 
-`jackin diagnostics validate` is the only command that promises a delivery check. `--debug` remains operator troubleshooting output and may raise governed telemetry verbosity when OTLP is enabled; it does not create an artifact. Persistent daemons expose sanitized configuration fingerprints and typed current health.
+`jackin diagnostics validate` currently emits markers and requests a force-flush, but positive per-signal backend delivery proof is not complete. The final typed health contract for persistent daemons is also pending. `--debug` remains operator troubleshooting output and may raise governed telemetry verbosity when OTLP is enabled; it does not create an artifact.
 
-## Shipped contract
+## Landed foundation
 
 - [Run telemetry](/guides/run-telemetry/) — operator setup, direct delivery, correlation, and failure behavior.
 - [Application observability](/reference/runtime/diagnostics/) — contributor schema, facade, propagation, privacy, lifecycle, and shutdown rules.
-- [Diagnostics command](/commands/diagnostics/) — the explicit three-signal delivery validation command.
+- [Diagnostics command](/commands/diagnostics/) — the current three-signal marker and flush command, with positive delivery proof still pending.
 - <RepoFile path="ENGINEERING.md" /> and <RepoFile path="TESTING.md" /> — instrumentation ownership and deterministic verification workflow.
 - <RepoFile path="plans/unified-otel-observability/worksheets/014-acceptance-map.md" /> — named evidence for every acceptance criterion.
 
-## Resolution
+## Remaining work
 
-The implementation removed the legacy JSONL run timeline, command-output telemetry sidecars, Capsule and host-daemon log files, local log readers/commands, file-specific telemetry configuration, legacy `jackin.*` and `parallax.run.id` telemetry namespaces, and the misleading telemetry-store name. Test-only PTY captures, render fixtures, and allocation artifacts remain explicitly outside production telemetry.
+The implementation has removed the legacy JSONL run timeline, command-output telemetry sidecars, Capsule and host-daemon log files, local log readers/commands, file-specific telemetry configuration, legacy `jackin.*` and `parallax.run.id` telemetry namespaces, and the misleading telemetry-store name. Test-only PTY captures, render fixtures, and allocation artifacts remain explicitly outside production telemetry.
+
+Before this roadmap can close, `jackin diagnostics validate` needs genuine per-signal backend acknowledgement, the daemon health contract needs its final typed shape and verification, and the remaining instrumentation, conformance, and acceptance evidence must be completed. A flush request or successful command exit must not be treated as proof that the backend accepted all three signals.
 
 Profiles remain deferred until the OpenTelemetry Rust profiling signal is stable and receives a separate design. Backend deployment, storage, dashboards, alerts, authentication, and retention remain owned outside jackin❯.
