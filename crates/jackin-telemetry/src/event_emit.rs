@@ -153,6 +153,7 @@ fn emit_agent_state_changed(def: &'static EventDef, fields: FieldSet<'_>) {
             ("agent.status.source", field_agent_status_source, String),
             ("agent.status.stuck", field_agent_status_stuck, Boolean),
             ("cli.invocation.id", field_cli_invocation_id, String),
+            ("gen_ai.agent.name", field_gen_ai_agent_name, String),
             ("session.id", field_session_id, String),
         ]
     );

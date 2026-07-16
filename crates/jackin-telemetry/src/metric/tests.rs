@@ -105,3 +105,40 @@ fn correlation_identities_are_never_metric_dimensions() {
         );
     }
 }
+
+#[test]
+fn agent_state_metrics_require_the_governed_dimensions() {
+    let attrs = [
+        Attr {
+            key: attrs::std_attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str("codex"),
+        },
+        Attr {
+            key: attrs::AGENT_STATE,
+            value: Value::Str("working"),
+        },
+        Attr {
+            key: attrs::AGENT_STATUS_SOURCE,
+            value: Value::Str("shell_integration"),
+        },
+        Attr {
+            key: attrs::AGENT_STATUS_CONFIDENCE,
+            value: Value::Str("strong"),
+        },
+    ];
+    assert_eq!(
+        validate_attributes(&AGENT_STATE_TRANSITIONS, &attrs),
+        Ok(())
+    );
+    assert_eq!(
+        validate_attributes(&AGENT_STATE_STUCK, &attrs[..3]),
+        Err(Rejection::InvalidValue)
+    );
+
+    let mut unknown_agent = attrs;
+    unknown_agent[0].value = Value::Str("unknown-agent");
+    assert_eq!(
+        validate_attributes(&AGENT_STATE_FLAPS, &unknown_agent),
+        Err(Rejection::InvalidValue)
+    );
+}

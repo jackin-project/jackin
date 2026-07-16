@@ -30,6 +30,7 @@ bounded_values!(ConfigScope { Global => "global", Workspace => "workspace" });
 bounded_values!(ConnectionPeerType { HostDaemon => "host_daemon", CapsuleControl => "capsule_control", CapsuleAttach => "capsule_attach", Docker => "docker", Provider => "provider", Parallax => "parallax" });
 bounded_values!(CredentialSourceType { Environment => "environment", AgentHome => "agent_home", Onepassword => "onepassword", GithubCli => "github_cli", OauthStore => "oauth_store", None => "none" });
 bounded_values!(DindMode { None => "none", Rootless => "rootless", Privileged => "privileged" });
+bounded_values!(GenAiAgentName { Claude => "claude", Codex => "codex", Amp => "amp", Kimi => "kimi", Opencode => "opencode", Grok => "grok" });
 bounded_values!(JobType { ImagePrewarm => "image_prewarm", SidecarPrewarm => "sidecar_prewarm" });
 bounded_values!(LaunchStageName { Identity => "identity", Role => "role", Credentials => "credentials", Construct => "construct", AgentBinaries => "agent_binaries", DerivedImage => "derived_image", Workspace => "workspace", Network => "network", Sidecar => "sidecar", Capsule => "capsule", Hardline => "hardline" });
 bounded_values!(LaunchTargetKind { Workspace => "workspace", Directory => "directory" });

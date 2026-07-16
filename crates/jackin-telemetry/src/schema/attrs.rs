@@ -296,13 +296,13 @@ pub const DIND_MODE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     value_type: super::ValueType::String,
     allowed_values: &["none", "rootless", "privileged"],
 };
-// registry-type: string
+// registry-type: enum
 pub const GEN_AI_AGENT_NAME: &str = "gen_ai.agent.name";
 pub const GEN_AI_AGENT_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: GEN_AI_AGENT_NAME,
     description: "Generative AI agent name.",
     value_type: super::ValueType::String,
-    allowed_values: &[],
+    allowed_values: &["claude", "codex", "amp", "kimi", "opencode", "grok"],
 };
 // registry-type: string
 pub const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";

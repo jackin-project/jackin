@@ -704,6 +704,10 @@ fn registered_scalar_and_array_types_round_trip() {
 
         let agent = [
             jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
+                value: jackin_telemetry::Value::Str("codex"),
+            },
+            jackin_telemetry::Attr {
                 key: jackin_telemetry::schema::attrs::AGENT_STATE,
                 value: jackin_telemetry::Value::Str("working"),
             },

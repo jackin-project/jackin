@@ -899,14 +899,15 @@ fn emit_agent_state_change(
 ) {
     use jackin_telemetry::{Attr, FieldSet, Value};
 
-    let source = match transition.winner {
-        jackin_agent_status::evidence::EvidenceWinner::Authority { .. } => "reported",
-        jackin_agent_status::evidence::EvidenceWinner::StrongVisualOrOsc
-        | jackin_agent_status::evidence::EvidenceWinner::Blocked
-        | jackin_agent_status::evidence::EvidenceWinner::Freeze => "visible_screen",
-        jackin_agent_status::evidence::EvidenceWinner::Physics
-        | jackin_agent_status::evidence::EvidenceWinner::ProcessExit => "foreground_process",
-        jackin_agent_status::evidence::EvidenceWinner::Unknown => "none",
+    let Some(agent) = session.agent.as_deref() else {
+        return;
+    };
+    let source = match session.status.report(None).source {
+        jackin_protocol::agent_status::AgentStatusSource::None => "none",
+        jackin_protocol::agent_status::AgentStatusSource::VisibleScreen => "visible_screen",
+        jackin_protocol::agent_status::AgentStatusSource::ShellIntegration => "shell_integration",
+        jackin_protocol::agent_status::AgentStatusSource::ForegroundProcess => "foreground_process",
+        jackin_protocol::agent_status::AgentStatusSource::Reported { .. } => "reported",
     };
     let confidence = match session.status.confidence {
         jackin_protocol::agent_status::AgentStatusConfidence::Unknown => "unknown",
@@ -914,7 +915,11 @@ fn emit_agent_state_change(
         jackin_protocol::agent_status::AgentStatusConfidence::Strong => "strong",
         jackin_protocol::agent_status::AgentStatusConfidence::Authoritative => "authoritative",
     };
-    let mut attrs = vec![
+    let metric_attrs = [
+        Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent),
+        },
         Attr {
             key: jackin_telemetry::schema::attrs::AGENT_STATE,
             value: Value::Str(transition.effective.label()),
@@ -927,27 +932,27 @@ fn emit_agent_state_change(
             key: jackin_telemetry::schema::attrs::AGENT_STATUS_CONFIDENCE,
             value: Value::Str(confidence),
         },
+    ];
+    let event_attrs = [
+        metric_attrs[0],
+        metric_attrs[1],
+        metric_attrs[2],
+        metric_attrs[3],
         Attr {
             key: jackin_telemetry::schema::attrs::AGENT_STATUS_STUCK,
             value: Value::Bool(stuck),
         },
     ];
-    if let Some(agent) = session.agent.as_deref() {
-        attrs.push(Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
-            value: Value::Str(agent),
-        });
-    }
     let _event_result = jackin_telemetry::emit_event(
         &jackin_telemetry::event::AGENT_STATE_CHANGED,
-        FieldSet::new(&attrs, None),
+        FieldSet::new(&event_attrs, None),
     );
     let _transition_result =
         jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_TRANSITIONS)
-            .add(1, &attrs);
+            .add(1, &metric_attrs);
     if stuck {
-        let _stuck_result =
-            jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_STUCK).add(1, &attrs);
+        let _stuck_result = jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_STUCK)
+            .add(1, &metric_attrs);
     }
 }
 

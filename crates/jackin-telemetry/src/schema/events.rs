@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // GENERATED from registry/ — do not hand-edit. Regenerate: cargo xtask telemetry-registry --generate.
 
-// registry: attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,agent.status.stuck:required,cli.invocation.id:recommended,session.id:recommended
+// registry: attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,agent.status.stuck:required,cli.invocation.id:recommended,gen_ai.agent.name:required,session.id:recommended
 pub const AGENT_STATE_CHANGED: &str = "agent.state.changed";
 pub const AGENT_STATE_CHANGED_DEF: super::EventMetadata = super::EventMetadata {
     name: AGENT_STATE_CHANGED,
@@ -43,6 +43,12 @@ pub const AGENT_STATE_CHANGED_DEF: super::EventMetadata = super::EventMetadata {
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
             allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "gen_ai.agent.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["claude", "codex", "amp", "kimi", "opencode", "grok"],
         },
         super::AttributeRequirement {
             name: "session.id",
@@ -791,7 +797,7 @@ pub const PTY_EXIT_DEF: super::EventMetadata = super::EventMetadata {
             name: "gen_ai.agent.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
-            allowed_values: &[],
+            allowed_values: &["claude", "codex", "amp", "kimi", "opencode", "grok"],
         },
         super::AttributeRequirement {
             name: "gen_ai.conversation.id",
@@ -841,7 +847,7 @@ pub const PTY_SPAWN_DEF: super::EventMetadata = super::EventMetadata {
             name: "gen_ai.agent.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Recommended,
-            allowed_values: &[],
+            allowed_values: &["claude", "codex", "amp", "kimi", "opencode", "grok"],
         },
         super::AttributeRequirement {
             name: "gen_ai.conversation.id",

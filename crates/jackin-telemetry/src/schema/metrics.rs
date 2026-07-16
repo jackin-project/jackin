@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // GENERATED from registry/ — do not hand-edit. Regenerate: cargo xtask telemetry-registry --generate.
 
-// registry: instrument=counter; unit={event}; attributes=
+// registry: instrument=counter; unit={event}; attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,gen_ai.agent.name:required
 pub const AGENT_STATE_FLAPS: &str = "agent.state.flaps";
 pub const AGENT_STATE_FLAPS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: AGENT_STATE_FLAPS,
@@ -10,9 +10,40 @@ pub const AGENT_STATE_FLAPS_DEF: super::MetricMetadata = super::MetricMetadata {
     instrument: super::MetricInstrument::Counter,
     unit: "{event}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "agent.state",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["working", "blocked", "done", "idle", "unknown"],
+        },
+        super::AttributeRequirement {
+            name: "agent.status.confidence",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["unknown", "weak", "strong", "authoritative"],
+        },
+        super::AttributeRequirement {
+            name: "agent.status.source",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "none",
+                "visible_screen",
+                "shell_integration",
+                "foreground_process",
+                "reported",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "gen_ai.agent.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["claude", "codex", "amp", "kimi", "opencode", "grok"],
+        },
+    ],
 };
-// registry: instrument=counter; unit={event}; attributes=
+// registry: instrument=counter; unit={event}; attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,gen_ai.agent.name:required
 pub const AGENT_STATE_STUCK: &str = "agent.state.stuck";
 pub const AGENT_STATE_STUCK_DEF: super::MetricMetadata = super::MetricMetadata {
     name: AGENT_STATE_STUCK,
@@ -20,9 +51,40 @@ pub const AGENT_STATE_STUCK_DEF: super::MetricMetadata = super::MetricMetadata {
     instrument: super::MetricInstrument::Counter,
     unit: "{event}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "agent.state",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["working", "blocked", "done", "idle", "unknown"],
+        },
+        super::AttributeRequirement {
+            name: "agent.status.confidence",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["unknown", "weak", "strong", "authoritative"],
+        },
+        super::AttributeRequirement {
+            name: "agent.status.source",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "none",
+                "visible_screen",
+                "shell_integration",
+                "foreground_process",
+                "reported",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "gen_ai.agent.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["claude", "codex", "amp", "kimi", "opencode", "grok"],
+        },
+    ],
 };
-// registry: instrument=counter; unit={transition}; attributes=
+// registry: instrument=counter; unit={transition}; attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,gen_ai.agent.name:required
 pub const AGENT_STATE_TRANSITIONS: &str = "agent.state.transitions";
 pub const AGENT_STATE_TRANSITIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: AGENT_STATE_TRANSITIONS,
@@ -30,7 +92,38 @@ pub const AGENT_STATE_TRANSITIONS_DEF: super::MetricMetadata = super::MetricMeta
     instrument: super::MetricInstrument::Counter,
     unit: "{transition}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "agent.state",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["working", "blocked", "done", "idle", "unknown"],
+        },
+        super::AttributeRequirement {
+            name: "agent.status.confidence",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["unknown", "weak", "strong", "authoritative"],
+        },
+        super::AttributeRequirement {
+            name: "agent.status.source",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "none",
+                "visible_screen",
+                "shell_integration",
+                "foreground_process",
+                "reported",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "gen_ai.agent.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["claude", "codex", "amp", "kimi", "opencode", "grok"],
+        },
+    ],
 };
 // registry: instrument=histogram; unit=s; attributes=
 pub const BACKGROUND_CYCLE_DURATION: &str = "background.cycle.duration";

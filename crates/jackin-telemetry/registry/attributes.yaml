@@ -46,7 +46,7 @@ groups:
       - { id: app.screen.name, type: string, examples: [workspace.list], brief: Stable application screen name., stability: development }
       - { id: app.widget.id, type: string, examples: [workspace.table], brief: Stable application widget identifier., stability: development }
       - { id: app.widget.name, type: string, examples: [workspace.table], brief: Stable application widget name., stability: development }
-      - { id: gen_ai.agent.name, type: string, examples: [codex], brief: Generative AI agent name., stability: development }
+      - { id: gen_ai.agent.name, type: { members: [{id: claude, value: claude, stability: development}, {id: codex, value: codex, stability: development}, {id: amp, value: amp, stability: development}, {id: kimi, value: kimi, stability: development}, {id: opencode, value: opencode, stability: development}, {id: grok, value: grok, stability: development}] }, brief: Generative AI agent name., stability: development }
       - { id: gen_ai.conversation.id, type: string, examples: [conversation-1], brief: Generative AI conversation identifier., stability: development }
       - { id: process.exit.code, type: int, brief: Process exit code., stability: stable }
       - { id: process.executable.name, type: string, examples: [git], brief: Process executable name without its path., stability: stable }
