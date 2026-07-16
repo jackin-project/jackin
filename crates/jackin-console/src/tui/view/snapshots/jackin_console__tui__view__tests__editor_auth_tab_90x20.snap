@@ -7,18 +7,18 @@ expression: rendered
                                                                                           
  General   Mounts   Roles   Environments   Auth                                           
                                           ━━━━━━                                          
-╔════════════════════════════════════════════════════════════════════════════════════════╗
-║▸ Claude Code                                                                           ║
-║  Codex                                                                                 ║
-║  Amp                                                                                   ║
-║  OpenCode                                                                              ║
-║  Grok                                                                                  ║
-║  GitHub CLI                                                                            ║
-║  Z.AI                                                                                  ║
-║  MiniMax                                                                               ║
-║                                                                                        ║
-║                                                                                        ║
-║                                                                                        ║
-╚════════════════════════════════════════════════════════════════════════════════════════╝
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│▸ Claude Code                                                                           │
+│  Codex                                                                                 │
+│  Amp                                                                                   │
+│  OpenCode                                                                              │
+│  Grok                                                                                  │
+│  GitHub CLI                                                                            │
+│  Z.AI                                                                                  │
+│  MiniMax                                                                               │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
                                                                                           
     ↑↓ navigate   ↵ manage auth   ⇤ tab bar   S save workspace   Esc back · Ctrl-Q quit

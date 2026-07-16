@@ -27,6 +27,8 @@ exclude = [
   # Research pages cite GitHub API evidence for external repositories. Those
   # endpoints can return 403 from Actions even for public repos.
   "https://api\\.github\\.com/repos/",
+  # Public user repository listings are also rate-limited with 403 in Actions.
+  "https://api\\.github\\.com/users/[^/]+/repos",
   # ACM DOI pages are public in browsers/search but return 403 to lychee in CI.
   "https://dl\\.acm\\.org/doi/10\\.1145/3735636",
   # Milvus pages below loop through redirects infinitely (verified locally:
