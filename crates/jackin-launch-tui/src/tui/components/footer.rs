@@ -192,28 +192,15 @@ pub fn render_footer(
 }
 
 #[must_use]
-pub const fn launch_overlay_chrome_areas(area: Rect, debug_mode: bool) -> BottomChromeAreas {
+pub fn launch_overlay_chrome_areas(area: Rect, debug_mode: bool) -> BottomChromeAreas {
     if debug_mode {
         return bottom_chrome_areas(area);
     }
-    // spacer and footer collapse to a zero-height row past the bottom edge.
-    let collapsed = Rect {
-        x: area.x,
-        y: area.y + area.height,
-        width: area.width,
-        height: 0,
-    };
+    let (body, [hint]) = termrock::layout::bottom_rows(area, [1]);
+    let collapsed = Rect::new(area.x, area.bottom(), area.width, 0);
     BottomChromeAreas {
-        body: Rect {
-            height: area.height.saturating_sub(1),
-            ..area
-        },
-        hint: Rect {
-            x: area.x,
-            y: area.y + area.height.saturating_sub(1),
-            width: area.width,
-            height: if area.height >= 1 { 1 } else { 0 },
-        },
+        body,
+        hint,
         spacer: collapsed,
         footer: collapsed,
     }

@@ -217,7 +217,7 @@ impl Multiplexer {
                 //
                 // Copy-capable dialogs stay on the stack — the
                 // operator's "did it actually copy?" question is
-                // answered by the green "✓ Copied!" badge the renderer
+                // answered by the copied check affordance the renderer
                 // paints now that `copied = true` (flipped by the
                 // dialog's handle_key or row-click handler before this
                 // action returned).

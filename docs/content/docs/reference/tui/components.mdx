@@ -27,11 +27,11 @@ description: "The hard reuse rule, the full reusable component catalog, and shar
 
 Shared TermRock components use one of three API shapes:
 
-1. **Stateful interactive component** — `pub struct XState` owns UI state only; rendering is a free function such as `render_x(frame: &mut Frame<'_>, area: Rect, state: &XState)`. Use `&mut XState` only when rendering must clamp scroll state, and document that reason in the component. Keyboard input lives on `XState::handle_key(&mut self, key: KeyEvent) -> ModalOutcome<T>`, where `T` is the component's semantic commit value. Do not add a parallel `impl Widget` wrapper for the same stateful component.
-2. **Pure value widget** — display-only values with no interaction implement Ratatui `Widget`. They may expose one thin `render_x(frame, area, ...)` convenience function, but that function delegates to the widget instead of carrying a second render body.
+1. **Stateful interactive widget** — `pub struct XState<Id>` owns UI state and stable identities; the component implements Ratatui `StatefulWidget` and returns typed semantic outcomes from input methods. Rendering may update measured viewport, regions, and clamped scroll state, but effects remain with the consumer. There is one public rendering body, not a parallel free renderer.
+2. **Pure value widget** — display-only values implement Ratatui `Widget`. A convenience function is acceptable only when it delegates to the widget instead of carrying a second render body.
 3. **Layout and primitive helpers** — rectangle math, scrollbars, blocks, hit testing, and backdrop helpers stay as free functions or small helper types. They do not introduce widget wrappers unless they render a concrete reusable value.
 
-`handle_key` always takes `&mut self` and returns `ModalOutcome<T>`. Mouse and scroll input use separately named methods such as `on_mouse_*`, `handle_scroll`, or viewport setters; do not add a second `handle_key_*` variant for key handling with extra context.
+Input methods return typed component outcomes (`ListOutcome`, `DetailTableOutcome`, `ModalOutcome`, or the widget's equivalent). Mouse and scroll input use separately named methods so keyboard, pointer, and render geometry share the same state and stable IDs.
 
 ### What to check before writing new code
 
@@ -42,7 +42,7 @@ Before adding any new TUI widget or state type:
 3. Search the owning surface's adapter shell before moving existing behavior: `rg 'struct .*State|fn render_' crates/jackin/src/console crates/jackin-console/src/tui`.
 4. If a component already owns the pattern, extend it. Add a mode enum, parameter, flag, or semantic variant. Do not create a second module.
 5. If no component owns the pattern and only one surface needs it, add it under `crates/<surface-crate>/src/tui/components/` with a thin `components.rs` export. Product-neutral multi-consumer patterns belong upstream in TermRock with catalog and visual-regression coverage.
-6. When moving an existing component into the final structure, preserve behavior first: identify existing tests/snapshots or add focused coverage, move the code, keep compatibility shims only where needed for the migration, and verify the same keyboard, mouse, focus, footer, error, and render behavior afterward.
+6. When moving an existing component into the final structure, identify existing tests/snapshots or add focused coverage, move the code, delete the superseded implementation and compatibility facade, and verify keyboard, mouse, focus, footer, error, and render behavior afterward. This pre-release codebase does not retain migration shims.
 
 ### Why this rule exists — canonical lesson
 
@@ -67,7 +67,7 @@ Reusable neutral TUI widgets live first in TermRock. Product-local widgets live 
 | Brand header | <RepoFile path="crates/jackin-console/src/tui/components/brand_header.rs">console brand header</RepoFile> + <RepoFile path="crates/jackin-launch-tui/src/tui/components/header.rs">launch header composition</RepoFile> | Product-owned brand pill row with the current surface label; the literal jackin❯ wordmark does not belong in TermRock | Header chrome that needs the canonical jackin❯ brand mark |
 | Button strip | [TermRock source](https://github.com/tailrocks/termrock) | Shared centered button row with focused and disabled item styling | Dialogs and form footers with multiple inline actions |
 | Confirm dialog | [TermRock source](https://github.com/tailrocks/termrock) | Yes/No two-button confirm with the canonical layout (see Confirmation dialogs rule), plus generic structured detail rows and note rows for prompts that need extra context. Product-specific strings are assembled by the owning surface, not by TermRock. | Any destructive or irreversible action |
-| Container info | <RepoFile path="crates/jackin-console/src/tui/components/container_info_surface.rs">console copy</RepoFile> + <RepoFile path="crates/jackin-launch-tui/src/tui/components/container_info.rs">launch copy</RepoFile> + <RepoFile path="crates/jackin-capsule/src/tui/components/container_info_surface.rs">Capsule copy</RepoFile> | Current migration residual: three copies provide the same read-only information dialog. The [follow-through roadmap](/roadmap/shared-tui-extraction/) moves the neutral table/render/interaction body to TermRock while keeping product facts and row construction in jackin❯. | Debug info dialogs across console, launch, and Capsule surfaces |
+| Debug info composition | <RepoFile path="crates/jackin-core/src/operator_info.rs">product facade</RepoFile> + [TermRock `DetailTable`](https://github.com/tailrocks/termrock) | One jackin❯ fact vocabulary and canonical row builder projected into TermRock's neutral dialog panel, table, scrolling, copy/link regions, hover, and copied-state rendering | Debug info dialogs across console, launch, and Capsule surfaces |
 | Diff view | [TermRock source](https://github.com/tailrocks/termrock) | Read-only side-by-side or single-pane text diff view backed by `similar::TextDiff` | Inspecting modified, added, deleted, or untracked file content |
 | Filter input | [TermRock source](https://github.com/tailrocks/termrock) | Canonical single-row `Filter:` input with placeholder and cursor styling | Picker dialogs that narrow a list by typed text |
 | Hint bar | [TermRock source](https://github.com/tailrocks/termrock) | Footer hint-bar renderer for grouped `HintSpan` shortcuts, including wrapped layout | Fixed footer rows that advertise active keyboard and mouse actions |
@@ -135,7 +135,7 @@ There are exactly two full-picker row kinds, and a caller must not hand-roll eit
 
 ### One scrollbar renderer
 
-**Every scrollbar in jackin❯ — host console panels, dialogs, and capsule pane scrollback — must render through the shared `scrollable_panel` functions ([TermRock source](https://github.com/tailrocks/termrock)): `render_vertical_scrollbar*` / `render_horizontal_scrollbar`, `ScrollbarStyle::Line` (`┃`) as the vertical thumb, `SCROLLBAR_TRACK` (`·`) as the track, and the shared `DIALOG_SCROLL_THUMB` / `DIALOG_SCROLL_TRACK` colors. A hand-painted thumb loop (a `█` column, a custom glyph, or per-surface colors) is a review-blocking violation** — the same rule as the one picker-list renderer above. Tail-relative surfaces (capsule pane scrollback, where offset `0` means "live tail") bridge to the component's top-relative offsets with `jackin_tui::scroll::TailScroll::to_top_offset` over a content length of `filled + viewport`, and map track clicks back through `scrollbar_offset_for_track_position` so click-to-jump and the painted thumb share one geometry.
+**Every scrollbar in jackin❯ — host console panels, dialogs, and capsule pane scrollback — must render through `termrock::scroll` or a canonical TermRock widget. A hand-painted thumb loop, custom glyph, or per-surface color is a review-blocking violation.** Tail-relative surfaces bridge to TermRock top-relative offsets with `termrock::scroll::TailScroll::to_top_offset` and use the shared track-position mapping so click-to-jump and the painted thumb share one geometry.
 
 ### Two-button choice pattern
 
@@ -151,7 +151,7 @@ There are exactly two full-picker row kinds, and a caller must not hand-roll eit
 
 ### Toasts are state feedback, never action hints
 
-Transient state feedback such as `Selection copied` uses the Toast contract. TermRock owns the canonical widget, while Capsule's remaining local placement/render implementation is tracked by the [Shared TUI Extraction Follow-through roadmap](/roadmap/shared-tui-extraction/). A toast is non-focusable, appears above the caller's reserved footer/status rows, and expires through the owning surface's state timer. Do not put copy-success or other state feedback in the hint/footer row: that row is reserved for actions currently available in the focused area.
+Transient state feedback such as `Selection copied` uses TermRock's canonical `Toast`, including severity styling and anchored placement above caller-supplied reserved footer/status rows. The owning surface retains the message and expiry timer. A toast is non-focusable. Do not put copy-success or other state feedback in the hint/footer row: that row is reserved for actions currently available in the focused area.
 
 ### Creation-sentinel pattern (`+ Add X` / `+ New X`)
 

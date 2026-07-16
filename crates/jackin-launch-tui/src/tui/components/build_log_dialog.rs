@@ -44,7 +44,7 @@ const fn vertical_scrollbar_area(area: Rect) -> Rect {
 }
 
 #[must_use]
-pub const fn build_log_box_area(area: Rect) -> Rect {
+pub fn build_log_box_area(area: Rect) -> Rect {
     // Structural exception: build-log geometry is the shared bottom-chrome body, not an independent modal rect.
     bottom_chrome_areas(area).body
 }

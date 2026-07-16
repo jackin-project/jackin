@@ -299,32 +299,46 @@ where
                 env_run_id.as_deref(),
             );
             let chip_row = debug_chip_row(bar_area);
-            if let Some(chip) =
-                jackin_console::tui::components::status_footer::status_footer_debug_chip_rect(
-                    chip_row, &run_id,
-                )
-            {
+            let content = format!(" {run_id} ");
+            let slots = [termrock::widgets::StatusSlot {
+                id: ConsoleChromeHover::DebugChip,
+                content: &content,
+                priority: 1,
+                min_width: 0,
+                enabled: true,
+                style: ratatui::style::Style::default()
+                    .bg(termrock::style::DANGER_RED)
+                    .fg(termrock::style::WHITE)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+                hover_style: Some(
+                    ratatui::style::Style::default()
+                        .bg(termrock::style::WHITE)
+                        .fg(termrock::style::DANGER_RED)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
+            }];
+            let mut status_state = termrock::widgets::StatusBarState {
+                hovered: (mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip))
+                    .then_some(ConsoleChromeHover::DebugChip),
+                regions: Vec::new(),
+            };
+            frame.render_stateful_widget(
+                &termrock::widgets::StatusBar {
+                    left: &[],
+                    right: &slots,
+                    style: ratatui::style::Style::default()
+                        .bg(termrock::style::WHITE)
+                        .fg(termrock::style::INK),
+                    alpha: 1.0,
+                },
+                chip_row,
+                &mut status_state,
+            );
+            for region in status_state.regions {
                 mouse_state
                     .chrome_hover_tracker
-                    .register(chip, ConsoleChromeHover::DebugChip);
+                    .register(region.area, region.id);
             }
-            jackin_console::tui::components::status_footer::render_status_footer_right_group(
-                frame,
-                chip_row,
-                "",
-                jackin_console::tui::components::status_footer::StatusRightGroup {
-                    usage: None,
-                    container: "",
-                    run_id: Some(&run_id),
-                },
-                1.0,
-                jackin_console::tui::components::status_footer::StatusFooterHover {
-                    left: false,
-                    usage: false,
-                    right: false,
-                    right_debug: mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip),
-                },
-            );
         }
     })?;
 

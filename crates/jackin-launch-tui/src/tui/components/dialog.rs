@@ -30,7 +30,8 @@ pub fn exact_dialog_rect(area: Rect, width: u16, height: u16) -> Rect {
             min_height: height,
             preferred_height: height,
             max_height: height,
-            margin: 0,
+            horizontal_margin: 0,
+            vertical_margin: 0,
             placement: termrock::layout::Placement::Centered,
         },
     )

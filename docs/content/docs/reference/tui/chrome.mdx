@@ -40,7 +40,7 @@ order.
 - Non-debug: container ID, role, agent, workdir, version rows only.
 - Debug mode: Run ID at the top, then all non-debug rows and every relevant diagnostics path in canonical order. Debug mode does NOT produce a separate dialog — it enriches the same dialog with more rows. There is no separate "container info dialog" — only Debug info with a variable field set.
 
-**Implementation rule:** The dialog must become a single TermRock-owned neutral component instantiated by every surface, with product facts and row construction remaining in jackin❯. The current console, launch, and Capsule copies are an extraction residual tracked by the [Shared TUI Extraction Follow-through roadmap](/roadmap/shared-tui-extraction/). Any migration-time deviation in layout, padding, or border color between surfaces is a design violation.
+**Implementation rule:** All three surfaces construct product facts through <RepoFile path="crates/jackin-core/src/operator_info.rs">the one jackin❯ operator-info facade</RepoFile>. That facade projects stable row IDs, labels, values, capabilities, emphasis, hover, copied state, and scroll offsets into TermRock `DetailTable`; TermRock owns the neutral panel, table rendering, regions, and geometry. A surface-specific row renderer or hit-test is a design violation.
 
 **Row and interaction contract:** `Run ID` is always the top row whenever available, is always the bare diagnostics id (e.g. `8b4766`), and is never the JSONL path. `Diagnostics log` is the full JSONL path and carries the `file://` hyperlink only when a local diagnostics file exists; backend-only runs use a non-copyable `Telemetry` row instead. Enter copies the first copyable row in canonical order, so it copies `Run ID` whenever present. Every copyable row renders an explicit copy affordance, hover lift applies only to the copyable value/affordance cells, and click hit-testing follows the visible value under both horizontal and vertical scroll. The capsule and launch surfaces may assemble different facts, but they do not own a second copy/hover/link implementation.
 
@@ -93,7 +93,7 @@ This matches `jackin --version` output (which prints `jackin <version>`) and `ja
 
 **The debug run ID is a compact red chip right-aligned on the status bar.** When `--debug` is active, the run ID appears as a `DANGER_RED` background chip on the right side of the status bar. Only the chip itself gets the red background. The rest of the bar stays white. The chip contains only the run ID string (e.g. `740709`), nothing else.
 
-**Implementation:** launch composes its footer with TermRock `StatusBar`, while console and Capsule currently use equivalent product-local `StatusFooter` implementations. Every screen must keep the chip present in `--debug` mode regardless of which surface the operator is on. The [Shared TUI Extraction Follow-through roadmap](/roadmap/shared-tui-extraction/) tracks converging the remaining copies on the canonical widget without changing the left context segment, usage headline, container chip, debug chip, or hit regions. The chip is clickable and opens the Debug info dialog.
+**Implementation:** launch, console, and Capsule all compose their bottom status row with TermRock `StatusBar`. jackin❯ supplies slot meaning and priority—left context, usage headline, container chip, and debug chip—while TermRock owns truncation, hover styling, fade behavior, and hit regions. Every screen keeps the chip present in `--debug` mode; it is clickable and opens Debug info.
 
 **Debug badge chip layout:**
 ```

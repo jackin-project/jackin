@@ -40,7 +40,9 @@ fn account_filter_shrinking_below_selection_resets_to_first_match() {
         account("b", "briar@example.com"),
         account("c", "casey@example.com"),
     ];
-    state.account_list_state = list_state_for_count(state.accounts.len());
+    state
+        .account_list_state
+        .select((!state.accounts.is_empty()).then_some(0));
     state.account_list_state.select(Some(2));
 
     state.handle_key(key(KeyCode::Char('b')));
@@ -60,7 +62,9 @@ fn item_filter_without_matches_clears_selection() {
         item("b", "GitHub"),
         item("c", "Stripe"),
     ];
-    state.item_list_state = list_state_for_count(state.items.len());
+    state
+        .item_list_state
+        .select((!state.items.is_empty()).then_some(0));
     state.item_list_state.select(Some(2));
 
     state.handle_key(key(KeyCode::Char('z')));

@@ -10,14 +10,20 @@
 pub mod branch_context_bar;
 pub mod chrome;
 pub mod container_info_dialog;
-pub mod container_info_surface;
+pub mod container_info_surface {
+    pub use jackin_core::operator_info::clamp_dialog_scroll as clamp_container_info_scroll;
+    pub use jackin_core::operator_info::copy_payload_at as container_info_copy_payload_at;
+    pub use jackin_core::operator_info::hyperlink_payload_at as container_info_hyperlink_payload_at;
+    pub use jackin_core::operator_info::hyperlink_regions as container_info_hyperlink_regions;
+    pub use jackin_core::operator_info::required_height as container_info_required_height;
+    pub use jackin_core::operator_info::*;
+}
 pub mod dialog;
 pub mod dialog_widgets;
 pub mod modal_rects;
 pub mod palette;
 pub mod pane;
 pub mod status_bar;
-pub mod status_footer;
 
 pub(crate) fn agent_display_name(slug: &str) -> Option<&'static str> {
     match slug {

@@ -603,7 +603,7 @@ fn container_info_enter_flips_copied_flag_for_render_feedback() {
     assert_eq!(
         copied_row,
         Some(0),
-        "Enter must mark the container-id row copied so the next render shows the Copied! indicator"
+        "Enter must mark the container-id row copied so the next render shows the copied affordance"
     );
 }
 

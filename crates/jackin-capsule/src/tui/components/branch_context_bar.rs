@@ -11,10 +11,13 @@
 //! must reserve; rendering writes ANSI escape sequences directly into the
 //! caller-supplied `buf` using absolute cursor positions.
 
-use crate::tui::components::status_footer::{
-    StatusRightChunk, StatusRightGroup, status_right_group_layout,
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Modifier, Style},
+    widgets::StatefulWidget,
 };
-use termrock::{display_cols, take_display_cols};
+use termrock::widgets::{StatusBar, StatusBarState, StatusSlot};
 
 use crate::pull_request::PullRequestInfo;
 
@@ -40,7 +43,6 @@ impl ColRange {
 }
 
 pub(crate) struct BranchContextBarLayout {
-    pub(crate) left: String,
     pub(crate) left_region: Option<ColRange>,
     pub(crate) usage_region: Option<ColRange>,
     pub(crate) debug_chip_region: Option<ColRange>,
@@ -51,9 +53,19 @@ pub(crate) fn visible_branch(branch: Option<&str>, is_default_branch: bool) -> O
     branch.filter(|_| !is_default_branch)
 }
 
-/// Convert a placed right-group chunk into its clickable column range.
-fn chunk_region(chunk: Option<&StatusRightChunk>) -> Option<ColRange> {
-    chunk.and_then(|chunk| ColRange::new(chunk.start, chunk.end))
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BranchBarSlot {
+    Context,
+    Usage,
+    Container,
+    RunId,
+}
+
+fn col_range(region: &termrock::interaction::HitRegion<BranchBarSlot>) -> Option<ColRange> {
+    ColRange::new(
+        region.area.x.saturating_add(1),
+        region.area.right().saturating_add(1),
+    )
 }
 
 #[expect(
@@ -81,36 +93,227 @@ pub(crate) fn branch_context_bar_layout(
         (None, Some(b)) => (format!(" Branch · {b} "), true),
         (None, None) => (String::new(), false),
     };
-    let term_cols_usize = usize::from(term_cols);
-    let right = status_right_group_layout(
-        term_cols,
-        StatusRightGroup {
-            usage: usage_status_label,
-            container: container_name,
-            run_id: debug_run_id,
-        },
-    );
-
-    let right_start = right.start(term_cols_usize.saturating_add(1));
-    let left_max_cols = right_start.saturating_sub(2);
-    let left = take_display_cols(&context_left, left_max_cols);
-    let left_cols = display_cols(&left);
-    let left_region = if left_clickable && left_cols > 0 {
-        let end = u16::try_from(left_cols.saturating_add(1)).unwrap_or(u16::MAX);
-        ColRange::new(1, end)
-    } else {
-        None
+    let container = format!(" {container_name} ");
+    let run_id = debug_run_id
+        .map(|value| format!(" {value} "))
+        .unwrap_or_default();
+    let usage = usage_content(term_cols, usage_status_label, &container, &run_id);
+    let left = [status_slot(
+        BranchBarSlot::Context,
+        &context_left,
+        1,
+        left_clickable,
+    )];
+    let right = [
+        status_slot(BranchBarSlot::Usage, &usage, 2, !usage.is_empty()),
+        status_slot(
+            BranchBarSlot::Container,
+            &container,
+            3,
+            !container_name.is_empty(),
+        ),
+        status_slot(BranchBarSlot::RunId, &run_id, 4, !run_id.is_empty()),
+    ];
+    let regions = StatusBar {
+        left: &left,
+        right: &right,
+        style: Style::default(),
+        alpha: 1.0,
+    }
+    .regions(Rect::new(0, term_rows.saturating_sub(1), term_cols, 1));
+    let region = |id| {
+        regions
+            .iter()
+            .find(|region| region.id == id)
+            .and_then(col_range)
     };
-    let usage_region = chunk_region(right.usage.as_ref());
-    let debug_chip_region = chunk_region(right.run_id.as_ref());
-    let container_region = chunk_region(right.container.as_ref());
     Some(BranchContextBarLayout {
-        left,
-        left_region,
-        usage_region,
-        debug_chip_region,
-        container_region,
+        left_region: left_clickable
+            .then(|| region(BranchBarSlot::Context))
+            .flatten(),
+        usage_region: region(BranchBarSlot::Usage),
+        debug_chip_region: region(BranchBarSlot::RunId),
+        container_region: region(BranchBarSlot::Container),
     })
+}
+
+fn status_slot<'a>(
+    id: BranchBarSlot,
+    content: &'a str,
+    priority: u8,
+    enabled: bool,
+) -> StatusSlot<'a, BranchBarSlot> {
+    StatusSlot {
+        id,
+        content,
+        priority,
+        min_width: u16::from(id == BranchBarSlot::Context),
+        enabled,
+        style: Style::default(),
+        hover_style: None,
+    }
+}
+
+fn usage_content(width: u16, label: Option<&str>, container: &str, run_id: &str) -> String {
+    let Some(label) = label.filter(|label| !label.is_empty()) else {
+        return String::new();
+    };
+    let reserved = termrock::display_cols(container)
+        .saturating_add(termrock::display_cols(run_id))
+        .saturating_add(1);
+    let available = usize::from(width).saturating_sub(reserved);
+    let full = format!(" {label} ");
+    if termrock::display_cols(&full) <= available {
+        return full;
+    }
+    let compact = format!(" {} ", compact_usage_status_label(label));
+    (termrock::display_cols(&compact) <= available)
+        .then_some(compact)
+        .unwrap_or_default()
+}
+
+fn compact_usage_status_label(label: &str) -> String {
+    let parts = label
+        .split(" · ")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    let remaining = parts
+        .iter()
+        .find(|part| part.starts_with("Session ") || part.starts_with("5-hour "))
+        .or_else(|| parts.iter().find(|part| part.contains('%')))
+        .map(|part| (*part).to_owned());
+    let state = parts.iter().rev().find_map(|part| {
+        let lower = part.to_ascii_lowercase();
+        [
+            "login",
+            "secret",
+            "stale",
+            "unsupported",
+            "unavailable",
+            "error",
+        ]
+        .into_iter()
+        .find(|word| lower.contains(word))
+    });
+    match (remaining, state) {
+        (Some(remaining), Some(state)) => format!("{remaining} · {state}"),
+        (Some(remaining), None) => remaining,
+        (None, Some(state)) => state.to_owned(),
+        (None, None) => label
+            .split_whitespace()
+            .next()
+            .unwrap_or("usage")
+            .to_owned(),
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "product status projection inputs"
+)]
+pub(crate) fn render_branch_context_bar(
+    buffer: &mut Buffer,
+    area: Rect,
+    branch: Option<&str>,
+    usage_status_label: Option<&str>,
+    pull_request: Option<&PullRequestInfo>,
+    pull_request_loading: bool,
+    debug_run_id: Option<&str>,
+    container_name: &str,
+    hover_target: Option<crate::tui::model::HoverTarget>,
+) {
+    use crate::tui::model::HoverTarget;
+    let (left_text, left_clickable) = match (pull_request, branch) {
+        (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
+        (None, Some(value)) if pull_request_loading => (format!(" Resolving PR · {value} "), true),
+        (None, Some(value)) => (format!(" Branch · {value} "), true),
+        (None, None) => (String::new(), false),
+    };
+    let container = format!(" {container_name} ");
+    let run = debug_run_id
+        .map(|value| format!(" {value} "))
+        .unwrap_or_default();
+    let usage = usage_content(area.width, usage_status_label, &container, &run);
+    let white_bg = Style::default().bg(termrock::style::WHITE);
+    let left = [StatusSlot {
+        style: white_bg
+            .fg(if left_clickable {
+                termrock::style::LINK_BLUE
+            } else {
+                termrock::style::INK
+            })
+            .add_modifier(Modifier::BOLD),
+        hover_style: Some(
+            white_bg
+                .fg(termrock::style::DEBUG_AMBER)
+                .add_modifier(Modifier::BOLD),
+        ),
+        ..status_slot(BranchBarSlot::Context, &left_text, 1, left_clickable)
+    }];
+    let right = [
+        StatusSlot {
+            style: white_bg
+                .fg(termrock::style::INK)
+                .add_modifier(Modifier::BOLD),
+            hover_style: Some(
+                white_bg
+                    .fg(termrock::style::DEBUG_AMBER)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            ..status_slot(BranchBarSlot::Usage, &usage, 2, !usage.is_empty())
+        },
+        StatusSlot {
+            style: white_bg
+                .fg(termrock::style::LINK_BLUE)
+                .add_modifier(Modifier::BOLD),
+            hover_style: Some(
+                white_bg
+                    .fg(termrock::style::DEBUG_AMBER)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            ..status_slot(
+                BranchBarSlot::Container,
+                &container,
+                3,
+                !container_name.is_empty(),
+            )
+        },
+        StatusSlot {
+            style: Style::default()
+                .bg(termrock::style::DANGER_RED)
+                .fg(termrock::style::WHITE)
+                .add_modifier(Modifier::BOLD),
+            hover_style: Some(
+                Style::default()
+                    .bg(termrock::style::WHITE)
+                    .fg(termrock::style::DANGER_RED)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            ..status_slot(BranchBarSlot::RunId, &run, 4, !run.is_empty())
+        },
+    ];
+    let hovered = match hover_target {
+        Some(HoverTarget::BranchContext) => Some(BranchBarSlot::Context),
+        Some(HoverTarget::UsageStatus) => Some(BranchBarSlot::Usage),
+        Some(HoverTarget::Container) => Some(BranchBarSlot::Container),
+        Some(HoverTarget::DebugChip) => Some(BranchBarSlot::RunId),
+        _ => None,
+    };
+    (&StatusBar {
+        left: &left,
+        right: &right,
+        style: white_bg.fg(termrock::style::INK),
+        alpha: 1.0,
+    })
+        .render(
+            area,
+            buffer,
+            &mut StatusBarState {
+                hovered,
+                regions: Vec::new(),
+            },
+        );
 }
 
 pub(crate) fn debug_run_id_label() -> Option<String> {

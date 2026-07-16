@@ -101,3 +101,8 @@ pub use url_text::*;
 pub use workspace_label::*;
 pub use workspace_name::*;
 pub use worktree_dirty::*;
+#[allow(
+    missing_docs,
+    reason = "operator-information projection is documented as one cohesive product facade"
+)]
+pub mod operator_info;

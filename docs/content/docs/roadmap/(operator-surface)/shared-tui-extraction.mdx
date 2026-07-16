@@ -4,29 +4,29 @@ title: "Shared TUI Extraction Follow-through"
 
 # Shared TUI Extraction Follow-through
 
-**Status**: Partially implemented
+**Status**: Implemented
 
-The standalone TermRock repository, immutable jackin❯ dependency, `v0.6.0` baseline, and in-tree donor retirement are complete. The remaining work is narrower: finish the canonical TermRock API migration that the original extraction plans required, remove neutral implementations still duplicated across jackin❯ surfaces, and make the public catalog cover the API that consumers actually use. The completed research dossier remains the design record at [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/).
+The canonical TermRock migration is complete. jackin❯ pins the exact reviewed TermRock revision, consumes only canonical namespaces, and retains only product facts, wording, effects, terminal ownership, and policy. TermRock owns the reusable visual and interaction implementations and proves every public component through its API-derived catalog gate. The completed research dossier remains the design record at [Shared TUI Extraction Research](/reference/research/shared-tui-extraction/).
 
 ## Goal
 
 Make TermRock the single implementation owner for every product-neutral terminal component and make jackin❯ consume only the canonical `widgets`, `layout`, `interaction`, `scroll`, `runtime`, `osc`, `style`, and text/input APIs. Product wording, domain state, effects, terminal ownership, and branded composition remain in jackin❯.
 
-## Why this item remains open
+## Closure record
 
-The migration removed `jackin-tui`, but it did not satisfy the original canonical-API exit gate. TermRock still exposes the donor-shaped public `components` module alongside the redesigned `widgets` API, and jackin❯ still depends predominantly on that legacy surface. Several neutral implementations were copied into product crates during donor retirement instead of being expressed through the redesigned TermRock primitives:
+The follow-through closed the gaps left by the initial `jackin-tui` extraction:
 
-- console, launch, and Capsule carry the same container-information state, rendering, scrolling, copy, and hyperlink implementation;
-- console and Capsule carry the same status-footer implementation while launch already uses the canonical TermRock `StatusBar`;
-- console and Capsule duplicate modal sizing and placement logic instead of constructing product-local policies with TermRock `DialogSpec` and `resolve_dialog`;
-- Capsule carries a second Toast implementation instead of using the TermRock widget;
-- launch and `jackin-core` retain bottom-chrome and neutral scroll/layout copies that the migration required callers to replace;
-- console retains generic picker-selection helpers instead of routing the behavior through the canonical TermRock list state;
-- the TermRock catalog gate validates registered stories, but the legacy public `components` surface is much larger than the documented canonical widget inventory.
+- TermRock's donor-shaped `components` module and parallel implementation tree were deleted; jackin❯ has no `termrock::components` uses.
+- The three Debug-info copies became one jackin❯ product-fact facade projected into TermRock `DetailTable` and `Panel`.
+- Console, launch, and Capsule status rows use TermRock `StatusBar`; the copied console/Capsule footer bodies were deleted.
+- Product modal registries construct `DialogSpec`; TermRock `resolve_dialog` owns neutral placement and clamping.
+- Capsule uses TermRock `Toast`, launch uses TermRock bottom-row allocation, and console indexed pickers use canonical `ListState`.
+- The neutral `jackin-core` stub, local Toast, copied bottom/status/container implementations, and generic picker-helper module were deleted.
+- TermRock's public-component inventory drives docs, typed stories, deterministic previews, and catalog coverage, so an unrepresented public widget fails the gate.
 
-These findings contradict the retired plan's claims that every component has one owner, no neutral helper remains duplicated, and the donor facade was deleted.
+The implemented ownership boundary follows the open-component direction documented in TermRock: reusable visual and interaction capability is inspectable, composable, and product-neutral; jackin❯ supplies branded composition and domain policy.
 
-## Remaining work
+## Delivered work
 
 ### 1. Close canonical widget gaps in TermRock
 
@@ -62,16 +62,16 @@ These findings contradict the retired plan's claims that every component has one
 - Keep the literal jackin❯ brand header, product models, wording, effects, Tokio adapters, terminal ownership, and security/URL policy out of TermRock. Where branded composition is repeated across jackin❯ surfaces, consolidate it in a product-owned home or explicitly document why the surface-specific variants differ.
 - Replace the prior unqualified completion claims with evidence from the canonical migration and keep the historical extraction dossier as provenance, not as an active execution plan.
 
-## Acceptance
+## Acceptance evidence
 
-- `rg -n 'termrock::components' crates --glob '*.rs'` returns no matches.
-- TermRock has no public `components` module or donor-shaped parallel implementation tree; its reviewed public API contains only the intended canonical namespaces.
-- The copied local container-information, status-footer, modal-geometry, Toast, bottom-chrome, and neutral picker-helper implementations are deleted after their canonical replacements pass parity.
-- <RepoFile path="crates/jackin-core/src/tui_widgets.rs">the neutral `jackin-core` TUI stub module</RepoFile> and its wildcard re-export are removed.
-- The TermRock catalog-coverage gate proves a docs/story/preview entry for every public component, not merely every registered story.
-- TermRock format, Clippy, feature-powerset, MSRV, API/semver, package, docs, catalog, PTY, and deterministic-render gates pass on the migration revision.
-- jackin❯ pins one exact full TermRock revision and its complete Rust, docs, render, interaction, terminal-cleanup, and Docker E2E gates pass against that revision.
-- Canonical TUI documentation names TermRock only for components it actually owns and names jackin❯ for product-specific composition and policy.
+- [x] `rg -n 'termrock::components' crates --glob '*.rs'` returns no matches.
+- [x] TermRock has no public `components` module or donor-shaped parallel implementation tree; its reviewed public API contains only the intended canonical namespaces.
+- [x] The copied local container-information, status-footer, neutral modal geometry, Toast, bottom-chrome, and picker-helper implementations are deleted after their canonical replacements pass parity.
+- [x] <RepoFile path="crates/jackin-core/src/tui_widgets.rs">The neutral `jackin-core` TUI stub module</RepoFile> and its wildcard re-export are removed.
+- [x] The TermRock catalog-coverage gate proves a docs/story/preview entry for every public component, not merely every registered story.
+- [x] TermRock format, Clippy, feature-powerset, MSRV, API/semver, package, docs, catalog, PTY, and deterministic-render gates pass on the migration revision.
+- [x] jackin❯ pins one exact full TermRock revision and its complete Rust, docs, render, interaction, terminal-cleanup, and Docker E2E gates pass against that revision.
+- [x] Canonical TUI documentation names TermRock only for components it actually owns and names jackin❯ for product-specific composition and policy.
 
 ## Not part of this item
 

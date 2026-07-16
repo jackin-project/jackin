@@ -194,7 +194,7 @@ pub enum Dialog {
         focused_agent: Option<String>,
         workdir: String,
         diagnostics: ContainerInfoDiagnostics,
-        /// Index of the row whose value was just copied (shows "Copied!"),
+        /// Index of the row whose value was just copied (shows a check affordance),
         /// or `None`. Indexes into the shared `ContainerInfoState` rows.
         copied_row: Option<usize>,
         /// Index of the copyable row under the pointer (link hover colour).
@@ -488,7 +488,7 @@ impl Dialog {
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the
         // operator's clipboard with the `copied` flag flipped to true
-        // so the next render's "Copied!" indicator confirms the OSC 52
+        // so the next render's check affordance confirms the OSC 52
         // fired. The dialog stays open until dismissed so the feedback
         // is actually visible.
         if matches!(self, Self::Usage { .. }) {
@@ -961,7 +961,7 @@ impl Dialog {
         }
         // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
         // log) copies via the shared hit-test. The clicked row's value goes to
-        // the clipboard and that row shows the "Copied!" badge.
+        // the clipboard and that row shows the copied check affordance.
         if matches!(self, Self::ContainerInfo { .. }) {
             let hit = self.container_info_state().and_then(|state| {
                 crate::tui::components::container_info_surface::container_info_copy_payload_at(

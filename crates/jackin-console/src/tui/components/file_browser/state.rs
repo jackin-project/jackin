@@ -8,12 +8,10 @@
 
 use std::path::{Path, PathBuf};
 
-use tui_widget_list::ListState;
-
 use super::git_prompt::GitPromptFocus;
 use super::listing::{FolderEntry, FolderListing};
-use crate::tui::components::list_helpers::{cycle_select, list_state_for_count, selected_choice};
 use crate::tui::layout::point_in_rect;
+use termrock::widgets::ListState;
 
 #[derive(Debug)]
 pub struct FileBrowserState {
@@ -23,8 +21,8 @@ pub struct FileBrowserState {
     pub cwd: PathBuf,
     /// Entries loaded from `cwd`, after filtering + sorting.
     pub entries: Vec<FolderEntry>,
-    /// tui-widget-list selection state. Drives which row is highlighted.
-    pub list_state: ListState,
+    /// Canonical TermRock selection state. Drives which row is highlighted.
+    pub list_state: ListState<usize>,
     /// Set when the operator presses `s` but the selection is rejected
     /// (e.g. `$HOME` itself, `~/.jackin/...`). Cleared on the next key.
     pub rejected_reason: Option<String>,
@@ -85,7 +83,7 @@ impl FileBrowserState {
 
     pub fn from_listing(listing: FolderListing) -> Self {
         let FolderListing { root, cwd, entries } = listing;
-        let list_state = list_state_for_count(entries.len());
+        let list_state = ListState::for_count(entries.len());
         Self {
             root,
             cwd,
@@ -104,7 +102,7 @@ impl FileBrowserState {
         self.root = listing.root;
         self.cwd = listing.cwd;
         self.entries = listing.entries;
-        self.list_state = list_state_for_count(self.entries.len());
+        self.list_state = ListState::for_count(self.entries.len());
     }
 
     /// Current working directory. Exposed so the create-workspace wizard
@@ -115,12 +113,12 @@ impl FileBrowserState {
 
     /// Move selection down one, wrapping at the end.
     pub(super) fn select_next(&mut self) {
-        cycle_select(&mut self.list_state, self.entries.len(), 1);
+        self.list_state.cycle_index(self.entries.len(), 1);
     }
 
     /// Move selection up one, wrapping at the start.
     pub(super) fn select_prev(&mut self) {
-        cycle_select(&mut self.list_state, self.entries.len(), -1);
+        self.list_state.cycle_index(self.entries.len(), -1);
     }
 
     /// Move selection by wheel delta without wrapping.
@@ -130,11 +128,8 @@ impl FileBrowserState {
     /// normal scroll behavior and preventing an edge scroll from jumping from
     /// the top to the bottom.
     pub fn scroll_selection(&mut self, delta: i16) -> bool {
-        crate::tui::components::list_helpers::scroll_select(
-            &mut self.list_state,
-            self.entries.len(),
-            delta,
-        )
+        self.list_state
+            .move_index(self.entries.len(), isize::from(delta))
     }
 
     pub fn scroll_selection_at(
@@ -158,7 +153,7 @@ impl FileBrowserState {
 
     /// The currently-highlighted entry, if any.
     pub(super) fn highlighted(&self) -> Option<&FolderEntry> {
-        selected_choice(&self.entries, self.list_state.selected)
+        self.list_state.selected_item(&self.entries)
     }
 
     pub fn reject_commit(&mut self, reason: String) {

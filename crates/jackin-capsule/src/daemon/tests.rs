@@ -4116,7 +4116,7 @@ fn container_info_id_click_copies_and_renders_feedback() {
             .any(|w| w == b"\x1b]52;c;");
     }
     assert!(saw_osc52, "copy should emit OSC 52");
-    assert!(String::from_utf8_lossy(&frame).contains("Copied!"));
+    assert!(String::from_utf8_lossy(&frame).contains('✓'));
     assert!(matches!(
         mux.dialog_top(),
         Some(Dialog::ContainerInfo {

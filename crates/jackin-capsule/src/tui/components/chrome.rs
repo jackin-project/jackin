@@ -17,7 +17,6 @@ use ratatui::{
 
 use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
 
-use crate::tui::components::status_footer::{FooterLeft, StatusFooter, StatusRightGroup};
 use termrock::Theme;
 use termrock::widgets::{Panel, PanelEmphasis};
 
@@ -320,47 +319,22 @@ fn render_branch_bar_row(
     instance_id_label: &str,
     hover_target: Option<crate::tui::model::HoverTarget>,
 ) {
-    use crate::tui::components::branch_context_bar::branch_context_bar_layout;
-    use crate::tui::model::HoverTarget;
-    let Some(layout) = branch_context_bar_layout(
-        area.height,
-        area.width,
+    crate::tui::components::branch_context_bar::render_branch_context_bar(
+        buf,
+        Rect {
+            x: area.x,
+            y: area.height.saturating_sub(1),
+            width: area.width,
+            height: 1,
+        },
         branch,
         usage_status_label,
         pull_request,
         pull_request_loading,
         debug_run_id,
         instance_id_label,
-    ) else {
-        return;
-    };
-    let bar_y = area.height.saturating_sub(1);
-    let left_hovered = hover_target == Some(HoverTarget::BranchContext);
-    let left = if layout.left_region.is_some() {
-        FooterLeft::link(layout.left.trim())
-    } else {
-        FooterLeft::plain("")
-    };
-    StatusFooter::new("")
-        .left(left)
-        .right_group(StatusRightGroup {
-            usage: usage_status_label,
-            container: instance_id_label,
-            run_id: debug_run_id,
-        })
-        .left_hover(left_hovered)
-        .usage_hover(hover_target == Some(HoverTarget::UsageStatus))
-        .right_hover(hover_target == Some(HoverTarget::Container))
-        .right_debug_hover(hover_target == Some(HoverTarget::DebugChip))
-        .render(
-            Rect {
-                x: area.x,
-                y: bar_y,
-                width: area.width,
-                height: 1,
-            },
-            buf,
-        );
+        hover_target,
+    );
 }
 
 /// The pane and footer chrome need one spacer each, so hints stay visually

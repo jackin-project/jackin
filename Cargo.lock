@@ -2916,6 +2916,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "crossterm",
  "directories",
  "hex",
  "owo-colors 4.3.0",
@@ -2924,6 +2925,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "termrock",
  "thiserror 2.0.18",
 ]
 
@@ -6379,7 +6381,7 @@ dependencies = [
 [[package]]
 name = "termrock"
 version = "0.8.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=a4d97f688c38981e378d68628ef7dfa08403ac4d#a4d97f688c38981e378d68628ef7dfa08403ac4d"
+source = "git+https://github.com/tailrocks/termrock.git?rev=23346f272cf50d5abc517e492faf6ae8b5a3a6f3#23346f272cf50d5abc517e492faf6ae8b5a3a6f3"
 dependencies = [
  "anstyle-parse 0.2.7",
  "base64 0.22.1",

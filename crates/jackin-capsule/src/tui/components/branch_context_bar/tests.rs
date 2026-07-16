@@ -25,10 +25,10 @@ fn widget_bar(
     loading: bool,
     container: &str,
     hover: Option<crate::tui::model::HoverTarget>,
-) -> (String, ratatui::buffer::Buffer) {
+) -> (String, Buffer) {
     use ratatui::widgets::Widget as _;
-    let area = ratatui::layout::Rect::new(0, 0, cols, 24);
-    let mut buf = ratatui::buffer::Buffer::empty(area);
+    let area = Rect::new(0, 0, cols, 24);
+    let mut buf = Buffer::empty(area);
     crate::tui::components::chrome::BottomChromeWidget {
         branch,
         usage_status_label,
