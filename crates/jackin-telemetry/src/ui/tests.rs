@@ -63,6 +63,33 @@ fn widget_focus_replaces_prior_focus() {
 }
 
 #[test]
+fn jank_emits_once_per_sliding_window_crossing() {
+    let mut monitor = JankMonitor::default();
+    let start = Instant::now();
+    monitor.record_frame_at(schema::enums::ScreenId::WorkspaceList, 0.101, start);
+    assert!(monitor.crossing_active);
+    monitor.record_frame_at(
+        schema::enums::ScreenId::WorkspaceList,
+        0.150,
+        start + std::time::Duration::from_millis(500),
+    );
+    assert_eq!(monitor.slow_frames.len(), 2);
+    monitor.record_frame_at(
+        schema::enums::ScreenId::WorkspaceList,
+        0.010,
+        start + std::time::Duration::from_millis(1_501),
+    );
+    assert!(!monitor.crossing_active);
+    monitor.record_frame_at(
+        schema::enums::ScreenId::WorkspaceList,
+        0.100,
+        start + std::time::Duration::from_millis(1_600),
+    );
+    assert!(monitor.crossing_active);
+    assert_eq!(monitor.slow_frames.len(), 1);
+}
+
+#[test]
 fn pending_action_owns_effect_and_one_render_until_taken() {
     let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()

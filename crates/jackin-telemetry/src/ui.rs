@@ -115,10 +115,18 @@ pub struct JankMonitor {
 
 impl JankMonitor {
     pub fn record_frame(&mut self, screen: schema::enums::ScreenId, elapsed_seconds: f64) {
+        self.record_frame_at(screen, elapsed_seconds, Instant::now());
+    }
+
+    fn record_frame_at(
+        &mut self,
+        screen: schema::enums::ScreenId,
+        elapsed_seconds: f64,
+        now: Instant,
+    ) {
         const WINDOW_SECONDS: f64 = 1.0;
         const THRESHOLD_SECONDS: f64 = 0.100;
         record_render(screen, elapsed_seconds);
-        let now = Instant::now();
         while self
             .slow_frames
             .front()

@@ -374,6 +374,43 @@ fn crash_event_exports_complete_bounded_private_shape() {
 }
 
 #[test]
+fn jank_event_exports_once_per_active_crossing() {
+    use opentelemetry::logs::AnyValue;
+
+    let (export, subscriber) = super::test_layers(false, "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        let mut monitor = jackin_telemetry::ui::JankMonitor::default();
+        monitor.record_frame(
+            jackin_telemetry::schema::enums::ScreenId::WorkspaceList,
+            0.101,
+        );
+        monitor.record_frame(
+            jackin_telemetry::schema::enums::ScreenId::WorkspaceList,
+            0.150,
+        );
+    });
+    export.logger_provider.force_flush().unwrap();
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 1);
+    let record = &logs[0].record;
+    assert_eq!(record.event_name(), Some("app.jank"));
+    assert_eq!(
+        log_attribute(record, "app.jank.frame_count"),
+        Some(&AnyValue::Int(1))
+    );
+    assert_eq!(
+        log_attribute(record, "app.jank.period"),
+        Some(&AnyValue::Double(1.0))
+    );
+    assert_eq!(
+        log_attribute(record, "app.jank.threshold"),
+        Some(&AnyValue::Double(0.1))
+    );
+    assert_eq!(record.attributes_iter().count(), 3);
+}
+
+#[test]
 fn isolation_events_export_exact_private_shape() {
     use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
 
