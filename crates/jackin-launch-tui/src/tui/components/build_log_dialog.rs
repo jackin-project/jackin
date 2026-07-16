@@ -263,8 +263,9 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
     }
 
     let default_style = Style::default().fg(Color::Gray).bg(DIALOG_SURFACE);
-    let spans = termrock::ansi_text::styled_spans(line.trim_end(), default_style);
-    wrap_build_log_spans(spans, width)
+    // Migration 0019: parse ANSI once at ingestion into an owned line.
+    let parsed = termrock::ansi_text::line_from_ansi(line.trim_end(), default_style);
+    wrap_build_log_spans(parsed.spans, width)
 }
 
 fn wrap_build_log_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
