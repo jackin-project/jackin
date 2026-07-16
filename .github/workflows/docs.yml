@@ -308,26 +308,6 @@ jobs:
           fi
           if [ -n "$artifact_id" ]; then
             exact=true
-          else
-            candidates=$(
-              gh api "repos/${REPOSITORY}/actions/artifacts?per_page=100" \
-                --jq '.artifacts[] | select(.expired == false and (.name | startswith("docs-site-v3-"))) | [.id, .workflow_run.head_sha] | @tsv'
-            )
-            while IFS=$'\t' read -r candidate_id source_sha; do
-              if [ -z "$candidate_id" ] || [ -z "$source_sha" ]; then
-                continue
-              fi
-              if ! git cat-file -e "$source_sha^{commit}" 2>/dev/null && \
-                 ! git fetch --no-tags --depth=1 origin "$source_sha"; then
-                continue
-              fi
-              if [ "$(scripts/ci/docs-site-contract.sh "$source_sha")" = \
-                   "$(scripts/ci/docs-site-contract.sh)" ]; then
-                echo "::notice::promoting a site built from identical semantic inputs"
-                artifact_id=$candidate_id
-                break
-              fi
-            done <<< "$candidates"
           fi
           if [ -n "$artifact_id" ]; then
             mkdir -p docs/.output/public
@@ -382,6 +362,13 @@ jobs:
         working-directory: docs
         run: bun run build
 
+      - name: Cache lychee responses
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .lycheecache
+          key: lychee-v1-${{ runner.os }}-${{ hashFiles('docs/lychee.toml', 'scripts/ci/docs-link-check.sh') }}
+          restore-keys: lychee-v1-${{ runner.os }}-
+
       - name: Find repository-wide successful link result
         id: link-result
         env:
@@ -398,42 +385,13 @@ jobs:
           )
           artifact_id=$(jq -r '.id // empty' <<< "$artifact")
           created_at=$(jq -r '.created_at // empty' <<< "$artifact")
-          promoted=false
-          if [ -z "$artifact_id" ]; then
-            candidates=$(
-              gh api "repos/${REPOSITORY}/actions/artifacts?per_page=100" \
-                | jq -r --argjson repository_id "$REPOSITORY_ID" \
-                  '.artifacts[] | select(.expired == false and (.name | startswith("docs-result-v1-")) and .workflow_run.head_repository_id == $repository_id) | [.id, .workflow_run.head_sha, .created_at] | @tsv'
-            )
-            while IFS=$'\t' read -r candidate_id source_sha candidate_created_at; do
-              if [ -z "$candidate_id" ] || [ -z "$source_sha" ]; then
-                continue
-              fi
-              if ! git cat-file -e "$source_sha^{commit}" 2>/dev/null && \
-                 ! git fetch --no-tags --depth=1 origin "$source_sha"; then
-                continue
-              fi
-              if [ "$(scripts/ci/docs-site-contract.sh "$source_sha")" = \
-                   "$(scripts/ci/docs-site-contract.sh)" ] && \
-                 [ "$(scripts/ci/docs-lychee-contract.sh "$source_sha")" = \
-                   "$(scripts/ci/docs-lychee-contract.sh)" ]; then
-                echo "::notice::promoting a successful link result from identical semantic inputs"
-                artifact_id=$candidate_id
-                created_at=$candidate_created_at
-                promoted=true
-                break
-              fi
-            done <<< "$candidates"
-          fi
           verified=false
           refresh=true
           if [ -n "$artifact_id" ]; then
             created_epoch=$(date -u -d "$created_at" +%s)
             if [ $(( $(date -u +%s) - created_epoch )) -lt 259200 ]; then
               verified=true
-              if [ "$promoted" = false ]; then
-                refresh=false
-              fi
+              refresh=false
             fi
           fi
           {
