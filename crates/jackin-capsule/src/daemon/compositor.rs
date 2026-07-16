@@ -79,12 +79,16 @@ impl Multiplexer {
             // itself errored — effectively impossible with SocketBackend.
             // Skip the frame; the generation stays ahead so the next loop
             // pass retries.
-            crate::clog!("compose_pending_frame: ratatui draw failed; skipping frame");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "compose_pending_frame: ratatui draw failed; skipping frame"
+            );
             return Vec::new();
         };
         self.render.rendered_generation = generation;
         jackin_diagnostics::record_render(started.elapsed().as_micros() as u64, 0);
-        crate::ctrace_payload!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "render: reason={} wipe={} generation={} bytes={} duration_us={} term={}x{} dialog_open={}",
             reason.map_or("none", FullRedrawReason::as_str),
             wipe.is_some(),
@@ -96,7 +100,8 @@ impl Multiplexer {
             self.dialog_open(),
         );
         if let Some(delta) = crate::alloc_telemetry::delta_since(alloc_before) {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "render_alloc: scope=frame alloc_blocks={} alloc_bytes={} bytes={}",
                 delta.blocks,
                 delta.bytes,
@@ -167,11 +172,12 @@ impl Multiplexer {
         // status bar — the resize-residue class. Logged per frame at the
         // firehose tier so a soak run pins the exact offending frame.
         // Skip the per-pane trace loop entirely unless the firehose is on; the
-        // individual `cdebug!`s self-gate, but the loop and its arg setup would
+        // individual governed DEBUG events self-gate, but the loop and its arg setup would
         // otherwise run every frame on the compose hot path.
         if crate::logging::debug_enabled() {
             let status_rows = crate::tui::components::status_bar::STATUS_BAR_ROWS;
-            crate::ctrace_payload!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "frame-geom: term={}x{} content_rows={} status_rows={} panes={}",
                 term_cols,
                 term_rows,
@@ -180,7 +186,8 @@ impl Multiplexer {
                 panes.len(),
             );
             for pane in &panes {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "frame-pane: id={} outer=row{},col{},rows{},cols{} inner_row={} {}",
                     pane.id,
                     pane.outer.row,
@@ -381,7 +388,8 @@ impl Multiplexer {
                     scrollback_active: session.scrollback_offset() != 0,
                     agent_cursor_hidden: session.shadow_grid.hide_cursor(),
                 });
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "pane scroll frame: id={} focused={} agent={:?} label={} alt_screen={} mouse_enabled={} content_rows={} scrollback_actual={} scrollback_reported={} offset={} reported_offset={} viewport={}x{} screen={}x{} visible_start={} thumb={:?} cursor={}x{} cursor_visible={}",
                     pane.id,
                     focused_id == Some(pane.id),
@@ -406,7 +414,8 @@ impl Multiplexer {
                 );
             }
         }
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "render: ratatui-frame panes={} pane_screens={}",
             panes.len(),
             pane_screens.len(),
@@ -529,7 +538,10 @@ impl Multiplexer {
                 Some(output)
             }
             Err(e) => {
-                crate::clog!("compose_ratatui_frame: draw failed: {e}; skipping frame");
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
+                    "compose_ratatui_frame: draw failed: {e}; skipping frame"
+                );
                 None
             }
         }

@@ -302,7 +302,7 @@ fn run_agent_setup() -> Result<()> {
     // Observability must never break the agent: a failure is logged, not fatal.
     if let Err(e) = install_agent_status_reporter(&agent) {
         let message = reporter_install_failure_message(&agent, &e);
-        crate::clog!("{message}");
+        jackin_diagnostics::telemetry_info!("capsule", "{message}");
         crate::output::stderr_line(format_args!("[entrypoint] {message}"));
     }
 
@@ -445,7 +445,7 @@ fn setup_claude_plugins() {
         return;
     }
     // The official marketplace backs the common plugins; non-fatal if already
-    // registered (failure logged via clog!, not propagated). Its result does not
+    // registered (failure logged via governed INFO event, not propagated). Its result does not
     // gate the user-declared installs or the marker — the infrastructure add is
     // best-effort.
     run_optional_command(
@@ -663,7 +663,8 @@ fn write_codex_provider_config_inner(
             config_path.display()
         ));
     } else {
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "codex: [model_providers.minimax] already present in {}; skipping append",
             config_path.display()
         );
@@ -674,7 +675,8 @@ fn write_codex_provider_config_inner(
     // `--profile` is passed alongside a legacy v1 profiles table.
     let profile_path = codex_dir.join("minimax.config.toml");
     if profile_path.exists() {
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "codex: {} already exists; leaving operator/prior profile as-is",
             profile_path.display()
         );
@@ -766,14 +768,16 @@ fn codex_minimax_profile_toml(model: &str) -> Result<String> {
 fn write_codex_minimax_catalog(codex_dir: &Path, model: &str) -> Result<()> {
     let catalog_path = codex_dir.join("minimax.models.json");
     if catalog_path.exists() {
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "codex: {} already exists; leaving as-is",
             catalog_path.display()
         );
         return Ok(());
     }
     let Some(template) = codex_catalog_template_entry() else {
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "codex: no usable entry from `codex debug models`; skipping MiniMax model catalog (Codex falls back to generic metadata)"
         );
         return Ok(());
@@ -1276,14 +1280,18 @@ fn cache_dco_identity_if_needed() {
     ) else {
         // DCO is on but git identity is unreadable at startup; the commit-time
         // hook will fall back to live `git config` (and warn) per commit.
-        crate::clog!("dco identity cache skipped: user.name/user.email not configured at startup");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "dco identity cache skipped: user.name/user.email not configured at startup"
+        );
         return;
     };
     let cache_path = git_dco_identity_cache_path();
     if let Err(err) = fs::write(&cache_path, format!("{name}\n{email}\n")) {
         // A failed cache write means every commit shells out to live git
         // config — the exact failure this cache exists to prevent.
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "dco identity cache write to {} failed: {err} (errno={:?})",
             cache_path.display(),
             err.raw_os_error()
@@ -1444,7 +1452,8 @@ fn run_optional_command(program: &str, args: &[&str]) -> bool {
     match jackin_process::exec_sync(&request) {
         Ok(result) if result.success => true,
         Ok(result) => {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "optional command {} exited with code {:?}",
                 format_command(program, args),
                 result.code
@@ -1452,7 +1461,8 @@ fn run_optional_command(program: &str, args: &[&str]) -> bool {
             false
         }
         Err(e) => {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "optional command {} failed to spawn: {e}",
                 format_command(program, args)
             );

@@ -72,7 +72,8 @@ impl Multiplexer {
     ) -> bool {
         if self.pr_watch.pull_request_lookup.in_flight {
             if mode == PullRequestLookupMode::ForceRefresh {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "pull-request-context: force-refresh skipped: in-flight lookup request_id={} will satisfy",
                     self.pr_watch.pull_request_lookup.request_id
                 );
@@ -83,19 +84,24 @@ impl Multiplexer {
             if mode == PullRequestLookupMode::RespectCache {
                 return false;
             }
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "pull-request-context: force-refresh scheduling lookup despite startup gh unavailable"
             );
         }
         let Some(branch) = self.pr_watch.pull_request_context_branch.clone() else {
             if mode == PullRequestLookupMode::ForceRefresh {
-                crate::cdebug!("pull-request-context: force-refresh skipped: no branch");
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
+                    "pull-request-context: force-refresh skipped: no branch"
+                );
             }
             return false;
         };
         if self.launch_env.workdir_context.is_default_branch(&branch) {
             if mode == PullRequestLookupMode::ForceRefresh {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "pull-request-context: force-refresh skipped: branch {branch} is default"
                 );
             }
@@ -117,7 +123,8 @@ impl Multiplexer {
             move || match gh_pull_request_info(&workdir, branch.as_str()) {
                 Ok(pr) => PullRequestLookupOutcome::Resolved(pr),
                 Err(err) => {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "pull-request-context: gh lookup failed for branch {branch}: {err}"
                     );
                     PullRequestLookupOutcome::TransientFailure
@@ -137,7 +144,7 @@ impl Multiplexer {
     /// `work` runs the actual `git`/`gh` subprocess (off the daemon's
     /// main thread); `to_event` maps the worker's return value into
     /// the `SessionEvent` variant the main loop dispatches. The
-    /// channel-closed `clog!` is uniform across callers so a future
+    /// channel-closed governed INFO event is uniform across callers so a future
     /// triage of "why didn't the bar refresh?" has the same shape
     /// regardless of which lookup misbehaved.
     pub(super) fn spawn_context_lookup<F, T, E>(&self, label: &'static str, work: F, to_event: E)
@@ -150,7 +157,10 @@ impl Multiplexer {
         let emit = move || {
             let value = work();
             if event_tx.send(to_event(value)).is_err() {
-                crate::clog!("{label}: event channel closed before result reached main loop");
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
+                    "{label}: event channel closed before result reached main loop"
+                );
             }
         };
         // Fire-and-forget worker — no `await`, no tokio context needed.
@@ -171,7 +181,10 @@ impl Multiplexer {
                     &jackin_telemetry::operation::BACKGROUND_CYCLE,
                     emit,
                 ) {
-                    crate::clog!("{label}: failed to spawn blocking worker thread: {e}");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "{label}: failed to spawn blocking worker thread: {e}"
+                    );
                 }
             }
         }
@@ -183,7 +196,8 @@ impl Multiplexer {
         context: GitContext,
         now: Instant,
     ) -> bool {
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "git-branch-context: lookup loaded request_id={} current_request_id={} context={:?}",
             request_id,
             self.pr_watch.git_branch_lookup.request_id,
@@ -247,7 +261,8 @@ impl Multiplexer {
         // path.
         let in_flight_before = self.pr_watch.pull_request_lookup.in_flight;
         self.pr_watch.pull_request_lookup.invalidate_in_flight();
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "git-branch-context: context flip old_branch={:?} old_head={:?} new_branch={:?} new_head={:?} invalidated_in_flight={}",
             old_branch,
             old_head,
@@ -290,7 +305,8 @@ impl Multiplexer {
         now: Instant,
     ) -> bool {
         if request_id != self.pr_watch.pull_request_lookup.request_id {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "pull-request-context: dropping stale result request_id={request_id} (current={})",
                 self.pr_watch.pull_request_lookup.request_id
             );
@@ -319,7 +335,10 @@ impl Multiplexer {
         let pull_request = match outcome {
             PullRequestLookupOutcome::Resolved(pr) => {
                 if !self.launch_env.workdir_context.gh_available {
-                    crate::clog!("pull-request-context: gh lookup succeeded after startup miss");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "pull-request-context: gh lookup succeeded after startup miss"
+                    );
                     self.launch_env.workdir_context.gh_available = true;
                 }
                 pr
@@ -337,7 +356,8 @@ impl Multiplexer {
         if self.pr_watch.pull_request_context_branch.as_ref() != Some(&branch)
             || self.pr_watch.pull_request_context_head != head
         {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "pull-request-context: (branch, head) drift between spawn and apply — \
                  spawn=({:?}, {:?}) apply=({:?}, {:?}); refusing to assign or cache",
                 branch,
@@ -381,7 +401,8 @@ impl Multiplexer {
             .retain(|_, entry| !entry.is_expired(now));
         let dropped = before - self.pr_watch.pull_request_context_cache.len();
         if dropped > 0 {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "pull-request-context: purged {dropped} expired cache entries (ttl=2x{:?})",
                 PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
             );

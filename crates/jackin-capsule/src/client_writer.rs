@@ -122,7 +122,10 @@ impl ClientWriter {
             && !self.dead_logged
         {
             self.dead_logged = true;
-            crate::clog!("client write: receiver dropped; output discarded (this attach is dead)");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "client write: receiver dropped; output discarded (this attach is dead)"
+            );
         }
     }
 
@@ -136,7 +139,8 @@ impl ClientWriter {
             metrics.painted_cells as u64,
         );
         // Per-frame text row demoted to TRACE (metrics replace the firehose).
-        crate::ctrace_payload!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "send: bytes={} cursor_moves={} sgr_resets={} osc8_opens={} osc8_closes={} max_row_addressed={} max_col_addressed={} full_screen_erases={} painted_cells={} full_frame_repaint={}",
             metrics.bytes,
             metrics.cursor_moves,
@@ -149,29 +153,7 @@ impl ClientWriter {
             metrics.painted_cells,
             metrics.full_frame_repaint,
         );
-        // Verbatim dump of only the smallest emissions (chrome / out-of-band
-        // only). Capped tight so a steady-state run can't balloon the log.
-        if bytes.len() <= 1200 {
-            crate::ctrace_payload!("send-bytes: {}", escape_for_log(bytes));
-        }
     }
-}
-
-/// Render a frame's bytes as a single readable line: ESC as `\e`, other
-/// control bytes as `\xNN`, printable ASCII verbatim. Used only behind the
-/// debug flag to dump small frames for triage.
-fn escape_for_log(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        match b {
-            0x1b => out.push_str("\\e"),
-            b'\n' => out.push_str("\\n"),
-            b'\r' => out.push_str("\\r"),
-            0x20..=0x7e => out.push(b as char),
-            _ => out.push_str(&format!("\\x{b:02x}")),
-        }
-    }
-    out
 }
 
 /// Emitted-byte counters used to catch render regressions now that Ratatui's

@@ -13,7 +13,10 @@ impl Multiplexer {
         let mut env = self.launch_env.env_passthrough.clone();
         for (key, value) in overrides {
             if !SESSION_ENV_PASSTHROUGH.iter().any(|allowed| allowed == key) {
-                crate::clog!("spawn env: rejected non-allowlisted key {key:?}");
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
+                    "spawn env: rejected non-allowlisted key {key:?}"
+                );
                 continue;
             }
             if let Some((_, existing)) =
@@ -131,7 +134,8 @@ impl Multiplexer {
     ) -> Vec<(String, String)> {
         let token = self.token_for_provider(provider);
         if token.is_none() && provider.adapter().needs_key_for_agent(agent_slug) {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
                 provider.label()
             );
@@ -205,7 +209,8 @@ impl Multiplexer {
         ) {
             self.render.wipe_pending = Some(reason);
         }
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "invalidate: reason={} generation={}",
             reason.as_str(),
             self.render.frame_generation,
@@ -319,7 +324,10 @@ impl Multiplexer {
                 true
             }
             Err(error) => {
-                crate::clog!("usage-refresh: background worker failed: {error}");
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
+                    "usage-refresh: background worker failed: {error}"
+                );
                 false
             }
         }

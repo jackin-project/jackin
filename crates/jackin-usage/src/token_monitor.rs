@@ -250,7 +250,10 @@ pub fn recompute_spend(
             Ok(Some(text)) => fold(&text, &mut acc),
             Ok(None) => {}
             Err(e) => {
-                crate::cdebug!("token monitor: {label} read {path:?} failed: {e}");
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
+                    "token monitor: {label} read {path:?} failed: {e}"
+                );
                 return None;
             }
         }

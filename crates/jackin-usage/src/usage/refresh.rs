@@ -86,7 +86,10 @@ where
                     drop(tx.send(result));
                 }
                 Err(_) => {
-                    crate::clog!("usage-refresh: provider probe panicked");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "usage-refresh: provider probe panicked"
+                    );
                 }
             }
         });
@@ -117,7 +120,8 @@ where
             let Some(target) = fallback_targets.get(&key).cloned() else {
                 continue;
             };
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "usage-refresh: provider probe timed out for {}",
                 target.cache_key()
             );
@@ -143,8 +147,8 @@ where
     results
 }
 
-/// Log a persistence outcome at the right tier: always-on `clog!` once when a
-/// fault starts and once when it clears, plus a per-cycle `cdebug!` firehose
+/// Log a persistence outcome at the right tier: always-on governed INFO event once when a
+/// fault starts and once when it clears, plus a per-cycle governed DEBUG events firehose
 /// line while it persists. Returns the new "failed" latch for the caller to store.
 pub(crate) fn log_persist_transition(
     what: &str,
@@ -154,15 +158,18 @@ pub(crate) fn log_persist_transition(
     match result {
         Ok(()) => {
             if was_failed {
-                crate::clog!("{what} recovered");
+                jackin_diagnostics::telemetry_info!("capsule", "{what} recovered");
             }
             false
         }
         Err(error) => {
             if !was_failed {
-                crate::clog!("{what} failed (suppressing repeats until recovery): {error}");
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
+                    "{what} failed (suppressing repeats until recovery): {error}"
+                );
             }
-            crate::cdebug!("{what} failed: {error}");
+            jackin_diagnostics::telemetry_debug!("capsule", "{what} failed: {error}");
             true
         }
     }
@@ -281,12 +288,18 @@ pub(crate) fn write_shared_usage_snapshot(
         return;
     };
     if let Err(error) = fs::create_dir_all(snapshots_dir) {
-        crate::clog!("usage snapshot dir create failed for {key}: {error}");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "usage snapshot dir create failed for {key}: {error}"
+        );
         return;
     }
     let path = shared_usage_snapshot_path(snapshots_dir, key);
     if let Err(error) = fs::write(path, json) {
-        crate::clog!("usage snapshot write failed for {key}: {error}");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "usage snapshot write failed for {key}: {error}"
+        );
     }
 }
 
@@ -349,7 +362,10 @@ pub(crate) fn write_shared_usage_cooldown_marker(
     reason: &str,
 ) {
     if let Err(error) = fs::create_dir_all(cooldown_dir) {
-        crate::clog!("usage cooldown marker dir create failed for {key}: {error}");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "usage cooldown marker dir create failed for {key}: {error}"
+        );
         return;
     }
     let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
@@ -358,7 +374,10 @@ pub(crate) fn write_shared_usage_cooldown_marker(
     // window, so surface the failure rather than silently defeating the 429
     // cooldown.
     if let Err(error) = fs::write(path, format!("{until_epoch}\n{reason}\n")) {
-        crate::clog!("usage cooldown marker write failed for {key}: {error}");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "usage cooldown marker write failed for {key}: {error}"
+        );
     }
 }
 

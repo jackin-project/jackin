@@ -236,7 +236,8 @@ impl Multiplexer {
         // chunk→parse→dispatch→PTY-write debug chain, and a quiet drop here
         // left "clicked in the pane, nothing happened" with no way to localize the failure.
         let drop_trace = |gate: &str| {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "mouse forward dropped at {gate}: row={row} col={col} button={button} press={press}"
             );
         };
@@ -331,7 +332,8 @@ impl Multiplexer {
         // so the conversion is a plain inversion.
         let tail_offset = filled.saturating_sub(usize::from(top_offset));
         let moved = session.set_scrollback_offset(tail_offset);
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "scrollbar jump: session={focused} row={row} col={col} filled={filled} top_offset={top_offset} tail_offset={tail_offset} moved={moved}"
         );
         if moved {
@@ -375,7 +377,8 @@ impl Multiplexer {
         }
         let scrollback_filled = session.scrollback_filled();
         let scrollback_offset = session.scrollback_offset();
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "selection start: session={id} press=({row},{col}) inner=({},{},{}x{})",
             inner.row,
             inner.col,
@@ -419,7 +422,8 @@ impl Multiplexer {
             return;
         };
         move_selection_end(sel, row, col, scrollback_filled, scrollback_offset);
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "selection motion: motion=({row},{col}) anchor=({},{}) end=({},{}) inner=({},{},{}x{})",
             sel.anchor_row,
             sel.anchor_col,
@@ -510,7 +514,8 @@ impl Multiplexer {
             // No toast and no clipboard write: name the quiet reasons
             // (empty rows from a vanished session, empty extracted text,
             // detached client) in a `--debug` trace.
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "selection copy skipped: session={} rows={} text_len={} attached={}",
                 sel.session_id,
                 rows.len(),
@@ -553,7 +558,11 @@ impl Multiplexer {
     /// session's content snapshot.
     fn select_word_at(&mut self, candidate: &SelectionState) -> bool {
         let Some(session) = self.session_supervisor.sessions.get(candidate.session_id) else {
-            crate::cdebug!("word select skipped: session={} gone", candidate.session_id);
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
+                "word select skipped: session={} gone",
+                candidate.session_id
+            );
             return false;
         };
         let rows = session.render_content_snapshot(candidate.inner.cols);
@@ -561,7 +570,8 @@ impl Multiplexer {
             .get(candidate.anchor_row)
             .and_then(|row| word_bounds_in_row(row, candidate.anchor_col))
         else {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "word select skipped: no word at session={} content_row={} col={}",
                 candidate.session_id,
                 candidate.anchor_row,
@@ -572,7 +582,8 @@ impl Multiplexer {
         let mut sel = *candidate;
         sel.anchor_col = start_col;
         sel.end_col = end_col;
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "word select: session={} content_row={} cols={start_col}..={end_col}",
             sel.session_id,
             sel.anchor_row
@@ -589,7 +600,8 @@ impl Multiplexer {
     /// `false` so the caller can preserve the existing raw-mouse fallback.
     pub(super) fn open_visible_url_at(&mut self, row: u16, col: u16) -> bool {
         if !host_url_opening_allowed() {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "visible url open skipped: host link opening disabled by JACKIN_OPEN_LINKS"
             );
             return false;
@@ -610,19 +622,29 @@ impl Multiplexer {
     /// mouse-modifier gesture.
     pub(super) fn open_visible_url_under_cursor(&mut self) -> bool {
         let Some(session_id) = self.active_focused_id() else {
-            crate::cdebug!("visible url open skipped: no focused pane");
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
+                "visible url open skipped: no focused pane"
+            );
             return false;
         };
         let Some(inner) = self.active_focused_inner_rect() else {
-            crate::cdebug!("visible url open skipped: focused pane has no visible rect");
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
+                "visible url open skipped: focused pane has no visible rect"
+            );
             return false;
         };
         let Some(session) = self.session_supervisor.sessions.get(session_id) else {
-            crate::cdebug!("visible url open skipped: focused session={session_id} gone");
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
+                "visible url open skipped: focused session={session_id} gone"
+            );
             return false;
         };
         if session.scrollback_offset() != 0 {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "visible url open skipped: focused session={session_id} is in scrollback"
             );
             return false;
@@ -636,7 +658,8 @@ impl Multiplexer {
         let rows = session
             .render_content_snapshot_range(inner.cols, content_row..content_row.saturating_add(1));
         if rows.is_empty() {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "visible url open skipped: focused session={session_id} cursor row={cursor_row} missing"
             );
             return false;
@@ -668,7 +691,8 @@ impl Multiplexer {
     ) -> Option<HostOpenTarget> {
         let Some(candidate) = self.detect_selection_start(row, col) else {
             if let Some(log_suffix) = log_suffix {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "visible url open skipped ({log_suffix}): no mouse-disabled pane at ({row},{col})"
                 );
             }
@@ -676,7 +700,8 @@ impl Multiplexer {
         };
         let Some(session) = self.session_supervisor.sessions.get(candidate.session_id) else {
             if let Some(log_suffix) = log_suffix {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "visible url open skipped ({log_suffix}): session={} gone",
                     candidate.session_id
                 );
@@ -718,7 +743,8 @@ impl Multiplexer {
     ) -> Option<HostOpenTarget> {
         let Some(session) = self.session_supervisor.sessions.get(session_id) else {
             if let Some(log_suffix) = log_suffix {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "visible url open skipped ({log_suffix}): session={session_id} gone"
                 );
             }
@@ -728,7 +754,8 @@ impl Multiplexer {
         if let Some(osc8_target) = session.hyperlink_target_at_content_row(row_idx, anchor_col) {
             if jackin_tui::url_text::is_host_open_url(osc8_target) {
                 if let Some(log_suffix) = log_suffix {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
                         "host-affordance: resolved {log_suffix} OSC8 url: {}",
                         jackin_tui::url_text::redact_url_for_log(osc8_target)
                     );
@@ -737,14 +764,16 @@ impl Multiplexer {
             }
             if !jackin_tui::url_text::has_url_scheme(osc8_target) {
                 if let Some(log_suffix) = log_suffix {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
                         "visible url open skipped ({log_suffix}): OSC8 target has no URL scheme at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
                     );
                 }
                 return None;
             }
             if let Some(log_suffix) = log_suffix {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "visible url open skipped ({log_suffix}): disallowed OSC8 token at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
                 );
             }
@@ -756,7 +785,8 @@ impl Multiplexer {
         let local_row = row_idx.saturating_sub(rows_base);
         let Some(row) = rows.get(local_row) else {
             if let Some(log_suffix) = log_suffix {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "visible url open skipped ({log_suffix}): row {row_idx} missing for session={session_id}"
                 );
             }
@@ -764,7 +794,8 @@ impl Multiplexer {
         };
         let Some((start_col, end_col)) = word_bounds_in_row(row, anchor_col) else {
             if let Some(log_suffix) = log_suffix {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "visible url open skipped ({log_suffix}): no word at session={session_id} content_row={row_idx} col={anchor_col}"
                 );
             }
@@ -774,21 +805,24 @@ impl Multiplexer {
         if !jackin_tui::url_text::is_host_open_url(&url) {
             if !jackin_tui::url_text::has_url_scheme(&url) {
                 if let Some(log_suffix) = log_suffix {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
                         "visible url open skipped ({log_suffix}): token has no URL scheme at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
                     );
                 }
                 return None;
             }
             if let Some(log_suffix) = log_suffix {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "visible url open skipped ({log_suffix}): disallowed token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
                 );
             }
             return Some(HostOpenTarget::Rejected { token: url });
         }
         if let Some(log_suffix) = log_suffix {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "host-affordance: resolved {log_suffix} visible-token url: {}",
                 jackin_tui::url_text::redact_url_for_log(&url)
             );
@@ -809,7 +843,8 @@ impl Multiplexer {
     }
 
     fn send_host_open_url(&mut self, log_suffix: &str, url: String) -> bool {
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "host-affordance: opening {log_suffix} visible url from pane: {}",
             jackin_tui::url_text::redact_url_for_log(&url)
         );
@@ -818,7 +853,8 @@ impl Multiplexer {
     }
 
     fn reject_host_open_url(&mut self, log_suffix: &str, token: &str) {
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "host-affordance: rejected {log_suffix} visible url from pane: {}",
             jackin_tui::url_text::redact_url_for_log(token)
         );

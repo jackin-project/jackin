@@ -397,7 +397,7 @@ impl Session {
     #[expect(
         clippy::excessive_nesting,
         reason = "Session spawn wires PTY + child handle + agent + env into the \
-                  multiplexer state. The nested `is_err` + `crate::clog!` + state- \
+                  multiplexer state. The nested `is_err` + governed INFO event + state- \
                   update branches are the per-stage error-reporting protocol."
     )]
     #[expect(
@@ -467,13 +467,17 @@ impl Session {
         jackin_telemetry::spawn::stream_blocking("pty.reader", move || {
             let writer = match master_for_write.lock() {
                 Err(_) => {
-                    crate::clog!("session {sid}: PTY master mutex poisoned; aborting writer task");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "session {sid}: PTY master mutex poisoned; aborting writer task"
+                    );
                     None
                 }
                 Ok(guard) => match guard.take_writer() {
                     Ok(w) => Some(w),
                     Err(e) => {
-                        crate::clog!(
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
                             "session {sid}: take_writer failed: {e}; aborting writer task"
                         );
                         None
@@ -488,7 +492,8 @@ impl Session {
                     })
                     .is_err()
                 {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "session {sid}: event channel closed — daemon will not reap this half-initialised session"
                     );
                 }
@@ -496,7 +501,8 @@ impl Session {
             };
             while let Some(data) = input_rx.blocking_recv() {
                 if let Err(e) = std::io::Write::write_all(&mut writer, &data) {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "session {sid}: PTY write error: {e} (errno={:?}); aborting writer",
                         e.raw_os_error()
                     );
@@ -507,7 +513,8 @@ impl Session {
                         })
                         .is_err()
                     {
-                        crate::clog!(
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
                             "session {sid}: event channel closed — daemon will not reap this dead writer"
                         );
                     }
@@ -520,13 +527,17 @@ impl Session {
         jackin_telemetry::spawn::stream_blocking("pty.writer", move || {
             let reader = match master_for_read.lock() {
                 Err(_) => {
-                    crate::clog!("session {sid}: PTY master mutex poisoned; aborting reader task");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "session {sid}: PTY master mutex poisoned; aborting reader task"
+                    );
                     None
                 }
                 Ok(guard) => match guard.try_clone_reader() {
                     Ok(r) => Some(r),
                     Err(e) => {
-                        crate::clog!(
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
                             "session {sid}: try_clone_reader failed: {e}; aborting reader task"
                         );
                         None
@@ -541,7 +552,8 @@ impl Session {
                     })
                     .is_err()
                 {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "session {sid}: event channel closed — daemon will not reap this half-initialised session"
                     );
                 }
@@ -551,11 +563,15 @@ impl Session {
             loop {
                 match std::io::Read::read(&mut reader, &mut buf) {
                     Ok(0) => {
-                        crate::clog!("session {sid}: PTY read EOF");
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
+                            "session {sid}: PTY read EOF"
+                        );
                         break;
                     }
                     Err(e) => {
-                        crate::clog!(
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
                             "session {sid}: PTY read error: {e} (errno={:?})",
                             e.raw_os_error()
                         );
@@ -571,7 +587,8 @@ impl Session {
                             })
                             .is_err()
                         {
-                            crate::clog!(
+                            jackin_diagnostics::telemetry_info!(
+                                "capsule",
                                 "session {sid}: event channel closed before PTY output drained; reader exiting"
                             );
                             break;
@@ -607,7 +624,10 @@ impl Session {
                 crate::pid1::unregister_managed_child(pid);
                 crate::pid1::reap_zombies();
             }
-            crate::clog!("session {sid}: child reaped: {status:?}");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "session {sid}: child reaped: {status:?}"
+            );
             if event_tx_exit
                 .send(SessionEvent::Exited {
                     session_id: sid,
@@ -615,7 +635,8 @@ impl Session {
                 })
                 .is_err()
             {
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "session {sid}: event channel closed — daemon will not see this child exit"
                 );
             }
@@ -774,15 +795,10 @@ impl Session {
     }
 
     pub fn send_input(&self, data: &[u8]) -> bool {
-        // Debug-only: log every byte chunk forwarded to a PTY. Pairs
-        // with the `rx ClientFrame::Input` line on the receive side so
-        // a `--debug` trace shows the full path from operator keystroke
-        // to slave fd write.
-        crate::ctrace_payload!(
-            "session send_input: agent={:?} label={} bytes={:02x?}",
-            self.agent,
-            self.label,
-            data
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
+            "session input forwarded: bytes={}",
+            data.len()
         );
         // SendError fires when the writer task has exited (it owns the
         // receiver). The writer task emits SessionEvent::Exited before
@@ -793,7 +809,8 @@ impl Session {
         match self.input_tx.send(data.to_vec()) {
             Ok(()) => true,
             Err(e) => {
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "session send_input: writer task gone ({} bytes dropped): {e}",
                     data.len()
                 );
@@ -882,7 +899,8 @@ impl Session {
                 // An event this build does not map (runtime/version skew renamed
                 // it). The reporter's authority silently goes dark; leave a
                 // Firehose breadcrumb so debug telemetry surfaces the drift.
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "agent-status: unmapped runtime event runtime={runtime} event={event} \
                      source={source_id}"
                 );
@@ -1125,12 +1143,10 @@ impl Session {
             self.received_output = true;
         }
         jackin_diagnostics::incr_terminal_bytes_received(bytes.len() as u64);
-        crate::ctrace_payload!(
-            "session feed_pty bytes: agent={:?} label={} len={} bytes={:02x?}",
-            self.agent,
-            self.label,
-            bytes.len(),
-            bytes
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
+            "session output received: bytes={}",
+            bytes.len()
         );
 
         // Single batch feed — the grid's persistent vte parser handles
@@ -1181,7 +1197,8 @@ impl Session {
         if debug_enabled {
             let (grid_rows, grid_cols) = self.shadow_grid.size();
             let (cursor_row, cursor_col) = self.shadow_grid.cursor_position();
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "session feed_pty: agent={:?} label={} bytes={} t_parse_us={} alt_screen={} mouse_enabled={} screen={}x{} cursor={}x{} scrollback={} scrollback_offset={}",
                 self.agent,
                 self.label,
@@ -1316,7 +1333,8 @@ impl Session {
                 // trail for "agent feature X stopped working" and the input
                 // for allowlist additions.
                 PassthroughEvent::DroppedCsi(ref raw) => {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
                         "dropped unhandled CSI (agent={:?}): {}",
                         self.agent.as_deref(),
                         raw.escape_ascii(),
@@ -1328,13 +1346,15 @@ impl Session {
                 // grid, not the host. (Root fix for the alt-screen corruption:
                 // the host was answering DA/DSR/DECRQM with its own caps.)
                 PassthroughEvent::Reply(bytes) => {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
                         "query reply to agent={:?}: {}",
                         self.agent.as_deref(),
                         bytes.escape_ascii(),
                     );
                     if let Err(e) = self.input_tx.send(bytes) {
-                        crate::clog!(
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
                             "session query reply (agent={:?} label={}): writer task gone: {e}",
                             self.agent,
                             self.label,
@@ -1372,7 +1392,8 @@ impl Session {
         if let Some(level) = parse_modify_other_keys(raw) {
             self.modify_other_keys = (level != 0).then_some(level);
         }
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "forwarding allowlisted CSI to client (agent={:?}): {}",
             self.agent.as_deref(),
             raw.escape_ascii(),
@@ -1407,10 +1428,16 @@ impl Session {
         match self.child_killer.lock() {
             Ok(mut killer) => {
                 if let Err(e) = killer.kill() {
-                    crate::clog!("session terminate: child kill failed: {e}");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "session terminate: child kill failed: {e}"
+                    );
                 }
             }
-            Err(e) => crate::clog!("session terminate: child killer mutex poisoned: {e}"),
+            Err(e) => jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "session terminate: child killer mutex poisoned: {e}"
+            ),
         }
     }
 
@@ -1433,7 +1460,8 @@ impl Session {
             // so a soak run can pin the offending frame rather than silently
             // running the agent with a collapsed dimension. Each axis is floored
             // independently, so `0x80` becomes `1x80`, not `1x1`.
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "resize-clamp: degenerate geometry {rows}x{cols} floored to {}x{}",
                 rows.max(1),
                 cols.max(1),
@@ -1456,10 +1484,16 @@ impl Session {
                     pixel_width: 0,
                     pixel_height: 0,
                 }) {
-                    crate::clog!("session resize: TIOCSWINSZ failed for {rows}x{cols}: {e}");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "session resize: TIOCSWINSZ failed for {rows}x{cols}: {e}"
+                    );
                 }
             }
-            Err(e) => crate::clog!("session resize: PTY mutex poisoned: {e}"),
+            Err(e) => jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "session resize: PTY mutex poisoned: {e}"
+            ),
         }
         self.shadow_grid.set_size(rows, cols);
         // Re-clamp through the grid: set_size may have shrunk the filled

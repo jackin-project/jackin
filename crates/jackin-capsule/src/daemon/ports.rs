@@ -97,7 +97,8 @@ impl ControlPort for DefaultDaemonPorts {
                 event.observed_at,
             );
         } else {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "agent-status: runtime event for unknown session {}",
                 event.session_id
             );

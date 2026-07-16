@@ -484,7 +484,8 @@ impl Multiplexer {
         let input_parser = InputParser::new(input_bindings.prefix, input_bindings.palette_key);
         let workdir = PathBuf::from(&launch_config.workdir);
         let workdir_context = WorkdirContext::resolve(&workdir);
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "workdir-context: git_available={} gh_available={} is_git_repo={} default_branch={:?}",
             workdir_context.git_available,
             workdir_context.gh_available,
@@ -646,7 +647,8 @@ impl Multiplexer {
             Ok(path) => {
                 let path = path.to_string_lossy();
                 let bytes = image.bytes.len();
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "clipboard-image: staged extension={} bytes={} path={path}",
                     image.format.extension(),
                     bytes
@@ -656,7 +658,8 @@ impl Multiplexer {
                         "Image staged: {path} ({bytes} bytes)"
                     ));
                 } else if self.dialog_captures_input() {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "clipboard-image: ignored staged path because a dialog owns input"
                     );
                     self.set_clipboard_image_notice(format!(
@@ -667,7 +670,8 @@ impl Multiplexer {
                         "Image staged: {path} ({bytes} bytes)"
                     ));
                 } else {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "clipboard-image: staged path not pasted because no writable focused pane was available"
                     );
                     self.set_clipboard_image_notice(format!(
@@ -692,8 +696,14 @@ pub(crate) enum ClipboardImageInsertMode {
 
 fn log_clipboard_image_rejection(stage: &str, err: &anyhow::Error) {
     let reason = clipboard_image_error_reason(err);
-    crate::clog!("clipboard-image: rejected reason={reason} stage={stage}");
-    crate::cdebug!("clipboard-image: rejected stage={stage} detail={err:#}");
+    jackin_diagnostics::telemetry_info!(
+        "capsule",
+        "clipboard-image: rejected reason={reason} stage={stage}"
+    );
+    jackin_diagnostics::telemetry_debug!(
+        "capsule",
+        "clipboard-image: rejected stage={stage} detail={err:#}"
+    );
 }
 
 fn clipboard_image_error_reason(err: &anyhow::Error) -> &'static str {
@@ -787,7 +797,10 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     match crate::exit_assess::decide_exit(mux.launch_env.config()).await {
         crate::exit_assess::ExitDecision::Drain => {
             if let Some(ref r) = reason {
-                crate::clog!("session: final session exited: {r}");
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
+                    "session: final session exited: {r}"
+                );
             }
             drain_and_exit_with_reason(mux, reason).await;
             true
@@ -805,7 +818,8 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
             true
         }
         crate::exit_assess::ExitDecision::ShowModal(repos) => {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "exit: {} dirty repo(s) with policy ask — showing in-capsule dirty-exit modal",
                 repos.len()
             );
@@ -836,7 +850,8 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
         .clipboard_image_transfers
         .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
     if stale_image_transfers > 0 {
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "clipboard-image: cleaned up {stale_image_transfers} idle transfer{}",
             if stale_image_transfers == 1 { "" } else { "s" }
         );
@@ -887,7 +902,8 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
             // Flap-rate telemetry: every public transition is logged with the
             // deciding evidence so a regression (an agent update breaking a
             // pack) shows up as a burst.
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "agent-status: session {session_id} {} -> {} (winner={:?})",
                 transition.previous.label(),
                 transition.effective.label(),
@@ -895,7 +911,8 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
             );
         }
         if tick.stuck {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "status.stuck: session {session_id} demoted to unknown — \
                  working claimed with no output/CPU/children past the watchdog window"
             );
@@ -972,7 +989,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let (rows, cols) = normalize_size(rows, cols);
 
     // OTLP export for this session — no-op unless the host injected an
-    // endpoint. Installs the tracing subscriber the clog!/cdebug! bridge and
+    // endpoint. Installs the tracing subscriber the governed INFO event/governed DEBUG events bridge and
     // the session-anchor span feed into; the guard flushes on daemon exit.
     let _otlp_flush = crate::telemetry::init();
     // Initialise the capsule log after OTLP so the logger can use a single
@@ -980,7 +997,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     crate::logging::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
-    crate::clog!(
+    jackin_diagnostics::telemetry_info!(
+        "capsule",
         "daemon start: rows={rows} cols={cols} initial_agent={initial_agent:?} workdir={}",
         launch_config.workdir.as_str()
     );
@@ -1002,7 +1020,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let rule_registry = match RulePackRegistry::bundled() {
         Ok(registry) => Some(registry),
         Err(e) => {
-            crate::clog!("agent-status: rule packs failed to load, screen detection off: {e:#}");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "agent-status: rule packs failed to load, screen detection off: {e:#}"
+            );
             mux.open_spawn_failure_dialog(screen_detection_disabled_message(&e));
             None
         }
@@ -1033,7 +1054,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             if let Ok(ms) = raw.parse::<u64>() {
                 Duration::from_millis(ms)
             } else {
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "{ENV_ESCAPE_TIME}={raw:?} ignored (not a positive integer); using default {} ms",
                     DEFAULT_ESCAPE_TIME.as_millis()
                 );
@@ -1186,7 +1208,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     focus_session,
                     client_permit,
                 } = ready;
-                crate::cdebug!("resize-event: source=attach rows={rows} cols={cols}");
+                jackin_diagnostics::telemetry_debug!("capsule", "resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
                 let capabilities = terminal.attach_capabilities();
                 mux.client_registry.pointer_shapes_supported = capabilities.pointer_shapes;
@@ -1197,7 +1219,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // wrong-capability report can be traced to whichever input
                 // (handshake identity, terminfo, color probe, override,
                 // denylist) decided it.
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!("capsule",
                     "attach: client terminal term={:?} colors fg={:?} bg={:?} caps={:?}",
                     terminal.term,
                     terminal.default_fg,
@@ -1212,7 +1234,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     && let Some(request) = pending_initial_spawn.take()
                     && let Err(err) = mux.spawn_request(request.clone(), &[])
                 {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!("capsule",
                         "initial spawn failed (request={}): {err:#}",
                         spawn_request_label(&request)
                     );
@@ -1221,7 +1243,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 if let Some(target) = focus_session
                     && !mux.focus_session_globally(target)
                 {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!("capsule",
                         "attach: ignoring unknown focus_session={target} (no matching pane)"
                     );
                 }
@@ -1240,7 +1262,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         .prepare_session_spawn(&mux.session_supervisor)
                         .and_then(|()| mux.spawn_request(request, &env).map(|_| ()));
                     if let Err(err) = spawn_result {
-                        crate::clog!("attach: spawn {label} failed: {err:#}");
+                        jackin_diagnostics::telemetry_info!("capsule", "attach: spawn {label} failed: {err:#}");
                         pending_spawn_failure = Some(spawn_request_failure_message(&label, &err));
                     }
                 }
@@ -1268,7 +1290,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     drained = drained.saturating_add(1);
                 }
                 if drained > 0 {
-                    crate::clog!("takeover: drained {drained} stale frame(s) from prior client");
+                    jackin_diagnostics::telemetry_info!("capsule", "takeover: drained {drained} stale frame(s) from prior client");
                 }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 mux.client_registry.client.attach(new_out_tx.clone());
@@ -1314,7 +1336,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     .into_iter()
                     .find_map(|(kind, bytes)| new_out_tx.send(bytes).err().map(|_| kind));
                 if let Some(kind) = first_failure {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!("capsule",
                         "attach: receiver closed before initial frame ({}); operator's terminal will not paint",
                         kind.label()
                     );
@@ -1337,7 +1359,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // so a SIGWINCH storm produces one reflow instead of N full repaints.
                 let (frames, coalesced) = coalesce_client_frames(frame, || cmd_rx.try_recv().ok());
                 if coalesced > 0 {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!("capsule",
                         "resize: coalesced {coalesced} pending resize(s), using latest"
                     );
                 }
@@ -1428,7 +1450,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                                 .and_then(|session| session.diagnostic_tail(12));
                             reason = Some(match tail {
                                 Some(tail) => {
-                                    crate::clog!(
+                                    jackin_diagnostics::telemetry_info!("capsule",
                                         "session {session_id}: final output tail:\n{tail}"
                                     );
                                     format!("{base}\nlast pane output:\n{tail}")

@@ -116,7 +116,7 @@ pub async fn unpushed_commit_count(worktree_path: &str, runner: &mut impl Comman
 ///
 /// `log` receives diagnostic lines describing each fail-closed decision; the
 /// caller routes them to its own debug channel (host `telemetry_debug!`, Capsule
-/// `cdebug!`). The full per-branch policy lives in the host's finalize docs.
+/// governed DEBUG events). The full per-branch policy lives in the host's finalize docs.
 ///
 /// # Errors
 /// Never returns `Err` today (every git failure is mapped to a fail-closed

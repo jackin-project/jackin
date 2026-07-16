@@ -13,7 +13,10 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> bool {
     }
 
     let Ok(conn) = connect_local(DB_PATH).await else {
-        crate::cdebug!("token monitor: opencode db open failed: {DB_PATH:?}");
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
+            "token monitor: opencode db open failed: {DB_PATH:?}"
+        );
         return false;
     };
 
@@ -22,7 +25,10 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> bool {
         // Pre-v1.2 OpenCode stored messages as JSON files, not SQLite; a missing
         // `message` table lands here. Reading that legacy format is not yet
         // implemented — treat as "no new data".
-        crate::cdebug!("token monitor: opencode db schema mismatch, query failed");
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
+            "token monitor: opencode db schema mismatch, query failed"
+        );
         return false;
     };
 
@@ -32,7 +38,10 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> bool {
             Ok(Some(row)) => row,
             Ok(None) => break,
             Err(e) => {
-                crate::cdebug!("token monitor: opencode row read failed: {e}");
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
+                    "token monitor: opencode row read failed: {e}"
+                );
                 break;
             }
         };

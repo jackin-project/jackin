@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 /// Cap reads against text metadata files so a corrupt or hostile file
 /// cannot pin daemon memory while parsing branch state or hostnames.
-/// `label` is a static tag so `cdebug!` traces name which call site
+/// `label` is a static tag so governed DEBUG events traces name which call site
 /// hit the cap or failed.
 pub fn read_text_bounded(label: &'static str, path: &Path, max_bytes: u64) -> Option<String> {
     #[expect(
@@ -23,7 +23,8 @@ pub fn read_text_bounded(label: &'static str, path: &Path, max_bytes: u64) -> Op
     let file = match std::fs::File::open(path) {
         Ok(f) => f,
         Err(e) => {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "read_text_bounded[{label}]: open {} failed: {e} (errno={:?})",
                 path.display(),
                 e.raw_os_error()
@@ -34,7 +35,8 @@ pub fn read_text_bounded(label: &'static str, path: &Path, max_bytes: u64) -> Op
     let mut buf = String::new();
     let read = file.take(max_bytes).read_to_string(&mut buf);
     if let Err(e) = read {
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "read_text_bounded[{label}]: read {} failed: {e} (errno={:?})",
             path.display(),
             e.raw_os_error()
@@ -42,7 +44,8 @@ pub fn read_text_bounded(label: &'static str, path: &Path, max_bytes: u64) -> Op
         return None;
     }
     if buf.len() as u64 == max_bytes {
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "read_text_bounded[{label}]: capped at {max_bytes} bytes; file {} likely larger and downstream parsing may fail",
             path.display()
         );
@@ -90,7 +93,8 @@ pub(crate) fn wait_child_with_timeout(
         }
         if started.elapsed() >= timeout {
             if let Err(e) = child.kill() {
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "{label}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
                     e.raw_os_error()
                 );
@@ -113,7 +117,11 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
     let mut child = match jackin_process::spawn_sync(request) {
         Ok(child) => child,
         Err(e) => {
-            crate::clog!("command spawn failed ({}): {e}", request.program.display());
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "command spawn failed ({}): {e}",
+                request.program.display()
+            );
             return None;
         }
     };
@@ -142,7 +150,8 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
             return None;
         }
         WaitOutcome::Failed(e) => {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "command try_wait failed ({}): {e} (errno={:?})",
                 request.program.display(),
                 e.raw_os_error()
@@ -152,7 +161,8 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
         }
     };
     if status_success == Some(false) {
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "command exited non-accepted status ({}); stderr was nulled so reason is unavailable",
             request.program.display()
         );
@@ -161,14 +171,15 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
     let stdout = match stdout_reader.join() {
         Ok(Ok(bytes)) => bytes,
         Ok(Err(e)) => {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "command stdout read failed: {e} (errno={:?})",
                 e.raw_os_error()
             );
             return None;
         }
         Err(_) => {
-            crate::clog!("command stdout reader thread panicked");
+            jackin_diagnostics::telemetry_info!("capsule", "command stdout reader thread panicked");
             return None;
         }
     };

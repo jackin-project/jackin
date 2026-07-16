@@ -7,8 +7,7 @@
 //! (`OTEL_EXPORTER_OTLP_ENDPOINT`); a no-op when unset. When active, the
 //! session's telemetry carries a `session.id` (grouping the whole session into
 //! one timeline) and a link back to the launch trace via W3C propagation. Capsule
-//! `clog!`/`cdebug!` bodies are bridged prefix-free with schema attributes;
-//! operator-visible file/stderr rendering keeps the `[jackin-capsule …]` prefix.
+//! All emitted signals pass through the shared governed facade.
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -60,10 +59,15 @@ pub fn init() -> FlushGuard {
                 &jackin_telemetry::event::SESSION_START,
                 jackin_telemetry::FieldSet::new(&attrs, None),
             );
-            crate::clog!("otlp export active: session_id={session_id}");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "otlp export active: session_id={session_id}"
+            );
         }
         Ok(false) => {}
-        Err(error) => crate::clog!("otlp export disabled: {error}"),
+        Err(error) => {
+            jackin_diagnostics::telemetry_info!("capsule", "otlp export disabled: {error}")
+        }
     }
     FlushGuard
 }
@@ -87,91 +91,6 @@ pub fn otlp_active() -> bool {
     OTLP_ACTIVE.load(Ordering::Relaxed)
 }
 
-#[cfg(test)]
-pub(crate) fn set_otlp_active_for_test(active: bool) {
-    OTLP_ACTIVE.store(active, Ordering::Relaxed);
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BridgeLevel {
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
-}
-
-impl BridgeLevel {
-    #[must_use]
-    pub const fn event_name(self) -> &'static str {
-        match self {
-            Self::Trace => "capsule.trace",
-            Self::Debug => "capsule.debug",
-            Self::Info => "capsule.log",
-            Self::Warn => "capsule.warn",
-            Self::Error => "capsule.error",
-        }
-    }
-
-    #[must_use]
-    pub const fn category(self) -> &'static str {
-        "capsule"
-    }
-
-    #[must_use]
-    pub const fn outcome(self) -> &'static str {
-        match self {
-            Self::Error => "failure",
-            Self::Warn => "cancelled",
-            _ => "success",
-        }
-    }
-}
-
-/// Bridge a capsule log body into OTLP at the supplied severity.
-///
-/// `message` must be **prefix-free** (no `[jackin-capsule …]`). Rendering
-/// prefixes belong only in [`crate::logging::write_line`]. No-op unless export
-/// is active. Redacts the body before emission.
-pub fn bridge_log(level: BridgeLevel, message: &str) {
-    bridge_log_structured(level, level.category(), level.event_name(), message);
-}
-
-/// Structured bridge entry used by capsule macros and tests.
-pub fn bridge_log_structured(
-    level: BridgeLevel,
-    _category: &'static str,
-    _event_name: &'static str,
-    message: &str,
-) {
-    if !otlp_active() {
-        return;
-    }
-    let body = jackin_diagnostics::redact::redact_text(message);
-    let body = body.as_ref();
-    let session_id = SESSION_CONTEXT
-        .get()
-        .map_or("", |ctx| ctx.session_id.as_str());
-    let outcome = level.outcome();
-    let attrs = [
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::OUTCOME,
-            value: jackin_telemetry::Value::Str(outcome),
-        },
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
-            value: jackin_telemetry::Value::Str(session_id),
-        },
-    ];
-    let def = match level {
-        BridgeLevel::Trace | BridgeLevel::Debug => &jackin_telemetry::event::DEBUG_LINE,
-        BridgeLevel::Info => &jackin_telemetry::event::OPERATION_LOG,
-        BridgeLevel::Warn => &jackin_telemetry::event::OPERATION_WARN,
-        BridgeLevel::Error => &jackin_telemetry::event::ERROR_TYPED,
-    };
-    let _ = jackin_telemetry::emit_event(def, jackin_telemetry::FieldSet::new(&attrs, Some(body)));
-}
-
 /// Flush and shut down the OTLP exporters before the daemon exits, so the tail
 /// of the session is not lost.
 pub fn shutdown() {
@@ -192,6 +111,3 @@ pub fn shutdown() {
         OTLP_ACTIVE.store(false, Ordering::Relaxed);
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -61,14 +61,14 @@ impl Multiplexer {
         // dispatch arms — Dismiss, Command, SpawnAgent, RenameTab. The
         // Redraw / Consume arms fire on every arrow key inside a dialog
         // and would swamp the production log; they go through the
-        // debug-only `cdebug!` surface so a `--debug` trace shows
+        // debug-only governed DEBUG events surface so a `--debug` trace shows
         // dialog dispatch landing for arrow keys while quiet runs stay
         // tidy.
         match &action {
             DialogAction::Redraw | DialogAction::Consume => {
-                crate::cdebug!("action: dialog={action:?}");
+                jackin_diagnostics::telemetry_debug!("capsule", "action: dialog={action:?}");
             }
-            _ => crate::clog!("action: dialog={action:?}"),
+            _ => jackin_diagnostics::telemetry_info!("capsule", "action: dialog={action:?}"),
         }
         let frame_plan = dialog_action_frame_plan(&action);
         match action {
@@ -184,7 +184,7 @@ impl Multiplexer {
                 let env_overrides =
                     jackin_protocol::Provider::from_label(&provider_label).map_or_else(
                         || {
-                            crate::clog!(
+                            jackin_diagnostics::telemetry_info!("capsule", 
                                 "spawn: unknown provider label {provider_label:?}; no env redirect applied"
                             );
                             Vec::new()
@@ -285,7 +285,7 @@ impl Multiplexer {
         self.invalidate(frame_plan.reason());
         // Per-keypress selection trace — firehose, gated at telemetry debug.
         if let Some(Dialog::ExitDirty { selected, .. }) = self.dialog_top() {
-            crate::cdebug!("exit-dirty: selected={selected}");
+            jackin_diagnostics::telemetry_debug!("capsule", "exit-dirty: selected={selected}");
         }
     }
 
@@ -460,7 +460,10 @@ impl Multiplexer {
             }
             Action::SplitFocused(direction) => {
                 if let Err(err) = self.split_focused(direction) {
-                    crate::clog!("split ({direction:?}) failed: {err:?}");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "split ({direction:?}) failed: {err:?}"
+                    );
                 }
                 self.invalidate_for(&Action::SplitFocused(direction));
             }
@@ -556,7 +559,8 @@ impl Multiplexer {
                     return;
                 }
                 if self.forward_mouse_to_focused_pane_with_kind(col, row, button, true) {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
                         "wheel dispatch: forwarded-to-pty row={} col={} button={}",
                         row,
                         col,
@@ -590,7 +594,8 @@ impl Multiplexer {
                     session.application_cursor(),
                     button,
                 ) {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
                         "wheel dispatch: cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} reason={} bytes={:02x?}",
                         focused,
                         session.agent,
@@ -605,7 +610,8 @@ impl Multiplexer {
                     return;
                 }
                 if filled == 0 {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
                         "wheel dispatch: no-scrollback session={} agent={:?} row={} col={} button={} alt_screen={} mouse_enabled={} vt_scrollback={} inline_scrollback={}",
                         focused,
                         session.agent,
@@ -619,7 +625,8 @@ impl Multiplexer {
                     );
                     return;
                 }
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "wheel dispatch: jackin-scrollback session={} row={} col={} button={} delta={} before={} filled={}",
                     focused,
                     row,
@@ -630,7 +637,8 @@ impl Multiplexer {
                     filled
                 );
                 let moved = session.scroll_by(delta);
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "wheel dispatch: jackin-scrollback session={} after={} moved={}",
                     focused,
                     session.scrollback_offset(),
@@ -931,7 +939,7 @@ impl Multiplexer {
         // line per dispatch is enough to reconstruct what the operator
         // pressed when triaging a bug report. The Debug formatter
         // includes any payload (`JumpTab(i)`, `MoveFocus(dir)`).
-        crate::clog!("action: prefix={cmd:?}");
+        jackin_diagnostics::telemetry_info!("capsule", "action: prefix={cmd:?}");
         if let Some(action) = prefix_command_action(&cmd) {
             self.apply_action(action);
         }

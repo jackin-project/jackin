@@ -128,7 +128,10 @@ pub(crate) fn codex_snapshot(
         fetch_codex_oauth_usage_refreshing(credentials, &codex_home).map(|mut usage| {
             usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
                 .inspect_err(|error| {
-                    crate::cdebug!("codex reset-credits fetch failed: {error}");
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
+                        "codex reset-credits fetch failed: {error}"
+                    );
                 })
                 .ok();
             usage
@@ -776,7 +779,7 @@ pub(crate) fn fetch_codex_rpc_usage(
         // an RPC failure here degrades to no label rather than failing the whole
         // snapshot. Logged at the firehose tier (visible at telemetry debug): an
         // absent account is usually a legitimate plan shape, not a fault, so this
-        // does not warrant always-on `clog!` noise on every refresh.
+        // does not warrant always-on governed INFO event noise on every refresh.
         let account_value = codex_rpc_request(
             &mut stdin,
             &rx,
@@ -786,7 +789,10 @@ pub(crate) fn fetch_codex_rpc_usage(
             CODEX_RPC_REQUEST_TIMEOUT,
         )
         .inspect_err(|error| {
-            crate::cdebug!("codex account/read RPC failed: {error}");
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
+                "codex account/read RPC failed: {error}"
+            );
             jackin_diagnostics::operation_error(
                 "usage.refresh",
                 "usage_rpc_failed",
@@ -1029,7 +1035,8 @@ pub(crate) fn resolve_codex_base_url(codex_home: &Path) -> String {
             // A config.toml that exists but is unreadable silently drops the
             // operator's custom base-URL override back to the public default.
             if error.kind() != std::io::ErrorKind::NotFound {
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "codex config.toml read failed for {}: {error}",
                     config_path.display()
                 );

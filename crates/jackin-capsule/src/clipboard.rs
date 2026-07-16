@@ -35,7 +35,7 @@ pub(crate) fn stage_clipboard_image(image: &ClipboardImage) -> Result<PathBuf> {
 
 pub(crate) fn cleanup_clipboard_run_dir() {
     if let Err(err) = cleanup_clipboard_run_dir_at(Path::new(CLIPBOARD_RUN_DIR)) {
-        crate::clog!("clipboard-image: cleanup failed: {err:#}");
+        jackin_diagnostics::telemetry_info!("capsule", "clipboard-image: cleanup failed: {err:#}");
     }
 }
 
@@ -193,7 +193,8 @@ impl ClipboardImageTransfers {
         let count = stale_ids.len();
         for transfer_id in stale_ids {
             if let Some(active) = self.active.remove(&transfer_id) {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "clipboard-image: abort stale transfer id={} format={:?} buffered={} expected={}",
                     transfer_id,
                     active.format,
@@ -266,7 +267,8 @@ fn cleanup_clipboard_run_dir_at(root: &Path) -> Result<usize> {
             remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
             removed += 1;
         } else {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "clipboard-image: leaving non-file staged entry during cleanup: {}",
                 path.display()
             );

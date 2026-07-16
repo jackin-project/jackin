@@ -372,7 +372,7 @@ async fn upsert_account_snapshot_rows(
             // Roll the whole batch back so a mid-batch failure never leaves a
             // partially-written snapshot set; surface the original row error.
             if let Err(rollback_err) = conn.execute("ROLLBACK", ()).await {
-                crate::cdebug!("telemetry snapshot rollback failed: {rollback_err}");
+                jackin_diagnostics::telemetry_debug!("capsule", "telemetry snapshot rollback failed: {rollback_err}");
             }
             return Err(format!("upsert telemetry account snapshot failed: {err}"));
         }

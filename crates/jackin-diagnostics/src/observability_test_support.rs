@@ -29,8 +29,8 @@ impl TestExport {
                             && matches!(value, AnyValue::String(actual) if actual.as_str() == expected)
                     })
                 };
-                attribute_equals("event.name", event_name)
-                    && attribute_equals("event.outcome", "failure")
+                log.record.event_name() == Some(event_name)
+                    && attribute_equals("outcome", "failure")
                     && attribute_equals("error.type", error_type)
             })
             .count()

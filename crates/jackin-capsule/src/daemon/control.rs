@@ -32,7 +32,7 @@ pub fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
         dir.join("evidence.json"),
         serde_json::to_string_pretty(&report)?,
     )?;
-    crate::clog!("status.capture: wrote {}", dir.display());
+    jackin_diagnostics::telemetry_info!("capsule", "status.capture: wrote {}", dir.display());
     Ok(())
 }
 
@@ -80,10 +80,16 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         ClientMsg::StatusCapture { session_id } => {
             if let Some(session) = mux.session_supervisor.sessions.get(session_id) {
                 if let Err(e) = write_status_capture(session_id, session) {
-                    crate::clog!("status.capture: session {session_id} failed: {e:#}");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "status.capture: session {session_id} failed: {e:#}"
+                    );
                 }
             } else {
-                crate::clog!("status.capture: no live session {session_id} to capture");
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
+                    "status.capture: no live session {session_id} to capture"
+                );
             }
             ServerMsg::Ack
         }
@@ -116,7 +122,10 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
                 .map(TokenTotals::to_summary),
         },
         ClientMsg::Unknown => {
-            crate::clog!("control: ignoring unknown ClientMsg variant from peer");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "control: ignoring unknown ClientMsg variant from peer"
+            );
             ServerMsg::Unknown
         }
     }
@@ -152,28 +161,22 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             // further Hello on the same connection is ignored.
         }
         ClientFrame::Resize { rows, cols } => {
-            crate::cdebug!("resize-event: source=client-frame rows={rows} cols={cols}");
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
+                "resize-event: source=client-frame rows={rows} cols={cols}"
+            );
             // resize() records the Resize invalidation (and its wipe); the
             // render loop composes the resized frame on the next pass.
             mux.resize(rows, cols);
         }
         ClientFrame::Input(bytes) => {
-            // Debug-only input-path telemetry: every chunk from the
-            // client and every parser event lands in the log when
-            // debug telemetry. Production runs stay quiet — the macro
-            // skips the format + write entirely. The pair is the
-            // canonical trace for "key X did nothing" triage: chunk
-            // line proves the byte reached the daemon, event line
-            // proves the parser classified it.
-            crate::ctrace_payload!(
-                "rx ClientFrame::Input len={} bytes={:02x?}",
-                bytes.len(),
-                bytes
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
+                "input chunk received: bytes={}",
+                bytes.len()
             );
             let events = mux.control.input_parser.parse(&bytes);
             for event in events {
-                let mode = mux.mux_mode();
-                crate::ctrace_payload!("  -> InputEvent::{:?} mode={mode:?}", event,);
                 mux.handle_input(event);
             }
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
@@ -219,13 +222,19 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::ClipboardImageError(error) => {
             let reason = error.reason_code();
-            crate::clog!("clipboard-image: host request failed reason={reason}");
-            crate::cdebug!("clipboard-image: host request failed detail={error}");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "clipboard-image: host request failed reason={reason}"
+            );
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
+                "clipboard-image: host request failed detail={error}"
+            );
             mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
             mux.set_clipboard_image_notice(format!("Image paste rejected: {error}"));
         }
         ClientFrame::HostNotice(message) => {
-            crate::clog!("host-affordance: {message}");
+            jackin_diagnostics::telemetry_info!("capsule", "host-affordance: {message}");
             mux.set_clipboard_image_notice(message);
         }
         ClientFrame::Detach => {

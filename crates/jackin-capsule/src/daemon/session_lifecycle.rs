@@ -92,7 +92,8 @@ impl Multiplexer {
         let closed_codename = self.session_supervisor.tabs[self.session_supervisor.active_tab]
             .codename
             .clone();
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "action: close_focused_tab tab_idx={} pane_count={}",
             self.session_supervisor.active_tab,
             tab_ids.len()
@@ -117,7 +118,8 @@ impl Multiplexer {
 
     pub(super) fn exit_all_sessions(&mut self) {
         self.cancel_drag();
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "action: exit_all_sessions session_count={} tab_count={}",
             self.session_supervisor.sessions.len(),
             self.session_supervisor.tabs.len()
@@ -150,7 +152,10 @@ impl Multiplexer {
               reflow protocol."
     )]
     pub(super) fn remove_exited_session(&mut self, session_id: u64) {
-        crate::clog!("action: remove_exited_session id={session_id}");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "action: remove_exited_session id={session_id}"
+        );
         // Any in-flight selection / drag-resize was anchored to a
         // pane that may be about to disappear (or whose siblings
         // are about to reflow). Drop both gestures so the next motion
@@ -257,7 +262,8 @@ impl Multiplexer {
                 {
                     self.provider_spawn_env(&slug, provider)
                 } else {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "spawn: unknown provider label {provider_label:?}; no env redirect applied"
                     );
                     env_overrides.to_vec()
@@ -355,7 +361,10 @@ impl Multiplexer {
         };
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
-            crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "spawn ({intent:?}, agent={agent_label}) failed: {err:?}"
+            );
             self.open_spawn_failure_dialog(spawn_failure_message(agent_label, &err));
         }
     }
@@ -377,7 +386,10 @@ impl Multiplexer {
         };
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
-            crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "spawn ({intent:?}, agent={agent_label}) failed: {err:?}"
+            );
             self.open_spawn_failure_dialog(spawn_failure_message(agent_label, &err));
         }
     }
@@ -449,7 +461,8 @@ impl Multiplexer {
         // past the pane's bottom border.
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, Some(id));
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "action: spawn_session id={id} agent={:?} label={label} tab_idx={tab_idx}",
             agent,
             label = launch.label,
@@ -500,7 +513,8 @@ impl Multiplexer {
             .is_some_and(|zoom_id| tab.tree.all_ids().contains(&zoom_id));
         tab.zoomed = if was_zoomed { None } else { Some(focused) };
         self.resize_panes();
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "action: toggle_zoom from={was_zoomed} to={} focused={focused:?}",
             self.active_zoomed_id().is_some()
         );

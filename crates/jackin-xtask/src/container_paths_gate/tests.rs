@@ -18,7 +18,12 @@ fn turso_import_detects_use_and_path_not_log_string() {
     assert!(turso_import_column("use turso::Builder;").is_some());
     assert!(turso_import_column("let db = turso::Builder::new_local(p);").is_some());
     // Log-string mention without path form must not trip the gate.
-    assert!(turso_import_column(r#"clog!("turso store ready");"#).is_none());
+    assert!(
+        turso_import_column(
+            r#"jackin_diagnostics::telemetry_info!("capsule", "turso store ready");"#
+        )
+        .is_none()
+    );
 }
 
 #[test]

@@ -82,7 +82,8 @@ impl Multiplexer {
             Some(Ok(Some((sample, cpu_percent)))) => {
                 let cpu_percent =
                     cpu_percent.map_or_else(|| "n/a".to_owned(), |value| format!("{value:.2}"));
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "resource: sessions={} tabs={} panes={} pending_render={} rss_kib={} cpu_jiffies={} cpu_percent_estimate={}",
                     session_count,
                     tab_count,
@@ -94,7 +95,8 @@ impl Multiplexer {
                 );
             }
             Some(Ok(None)) => {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "resource: sample unavailable sessions={} tabs={} panes={} pending_render={}",
                     session_count,
                     tab_count,
@@ -103,7 +105,8 @@ impl Multiplexer {
                 );
             }
             Some(Err(error)) => {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "resource: sample failed sessions={} tabs={} panes={} pending_render={} error={error:#}",
                     session_count,
                     tab_count,

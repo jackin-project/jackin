@@ -134,34 +134,34 @@ pub async fn run_client(
                     }
                     ServerFrame::HostOpenUrl(url) => {
                         let redacted = jackin_tui::url_text::redact_url_for_log(&url);
-                        crate::cdebug!(
+                        jackin_diagnostics::telemetry_debug!("capsule",
                             "attach-client: ignoring host-open-url frame in in-container client: {redacted:?}"
                         );
                     }
                     ServerFrame::HostRevealPath(_) => {
-                        crate::cdebug!(
+                        jackin_diagnostics::telemetry_debug!("capsule",
                             "attach-client: ignoring host-reveal-path frame in in-container client"
                         );
                     }
                     ServerFrame::HostStageImageFromClipboardPath => {
-                        crate::cdebug!(
+                        jackin_diagnostics::telemetry_debug!("capsule",
                             "attach-client: ignoring host-stage-image-path frame in in-container client"
                         );
                     }
                     ServerFrame::HostPasteImageFromClipboard => {
-                        crate::cdebug!(
+                        jackin_diagnostics::telemetry_debug!("capsule",
                             "attach-client: ignoring host-paste-image frame in in-container client"
                         );
                     }
                     ServerFrame::HostStageImageFromClipboard => {
-                        crate::cdebug!(
+                        jackin_diagnostics::telemetry_debug!("capsule",
                             "attach-client: ignoring host-stage-image frame in in-container client"
                         );
                     }
                     ServerFrame::FileExportStart(_)
                     | ServerFrame::FileExportChunk(_)
                     | ServerFrame::FileExportEnd(_) => {
-                        crate::cdebug!("attach-client: ignoring host file-export frame");
+                        jackin_diagnostics::telemetry_debug!("capsule", "attach-client: ignoring host file-export frame");
                     }
                     ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
                 }

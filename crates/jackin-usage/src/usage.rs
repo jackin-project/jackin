@@ -193,8 +193,8 @@ pub struct UsageCache {
     accounts_materialize_path: PathBuf,
     /// Latched on persistence failure so a persistent fault (e.g. read-only
     /// `/jackin/state`, disk-full, DB corruption) logs once on transition via
-    /// always-on `clog!` rather than every 5-minute refresh — and is never
-    /// invisible the way the firehose-only `cdebug!` would be in production.
+    /// always-on governed INFO event rather than every 5-minute refresh — and is never
+    /// invisible the way the firehose-only governed DEBUG events would be in production.
     telemetry_persist_failed: bool,
     accounts_materialize_failed: bool,
 }
@@ -1000,7 +1000,7 @@ pub(crate) fn first_credential<T>(
 
 /// Read and parse a JSON credential/config file, distinguishing "absent"
 /// (expected — `None`, no log) from "present but broken" (a real error the
-/// operator must see — logged via the always-on `clog!`, then `None`). The
+/// operator must see — logged via the always-on governed INFO event, then `None`). The
 /// `.ok()?` idiom these loaders previously used collapsed both cases, so a
 /// corrupt or permission-denied token file looked identical to a logged-out
 /// provider and surfaced no diagnostic.
@@ -1009,7 +1009,8 @@ pub(crate) fn read_json_file(path: &Path) -> Option<serde_json::Value> {
         Ok(text) => text,
         Err(error) => {
             if error.kind() != std::io::ErrorKind::NotFound {
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "usage credential read failed for {}: {error}",
                     path.display()
                 );
@@ -1020,7 +1021,8 @@ pub(crate) fn read_json_file(path: &Path) -> Option<serde_json::Value> {
     match serde_json::from_str(&text) {
         Ok(value) => Some(value),
         Err(error) => {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "usage credential parse failed for {}: {error}",
                 path.display()
             );

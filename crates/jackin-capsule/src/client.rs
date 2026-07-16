@@ -39,7 +39,7 @@ pub async fn run_client(
 /// logged and swallowed.
 pub async fn run_report_event(args: &[String]) -> Result<()> {
     if let Err(e) = try_report_event(args).await {
-        crate::clog!("report-event: {e:#}");
+        jackin_diagnostics::telemetry_info!("capsule", "report-event: {e:#}");
     }
     Ok(())
 }

@@ -30,7 +30,10 @@ fn resolve_prefix_binding() -> Option<u8> {
     if let Some(byte) = parse_key_binding(&s) {
         Some(byte)
     } else {
-        crate::clog!("invalid JACKIN_PREFIX={s:?}; prefix mode disabled");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "invalid JACKIN_PREFIX={s:?}; prefix mode disabled"
+        );
         None
     }
 }
@@ -45,7 +48,10 @@ fn resolve_palette_binding() -> Option<u8> {
             if let Some(byte) = parse_key_binding(&s) {
                 Some(byte)
             } else {
-                crate::clog!("invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\");
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
+                    "invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\"
+                );
                 Some(0x1C)
             }
         }

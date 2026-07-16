@@ -41,7 +41,8 @@ impl Multiplexer {
                 self.set_clipboard_image_notice(format!("{action}: {file_name}"));
             }
             Err(err) => {
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "file-export: rejected source_category={} reason={}",
                     requested_export_path_category(&requested_path),
                     compact_export_error_reason(&err)
@@ -88,7 +89,10 @@ impl Multiplexer {
             return false;
         };
         if let Err(err) = self.resolve_export_candidate(&requested_path) {
-            crate::cdebug!("file-export: modified-click ignored token={requested_path:?}: {err:#}");
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
+                "file-export: modified-click ignored token={requested_path:?}: {err:#}"
+            );
             return false;
         }
         self.export_file_to_host(requested_path, false, false);
@@ -169,7 +173,8 @@ impl Multiplexer {
             sha256,
         }));
         let source_category = export_source_category(&source, &canonical_workdir);
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "file-export: queued transfer_id={} source_category={} basename={:?} bytes={} sha256={} reveal_after_export={} open_after_export={}",
             transfer_id,
             source_category,
@@ -179,7 +184,8 @@ impl Multiplexer {
             reveal_after_export,
             open_after_export
         );
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "{}",
             file_export_queue_compact_line(
                 source_category,

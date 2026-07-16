@@ -44,7 +44,8 @@ pub fn register_managed_child(pid: u32) {
             // the PID-1 reaper then races session owners for their children
             // (the exact bug `reap_zombies_does_not_steal_registered_session_child`
             // pins). Surface so the operator can restart the daemon.
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "pid1: managed_children mutex poisoned; cannot register pid {pid}. Reaper may steal session children."
             );
         }
@@ -60,7 +61,10 @@ pub fn unregister_managed_child(pid: u32) {
             children.remove(&pid);
         }
         Err(_) => {
-            crate::clog!("pid1: managed_children mutex poisoned; cannot unregister pid {pid}");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "pid1: managed_children mutex poisoned; cannot unregister pid {pid}"
+            );
         }
     }
 }
@@ -86,7 +90,10 @@ pub fn install_sigchld_reaper() {
     let mut mask = SigSet::empty();
     mask.add(Signal::SIGCHLD);
     if let Err(error) = mask.thread_block() {
-        crate::clog!("failed to block SIGCHLD on PID 1 main thread: {error}");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "failed to block SIGCHLD on PID 1 main thread: {error}"
+        );
         return;
     }
 
@@ -103,7 +110,10 @@ pub fn install_sigchld_reaper() {
                 Ok(_) => reap_zombies(),
                 Err(nix::errno::Errno::EINTR) => {}
                 Err(e) => {
-                    crate::clog!("zombie-reaper sigwait error: {e}; backing off 100ms");
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
+                        "zombie-reaper sigwait error: {e}; backing off 100ms"
+                    );
                     #[expect(
                         clippy::disallowed_methods,
                         reason = "zombie reaper owns its OS thread and is not the multiplexer render thread"
@@ -114,7 +124,10 @@ pub fn install_sigchld_reaper() {
         }
     });
     if let Err(error) = reaper {
-        crate::clog!("failed to spawn zombie-reaper thread: {error}");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "failed to spawn zombie-reaper thread: {error}"
+        );
     }
 }
 
@@ -160,7 +173,8 @@ fn reap_zombies_linux() {
                     Ok(_) => {}
                     Err(nix::errno::Errno::ECHILD) => break,
                     Err(e) => {
-                        crate::clog!(
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
                             "pid1: waitpid({pid}) failed unexpectedly: {e} (errno={:?})",
                             e as i32
                         );
@@ -172,7 +186,8 @@ fn reap_zombies_linux() {
             // kernel/libc bug (EINVAL, EFAULT) we cannot recover from —
             // log so triage isn't blind, then break to avoid spinning.
             Err(e) => {
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "pid1: waitid(Id::All) failed unexpectedly: {e} (errno={:?})",
                     e as i32
                 );
@@ -190,7 +205,8 @@ fn reap_zombies_unfiltered() {
             Ok(_) => {}
             Err(nix::errno::Errno::ECHILD) => break,
             Err(e) => {
-                crate::clog!(
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
                     "pid1: waitpid(-1) failed unexpectedly: {e} (errno={:?})",
                     e as i32
                 );

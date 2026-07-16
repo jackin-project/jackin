@@ -91,7 +91,8 @@ impl Multiplexer {
             // could be confirmed. Stamp its exit now so the reaped orphan is not
             // reported as a permanently "active" agent in the registry snapshot.
             self.mark_agent_session_exited(new_id);
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "action: split aborted — from_id={from_id} no longer in tab tree; reaped orphan id={new_id}",
             );
             return Ok(());
@@ -99,7 +100,8 @@ impl Multiplexer {
         tab.focused_id = new_id;
         self.resize_panes();
         self.synthesise_focus_swap(Some(from_id), Some(new_id));
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "action: split id={new_id} from={from_id} dir={direction:?} agent={agent_for_log:?} label={label}",
             label = launch.label,
         );
@@ -157,7 +159,8 @@ impl Multiplexer {
         let id = tab.focused_id;
         let all = tab.tree.all_ids();
         let next_focus = all.iter().find(|&&sid| sid != id).copied();
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "action: close_focused_pane id={id} tab_idx={} siblings_remaining={}",
             self.session_supervisor.active_tab,
             next_focus.is_some()
@@ -207,7 +210,8 @@ impl Multiplexer {
 
     pub(super) fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = normalize_size(rows, cols);
-        crate::cdebug!(
+        jackin_diagnostics::telemetry_debug!(
+            "capsule",
             "resize: {}x{} → {}x{} content_rows={}",
             self.render.term_cols,
             self.render.term_rows,

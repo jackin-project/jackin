@@ -68,12 +68,16 @@ pub(crate) async fn perform_handshake(
     match tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.read_exact(&mut first)).await {
         Ok(Ok(_)) => {}
         Ok(Err(e)) => {
-            crate::clog!("attach: handshake read_exact(first byte) failed: {e}");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "attach: handshake read_exact(first byte) failed: {e}"
+            );
             drop(client_permit);
             return;
         }
         Err(_) => {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "attach: handshake first byte not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
             );
             drop(client_permit);
@@ -87,7 +91,10 @@ pub(crate) async fn perform_handshake(
         let request = match socket::read_control_msg(&mut stream, first[0]).await {
             Ok(request) => request,
             Err(e) => {
-                crate::clog!("control: rejecting malformed request: {e:#}");
+                jackin_diagnostics::telemetry_info!(
+                    "capsule",
+                    "control: rejecting malformed request: {e:#}"
+                );
                 drop(client_permit);
                 return;
             }
@@ -101,14 +108,23 @@ pub(crate) async fn perform_handshake(
             })
             .is_err()
         {
-            crate::clog!("control: daemon loop unavailable while handling request");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "control: daemon loop unavailable while handling request"
+            );
             drop(client_permit);
             return;
         }
         match tokio::time::timeout(HANDSHAKE_TIMEOUT, reply_rx).await {
             Ok(Ok(reply)) => socket::write_control_reply(stream, &reply).await,
-            Ok(Err(_)) => crate::clog!("control: reply channel closed before response"),
-            Err(_) => crate::clog!("control: daemon reply timed out after {HANDSHAKE_TIMEOUT:?}"),
+            Ok(Err(_)) => jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "control: reply channel closed before response"
+            ),
+            Err(_) => jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "control: daemon reply timed out after {HANDSHAKE_TIMEOUT:?}"
+            ),
         }
         drop(client_permit);
         return;
@@ -121,17 +137,24 @@ pub(crate) async fn perform_handshake(
     {
         Ok(Ok(Some(frame))) => frame,
         Ok(Ok(None)) => {
-            crate::clog!("attach: handshake EOF before initial frame");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "attach: handshake EOF before initial frame"
+            );
             drop(client_permit);
             return;
         }
         Ok(Err(e)) => {
-            crate::clog!("attach: handshake frame decode failed: {e}");
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "attach: handshake frame decode failed: {e}"
+            );
             drop(client_permit);
             return;
         }
         Err(_) => {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
                 "attach: handshake Hello frame not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
             );
             drop(client_permit);
@@ -148,7 +171,10 @@ pub(crate) async fn perform_handshake(
         context,
     } = initial_frame
     else {
-        crate::clog!("attach: rejected client whose first frame was not Hello: {initial_frame:?}");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "attach: rejected client whose first frame was not Hello: {initial_frame:?}"
+        );
         drop(client_permit);
         return;
     };
@@ -158,7 +184,10 @@ pub(crate) async fn perform_handshake(
             jackin_telemetry::propagation::ExtractOutcome::RejectRequest
         )
     }) {
-        crate::clog!("attach: rejected invalid telemetry correlation");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "attach: rejected invalid telemetry correlation"
+        );
         drop(client_permit);
         return;
     }
@@ -173,7 +202,10 @@ pub(crate) async fn perform_handshake(
         client_permit,
     };
     if handshake_tx.send(handshake).is_err() {
-        crate::clog!("attach: handshake channel closed; daemon shutting down");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "attach: handshake channel closed; daemon shutting down"
+        );
     }
 }
 
@@ -207,7 +239,10 @@ pub(crate) fn send_attached_shutdown(
         }))
         .is_err()
     {
-        crate::clog!("{context}: client receiver already dropped; Shutdown frame not delivered");
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "{context}: client receiver already dropped; Shutdown frame not delivered"
+        );
     }
     true
 }
@@ -261,11 +296,11 @@ async fn gracefully_detach_attached_task_with_reason(
             if let Err(err) = result
                 && !err.is_cancelled()
             {
-                crate::clog!("{context}: attach task ended with join error: {err}");
+                jackin_diagnostics::telemetry_info!("capsule", "{context}: attach task ended with join error: {err}");
             }
         }
         () = tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_CLOSE_GRACE_MS)) => {
-            crate::clog!(
+            jackin_diagnostics::telemetry_info!("capsule",
                 "{context}: attach client did not close after Shutdown within {ATTACH_SHUTDOWN_CLOSE_GRACE_MS}ms; aborting"
             );
             handle.abort();
@@ -324,10 +359,10 @@ pub(crate) async fn handle_attach_client(
                 if let Err(e) = result {
                     if e.kind() == std::io::ErrorKind::UnexpectedEof {
                         // Expected detach — not a failure (plan 008).
-                        crate::cdebug!("attach client: socket closed (client detached)");
+                        jackin_diagnostics::telemetry_debug!("capsule", "attach client: socket closed (client detached)");
                     } else {
                         // Operator-visible breadcrumb + typed OTLP failure.
-                        crate::cerror!("attach client: socket read failed: {e}");
+                        jackin_diagnostics::telemetry_error!("capsule_error", "attach client: socket read failed: {e}");
                         record_attach_failure(
                             "attach_socket_read_failed",
                             "attach socket read failed",
@@ -338,7 +373,7 @@ pub(crate) async fn handle_attach_client(
                 let frame = match read_client_frame(&mut stream, tag[0]).await {
                     Ok(Some(frame)) => frame,
                     Ok(None) => {
-                        crate::cwarn!("attach client: EOF mid-frame (tag={:#04x})", tag[0]);
+                        jackin_diagnostics::telemetry_warn!("capsule", "attach client: EOF mid-frame (tag={:#04x})", tag[0]);
                         record_attach_failure(
                             "attach_socket_eof",
                             "attach socket closed mid-frame",
@@ -346,7 +381,7 @@ pub(crate) async fn handle_attach_client(
                         break;
                     }
                     Err(e) => {
-                        crate::cerror!(
+                        jackin_diagnostics::telemetry_error!("capsule_error",
                             "attach client: frame decode failed (tag={:#04x}): {e}",
                             tag[0]
                         );
@@ -358,7 +393,7 @@ pub(crate) async fn handle_attach_client(
                     }
                 };
                 if cmd_tx.send(frame).is_err() {
-                    crate::clog!("attach client: cmd_tx closed; daemon shutting down");
+                    jackin_diagnostics::telemetry_info!("capsule", "attach client: cmd_tx closed; daemon shutting down");
                     return;
                 }
             }
@@ -368,9 +403,9 @@ pub(crate) async fn handle_attach_client(
                         e.kind(),
                         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::BrokenPipe
                     ) {
-                        crate::cwarn!("attach client: socket write failed: {e}");
+                        jackin_diagnostics::telemetry_warn!("capsule", "attach client: socket write failed: {e}");
                     } else {
-                        crate::cerror!("attach client: socket write failed: {e}");
+                        jackin_diagnostics::telemetry_error!("capsule_error", "attach client: socket write failed: {e}");
                         record_attach_failure(
                             "attach_socket_write_failed",
                             "attach socket write failed",
@@ -389,7 +424,8 @@ pub(crate) async fn handle_attach_client(
     // exact symptom this comment warns against does not happen
     // silently if the cmd_tx side is the one that died first.
     if cmd_tx.send(ClientFrame::Detach).is_err() {
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "attach client: cmd_tx closed before synthetic Detach could fire; main loop is already tearing down"
         );
     }

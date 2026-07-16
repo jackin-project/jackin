@@ -21,7 +21,7 @@ async fn conformance_attach_protocol_failure_and_expected_detach() {
     drop(guard);
     export.force_flush();
     assert_eq!(
-        export.typed_error_count("capsule.attach", "attach_socket_eof"),
+        export.typed_error_count("error.typed", "attach_socket_eof"),
         1
     );
     assert_eq!(export.error_span_count(), 1);
@@ -40,7 +40,7 @@ async fn conformance_attach_protocol_failure_and_expected_detach() {
     clean_export.force_flush();
     assert_eq!(clean_export.error_span_count(), 0);
     assert_eq!(
-        clean_export.typed_error_count("capsule.attach", "attach_socket_eof"),
+        clean_export.typed_error_count("error.typed", "attach_socket_eof"),
         0
     );
 }

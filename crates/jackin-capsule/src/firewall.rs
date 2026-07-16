@@ -113,7 +113,8 @@ pub fn apply() -> Result<()> {
 
     if entries.is_empty() {
         // network=allowlist with no hosts is fail-closed (no egress), not open.
-        crate::clog!(
+        jackin_diagnostics::telemetry_info!(
+            "capsule",
             "firewall: JACKIN_ALLOWED_HOSTS is empty; DROP-only policy (no IPv4/IPv6 egress)"
         );
         return Ok(());
@@ -135,7 +136,8 @@ pub fn apply() -> Result<()> {
                 if enforceable_ipv4(&net) {
                     members.insert(net);
                 } else {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "firewall: WARNING: allowlist entry {net:?} is not an enforceable \
                          IPv4 address/CIDR; skipping (IPv6 egress is not filtered)"
                     );
@@ -148,7 +150,8 @@ pub fn apply() -> Result<()> {
                     .map(|ip| ip.to_string())
                     .collect();
                 if v4.is_empty() {
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "firewall: WARNING: {domain} resolved to no IPv4 address; \
                          not allowlisted (host will be unreachable)"
                     );
@@ -172,7 +175,8 @@ pub fn apply() -> Result<()> {
         "ACCEPT",
     ])?;
 
-    crate::clog!(
+    jackin_diagnostics::telemetry_info!(
+        "capsule",
         "firewall: OUTPUT allowlist active: {} IPv4 entries; IPv6 egress denied",
         members.len()
     );

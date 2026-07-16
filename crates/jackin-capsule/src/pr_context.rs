@@ -142,7 +142,12 @@ pub(crate) fn gh_pull_request_info(
     // Checks lookup is best-effort — a parse failure on checks should
     // not poison the PR cache. Demote any error to `None` checks.
     let checks = gh_pull_request_checks(workdir, &pr.url)
-        .map_err(|e| crate::clog!("pull-request-context: gh pr checks failed: {e}"))
+        .map_err(|e| {
+            jackin_diagnostics::telemetry_info!(
+                "capsule",
+                "pull-request-context: gh pr checks failed: {e}"
+            )
+        })
         .ok()
         .flatten();
     // GitHub does not sanitize PR titles for terminal safety; strip
@@ -179,7 +184,8 @@ fn gh_pull_request_checks(
             check.bucket.as_str(),
             "pass" | "fail" | "pending" | "skipping" | "cancel"
         ) {
-            crate::cdebug!(
+            jackin_diagnostics::telemetry_debug!(
+                "capsule",
                 "pull-request-context: unknown gh pr checks bucket {:?}",
                 check.bucket
             );
@@ -189,7 +195,8 @@ fn gh_pull_request_checks(
         .or_else(|| {
             gh_status_check_rollup_url(workdir, url)
                 .map_err(|e| {
-                    crate::cdebug!(
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
                         "pull-request-context: gh pr view statusCheckRollup failed: {e}"
                     );
                 })
@@ -394,7 +401,8 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
                 }
             }
             if truncated {
-                crate::cdebug!(
+                jackin_diagnostics::telemetry_debug!(
+                    "capsule",
                     "read_pipe_bounded[{program} {stream}]: capped at {cap} bytes; downstream parsing may fail"
                 );
             }

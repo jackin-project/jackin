@@ -146,7 +146,8 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                     // drops and a fresh accept proceeds.
                     let permit = if let Ok(p) = Arc::clone(&limiter).try_acquire_owned() {
                         if at_cap_logged {
-                            crate::clog!(
+                            jackin_diagnostics::telemetry_info!(
+                                "capsule",
                                 "socket: capacity recovered below cap {MAX_CONCURRENT_CLIENTS}"
                             );
                             at_cap_logged = false;
@@ -154,11 +155,13 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                         p
                     } else {
                         if at_cap_logged {
-                            crate::cdebug!(
+                            jackin_diagnostics::telemetry_debug!(
+                                "capsule",
                                 "socket: dropping over-cap connection (cap={MAX_CONCURRENT_CLIENTS})"
                             );
                         } else {
-                            crate::clog!(
+                            jackin_diagnostics::telemetry_info!(
+                                "capsule",
                                 "socket: at concurrent-client cap {MAX_CONCURRENT_CLIENTS}; over-cap connections will be dropped silently until capacity recovers"
                             );
                             at_cap_logged = true;
@@ -171,17 +174,22 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                         // Stop accepting so we don't burn cycles
                         // accepting connections that are immediately
                         // dropped on the floor.
-                        crate::clog!("socket: client queue closed; listener stopping");
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
+                            "socket: client queue closed; listener stopping"
+                        );
                         return;
                     }
                 }
                 Err(e) => {
                     consecutive_failures = consecutive_failures.saturating_add(1);
-                    crate::clog!(
+                    jackin_diagnostics::telemetry_info!(
+                        "capsule",
                         "socket accept error ({consecutive_failures}/{ACCEPT_FAILURE_BAIL}): {e}"
                     );
                     if consecutive_failures >= ACCEPT_FAILURE_BAIL {
-                        crate::clog!(
+                        jackin_diagnostics::telemetry_info!(
+                            "capsule",
                             "socket: giving up after {ACCEPT_FAILURE_BAIL} consecutive accept failures"
                         );
                         return;
@@ -198,7 +206,10 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                     // accept-error clog above already names the
                     // failure. Keep this on the debug tier so the
                     // 1-line-per-failure compact-log invariant holds.
-                    crate::cdebug!("socket: backing off {backoff_ms}ms before next accept");
+                    jackin_diagnostics::telemetry_debug!(
+                        "capsule",
+                        "socket: backing off {backoff_ms}ms before next accept"
+                    );
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 }
             }
@@ -278,8 +289,13 @@ async fn read_payload_lazy(
 pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) {
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed: {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s"),
+        Ok(Err(e)) => {
+            jackin_diagnostics::telemetry_info!("capsule", "control reply write failed: {e}")
+        }
+        Err(_) => jackin_diagnostics::telemetry_info!(
+            "capsule",
+            "control reply write timed out after 2 s"
+        ),
     }
 }
 
